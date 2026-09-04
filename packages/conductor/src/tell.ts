@@ -122,9 +122,15 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
  * Appending the outcome must not be able to fail the caller either.
  *
  * A run that merged, told GitHub, and then could not write down that it had
- * told GitHub is still a run that merged. The log loses one fact; `reconcile`
- * finds the divergence later because it compares against GitHub rather than
- * against this row.
+ * told GitHub is still a run that merged. The log loses one fact, and losing it
+ * costs exactly what 0022 kept this event for: afterwards nobody can tell "we
+ * never commented" from "we commented and it did not help".
+ *
+ * **That cost is unpaid, not avoided.** `reconcile` is meant to find the
+ * divergence by comparing against GitHub rather than against this row, and it
+ * does not yet — it converges worktrees and nothing else (`#69`). Until it
+ * does, a swallowed append here is a fact nothing recovers. Swallowing is still
+ * right: failing the caller would turn a lost record into a lost merge.
  */
 async function record(
   store: EventStore,

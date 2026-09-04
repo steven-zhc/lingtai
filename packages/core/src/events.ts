@@ -375,9 +375,10 @@ export const OutboxFailed = z.object({
 /**
  * Lingtai told GitHub something about an issue, and it landed.
  *
- * The noun is the issue rather than the outbox that carries it today: the queue
+ * The noun is the issue rather than the outbox that used to carry it: a queue
  * is an implementation detail and an event name must not spend the log's
- * vocabulary on one ([0022](../../../doc/decisions/0022-the-seams.md)). Three
+ * vocabulary on one ([0022](../../../doc/decisions/0022-the-seams.md)) — which
+ * this pair outlived by two commits, as intended. Three
  * changes are possible and they are the only three — a comment, the label set,
  * and closing — so the kind is a field rather than three event types, which
  * would have been six once the failures are counted.
@@ -386,8 +387,9 @@ export const OutboxFailed = z.object({
  * takes the union with whatever labels somebody else put on the issue, because
  * that needs GitHub's current state and a decision must not.
  *
- * Nothing appends this yet. It is here first so that the change which starts
- * appending it is only about the deletion.
+ * Appended by `conductor`'s `tell.ts`, at the moment it tells GitHub. It was
+ * added one commit ahead of that so the commit which deleted the outbox was
+ * only about the deletion.
  */
 export const IssueUpdated = z.object({
   project: z.string(),

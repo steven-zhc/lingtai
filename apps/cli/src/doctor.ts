@@ -723,7 +723,10 @@ async function gatePointsRan(url: string): Promise<CheckResult> {
  * more (0022): `tellGitHub` calls GitHub inline and writes down what happened,
  * so the question is no longer *how much is waiting* but *what did we say we
  * would do and not manage*. An `IssueUpdateFailed` with no later `IssueUpdated`
- * for the same issue and change is exactly the divergence `reconcile` owes.
+ * for the same issue and change is exactly the divergence `reconcile` owes —
+ * and, until `#69` widens it, does not pay. This check is therefore the whole
+ * of the safety net the outbox's retries were deleted against, which is why it
+ * fails rather than warns: it has nobody to hand the divergence to.
  *
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
@@ -762,7 +765,8 @@ async function unconverged(url: string): Promise<CheckResult> {
     detail:
       `${rows.rows.length} issue(s) diverged — ` +
       rows.rows.slice(0, 4).map((r) => `${r.project}#${r.issue} (${r.change})`).join(", ") +
-      ". Nothing retries these; reconcile converges them.",
+      ". Nothing retries these, and `reconcile` does not converge them yet (#69) — " +
+      "say it again by hand, or let the next state change carry the labels.",
   };
 }
 
