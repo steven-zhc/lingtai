@@ -1,13 +1,22 @@
 /**
- * What the log said, against what the machine actually has.
+ * What the log said, against what the world actually has.
  *
- * A daemon that is killed mid-run leaves two things behind, and only one of
- * them cleans itself up. The **claim** has a lease, so it expires without
- * anybody releasing it and the task returns to the queue on its own
- * (`claim.ts`). The **worktree** does not: a directory under
- * `~/.lingtai/worktrees/` outlives every process that knew about it, and it
- * is holding a branch checked out, which stops git updating that ref on the
- * next attempt.
+ * **Four things at startup**, and until `#69` only the second was checked:
+ *
+ * 1. the projection is caught up — the checkpoint against the log's head
+ * 2. worktrees are cleaned — the original job
+ * 3. expired claims are returned — a lease that ran out on a dead process
+ * 4. GitHub says what the log says — see `converge.ts`
+ *
+ * A daemon that is killed mid-run leaves two things behind, and the claim's
+ * self-repair is thinner than it looks. The **claim** has a lease, so nothing
+ * has to release it for another process to take the item (`claim.ts`) — but
+ * `task_view` still folds it as `running`, and the queue only offers what the
+ * log says is queued, so an expired claim that nobody returns is an item
+ * removed from the queue for good. That is the third check. The **worktree**
+ * has no equivalent at all: a directory under `~/.lingtai/worktrees/` outlives
+ * every process that knew about it, and it is holding a branch checked out,
+ * which stops git updating that ref on the next attempt.
  *
  * ## Recorded, not quietly repaired
  *
@@ -34,17 +43,29 @@
  */
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { reduceWorkItem, parsePayload } from "@lingtai/core";
-import { type EventStore, eventStore } from "@lingtai/store";
+import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/core";
+import { databaseUrl } from "@lingtai/env";
+import { projectionLag, type EventStore, eventStore } from "@lingtai/store";
+import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
+import pg from "pg";
+
+/**
+ * What was done about a divergence.
+ *
+ * A free-form string in the event (`Reconciled.findings[].action`), so this
+ * list grows without a schema change — which is the point, because each of the
+ * four checks repairs a different kind of thing.
+ */
+export type Action = "removed" | "released" | "converged" | "reported";
 
 export interface Finding {
-  /** The run whose worktree this is. */
+  /** The stream the divergence is about — a run, a work item, or a projection. */
   stream: string;
   expected: string;
   actual: string;
-  action: "removed" | "reported";
-  /** Absolute path, so somebody can go and look. */
+  action: Action;
+  /** Absolute path for a worktree finding; empty for the others. */
   path: string;
 }
 
@@ -59,6 +80,32 @@ export interface ReconcileOptions {
   store?: EventStore;
   now?: () => number;
   log?: (line: string) => void;
+  url?: string;
+  /**
+   * Which projections this system runs, so lag can be judged.
+   *
+   * Told, not discovered. A `checkpoints` row for a projection nobody runs any
+   * more is not "behind" — it is dead, and reporting it as lag every startup
+   * would be a permanent finding nobody can clear, which is the failure mode
+   * this file's own header warns about. (There is one such row today: `outbox`,
+   * whose projection 0022 deleted; `#72` removes it.)
+   */
+  projections?: readonly string[];
+  /**
+   * The registered projects, which bound the claim scan.
+   *
+   * Told rather than discovered for a blunter reason: this check *appends*, and
+   * a reconcile in a test shares its database with every other suite. Scanning
+   * every `wi-` stream would release fixtures belonging to tests that are not
+   * running. Production passes every registered project, which is the same set.
+   */
+  projects?: readonly ProjectState[];
+  /**
+   * Everything the GitHub check needs, injected. Omit it and that check is
+   * skipped rather than guessed at — a reconcile that cannot reach GitHub
+   * should still clean worktrees and return claims.
+   */
+  github?: ConvergeOptions;
 }
 
 /**
@@ -142,14 +189,156 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
   return findings;
 }
 
+/**
+ * Is the projection at the head of the log?
+ *
+ * **Reported, never repaired here.** Since `#66` every process that appends
+ * holds a projector, so a lag at startup means the mechanism is not running or
+ * has stopped — and a reconcile that quietly folded the backlog would repair
+ * the symptom and hide that. The one thing this must not do is make a broken
+ * projector look like a working one.
+ */
+export async function findLaggingProjections(options: ReconcileOptions = {}): Promise<Finding[]> {
+  const known = new Set(options.projections ?? []);
+  if (known.size === 0) return [];
+  const lags = await projectionLag(options.url ?? databaseUrl()).catch(() => null);
+  // No checkpoints table yet is a system that has never run, not a divergence.
+  if (lags === null) return [];
+  return lags
+    .filter((l) => known.has(l.name))
+    .filter((l) => l.lag > 0n)
+    .map((l) => ({
+      stream: l.name,
+      expected: `at the head — ${l.headSeq}`,
+      actual: `${l.lastSeq}, ${l.lag} behind since ${l.updatedAt?.toISOString() ?? "never"}`,
+      action: "reported" as const,
+      path: "",
+    }));
+}
+
+/**
+ * Claims whose lease ran out, so the item can be taken again.
+ *
+ * The lease already means another process *may* claim it (`claim.ts` treats an
+ * expired lease as unheld). What it does not do is put the item back where the
+ * queue can see it: `task_view` folds a claim as `running`, and `selectRunnable`
+ * offers nothing that is not `queued`. So without this, a daemon killed
+ * mid-run takes an item out of circulation permanently — the log says a run
+ * holds it, and that run is never coming back.
+ *
+ * The release is an event, which is what makes the repair visible: the card
+ * moves, and `Reconciled` says why it moved.
+ */
+export async function findExpiredClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
+  const store = options.store ?? eventStore;
+  const now = options.now ?? Date.now;
+  const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
+  if (names.length === 0) return [];
+
+  const client = new pg.Client({ connectionString: options.url ?? databaseUrl() });
+  let streams: string[];
+  try {
+    await client.connect();
+    const r = await client.query<{ stream_id: string }>(
+      `select distinct stream_id from events
+       where type = 'WorkItemClaimed'
+         and stream_id like any($1)
+       order by stream_id`,
+      [names.map((n) => `wi-${n}-%`)],
+    );
+    streams = r.rows.map((row) => row.stream_id);
+  } catch {
+    // No log to read is not a divergence.
+    return [];
+  } finally {
+    await client.end().catch(() => {});
+  }
+
+  const findings: Finding[] = [];
+  for (const workItemId of streams) {
+    const item = reduceWorkItem(await store.read(workItemId).catch(() => []));
+    const life = item.lifecycle;
+    if (life.status !== "claimed") continue;
+    if (life.leaseUntilMs > now()) continue;
+    findings.push({
+      stream: workItemId,
+      expected: `queued — ${life.runId}'s lease expired at ${new Date(life.leaseUntilMs).toISOString()}`,
+      actual: `still claimed by ${life.worker}`,
+      action: options.dryRun ? "reported" : "released",
+      path: "",
+    });
+  }
+  return findings;
+}
+
 export async function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
   const log = options.log ?? (() => {});
   const store = options.store ?? eventStore;
-  const findings = await findOrphans(options);
+
+  // Read all four before acting on any. A pass that repaired as it discovered
+  // would report a world that no longer existed by the time it finished.
+  const findings = [
+    ...(await findLaggingProjections(options)),
+    ...(await findOrphans(options)),
+    ...(await findExpiredClaims(options)),
+  ];
+
+  // 4. GitHub, which repairs as it reads because the read *is* the comparison
+  // — see `converge.ts`. Skipped entirely when nothing was injected to reach
+  // GitHub with, rather than guessed at.
+  if (options.github) {
+    const { divergences, converged } = await convergeIssues({
+      ...options.github,
+      store,
+      ...(options.url === undefined ? {} : { url: options.url }),
+      ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
+      log,
+    });
+    const done = new Set(converged.map((d) => `${d.workItemId}:${d.change}`));
+    for (const d of divergences) {
+      findings.push({
+        stream: d.workItemId,
+        expected: `${d.change}: ${d.expected}`,
+        actual: d.actual,
+        action: done.has(`${d.workItemId}:${d.change}`) ? "converged" : "reported",
+        path: "",
+      });
+    }
+  }
 
   if (findings.length === 0) return [];
 
   for (const f of findings) {
+    if (f.action === "released") {
+      try {
+        // Re-read rather than trust the finding. Between the scan and here a
+        // process could have renewed the lease, and releasing a live claim is a
+        // far worse outcome than leaving a dead one — the same rule the
+        // worktree check follows for the same reason.
+        const events = await store.read(f.stream);
+        const life = reduceWorkItem(events).lifecycle;
+        if (life.status !== "claimed" || life.leaseUntilMs > (options.now ?? Date.now)()) {
+          f.action = "reported";
+          f.actual = `${f.actual} (claimed again before it could be released)`;
+          continue;
+        }
+        await store.append(f.stream, events.length, [
+          {
+            type: "WorkItemReleased",
+            actor: "conductor",
+            data: parsePayload("WorkItemReleased", {
+              runId: life.runId,
+              reason: "the lease expired and the run never came back",
+            }),
+          },
+        ]);
+        log(`reconciled: released ${f.stream}`);
+      } catch (err) {
+        f.action = "reported";
+        f.actual = `${f.actual} (could not release: ${(err as Error).message})`;
+      }
+      continue;
+    }
     if (f.action !== "removed") continue;
     try {
       await rm(f.path, { recursive: true, force: true });

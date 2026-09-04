@@ -23,6 +23,7 @@
  * satisfies it with four functions and no network — which is the whole point of
  * a caller naming its own requirement.
  */
+import { parseWorkItemStream } from "./discover.ts";
 import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/core";
 import type { EventStore } from "@lingtai/store";
 import { foreignLabels } from "./labels.ts";
@@ -56,12 +57,12 @@ export interface TellOptions {
 
 /** `wi-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
 function split(workItemId: string): { project: string; issue: number } | null {
-  const body = workItemId.startsWith("wi-") ? workItemId.slice(3) : workItemId;
-  const cut = body.lastIndexOf("-");
-  if (cut < 0) return null;
-  const issue = Number(body.slice(cut + 1));
-  if (!Number.isInteger(issue)) return null;
-  return { project: body.slice(0, cut), issue };
+  const parsed = parseWorkItemStream(workItemId);
+  if (!parsed) return null;
+  // This path nominates issues by number; a non-numeric ref is not one it can
+  // tell GitHub about.
+  const issue = Number(parsed.issue);
+  return Number.isInteger(issue) ? { project: parsed.project, issue } : null;
 }
 
 /**

@@ -14,6 +14,7 @@
     "@lingtai/conductor": "workspace:*",
     "@lingtai/core": "workspace:*",
     "@lingtai/env": "workspace:*",
+    "@lingtai/github": "workspace:*",
     "@lingtai/store": "workspace:*",
     "pg": "^8.16.3"
   },

@@ -9,7 +9,8 @@
     "./decide": "./src/approve.ts",
     "./worktree": "./src/worktree.ts",
     "./task-view": "./src/task-view.ts",
-    "./discover": "./src/discover.ts"
+    "./discover": "./src/discover.ts",
+    "./labels": "./src/labels.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -16,11 +16,12 @@ import {
   directDatabaseUrl,
   projectionLag,
 } from "@lingtai/store";
-import { taskViewProjection } from "@lingtai/conductor";
+import { loadProjects, taskViewProjection } from "@lingtai/conductor";
 import type { Tier } from "@lingtai/core";
 import {
   HEARTBEAT_MS,
   beat,
+  clientsForProjects,
   createStatusTable,
   createNotifier,
   createWorkLoop,
@@ -229,7 +230,19 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
   // so the tidy-up has to happen before the next attempt, not after it fails.
-  const found = await reconcile({ log: (line) => console.log(line) }).catch((err: unknown) => {
+  // All four checks, GitHub included (`#69`). The clients are built here and
+  // injected rather than reached for inside `reconcile`, so a reconcile in a
+  // test — or on a machine with no App — still does the other three.
+  const registered = await loadProjects().catch(() => []);
+  const found = await reconcile({
+    log: (line) => console.log(line),
+    // Told what world it is repairing: which projections should be current,
+    // which projects' claims are ours, and how to reach GitHub. Each check
+    // no-ops without its own input rather than guessing at a global scan.
+    projections: [taskViewProjection.name],
+    projects: registered,
+    github: { projects: registered, clients: await clientsForProjects(registered) },
+  }).catch((err: unknown) => {
     // Reported, never fatal. Refusing to start because a directory could not be
     // removed would turn a mess into an outage.
     console.error(`reconcile failed: ${(err as Error).message}`);

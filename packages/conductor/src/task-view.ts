@@ -42,7 +42,7 @@ import type { PayloadOf } from "@lingtai/core";
 import { databaseUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "@lingtai/store";
 import pg from "pg";
-import { workItemStream } from "./discover.ts";
+import { parseWorkItemStream, workItemStream } from "./discover.ts";
 
 /**
  * Where a task is.
@@ -340,10 +340,9 @@ const VERDICT: Record<string, string> = {
  * hyphens survive — which every one of them does.
  */
 function splitTaskId(taskId: string): { project: string; issue: string } {
-  const body = taskId.startsWith("wi-") ? taskId.slice(3) : taskId;
-  const cut = body.lastIndexOf("-");
-  if (cut < 0) return { project: body, issue: "" };
-  return { project: body.slice(0, cut), issue: body.slice(cut + 1) };
+  // A projection must fold anything the log holds, including an id it cannot
+  // parse — hence the fallback rather than a null the caller has to handle.
+  return parseWorkItemStream(taskId) ?? { project: taskId.replace(/^wi-/, ""), issue: "" };
 }
 
 async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): Promise<void> {

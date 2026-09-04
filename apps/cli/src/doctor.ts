@@ -723,10 +723,16 @@ async function gatePointsRan(url: string): Promise<CheckResult> {
  * more (0022): `tellGitHub` calls GitHub inline and writes down what happened,
  * so the question is no longer *how much is waiting* but *what did we say we
  * would do and not manage*. An `IssueUpdateFailed` with no later `IssueUpdated`
- * for the same issue and change is exactly the divergence `reconcile` owes —
- * and, until `#69` widens it, does not pay. This check is therefore the whole
- * of the safety net the outbox's retries were deleted against, which is why it
- * fails rather than warns: it has nobody to hand the divergence to.
+ * for the same issue and change is exactly the divergence `reconcile` converges
+ * at the next startup (`#69`) — by recomputing the target, never by replaying
+ * the call.
+ *
+ * **Two grades, because two of the three changes are computable and one is
+ * not.** Labels and closing come back from `labelsFor` and the work item's
+ * state, so a divergence in either is a job with an owner and clears itself.
+ * A comment's text was a one-off decision that no later pass can re-make, so
+ * it is a fact for a person: it is listed separately and never graded `fail`,
+ * because a check that stays red forever is a check nobody reads.
  *
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
@@ -759,14 +765,32 @@ async function unconverged(url: string): Promise<CheckResult> {
   if (rows.rows.length === 0) {
     return { name, status: "ok", detail: "every issue carries what the log last said about it" };
   }
+
+  const comments = rows.rows.filter((r) => r.change === "comment");
+  const computable = rows.rows.filter((r) => r.change !== "comment");
+  const say = (r: { project: string; issue: string; change: string }) =>
+    `${r.project}#${r.issue} (${r.change})`;
+
+  if (computable.length === 0) {
+    return {
+      name,
+      status: "warn",
+      detail:
+        `${comments.length} comment(s) the log says were never posted — ` +
+        comments.slice(0, 4).map(say).join(", ") +
+        ". A comment is not computable from state, so nothing will converge it; say it by hand if it still matters.",
+    };
+  }
   return {
     name,
-    status: "fail",
+    status: "warn",
     detail:
-      `${rows.rows.length} issue(s) diverged — ` +
-      rows.rows.slice(0, 4).map((r) => `${r.project}#${r.issue} (${r.change})`).join(", ") +
-      ". Nothing retries these, and `reconcile` does not converge them yet (#69) — " +
-      "say it again by hand, or let the next state change carry the labels.",
+      `${computable.length} issue(s) diverged — ` +
+      computable.slice(0, 4).map(say).join(", ") +
+      ". The next reconcile recomputes and writes the difference (lingtai daemon)" +
+      (comments.length > 0
+        ? `; ${comments.length} comment(s) it cannot, which need a person.`
+        : "."),
   };
 }
 

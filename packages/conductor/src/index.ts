@@ -10,6 +10,7 @@ export {
 export {
   considerIssue,
   kindOf,
+  parseWorkItemStream,
   runnableNow,
   workItemStream,
   type Considered,

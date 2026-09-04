@@ -196,6 +196,9 @@ importers:
       '@lingtai/env':
         specifier: workspace:*
         version: link:../env
+      '@lingtai/github':
+        specifier: workspace:*
+        version: link:../github
       '@lingtai/store':
         specifier: workspace:*
         version: link:../store

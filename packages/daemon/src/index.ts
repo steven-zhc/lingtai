@@ -35,11 +35,21 @@ export {
 } from "./control.ts";
 export {
   exists,
+  findExpiredClaims,
+  findLaggingProjections,
   findOrphans,
   reconcile,
+  type Action,
   type Finding,
   type ReconcileOptions,
 } from "./reconcile.ts";
+export {
+  clientsForProjects,
+  convergeIssues,
+  findIssueDrift,
+  type ConvergeOptions,
+  type Divergence,
+} from "./converge.ts";
 export {
   DEFAULT_SUBSCRIPTIONS,
   createNotifier,
