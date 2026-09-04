@@ -41,6 +41,8 @@ Three kinds of thing live here, and the distinction matters.
 | [0019](decisions/0019-a-second-reset.md) | The log is reset a second time, and what makes it the last | accepted |
 | [0020](decisions/0020-the-agent-environment-in-layers.md) | The agent's environment comes from three named layers | superseded by 0021 |
 | [0021](decisions/0021-the-recipe-decides-the-environment.md) | The recipe decides the environment; the machine only holds it | accepted |
+| [0022](decisions/0022-the-seams.md) | **Where the seams go: eleven packages, and four deletions** | accepted |
+| [0023](decisions/0023-effect-at-the-boundary.md) | Effect at the port boundary, and nowhere else | accepted |
 
 ## Experiments
 
