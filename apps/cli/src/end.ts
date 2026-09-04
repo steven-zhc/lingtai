@@ -31,7 +31,7 @@ import { tellGitHubAbout } from "@lingtai/conductor";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { eventStore } from "@lingtai/store";
-import { catchUpProjections } from "./projections.ts";
+import { withProjector } from "./projector.ts";
 
 export interface EndReplayOptions {
   /** Narrows to one project; every affected one otherwise. */
@@ -59,43 +59,46 @@ export async function endReplay(
     return 1;
   }
 
-  // One client per project. An installation token is scoped to one repository,
-  // and minting one per item would be a lookup per item.
-  const clients = new Map<string, GitHubClient>();
-  let replayed = 0;
+  // Held for the appending, not applied after it. This command writes end
+  // actions and the board reads a projection of them, so it follows the log
+  // while it works — the same rule the daemon and `lingtai run` obey.
+  return withProjector(log, async () => {
+    // One client per project. An installation token is scoped to one repository,
+    // and minting one per item would be a lookup per item.
+    const clients = new Map<string, GitHubClient>();
+    let replayed = 0;
 
-  for (const item of found) {
-    const project = await loadProject(item.project);
-    if (!project?.owner) {
-      log(`${item.workItemId}: no project named "${item.project}" is onboarded — skipped`);
-      continue;
-    }
-    try {
-      let client = clients.get(item.project);
-      if (!client) {
-        client = await createGitHubClient({
-          auth: githubApp(),
-          owner: project.owner,
-          repo: item.project,
-        });
-        clients.set(item.project, client);
+    for (const item of found) {
+      const project = await loadProject(item.project);
+      if (!project?.owner) {
+        log(`${item.workItemId}: no project named "${item.project}" is onboarded — skipped`);
+        continue;
       }
-      const resolved = await currentRecipe(project, client);
-      const ended = await appendEndActions(eventStore, item.workItemId, resolved.recipe.gates.end, "landed");
-      // Resolved and then carried out, in that order and in this process. The
-      // outbox used to stand between them; there is nothing to wait for now.
-      await tellGitHubAbout({ store: eventStore, github: client, workItemId: item.workItemId, appended: ended });
-      replayed += 1;
-      log(`${item.project}#${item.issue}: end resolved from the recipe at ${resolved.ref}`);
-    } catch (err) {
-      // Named and carried on. One unreadable recipe must not strand the other
-      // items, and the log is intact either way.
-      log(`${item.project}#${item.issue}: not replayed — ${(err as Error).message}`);
+      try {
+        let client = clients.get(item.project);
+        if (!client) {
+          client = await createGitHubClient({
+            auth: githubApp(),
+            owner: project.owner,
+            repo: item.project,
+          });
+          clients.set(item.project, client);
+        }
+        const resolved = await currentRecipe(project, client);
+        const ended = await appendEndActions(eventStore, item.workItemId, resolved.recipe.gates.end, "landed");
+        // Resolved and then carried out, in that order and in this process. The
+        // outbox used to stand between them; there is nothing to wait for now.
+        await tellGitHubAbout({ store: eventStore, github: client, workItemId: item.workItemId, appended: ended });
+        replayed += 1;
+        log(`${item.project}#${item.issue}: end resolved from the recipe at ${resolved.ref}`);
+      } catch (err) {
+        // Named and carried on. One unreadable recipe must not strand the other
+        // items, and the log is intact either way.
+        log(`${item.project}#${item.issue}: not replayed — ${(err as Error).message}`);
+      }
     }
-  }
 
-  // The board reads a projection, and this command appended.
-  await catchUpProjections();
-  log(`${replayed} replayed`);
-  return 0;
+    log(`${replayed} replayed`);
+    return 0;
+  });
 }

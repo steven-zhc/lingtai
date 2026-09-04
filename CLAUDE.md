@@ -15,8 +15,10 @@ spirit: a decision that turns out wrong gets a superseding file, not an edit.
 Behavioural claims are settled by reading `events`, not by reasoning about the
 code. A finding that cites a seq number is worth more than one that argues.
 
-`task_view` and `outbox` are projections, and the way to correct one is
-`lingtai projection rebuild <name>` — replay, never a repair by hand.
+`task_view` is the one projection, and the way to correct it is
+`lingtai projection rebuild task_view` — replay, never a repair by hand. It is
+now a fold and nothing else: the outbox and the queue cache are gone (0022), so
+nothing writes to it but the projection.
 
 ## Opening an issue
 
@@ -43,14 +45,22 @@ than filed. House style, as in #52, #55, #58:
 Pass `--no-merge`, by hand, every time. The `merge` gate point does not execute
 (#58), so a run without the flag merges itself into `main` unapproved.
 
-The board reads `task_view` and nothing else, and the follower that advances it
-lives in the daemon — so a bare `lingtai run` leaves the board frozen for the
-whole run and catches it up on the way out (expected; #64). To watch a run live,
-in a second terminal:
+The board follows a bare `lingtai run` live: **every process that appends holds
+a projector while it runs** (0022), so there is nothing to start in a second
+terminal and nothing to wait for at the end. The chip in the bar says whether
+that is actually true — it reports the projection's lag and the daemon's
+beacon, not whether the socket is open, which is the distinction #64 turned on.
+
+A daemon is still what takes work unattended, and
 
     pnpm lingtai daemon --no-conduct
 
-It takes no work, and is safe beside a pass already in flight.
+is still safe beside a pass already in flight — two projectors on one log
+converge, because `apply` is idempotent and the checkpoint moves inside the
+same transaction as its writes.
+
+The board's Queued column asks GitHub on render; every other column is the
+fold.
 
 The suite appends real events and refuses to run without `TEST_DATABASE_URL`.
 `DATABASE_URL` is this system's own log, and an agent is never given it.

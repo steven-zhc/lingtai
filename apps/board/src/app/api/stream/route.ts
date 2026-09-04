@@ -19,8 +19,16 @@
  * session-mode Postgres connection, which is fine for a console one person has
  * open and would not be for anything larger — said here because the tradeoff is
  * invisible otherwise.
+ *
+ * **It also carries the board's own health**, on the same socket, because that
+ * is the one place a client is already listening. The chip used to report
+ * whether this connection was open — the fact never in doubt on the morning it
+ * lied (`#64`) — and now reports the projection's lag and the daemon's beacon.
+ * A `health` frame goes out on connect, on the keep-alive tick, and shortly
+ * after a burst of appends settles.
  */
 import { subscribe } from "@lingtai/store";
+import { readHealth } from "@/lib/health";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +59,9 @@ export function GET(request: Request): Response {
   const encoder = new TextEncoder();
   let subscription: { close(): Promise<void> } | null = null;
   let keepAlive: ReturnType<typeof setInterval> | undefined;
+  // A `setTimeout`, not a second interval: it fires once after a burst of
+  // appends stops, so a run that writes fifty events costs one health read.
+  let healthSoon: ReturnType<typeof setTimeout> | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -67,13 +78,37 @@ export function GET(request: Request): Response {
 
       send(": connected\n\n");
 
+      /**
+       * Two reads against Postgres, so it is never on the append path.
+       *
+       * A failure is swallowed rather than reported as `trouble`: not knowing
+       * the lag is not a reason to tear down a stream that is delivering
+       * events perfectly well, and the client keeps showing the last answer.
+       */
+      const sendHealth = async () => {
+        if (!open) return;
+        try {
+          send(`event: health\ndata: ${JSON.stringify(await readHealth())}\n\n`);
+        } catch {
+          // The next tick asks again.
+        }
+      };
+
+      void sendHealth();
+
       // Proxies and browsers drop an idle event stream; a comment frame is the
       // conventional way to say "still here" without inventing an event type.
-      keepAlive = setInterval(() => send(": ping\n\n"), 25_000);
+      // The health read rides along on the same tick, so a board nobody is
+      // appending to still notices a daemon that died.
+      keepAlive = setInterval(() => {
+        send(": ping\n\n");
+        void sendHealth();
+      }, 25_000);
 
       const stop = () => {
         open = false;
         clearInterval(keepAlive);
+        clearTimeout(healthSoon);
         void subscription?.close();
         try {
           controller.close();
@@ -99,6 +134,11 @@ export function GET(request: Request): Response {
             // trying to fold events client-side, so this only has to say
             // *something changed* and how far the client has got.
             send(`id: ${frame.seq}\nevent: append\ndata: ${JSON.stringify(frame)}\n\n`);
+            // After the burst, not during it. The projector is folding these
+            // as they arrive, so the lag worth reporting is the one left when
+            // the writing stops.
+            clearTimeout(healthSoon);
+            healthSoon = setTimeout(() => void sendHealth(), 600);
           },
           onError: (error, phase) => {
             // A connection error retries inside `subscribe`. A handler error
@@ -116,6 +156,7 @@ export function GET(request: Request): Response {
 
     cancel() {
       clearInterval(keepAlive);
+      clearTimeout(healthSoon);
       void subscription?.close();
     },
   });

@@ -16,6 +16,7 @@ import {
   directDatabaseUrl,
   projectionLag,
 } from "@lingtai/store";
+import { taskViewProjection } from "@lingtai/conductor";
 import type { Tier } from "@lingtai/core";
 import {
   HEARTBEAT_MS,
@@ -36,7 +37,6 @@ import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
 import { formatReport, runDoctor } from "./doctor.ts";
 import { endReplay } from "./end.ts";
-import { PROJECTIONS } from "./projections.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
 
@@ -71,7 +71,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai help
   lingtai version
 
-Projections: ${Object.keys(PROJECTIONS).join(", ") || "(none)"}
+Projections: ${taskViewProjection.name}
 `;
 
 async function doctor(): Promise<number> {
@@ -157,11 +157,16 @@ async function projectionCommand(args: string[]): Promise<number> {
       console.error("lingtai projection rebuild <name>");
       return 2;
     }
-    const projection = PROJECTIONS[name];
-    if (!projection) {
-      console.error(`unknown projection "${name}" — known: ${Object.keys(PROJECTIONS).join(", ")}`);
+    // Named, not looked up in a registry. There is one projection, and a list
+    // of one was a list whose only job was to let a projection be written and
+    // silently left out of it — no table, no checkpoint, no failing check
+    // ([0022](../../../doc/decisions/0022-the-seams.md)). A second one is added
+    // here, in the open, or it does not exist.
+    if (name !== taskViewProjection.name) {
+      console.error(`unknown projection "${name}" — known: ${taskViewProjection.name}`);
       return 2;
     }
+    const projection = taskViewProjection;
     const runner = createProjectionRunner({ projection });
     try {
       // Drop the table, reset the checkpoint, replay. This is what makes a
@@ -178,11 +183,11 @@ async function projectionCommand(args: string[]): Promise<number> {
   // Gone, and answered by name rather than by falling through to the usage.
   //
   // It was an alias for `lingtai daemon`, and that is exactly what made it
-  // confusing: it read as a third way to advance projections, next to the
-  // one-shot `catchUpProjections` a command does on its way out and the
-  // daemon's long-lived follower, when it was only ever the second one wearing
-  // another name. Two names for one process is how "why is the board stale"
-  // gets a different answer depending on which name you happened to learn.
+  // confusing: it read as a second way to follow the log, when it was only the
+  // same one wearing another name. Two names for one process is how "why is
+  // the board stale" gets a different answer depending on which name you
+  // happened to learn. Since 0022 there is one behaviour everywhere — every
+  // process that appends holds a projector while it runs.
   if (sub === "run") {
     console.error("lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.");
     return 2;
@@ -205,7 +210,7 @@ async function projectionCommand(args: string[]): Promise<number> {
  */
 async function daemonCommand(flags: Record<string, string> = {}): Promise<number> {
   const started = await startDaemon({
-    projections: Object.values(PROJECTIONS),
+    projections: [taskViewProjection],
     log: (line) => console.log(line),
   });
 
@@ -302,6 +307,11 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
  * They append and return. The daemon is listening, so a pause takes effect at
  * its next opportunity; if it is down, the command is waiting when it comes
  * back rather than being a race somebody has to handle.
+ *
+ * **The one place that does not hold a projector**, and deliberately: a
+ * projector catches up to the head before it returns, so a pause issued against
+ * a daemon that has been down would replay the backlog before pausing anything.
+ * See `withProjector` for the rule and for this exception.
  */
 async function controlCommand(verb: "pause" | "resume" | "now", args: string[]): Promise<number> {
   const { positional, flags } = parseFlags(args);

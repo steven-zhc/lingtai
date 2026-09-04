@@ -82,6 +82,10 @@ body {
 }
 .chip.live { color: var(--pass); border-color: var(--pass); background: var(--pass-soft); }
 .chip.idle { color: var(--muted); }
+/* Behind with nothing coming for it, or a stream that has stopped. Not an
+   error style: it is a true statement about the board, and it should read as
+   one rather than as a crash. */
+.chip.warn { color: var(--fail); border-color: var(--fail); }
 
 .cols {
   display: grid;

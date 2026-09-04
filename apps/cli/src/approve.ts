@@ -7,6 +7,7 @@
  * thing that merges is not the thing anyone looked at.
  */
 import { approve as approveRun, loadProject } from "@lingtai/conductor";
+import { withProjector } from "./projector.ts";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
 import { userInfo } from "node:os";
@@ -43,32 +44,36 @@ export async function approveCommand(
 
   const by = options.by ?? `human:${userInfo().username}`;
 
-  if (options.reject !== undefined) {
-    const { reject } = await import("@lingtai/conductor");
-    const outcome = await reject({
+  // This is the command most likely to be run with the board open, and it moves
+  // a card off the lane the board exists for. So it follows the log while it
+  // works, like every other host that appends — see `withProjector`.
+  return withProjector(log, async () => {
+    if (options.reject !== undefined) {
+      const { reject } = await import("@lingtai/conductor");
+      const outcome = await reject({
+        project: options.project,
+        issue: options.issue,
+        base: project.base ?? (await client.defaultBranch()),
+        client,
+        by,
+        reason: options.reject,
+        log,
+      });
+      log(outcome.detail);
+      return outcome.ok ? 0 : 1;
+    }
+
+    const result = await approveRun({
       project: options.project,
       issue: options.issue,
       base: project.base ?? (await client.defaultBranch()),
       client,
+      // An approval is never anonymous. The local account is a weak claim, but it
+      // is a true one, and it is what a single-machine deployment has (0007).
       by,
-      reason: options.reject,
+      note: options.note,
+      token: () => client.token(),
       log,
-    });
-    log(outcome.detail);
-    return outcome.ok ? 0 : 1;
-  }
-
-  const result = await approveRun({
-    project: options.project,
-    issue: options.issue,
-    base: project.base ?? (await client.defaultBranch()),
-    client,
-    // An approval is never anonymous. The local account is a weak claim, but it
-    // is a true one, and it is what a single-machine deployment has (0007).
-    by,
-    note: options.note,
-    token: () => client.token(),
-    log,
   });
 
   if (result.ok) {
@@ -77,4 +82,5 @@ export async function approveCommand(
   }
   log(`did not merge (${result.reason}): ${result.detail}`);
   return 1;
+  });
 }
