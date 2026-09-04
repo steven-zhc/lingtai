@@ -18,7 +18,7 @@ import { directDatabaseUrl } from "@lingtai/env";
 import { createDb, createEventStore, createProjectionRunner, type Db, type EventStore } from "@lingtai/store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { integrationStream, readTasks, syncQueued, taskViewProjection } from "../src/index.ts";
+import { integrationStream, readTasks, selectRunnable, taskViewProjection } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
@@ -215,25 +215,25 @@ describe("task_view", () => {
   });
 });
 
-describe("the queue GitHub reported", () => {
+describe("selectRunnable", () => {
   const other = `esctest${crypto.randomUUID().slice(0, 6)}`;
 
-  it("adds what GitHub lists, drops what it stops listing, and leaves claimed work alone", async () => {
-    await syncQueued(other, [
+  /**
+   * The subtraction. GitHub's offer is an argument now rather than a table, so
+   * what is being tested is the rule and not a cache's freshness.
+   */
+  it("offers what GitHub lists, minus what the log says is claimed", async () => {
+    const offered = [
       { ref: "10", title: "one", kind: "bug" },
       { ref: "11", title: "two", kind: "feature" },
-    ]);
-    let tasks = await readTasks({ project: other });
-    expect(tasks.map((t) => t.issue).sort()).toEqual(["10", "11"]);
+    ];
+    const kinds = ["bug", "feature"];
 
-    // GitHub stops listing 11 — it was closed by a person, and it was never
-    // Lingtai's state to keep.
-    await syncQueued(other, [{ ref: "10", title: "one", kind: "bug" }]);
-    tasks = await readTasks({ project: other });
-    expect(tasks.map((t) => t.issue)).toEqual(["10"]);
+    // No rows at all: the log has no opinion about either, so both are runnable.
+    const before = await selectRunnable({ project: other, offered, kinds });
+    expect(before.map((r) => r.issue)).toEqual(["10", "11"]);
+    expect(before[0]).toEqual({ taskId: `wi-${other}-10`, issue: "10", title: "one", kind: "bug" });
 
-    // A claimed task stays even though GitHub still lists it: the log is the
-    // authority on what happened after the claim.
     const claimedId = `wi-${other}-10`;
     created.add(claimedId);
     await store.append(claimedId, 0, [
@@ -242,9 +242,43 @@ describe("the queue GitHub reported", () => {
     created.add(`run-${other}-10`);
     await build();
 
-    await syncQueued(other, [{ ref: "10", title: "one", kind: "bug" }]);
-    tasks = await readTasks({ project: other });
-    expect(tasks[0]?.state).toBe("running");
+    // GitHub still lists 10. The log is the authority on what happened after
+    // the claim, and it says the claim happened.
+    expect((await selectRunnable({ project: other, offered, kinds })).map((r) => r.issue)).toEqual([
+      "11",
+    ]);
+
+    // GitHub stops listing 11 — closed by a person. Nothing has to be
+    // invalidated, because nothing was stored: it is simply not in the offer.
+    const narrowed = await selectRunnable({ project: other, offered: [offered[0]!], kinds });
+    expect(narrowed).toEqual([]);
+  });
+
+  /** Priority is the recipe's `kinds` order, and ties break numerically. */
+  it("puts the recipe's first kind first, and orders by issue number inside it", async () => {
+    const fresh = `esctest${crypto.randomUUID().slice(0, 6)}`;
+    const runnable = await selectRunnable({
+      project: fresh,
+      offered: [
+        { ref: "9", title: "b", kind: "bug" },
+        { ref: "100", title: "f", kind: "feature" },
+        { ref: "20", title: "b2", kind: "bug" },
+      ],
+      kinds: ["feature", "bug"],
+    });
+    // #100 beats both bugs on kind; #9 beats #20 numerically, not lexically.
+    expect(runnable.map((r) => r.issue)).toEqual(["100", "9", "20"]);
+  });
+
+  /** A kind the recipe does not want is not offered, whatever GitHub says. */
+  it("drops a kind the recipe does not take", async () => {
+    const fresh = `esctest${crypto.randomUUID().slice(0, 6)}`;
+    const runnable = await selectRunnable({
+      project: fresh,
+      offered: [{ ref: "1", title: "c", kind: "chore" }],
+      kinds: ["bug"],
+    });
+    expect(runnable).toEqual([]);
   });
 
   afterAll(async () => {

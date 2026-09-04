@@ -27,8 +27,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appendEndActions, approve, integrationStream, readTasks, reject, renderPrompt, runOnce, runQueue, syncQueued, taskViewProjection, waive, workItemStream } from "../src/index.ts";
-import type { GateAction } from "@lingtai/config";
+import { appendEndActions, approve, integrationStream, readTasks, reject, renderPrompt, runOnce, runQueue, taskViewProjection, waive, workItemStream } from "../src/index.ts";
+import type { GateAction, Recipe } from "@lingtai/config";
 import type { ProjectState } from "@lingtai/core";
 
 const exec = promisify(execFile);
@@ -787,25 +787,41 @@ git add -A && git commit -q -m "fix the race"
     const SCHED = `${PROJECT}sched`;
     const schedProject: ProjectState = { ...project, project: SCHED };
 
-    const queued = async (refs: number[]) => {
-      // What the conductor does: ask GitHub, write the runnable set into
-      // `task_view`. Nothing is appended — since 0012 the queue is not in the
-      // log, so seeding it by appending would be testing a path that no longer
-      // exists.
+    /** `RECIPE`, parsed. `runQueue` asks GitHub itself now, so it needs it. */
+    const SCHED_RECIPE = {
+      version: 1,
+      repo: { base: "develop", submodules: false },
+      source: { kinds: ["bug"], exclude: ["blocked"] },
+      env: { required: [], plantAt: ".env.local" },
+      gates: { admit: [], prepared: [], proposed: [], merge: [], end: [] },
+      runtime: { agent: "claude-code", limits: { turns: 10, wall: "2m" } },
+    } as unknown as Recipe;
+
+    /**
+     * The queue is what GitHub offers, so seeding it means making GitHub say so.
+     *
+     * It used to mean writing rows into `task_view` through `syncQueued`, which
+     * is the cache 0022 deleted — and the fact that a test could seed a queue
+     * without GitHub agreeing is close to what #57 was.
+     */
+    const offering = (refs: number[]): GitHubClient =>
+      fakeClient({
+        listOpenIssues: async () => refs.map((n) => ({ ...issue2(n), title: `issue ${n}` })),
+        getIssue: async (n: number) => ({ ...issue2(n), title: `issue ${n}` }),
+      });
+
+    /** `selectRunnable` reads `task_view` to learn what the log already took. */
+    const projectionReady = async () => {
       const runner = createProjectionRunner({ projection: taskViewProjection, store });
       try {
         await runner.start();
       } finally {
         await runner.close();
       }
-      await syncQueued(
-        SCHED,
-        refs.map((ref) => ({ ref: String(ref), title: `issue ${ref}`, kind: "bug" })),
-      );
     };
 
     it("takes items itself, in order, without anyone naming them", async () => {
-      await queued([140, 141]);
+      await projectionReady();
       const agent = await agentThat(`
 mkdir -p src && echo "export const q = $RANDOM;" > src/fix.ts
 git add -A && git commit -q -m "fix"
@@ -813,11 +829,11 @@ git add -A && git commit -q -m "fix"
 
       const outcome = await runQueue({
         project: schedProject,
-        client: fakeClient({ getIssue: async (n: number) => issue2(n) }),
+        client: offering([140, 141]),
         runtime: createClaudeCodeRuntime({ binary: agent }),
         hookBinary,
         prompt: "fix the race",
-        kinds: ["bug"],
+        recipe: SCHED_RECIPE,
         max: 2,
         merge: false,
         home,
@@ -839,17 +855,17 @@ git add -A && git commit -q -m "fix"
      * and #59 re-ran five times for roughly $29.
      */
     it("does not take the same failing item twice in one pass", async () => {
-      await queued([142]);
+      await projectionReady();
       // Fails every time, and is released every time.
       const agent = await agentThat(`echo "no commits from me"; exit 0`);
 
       const outcome = await runQueue({
         project: schedProject,
-        client: fakeClient({ getIssue: async (n: number) => issue2(n) }),
+        client: offering([142]),
         runtime: createClaudeCodeRuntime({ binary: agent }),
         hookBinary,
         prompt: "fix the race",
-        kinds: ["bug"],
+        recipe: SCHED_RECIPE,
         home,
         store,
         remote: originPath,

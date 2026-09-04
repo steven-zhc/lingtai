@@ -1,5 +1,14 @@
 /**
- * The board's data: one query, against one table.
+ * The board's data: one table, plus one question put to GitHub.
+ *
+ * The table is the answer for everything Lingtai has touched. **Queued is the
+ * exception**, and it is not an inconsistency: an issue nobody has run has no
+ * events, so there is nothing to fold — being queued is a fact about GitHub,
+ * not about the log. It used to be cached in `task_view` by a writer that was
+ * not the projection, which is how a queue change reached nobody (#56) and how
+ * two entry points came to disagree about refreshing it (#57);
+ * [0022](../../../../doc/decisions/0022-the-seams.md) deleted the cache, so the
+ * question is asked here instead, once per render.
  *
  * `task_view` holds what a card shows and nothing else
  * ([0012](../../../../doc/decisions/0012-one-task-view.md)). Gate evidence,
@@ -14,7 +23,11 @@
 // The subpath, not the barrel: importing the barrel pulls in the gate
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
-import { readTasks, type TaskCard } from "@lingtai/conductor/task-view";
+import { readTasks, selectRunnable, type TaskCard } from "@lingtai/conductor/task-view";
+import { runnableNow } from "@lingtai/conductor/discover";
+import { currentRecipe, loadProjects } from "@lingtai/conductor/projects";
+import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { createGitHubClient } from "@lingtai/github";
 
 /**
  * Four, not five. `gates` folded into `running` (ADR 0016 §8).
@@ -93,7 +106,64 @@ function toCard(t: TaskCard): BoardCard {
 }
 
 /**
- * Reads `task_view` into columns.
+ * The Queued column: what GitHub is offering that the log has not taken.
+ *
+ * Silent on failure, per project. A repository whose token expired should cost
+ * you its queue, not the whole board — and the board is a read, so a card that
+ * does not appear is the only damage.
+ */
+async function queuedCards(project?: string): Promise<BoardCard[]> {
+  if (!hasGitHubApp()) return [];
+
+  const projects = (await loadProjects().catch(() => [])).filter(
+    (p) => p.project && p.owner && (project === undefined || p.project === project),
+  );
+
+  const cards: BoardCard[] = [];
+  for (const p of projects) {
+    try {
+      const client = await createGitHubClient({
+        auth: githubApp(),
+        owner: p.owner!,
+        repo: p.project!,
+      });
+      const recipe = (await currentRecipe(p, client)).recipe;
+      const offered = await runnableNow({ client, recipe });
+      const runnable = await selectRunnable({
+        project: p.project!,
+        offered: offered.runnable,
+        kinds: recipe.source.kinds,
+      });
+      for (const r of runnable) {
+        cards.push({
+          taskId: r.taskId,
+          project: p.project!,
+          column: "queued",
+          ref: r.issue,
+          kind: r.kind,
+          title: r.title,
+          // The column default the deleted cache also relied on. Which tier it
+          // will actually run at is decided when it runs, not now.
+          tier: "guarded",
+          headSha: null,
+          gatesPassed: 0,
+          gatesFailed: 0,
+          turns: null,
+          costUsd: null,
+          note: null,
+          updatedAt: new Date().toISOString(),
+          attempts: 0,
+        });
+      }
+    } catch {
+      // Nothing to say on a card about a project whose GitHub is unreachable.
+    }
+  }
+  return cards;
+}
+
+/**
+ * Reads `task_view` into columns, and asks GitHub for the queue.
  *
  * An unbuilt projection is reported as empty rather than as a crash: it is a
  * state the system can be in, and it is the state it is in before the first
@@ -108,8 +178,11 @@ export async function loadBoard(project?: string): Promise<BoardColumn[]> {
     if (!/does not exist/i.test((err as Error).message)) throw err;
   }
 
-  return COLUMNS.map((c) => ({
-    ...c,
-    cards: tasks.filter((t) => t.state === c.id).map(toCard),
-  }));
+  const fromLog = tasks.map(toCard);
+  // A task released back to the queue has a row *and* is offered by GitHub, so
+  // it would otherwise appear twice. The row wins: it carries the attempts.
+  const known = new Set(fromLog.map((c) => c.taskId));
+  const cards = [...fromLog, ...(await queuedCards(project)).filter((c) => !known.has(c.taskId))];
+
+  return COLUMNS.map((c) => ({ ...c, cards: cards.filter((card) => card.column === c.id) }));
 }

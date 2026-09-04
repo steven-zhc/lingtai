@@ -56,7 +56,6 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --reject <why>              withdraw instead: back to the gate, not merged
   lingtai status [project]          what is runnable, and what is holding the rest
     --all                       include items that have left the queue
-    --refresh                   ask GitHub first, and say what it passed over
                                 and why. Takes nothing and claims nothing.
   lingtai doctor                    check everything that can be checked
   lingtai end replay [project]      resolve the end point for items that landed
@@ -393,7 +392,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case "status": {
       const { positional, flags } = parseFlags(rest);
-      return status({ project: positional[0], all: "all" in flags, refresh: "refresh" in flags });
+      return status({ project: positional[0], all: "all" in flags });
     }
     case "doctor":
       return doctor();

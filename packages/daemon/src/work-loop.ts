@@ -28,7 +28,7 @@
  * top of the queue is the ticket that just failed. That is an infinite loop at
  * agent prices, and it is not hypothetical: the old harness re-ran two tickets
  * five times for roughly $29 because nothing remembered the last attempt. The
- * guard is `last_attempt_at` on `task_view`, applied by `readRunnable`, and it
+ * guard is `last_attempt_at` on `task_view`, applied by `selectRunnable`, and it
  * lives in the table rather than in memory precisely so that a daemon crashing
  * on a bad ticket does not come back and spend the money again.
  *

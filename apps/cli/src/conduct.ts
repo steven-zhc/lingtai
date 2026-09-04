@@ -16,7 +16,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { currentRecipe, foreignLabels, loadProjects, readRunnable, refreshQueue, runOnce, runQueue } from "@lingtai/conductor";
+import { currentRecipe, foreignLabels, loadProjects, runOnce, runQueue, runnableNow, selectRunnable } from "@lingtai/conductor";
 import { readControl } from "@lingtai/daemon";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -88,10 +88,6 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       if (options.max === 0) continue;
       const resolved = await currentRecipe(project, client);
 
-      // Ask GitHub first. Without this the queue is whatever the last pass saw,
-      // and a task closed by hand would still be taken.
-      await refreshQueue({ project: name, client, recipe: resolved.recipe });
-
       const common = {
         project,
         client,
@@ -116,8 +112,18 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // A request needs no separate "consumed" event: it is satisfied when the
       // task stops being queued, which claiming it does. Filtering on that is
       // what keeps the control stream from growing a second state machine.
+      // Asked, not read back: GitHub says what it is offering right now, so a
+      // request for an issue that was closed or relabelled by hand since it was
+      // made simply does not match.
+      const offered = await runnableNow({ client, recipe: resolved.recipe });
       const queued = new Set(
-        (await readRunnable({ project: name, kinds: resolved.recipe.source.kinds })).map((t) => t.issue),
+        (
+          await selectRunnable({
+            project: name,
+            offered: offered.runnable,
+            kinds: resolved.recipe.source.kinds,
+          })
+        ).map((t) => t.issue),
       );
       const asked = control.requested.find((r) => r.project === name && queued.has(r.issue));
 
@@ -131,7 +137,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       } else {
         const ran = await runQueue({
           ...common,
-          kinds: resolved.recipe.source.kinds,
+          recipe: resolved.recipe,
           max: options.max ?? 1,
         });
         outcome.ran += ran.ran.length;

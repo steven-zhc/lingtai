@@ -6,9 +6,10 @@
  * owns it. Once a task is claimed the log is the authority and no label is
  * consulted for state again.
  *
- * Since 0012 this appends nothing at all. The runnable set is written into
- * `task_view` and the queue is simply what GitHub currently says, minus what
- * the log says is claimed. That inversion is the whole of
+ * Since 0012 this appends nothing at all, and since 0022 it stores nothing
+ * either: the runnable set is what GitHub currently says, minus what the log
+ * says is claimed, computed at the moment somebody needs it. That inversion is
+ * the whole of
  * doc/decisions/0001-event-sourcing.md: #35 carried `agent:blocked` and
  * `agent:review` at the same time because `--add-label` is set union, not a
  * transition, and nothing could have noticed.
@@ -22,7 +23,6 @@
 import type { Recipe } from "@lingtai/config";
 import { type WorkKind, WorkKind as WorkKindSchema } from "@lingtai/core";
 import type { GitHubClient, Issue } from "@lingtai/github";
-import { syncQueued } from "./task-view.ts";
 
 /** `wi-{project}-{n}`, the work item's own stream. */
 export function workItemStream(project: string, externalRef: string | number): string {
@@ -91,46 +91,43 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   return { issue, skip: null };
 }
 
-export interface QueueRefresh {
+export interface Offered {
   /** Issues GitHub lists that the recipe will take. */
   runnable: { ref: string; title: string; kind: string }[];
   /** Every issue that was not runnable, with the reason. */
   skipped: { ref: number; reason: SkipReason }[];
 }
 
-export interface RefreshQueueOptions {
-  project: string;
+export interface RunnableNowOptions {
   client: GitHubClient;
   recipe: Recipe;
-  /** Restricts the refresh to specific issue numbers. */
+  /** Restricts the read to specific issue numbers. */
   only?: number[];
-  /** Injectable so a test does not need a database. */
-  sync?: typeof syncQueued;
 }
 
 /**
- * Ask GitHub what is runnable and write it into `task_view`.
+ * Ask GitHub what it is offering, right now.
  *
- * **Nothing is appended.** Which issues exist is GitHub's state, not
- * Lingtai's, and mirroring it into an append-only log meant one event per
- * issue per pass to reproduce a fact that GitHub answers correctly on request
- * ([0012](../../../doc/decisions/0012-one-task-view.md)). What Lingtai
- * decides — which one it claimed — is still an event, and still the whole of
+ * **Nothing is appended and nothing is stored.** Which issues exist is
+ * GitHub's state, not Lingtai's; mirroring it into an append-only log meant one
+ * event per issue per pass to reproduce a fact GitHub answers correctly on
+ * request ([0012](../../../doc/decisions/0012-one-task-view.md)), and mirroring
+ * it into a table meant two bugs that were both cache invalidation
+ * ([0022](../../../doc/decisions/0022-the-seams.md), #56 and #57). What Lingtai
+ * *decides* — which one it claimed — is still an event, and still the whole of
  * the mutual exclusion.
  *
- * The conductor calls this, never the board. A board that asked GitHub per
- * render would exhaust the rate limit with a few tabs open and an event stream
- * refreshing them; going through the projection means the board keeps reading
- * one table and this stays the only caller that needs a token.
+ * The answer is an argument, not a side effect: pass it to `selectRunnable`,
+ * which subtracts what the log says is claimed.
  */
-export async function refreshQueue(options: RefreshQueueOptions): Promise<QueueRefresh> {
-  const { project, client, recipe } = options;
+export async function runnableNow(options: RunnableNowOptions): Promise<Offered> {
+  const { client, recipe } = options;
 
   const issues = options.only
     ? await Promise.all(options.only.map((n) => client.getIssue(n)))
     : await client.listOpenIssues();
 
-  const result: QueueRefresh = { runnable: [], skipped: [] };
+  const result: Offered = { runnable: [], skipped: [] };
 
   for (const issue of issues) {
     const { skip } = considerIssue(issue, recipe);
@@ -145,10 +142,6 @@ export async function refreshQueue(options: RefreshQueueOptions): Promise<QueueR
       kind: kindOf(issue)!,
     });
   }
-
-  // A partial refresh must not delete the rest of the queue: `only` means "look
-  // at these", not "these are all there is".
-  if (!options.only) await (options.sync ?? syncQueued)(project, result.runnable);
 
   return result;
 }

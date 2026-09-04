@@ -727,6 +727,7 @@
     <p class="sub-h">What goes away</p>
     <div class="prop">
       <h3>Four deletions</h3>
+      <p style="opacity:.75"><b>Two of the four have landed</b> — the outbox on 2026-09-03 (<code>442f513</code>), the queue cache on 2026-09-04. Sections 1&ndash;6 above describe the system as it stood <em>before</em> them, and still draw both. They are redrawn when the rest of 0022 lands.</p>
       <p><b><code>outbox</code> — the table, the projection, the delivery worker, the backoff, the dead-letter, two event types, spread across <code>conductor</code>, <code>daemon</code> and <code>apps/cli</code>. All of it for three calls: comment, set labels, close</b><br><code>conductor</code> calls <code>github</code> and appends the outcome. What did not land, <code>reconcile</code> converges.</p>
       <p><b>the queue cache — <code>syncQueued</code>, the <code>queued</code> rows, <code>refreshQueue</code></b><br>Ask GitHub at the moment you need it. Its main consumer already refreshed it immediately before every read.</p>
       <p><b>the catch-up-on-exit special case — <code>advanceBoard</code>, <code>catchUpProjections</code></b><br>Every host that appends holds a <code>projector</code> while it runs. One behaviour, not two.</p>

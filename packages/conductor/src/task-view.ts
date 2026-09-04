@@ -42,10 +42,16 @@ import type { PayloadOf } from "@lingtai/core";
 import { databaseUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "@lingtai/store";
 import pg from "pg";
+import { workItemStream } from "./discover.ts";
 
 /**
- * Where a task is. `queued` is the only one that can be true without
- * Lingtai having appended anything — see `syncQueued`.
+ * Where a task is.
+ *
+ * Every one of these now comes from a fold — `queued` used to be written
+ * straight into the table by `syncQueued`, with no event behind it, which is
+ * why a queue change reached nobody (#56). A task is `queued` because the log
+ * says it was released or unblocked, or because it has no row at all and
+ * GitHub is offering it.
  */
 export type TaskState = "queued" | "running" | "gates" | "waiting" | "landed";
 
@@ -351,9 +357,9 @@ async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): P
 /**
  * Creates the row if it is not there, updates it if it is.
  *
- * Needed because a task can now first be seen either from GitHub (`syncQueued`)
- * or from its own claim — the queue is not in the log any more, so there is no
- * single event that always comes first.
+ * Needed because no single event is guaranteed to come first. Today the claim
+ * always is; a projection that assumed so would break the first time a task
+ * acquired an event before it — and a rebuild of a partial log has to work.
  */
 async function upsert(
   ctx: ProjectionContext,
@@ -462,49 +468,6 @@ async function setGate(
   );
 }
 
-/**
- * Writes the runnable set GitHub reported.
- *
- * The queue is not in the log any more ([0012](../../../doc/decisions/0012-one-task-view.md)),
- * so something has to put queued rows here — and it is the conductor, not the
- * board. A board that asked GitHub per render would hit the rate limit with a
- * few tabs open and an event stream refreshing them.
- *
- * Rows already past `queued` are left alone: GitHub still lists an issue that
- * Lingtai has claimed, and the log is the authority on what happened to it.
- * Queued rows that GitHub no longer lists are dropped, because they were never
- * Lingtai's state to keep.
- */
-export async function syncQueued(
-  project: string,
-  issues: readonly { ref: string; title: string; kind: string }[],
-  at: Date = new Date(),
-  url = databaseUrl(),
-): Promise<{ added: number; removed: number }> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    const refs = issues.map((i) => i.ref);
-    for (const issue of issues) {
-      await client.query(
-        `insert into task_view (task_id, project, issue, title, kind, state, updated_at, updated_seq)
-         values ($1, $2, $3, $4, $5, 'queued', $6, 0)
-         on conflict (task_id) do update
-           set title = excluded.title, kind = excluded.kind`,
-        [`wi-${project}-${issue.ref}`, project, issue.ref, issue.title, issue.kind, at],
-      );
-    }
-    const gone = await client.query(
-      `delete from task_view
-       where project = $1 and state = 'queued' and not (issue = any($2::text[]))
-       returning task_id`,
-      [project, refs],
-    );
-    return { added: issues.length, removed: gone.rowCount ?? 0 };
-  } finally {
-    await client.end();
-  }
-}
 
 // ------------------------------------------------------------------ read ----
 
@@ -536,8 +499,24 @@ export interface TaskCard {
 /** Long enough that a failing ticket stops costing money; short enough to retry today. */
 export const DEFAULT_BACKOFF_MS = 60 * 60_000;
 
+/** What a caller needs to run one: enough to nominate it, and nothing more. */
+export interface Runnable {
+  taskId: string;
+  issue: string;
+  title: string;
+  kind: string;
+}
+
 export interface RunnableOptions {
   project: string;
+  /**
+   * What GitHub offers right now, from `runnableNow`.
+   *
+   * Passed in rather than read from a table: the queue was a cache and its two
+   * bugs were both cache invalidation (#56, #57). Its own consumer refreshed it
+   * immediately before every read, so it was a holding place inside one pass.
+   */
+  offered: readonly { ref: string; title: string; kind: string }[];
   /** The recipe's priority order. Priority is asked, not stored. */
   kinds: readonly string[];
   /**
@@ -562,26 +541,41 @@ export interface RunnableOptions {
 /**
  * What the conductor may pick up next, best first.
  *
- * Reads `task_view` rather than a queue projection of its own: what is queued
- * is what GitHub last reported minus what the log says is claimed, and both of
- * those already land in this table.
+ * The subtraction, in one place: GitHub says what it is offering, the log says
+ * what Lingtai is already doing, and this returns the difference. Neither side
+ * is stored — the offer is asked for at the moment it is needed, and the log's
+ * side is this table, which is now nothing but a fold.
  */
-export async function readRunnable(options: RunnableOptions): Promise<TaskCard[]> {
+export async function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
   const kinds = options.kinds.length > 0 ? [...options.kinds] : ["bug"];
-  const tasks = await readTasks({
-    project: options.project,
-    // Retention is about landed work; a queued task is never filtered by it.
-    retentionDays: 36_500,
-    ...(options.url === undefined ? {} : { url: options.url }),
-  });
+  // Every row, not just the queued ones: a row's *existence* is what says the
+  // log has an opinion about this issue, and its state is that opinion.
+  const seen = new Map(
+    (
+      await readTasks({
+        project: options.project,
+        retentionDays: 36_500,
+        ...(options.url === undefined ? {} : { url: options.url }),
+      })
+    ).map((t) => [t.issue, t]),
+  );
 
   const now = (options.now ?? new Date()).getTime();
   const backoff = options.backoffMs ?? DEFAULT_BACKOFF_MS;
 
-  return tasks
-    .filter((t) => t.state === "queued")
-    .filter((t) => kinds.includes(t.kind))
-    .filter((t) => t.lastAttemptAt === null || now - t.lastAttemptAt.getTime() >= backoff)
+  return options.offered
+    .filter((o) => kinds.includes(o.kind))
+    .filter((o) => {
+      const row = seen.get(o.ref);
+      // No row: Lingtai has never touched it, and GitHub is offering it.
+      if (!row) return true;
+      // A row that is not `queued` is one the log says is claimed, waiting on a
+      // person, or finished. GitHub still listing the issue does not overrule
+      // the log about what Lingtai is doing with it.
+      if (row.state !== "queued") return false;
+      return row.lastAttemptAt === null || now - row.lastAttemptAt.getTime() >= backoff;
+    })
+    .map((o) => ({ taskId: workItemStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
     .sort((a, b) => {
       const byKind = kinds.indexOf(a.kind) - kinds.indexOf(b.kind);
       if (byKind !== 0) return byKind;

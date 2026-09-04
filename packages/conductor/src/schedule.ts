@@ -30,11 +30,13 @@
  * it to an append-only log would make a restart inherit a grudge. A new pass
  * starts fresh, which is what you want after a fix.
  */
+import type { Recipe } from "@lingtai/config";
 import type { GitHubClient } from "@lingtai/github";
 import type { Runtime } from "@lingtai/runtime";
 import { type EventStore, eventStore } from "@lingtai/store";
 import { type ProjectState, reduceWorkItem } from "@lingtai/core";
-import { readRunnable } from "./task-view.ts";
+import { runnableNow } from "./discover.ts";
+import { selectRunnable } from "./task-view.ts";
 import { type RunOnceResult, runOnce } from "./run-once.ts";
 import type { TokenSource } from "./worktree.ts";
 
@@ -47,8 +49,14 @@ export interface ScheduleOptions {
   guard?: boolean;
   prompt: string;
   promptVersion?: string;
-  /** The recipe's priority order. Priority is asked, not stored — see `queue`. */
-  kinds: readonly string[];
+  /**
+   * What the project will take, and in what order.
+   *
+   * The whole recipe rather than just its `kinds`, because the pass now asks
+   * GitHub for the offer itself and needs the exclusions too. Asked rather than
+   * stored: a project that reorders its kinds must not need a rebuild.
+   */
+  recipe: Recipe;
   /**
    * Stop after this many items. Undefined runs until the queue has nothing
    * runnable left.
@@ -119,10 +127,20 @@ export async function runQueue(options: ScheduleOptions): Promise<ScheduleResult
     if (options.signal?.aborted) return finish("aborted");
     if (options.max !== undefined && ran.length >= options.max) return finish("max");
 
-    // Reads `task_view`: what GitHub last reported, minus what the log says is
-    // claimed, minus anything inside the backoff window. The backoff is the
-    // part that survives a restart, which the in-memory set below does not.
-    const queue = await readRunnable({ project: name, kinds: options.kinds });
+    // Asked, every time round the loop. GitHub says what it is offering and
+    // the log says what is already claimed; the difference is the queue, minus
+    // anything inside the backoff window. The backoff is the part that survives
+    // a restart, which the in-memory set below does not.
+    //
+    // Once a pass, not once: an issue closed by hand or relabelled while the
+    // pass is running changes the answer, and the old cached queue would have
+    // taken it anyway.
+    const offered = await runnableNow({ client: options.client, recipe: options.recipe });
+    const queue = await selectRunnable({
+      project: name,
+      offered: offered.runnable,
+      kinds: options.recipe.source.kinds,
+    });
     if (queue.length === 0) return finish("empty");
 
     const next = queue.find((entry) => !attempted.has(entry.taskId));

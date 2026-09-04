@@ -10,11 +10,11 @@ export {
 export {
   considerIssue,
   kindOf,
-  refreshQueue,
+  runnableNow,
   workItemStream,
   type Considered,
-  type QueueRefresh,
-  type RefreshQueueOptions,
+  type Offered,
+  type RunnableNowOptions,
   type SkipReason,
 } from "./discover.ts";
 export {
@@ -82,11 +82,11 @@ export {
   DEFAULT_BACKOFF_MS,
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
-  readRunnable,
   readTasks,
-  syncQueued,
+  selectRunnable,
   taskViewProjection,
   type ReadTasksOptions,
+  type Runnable,
   type RunnableOptions,
   type TaskCard,
   type TaskState,

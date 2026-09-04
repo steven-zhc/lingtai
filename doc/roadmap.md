@@ -146,11 +146,12 @@ including the two defects the run found that no unit test had — `lingtai now` 
 running the issue it named, and the outbox deleting every label it did not put
 there.
 
-Two items filed under 2d turned out to need nothing. **Queue caching** is how
-`syncQueued` already works — the conductor asks GitHub and the board reads the
-table, so no page render ever calls the API. **Retention** is already a
-parameter on `readTasks`, because 0012 put it in the query rather than the
-projection. Structured logging was not done and is not tracked; nothing has
+Two items filed under 2d turned out to need nothing. **Queue caching** was how
+`syncQueued` worked — and it is gone: [0022](decisions/0022-the-seams.md)
+deleted the cache, so the board does ask GitHub on render, and #56 and #57 died
+with it. If a rate limit ever bites, a cache comes back with a reason and with
+somebody watching it. **Retention** is already a parameter on `readTasks`,
+because 0012 put it in the query rather than the projection. Structured logging was not done and is not tracked; nothing has
 needed it yet.
 
 What was cut from #25 is worth naming: labels are written when a task changes

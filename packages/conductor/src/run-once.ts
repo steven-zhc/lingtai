@@ -28,7 +28,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { type Runtime, missingForTier } from "@lingtai/runtime";
 import { type EventStore, eventStore } from "@lingtai/store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
-import { refreshQueue, workItemStream } from "./discover.ts";
+import { runnableNow, workItemStream } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
@@ -206,7 +206,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
   // was first seen (0012), so there is no "was it discovered" to read — the
   // recipe decides against the issue as GitHub reports it right now, which is
   // also the only way a label edit takes effect without a second mechanism.
-  const found = await refreshQueue({ project, client: options.client, recipe, only: [options.issue] });
+  const found = await runnableNow({ client: options.client, recipe, only: [options.issue] });
   const ticket = found.runnable.find((r) => r.ref === String(options.issue));
   if (!ticket) {
     const why = found.skipped.find((s) => s.ref === options.issue)?.reason ?? "not runnable";

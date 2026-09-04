@@ -128,9 +128,9 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
     const outcome = await runQueue({
       ...common,
       prompt,
-      // The recipe's order, asked rather than stored: a project that reorders
-      // its kinds must not need a projection rebuild.
-      kinds: resolved.recipe.source.kinds,
+      // Asked rather than stored: a project that reorders its kinds, or adds
+      // an exclusion, must not need a projection rebuild.
+      recipe: resolved.recipe,
       ...(options.max === undefined ? {} : { max: options.max }),
     });
 
