@@ -19,8 +19,10 @@ import {
   createEventStore,
   type Db,
   type EventStore,
+  RetiredEventTypeError,
   UnknownEventTypeError,
 } from "../src/index.ts";
+import { isEventType, parsePayload } from "@lingtai/core";
 import { cleanupStreams, discovered, streamId } from "./support.ts";
 
 /** Every SQLSTATE in an error's `cause` chain. */
@@ -203,5 +205,51 @@ describe("readAll", () => {
     const s = streamId();
     const [first] = await store.append(s, 0, [discovered("a"), discovered("b"), discovered("c")]);
     expect(await store.readAll(first!.seq, 1)).toHaveLength(1);
+  });
+});
+
+/**
+ * Retirement is a write-side rule, and it has to be, because the read side has
+ * no honest way to refuse a row.
+ *
+ * 0019 is the record of what happens when a type the log holds leaves the
+ * catalogue: every stream carrying it becomes unreadable from its first row,
+ * `projection rebuild` cannot run at all, and the way out was a second reset.
+ * 0022 spends `OutboxDelivered` and `OutboxFailed` and keeps them parseable for
+ * exactly that reason — so the test that matters is that they still parse and
+ * that nothing can add another one.
+ */
+describe("retired event types", () => {
+  it("still parse, because the log holds them", () => {
+    expect(isEventType("OutboxDelivered")).toBe(true);
+    expect(isEventType("OutboxFailed")).toBe(true);
+    expect(() =>
+      parsePayload("OutboxDelivered", { ref: "1:issue-close", kind: "issue-close", target: "58", detail: "" }),
+    ).not.toThrow();
+  });
+
+  it("are refused on append, by name", async () => {
+    const s = streamId();
+    await expect(
+      store.append(s, 0, [
+        {
+          type: "OutboxDelivered",
+          actor: "conductor",
+          data: { ref: "1:issue-close", kind: "issue-close", target: "58", detail: "" },
+        },
+      ]),
+    ).rejects.toBeInstanceOf(RetiredEventTypeError);
+  });
+
+  it("does not refuse the pair that replaced them", async () => {
+    const s = streamId();
+    const [w] = await store.append(s, 0, [
+      {
+        type: "IssueUpdated",
+        actor: "conductor",
+        data: { project: "lingtai", issue: "58", change: "closed", detail: "" },
+      },
+    ]);
+    expect(w?.version).toBe(1);
   });
 });

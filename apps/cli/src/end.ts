@@ -27,11 +27,10 @@ import {
   landedWithoutEndActions,
   loadProject,
 } from "@lingtai/conductor";
-import { deliverOutbox } from "@lingtai/daemon";
+import { tellGitHubAbout } from "@lingtai/conductor";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { eventStore } from "@lingtai/store";
-import { deliverer } from "./conduct.ts";
 import { catchUpProjections } from "./projections.ts";
 
 export interface EndReplayOptions {
@@ -82,7 +81,10 @@ export async function endReplay(
         clients.set(item.project, client);
       }
       const resolved = await currentRecipe(project, client);
-      await appendEndActions(eventStore, item.workItemId, resolved.recipe.gates.end, "landed");
+      const ended = await appendEndActions(eventStore, item.workItemId, resolved.recipe.gates.end, "landed");
+      // Resolved and then carried out, in that order and in this process. The
+      // outbox used to stand between them; there is nothing to wait for now.
+      await tellGitHubAbout({ store: eventStore, github: client, workItemId: item.workItemId, appended: ended });
       replayed += 1;
       log(`${item.project}#${item.issue}: end resolved from the recipe at ${resolved.ref}`);
     } catch (err) {
@@ -92,16 +94,8 @@ export async function endReplay(
     }
   }
 
-  // The outbox is a projection, so the rows do not exist until something folds
-  // the events just appended.
+  // The board reads a projection, and this command appended.
   await catchUpProjections();
-  const sent = await deliverOutbox({ deliverer: deliverer(clients), log });
-  log(`${replayed} replayed, ${sent.delivered} delivered`);
-  if (sent.delivered < replayed) {
-    // Not a failure: a fresh outbox row is not due for a second, and the
-    // delivery is durable — it goes out on the next pass, of a daemon or of
-    // this command.
-    log("the rest are queued in the outbox and go out on the next pass");
-  }
+  log(`${replayed} replayed`);
   return 0;
 }

@@ -20,6 +20,7 @@ import {
   StreamId,
   type ToAppend,
   isEventType,
+  isRetiredEventType,
   parsePayload,
   parseStoredPayload,
 } from "@lingtai/core";
@@ -80,6 +81,22 @@ export class UnknownEventTypeError extends Error {
 
   constructor(type: string, where: "append" | "read") {
     super(`"${type}" is not an event type in @lingtai/core (on ${where})`);
+    this.type = type;
+  }
+}
+
+/**
+ * A type the log still holds, and nothing may add to it again.
+ *
+ * The read path stays open on purpose (`RETIRED` in `@lingtai/core`). Refusing
+ * the write costs nothing and does not require pretending a row is not there.
+ */
+export class RetiredEventTypeError extends Error {
+  override readonly name = "RetiredEventTypeError";
+  readonly type: string;
+
+  constructor(type: string) {
+    super(`"${type}" is retired: readable, never appended (doc/decisions/0022-the-seams.md)`);
     this.type = type;
   }
 }
@@ -227,6 +244,7 @@ export function createEventStore(client: Db): EventStore {
       // fail halfway through validation with rows already written.
       const rows = events.map((e, i) => {
         if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, "append");
+        if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type);
         Actor.parse(e.actor);
         return {
           streamId,

@@ -23,7 +23,6 @@ import {
   createStatusTable,
   createNotifier,
   createWorkLoop,
-  deliverOutbox,
   macNotifier,
   pauseConductor,
   readControl,
@@ -32,7 +31,7 @@ import {
   resumeConductor,
   startDaemon,
 } from "@lingtai/daemon";
-import { conductorPass, deliverer } from "./conduct.ts";
+import { conductorPass } from "./conduct.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
 import { formatReport, runDoctor } from "./doctor.ts";
@@ -258,40 +257,17 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
       paused: async () => (await readControl()).paused,
-      // A pause stops taking work, never delivering what already happened.
-      // Same deliverer, no conductor pass: `conductorPass({ max: 0 })` builds
-      // the per-project clients and takes nothing.
-      drain: async () => {
-        const idle = await conductorPass({ max: 0, log: () => {} });
-        const sent = await deliverOutbox({
-          deliverer: deliverer(idle.clients),
-          log: (line) => console.log(line),
-        });
-        if (sent.delivered > 0) console.log(`paused — ${sent.delivered} delivered anyway`);
-      },
 
       pass: async (reason) => {
         const outcome = await conductorPass({
           merge: !("no-merge" in flags),
           log: (line) => console.log(line),
         });
-        // After the run, in the same pass. A comment saying "waiting on you"
-        // is only useful if it goes out near the moment it became true, and
-        // the pass is the only thing that knows a client for each project.
-        const sent = await deliverOutbox({
-          deliverer: deliverer(outcome.clients),
-          log: (line) => console.log(line),
-        }).catch((err: unknown) => {
-          // Never fatal. A delivery that cannot go out must not stop work from
-          // being taken — the row stays pending and the next pass tries again.
-          console.error(`outbox: ${(err as Error).message}`);
-          return { delivered: 0, failed: 0 };
-        });
-
+        // The run told GitHub as it went (0022), so there is nothing left
+        // here to send and nothing to report about sending it.
         console.log(
           `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
-            (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : "") +
-            (sent.delivered + sent.failed > 0 ? `, ${sent.delivered} sent` : ""),
+            (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ""),
         );
       },
     });

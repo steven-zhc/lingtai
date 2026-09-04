@@ -137,9 +137,13 @@ function fakeClient(over: Partial<GitHubClient> & { recipe?: string } = {}): Git
       path === ".lingtai/config.yaml" && ref === "develop" ? recipe : null,
     refSha: async () => "0".repeat(40),
     listOpenIssues: async () => [issue],
-comment: async () => { throw new Error("no writes in this test"); },
-closeIssue: async () => {},
-setLabels: async () => { throw new Error("no writes in this test"); },
+    // These used to throw. The conductor never wrote to GitHub — the outbox
+    // did — so a write from here meant a bug, and the fake said so. 0022
+    // deletes the outbox and makes the conductor tell GitHub inline, so the
+    // guard would now fail the thing it was guarding. They record instead.
+    comment: async () => ({ id: 909 }),
+    closeIssue: async () => {},
+    setLabels: async () => {},
     getIssue: async () => issue,
     ...rest,
   };
@@ -237,7 +241,10 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'fix the race'
 
     // ---- the event stream reads as a coherent story with no gaps ----
     const wi = (await store.read(workItemId())).map((e) => e.type);
-    expect(wi).toEqual(["WorkItemClaimed", "WorkItemLanded"]);
+    // `IssueUpdated` after each state change: the run tells GitHub as it goes
+    // and writes down that it did (0022). The claim sets `lingtai:working`;
+    // the landing clears it.
+    expect(wi).toEqual(["WorkItemClaimed", "IssueUpdated", "WorkItemLanded", "IssueUpdated"]);
 
     const run = (await store.read(result.runId)).map((e) => e.type);
     expect(run.slice(0, 3)).toEqual(["RunStarted", "GatesResolved", "RunFinished"]);
@@ -313,7 +320,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
     // Blocked with a question, not silently dropped — the board's "Waiting on
     // you" column is where a refusal goes.
     const wi = (await store.read(workItemStream(PROJECT, 118))).map((e) => e.type);
-    expect(wi).toEqual(["WorkItemClaimed", "WorkItemBlocked"]);
+    expect(wi).toEqual(["WorkItemClaimed", "IssueUpdated", "WorkItemBlocked", "IssueUpdated"]);
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
     expect(log.stdout).not.toContain("wrong change");
@@ -611,8 +618,9 @@ git add -A && git commit -q -m "fix the race"
     const landed = item.filter(
       (e) => e.type === "EndActionsResolved" && (e.data as { outcome: string }).outcome === "landed",
     );
-    // What the outbox turns into a close. The plan crosses into the log here,
-    // because a projection may never read a recipe.
+    // What `tellGitHub` turns into a close. The plan crosses into the log
+    // here, so that carrying it out never has to read a recipe — and so that a
+    // replay years later does what the recipe said then, not what it says now.
     expect(landed[0]!.data).toEqual({
       outcome: "landed",
       actions: [{ name: "close the ticket", close: true }],

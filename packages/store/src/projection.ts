@@ -96,7 +96,9 @@ export interface ProjectionRunner {
    * It is not free, and the price is the *log's* length rather than the
    * projection's: a handler issues its own statements per event, so a replay is
    * O(events) round trips. Measured 2026-09-02 against the test database:
-   * 1,184 events through `outboxProjection` took 59.4s, about 50ms each. Worth
+   * 1,184 events through the outbox projection took 59.4s, about 50ms each —
+   * that projection is gone (0022), and the measurement is kept because the
+   * cost belongs to the mechanism rather than to that handler. Worth
    * knowing before putting one inside anything with a deadline.
    */
   rebuild(): Promise<void>;

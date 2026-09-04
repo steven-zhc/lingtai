@@ -23,7 +23,7 @@
  * satisfies it with four functions and no network — which is the whole point of
  * a caller naming its own requirement.
  */
-import { parsePayload } from "@lingtai/core";
+import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/core";
 import type { EventStore } from "@lingtai/store";
 import { foreignLabels } from "./labels.ts";
 
@@ -139,5 +139,52 @@ async function record(
     ]);
   } catch {
     // Deliberately silent: see above.
+  }
+}
+
+/**
+ * Everything one state change implies for an issue, in the order the outbox
+ * used to send it.
+ *
+ * The outbox folded events in `seq` order, so a comment appended beside its
+ * `EndActionsResolved` went out first and the end point's own labels went out
+ * second. That order is kept: it is the difference between an issue that ends
+ * up closed and one that ends up closed and then reopened by a label write.
+ *
+ * **Only what the outbox actually did.** `labelsFor` handles `waiting`, and
+ * nothing ever passed it: the projection set labels on `WorkItemClaimed`,
+ * `WorkItemReleased` and `WorkItemLanded` only, so a blocked item got the
+ * comment and no label. `lingtai:waiting` has therefore never once been applied
+ * — a label declared and never written, which is the shape of #58 wearing a
+ * smaller hat. It is left alone here on purpose: this function replaces the
+ * outbox and a replacement that also changes behaviour cannot be reviewed as
+ * one. It is worth a ticket of its own.
+ */
+export async function tellGitHubAbout(options: {
+  store: EventStore;
+  github: IssueChannel;
+  workItemId: string;
+  /** Lingtai's own labels for this state, or `null` to leave them alone. */
+  labels?: readonly string[] | null;
+  /** The question, when a person is now the thing being waited on. */
+  question?: string;
+  /** The events just appended; any `EndActionsResolved` among them is carried out. */
+  appended?: readonly ToAppend[];
+}): Promise<void> {
+  const { store, github, workItemId } = options;
+  const tell = (change: IssueChange) => tellGitHub({ store, github, workItemId, change });
+
+  if (options.question !== undefined) {
+    await tell({ kind: "comment", body: `**Lingtai is waiting on you.**\n\n${options.question}` });
+  }
+  if (options.labels != null) await tell({ kind: "labels", labels: options.labels });
+
+  for (const e of options.appended ?? []) {
+    if (e.type !== "EndActionsResolved") continue;
+    const d = e.data as PayloadOf<"EndActionsResolved">;
+    for (const action of d.actions) {
+      if ("close" in action) await tell({ kind: "closed" });
+      else await tell({ kind: "labels", labels: action.labels });
+    }
   }
 }

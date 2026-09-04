@@ -1,13 +1,15 @@
 /**
  * Telling the operator when the operator is the bottleneck.
  *
- * ## Why this does not use the outbox
+ * ## Why nothing here is retried
  *
- * The outbox exists so a side effect survives a crash, and it retries with
- * backoff until it lands. That is exactly wrong for a notification: one
- * delivered an hour late, about a decision already made, is worse than none —
- * it trains you to ignore the next one. So this is fire-and-forget, and a
- * failure is logged rather than queued.
+ * A retry is right for a fact somebody will read later and wrong for an
+ * interruption: a notification delivered an hour late, about a decision already
+ * made, is worse than none — it trains you to ignore the next one. So this is
+ * fire-and-forget, and a failure is logged rather than queued. Nothing else in
+ * the system retries either since 0022, but for a different reason: GitHub is
+ * converged rather than retried, and this cannot be converged because there is
+ * no state to compare against.
  *
  * The criterion "notification failure never blocks the event" is met by the
  * shape rather than by a queue: this reads the log and never writes to it, so

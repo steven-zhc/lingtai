@@ -2,9 +2,10 @@
  * The `end` point, resolved against the outcome a work item actually reached.
  *
  * `end` is the one point that cannot refuse: its actions run for effect. They
- * are declared in a recipe and carried out by the outbox, and the outbox is a
- * *projection* — it may read the log and nothing else. So the plan has to cross
- * that line as an event, which is what `EndActionsResolved` is for.
+ * are declared in a recipe and carried out afterwards, by whoever holds a
+ * GitHub client — so the plan has to cross into the log first, which is what
+ * `EndActionsResolved` is for. Resolving is a fact and belongs in the same
+ * transaction as the outcome; doing is I/O and must not be able to undo it.
  *
  * ## Why this is its own file
  *
@@ -124,12 +125,16 @@ export async function appendEndActions(
   workItemId: string,
   actions: readonly GateAction[],
   outcome: TerminalOutcome,
-): Promise<void> {
-  if (actions.length === 0) return;
+): Promise<ToAppend[]> {
+  if (actions.length === 0) return [];
   const events = await store.read(workItemId);
   const toAppend = resolveEndActions(events, actions, outcome);
-  if (toAppend.length === 0) return;
+  if (toAppend.length === 0) return [];
   await store.append(workItemId, events.length, toAppend);
+  // Returned so the caller can carry them out. Resolving and doing are two
+  // steps on purpose — the resolution is a fact and belongs in one transaction
+  // with the outcome, and the doing is I/O that must not be able to undo it.
+  return toAppend;
 }
 
 // ------------------------------------------------------- what did not run ----

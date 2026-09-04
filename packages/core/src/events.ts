@@ -338,16 +338,21 @@ export const ConductorResumed = z.object({ by: z.string() });
  * GitHub does, several times, on any non-2xx — cheap to recognise and drop.
  */
 /**
- * A side effect that was actually carried out.
+ * **Retired** ([0022](../../../doc/decisions/0022-the-seams.md)). Readable for
+ * ever, appended never: `RETIRED` below, refused by `store.append`.
  *
- * The outbox is a *projection*, which is what makes "a crash between the event
- * and the delivery loses nothing" true: the pending row is derived from the
- * log, so it comes back on replay. But that only works if delivery is also in
- * the log — otherwise rebuilding the projection would forget what had already
- * been sent and post every comment again.
+ * It recorded a delivery the outbox worker made. There is no outbox — three
+ * calls to GitHub did not need a table, a projection, a worker, a backoff and a
+ * dead-letter, and the failure all of that retried was never once observed.
+ * `IssueUpdated` records the same fact without the queue.
  *
- * So this is the half that makes the other half safe, and it is a fact worth
- * keeping on its own: *we commented on #155 at 14:02, and here is the id*.
+ * The rows stay because [0019](../../../doc/decisions/0019-a-second-reset.md)
+ * says they must. Deleting a type the log still holds makes every stream
+ * carrying it unreadable from its first row — that is what took
+ * `projection rebuild` out and forced the second reset — and skipping rows on
+ * read is not an option at any price: `run-once` computes `expectedVersion` as
+ * `(await store.read(id)).length`, so a read that drops rows makes every later
+ * append fail a concurrency check.
  */
 export const OutboxDelivered = z.object({
   /** `<seq>:<kind>` — stable across replay, because seq is. */
@@ -358,17 +363,7 @@ export const OutboxDelivered = z.object({
   detail: z.string(),
 });
 
-/**
- * An attempt that did not work.
- *
- * Every failed attempt, not just the last: the count is what the backoff reads,
- * and keeping it in the log is what stops a restart from resetting the delay
- * and hammering an endpoint that is already unhappy.
- *
- * `permanent` is the difference between "try again later" and "this will never
- * work" — a 404 on an issue somebody deleted is not a retry candidate, and
- * retrying it forever is how a queue silently stops meaning anything.
- */
+/** **Retired** with `OutboxDelivered` above, and for the same reasons. */
 export const OutboxFailed = z.object({
   ref: z.string(),
   kind: z.string(),
@@ -572,6 +567,20 @@ const BUMPED: Partial<Record<EventType, number>> = {
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
   (Object.keys(EVENTS) as EventType[]).map((k) => [k, BUMPED[k] ?? 1]),
 ) as Record<EventType, number>;
+
+/**
+ * Types the log holds and nothing appends again.
+ *
+ * The refusal is on the write side because the read side has no honest way to
+ * decline a row — see the note on `OutboxDelivered`. Retiring is therefore two
+ * things and only the second can be enforced: stop writing them, and keep
+ * reading them for ever.
+ */
+export const RETIRED: ReadonlySet<EventType> = new Set<EventType>(["OutboxDelivered", "OutboxFailed"]);
+
+export function isRetiredEventType(t: string): boolean {
+  return isEventType(t) && RETIRED.has(t);
+}
 
 export function isEventType(t: string): t is EventType {
   return Object.hasOwn(EVENTS, t);

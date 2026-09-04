@@ -5,6 +5,7 @@ export {
   createEventStore,
   eventStore,
   SchemaVersionUnsupportedError,
+  RetiredEventTypeError,
   UnknownEventTypeError,
   type EventStore,
 } from "./event-store.ts";

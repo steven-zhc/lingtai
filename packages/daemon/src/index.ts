@@ -41,12 +41,6 @@ export {
   type ReconcileOptions,
 } from "./reconcile.ts";
 export {
-  deliverOutbox,
-  type Deliverer,
-  type DeliverOptions,
-  type DeliverOutcome,
-} from "./deliver.ts";
-export {
   DEFAULT_SUBSCRIPTIONS,
   createNotifier,
   describe,

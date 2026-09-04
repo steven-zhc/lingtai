@@ -30,6 +30,8 @@ import { type EventStore, eventStore } from "@lingtai/store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { refreshQueue, workItemStream } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
+import { labelsFor } from "./labels.ts";
+import { tellGitHubAbout } from "./tell.ts";
 import { smokeTestFailClosed, writeHookWiring } from "./hook-config.ts";
 import { createHookServer } from "./hook-socket.ts";
 import { integrate } from "./integrate.ts";
@@ -230,6 +232,10 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
     };
   }
   log(`claimed ${workItemId} as ${runId}`);
+  // The issue says what the log says, from here on. Inline rather than queued
+  // (0022): three calls do not need a table, and a call that does not land is
+  // written down and converged later rather than retried.
+  await tellGitHubAbout({ store, github: options.client, workItemId, labels: labelsFor("running") });
 
   // ---- 5. the worktree, planted with the environment resolved above --------
   const branch = `agent/${options.issue}`;
@@ -244,9 +250,17 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
     // mergeable is the `failed` one. On its own append because the release owns
     // the one above; logged rather than thrown because this path is already
     // carrying somebody else's failure and must not replace it with its own.
-    await appendEndActions(store, workItemId, recipe.gates.end, "failed").catch((err) =>
-      log(`end actions not resolved: ${(err as Error).message}`),
-    );
+    const ended = await appendEndActions(store, workItemId, recipe.gates.end, "failed").catch((err) => {
+      log(`end actions not resolved: ${(err as Error).message}`);
+      return [];
+    });
+    await tellGitHubAbout({
+      store,
+      github: options.client,
+      workItemId,
+      labels: labelsFor("queued"),
+      appended: ended,
+    });
   };
 
   try {
@@ -618,22 +632,21 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
         // another run could claim it and throw the question away. It also stops
         // the claim's lease from quietly expiring while someone thinks.
         const blocked = await store.read(workItemId);
+        const question = `held at the ${gate} gate: ${branch} into ${base}`;
+        // In the same append as the outcome it is about. A hold is a terminal
+        // outcome for this run, and a `when: blocked` action is as configured
+        // as any other.
+        const ended = resolveEndActions(blocked, recipe.gates.end, "blocked");
         await store.append(workItemId, blocked.length, [
           {
             type: "WorkItemBlocked",
             actor: "conductor",
-            data: parsePayload("WorkItemBlocked", {
-              question: `held at the ${gate} gate: ${branch} into ${base}`,
-              needsFrom: "human",
-              runId,
-            }),
+            data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
           },
-          // In the same append as the outcome it is about. A hold is a terminal
-          // outcome for this run, and a `when: blocked` action is as configured
-          // as any other.
-          ...resolveEndActions(blocked, recipe.gates.end, "blocked"),
+          ...ended,
         ]);
         released = true;
+        await tellGitHubAbout({ store, github: options.client, workItemId, question, appended: ended });
 
         log(`held at ${headSha.slice(0, 7)} — asked for approval to merge into ${base}`);
         return { ok: "held", workItemId, runId, headSha, gate };
@@ -665,36 +678,43 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
         // Blocked rather than released: a refusal is a question for a person,
         // and the board's "Waiting on you" column is where it goes.
         const blocked = await store.read(workItemId);
+        const question = `${merged.reason}: ${merged.detail.slice(0, 500)}`;
+        const ended = resolveEndActions(blocked, recipe.gates.end, "blocked");
         await store.append(workItemId, blocked.length, [
           {
             type: "WorkItemBlocked",
             actor: "conductor",
-            data: parsePayload("WorkItemBlocked", {
-              question: `${merged.reason}: ${merged.detail.slice(0, 500)}`,
-              needsFrom: "human",
-              runId,
-            }),
+            data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
           },
-          ...resolveEndActions(blocked, recipe.gates.end, "blocked"),
+          ...ended,
         ]);
         released = true;
+        await tellGitHubAbout({ store, github: options.client, workItemId, question, appended: ended });
         return { ok: false, workItemId, runId, stage: "integrate", detail: `${merged.reason}: ${merged.detail}` };
       }
 
       const landed = await store.read(workItemId);
+      // One transaction with the landing itself. This used to be a second
+      // append on this line only, which is how every item that landed by any
+      // other route — an approval, on the CLI or the board — never resolved
+      // the point at all.
+      const ended = resolveEndActions(landed, recipe.gates.end, "landed");
       await store.append(workItemId, landed.length, [
         {
           type: "WorkItemLanded",
           actor: "conductor",
           data: parsePayload("WorkItemLanded", { mergeCommit: merged.mergeCommit, base }),
         },
-        // One transaction with the landing itself. This used to be a second
-        // append on this line only, which is how every item that landed by any
-        // other route — an approval, on the CLI or the board — never resolved
-        // the point at all.
-        ...resolveEndActions(landed, recipe.gates.end, "landed"),
+        ...ended,
       ]);
       released = true;
+      await tellGitHubAbout({
+        store,
+        github: options.client,
+        workItemId,
+        labels: labelsFor("landed"),
+        appended: ended,
+      });
       log(`landed ${merged.mergeCommit.slice(0, 7)} on ${base}`);
       return { ok: true, workItemId, runId, mergeCommit: merged.mergeCommit };
     } finally {

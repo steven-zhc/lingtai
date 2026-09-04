@@ -109,18 +109,5 @@ export {
   type TerminalOutcome,
   type UnresolvedEnd,
 } from "./end-point.ts";
-export {
-  BASE_BACKOFF_MS,
-  MAX_ATTEMPTS,
-  MAX_BACKOFF_MS,
-  OUTBOX_TABLE,
-  backoffFor,
-  deadOutbox,
-  outboxProjection,
-  pendingOutbox,
-  type OutboxItem,
-  type OutboxKind,
-  type PendingOptions,
-} from "./outbox.ts";
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
-export { tellGitHub, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";
+export { tellGitHub, tellGitHubAbout, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";

@@ -97,16 +97,6 @@ export interface WorkLoopOptions {
    */
   paused?: () => Promise<boolean>;
   /**
-   * Run while paused, instead of a full pass.
-   *
-   * A pause stops the conductor **taking work**. It must not stop delivering
-   * what already happened: a "waiting on you" comment sits in the outbox until
-   * something sends it, and a pause is exactly when somebody most needs to read
-   * one. Found by the 3f verification run, where a landed issue's close sat
-   * queued behind a pause and the issue stayed open.
-   */
-  drain?: () => Promise<void>;
-  /**
    * Told about every appended event, subscribed or not — it decides.
    *
    * On the loop's existing subscription rather than a second one: a notifier
@@ -161,11 +151,10 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         // take effect at the next opportunity, and the next opportunity is
         // here.
         if (await options.paused?.()) {
+          // Nothing is left pending by a pause any more: a run tells GitHub
+          // as it goes, so a paused conductor has nothing owed (0022). What
+          // used to sit here was a drain for the outbox's queue.
           log("paused — taking no work");
-          // Effects still go out. See `drain`.
-          await options.drain?.().catch((err: unknown) => {
-            log(`outbox while paused: ${(err as Error).message}`);
-          });
           break;
         }
         passes += 1;

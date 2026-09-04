@@ -23,6 +23,8 @@ import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/store";
 import { workItemStream } from "./discover.ts";
 import { resolveEndActions } from "./end-point.ts";
+import { labelsFor } from "./labels.ts";
+import { tellGitHubAbout } from "./tell.ts";
 import { integrate } from "./integrate.ts";
 import type { TokenSource } from "./worktree.ts";
 
@@ -188,32 +190,39 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
 
   if (!merged.ok) {
     const blocked = await store.read(workItemId);
+    const question = `${merged.reason}: ${merged.detail.slice(0, 500)}`;
+    const ended = resolveEndActions(blocked, end, "blocked");
     await store.append(workItemId, blocked.length, [
       {
         type: "WorkItemBlocked",
         actor: "conductor",
-        data: parsePayload("WorkItemBlocked", {
-          question: `${merged.reason}: ${merged.detail.slice(0, 500)}`,
-          needsFrom: "human",
-          runId,
-        }),
+        data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
       },
-      ...resolveEndActions(blocked, end, "blocked"),
+      ...ended,
     ]);
+    await tellGitHubAbout({ store, github: options.client, workItemId, question, appended: ended });
     return { ok: false, workItemId, reason: merged.reason, detail: merged.detail };
   }
 
   const landed = await store.read(workItemId);
+  // The same append, so an item cannot land without its `end` point being
+  // resolved in the same transaction.
+  const ended = resolveEndActions(landed, end, "landed");
   await store.append(workItemId, landed.length, [
     {
       type: "WorkItemLanded",
       actor: "conductor",
       data: parsePayload("WorkItemLanded", { mergeCommit: merged.mergeCommit, base: options.base }),
     },
-    // The same append, so an item cannot land without its `end` point being
-    // resolved in the same transaction.
-    ...resolveEndActions(landed, end, "landed"),
+    ...ended,
   ]);
+  await tellGitHubAbout({
+    store,
+    github: options.client,
+    workItemId,
+    labels: labelsFor("landed"),
+    appended: ended,
+  });
   log(`landed ${merged.mergeCommit.slice(0, 7)} on ${options.base}`);
   return { ok: true, workItemId, runId, mergeCommit: merged.mergeCommit };
 }

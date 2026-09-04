@@ -18,7 +18,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { currentRecipe, foreignLabels, loadProjects, readRunnable, refreshQueue, runOnce, runQueue } from "@lingtai/conductor";
 import { readControl } from "@lingtai/daemon";
-import { createGitHubClient, type GitHubClient } from "@lingtai/github";
+import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createClaudeCodeRuntime } from "@lingtai/runtime";
 
@@ -34,60 +34,9 @@ export interface ConductOptions {
   log?: (line: string) => void;
 }
 
-/**
- * A `Deliverer` over as many projects as the daemon manages.
- *
- * Clients are per repository — an installation token is scoped to one — so the
- * outbox worker, which is not, needs something that can reach any of them. The
- * cache is not an optimisation: minting a token per delivery would turn a
- * hundred queued labels into a hundred installation lookups.
- */
-export function deliverer(clients: Map<string, GitHubClient>) {
-  const need = (project: string): GitHubClient => {
-    const client = clients.get(project);
-    if (!client) throw new Error(`no GitHub client for ${project}`);
-    return client;
-  };
-  return {
-    async comment(project: string, issue: number, body: string): Promise<string> {
-      const { id } = await need(project).comment(issue, body);
-      return String(id);
-    },
-    /**
-     * Sets Lingtai's labels and leaves everybody else's alone.
-     *
-     * `setLabels` on the client is a whole-set replace, which is deliberate:
-     * `--add-label` is set union rather than a transition, and that is how #35
-     * came to carry `agent:blocked` and `agent:review` at once. But a replace
-     * given only the computed labels deletes every *foreign* label too, and it
-     * did: the first outbox drain stripped `enhancement` from admin #120, #155
-     * and #156 — the very label the recipe selects on, so Lingtai deleted
-     * its own queue's selection criteria and the three issues went unrunnable.
-     *
-     * The union is taken here rather than in the projection because a
-     * projection must be deterministic, and what else is on the issue is not
-     * in the log. Read-modify-write, so a label added by a person in the gap
-     * is lost; that is a far smaller wrong than deleting all of them, and the
-     * gap is one HTTP round trip.
-     */
-    async closeIssue(project: string, issue: number): Promise<void> {
-      await need(project).closeIssue(issue);
-    },
-
-    async setLabels(project: string, issue: number, labels: readonly string[]): Promise<void> {
-      const client = need(project);
-      const current = await client.getIssue(issue);
-      const foreign = foreignLabels(current.labels);
-      await client.setLabels(issue, [...new Set([...foreign, ...labels])]);
-    },
-  };
-}
-
 export interface PassOutcome {
   /** Projects looked at. */
   projects: number;
-  /** A client per project, so the outbox worker can reach any of them. */
-  clients: Map<string, GitHubClient>;
   /** Items run across all of them. */
   ran: number;
   /** Projects that could not be looked at, and why. */
@@ -96,7 +45,7 @@ export interface PassOutcome {
 
 export async function conductorPass(options: ConductOptions = {}): Promise<PassOutcome> {
   const log = options.log ?? (() => {});
-  const outcome: PassOutcome = { projects: 0, ran: 0, refused: [], clients: new Map() };
+  const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] };
 
   if (!hasGitHubApp()) {
     outcome.refused.push({ project: "*", detail: "no GitHub App configured" });
@@ -132,13 +81,10 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
         owner: project.owner,
         repo: name,
       });
-      outcome.clients.set(name, client);
 
-      // `max: 0` means "build the clients and take nothing". The daemon uses it
-      // to drain the outbox while paused: a pause stops work being taken, never
-      // effects that already happened from going out. Returning here rather
-      // than relying on `runQueue({ max: 0 })` because a nominated issue would
-      // otherwise still jump the queue and run.
+      // `max: 0` means "look at the project and take nothing". Returned here
+      // rather than through `runQueue({ max: 0 })` because a nominated issue
+      // would otherwise still jump the queue and run.
       if (options.max === 0) continue;
       const resolved = await currentRecipe(project, client);
 

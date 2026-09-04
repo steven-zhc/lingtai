@@ -24,11 +24,9 @@
  */
 import {
   currentRecipe,
-  deadOutbox,
   landedWithoutEndActions,
   landedWithoutGatePoints,
   loadProjects,
-  pendingOutbox,
   resolveAgentEnv,
   runnableEnv,
 } from "@lingtai/conductor";
@@ -719,35 +717,52 @@ async function gatePointsRan(url: string): Promise<CheckResult> {
 }
 
 /**
- * How much is queued to go out, and how much never will.
+ * Issues whose last word from Lingtai was a failure.
  *
- * Depth is reported; **dead letters fail**. That asymmetry is the point. A
- * backlog is usually a daemon that has been down and will drain on its own; a
- * permanently failed delivery is a thing somebody has to look at, and it is
- * exactly what the old loop lost — a `gh` call that failed inline left no trace
- * at all, so nobody could tell "we never commented" from "we commented and it
- * did not help".
+ * The outbox reported depth and failed on dead letters. There is no queue any
+ * more (0022): `tellGitHub` calls GitHub inline and writes down what happened,
+ * so the question is no longer *how much is waiting* but *what did we say we
+ * would do and not manage*. An `IssueUpdateFailed` with no later `IssueUpdated`
+ * for the same issue and change is exactly the divergence `reconcile` owes.
+ *
+ * A failure that a later attempt fixed is not reported: the log keeps both, and
+ * only the last one is the state of the world.
  */
-async function outbox(): Promise<CheckResult> {
-  const pending = await pendingOutbox({ limit: 1000 }).catch(() => null);
-  if (pending === null) {
-    return { name: "outbox: depth", status: "ok", detail: "no outbox yet — nothing has been queued" };
-  }
-  const dead = await deadOutbox().catch(() => []);
-
-  if (dead.length > 0) {
-    return {
-      name: "outbox: depth",
-      status: "fail",
-      detail:
-        `${dead.length} will never be delivered — ` +
-        dead.slice(0, 3).map((d) => `${d.project}#${d.target}: ${d.lastError}`).join("; "),
-    };
+async function unconverged(url: string): Promise<CheckResult> {
+  const name = "github: what we said and did not manage";
+  const rows = await withClient(url, (c) =>
+    c.query<{ project: string; issue: string; change: string }>(
+      `with said as (
+         select type,
+                data->>'project' as project,
+                data->>'issue'   as issue,
+                data->>'change'  as change,
+                max(seq)         as seq
+         from events
+         where type in ('IssueUpdated', 'IssueUpdateFailed')
+         group by 1, 2, 3, 4
+       ),
+       failed as (select * from said where type = 'IssueUpdateFailed'),
+       ok     as (select * from said where type = 'IssueUpdated')
+       select failed.project, failed.issue, failed.change
+       from failed
+       left join ok
+         on ok.project = failed.project and ok.issue = failed.issue and ok.change = failed.change
+       where ok.seq is null or ok.seq < failed.seq
+       order by failed.project, failed.issue`,
+    ),
+  ).catch(() => null);
+  if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
+  if (rows.rows.length === 0) {
+    return { name, status: "ok", detail: "every issue carries what the log last said about it" };
   }
   return {
-    name: "outbox: depth",
-    status: "ok",
-    detail: pending.length === 0 ? "empty" : `${pending.length} waiting to go out`,
+    name,
+    status: "fail",
+    detail:
+      `${rows.rows.length} issue(s) diverged — ` +
+      rows.rows.slice(0, 4).map((r) => `${r.project}#${r.issue} (${r.change})`).join(", ") +
+      ". Nothing retries these; reconcile converges them.",
   };
 }
 
@@ -860,7 +875,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     results.push(await daemonLiveness());
     results.push(await readableTypes(direct));
     results.push(await orphans());
-    results.push(await outbox());
+    results.push(await unconverged(direct));
     results.push(await endPointRan(direct));
     results.push(await gatePointsRan(direct));
   } else {

@@ -21,13 +21,12 @@
  * same transaction as its writes, so two followers on the same log converge on
  * the same rows; the second one simply finds nothing left to do.
  */
-import { outboxProjection, taskViewProjection } from "@lingtai/conductor";
+import { taskViewProjection } from "@lingtai/conductor";
 import { createProjectionRunner, type Projection, type ProjectionLag } from "@lingtai/store";
 
 /** Every projection the runner knows how to advance, by `checkpoints.name`. */
 export const PROJECTIONS: Record<string, Projection> = {
   [taskViewProjection.name]: taskViewProjection,
-  [outboxProjection.name]: outboxProjection,
 };
 
 /**
