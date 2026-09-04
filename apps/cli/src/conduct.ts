@@ -16,7 +16,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { currentRecipe, loadProjects, readRunnable, refreshQueue, runOnce, runQueue } from "@lingtai/conductor";
+import { currentRecipe, foreignLabels, loadProjects, readRunnable, refreshQueue, runOnce, runQueue } from "@lingtai/conductor";
 import { readControl } from "@lingtai/daemon";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -42,9 +42,6 @@ export interface ConductOptions {
  * cache is not an optimisation: minting a token per delivery would turn a
  * hundred queued labels into a hundred installation lookups.
  */
-/** Every label Lingtai owns starts with this. Everything else is somebody else's. */
-export const LINGTAI_LABEL_PREFIX = "lingtai:";
-
 export function deliverer(clients: Map<string, GitHubClient>) {
   const need = (project: string): GitHubClient => {
     const client = clients.get(project);
@@ -80,7 +77,7 @@ export function deliverer(clients: Map<string, GitHubClient>) {
     async setLabels(project: string, issue: number, labels: readonly string[]): Promise<void> {
       const client = need(project);
       const current = await client.getIssue(issue);
-      const foreign = current.labels.filter((l) => !l.startsWith(LINGTAI_LABEL_PREFIX));
+      const foreign = foreignLabels(current.labels);
       await client.setLabels(issue, [...new Set([...foreign, ...labels])]);
     },
   };

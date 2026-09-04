@@ -377,6 +377,48 @@ export const OutboxFailed = z.object({
   permanent: z.boolean(),
 });
 
+/**
+ * Lingtai told GitHub something about an issue, and it landed.
+ *
+ * The noun is the issue rather than the outbox that carries it today: the queue
+ * is an implementation detail and an event name must not spend the log's
+ * vocabulary on one ([0022](../../../doc/decisions/0022-the-seams.md)). Three
+ * changes are possible and they are the only three — a comment, the label set,
+ * and closing — so the kind is a field rather than three event types, which
+ * would have been six once the failures are counted.
+ *
+ * `conductor` decides *which* labels, from the work item's state; `github`
+ * takes the union with whatever labels somebody else put on the issue, because
+ * that needs GitHub's current state and a decision must not.
+ *
+ * Nothing appends this yet. It is here first so that the change which starts
+ * appending it is only about the deletion.
+ */
+export const IssueUpdated = z.object({
+  project: z.string(),
+  issue: z.string(),
+  change: z.enum(["comment", "labels", "closed"]),
+  /** Whatever identifies what happened: a comment id, the labels that were set. */
+  detail: z.string(),
+});
+
+/**
+ * The same attempt, refused.
+ *
+ * There is no retry behind this, and that is the point. The old loop called
+ * `gh` inline and a failed call left nothing at all, so afterwards nobody could
+ * tell *we never commented* from *we commented and it did not help*. This keeps
+ * the record without keeping the machine: what did not land, `reconcile`
+ * converges by comparing what the log says an issue should look like against
+ * what GitHub says it does.
+ */
+export const IssueUpdateFailed = z.object({
+  project: z.string(),
+  issue: z.string(),
+  change: z.enum(["comment", "labels", "closed"]),
+  error: z.string(),
+});
+
 export const QueueChanged = z.object({
   project: z.string(),
   /** `issues.opened`, `issues.labeled`, and so on. */
@@ -490,6 +532,8 @@ export const EVENTS = {
   ConductorResumed,
   OutboxDelivered,
   OutboxFailed,
+  IssueUpdated,
+  IssueUpdateFailed,
   QueueChanged,
   RunRequested,
   ProjectConfigured,

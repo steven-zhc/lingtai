@@ -116,10 +116,10 @@ export {
   OUTBOX_TABLE,
   backoffFor,
   deadOutbox,
-  labelsFor,
   outboxProjection,
   pendingOutbox,
   type OutboxItem,
   type OutboxKind,
   type PendingOptions,
 } from "./outbox.ts";
+export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";

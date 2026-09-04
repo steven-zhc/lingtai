@@ -53,8 +53,12 @@ import type { PayloadOf } from "@lingtai/core";
 import { databaseUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "@lingtai/store";
 import pg from "pg";
+import { labelsFor } from "./labels.ts";
 
 export const OUTBOX_TABLE = "outbox";
+
+// Re-exported so the retirement of this file does not move two things at once.
+export { labelsFor, LINGTAI_LABEL_PREFIX, foreignLabels } from "./labels.ts";
 
 /**
  * Give up after this many failures.
@@ -112,25 +116,6 @@ function splitTaskId(taskId: string): { project: string; issue: string } {
   const cut = body.lastIndexOf("-");
   if (cut < 0) return { project: body, issue: "" };
   return { project: body.slice(0, cut), issue: body.slice(cut + 1) };
-}
-
-/**
- * The label set a task's state implies.
- *
- * Computed, so it cannot contradict itself, and deliberately small: these say
- * what Lingtai is doing, and every other label on the issue is somebody
- * else's and is left alone by the caller.
- */
-export function labelsFor(state: string): string[] {
-  switch (state) {
-    case "running":
-    case "gates":
-      return ["lingtai:working"];
-    case "waiting":
-      return ["lingtai:waiting"];
-    default:
-      return [];
-  }
 }
 
 export const outboxProjection: Projection = {
