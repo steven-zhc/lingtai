@@ -123,3 +123,4 @@ export {
   type PendingOptions,
 } from "./outbox.ts";
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
+export { tellGitHub, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";
