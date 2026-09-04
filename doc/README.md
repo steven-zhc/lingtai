@@ -2,7 +2,10 @@
 
 **[architecture.html](architecture.html)** — one page, four diagrams: which
 processes exist, who appends to the log, who is told when it changes, and
-where every piece of state lives. Open it in a browser.
+where every piece of state lives, plus a proposal for where the module seams
+should go. Open it in a browser. Also in Chinese:
+**[architecture.zh.html](architecture.zh.html)** — the same page, translated;
+a change to either belongs in both.
 
 Three kinds of thing live here, and the distinction matters.
 
