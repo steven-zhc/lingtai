@@ -65,20 +65,11 @@ model Checkpoint {
   @@map("checkpoints")
 }
 
-/// Side effects that must survive a crash: GitHub labels and comments, macOS
-/// notifications. The old loop called `gh` inline, so a failed call vanished
-/// with no record and no retry. Here the event lands first and delivery is a
-/// separate, retryable concern.
-model Outbox {
-  id          String  @id @default(uuid())
-  causedBy    BigInt  @map("caused_by")
-  kind        String
-  payload     Jsonb
-  attempts    Int     @default(0)
-  lastError   String? @map("last_error")
-  deliveredAt TimestamptzString? @map("delivered_at")
-  createdAt   TimestamptzString  @default(now()) @map("created_at")
-
-  @@index([deliveredAt, createdAt])
-  @@map("outbox")
-}
+/// The `Outbox` model stood here. A table, a projection, a delivery worker, a
+/// backoff and a dead-letter — all for three calls: comment, set labels, close.
+/// [0022](../../../../doc/decisions/0022-the-seams.md) deleted it — the
+/// conductor tells GitHub inline and appends the outcome, and what did not land
+/// `reconcile` converges by recomputing the target rather than replaying the
+/// call. The rows it held were delivery state, not history; the history is in
+/// `events`, which keeps `OutboxDelivered` and `OutboxFailed` readable for ever
+/// (0019).

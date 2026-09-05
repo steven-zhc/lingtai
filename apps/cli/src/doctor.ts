@@ -234,15 +234,18 @@ async function schema(url: string): Promise<CheckResult[]> {
     return await withClient(url, async (c) => {
       const out: CheckResult[] = [];
 
+      // Two, since `#72` dropped `outbox`. The log and the one projection's
+      // checkpoint are the whole of the schema now, which is the shape 0022
+      // was arguing for: everything else is computed on demand.
       const tables = await c.query<{ table_name: string }>(
         `select table_name from information_schema.tables
-         where table_schema = 'public' and table_name in ('events','checkpoints','outbox')`,
+         where table_schema = 'public' and table_name in ('events','checkpoints')`,
       );
       const found = tables.rows.map((r) => r.table_name).sort();
       out.push({
         name: "schema: tables",
-        status: found.length === 3 ? "ok" : "fail",
-        detail: found.length === 3 ? found.join(", ") : `found ${found.join(", ") || "none"} — expected all three`,
+        status: found.length === 2 ? "ok" : "fail",
+        detail: found.length === 2 ? found.join(", ") : `found ${found.join(", ") || "none"} — expected both`,
       });
 
       const uq = await c.query(
@@ -288,16 +291,18 @@ async function schema(url: string): Promise<CheckResult[]> {
       const jsonb = await c.query<{ table_name: string; column_name: string; data_type: string }>(
         `select table_name, column_name, data_type from information_schema.columns
          where table_schema = 'public'
-           and (table_name, column_name) in (('events','data'), ('outbox','payload'))`,
+           and (table_name, column_name) in (('events','data'))`,
       );
       const wrong = jsonb.rows.filter((r) => r.data_type !== "jsonb");
       out.push({
-        name: "schema: payload columns",
-        status: jsonb.rows.length === 2 && wrong.length === 0 ? "ok" : "fail",
+        name: "schema: payload column",
+        status: jsonb.rows.length === 1 && wrong.length === 0 ? "ok" : "fail",
         detail:
-          wrong.length === 0
-            ? "events.data and outbox.payload are jsonb"
-            : wrong.map((r) => `${r.table_name}.${r.column_name} is ${r.data_type}`).join(", "),
+          jsonb.rows.length === 1 && wrong.length === 0
+            ? "events.data is jsonb"
+            : wrong.length > 0
+              ? wrong.map((r) => `${r.table_name}.${r.column_name} is ${r.data_type}`).join(", ")
+              : "events.data is missing",
       });
 
       return out;

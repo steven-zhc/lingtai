@@ -11,10 +11,10 @@
  *
  * **A replay, not a rewrite.** Nothing in the log is edited — an
  * `EndActionsResolved` is appended now, saying what the point resolved to, and
- * the outbox folds it exactly as it would have folded one written at the time.
- * That is the whole reason the plan is an event rather than something a
- * projection derives: it can be supplied late and everything downstream is
- * unchanged.
+ * `tellGitHubAbout` carries it out exactly as it would have carried out one
+ * written at the time. That is the whole reason the plan is an event rather
+ * than something derived on the fly: it can be supplied late and everything
+ * downstream is unchanged.
  *
  * The recipe comes from `origin/<base>` as it is *today*, which is the one
  * honest option: the recipe that was in force at the merge is not recoverable

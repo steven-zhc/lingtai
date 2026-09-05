@@ -233,16 +233,18 @@ export const GatesResolved = z.object({
 /**
  * What the `end` point resolved to, and the outcome it resolved against.
  *
- * `end` is the point that cannot refuse: its actions run for effect. Effects
- * that must survive a crash go through the outbox, and the outbox is a
- * *projection* — it may read the log and nothing else, so it can never read a
- * recipe.
+ * `end` is the point that cannot refuse: its actions run for effect.
  *
- * That is what this event is for. The conductor reads the recipe (which is what
- * the conductor does) and appends what it resolved; the projection folds this
- * and enqueues the deliveries. Teaching the projection to read configuration
- * would have been the other way to do it, and would have made every projection
- * rebuild depend on a recipe that has since changed.
+ * This event exists because **resolving them is a decision and carrying them
+ * out is not**. The conductor reads the recipe — which is what the conductor
+ * does — and appends what it resolved; `tell.ts` then does it, inline, and
+ * appends whether GitHub took it.
+ *
+ * The original reason was narrower: the outbox that carried the effects was a
+ * projection, and a projection may read the log and nothing else, so it could
+ * never read a recipe. 0022 deleted the outbox and the reason outlived it — a
+ * rebuild that had to re-resolve `end` would depend on a recipe that has since
+ * changed, and would produce a different answer for the same history.
  */
 export const EndActionsResolved = z.object({
   outcome: z.enum(["landed", "blocked", "failed"]),

@@ -62,8 +62,10 @@ export interface GitHubClient {
    * that changes *code* still goes through git, so this is only for telling a
    * person something on the ticket they are already looking at.
    *
-   * Called from the outbox worker, never inline. The old loop called `gh`
-   * in-line and a failed call vanished with no record and no retry.
+   * Called by `conductor`'s `tell.ts` as a run changes state, and the outcome
+   * is appended. The old loop called `gh` inline too — the difference is the
+   * record: a failed call there vanished, leaving nobody able to tell "we never
+   * commented" from "we commented and it did not help".
    */
   comment(issue: number, body: string): Promise<{ id: number }>;
 

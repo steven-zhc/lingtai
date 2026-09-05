@@ -71,7 +71,7 @@ export function gatesFromRecipe(actions: readonly GateAction[], deps: GateDeps =
     }
 
     // `close` and `labels` are effects, not verdicts — they belong at `end`,
-    // the one point that cannot refuse, and are carried out by the outbox
+    // the one point that cannot refuse, and are carried out by `tell.ts`
     // rather than run here. Reaching this is a recipe that put one at a gating
     // point, and refusing loudly beats a gate that silently does nothing.
     throw new GateActionUnavailableError(

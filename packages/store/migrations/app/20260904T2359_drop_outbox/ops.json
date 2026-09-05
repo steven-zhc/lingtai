@@ -1,0 +1,39 @@
+[
+  {
+    "id": "dropTable.outbox",
+    "label": "Drop table \"outbox\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "outbox"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"outbox\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"outbox\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"outbox\"",
+        "sql": "DROP TABLE \"public\".\"outbox\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"outbox\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"outbox\""
+        ]
+      }
+    ]
+  }
+]

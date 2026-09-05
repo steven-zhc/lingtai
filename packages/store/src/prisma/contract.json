@@ -11,10 +11,6 @@
     "events": {
       "model": "Event",
       "namespace": "public"
-    },
-    "outbox": {
-      "model": "Outbox",
-      "namespace": "public"
     }
   },
   "domain": {
@@ -162,97 +158,6 @@
               "namespaceId": "public",
               "table": "events"
             }
-          },
-          "Outbox": {
-            "fields": {
-              "attempts": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/int4@1",
-                  "kind": "scalar"
-                }
-              },
-              "causedBy": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/int8@1",
-                  "kind": "scalar"
-                }
-              },
-              "createdAt": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/timestamptz-string@1",
-                  "kind": "scalar"
-                }
-              },
-              "deliveredAt": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/timestamptz-string@1",
-                  "kind": "scalar"
-                }
-              },
-              "id": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "kind": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "lastError": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "payload": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/jsonb@1",
-                  "kind": "scalar"
-                }
-              }
-            },
-            "relations": {},
-            "storage": {
-              "fields": {
-                "attempts": {
-                  "column": "attempts"
-                },
-                "causedBy": {
-                  "column": "caused_by"
-                },
-                "createdAt": {
-                  "column": "created_at"
-                },
-                "deliveredAt": {
-                  "column": "delivered_at"
-                },
-                "id": {
-                  "column": "id"
-                },
-                "kind": {
-                  "column": "kind"
-                },
-                "lastError": {
-                  "column": "last_error"
-                },
-                "payload": {
-                  "column": "payload"
-                }
-              },
-              "namespaceId": "public",
-              "table": "outbox"
-            }
           }
         }
       }
@@ -396,76 +301,6 @@
                   ]
                 }
               ]
-            },
-            "outbox": {
-              "columns": {
-                "attempts": {
-                  "codecId": "pg/int4@1",
-                  "default": {
-                    "kind": "literal",
-                    "value": 0
-                  },
-                  "nativeType": "int4",
-                  "nullable": false
-                },
-                "caused_by": {
-                  "codecId": "pg/int8@1",
-                  "nativeType": "int8",
-                  "nullable": false
-                },
-                "created_at": {
-                  "codecId": "pg/timestamptz-string@1",
-                  "default": {
-                    "expression": "now()",
-                    "kind": "function"
-                  },
-                  "nativeType": "timestamptz",
-                  "nullable": false
-                },
-                "delivered_at": {
-                  "codecId": "pg/timestamptz-string@1",
-                  "nativeType": "timestamptz",
-                  "nullable": true
-                },
-                "id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "kind": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "last_error": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
-                "payload": {
-                  "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
-                  "nullable": false
-                }
-              },
-              "foreignKeys": [],
-              "indexes": [
-                {
-                  "columns": [
-                    "delivered_at",
-                    "created_at"
-                  ],
-                  "name": "outbox_delivered_at_created_at_idx_e4092e18",
-                  "prefix": "outbox_delivered_at_created_at_idx",
-                  "unique": false
-                }
-              ],
-              "primaryKey": {
-                "columns": [
-                  "id"
-                ]
-              },
-              "uniques": []
             }
           }
         },
@@ -473,10 +308,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "23b6c85a86e41a6df7c4cf1ce29387a439ba4a31c8e4bda9615f63dcf9181684"
+    "storageHash": "a55f72e27d55037650dbc46e3ca46537e54218a8644cfa037e8062fdb44d0720"
   },
   "execution": {
-    "executionHash": "faca57d882e94e5f774bf7721dbd27c47a84fc30eb72eb7d1df92e3e47d31833",
+    "executionHash": "648bad05429cbf67cc65e1137b43e7f3b817c6bc0d4d8e2b5cd587e7d9c5f029",
     "mutations": {
       "defaults": [
         {
@@ -492,17 +327,6 @@
             "column": "updated_at",
             "namespace": "public",
             "table": "checkpoints"
-          }
-        },
-        {
-          "onCreate": {
-            "id": "uuidv4",
-            "kind": "generator"
-          },
-          "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "outbox"
           }
         }
       ]
