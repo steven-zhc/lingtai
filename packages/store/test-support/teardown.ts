@@ -7,9 +7,11 @@
  * removed them, so the test log gained a project per run for ever.
  *
  * That is not merely untidy, and the way it failed is worth writing down. An
- * `esctest*` project's outbox rows name GitHub issues that never existed, so
- * delivery answers 404, `attempts` climbs, and past `MAX_ATTEMPTS` the row is
- * dead for good. Twelve such rows accumulated, and then
+ * `esctest*` project's outbox rows named GitHub issues that never existed, so
+ * delivery answered 404, `attempts` climbed, and past `MAX_ATTEMPTS` the row
+ * was dead for good. (The outbox itself is gone — 0022 — but the lesson is not:
+ * residue from one suite is what fails the next one.) Twelve such rows
+ * accumulated, and then
  * `lingtai doctor`'s own test — which asserts the whole database is green —
  * started failing on residue no test in that file had created. A suite that
  * fails because of what an *earlier* suite left is a suite nobody trusts.
@@ -90,14 +92,13 @@ export async function teardown(): Promise<void> {
     } finally {
       await c.query("alter table events enable rule lingtai_events_no_delete");
     }
-    await c.query(`delete from outbox where payload->>'project' like $1`, [`${THROWAWAY}%`]);
 
     // Every projection that names a project, found rather than listed: a table
     // added later is covered without anyone remembering to add it here.
     const projections = await c.query(
       `select table_name from information_schema.columns
        where table_schema = 'public' and column_name = 'project'
-         and table_name not in ('events', 'outbox')`,
+         and table_name != 'events'`,
     );
     for (const { table_name } of projections.rows as { table_name: string }[]) {
       await c.query(`delete from "${table_name}" where project like $1`, [`${THROWAWAY}%`]);
