@@ -154,7 +154,7 @@ describe("projection runner", () => {
 
     const rows = await direct((c) =>
       c
-        .query<{ pattern: string }>(`select path from ${TEST_TABLE} where run_id = $1 order by seq`, [
+        .query<{ path: string }>(`select path from ${TEST_TABLE} where run_id = $1 order by seq`, [
           run,
         ])
         .then((r) => r.rows),
@@ -285,7 +285,9 @@ describe("projection runner", () => {
     // batch commits legitimately and the assertion below reads 1000 rows and
     // calls the runner broken. That is what it did once the shared test log
     // grew past a thousand events.
-    const base = written[0].seq - 1n;
+    // Non-null: the append above returned two rows, and an empty one would
+    // have failed at the append rather than here.
+    const base = written[0]!.seq - 1n;
     await direct((c) =>
       // Upsert: the row outlives the test run, and the base is different every
       // time because the log has grown.

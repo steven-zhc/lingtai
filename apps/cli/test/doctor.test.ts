@@ -16,7 +16,15 @@ const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
 const env = (over: Record<string, string | undefined>): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv;
 
-function find(results: { name: string }[], name: string) {
+/**
+ * Generic, so the check's own type survives the lookup.
+ *
+ * It took `{ name: string }[]` and therefore returned one — every `.status` and
+ * `.detail` below was an error nobody could see, because this file was not
+ * typechecked (`#70`). The assertions were right; the helper threw the type
+ * away on the way past.
+ */
+function find<T extends { name: string }>(results: readonly T[], name: string): T {
   const r = results.find((x) => x.name === name);
   expect(r, `no check named ${name}`).toBeDefined();
   return r!;
