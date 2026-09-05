@@ -43,6 +43,7 @@ import { databaseUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "@lingtai/store";
 import pg from "pg";
 import { parseWorkItemStream, workItemStream } from "./discover.ts";
+import type { LabelState } from "./labels.ts";
 
 /**
  * Where a task is.
@@ -53,7 +54,7 @@ import { parseWorkItemStream, workItemStream } from "./discover.ts";
  * says it was released or unblocked, or because it has no row at all and
  * GitHub is offering it.
  */
-export type TaskState = "queued" | "running" | "gates" | "waiting" | "landed";
+export type TaskState = LabelState;
 
 export const TASK_VIEW_TABLE = "task_view";
 

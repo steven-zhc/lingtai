@@ -646,7 +646,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
           ...ended,
         ]);
         released = true;
-        await tellGitHubAbout({ store, github: options.client, workItemId, question, appended: ended });
+        await tellGitHubAbout({ store, github: options.client, workItemId, question, labels: labelsFor("waiting"), appended: ended });
 
         log(`held at ${headSha.slice(0, 7)} — asked for approval to merge into ${base}`);
         return { ok: "held", workItemId, runId, headSha, gate };
@@ -689,7 +689,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
           ...ended,
         ]);
         released = true;
-        await tellGitHubAbout({ store, github: options.client, workItemId, question, appended: ended });
+        await tellGitHubAbout({ store, github: options.client, workItemId, question, labels: labelsFor("waiting"), appended: ended });
         return { ok: false, workItemId, runId, stage: "integrate", detail: `${merged.reason}: ${merged.detail}` };
       }
 

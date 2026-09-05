@@ -319,8 +319,19 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
 
     // Blocked with a question, not silently dropped — the board's "Waiting on
     // you" column is where a refusal goes.
+    //
+    // Three `IssueUpdated`: the claim's `lingtai:working`, then the question as
+    // a comment, then `lingtai:waiting` replacing `working`. The third is
+    // `#71` — for the whole life of the outbox a blocked item kept `working`
+    // on GitHub while the board showed it waiting on a person.
     const wi = (await store.read(workItemStream(PROJECT, 118))).map((e) => e.type);
-    expect(wi).toEqual(["WorkItemClaimed", "IssueUpdated", "WorkItemBlocked", "IssueUpdated"]);
+    expect(wi).toEqual([
+      "WorkItemClaimed",
+      "IssueUpdated",
+      "WorkItemBlocked",
+      "IssueUpdated",
+      "IssueUpdated",
+    ]);
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
     expect(log.stdout).not.toContain("wrong change");

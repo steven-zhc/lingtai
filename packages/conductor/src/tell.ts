@@ -158,14 +158,18 @@ async function record(
  * second. That order is kept: it is the difference between an issue that ends
  * up closed and one that ends up closed and then reopened by a label write.
  *
- * **Only what the outbox actually did.** `labelsFor` handles `waiting`, and
- * nothing ever passed it: the projection set labels on `WorkItemClaimed`,
- * `WorkItemReleased` and `WorkItemLanded` only, so a blocked item got the
- * comment and no label. `lingtai:waiting` has therefore never once been applied
- * — a label declared and never written, which is the shape of #58 wearing a
- * smaller hat. It is left alone here on purpose: this function replaces the
- * outbox and a replacement that also changes behaviour cannot be reviewed as
- * one. It is worth a ticket of its own.
+ * **A blocked item now says so on GitHub.** For the whole life of the outbox it
+ * did not: the projection set labels on `WorkItemClaimed`, `WorkItemReleased`
+ * and `WorkItemLanded` only, so an item waiting on a person kept
+ * `lingtai:working` while the board showed it in *Waiting on you*, and
+ * `lingtai:waiting` was never once written. `442f513` preserved that on purpose
+ * — a replacement that also changes behaviour cannot be reviewed as one — and
+ * `#71` is where it changed. The three callers that append `WorkItemBlocked`
+ * pass `labelsFor("waiting")` alongside the question.
+ *
+ * The order below is why they pass it rather than this function inferring it:
+ * the recipe's own `end` actions run last and may set labels of their own, and
+ * a recipe must be able to overrule a default.
  */
 export async function tellGitHubAbout(options: {
   store: EventStore;

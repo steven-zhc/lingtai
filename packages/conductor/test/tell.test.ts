@@ -17,6 +17,7 @@ import { directDatabaseUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { foreignLabels, labelsFor } from "../src/labels.ts";
 import { type IssueChannel, tellGitHub } from "../src/tell.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -133,5 +134,36 @@ describe("tellGitHub", () => {
       tellGitHub({ store, github: gh.channel, workItemId: "nonsense", change: { kind: "closed" } }),
     ).resolves.toBeUndefined();
     expect(gh.calls, "no call was made").toHaveLength(0);
+  });
+});
+
+/**
+ * `#71`: the label set at every state, asserted as a set rather than as "a call
+ * was made".
+ *
+ * `lingtai:waiting` was declared, rendered on the board, and never once written
+ * — for the whole life of the outbox, because the projection set labels on
+ * three events and `WorkItemBlocked` was not one of them. A test that only
+ * checked "setLabels was called" would have passed throughout.
+ */
+describe("labelsFor, at every state", () => {
+  it("names one label per state and no label anywhere else", () => {
+    expect(labelsFor("running")).toEqual(["lingtai:working"]);
+    // `gates` is the same fact from an operator's seat: the machine has it.
+    expect(labelsFor("gates")).toEqual(["lingtai:working"]);
+    // The one that was never reached.
+    expect(labelsFor("waiting")).toEqual(["lingtai:waiting"]);
+    // Both of these clear: a queued item has not been touched, and a landed one
+    // is finished with. An empty set is a *whole-set write*, so it removes.
+    expect(labelsFor("queued")).toEqual([]);
+    expect(labelsFor("landed")).toEqual([]);
+  });
+
+  /** The union rule, which is what makes an empty set safe to write. */
+  it("leaves everybody else's labels alone", () => {
+    expect(foreignLabels(["bug", "lingtai:working", "agent:followup"])).toEqual([
+      "bug",
+      "agent:followup",
+    ]);
   });
 });

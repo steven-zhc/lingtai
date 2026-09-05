@@ -44,7 +44,7 @@
 // Subpaths, never the barrel. `@lingtai/conductor`'s index pulls in the gate
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
-import { foreignLabels, labelsFor } from "@lingtai/conductor/labels";
+import { foreignLabels, labelsFor, type LabelState } from "@lingtai/conductor/labels";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { parseWorkItemStream } from "@lingtai/conductor/discover";
 import { reduceWorkItem, parsePayload, type ProjectState, type WorkItemStatus } from "@lingtai/core";
@@ -88,7 +88,7 @@ export async function clientsForProjects(
  * rather than from `task_view`, because reconciliation has to work when a
  * projection is the thing that is broken.
  */
-function labelState(status: WorkItemStatus): string {
+function labelState(status: WorkItemStatus): LabelState {
   switch (status) {
     case "claimed":
       return "running";

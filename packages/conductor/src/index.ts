@@ -110,5 +110,5 @@ export {
   type TerminalOutcome,
   type UnresolvedEnd,
 } from "./end-point.ts";
-export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
+export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor, type LabelState } from "./labels.ts";
 export { tellGitHub, tellGitHubAbout, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";

@@ -200,7 +200,7 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
       },
       ...ended,
     ]);
-    await tellGitHubAbout({ store, github: options.client, workItemId, question, appended: ended });
+    await tellGitHubAbout({ store, github: options.client, workItemId, question, labels: labelsFor("waiting"), appended: ended });
     return { ok: false, workItemId, reason: merged.reason, detail: merged.detail };
   }
 
