@@ -567,8 +567,11 @@ raw history with every actor. Nothing on that page is maintained in a table — 
 detail view is read rarely, by one person, about one task.
 
 The page updates itself: Postgres notifies on every append, the daemon advances
-the projection, and the board re-reads. If it stops moving, `lingtai doctor` says
-whether the daemon is up and whether somebody paused it.
+the projection, and the board re-reads. When the conductor is paused the bar
+says so on its own chip — who paused it, why, and a Resume beside it — because a
+board that is perfectly current and going nowhere looks exactly like a quiet one
+(`#77`). If it stops moving for any other reason, `lingtai doctor` says whether
+the daemon is up.
 
 That is the whole bet: if deciding still means opening GitHub, nothing changed.
 

@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { LABEL_STATES } from "@lingtai/domain";
 import type { TaskCard } from "@lingtai/projector/task-view";
-import { COLUMNS, toCard, toColumns } from "../src/lib/board.ts";
+import { COLUMNS, emptyNote, toCard, toColumns } from "../src/lib/board.ts";
 
 function task(state: TaskCard["state"]): TaskCard {
   return {
@@ -63,5 +63,36 @@ describe("the board's columns", () => {
       "wi-esctest-gates",
       "wi-esctest-running",
     ]);
+  });
+});
+
+/**
+ * The copy under an empty lane is a claim, and it can be false.
+ *
+ * "Nothing here yet" under Running was what the board said for four days while
+ * three cards sat in Queued and the conductor was paused (#77) — true about
+ * the column, wrong about the world. Checked here rather than in the page,
+ * because the sentence is a function of two facts and nothing else.
+ */
+describe("what an empty column says", () => {
+  it("says Running is stopped, not bare, while the conductor is paused", () => {
+    expect(emptyNote("running", true)).toBe("Paused — nothing will start.");
+  });
+
+  it("keeps the ordinary copy when nothing is paused", () => {
+    expect(emptyNote("running", false)).toBe("Nothing here yet.");
+    expect(emptyNote("queued", false)).toBe("Nothing here yet.");
+  });
+
+  it("never tells a person a lane is waiting on them when it is not", () => {
+    for (const paused of [true, false]) {
+      expect(emptyNote("waiting", paused)).toBe("Nothing is waiting on you.");
+    }
+  });
+
+  it("says something for every column there is", () => {
+    for (const column of COLUMNS) {
+      expect(emptyNote(column.id, true).length, `${column.id} says`).toBeGreaterThan(0);
+    }
   });
 });

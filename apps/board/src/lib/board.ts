@@ -86,6 +86,21 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
 ];
 
 /**
+ * What an empty column says.
+ *
+ * "Nothing here yet" under Running is false in the way that matters while the
+ * conductor is paused (#77): there is plenty to run, and the reason none of it
+ * is running is a decision somebody made and the log remembers. The empty
+ * column is where a person looks when a lane is bare, so it is the one place
+ * that has to know.
+ */
+export function emptyNote(column: ColumnId, paused: boolean): string {
+  if (column === "running" && paused) return "Paused — nothing will start.";
+  if (column === "waiting") return "Nothing is waiting on you.";
+  return "Nothing here yet.";
+}
+
+/**
  * Which column a state is shown on. The whole mapping, said once.
  *
  * A record over `TaskState` rather than a ternary at the point of use, because

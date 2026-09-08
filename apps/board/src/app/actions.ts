@@ -1,7 +1,10 @@
 "use server";
 
 /**
- * The three things a person can do from the board.
+ * What a person can do from the board.
+ *
+ * Three of them decide a card — approve, reject, waive — and one decides the
+ * whole installation: resume. They are the same shape, which is the point.
  *
  * This is the ticket the whole project is a bet on. The old review queue
  * reached 45 items growing at 14 a day against zero processed, and the reason
@@ -25,6 +28,7 @@
 // the same reason `./board` and `./projects` exist.
 import { approve, reject, waive } from "@lingtai/conductor/decide";
 import { loadProject } from "@lingtai/conductor/projects";
+import { resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
 import { git } from "@lingtai/repo";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -143,6 +147,28 @@ export async function waiveGate(input: {
 
     revalidatePath("/");
     return { ok: result.ok, detail: result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * Lift the pause, from the chip that reports it.
+ *
+ * An append and nothing else, exactly like `lingtai resume` — this does not
+ * start a daemon and does not reach into a pass already in flight. Whatever is
+ * hosting the work asks the log every pass, so a resume issued while nothing
+ * is running is waiting when something starts (0013).
+ *
+ * No `onSha`, because there is no diff being agreed to: the thing being
+ * decided is the conductor, and it has one state.
+ */
+export async function resumeWork(): Promise<ActionResult> {
+  try {
+    const by = actor();
+    await resumeConductor(by);
+    revalidatePath("/");
+    return { ok: true, detail: `resumed by ${by}` };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }

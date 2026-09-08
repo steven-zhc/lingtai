@@ -22,6 +22,13 @@
  * coming* — and since [0022] a `lingtai run` follows the log itself, so lag
  * without a daemon is ordinary during a run and an accusation after one.
  *
+ * **It answers whether you are current, never whether anything will move.**
+ * Those came apart in `#77`: the projection was at the head, so this chip said
+ * `current` — correctly — for four days in which the conductor was paused and
+ * nothing was ever going to run. That fact has its own chip next door
+ * (`paused.tsx`), because it is its own fact and folding it in here would make
+ * one word carry two answers.
+ *
  * Several tabs each get their own stream, and all of them update. Nothing here
  * coordinates them, because nothing has to: each one is reading the same
  * projection.

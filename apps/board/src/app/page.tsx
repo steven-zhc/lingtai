@@ -1,8 +1,13 @@
 import Link from "next/link";
-import { loadBoard, type BoardCard } from "@/lib/board";
+import { emptyNote, loadBoard, type BoardCard } from "@/lib/board";
 import { loadProjects } from "@lingtai/conductor/projects";
+// The subpath, not the barrel: the board reads the control stream and hosts
+// no work, and `@lingtai/daemon` would drag the work loop and the runtime in
+// behind it — the same reason the actions import `@lingtai/conductor/decide`.
+import { readControl } from "@lingtai/daemon/control";
 import { Decide } from "./decide.tsx";
 import { Live } from "./live.tsx";
+import { Paused } from "./paused.tsx";
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the
@@ -89,6 +94,10 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
 export default async function Page() {
   const columns = await loadBoard();
   const projects = await loadProjects().catch(() => []);
+  // Not caught. A control read that fails would render as "nothing is paused",
+  // which is the exact silence #77 is about; and it reads the same database
+  // `loadBoard` just read, so it fails when the board fails and not otherwise.
+  const control = await readControl();
   const total = columns.reduce((n, c) => n + c.cards.length, 0);
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
@@ -112,6 +121,16 @@ export default async function Page() {
         {/* Says whether what you are looking at is current. A board that has
             silently stopped updating is worse than one that admits it. */}
         <Live />
+        {/* And, beside it, whether anything is going to move. Two chips because
+            two facts: the projection can be at the head of the log while the
+            conductor has been told to take nothing, which is what the board
+            showed for four days without a word for it (#77). */}
+        {control.paused ? (
+          <>
+            <span className="sep" />
+            <Paused by={control.by} reason={control.reason} />
+          </>
+        ) : null}
       </div>
 
       <div className="cols">
@@ -123,8 +142,8 @@ export default async function Page() {
             </header>
             <div className="cards">
               {col.cards.length === 0 ? (
-                <p className="empty">
-                  {col.id === "waiting" ? "Nothing is waiting on you." : "Nothing here yet."}
+                <p className={`empty${col.id === "running" && control.paused ? " held" : ""}`}>
+                  {emptyNote(col.id, control.paused)}
                 </p>
               ) : (
                 col.cards.map((card) => (
