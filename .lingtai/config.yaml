@@ -47,9 +47,11 @@ env:
   # LINGTAI_DATABASE_URL: that is this system's own log, the thing it is
   # keeping. Naming only these two is what keeps them apart.
   #
-  # `required`, not `allow`: a repository naming a variable is a repository
-  # saying it needs one, and a run that cannot supply it refuses this whole
-  # project before it claims anything ([0021](../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+  # `required` is a *check*, not a filter: naming a variable here says this
+  # repository needs one, and a run that cannot supply it refuses the whole
+  # project before it claims anything. `allow` and `deny` are the filters, and
+  # this recipe sets neither — so the two files' contents reach the agent, minus
+  # anything that is Lingtai's own ([0021](../doc/decisions/0021-the-recipe-decides-the-environment.md), #60).
   #
   # The names carry `LINGTAI_` since #63, and that prefix is doing the work the
   # old `TEST_*`/RESERVED asymmetry used to. No managed application asks for a

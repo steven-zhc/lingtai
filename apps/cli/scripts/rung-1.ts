@@ -98,7 +98,12 @@ if (recipe.repo.base !== base) {
 
 // ---- seams 2 and 3: clone and submodules, over https, with the token -------
 done = step("worktree");
-const env = await resolveAgentEnv({ project: repo, required: recipe.env.required });
+const env = await resolveAgentEnv({
+  project: repo,
+  required: recipe.env.required,
+  allow: recipe.env.allow,
+  deny: recipe.env.deny,
+});
 if (env.refusal) {
   console.log(env.refusal);
   process.exit(1);

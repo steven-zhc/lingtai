@@ -22,7 +22,7 @@ import type { GitHubClient, Issue } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -172,6 +172,21 @@ beforeAll(async () => {
   work = join(root, "work");
   home = join(root, "home");
 
+  // The value the fixture recipe requires, in the **project's own file**.
+  //
+  // It used to be `process.env["ESC_TEST_VALUE"] = "planted"` inside the first
+  // test, and `#60` is why that stopped working: the shell is no longer a layer.
+  // An agent's environment is the two files merged — the machine's and the
+  // project's — so the operator's exports (`AWS_*`, npm tokens, whatever is set
+  // in the terminal a command was typed into) never reach a run. Writing it
+  // here is what a real operator does.
+  await mkdir(join(home, "env"), { recursive: true });
+  // Both projects: the scheduler suite runs under its own name, and an env file
+  // is per project by design — that is the whole of layer 3.
+  for (const name of [PROJECT, `${PROJECT}sched`]) {
+    await writeFile(join(home, "env", `${name}.env`), 'ESC_TEST_VALUE="planted"\n');
+  }
+
   await exec("git", ["init", "-q", "-b", "develop", work]);
   await writeFile(join(work, "README.md"), "hello\n");
   await g(["add", "-A"], work);
@@ -221,8 +236,6 @@ const options = (agent: string) => ({
 
 describe("runOnce", () => {
   it("takes one issue from discovery to a merge, and records the whole story", async () => {
-    process.env["ESC_TEST_VALUE"] = "planted";
-
     const agent = await agentThat(`
 mkdir -p src
 echo 'export const fix = 1;' > src/fix.ts

@@ -181,9 +181,28 @@ export const Recipe = z.object({
    * made zod's default drop.
    */
   env: z.strictObject({
-    /** Variable NAMES only. Values resolve at runtime from somewhere the agent
-     *  cannot see, so this file is safe to commit. A name that is not here never
-     *  reaches the agent from the conductor's environment. */
+    /**
+     * If present, **only** these names reach the agent.
+     *
+     * Back in the schema since `#60`, with the meaning it never had before: a
+     * filter over data that already exists, not a list of names to go looking
+     * for in the process environment. Absent and empty are different — absent
+     * means "no allowlist", `[]` means "nothing passes" — which is why this is
+     * `optional` and not `.default([])`.
+     */
+    allow: z.array(z.string()).optional(),
+    /** If present, these names do not reach the agent, whatever `allow` says. */
+    deny: z.array(z.string()).default([]),
+    /**
+     * Variable NAMES only. Values resolve at runtime from somewhere the agent
+     * cannot see, so this file is safe to commit.
+     *
+     * **A check, not a filter** ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+     * It is evaluated against the merged data, before `allow`/`deny` apply, so a
+     * name that is both `required` and `deny`ed is legal and says two true
+     * things: this machine must be configured with it, and this run does not
+     * need to see it.
+     */
     required: z.array(z.string()).default([]),
     /** Where the filtered env file is planted inside the worktree. Rarely the
      *  repo root — Next/Prisma/vitest read it from the app directory. */

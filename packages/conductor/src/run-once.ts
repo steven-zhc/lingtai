@@ -167,7 +167,15 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
   // clone is a network round trip.
   let env: AgentEnv;
   try {
-    env = await ports.agent.resolveEnv({ project, required: recipe.env.required, home });
+    env = await ports.agent.resolveEnv({
+      project,
+      // All three, because all three are the recipe's and none is this
+      // file's business: `required` refuses, `allow`/`deny` filter (0021).
+      required: recipe.env.required,
+      allow: recipe.env.allow,
+      deny: recipe.env.deny,
+      home,
+    });
   } catch (err) {
     // ProductionValueError. Refusing before the claim for the same reason.
     return { ok: false, workItemId: null, runId: null, stage: "env", detail: (err as Error).message };

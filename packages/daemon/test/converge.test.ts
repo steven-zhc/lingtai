@@ -167,6 +167,35 @@ describe("convergeIssues", () => {
     expect(writes).toEqual([]);
   }, 60_000);
 
+  /**
+   * The commonest drift there is, and the one that was invisible.
+   *
+   * Nothing failed here: the label write **succeeded**, and then the item was
+   * released. `labelsFor` wants nothing for a released item, so `wanted` was
+   * empty, so the candidate was skipped and the `lingtai:working` it is still
+   * wearing was never read. Found for real when a run was killed mid-flight —
+   * the release landed, reconcile ran, and it walked straight past the label.
+   */
+  it("clears a label it put on and no longer wants, with nothing having failed", async () => {
+    const stream = `wi-${PROJECT}-5`;
+    await seed(stream, [
+      { type: "WorkItemClaimed", data: { runId: `run-${PROJECT}-5`, worker: "w", leaseUntilMs: Date.now() + 600_000, title: "t", kind: "bug" } },
+      { type: "IssueUpdated", data: { project: PROJECT, issue: "5", change: "labels", detail: "lingtai:working" } },
+      { type: "WorkItemReleased", data: { runId: `run-${PROJECT}-5`, reason: "killed" } },
+    ]);
+
+    const { github, world, writes } = fakeGitHub({ labels: ["bug", "lingtai:working"] });
+    const { converged } = await convergeIssues({
+      store,
+      projects: [project],
+      clients: new Map([[PROJECT, github]]),
+    });
+
+    expect(converged.map((d) => d.change)).toEqual(["labels"]);
+    expect(world.labels).toEqual(["bug"]);
+    expect(writes).toEqual(["setLabels bug"]);
+  }, 60_000);
+
   /** A landed item should be carrying no Lingtai label, and a stale one is drift. */
   it("clears a label the log says should be gone", async () => {
     const stream = `wi-${PROJECT}-4`;

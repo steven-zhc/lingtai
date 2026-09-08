@@ -97,22 +97,43 @@ describe("resolveRecipe", () => {
   });
 
   /**
-   * The same half-move one section over. `allow` meant "plant these if they
-   * exist"; `required` means "the run cannot proceed without them". A recipe
-   * still saying `allow:` under a non-strict schema would resolve to
-   * `required: []` — a project that declares nothing, refuses nothing, and runs
-   * an agent against a database it cannot reach. That is what cost $0.97 and ten
-   * turns (ADR 0020).
+   * `allow` is back, and it means something else.
+   *
+   * It used to mean "plant these if they exist", which is the half-move 0020
+   * cost $0.97 and ten turns for; the schema then made it **fail to resolve**,
+   * so that a recipe still saying it could not quietly become "declares
+   * nothing". `#60` returns it as a *filter over data that already exists*
+   * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+   *
+   * Reintroducing a word with a new meaning is only safe because the old
+   * meaning made a recipe **refuse to resolve**: no recipe in service can be
+   * carrying `allow` written under the old sense, so none can be silently
+   * reinterpreted. Checked against both live recipes when this landed.
+   *
+   * What must not come back is the *old* meaning, and this is that assertion:
+   * `allow` alone declares nothing required, so it refuses nothing.
    */
-  it("refuses a recipe still saying `allow`, and names the key", async () => {
-    const stale = VALID.replace("  required: [", "  allow: [");
+  it("takes `allow` as a filter, and it declares nothing required", async () => {
+    const filtered = VALID.replace("  required: [", "  allow: [");
+    const resolved = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: filtered }),
+      "develop",
+    );
+
+    expect(resolved.recipe.env.allow).toBeDefined();
+    expect(resolved.recipe.env.required).toEqual([]);
+  });
+
+  /** An unknown key in `env` still names itself, which is what keeps the above honest. */
+  it("refuses an env key that is not one of the four", async () => {
+    const typo = VALID.replace("  required: [", "  requried: [");
     const err = await resolveRecipe(
-      reader({ [`develop:${RECIPE_PATH}`]: stale }),
+      reader({ [`develop:${RECIPE_PATH}`]: typo }),
       "develop",
     ).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(RecipeInvalidError);
-    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/allow/);
+    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/requried/);
   });
 
   it("rejects YAML that is not a recipe at all", async () => {

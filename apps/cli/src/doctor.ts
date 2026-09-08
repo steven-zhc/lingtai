@@ -849,9 +849,15 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
         repo: project.project,
       });
       const resolved = await currentRecipe(project, client);
+      // Every name either file offers, and which one answered — 0021 makes
+      // this load-bearing rather than nice: "the operator is responsible" is
+      // only true where the operator can see what is happening. Names only,
+      // never values.
       const agentEnv = await resolveAgentEnv({
         project: project.project,
         required: resolved.recipe.env.required,
+        allow: resolved.recipe.env.allow,
+        deny: resolved.recipe.env.deny,
       });
 
       if (agentEnv.names.length === 0) {
@@ -862,11 +868,15 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
         });
         continue;
       }
+      // A name that resolved but does not reach the agent is worth saying: it
+      // is the `deny` half of the recipe doing its job, and it is invisible in
+      // the values.
       const detail = agentEnv.names
-        .map(
-          (n) =>
-            `${n.name} ← ${n.layer === "project file" ? basename(agentEnv.file) : n.layer}`,
-        )
+        .map((n) => {
+          const where = n.layer === "project file" ? basename(agentEnv.file) : n.layer;
+          const held = n.layer !== "not set" && !(n.name in agentEnv.values);
+          return `${n.name} ← ${where}${held ? " (denied)" : ""}`;
+        })
         .join(" · ");
       results.push({
         name: label,

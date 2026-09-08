@@ -184,16 +184,32 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
     // success is an outstanding claim; a success after it means somebody or
     // something already got there.
     const lastOutcome = new Map<string, string>();
+    // And what it last said it *wrote*. An item that should carry no label but
+    // was given one is drift the log can see on its own, without a request.
+    let lastWrote: readonly string[] = [];
     for (const e of events) {
       if (e.type !== "IssueUpdated" && e.type !== "IssueUpdateFailed") continue;
-      const d = e.data as { change?: string };
-      if (d.change) lastOutcome.set(d.change, e.type);
+      const d = e.data as { change?: string; detail?: string };
+      if (!d.change) continue;
+      lastOutcome.set(d.change, e.type);
+      if (d.change === "labels" && e.type === "IssueUpdated") {
+        lastWrote = d.detail ? d.detail.split(",").filter(Boolean) : [];
+      }
     }
 
-    // Nothing outstanding and no label to hold: the log is not claiming
-    // anything about this issue, so it is not worth a request.
     const outstanding = [...lastOutcome].some(([, t]) => t === "IssueUpdateFailed");
-    if (wanted.length === 0 && !outstanding) continue;
+    // A label Lingtai put on and no longer wants.
+    //
+    // Without this the commonest drift there is was invisible: a released or
+    // landed item wants no label, so `wanted` is empty, so the item was skipped
+    // and the `lingtai:working` it is still wearing was never seen. Found the
+    // first time a run was killed mid-flight — the release landed, the label
+    // stayed, and reconcile walked straight past it.
+    const stale = wanted.length === 0 && lastWrote.length > 0;
+
+    // Nothing outstanding, nothing to hold, nothing left over: the log is not
+    // claiming anything about this issue, so it is not worth a request.
+    if (wanted.length === 0 && !outstanding && !stale) continue;
 
     const client = options.clients?.get(parsed.project);
     if (!client) continue;

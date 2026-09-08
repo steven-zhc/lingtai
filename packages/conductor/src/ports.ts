@@ -68,8 +68,13 @@ export interface AgentHostPort {
   serve(options: HookServerOptions): HookServer;
   resolveEnv(options: {
     project: string;
-    required: readonly string[];
-    source?: NodeJS.ProcessEnv;
+    /** `env.required` — a check against the merged data, not a filter. */
+    required?: readonly string[];
+    /** `env.allow` — absent means no allowlist; `[]` means nothing passes. */
+    allow?: readonly string[] | undefined;
+    /** `env.deny` — never reaches the agent, whatever `allow` says. */
+    deny?: readonly string[] | undefined;
+    machine?: Record<string, string>;
     home?: string;
     patterns?: readonly string[];
   }): Promise<AgentEnv>;

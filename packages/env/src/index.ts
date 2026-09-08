@@ -23,10 +23,27 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** `packages/env/src` → the repository root. */
 const root = resolve(here, "../../..");
 
-config({
+const loaded = config({
   path: [resolve(root, ".env.local"), resolve(root, ".env")],
   quiet: true,
 });
+
+/**
+ * What the machine's own env **file** holds — not the whole process environment.
+ *
+ * The distinction is the whole of `#60`'s default. An agent's environment is
+ * "the two files merged" ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)):
+ * this one and the project's. It is deliberately **not** `process.env`, because
+ * that also carries the operator's shell — `AWS_*`, npm tokens, whatever is
+ * exported in the terminal a command was typed into — and none of that is
+ * something either file said to hand over.
+ *
+ * `LINGTAI_*` names are stripped by `agent-env`, not here: this function's job
+ * is to say what the file holds, and whose it is, is somebody else's question.
+ */
+export function machineEnvFile(): Record<string, string> {
+  return { ...(loaded.parsed ?? {}) };
+}
 
 /**
  * Whether this process is a test run.
