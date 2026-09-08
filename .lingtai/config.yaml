@@ -80,16 +80,22 @@ gates:
       run: pnpm typecheck && pnpm test
       timeout: 20m
 
-  # Every merge waits for a person, with no exception written down.
+  # Nothing holds here any more, and this is the moment the previous version of
+  # this comment named: "when being asked every time becomes the annoyance
+  # rather than the point". On 2026-09-08 seven changes landed and every one was
+  # approved unread-in-substance, which is an approval that has stopped meaning
+  # anything.
   #
-  # #31 proposed a `watch:` list over packages/conductor, store, hook, gates.
-  # A blanket hold is simpler and strictly stronger — a path list has to be kept
-  # correct, and the first thing it would miss is the file that defines it. When
-  # being asked every time becomes the annoyance rather than the point, that is
-  # the moment to narrow this, and not before.
-  merge:
-    - name: approval
-      human: Merge {branch} into main? This is Lingtai's own code.
+  # **What is now the only thing between an agent and `main` is `proposed`** —
+  # `pnpm typecheck && pnpm test`, green. That is a real gate and it has caught
+  # real failures today; it is not a person reading a diff.
+  #
+  # `#31`'s `watch:` list over packages/conductor, event-store, hook and actions
+  # is still the narrowing to reach for if this turns out to be too far. The old
+  # comment's objection to it stands — a path list has to be kept correct, and
+  # the first thing it would miss is the file that defines it — so if it comes
+  # back it should be tried against that objection, not around it.
+  merge: []
 
   end:
     - name: close the ticket
@@ -101,9 +107,13 @@ gates:
 #
 # Written out rather than left to the default, because this is the repository
 # that has to be able to read its own policy without opening its own source —
-# and because one is a deliberate number here. Every merge already waits for a
-# person, so a repair produces a diff that is read before it lands; what the
-# ceiling bounds is how much is spent producing it.
+# and because one is a deliberate number here.
+#
+# **The reason for the ceiling changed on 2026-09-08.** It used to bound only
+# spend: every merge waited for a person, so a repair produced a diff that was
+# read before it landed. `merge` is empty now, so a repair that passes
+# `proposed` lands unread. One attempt is therefore the whole of the limit on
+# how far an agent may go correcting itself, not just on what that costs.
 repair:
   on: true
   maxAttempts: 1
