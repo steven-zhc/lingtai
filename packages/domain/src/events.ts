@@ -19,8 +19,24 @@ import { z } from "zod";
 
 // ---------------------------------------------------------------- shared ----
 
-export const WorkKind = z.enum(["bug", "feature", "enhancement", "tech-debt"]);
-export type WorkKind = z.infer<typeof WorkKind>;
+/**
+ * There is no `WorkKind` here any more, and its absence is the point.
+ *
+ * It was `z.enum(["bug", "feature", "enhancement", "tech-debt"])` — a
+ * vocabulary guessed at in the core about repositories it cannot see. Nothing
+ * ever branched on a specific value: `kind` decides whether an issue is wanted
+ * (`recipe.source.kinds.includes`) and where it sits in the priority order (the
+ * array's order), and both of those are the recipe's. The enum bought no
+ * behaviour and cost a whole queue — a recipe naming `documentation` stopped
+ * parsing, so every issue in the project vanished, including the two `bug`s
+ * (#76). The same argument 0016 §7 made about the hardcoded `agent:*` skip in
+ * `discover.ts`, one field along.
+ *
+ * `WorkItemDiscovered.kind` is therefore `z.string()`. That is a *widening*: no
+ * upcaster is needed because every stored event still parses. Old code reading
+ * a new event will refuse a kind outside its enum, which is the
+ * forward-compatibility limit this catalogue already documents.
+ */
 
 /** Which containment a project demands. See doc/decisions/0005. */
 export const Tier = z.enum(["open", "guarded", "sandboxed"]);
@@ -85,7 +101,8 @@ export const WorkItemDiscovered = z.object({
   source: z.enum(["github-issue", "manual", "agent-followup"]),
   externalRef: z.string(),
   title: z.string(),
-  kind: WorkKind,
+  /** A label of the repository's, not a member of a set this file keeps. */
+  kind: z.string(),
   labels: z.array(z.string()),
 });
 

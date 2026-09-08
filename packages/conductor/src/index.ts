@@ -23,6 +23,15 @@ export {
   loadProjects,
 } from "./projects.ts";
 export {
+  describeFilter,
+  describeFilters,
+  githubClientFor,
+  projectFilter,
+  projectFilters,
+  type ClientFor,
+  type ProjectFilter,
+} from "./filter.ts";
+export {
   DEFAULT_BACKOFF_MS,
   selectRunnable,
   type Runnable,

@@ -15,7 +15,7 @@ import {
   databaseUrl,
   directDatabaseUrl,
 } from "@lingtai/event-store";
-import { loadProjects } from "@lingtai/conductor";
+import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
 import { taskViewProjection } from "@lingtai/projector";
 import type { Tier } from "@lingtai/domain";
 import {
@@ -234,6 +234,21 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // injected rather than reached for inside `reconcile`, so a reconcile in a
   // test — or on a machine with no App — still does the other three.
   const registered = await loadProjects().catch(() => []);
+
+  // What this daemon will and will not take, per project, **before it takes
+  // anything**. The same lines `lingtai status` prints, from the same function,
+  // so the two cannot disagree about whether a queue is empty or unreadable.
+  //
+  // #76 is why this is at startup rather than only in a pass. A recipe on
+  // `main` naming a label the core did not know stopped parsing, every issue in
+  // the project left the queue, and the only place that said so was a `lingtai
+  // status` nobody ran — `conduct.ts` put it in `outcome.refused` and the loop
+  // logged one `pass failed:` line, but only once a pass had run, and one line
+  // into scrollback. A daemon that cannot read a recipe now says so in the
+  // block you are already reading while it starts.
+  if (registered.length === 0) console.log("no project registered — run lingtai add <owner>/<repo>");
+  for (const line of describeFilters(await projectFilters(registered))) console.log(line);
+
   const found = await reconcile({
     log: (line) => console.log(line),
     // Told what world it is repairing: which projections should be current,

@@ -42,8 +42,8 @@ repo:
   base: main
 
 source:
-  # Which issue labels are work, in priority order. An issue with none of these
-  # is not picked up.
+  # Which issue labels are work, in priority order. Any label of yours; Lingtai
+  # keeps no list of its own. An issue with none of these is not picked up.
   kinds: [bug, feature]
   # Labels of yours that keep an agent off a ticket.
   exclude: [blocked]

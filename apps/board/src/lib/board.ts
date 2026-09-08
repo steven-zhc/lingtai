@@ -26,9 +26,8 @@
 import { readTasks, type TaskCard, type TaskState } from "@lingtai/projector/task-view";
 import { selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
-import { currentRecipe, loadProjects } from "@lingtai/conductor/projects";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient } from "@lingtai/github";
+import { loadProjects } from "@lingtai/conductor/projects";
+import { projectFilter } from "@lingtai/conductor/filter";
 
 /**
  * Four, not five. `gates` folded into `running` (ADR 0016 §8).
@@ -70,10 +69,32 @@ export interface BoardCard {
   attempts: number;
 }
 
+/**
+ * A project whose queue could not be listed, and why.
+ *
+ * Its own shape rather than a card, because it is not work: it is the absence
+ * of an answer about work, and rendering it as a card would put a fake ticket
+ * on a board whose whole claim is that every card is real.
+ */
+export interface QueueProblem {
+  project: string;
+  reason: string;
+}
+
 export interface BoardColumn {
   id: ColumnId;
   label: string;
   cards: BoardCard[];
+  /**
+   * Only ever on Queued, and only when something went wrong.
+   *
+   * **"Nothing is runnable" and "the queue could not be listed" are different
+   * facts and used to render identically** — as an empty column (#76). A recipe
+   * that would not parse, a recipe that was missing and an App that was
+   * misconfigured all arrived at the same empty catch here, whose comment
+   * assumed the one failure it named.
+   */
+  problems?: QueueProblem[];
 }
 
 export const COLUMNS: { id: ColumnId; label: string }[] = [
@@ -125,38 +146,47 @@ export function toCard(t: TaskCard): BoardCard {
 }
 
 /**
- * The Queued column: what GitHub is offering that the log has not taken.
+ * The Queued column: what GitHub is offering that the log has not taken, and
+ * what could not be asked.
  *
- * Silent on failure, per project. A repository whose token expired should cost
- * you its queue, not the whole board — and the board is a read, so a card that
- * does not appear is the only damage.
+ * Still per project — a repository whose token expired costs you its queue and
+ * not the whole board — but no longer *silent*. This used to end in an empty
+ * catch whose comment named one failure ("a project whose GitHub is
+ * unreachable") and swallowed four: that, a recipe that will not parse, a
+ * recipe that is missing, and an App that is misconfigured. All of them
+ * rendered as an empty Queued column, which is also what a repository with
+ * nothing to do renders as (#76). The operator's report was "I still don't know
+ * why the issues weren't picked up."
+ *
+ * `projectFilter` is the shared answer: resolved, or refused with the reason,
+ * in the same wording `lingtai daemon` and `lingtai status` use.
  */
-async function queuedCards(project?: string): Promise<BoardCard[]> {
-  if (!hasGitHubApp()) return [];
-
+async function queuedCards(
+  project?: string,
+): Promise<{ cards: BoardCard[]; problems: QueueProblem[] }> {
   const projects = (await loadProjects().catch(() => [])).filter(
-    (p) => p.project && p.owner && (project === undefined || p.project === project),
+    (p) => project === undefined || p.project === project,
   );
 
   const cards: BoardCard[] = [];
+  const problems: QueueProblem[] = [];
   for (const p of projects) {
+    const filter = await projectFilter(p);
+    if (!filter.ok) {
+      problems.push({ project: filter.project, reason: filter.problem });
+      continue;
+    }
     try {
-      const client = await createGitHubClient({
-        auth: githubApp(),
-        owner: p.owner!,
-        repo: p.project!,
-      });
-      const recipe = (await currentRecipe(p, client)).recipe;
-      const offered = await runnableNow({ client, recipe });
+      const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
       const runnable = await selectRunnable({
-        project: p.project!,
+        project: filter.project,
         offered: offered.runnable,
-        kinds: recipe.source.kinds,
+        kinds: filter.kinds,
       });
       for (const r of runnable) {
         cards.push({
           taskId: r.taskId,
-          project: p.project!,
+          project: filter.project,
           column: "queued",
           ref: r.issue,
           kind: r.kind,
@@ -174,11 +204,13 @@ async function queuedCards(project?: string): Promise<BoardCard[]> {
           attempts: 0,
         });
       }
-    } catch {
-      // Nothing to say on a card about a project whose GitHub is unreachable.
+    } catch (err) {
+      // The recipe resolved and GitHub still would not answer — a rate limit, a
+      // revoked installation. Named rather than dropped, for the same reason.
+      problems.push({ project: filter.project, reason: (err as Error).message });
     }
   }
-  return cards;
+  return { cards, problems };
 }
 
 /**
@@ -201,9 +233,10 @@ export async function loadBoard(project?: string): Promise<BoardColumn[]> {
   // A task released back to the queue has a row *and* is offered by GitHub, so
   // it would otherwise appear twice. The row wins: it carries the attempts.
   const known = new Set(fromLog.map((c) => c.taskId));
-  const cards = [...fromLog, ...(await queuedCards(project)).filter((c) => !known.has(c.taskId))];
+  const queued = await queuedCards(project);
+  const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))];
 
-  return toColumns(cards);
+  return toColumns(cards, queued.problems);
 }
 
 /**
@@ -213,7 +246,15 @@ export async function loadBoard(project?: string): Promise<BoardColumn[]> {
  * nothing and the card is dropped silently, which is precisely how a card
  * disappeared for the length of its gates (#59). The placement is `COLUMN_OF`'s
  * to make, and this only reads it back off the card.
+ *
+ * `problems` land on Queued, the one column that is a question put to GitHub
+ * rather than a fold of the log, and therefore the one that can fail to be
+ * answered.
  */
-export function toColumns(cards: BoardCard[]): BoardColumn[] {
-  return COLUMNS.map((c) => ({ ...c, cards: cards.filter((card) => card.column === c.id) }));
+export function toColumns(cards: BoardCard[], problems: QueueProblem[] = []): BoardColumn[] {
+  return COLUMNS.map((c) => ({
+    ...c,
+    cards: cards.filter((card) => card.column === c.id),
+    ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
+  }));
 }

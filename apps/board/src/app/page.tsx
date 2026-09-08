@@ -122,7 +122,18 @@ export default async function Page() {
               <span className="ct">{col.cards.length}</span>
             </header>
             <div className="cards">
-              {col.cards.length === 0 ? (
+              {/* **An empty column and an unanswerable one are different facts.**
+                  They rendered identically until #76: a recipe that would not
+                  parse took every issue out of Queued, and the column read
+                  exactly like a repository with nothing to do. So the reason
+                  goes here, where somebody is already looking, and the "nothing
+                  here yet" line is kept for the case that actually means it. */}
+              {col.problems?.map((p) => (
+                <p key={p.project} className="empty broken">
+                  <strong>{p.project}</strong>: the queue could not be listed — {p.reason}
+                </p>
+              ))}
+              {col.cards.length === 0 && !col.problems?.length ? (
                 <p className="empty">
                   {col.id === "waiting" ? "Nothing is waiting on you." : "Nothing here yet."}
                 </p>
