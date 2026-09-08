@@ -129,6 +129,15 @@ body {
    in the bar, so the two read as one statement rather than two coincidences. */
 .empty.held { color: var(--held); }
 
+/* An empty column says nothing in muted grey. A column that could not be filled
+   has to read as a fault, or it is the empty column again (#76). */
+.empty.broken {
+  color: var(--fail);
+  border-left: 2px solid var(--fail);
+  background: var(--fail-soft);
+  padding: 10px 9px; border-radius: 3px;
+}
+
 /* --- cards ---------------------------------------------------------------
    Everything below renders a real row of the `board` projection.
 
@@ -163,6 +172,9 @@ body {
 .card.a-pass { border-left-color: var(--pass); }
 .card.a-fail { border-left-color: var(--fail); }
 .card.a-sig { border-left-color: var(--signal); }
+/* Back in the queue after an attempt that ended without landing. Its own colour
+   because the failure is not a gate's: a run killed from outside fails nothing,
+   and without this the card was indistinguishable from one nobody had run. */
 .card.a-hold { border-left-color: var(--held); }
 
 /* Reference and kind on one mono line. They are the same fact — which ticket —

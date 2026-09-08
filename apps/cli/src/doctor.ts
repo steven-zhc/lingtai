@@ -15,8 +15,8 @@
  * the write-side setup step. The one exception is `NOTIFY`, which is a
  * transient signal and touches no table.
  *
- * **A check that cannot run yet says so.** The checks for the recipe, the
- * repository, the hook and GitHub are listed as `skip` rather than omitted — a
+ * **A check that cannot run yet says so.** The checks for the repository, the
+ * hook and GitHub are listed as `skip` rather than omitted — a
  * check you cannot see is a check you will forget you never had. Each carries
  * the reason it is not a startup check, which is a fact about the design and
  * not about what happened to be installed the day it was written: see
@@ -28,6 +28,7 @@ import {
   landedWithoutEndActions,
   landedWithoutGatePoints,
   loadProjects,
+  projectFilters,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
 import { baseDivergence } from "@lingtai/recipe";
@@ -493,13 +494,6 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
  */
 const DEFERRED: { name: string; detail: string }[] = [
   {
-    name: "recipe: schema",
-    detail:
-      "a recipe governs one project and is read from origin/<base> through the API as a run starts; " +
-      "resolveRecipe validates it there and refuses the run when it does not parse, so a copy read " +
-      "here would be a different commit's (doc/decisions/0005-config-in-target-repo.md)",
-  },
-  {
     name: "repository, base branch, submodules",
     detail:
       "only a clone settles these: every run cuts its branch from origin/<base> in the mirror and " +
@@ -801,6 +795,57 @@ async function unconverged(url: string): Promise<CheckResult> {
 }
 
 /**
+ * Per project: does its recipe resolve at all, and what will it therefore take.
+ *
+ * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
+ * recipe read here would be "a different commit's" than the one a run reads.
+ * That argument was about the wrong thing. The run reads `origin/<base>` through
+ * the API and so does this, via the same `currentRecipe`; and the question being
+ * asked is not "will this exact commit's gates pass", it is "does the file that
+ * governs the next run parse" — which was `no` on `main` for long enough that
+ * every issue in the project sat unpicked, with doctor green throughout.
+ *
+ * The detail is `ProjectFilter`'s, the same value `lingtai daemon` prints at
+ * startup and `lingtai status` prints per project. Three commands, one answer.
+ */
+async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+  const name = "recipe: resolves for every project";
+  if (!hasGitHubApp(env)) {
+    return [
+      {
+        name,
+        status: "skip",
+        detail: "no App configured, and a recipe is read from the repository through the API",
+      },
+    ];
+  }
+
+  const projects = await loadProjects().catch(() => null);
+  if (projects === null) {
+    return [{ name, status: "skip", detail: "the project streams could not be read" }];
+  }
+  if (projects.length === 0) {
+    return [{ name, status: "ok", detail: "nothing is registered, so no recipe governs anything" }];
+  }
+
+  return (await projectFilters(projects)).map((f) =>
+    f.ok
+      ? {
+          name: `recipe: ${f.project}`,
+          status: "ok" as const,
+          detail:
+            `${f.configHash.slice(0, 12)} from ${f.ref} · picks up ${f.kinds.join(" > ")} · ` +
+            `excludes ${f.exclude.length > 0 ? f.exclude.join(", ") : "nothing"}`,
+        }
+      : {
+          name: `recipe: ${f.project}`,
+          status: "fail" as const,
+          detail: `${f.problem} — nothing will be taken from this project`,
+        },
+  );
+}
+
+/**
  * Per project: every name its recipe requires, and **which layer answered**.
  *
  * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)
@@ -994,6 +1039,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   }
 
   results.push(githubCredentials(env));
+  results.push(...(await projectRecipes(env)));
   results.push(...(await declaredEnvironment(env)));
   results.push(...(await recipeGovernsItsBase(env)));
   results.push(await settingsSources());

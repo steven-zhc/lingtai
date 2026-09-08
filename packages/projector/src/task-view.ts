@@ -37,6 +37,15 @@
  * on the same numbers. Gate verdicts are a keyed map rather than a list, for
  * the same reason: assignment is idempotent and appending is not. Only the
  * verdict is kept — the evidence that came with it is detail.
+ *
+ * That key includes the run (#78). Keying it `point:action` alone bought
+ * replay-safety and quietly gave up scope: a second attempt overwrote the same
+ * cells, and in the window between a release and the next attempt reaching the
+ * same point the card asserted a verdict no live run held. `wi-lingtai-59` read
+ * `1 passed · attempt 2` while attempt 1's only gate belonged to a run an
+ * operator had killed hours earlier. Keying by run keeps both properties:
+ * assignment is still idempotent, and `readTasks` shows only the run the card
+ * names.
  */
 import type { LabelState, PayloadOf } from "@lingtai/domain";
 import { parseWorkItemStream } from "@lingtai/domain";
@@ -86,8 +95,10 @@ export const taskViewProjection: Projection = {
         insertions   int,
         deletions    int,
 
-        -- { "build": "passed", "review": "failed" }. A map, so replaying is
-        -- assignment rather than appending. Evidence is not here on purpose.
+        -- { "run-abc:proposed:build": "passed" }. A map, so replaying is
+        -- assignment rather than appending; keyed by the run that produced the
+        -- verdict, so an attempt that is over cannot lend its verdicts to the
+        -- next one. Evidence is not here on purpose.
         gates        jsonb not null default '{}'::jsonb,
 
         -- One line for the card: what it is waiting on, or why it stopped.
@@ -177,9 +188,21 @@ export const taskViewProjection: Projection = {
           break;
         }
 
-        case "WorkItemReleased":
-          await set(ctx, event.streamId, seq, at, { state: "queued", run_id: null });
+        case "WorkItemReleased": {
+          const d = event.data as PayloadOf<"WorkItemReleased">;
+          // The reason becomes the card's line. A release is an attempt that
+          // ended without landing, and it used to leave no mark at all: a run
+          // killed from outside fails no gate, so the card came back to Queued
+          // with nothing to say and read like work nobody had started (#78).
+          // Clearing `run_id` is also what scopes the gate pills — the card no
+          // longer names a run, so it shows no verdicts.
+          await set(ctx, event.streamId, seq, at, {
+            state: "queued",
+            run_id: null,
+            note: d.reason,
+          });
           break;
+        }
 
         case "WorkItemBlocked": {
           const d = event.data as PayloadOf<"WorkItemBlocked">;
@@ -279,8 +302,10 @@ export const taskViewProjection: Projection = {
         case "ApprovalRequested":
         case "ApprovalGranted":
         case "ApprovalRevoked": {
-          // Keyed `point:action`, because two points can run an action of the
-          // same name and a bare name would let the second overwrite the first.
+          // Keyed `run:point:action`. The point is there because two points can
+          // run an action of the same name; the run is there because two
+          // attempts can run the same point, and without it the second silently
+          // inherited the first's verdicts (#78).
           const d = event.data as { gate: string; action: string; question?: string };
           const verdict = VERDICT[event.type];
           if (verdict) await setGate(ctx, event.streamId, seq, at, `${d.gate}:${d.action}`, verdict);
@@ -321,12 +346,21 @@ export const taskViewProjection: Projection = {
   },
 };
 
+/**
+ * What a card counts a gate event as.
+ *
+ * Six events, five verdicts, and the distinctions are the point. `waived` and
+ * `approved` used to both be `passed`, which made a person overriding a red
+ * build indistinguishable from a green one — the distinction a waiver records
+ * who and why for (#78). A machine ran it and it went green, a machine ran it
+ * and it went red, and a person said so anyway are three different facts.
+ */
 const VERDICT: Record<string, string> = {
   GatePassed: "passed",
   GateFailed: "failed",
   GateWaived: "waived",
   ApprovalRequested: "pending",
-  ApprovalGranted: "passed",
+  ApprovalGranted: "approved",
   ApprovalRevoked: "pending",
 };
 
@@ -442,13 +476,20 @@ async function viaRun(
   if (taskId) await set(ctx, taskId, seq, at, values);
 }
 
-/** Assignment into a keyed map, so replaying is idempotent without a guard. */
+/**
+ * Assignment into a keyed map, so replaying is idempotent without a guard.
+ *
+ * The run is part of the key, not just the lookup: the cell a verdict lands in
+ * belongs to the attempt that produced it, so a later attempt starts on a fresh
+ * set rather than overwriting a dead one. `readTasks` then shows the cells
+ * belonging to the run the row names, and nothing else.
+ */
 async function setGate(
   ctx: ProjectionContext,
   runId: string,
   seq: string,
   at: Date,
-  gate: string,
+  point: string,
   verdict: string,
 ): Promise<void> {
   const rows = await ctx.query<{ task_id: string }>(
@@ -457,6 +498,7 @@ async function setGate(
   );
   const taskId = rows[0]?.task_id;
   if (!taskId) return;
+  const gate = `${runId}:${point}`;
   await ctx.query(
     `update task_view
      set gates = gates || jsonb_build_object($3::text, $4::text),
@@ -481,8 +523,17 @@ export interface TaskCard {
   runId: string | null;
   turns: number | null;
   costUsd: number | null;
+  /**
+   * Verdicts from the run this card names, and no other. Four counts rather
+   * than two, because a person's word is not a gate's: `gatesWaived` is an
+   * override of a failure and `gatesApproved` is a human answering a `human`
+   * action. Counting either as passed made the card say the opposite of what
+   * happened.
+   */
   gatesPassed: number;
   gatesFailed: number;
+  gatesWaived: number;
+  gatesApproved: number;
   baseSha: string | null;
   headSha: string | null;
   files: number | null;
@@ -533,7 +584,17 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
 
     return r.rows.map((row) => {
       const gates = (row.gates ?? {}) as Record<string, string>;
-      const verdicts = Object.values(gates);
+      // Only the run the row names. A released row names none, so it counts
+      // nothing — which is the point: between a release and the next attempt
+      // reaching the same point there is no live verdict to report, and the
+      // card used to report the dead one anyway (#78).
+      const mine = row.run_id ? `${row.run_id as string}:` : null;
+      const verdicts = mine
+        ? Object.entries(gates)
+            .filter(([key]) => key.startsWith(mine))
+            .map(([, verdict]) => verdict)
+        : [];
+      const count = (v: string) => verdicts.filter((x) => x === v).length;
       return {
         taskId: row.task_id,
         project: row.project,
@@ -545,8 +606,10 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         runId: row.run_id,
         turns: row.turns,
         costUsd: row.cost_usd,
-        gatesPassed: verdicts.filter((v) => v === "passed" || v === "waived").length,
-        gatesFailed: verdicts.filter((v) => v === "failed").length,
+        gatesPassed: count("passed"),
+        gatesFailed: count("failed"),
+        gatesWaived: count("waived"),
+        gatesApproved: count("approved"),
         baseSha: row.base_sha,
         headSha: row.head_sha,
         files: row.files,

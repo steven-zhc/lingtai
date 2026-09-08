@@ -134,6 +134,27 @@ describe("lingtai doctor — the declared environment", () => {
   });
 });
 
+describe("lingtai doctor — the recipes", () => {
+  /**
+   * This check was in `DEFERRED` — a permanent skip, on the argument that a
+   * recipe read here would be a different commit's. Both read `origin/<base>`
+   * through the API, and the question is only whether the file that governs the
+   * next run parses at all: it did not, on `main`, for long enough that every
+   * issue in the project sat unpicked with doctor green throughout (#76).
+   */
+  it("runs, rather than being deferred forever", async () => {
+    const report = await runDoctor(env({}));
+    const check = find(report.results, "recipe: resolves for every project");
+
+    // Without an App there is nothing to read a recipe through, so it is a skip
+    // about *this* run — not a literal about the installation, which is the
+    // distinction `deferred` marks.
+    expect(check.status).toBe("skip");
+    expect(check.deferred).toBeUndefined();
+    expect(report.results.some((r) => r.name === "recipe: schema")).toBe(false);
+  });
+});
+
 describe("lingtai doctor — reporting", () => {
   it("lists the checks that cannot run yet, rather than omitting them", async () => {
     // With no LINGTAI_GITHUB_APP_ID in this environment, the credentials check is itself

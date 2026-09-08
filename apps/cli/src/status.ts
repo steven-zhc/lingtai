@@ -6,11 +6,14 @@
  * therefore not the queue but the **absences**: an issue that is not being
  * worked has a reason, and until now the reason was never written down anywhere.
  */
-import { hasGitHubApp, githubApp } from "@lingtai/env";
-import { currentRecipe, loadProjects, runnableNow, selectRunnable } from "@lingtai/conductor";
+import {
+  describeFilter,
+  loadProjects,
+  projectFilter,
+  runnableNow,
+  selectRunnable,
+} from "@lingtai/conductor";
 import { readTasks } from "@lingtai/projector";
-import { createGitHubClient } from "@lingtai/github";
-import type { WorkKind } from "@lingtai/domain";
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -37,31 +40,25 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
     const name = project.project!;
     log(`${name}  base=${project.base ?? "(unrecorded)"}`);
 
+    // What this project will and will not take, said before the numbers that
+    // depend on it — and said by the same function `lingtai daemon` prints at
+    // startup, so the two cannot disagree (#76). It names the recipe's hash and
+    // branch, its kinds in priority order, its excludes; or, when the recipe
+    // will not resolve, that and the reason, which is the case that used to
+    // render as a queue that was simply empty.
+    const filter = await projectFilter(project);
+    for (const line of describeFilter(filter)) log(`  ${line}`);
+
     // Priority order is the recipe's `kinds`, and the recipe lives in the
     // managed repository — so without GitHub the queue can still be listed, just
-    // not prioritised. Saying so beats printing an order that is not the real one.
-    let kinds: readonly WorkKind[] = [];
+    // not prioritised.
+    const kinds: readonly string[] = filter.ok ? filter.kinds : [];
     // What GitHub is offering. Empty when it could not be asked, which is not
     // the same as an empty queue and is said differently below.
     let offered: { ref: string; title: string; kind: string }[] = [];
-    const why = !hasGitHubApp()
-      ? "no GitHub App configured, so the recipe cannot be read"
-      : !project.owner
-        // Registered before ProjectConfigured carried an owner. Saying so beats
-        // guessing at one.
-        ? "no owner recorded — re-run lingtai add to record it"
-        : null;
-    if (why !== null) {
-      log(`  (priority order unavailable: ${why})`);
-    } else {
+    if (filter.ok) {
       try {
-        const client = await createGitHubClient({
-          auth: githubApp(),
-          owner: project.owner!,
-          repo: name,
-        });
-        const recipe = (await currentRecipe(project, client)).recipe;
-        kinds = recipe.source.kinds;
+        const { client, recipe } = filter;
 
         // Always, not behind a flag. There is nothing left to read the queue
         // out of — 0022 deleted the table that used to hold it — so the choice

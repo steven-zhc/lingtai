@@ -27,6 +27,8 @@ function task(state: TaskCard["state"]): TaskCard {
     costUsd: null,
     gatesPassed: 0,
     gatesFailed: 0,
+    gatesWaived: 0,
+    gatesApproved: 0,
     baseSha: null,
     headSha: null,
     files: null,
@@ -54,6 +56,31 @@ describe("the board's columns", () => {
     const columns = toColumns(LABEL_STATES.map((state) => toCard(task(state))));
     expect(columns.reduce((n, c) => n + c.cards.length, 0)).toBe(LABEL_STATES.length);
     expect(columns.map((c) => c.id)).toEqual(COLUMNS.map((c) => c.id));
+  });
+
+  /**
+   * *Nothing is runnable* and *the queue could not be listed* used to render
+   * identically — as an empty Queued column (#76). A recipe that would not
+   * parse, one that was missing and a misconfigured App all reached the same
+   * empty catch, whose comment named only "GitHub unreachable".
+   */
+  it("carries a queue that could not be listed as a reason, not as an absence", () => {
+    const columns = toColumns([], [{ project: "lingtai", reason: "source.kinds.3: Invalid option" }]);
+    const queued = columns.find((c) => c.id === "queued");
+
+    expect(queued?.cards).toEqual([]);
+    expect(queued?.problems).toEqual([
+      { project: "lingtai", reason: "source.kinds.3: Invalid option" },
+    ]);
+    // Only Queued. Every other column is a fold of the log, which cannot fail
+    // to be asked.
+    expect(columns.filter((c) => c.problems !== undefined).map((c) => c.id)).toEqual(["queued"]);
+  });
+
+  it("leaves an empty queue empty, so the two stay distinguishable", () => {
+    const queued = toColumns([]).find((c) => c.id === "queued");
+    expect(queued?.cards).toEqual([]);
+    expect(queued?.problems).toBeUndefined();
   });
 
   it("shows a task in gates as running, beside the state that shares the lane", () => {

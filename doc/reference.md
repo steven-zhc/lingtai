@@ -206,15 +206,26 @@ enforcement.
 `sandboxed` remains a value no runtime provides, so asking for it can only ever
 refuse.
 
-## work kind — 4
+## work kind — open
 
-What the recipe's `source.kinds` selects on, read from an issue's labels.
-Source: `WorkKind` in `packages/core/src/events.ts:22`.
+**The repository's, not this list's.** `source.kinds` in the recipe is
+`z.array(z.string()).min(1)` and `kindOf` matches against exactly it, so one
+list is the vocabulary, the filter and the priority order at once. `exclude` is
+free-form for the same reason and always was; the asymmetry was the defect.
 
-`bug` · `feature` · `enhancement` · `tech-debt`
+There was a `WorkKind` enum here — `bug` · `feature` · `enhancement` ·
+`tech-debt` — and #76 deleted it. No code ever branched on a specific kind, so
+it bought no behaviour, and it cost a whole queue: a recipe naming
+`documentation` did not fail to take documentation, it failed to *resolve*, and
+the project offered nothing at all. It also carried `enhancement`, which no
+recipe here has ever used. This is 0016 §7 — policy the core guesses at, about
+a repository it cannot see.
 
-An issue with no matching label has no kind and is **not runnable** — which is
-why admin #156 sat invisible until it was labelled.
+`WorkItemDiscovered.kind` is therefore `z.string()`. Stored events still parse;
+no upcaster was needed.
+
+An issue with no label the recipe names has no kind and is **not runnable** —
+which is why admin #156 sat invisible until it was labelled.
 
 ## runtime — 2
 

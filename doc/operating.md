@@ -286,7 +286,9 @@ repo:
   submodules: true
 
 source:
-  # Also the priority order: earlier wins.
+  # Both lists are yours. Any label of this repository's may appear in either;
+  # Lingtai keeps no vocabulary of its own and enforces nothing about the names
+  # (#76). `kinds` is also the priority order: earlier wins.
   kinds: [bug, tech-debt]
   # Labels of yours that keep the agent off a ticket.
   exclude: [blocked, needs-design]
@@ -440,11 +442,28 @@ asks GitHub, writes the queue, and reports **what it passed over and why**:
 
 ```
 nextloom-ai-admin  base=develop
-  from GitHub: 9 runnable, 29 passed over — excluded-label 29
+  nextloom-ai-a  recipe 3f8a1c2b9d04 from develop
+    picks up     bug > enhancement   (in priority order)
+    excludes     blocked, needs-design
+  from GitHub: 9 eligible, 29 passed over — excluded-label 29
   queue: 9 runnable
     #154   bug         [Bug] The resolve-aliases destination search has no request sequencing…
     #110   enhancement [Enhancement] /users still prints async job ids to copy…
 ```
+
+The first three lines are **what this project will and will not take**, and
+`lingtai daemon` prints the same block for every registered project at startup,
+from the same function, before it takes anything. A project whose recipe will
+not resolve gets that slot rather than being left out:
+
+```
+lingtai        RECIPE INVALID — .lingtai/config.yaml on main is not valid: source.kinds.3: Invalid option
+               nothing will be taken from this project
+```
+
+That case used to be an empty queue and nothing else (#76), which is
+indistinguishable from a repository with no work. `lingtai doctor` now fails on
+it too.
 
 It takes nothing, claims nothing and appends no event — the whole of what it
 does is make the answer current. The absences are the half worth having: an
