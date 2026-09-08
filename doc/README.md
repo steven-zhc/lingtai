@@ -14,6 +14,9 @@ Three kinds of thing live here, and the distinction matters.
 
 | | |
 |---|---|
+| [`tutorial.md`](tutorial.md) | The shortest path from nothing to an issue merged unattended. Start here if you have never run it. |
+| [`operating.md`](operating.md) | Everything you type, and why: setup, the GitHub App, onboarding, running work, and what every refusal means. Moved out of the root README on 2026-09-08. |
+| [`reference.md`](reference.md) | Every term, and everything currently in it — counted. |
 | [`roadmap.md`](roadmap.md) | Six phases, each with an exit criterion that is a fact. The backlog, with issue numbers. |
 | [`design.md`](design.md) | How the system is meant to work, as a whole. Rewritten as it changes. |
 | [`decisions/`](decisions/) | One decision per file, with its context and its consequences. **Append-only in spirit** — a decision that turns out wrong gets a new file that supersedes it, not an edit. |

@@ -214,8 +214,10 @@ never stops effects that already happened from going out.
 
 ## What to read next
 
-- [`README.md`](../README.md) — the terms, the five gate points, and what
-  Lingtai deliberately does not do
+- [`README.md`](../README.md) — what this is, the big picture, and the five
+  gate points, on one screen
+- [`operating.md`](operating.md) — the same path as this tutorial, with the
+  reasons: every refusal, and what each one means
 - [`doc/reference.md`](reference.md) — every enum, every gate action, every
   refusal reason, counted
 - [`doc/decisions/`](decisions/) — why each of these is the way it is
