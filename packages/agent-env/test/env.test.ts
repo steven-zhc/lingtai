@@ -10,20 +10,26 @@
  * pair most likely to be "helpfully" rejected later (`required` *and* `deny`)
  * has a case of its own.
  */
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   DEFAULT_PRODUCTION_PATTERNS,
   ProductionValueError,
+  SecretSourceError,
   filterEnv,
   hostLooksProduction,
   parseEnvFile,
+  projectEnvNames,
   projectEnvPath,
   renderEnvFile,
   resolveAgentEnv,
   runnableEnv,
+  setEnvLine,
+  setProjectEnv,
+  unsetEnvLine,
+  unsetProjectEnv,
 } from "../src/index.ts";
 
 const PROJECT = "envcheck";
@@ -196,5 +202,144 @@ describe("the pieces the layers are built from", () => {
     const out = runnableEnv({ PATH: "/from/recipe" }, { PATH: "/from/os", HOME: "/h" });
     expect(out["PATH"]).toBe("/from/recipe");
     expect(out["HOME"]).toBe("/h");
+  });
+});
+
+/**
+ * `lingtai env set` — the four chances to get it wrong, closed (`#62`).
+ *
+ * A separate project name in the same home, because these write the file the
+ * cases above read and a shared one would make the order load-bearing.
+ */
+describe("writing the project's file", () => {
+  const WRITTEN = "envwrite";
+  const file = () => projectEnvPath(WRITTEN, home);
+
+  it("creates the file 0600, and never touches the mode of one that exists", async () => {
+    // Asked for outright rather than left to `writeFile`'s `mode`, which a
+    // umask can narrow on the way past.
+    const { created } = await setProjectEnv({ project: WRITTEN, name: "FIRST", value: "1", home });
+    expect(created).toBe(true);
+    expect((await stat(file())).mode & 0o777).toBe(0o600);
+
+    await setProjectEnv({ project: WRITTEN, name: "SECOND", value: "2", home });
+    expect((await stat(file())).mode & 0o777).toBe(0o600);
+
+    // The mode of a file that already exists is the operator's, either way. A
+    // command that widened one while claiming to secure it would be worse than
+    // one that never touched it — so this asserts it is not touched at all.
+    await chmod(file(), 0o640);
+    await setProjectEnv({ project: WRITTEN, name: "THIRD", value: "3", home });
+    expect((await stat(file())).mode & 0o777).toBe(0o640);
+    await chmod(file(), 0o600);
+  });
+
+  it("replaces one line and leaves the comments and the neighbours alone", async () => {
+    await writeFile(
+      file(),
+      "# the one the application reads\nDATABASE_URL=postgres://old\n\n# keep me\nOTHER=untouched\n",
+      { mode: 0o600 },
+    );
+    const { replaced } = await setProjectEnv({
+      project: WRITTEN,
+      name: "DATABASE_URL",
+      value: "postgres://new",
+      home,
+    });
+
+    expect(replaced).toBe(true);
+    const text = await readFile(file(), "utf8");
+    expect(text).toContain("# the one the application reads");
+    expect(text).toContain("# keep me");
+    expect(text).toContain("OTHER=untouched");
+    expect(text).not.toContain("postgres://old");
+    expect(parseEnvFile(text).values["DATABASE_URL"]).toBe("postgres://new");
+  });
+
+  /**
+   * The file stays the dumb data store 0021 says it is: nothing expands and
+   * nothing truncates, so a password holding a `$` or a `#` survives being
+   * written and read back as itself.
+   */
+  it("writes a value literally, through a round trip", async () => {
+    const value = 'p@ss $HOME # not-a-comment "quoted" \\ end';
+    await setProjectEnv({ project: WRITTEN, name: "PASSWORD", value, home });
+    expect(parseEnvFile(await readFile(file(), "utf8")).values["PASSWORD"]).toBe(value);
+
+    const env = await resolveAgentEnv({ project: WRITTEN, home, machine: {} });
+    expect(env.values["PASSWORD"]).toBe(value);
+  });
+
+  /**
+   * Layer 4 does not exist, so writing one plants a literal `!op read …` where
+   * a connection string should be — a line that looks correct and refuses.
+   */
+  it("refuses a !-prefixed value, and writes nothing", async () => {
+    const before = await readFile(file(), "utf8");
+    await expect(
+      setProjectEnv({ project: WRITTEN, name: "TOKEN", value: "!op read op://x", home }),
+    ).rejects.toBeInstanceOf(SecretSourceError);
+    expect(await readFile(file(), "utf8")).toBe(before);
+  });
+
+  it("refuses a name that is not one, and a project that is a path", async () => {
+    await expect(setProjectEnv({ project: WRITTEN, name: "not a name", value: "x", home })).rejects.toThrow();
+    await expect(setProjectEnv({ project: "../escape", name: "OK", value: "x", home })).rejects.toThrow();
+  });
+
+  it("unsets one name and keeps the rest of the file", async () => {
+    await setProjectEnv({ project: WRITTEN, name: "GOING", value: "x", home });
+    const { removed } = await unsetProjectEnv({ project: WRITTEN, name: "GOING", home });
+    expect(removed).toBe(true);
+
+    const text = await readFile(file(), "utf8");
+    expect(text).not.toContain("GOING");
+    expect(text).toContain("# keep me");
+    expect((await unsetProjectEnv({ project: WRITTEN, name: "GOING", home })).removed).toBe(false);
+  });
+
+  it("lists names and their layer, and knows a secret source when it sees one", async () => {
+    await writeFile(file(), "# a comment\nFROM_FILE=x\nASKED=!op read op://x\n", { mode: 0o600 });
+    const listing = await projectEnvNames({
+      project: WRITTEN,
+      home,
+      machine: { FROM_MACHINE: "y", LINGTAI_DATABASE_URL: "postgres://the-system-itself" },
+    });
+
+    expect(listing.names).toEqual([
+      { name: "ASKED", layer: "not set" },
+      { name: "FROM_FILE", layer: "project file" },
+      { name: "FROM_MACHINE", layer: "machine file" },
+    ]);
+    expect(listing.deferred).toEqual(["ASKED"]);
+  });
+
+  /** The pieces, so a duplicate line and a `#` in a value are settled here. */
+  it("drops a duplicate line rather than writing a value the file will not report", () => {
+    const text = setEnvLine("A=one\nB=b\nA=two\n", "A", "three");
+    expect(text).toBe('A="three"\nB=b\n');
+    expect(parseEnvFile(text).values["A"]).toBe("three");
+  });
+
+  it("removes every line declaring the name", () => {
+    expect(unsetEnvLine("# c\nA=1\nB=2\nA=3\n", "A")).toEqual({ text: "# c\nB=2\n", removed: true });
+  });
+});
+
+/**
+ * The refusal an operator actually reads. It named a file, a directory to
+ * create, a syntax and a mode; it names the command that does all four (`#62`).
+ */
+describe("what the refusal tells you to do", () => {
+  it("points at lingtai env set <project> <NAME>, not at a path and a format", async () => {
+    const env = await resolveAgentEnv({
+      project: "refuser",
+      home,
+      required: ["MISSING_ONE"],
+      machine: {},
+    });
+
+    expect(env.refusal).toContain("lingtai env set refuser MISSING_ONE");
+    expect(env.refusal).toContain("unechoed");
   });
 });

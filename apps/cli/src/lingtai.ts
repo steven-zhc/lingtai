@@ -38,6 +38,7 @@ import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
 import { formatReport, runDoctor } from "./doctor.ts";
 import { endReplay } from "./end.ts";
+import { envCommand } from "./env.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
 
@@ -59,6 +60,11 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --all                       include items that have left the queue
                                 and why. Takes nothing and claims nothing.
   lingtai doctor                    check everything that can be checked
+  lingtai env set <project> KEY=VALUE
+                                write one value into ~/.lingtai/env/<project>.env
+  lingtai env set <project> KEY     read the value from stdin, unechoed
+  lingtai env list <project>        names and which layer answered — never values
+  lingtai env unset <project> KEY   remove one
   lingtai end replay [project]      resolve the end point for items that landed
     --issue <n>                 without it, and deliver what it resolves to
   lingtai daemon                    hold the projections current and take work
@@ -434,6 +440,10 @@ async function main(argv: string[]): Promise<number> {
     }
     case "doctor":
       return doctor();
+    // Positional throughout, and not through `parseFlags`: a value is an
+    // argument here, and `KEY=--anything` is a legitimate one.
+    case "env":
+      return envCommand(rest);
     case "end": {
       const { positional, flags } = parseFlags(rest);
       // One subcommand, spelled out. `lingtai end` on its own would read like

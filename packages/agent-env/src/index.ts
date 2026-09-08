@@ -19,9 +19,9 @@
  * `resolveAgentEnv`, which reads the project's own file. That one read is the
  * whole of the impurity and is marked where it happens.
  */
-import { readFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { PREFIX, machineEnvFile, stateDir } from "@lingtai/env";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 // ------------------------------------------------------------ environment ----
 
@@ -322,6 +322,47 @@ export async function resolveAgentEnv(options: {
 }): Promise<AgentEnv> {
   const required = options.required ?? [];
   const patterns = options.patterns ?? DEFAULT_PRODUCTION_PATTERNS;
+  const { file, merged, fromFile, commands } = await readEnvLayers(options);
+
+  const deferred = required.filter((name) => commands[name] !== undefined);
+  const missing = required.filter((name) => !(name in merged));
+
+  const values = filterEnv(merged, { allow: options.allow, deny: options.deny });
+  // Over every value that actually reaches an agent, from either file — which
+  // is the only place it can be over, now that the filters run last.
+  for (const [name, value] of Object.entries(values)) guardProduction(name, value, patterns);
+
+  const names = layerNames(merged, fromFile, required);
+
+  return {
+    values,
+    names,
+    missing,
+    deferred,
+    file,
+    refusal: refusalFor(options.project, missing, deferred, file),
+  };
+}
+
+/**
+ * The two files, read and merged, with nothing decided about them yet.
+ *
+ * Shared by `resolveAgentEnv` and by `projectEnvNames`, which is what `lingtai
+ * env list` asks. Splitting it out is what stops the listing command growing a
+ * second, subtly different idea of which layer answered for a name — the thing
+ * the operator is being asked to be responsible for
+ * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+ */
+async function readEnvLayers(options: {
+  project: string;
+  machine?: Record<string, string>;
+  home?: string;
+}): Promise<{
+  file: string;
+  merged: Record<string, string>;
+  fromFile: Set<string>;
+  commands: Record<string, string>;
+}> {
   const file = projectEnvPath(options.project, options.home ?? stateDir());
 
   // Layer 2, minus what is Lingtai's own. See `isMachineOwn`: this is the one
@@ -348,25 +389,22 @@ export async function resolveAgentEnv(options: {
     fromFile.add(name);
   }
 
-  const deferred = required.filter((name) => parsed.commands[name] !== undefined);
-  const missing = required.filter((name) => !(name in merged));
+  return { file, merged, fromFile, commands: parsed.commands };
+}
 
-  const values = filterEnv(merged, { allow: options.allow, deny: options.deny });
-  // Over every value that actually reaches an agent, from either file — which
-  // is the only place it can be over, now that the filters run last.
-  for (const [name, value] of Object.entries(values)) guardProduction(name, value, patterns);
-
-  const names: AgentEnvName[] = [...new Set([...Object.keys(merged), ...required])]
-    .sort()
-    .map((name) => ({
-      name,
-      layer: fromFile.has(name) ? "project file" : name in merged ? "machine file" : "not set",
-    }));
-
-  return { values, names, missing, deferred, file, refusal: refusalFor(missing, deferred, file) };
+function layerNames(
+  merged: Record<string, string>,
+  fromFile: ReadonlySet<string>,
+  also: readonly string[] = [],
+): AgentEnvName[] {
+  return [...new Set([...Object.keys(merged), ...also])].sort().map((name) => ({
+    name,
+    layer: fromFile.has(name) ? "project file" : name in merged ? "machine file" : "not set",
+  }));
 }
 
 function refusalFor(
+  project: string,
   missing: readonly string[],
   deferred: readonly string[],
   file: string,
@@ -381,16 +419,239 @@ function refusalFor(
 
   const ordinary = missing.filter((n) => !isDeferredName.has(n));
   if (ordinary.length > 0) {
-    lines.push(`  ${ordinary.join(", ")}: write ${file} — one NAME=value per line.`);
+    // The command, not the path and the format. Naming the file left four
+    // things to get right — the directory, the filename, dotenv syntax, and
+    // `chmod 600` — for one key and one value, and the failure of each was the
+    // same silent refusal this sentence is reporting (`#62`). `set` with no
+    // value reads stdin unechoed, which is how a connection string stays out
+    // of shell history.
+    lines.push(
+      `  ${ordinary.join(", ")}: lingtai env set ${project} ${ordinary[0]}` +
+        `${ordinary.length > 1 ? " (one per name)" : ""} — it reads the value from stdin, unechoed.`,
+    );
   }
   const asked = missing.filter((n) => isDeferredName.has(n));
   if (asked.length > 0) {
     lines.push(
       `  ${asked.join(", ")}: ${file} asks for a secret source (a "!" value), which is not built yet. ` +
-        `Write the value, or quote it to mean it literally.`,
+        `Write the value with lingtai env set ${project} ${asked[0]}, or quote it to mean it literally.`,
     );
   }
   return lines.join("\n");
+}
+
+// ----------------------------------------------- writing the project's file ---
+
+/**
+ * The mode the project's file is **created** with.
+ *
+ * Not enforced on a file that already exists: that mode is the operator's, and
+ * a command that reset it would be a command that widened a file somebody had
+ * deliberately narrowed, while claiming to be securing it.
+ */
+export const ENV_FILE_MODE = 0o600;
+/** `~/.lingtai/env`, created with the same instinct as the file inside it. */
+export const ENV_DIR_MODE = 0o700;
+
+/**
+ * A `!` value refused, with the thing to do instead.
+ *
+ * Layer 4 does not exist, so `SECRET=!op read op://…` written today is eight
+ * characters and a shell command sitting where a connection string belongs —
+ * and the project goes on refusing, past a line that reads as correct. The one
+ * value that really does start with `!` still has an escape hatch, and it is
+ * the one `parseEnvFile` documents: quote it, by hand, in the file.
+ */
+export class SecretSourceError extends Error {
+  override readonly name = "SecretSourceError";
+  readonly variable: string;
+
+  constructor(variable: string) {
+    super(
+      `${variable}: a value beginning with "!" is reserved for a secret source — layer 4 of ` +
+        "0021, which is not built. Writing it would plant the literal text where the value " +
+        "belongs, and the project would go on refusing past a line that looks correct. " +
+        `If "!" really is the first character of the value, write the line by hand and quote ` +
+        `it: ${variable}="!…" is those characters and nothing else.`,
+    );
+    this.variable = variable;
+  }
+}
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** A project name is a filename here, so `..` and a slash have to be refused. */
+const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function checkName(name: string): string {
+  if (!ENV_NAME.test(name)) {
+    throw new Error(`"${name}" is not an environment variable name — letters, digits and _, not starting with a digit`);
+  }
+  return name;
+}
+
+function checkProject(project: string): string {
+  if (!PROJECT_NAME.test(project)) {
+    throw new Error(`"${project}" is not a project name — it is used as a filename under ~/.lingtai/env`);
+  }
+  return project;
+}
+
+/**
+ * The name a `.env` line declares, or null for a blank line or a comment.
+ *
+ * The same reading `parseEnvFile` does, so that a line this recognises is a
+ * line that would have answered for the name — which is what makes replacing
+ * exactly one of them correct.
+ */
+function nameOfLine(line: string): string | null {
+  const trimmed = line.trim();
+  if (trimmed === "" || trimmed.startsWith("#")) return null;
+  const eq = trimmed.indexOf("=");
+  if (eq <= 0) return null;
+  const name = trimmed.slice(0, eq).trim().replace(/^export\s+/, "");
+  return name === "" ? null : name;
+}
+
+function linesOf(text: string): string[] {
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body === "" ? [] : body.split("\n");
+}
+
+/**
+ * One line replaced or appended, and **every other line left exactly as it was**.
+ *
+ * Not a parse and a re-render: that would lose the comments the operator wrote
+ * beside the values, and a file that silently reformats itself is one people
+ * stop editing by hand. The value is JSON-quoted, which is `parseEnvFile`'s
+ * inverse — so a password holding a `$`, a `#`, a space or a newline round
+ * trips as itself, with nothing expanding and nothing truncating it.
+ *
+ * A duplicate line for the same name is dropped rather than kept: the last one
+ * wins on the way back in, so leaving it would mean `set` wrote a value the
+ * file does not report.
+ */
+export function setEnvLine(text: string, name: string, value: string): string {
+  const line = `${name}=${JSON.stringify(value)}`;
+  const out: string[] = [];
+  let written = false;
+  for (const l of linesOf(text)) {
+    if (nameOfLine(l) !== name) {
+      out.push(l);
+      continue;
+    }
+    if (written) continue;
+    out.push(line);
+    written = true;
+  }
+  if (!written) out.push(line);
+  return `${out.join("\n")}\n`;
+}
+
+/** Every line declaring the name removed, comments and neighbours untouched. */
+export function unsetEnvLine(text: string, name: string): { text: string; removed: boolean } {
+  const lines = linesOf(text);
+  const kept = lines.filter((l) => nameOfLine(l) !== name);
+  return {
+    text: kept.length === 0 ? "" : `${kept.join("\n")}\n`,
+    removed: kept.length !== lines.length,
+  };
+}
+
+function header(project: string): string {
+  return (
+    `# ${project} — the values Lingtai merges over the machine's own file when it\n` +
+    `# prepares a run (doc/decisions/0021). One NAME=value per line.\n` +
+    `# Written by \`lingtai env set ${project}\`; edit it by hand if you prefer.\n`
+  );
+}
+
+async function readOrNull(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `lingtai env set` — one name, one value, in the file the project reads.
+ *
+ * Creates the directory and the file, replaces one line, and leaves the file
+ * `0600`. It does **not** chmod a file that already exists: the mode is the
+ * operator's if they have narrowed it, and a command that widened a file while
+ * claiming to secure it would be worse than one that never touched it.
+ *
+ * A `!` value is refused rather than written — see `SecretSourceError`.
+ */
+export async function setProjectEnv(options: {
+  project: string;
+  name: string;
+  value: string;
+  home?: string;
+}): Promise<{ file: string; created: boolean; replaced: boolean }> {
+  const project = checkProject(options.project);
+  const name = checkName(options.name);
+  if (options.value.startsWith("!")) throw new SecretSourceError(name);
+
+  const file = projectEnvPath(project, options.home ?? stateDir());
+  const before = await readOrNull(file);
+  const created = before === null;
+  const text = before ?? header(project);
+  const replaced = linesOf(text).some((l) => nameOfLine(l) === name);
+
+  await mkdir(dirname(file), { recursive: true, mode: ENV_DIR_MODE });
+  await writeFile(file, setEnvLine(text, name, options.value), { mode: ENV_FILE_MODE });
+  // `mode` on `writeFile` only applies when the file is created, and a umask
+  // can narrow it on the way. Asked for outright, so "the file is 0600" is a
+  // fact rather than a hope.
+  if (created) await chmod(file, ENV_FILE_MODE);
+
+  return { file, created, replaced };
+}
+
+/** `lingtai env unset` — the name gone from the file, and nothing else changed. */
+export async function unsetProjectEnv(options: {
+  project: string;
+  name: string;
+  home?: string;
+}): Promise<{ file: string; removed: boolean }> {
+  const project = checkProject(options.project);
+  const name = checkName(options.name);
+  const file = projectEnvPath(project, options.home ?? stateDir());
+
+  const before = await readOrNull(file);
+  if (before === null) return { file, removed: false };
+  const { text, removed } = unsetEnvLine(before, name);
+  if (removed) await writeFile(file, text, { mode: ENV_FILE_MODE });
+  return { file, removed };
+}
+
+export interface ProjectEnvListing {
+  file: string;
+  /** Every name either file offers, and which one answered. Never a value. */
+  names: AgentEnvName[];
+  /** Names in the project's file whose value asks for the unbuilt layer 4. */
+  deferred: string[];
+}
+
+/**
+ * `lingtai env list` — what is set for a project, and where it came from.
+ *
+ * The recipe is not consulted, deliberately: this answers "what does this
+ * machine hold for this project", which is a question worth being able to ask
+ * with no App configured and no recipe fetched. What a *run* would then do with
+ * it — `required`, `allow`, `deny` — is `lingtai doctor`'s answer, from
+ * `resolveAgentEnv`, over these same two layers.
+ */
+export async function projectEnvNames(options: {
+  project: string;
+  machine?: Record<string, string>;
+  home?: string;
+}): Promise<ProjectEnvListing> {
+  const project = checkProject(options.project);
+  const { file, merged, fromFile, commands } = await readEnvLayers({ ...options, project });
+  const deferred = Object.keys(commands).sort();
+  return { file, names: layerNames(merged, fromFile, deferred), deferred };
 }
 
 /** `.env`-file text. Values are quoted so a `#` or a space cannot truncate one. */

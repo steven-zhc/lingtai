@@ -374,11 +374,20 @@ owners, merged in order — later wins:
 | 2 | the workspace's `.env.local`, then `.env` | the repository | whatever it declares |
 
 ```bash
-mkdir -p ~/.lingtai/env
-cat > ~/.lingtai/env/nextloom-ai-admin.env <<'EOF'
-LOCAL_DATABASE_URL=postgresql://localhost:5432/admin_dev
-EOF
+lingtai env set nextloom-ai-admin LOCAL_DATABASE_URL=postgresql://localhost:5432/admin_dev
+lingtai env set nextloom-ai-admin API_TOKEN     # no value: read from stdin, unechoed
+lingtai env list nextloom-ai-admin              # names and their layer, never values
+lingtai env unset nextloom-ai-admin API_TOKEN
 ```
+
+`set` creates the directory and the file, replaces one line without touching
+the others or their comments, and leaves the file `0600`. Giving it no value is
+the case worth having: the value is read from stdin without being echoed, so a
+connection string never becomes a word in your shell history. The value is
+written literally — nothing expands it and a `#` cannot truncate it — and there
+is deliberately no `--from-file`, because copying an application's whole `.env`
+is exactly how a `PROD_DATABASE_URL` reaches an agent. Writing the file by hand
+still works; the command is only the four things it saves getting wrong.
 
 The per-project file exists because a shell has one global home: two projects
 wanting `DATABASE_URL` to mean different things cannot both be expressed in it.
@@ -660,7 +669,7 @@ Every refusal names itself. The common ones:
 | `no lingtai-hook binary at …` | `pnpm --filter @lingtai/hook build`. A run without the guard must not start. |
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |
 | `stopped at recipe: …` | The recipe did not parse, or names an action this build does not have. The message is the validation failure. |
-| `stopped at env: … declared in env.required and not set in any layer` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. Write `~/.lingtai/env/<project>.env`, or declare it in the repository's own `.env.local` — the message names the file. A `LINGTAI_` name never crosses from the machine file at all. |
+| `stopped at env: … declared in env.required and not set in any layer` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. Or declare it in the repository's own `.env.local`. A `LINGTAI_` name never crosses from the machine file at all. |
 | `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
 | `stopped at discover: excluded-label` | That issue carries a label the recipe's `source.exclude` names. Every reason an issue is passed over is the recipe's — there is no built-in list. |
 | `stopped at prepare: the install action refused` | An action at the `prepared` point refused — usually dependencies that did not install in a fresh worktree. Nothing expensive ran; that is the point of failing here. |
