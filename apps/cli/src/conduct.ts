@@ -16,7 +16,17 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { currentRecipe, foreignLabels, loadProjects, runOnce, runQueue, runnableNow, selectRunnable } from "@lingtai/conductor";
+import {
+  PortsLive,
+  currentRecipe,
+  foreignLabels,
+  loadProjects,
+  runOnce,
+  runQueue,
+  runnableNow,
+  selectRunnable,
+} from "@lingtai/conductor";
+import { Effect } from "effect";
 import { readControl } from "@lingtai/daemon";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -43,6 +53,15 @@ export interface PassOutcome {
   refused: { project: string; detail: string }[];
 }
 
+/**
+ * A pass, with the world provided around each item it takes.
+ *
+ * `runOnce` and `runQueue` ask for `Repo` and `AgentHost`
+ * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)), so a
+ * pass is a host as much as `lingtai run` is: it provides `PortsLive` and calls
+ * `runPromise` at its own edge. The projector is the daemon's, held for as long
+ * as the daemon runs, which is why there is no scope of that kind here.
+ */
 export async function conductorPass(options: ConductOptions = {}): Promise<PassOutcome> {
   const log = options.log ?? (() => {});
   const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] };
@@ -129,17 +148,21 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
 
       if (asked) {
         log(`${name}: taking #${asked.issue} — asked for by ${asked.by}`);
-        const result = await runOnce({ ...common, issue: Number(asked.issue) });
+        const result = await Effect.runPromise(
+          runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
+        );
         outcome.ran += 1;
         if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
         else if (result.ok === "held") log(`held at ${result.gate}`);
         else log(`stopped at ${result.stage}: ${result.detail}`);
       } else {
-        const ran = await runQueue({
-          ...common,
-          recipe: resolved.recipe,
-          max: options.max ?? 1,
-        });
+        const ran = await Effect.runPromise(
+          runQueue({
+            ...common,
+            recipe: resolved.recipe,
+            max: options.max ?? 1,
+          }).pipe(Effect.provide(PortsLive)),
+        );
         outcome.ran += ran.ran.length;
       }
     } catch (err) {

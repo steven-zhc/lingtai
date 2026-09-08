@@ -66,6 +66,11 @@ is a call the operator gets to make and this file records rather than argues.
 `Effect.promise`. 0023 says *"the adapter packages and `conductor` are Effect"*;
 today only the seam is.
 
+> **Superseded by [0025](0025-the-conversion-past-the-seam.md)** on 2026-09-08.
+> The paragraph above described the state on the day this file was written and
+> is left as written; 0025 is what closed it, and its own "what is not
+> converted" list is the current answer to the same question.
+
 ### One thing the conversion taught, worth keeping
 
 A `Layer` is built where it is *provided*, so providing the projector to the

@@ -907,14 +907,14 @@
 
     <div class="prop">
       <h3>Named, so that it is a fact rather than a discovery</h3>
-      <p><b><code>runOnce</code> is still <code>async</code>/<code>await</code>.</b>
-        <a href="decisions/0023-effect-at-the-boundary.md">0023</a> says the adapter packages and
-        <code>conductor</code> are Effect; today only the seam is. The ports are
-        <code>Context.Tag</code>s, the projector is a <code>Layer.scoped</code> and
-        <code>run()</code>'s five refusals are a typed error channel — and one line past that,
-        <code>Effect.promise</code> hands control to 754 lines that hold release in two
-        <code>finally</code> blocks and “every exit appends” in a catch-all.
-        <code>#73</code>.</p>
+      <p><b>Two interfaces are still promises, on purpose.</b>
+        <a href="decisions/0025-the-conversion-past-the-seam.md">0025</a> took
+        <code>runOnce</code>, the ports and the adapters to Effect: the worktree, the hook socket
+        and the agent process are each a <code>Scope</code>, and the catch-all that held “every
+        exit appends” is a named defect handler with a test behind it. What it did not convert is
+        <code>Runtime</code>, because <code>actions</code> consumes it and 0023 keeps that package
+        plain, and <code>GitHubClient</code>, because the board, the daemon and four commands use
+        it. Each is its own ticket, and worth doing only if something asks for it.</p>
       <p><b><code>admit</code> runs nothing.</b> It is one of the five points, resolved into
         <code>GatesResolved</code> and drawn on the board, and no pipeline is built for it. That is
         the same sentence as <code>#58</code>'s, which is why <code>gate-audit</code> includes it

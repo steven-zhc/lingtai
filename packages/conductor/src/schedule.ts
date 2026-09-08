@@ -39,6 +39,8 @@ import { runnableNow } from "./discover.ts";
 import { selectRunnable } from "./queue.ts";
 import { type RunOnceResult, runOnce } from "./run-once.ts";
 import type { TokenSource } from "@lingtai/repo";
+import { Effect } from "effect";
+import type { AgentHost, Repo } from "./ports.ts";
 
 export interface ScheduleOptions {
   project: ProjectState;
@@ -108,93 +110,115 @@ export interface ScheduleResult {
   attempted: string[];
 }
 
-export async function runQueue(options: ScheduleOptions): Promise<ScheduleResult> {
-  const log = options.log ?? (() => {});
-  const ran: RunOnceResult[] = [];
-  const attempted = new Set<string>();
+/**
+ * A pass, as an `Effect`.
+ *
+ * It takes the same world `runOnce` does and for the same reason: this is a
+ * loop over that function, so it needs whatever that function needs and adds
+ * nothing of its own ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)).
+ * A host provides `Repo` and `AgentHost` once, around the pass.
+ */
+export function runQueue(
+  options: ScheduleOptions,
+): Effect.Effect<ScheduleResult, never, Repo | AgentHost> {
+  return Effect.gen(function* () {
+    const log = options.log ?? (() => {});
+    const ran: RunOnceResult[] = [];
+    const attempted = new Set<string>();
 
-  const finish = (stopped: StoppedBecause): ScheduleResult => {
-    log(`stopped: ${stopped} — ${ran.length} run(s)`);
-    return { ran, stopped, attempted: [...attempted] };
-  };
+    const finish = (stopped: StoppedBecause): ScheduleResult => {
+      log(`stopped: ${stopped} — ${ran.length} run(s)`);
+      return { ran, stopped, attempted: [...attempted] };
+    };
 
-  // Null for a project registered before the name was recorded. Refusing here
-  // is better than reading an empty queue and reporting "nothing to do".
-  const name = options.project.project;
-  if (!name) throw new Error("this project has no name recorded — re-run lingtai add");
-
-  for (;;) {
-    if (options.signal?.aborted) return finish("aborted");
-    if (options.max !== undefined && ran.length >= options.max) return finish("max");
-
-    // Asked, every time round the loop. GitHub says what it is offering and
-    // the log says what is already claimed; the difference is the queue, minus
-    // anything inside the backoff window. The backoff is the part that survives
-    // a restart, which the in-memory set below does not.
+    // Null for a project registered before the name was recorded. Refusing here
+    // is better than reading an empty queue and reporting "nothing to do".
     //
-    // Once a pass, not once: an issue closed by hand or relabelled while the
-    // pass is running changes the answer, and the old cached queue would have
-    // taken it anyway.
-    const offered = await runnableNow({ client: options.client, recipe: options.recipe });
-    const queue = await selectRunnable({
-      project: name,
-      offered: offered.runnable,
-      kinds: options.recipe.source.kinds,
-    });
-    if (queue.length === 0) return finish("empty");
-
-    const next = queue.find((entry) => !attempted.has(entry.taskId));
-    if (!next) {
-      // The queue has items and every one of them has already been through this
-      // pass. Retrying now would be the $29 loop.
-      return finish("exhausted");
+    // A defect rather than a typed failure: every caller checks the name before
+    // it gets here, so reaching this line means a caller is broken and not that
+    // a project is misconfigured.
+    const name = options.project.project;
+    if (!name) {
+      return yield* Effect.die(new Error("this project has no name recorded — re-run lingtai add"));
     }
 
-    const issue = Number(next.issue);
-    if (!Number.isInteger(issue)) {
-      // A work item whose reference is not a number cannot be run by a path
-      // that nominates issues by number. Marked attempted so the loop moves on
-      // rather than seeing it at the top of the queue forever.
+    for (;;) {
+      if (options.signal?.aborted) return finish("aborted");
+      if (options.max !== undefined && ran.length >= options.max) return finish("max");
+
+      // Asked, every time round the loop. GitHub says what it is offering and
+      // the log says what is already claimed; the difference is the queue, minus
+      // anything inside the backoff window. The backoff is the part that survives
+      // a restart, which the in-memory set below does not.
+      //
+      // Once a pass, not once: an issue closed by hand or relabelled while the
+      // pass is running changes the answer, and the old cached queue would have
+      // taken it anyway.
+      const offered = yield* Effect.promise(() =>
+        runnableNow({ client: options.client, recipe: options.recipe }),
+      );
+      const queue = yield* Effect.promise(() =>
+        selectRunnable({
+          project: name,
+          offered: offered.runnable,
+          kinds: options.recipe.source.kinds,
+        }),
+      );
+      if (queue.length === 0) return finish("empty");
+
+      const next = queue.find((entry) => !attempted.has(entry.taskId));
+      if (!next) {
+        // The queue has items and every one of them has already been through this
+        // pass. Retrying now would be the $29 loop.
+        return finish("exhausted");
+      }
+
+      const issue = Number(next.issue);
+      if (!Number.isInteger(issue)) {
+        // A work item whose reference is not a number cannot be run by a path
+        // that nominates issues by number. Marked attempted so the loop moves on
+        // rather than seeing it at the top of the queue forever.
+        attempted.add(next.taskId);
+        log(`skipping ${next.taskId}: "${next.issue}" is not an issue number`);
+        continue;
+      }
+
       attempted.add(next.taskId);
-      log(`skipping ${next.taskId}: "${next.issue}" is not an issue number`);
-      continue;
+      log(`taking ${next.taskId} — ${next.title}`);
+
+      const result = yield* runOnce({
+        project: options.project,
+        client: options.client,
+        runtime: options.runtime,
+        issue,
+        hookBinary: options.hookBinary,
+        ...(options.guard === undefined ? {} : { guard: options.guard }),
+        // Raw. `runOnce` has the ticket and does the substitution.
+        prompt: options.prompt,
+        ...(options.promptVersion === undefined ? {} : { promptVersion: options.promptVersion }),
+        ...(options.merge === undefined ? {} : { merge: options.merge }),
+        ...(options.token === undefined ? {} : { token: options.token }),
+        ...(options.home === undefined ? {} : { home: options.home }),
+        ...(options.store === undefined ? {} : { store: options.store }),
+        ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+        ...(options.remote === undefined ? {} : { remote: options.remote }),
+        log: options.log,
+      });
+
+      ran.push(result);
+
+      // Every ending is reported, including the ones that are nobody's fault.
+      // A scheduler that only logs successes is the old loop.
+      if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
+      else if (result.ok === "held") log(`held at ${result.gate}`);
+      else log(`stopped at ${result.stage}: ${result.detail}`);
+
+      // The environment is the project's, not the item's. `runOnce` refused
+      // before claiming anything, and the next ticket would be refused for the
+      // same reason — so the pass ends here rather than saying it nine times.
+      if (result.ok === false && result.stage === "env") return finish("env");
     }
-
-    attempted.add(next.taskId);
-    log(`taking ${next.taskId} — ${next.title}`);
-
-    const result = await runOnce({
-      project: options.project,
-      client: options.client,
-      runtime: options.runtime,
-      issue,
-      hookBinary: options.hookBinary,
-      ...(options.guard === undefined ? {} : { guard: options.guard }),
-      // Raw. `runOnce` has the ticket and does the substitution.
-      prompt: options.prompt,
-      ...(options.promptVersion === undefined ? {} : { promptVersion: options.promptVersion }),
-      ...(options.merge === undefined ? {} : { merge: options.merge }),
-      ...(options.token === undefined ? {} : { token: options.token }),
-      ...(options.home === undefined ? {} : { home: options.home }),
-      ...(options.store === undefined ? {} : { store: options.store }),
-      ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
-      ...(options.remote === undefined ? {} : { remote: options.remote }),
-      log: options.log,
-    });
-
-    ran.push(result);
-
-    // Every ending is reported, including the ones that are nobody's fault.
-    // A scheduler that only logs successes is the old loop.
-    if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
-    else if (result.ok === "held") log(`held at ${result.gate}`);
-    else log(`stopped at ${result.stage}: ${result.detail}`);
-
-    // The environment is the project's, not the item's. `runOnce` refused
-    // before claiming anything, and the next ticket would be refused for the
-    // same reason — so the pass ends here rather than saying it nine times.
-    if (result.ok === false && result.stage === "env") return finish("env");
-  }
+  });
 }
 
 /**

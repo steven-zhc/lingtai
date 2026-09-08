@@ -12,6 +12,7 @@
  * intersection (doc/decisions/0007-dual-runtime.md); the extras are bonus signal
  * and the system works without them.
  */
+import { Data, Effect } from "effect";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -185,3 +186,39 @@ export async function smokeTestFailClosed(
       "the log is the answer, that is the failure with no symptom.",
   };
 }
+
+/**
+ * Anything the host could not do for a run, in a channel a caller can see.
+ *
+ * The mirror of `@lingtai/repo`'s `RepoFailed`, and for the same reason
+ * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)): the
+ * conversion is worth something because the type says a call can fail, not
+ * because it returns an `Effect`.
+ */
+export class AgentHostFailed extends Data.TaggedError("AgentHostFailed")<{
+  /** `wire`, `smokeTest`, `serve` — what was being attempted. */
+  readonly operation: string;
+  readonly detail: string;
+}> {}
+
+/** The two above, as `Effect`s. The promise faces stay for callers that are not. */
+export const writeHookWiringEffect = (
+  options: RenderOptions,
+): Effect.Effect<HookWiring, AgentHostFailed> =>
+  Effect.tryPromise({
+    try: () => writeHookWiring(options),
+    catch: (err) => new AgentHostFailed({ operation: "wire", detail: (err as Error).message }),
+  });
+
+export const smokeTestFailClosedEffect = (
+  hookBinary: string,
+  run: (
+    bin: string,
+    env: Record<string, string>,
+    stdin: string,
+  ) => Promise<{ code: number | null; stderr: string }>,
+): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed> =>
+  Effect.tryPromise({
+    try: () => smokeTestFailClosed(hookBinary, run),
+    catch: (err) => new AgentHostFailed({ operation: "smokeTest", detail: (err as Error).message }),
+  });
