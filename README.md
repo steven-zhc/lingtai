@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/logo-dark.png">
+  <img src="doc/logo.png" alt="" width="120" align="right">
+</picture>
+
 # Lingtai
 
 **One agent loop, driven by an append-only event log. Everything else is a
