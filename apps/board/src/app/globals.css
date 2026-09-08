@@ -114,6 +114,14 @@ body {
 .empty {
   padding: 14px 4px; font-size: 12px; color: var(--muted); line-height: 1.6;
 }
+/* An empty column says nothing in muted grey. A column that could not be filled
+   has to read as a fault, or it is the empty column again (#76). */
+.empty.broken {
+  color: var(--fail);
+  border-left: 2px solid var(--fail);
+  background: var(--fail-soft);
+  padding: 10px 9px; border-radius: 3px;
+}
 
 /* --- cards ---------------------------------------------------------------
    Everything below renders a real row of the `board` projection.
