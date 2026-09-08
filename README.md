@@ -45,34 +45,37 @@ each repository it manages, and the agent processes it starts.
 
 ```mermaid
 flowchart TB
-  subgraph github["GitHub"]
-    repo["<b>managed repository</b><br/>issues, branches,<br/>.lingtai/config.yaml"]
-  end
+  gh(["<b>GitHub</b> — the authority on what work exists"])
+  cond["<b>conductor</b><br/>discover · claim · worktree · gates · integrate"]
+  agent["<b>agent</b><br/>claude-code, in a worktree of its own"]
+  log[("<b>events</b> — append-only, and the only truth")]
+  you["<b>board</b> · <b>lingtai</b> — where you see it and decide"]
 
-  subgraph yours["your machine"]
-    cond["<b>conductor</b><br/>discover → claim → worktree →<br/>run → gate → integrate"]
-    agent["<b>agent runtime</b><br/>claude-code, in a worktree<br/>of its own"]
-    hook["<b>lingtai-hook</b><br/>the agent's channel<br/>to the log · fails closed"]
-    log[("<b>event log</b><br/>Postgres, append-only")]
-    cli["<b>lingtai</b><br/>the CLI"]
-    board["<b>board</b><br/>the web UI"]
-  end
+  gh -->|"issues, recipe"| cond
+  cond -->|"branch, merge, labels"| gh
+  cond -->|"starts it, hears it back"| agent
+  cond -->|"append"| log
+  agent -->|"append, through the hook"| log
+  log -->|"read"| you
+  you -->|"approve · reject · pause"| log
 
-  repo -- "issues, recipe" --> cond
-  cond -- "branch, merge, labels" --> repo
-  cond --> agent
-  agent <--> hook
-  cond --> log
-  agent --> log
-  hook --> log
-  log --> board
-  cli <--> log
-  cli --> cond
+  classDef out fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
+  classDef work fill:#e6e9ec,stroke:#5c646d,stroke-width:1.5px,color:#14181c;
+  classDef truth fill:#e9dcc0,stroke:#8a6a2e,stroke-width:3px,color:#14181c;
+  classDef read fill:#e2ecea,stroke:#2c6b67,stroke-width:1.5px,color:#14181c;
+  class gh out;
+  class cond,agent work;
+  class log truth;
+  class you read;
 ```
 
-The log in the middle is the point. GitHub is an *input* — the authority on what
-work exists — and an *output*, told what the log says. It is never where Lingtai
-keeps what it did.
+**Everything writes to the middle, and everything else reads it.** Nothing keeps
+private state, which is why the board and the CLI cannot disagree — and why the
+three questions above are one query rather than three investigations.
+
+GitHub is on both sides and is neither the middle: an **input**, since it is the
+authority on what work exists, and an **output**, told what the log says. It is
+never where Lingtai keeps what it did.
 
 ## The loop, and the five places it stops
 
