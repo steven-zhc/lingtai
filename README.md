@@ -12,17 +12,18 @@ including a human one — has passed.
 
 ## Why
 
-It replaces `agent-loop.sh`, a bash harness that worked 73 tickets against one
-repository in four days. That harness kept its state in GitHub labels, its
-history in issue comments, and its telemetry in a log file nobody parsed. It
-could not answer three questions:
+Three questions decide whether you can leave a coding agent running:
 
 - *what state is this ticket in?*
 - *why did this not merge?*
 - *what is waiting on me?*
 
-Everything here follows from making those three the same query against the same
-table. The load-bearing word is **log**, not *event*: plenty of systems are
+Everything here follows from making those three **the same query against the
+same table**. Scatter them — state in labels, history in comments, telemetry in
+a log nobody parses — and each is answerable only by someone who already knows
+where to look, which is near enough to not answerable at all.
+
+The load-bearing word is **log**, not *event*: plenty of systems are
 event-driven and still keep authoritative mutable state somewhere. Here the log
 is the only truth — every table is derived, can be dropped, and rebuilds to
 exactly what it was.
