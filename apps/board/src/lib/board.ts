@@ -23,7 +23,7 @@
 // The subpath, not the barrel: importing the barrel pulls in the gate
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
-import { readTasks, type TaskCard } from "@lingtai/projector/task-view";
+import { readTasks, type TaskCard, type TaskState } from "@lingtai/projector/task-view";
 import { selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { currentRecipe, loadProjects } from "@lingtai/conductor/projects";
@@ -85,12 +85,30 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
   { id: "landed", label: "Landed" },
 ];
 
-function toCard(t: TaskCard): BoardCard {
+/**
+ * Which column a state is shown on. The whole mapping, said once.
+ *
+ * A record over `TaskState` rather than a ternary at the point of use, because
+ * the states outnumber the columns and this is the only thing that makes the
+ * board total: every state names a column, so no card can be nowhere. Written
+ * as a record so a sixth state cannot be added without naming its column here
+ * — which is the property #59 lacked, where bucketing on the raw state left a
+ * task in `gates` off every column for the whole of its gate run.
+ */
+export const COLUMN_OF: Record<TaskState, ColumnId> = {
+  queued: "queued",
+  running: "running",
+  // `gates` is a task state and no longer a lane; it belongs with `running`.
+  gates: "running",
+  waiting: "waiting",
+  landed: "landed",
+};
+
+export function toCard(t: TaskCard): BoardCard {
   return {
     taskId: t.taskId,
     project: t.project,
-    // `gates` is a task state and no longer a lane; it belongs with `running`.
-    column: t.state === "gates" ? "running" : t.state,
+    column: COLUMN_OF[t.state],
     ref: t.issue,
     kind: t.kind,
     title: t.title,
@@ -185,5 +203,17 @@ export async function loadBoard(project?: string): Promise<BoardColumn[]> {
   const known = new Set(fromLog.map((c) => c.taskId));
   const cards = [...fromLog, ...(await queuedCards(project)).filter((c) => !known.has(c.taskId))];
 
+  return toColumns(cards);
+}
+
+/**
+ * Buckets cards into the four columns, by the column each card already knows.
+ *
+ * Never by the task's raw state: a state the columns do not carry then matches
+ * nothing and the card is dropped silently, which is precisely how a card
+ * disappeared for the length of its gates (#59). The placement is `COLUMN_OF`'s
+ * to make, and this only reads it back off the card.
+ */
+export function toColumns(cards: BoardCard[]): BoardColumn[] {
   return COLUMNS.map((c) => ({ ...c, cards: cards.filter((card) => card.column === c.id) }));
 }

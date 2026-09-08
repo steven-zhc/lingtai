@@ -52,5 +52,12 @@ export function integrationStream(project: string, base: string): string {
  * labels", so with a `string` a typo and a deliberate clear were the same
  * expression — and the one state nobody ever passed (`waiting`) went unnoticed
  * for the whole life of the outbox.
+ *
+ * The list is the value and the type is read off it, so that the states can be
+ * enumerated at runtime. That is what lets the board *prove* every one of them
+ * lands on a column (#59) instead of asserting it about the five a test
+ * happened to think of.
  */
-export type LabelState = "queued" | "running" | "gates" | "waiting" | "landed";
+export const LABEL_STATES = ["queued", "running", "gates", "waiting", "landed"] as const;
+
+export type LabelState = (typeof LABEL_STATES)[number];
