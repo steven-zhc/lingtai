@@ -7,24 +7,25 @@
     ".": "./src/index.ts",
     "./projects": "./src/projects.ts",
     "./decide": "./src/approve.ts",
-    "./worktree": "./src/worktree.ts",
     "./discover": "./src/discover.ts",
     "./labels": "./src/labels.ts",
     "./queue": "./src/queue.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run && vitest run -c vitest.pure.config.ts"
   },
   "dependencies": {
     "@lingtai/actions": "workspace:*",
+    "@lingtai/agent-env": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
     "@lingtai/event-store": "workspace:*",
     "@lingtai/github": "workspace:*",
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
-    "@lingtai/runtime": "workspace:*",
+    "@lingtai/repo": "workspace:*",
+    "@lingtai/agent": "workspace:*",
     "pg": "^8.16.3"
   },
   "devDependencies": {

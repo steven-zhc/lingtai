@@ -1,7 +1,7 @@
 import { config } from "dotenv";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -157,6 +157,20 @@ export interface GitHubAppCredentials {
  * a command happened to start in — the same rule the environment file itself
  * follows.
  */
+/**
+ * Where Lingtai keeps what it owns on this machine — clones, worktrees, the
+ * per-project env files, the hook sockets.
+ *
+ * Here rather than beside the worktrees because it is not about worktrees: it
+ * is a fact about the machine, which is what this package is for, and three
+ * packages need it without needing each other. There were two copies before
+ * (`conductor/worktree.ts` and `daemon/reconcile.ts`), differing in how they
+ * fell back when `HOME` was unset.
+ */
+export function stateDir(from: NodeJS.ProcessEnv = process.env): string {
+  return from["LINGTAI_HOME"] ?? join(from["HOME"] ?? homedir(), ".lingtai");
+}
+
 export function resolvePath(path: string): string {
   if (path === "~") return homedir();
   if (path.startsWith("~/")) return resolve(homedir(), path.slice(2));

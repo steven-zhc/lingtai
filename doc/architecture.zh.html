@@ -709,7 +709,7 @@
     <p class="sub-h">什么被删掉</p>
     <div class="prop">
       <h3>四处删除</h3>
-      <p style="opacity:.75"><b>四处全部落地，改名也落地了</b> —— outbox 在 2026-09-03（<code>442f513</code>），队列缓存、「退出前追平」和投影名单在 2026-09-04，四处改名和 <code>store</code> 的拆分在 2026-09-07。上面第 1&ndash;6 节画的是这一切<em>之前</em>的系统，outbox、队列和旧包名都还在图上。等抽取那一步落地后一起重画。</p>
+      <p style="opacity:.75"><b>四处全部落地，改名也落地了</b> —— outbox 在 2026-09-03（<code>442f513</code>），队列缓存、「退出前追平」和投影名单在 2026-09-04，四处改名和 <code>store</code> 的拆分在 2026-09-07。上面第 1&ndash;6 节画的是这一切<em>之前</em>的系统，outbox、队列和旧包名都还在图上。抽取那一步也在 2026-09-07 落地了，0022 至此全部建成，这几张图是它最后欠下的东西。</p>
       <p><b><code>outbox</code> —— 表、投影、投递 worker、退避重试、死信、两个事件类型，散在 <code>conductor</code>、<code>daemon</code> 和 <code>apps/cli</code> 三个包里。全部只为三种调用：发评论、设标签、关 issue</b><br><code>conductor</code> 直接调 <code>github</code>，成败各 append 一条。没落地的，由 <code>reconcile</code> 收敛。</p>
       <p><b>队列缓存 —— <code>syncQueued</code>、<code>queued</code> 行、<code>refreshQueue</code></b><br>要用的时候现问 GitHub。它的主要消费者本来就在每次读之前刚刚刷新过它。</p>
       <p><b>「退出前追平一次」这个特例 —— <code>advanceBoard</code>、<code>catchUpProjections</code></b><br>每个 append 的宿主，在运行期间都持有一个 <code>projector</code>。一种行为，不是两种。</p>

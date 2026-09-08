@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { stateDir } from "./worktree.ts";
+import { stateDir } from "@lingtai/env";
 
 /**
  * The four both runtimes have, then Claude Code's extras.

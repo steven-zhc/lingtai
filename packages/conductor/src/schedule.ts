@@ -32,13 +32,13 @@
  */
 import type { Recipe } from "@lingtai/recipe";
 import type { GitHubClient } from "@lingtai/github";
-import type { Runtime } from "@lingtai/runtime";
+import type { Runtime } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { type ProjectState, reduceWorkItem } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
 import { selectRunnable } from "./queue.ts";
 import { type RunOnceResult, runOnce } from "./run-once.ts";
-import type { TokenSource } from "./worktree.ts";
+import type { TokenSource } from "@lingtai/repo";
 
 export interface ScheduleOptions {
   project: ProjectState;

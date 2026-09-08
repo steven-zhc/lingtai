@@ -25,7 +25,7 @@ import { type ResolvedRecipe, parseDuration } from "@lingtai/recipe";
 import { type Tier, parsePayload } from "@lingtai/domain";
 import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
-import { type Runtime, missingForTier } from "@lingtai/runtime";
+import { type Runtime, missingForTier } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { workItemStream } from "@lingtai/domain";
@@ -33,11 +33,13 @@ import { runnableNow } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
-import { smokeTestFailClosed, writeHookWiring } from "./hook-config.ts";
-import { createHookServer } from "./hook-socket.ts";
-import { integrate } from "./integrate.ts";
+
 import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
-import { type AgentEnv, type TokenSource, git, provisionWorktree, removeWorktree, resolveAgentEnv, runnableEnv, stateDir } from "./worktree.ts";
+import { type AgentEnv, runnableEnv } from "@lingtai/agent-env";
+import { stateDir } from "@lingtai/env";
+import type { TokenSource } from "@lingtai/repo";
+import { livePorts } from "./live.ts";
+import type { RunPorts } from "./ports.ts";
 import { spawn } from "node:child_process";
 
 export interface RunOnceOptions {
@@ -72,6 +74,14 @@ export interface RunOnceOptions {
    * arithmetic rather than by anyone remembering to.
    */
   merge?: boolean;
+  /**
+   * The world this run acts on. Defaults to the real one.
+   *
+   * A test supplies fakes and gets a whole pass with no git, no socket, no
+   * subprocess and no database — which is the property `#68` was for, and the
+   * one that says whether the seam is real or only a directory listing.
+   */
+  ports?: RunPorts;
   log?: (line: string) => void;
 }
 
@@ -119,6 +129,7 @@ function runBinary(
 }
 
 export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
+  const ports = options.ports ?? livePorts();
   const store = options.store ?? eventStore;
   const home = options.home ?? stateDir();
   const log = options.log ?? (() => {});
@@ -156,7 +167,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
   // clone is a network round trip.
   let env: AgentEnv;
   try {
-    env = await resolveAgentEnv({ project, required: recipe.env.required, home });
+    env = await ports.agent.resolveEnv({ project, required: recipe.env.required, home });
   } catch (err) {
     // ProductionValueError. Refusing before the claim for the same reason.
     return { ok: false, workItemId: null, runId: null, stage: "env", detail: (err as Error).message };
@@ -265,7 +276,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
   };
 
   try {
-    const worktree = await provisionWorktree({
+    const worktree = await ports.repo.provision({
       project,
       owner: options.client.owner,
       repo: options.client.repo,
@@ -288,8 +299,8 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
     // fails closed is therefore about the *record*, not about mediation — a
     // hook that cannot reach the conductor must stop the run rather than let it
     // produce nothing and look like it produced everything.
-    const wiring = await writeHookWiring({ runId, hookBinary: options.hookBinary, home });
-    const smoke = await smokeTestFailClosed(options.hookBinary, runBinary);
+    const wiring = await ports.agent.wire({ runId, hookBinary: options.hookBinary, home });
+    const smoke = await ports.agent.smokeTest(options.hookBinary, runBinary);
     if (!smoke.ok) {
       await release("the hook did not fail closed");
       return { ok: false, workItemId, runId, stage: "hook", detail: smoke.detail };
@@ -335,7 +346,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
 
     let proposedSha: string | null = null;
 
-    const server = createHookServer({
+    const server = ports.agent.serve({
       socketPath: wiring.socketPath,
       store,
       onLifecycle: (_r, hook) => {
@@ -445,8 +456,8 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
       log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`);
 
       // ---- 9. the diff the `proposed` gates will be about ----------------
-      const headSha = await git(["rev-parse", "HEAD"], { ...{ token: options.token, env: options.gitEnv }, cwd: worktree.path });
-      const stat = await git(["diff", "--numstat", `${worktree.baseSha}..HEAD`], {
+      const headSha = await ports.repo.git(["rev-parse", "HEAD"], { ...{ token: options.token, env: options.gitEnv }, cwd: worktree.path });
+      const stat = await ports.repo.git(["diff", "--numstat", `${worktree.baseSha}..HEAD`], {
         token: options.token,
         env: options.gitEnv,
         cwd: worktree.path,
@@ -494,7 +505,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
             body: ticket.body,
           }),
           diff: () =>
-            git(["diff", `${worktree.baseSha}...HEAD`], {
+            ports.repo.git(["diff", `${worktree.baseSha}...HEAD`], {
               ...{ token: options.token, env: options.gitEnv },
               cwd: worktree.path,
             }),
@@ -506,7 +517,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
         },
         watch: {
           changedFiles: async () => {
-            const names = await git(["diff", "--name-only", `${worktree.baseSha}...HEAD`], {
+            const names = await ports.repo.git(["diff", "--name-only", `${worktree.baseSha}...HEAD`], {
               ...{ token: options.token, env: options.gitEnv },
               cwd: worktree.path,
             });
@@ -533,7 +544,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
 
       // The agent's branch has to exist on the remote for the integrator to
       // merge it; it works in a worktree, not on origin.
-      await git(["push", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`], {
+      await ports.repo.git(["push", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`], {
         token: options.token,
         env: options.gitEnv,
         cwd: worktree.path,
@@ -582,7 +593,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
       // mirror, and git refuses to update a ref that some worktree has checked
       // out. Keeping it alive through the merge is what made the first
       // end-to-end run fail.
-      await removeWorktree({ project, runId, home }).catch(() => {});
+      await ports.repo.remove({ project, runId, home }).catch(() => {});
 
       // ---- 12. hold, if anything asked for a person -------------------------
       // Three things can ask: a gate at `proposed` whose verdict is
@@ -657,7 +668,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
       // Only one of the two can have refused — `merge` runs only when
       // `proposed` passed — and the integrator records that one.
       const refused = pipeline.failedAt !== null ? pipeline : atMerge;
-      const merged = await integrate({
+      const merged = await ports.repo.integrate({
         project,
         owner: options.client.owner,
         repo: options.client.repo,
@@ -730,6 +741,6 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
     await release(`unexpected failure: ${(err as Error).message}`);
     return { ok: false, workItemId, runId, stage: "unexpected", detail: (err as Error).message };
   } finally {
-    await removeWorktree({ project, runId, home }).catch(() => {});
+    await ports.repo.remove({ project, runId, home }).catch(() => {});
   }
 }

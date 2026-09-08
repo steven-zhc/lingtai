@@ -23,58 +23,6 @@ export {
   loadProjects,
 } from "./projects.ts";
 export {
-  DEFAULT_PRODUCTION_PATTERNS,
-  ensureMirror,
-  filterEnv,
-  git,
-  isReserved,
-  parseEnvFile,
-  ProductionValueError,
-  projectEnvPath,
-  provisionWorktree,
-  removeWorktree,
-  renderEnvFile,
-  RESERVED,
-  resolveAgentEnv,
-  RUNNABLE,
-  runnableEnv,
-  stateDir,
-  worktreePath,
-  type AgentEnv,
-  type AgentEnvName,
-  type EnvFile,
-  type EnvLayer,
-  type FilteredEnv,
-  type ProvisionOptions,
-  type TokenSource,
-  type Worktree,
-} from "./worktree.ts";
-export {
-  createHookServer,
-  type HookName,
-  type HookServer,
-  type HookServerOptions,
-  type RegisteredRun,
-  redact,
-} from "./hook-socket.ts";
-export {
-  CLAUDE_ONLY_HOOKS,
-  INTERSECTION_HOOKS,
-  renderSettings,
-  settingsPathFor,
-  smokeTestFailClosed,
-  socketPathFor,
-  SUN_PATH_MAX,
-  writeHookWiring,
-  type HookWiring,
-  type RenderOptions,
-} from "./hook-config.ts";
-export {
-  integrate,
-  type IntegrateOptions,
-  type IntegrateResult,
-} from "./integrate.ts";
-export {
   DEFAULT_BACKOFF_MS,
   selectRunnable,
   type Runnable,

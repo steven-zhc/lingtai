@@ -30,7 +30,9 @@ import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/do
 import { directDatabaseUrl } from "@lingtai/env";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import pg from "pg";
-import { type TokenSource, git, stateDir, worktreePath } from "./worktree.ts";
+import { stateDir } from "@lingtai/env";
+import { type TokenSource, git } from "./git.ts";
+import { worktreePath } from "./worktree.ts";
 
 export interface IntegrateOptions {
   project: string;

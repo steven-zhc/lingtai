@@ -9,7 +9,7 @@
 import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from "@lingtai/conductor";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/runtime";
+import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

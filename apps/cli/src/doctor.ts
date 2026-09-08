@@ -22,20 +22,19 @@
  * not about what happened to be installed the day it was written: see
  * `DEFERRED`.
  */
+import { resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
   currentRecipe,
   landedWithoutEndActions,
   landedWithoutGatePoints,
   loadProjects,
-  resolveAgentEnv,
-  runnableEnv,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
 import { isEventType } from "@lingtai/domain";
 import { STALE_AFTER_MS, findOrphans, readControl, readStatus } from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/runtime";
+import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { projectionLag } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";

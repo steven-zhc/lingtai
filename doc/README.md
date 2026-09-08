@@ -29,6 +29,13 @@ from what an older file says to what is on disk now.
 | `@lingtai/config` | `@lingtai/recipe` | a recipe is not "config" |
 | `@lingtai/gates` | `@lingtai/actions` | `end` gates nothing; it runs for effect |
 | `@lingtai/store` | `@lingtai/event-store` + `@lingtai/projector` | an event store offers resumption; it does not remember its readers |
+| `@lingtai/runtime` | `@lingtai/agent` | starting the process and hearing it back are one concern |
+
+Three packages came *out* of `conductor` on the same day, which no older ADR
+mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
+**`@lingtai/agent`** (the runtime, the hook wiring and the hook socket) and
+**`@lingtai/agent-env`** (the agent's environment — never to be confused with
+`@lingtai/env`, which holds the *machine's* credentials).
 
 ## Decisions
 

@@ -19,7 +19,7 @@ import { integrationStream, workItemStream } from "@lingtai/domain";
 import { createProjectionRunner, readTasks, taskViewProjection } from "@lingtai/projector";
 import { directDatabaseUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/runtime";
+import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";

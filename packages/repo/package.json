@@ -1,5 +1,5 @@
 {
-  "name": "@lingtai/actions",
+  "name": "@lingtai/repo",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,16 +8,19 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@lingtai/recipe": "workspace:*",
+    "@lingtai/agent-env": "workspace:*",
     "@lingtai/domain": "workspace:*",
-    "@lingtai/agent": "workspace:*"
+    "@lingtai/env": "workspace:*",
+    "@lingtai/event-store": "workspace:*",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@types/pg": "^8.15.6"
   }
 }

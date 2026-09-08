@@ -25,8 +25,7 @@ import { workItemStream } from "@lingtai/domain";
 import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
-import { integrate } from "./integrate.ts";
-import type { TokenSource } from "./worktree.ts";
+import { integrate, type TokenSource } from "@lingtai/repo";
 
 /**
  * `proposed:build` → the point and the action.

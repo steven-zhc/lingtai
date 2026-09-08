@@ -25,7 +25,8 @@
 // the same reason `./board` and `./projects` exist.
 import { approve, reject, waive } from "@lingtai/conductor/decide";
 import { loadProject } from "@lingtai/conductor/projects";
-import { git, stateDir } from "@lingtai/conductor/worktree";
+import { stateDir } from "@lingtai/env";
+import { git } from "@lingtai/repo";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
 import { revalidatePath } from "next/cache";

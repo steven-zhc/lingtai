@@ -20,7 +20,7 @@ import { currentRecipe, foreignLabels, loadProjects, runOnce, runQueue, runnable
 import { readControl } from "@lingtai/daemon";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createClaudeCodeRuntime } from "@lingtai/runtime";
+import { createClaudeCodeRuntime } from "@lingtai/agent";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 

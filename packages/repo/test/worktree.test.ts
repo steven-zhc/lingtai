@@ -13,20 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  DEFAULT_PRODUCTION_PATTERNS,
-  ProductionValueError,
-  RESERVED,
-  filterEnv,
-  isReserved,
-  parseEnvFile,
-  projectEnvPath,
-  provisionWorktree,
-  removeWorktree,
-  renderEnvFile,
-  resolveAgentEnv,
-  runnableEnv,
-} from "../src/index.ts";
+import { DEFAULT_PRODUCTION_PATTERNS, ProductionValueError, RESERVED, filterEnv, isReserved, parseEnvFile, projectEnvPath, renderEnvFile, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
+import { provisionWorktree, removeWorktree } from "../src/index.ts";
 
 const exec = promisify(execFile);
 const git = (args: string[], cwd: string) =>
