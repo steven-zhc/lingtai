@@ -42,23 +42,23 @@ source:
 env:
   # The test database, and nothing else.
   #
-  # The suite refuses to run without TEST_DATABASE_URL, and every test appends
-  # real events — so an agent needs it. What an agent must never have is
-  # DATABASE_URL: that is this system's own log, the thing it is keeping.
-  # Naming only these two is what keeps them apart.
+  # The suite refuses to run without LINGTAI_TEST_DATABASE_URL, and every test
+  # appends real events — so an agent needs it. What an agent must never have is
+  # LINGTAI_DATABASE_URL: that is this system's own log, the thing it is
+  # keeping. Naming only these two is what keeps them apart.
   #
   # `required`, not `allow`: a repository naming a variable is a repository
   # saying it needs one, and a run that cannot supply it refuses this whole
-  # project before it claims anything ([0020](../doc/decisions/0020-the-agent-environment-in-layers.md)).
+  # project before it claims anything ([0021](../doc/decisions/0021-the-recipe-decides-the-environment.md)).
   #
-  # Both names match `TEST_*`, which is RESERVED — so they can only come from
-  # `~/.lingtai/env/lingtai.env`, never from the conductor's own environment.
-  # That is exactly the asymmetry that lets Lingtai reach its test database
-  # while a managed repository's recipe cannot reach for one by writing the
-  # same two lines.
+  # The names carry `LINGTAI_` since #63, and that prefix is doing the work the
+  # old `TEST_*`/RESERVED asymmetry used to. No managed application asks for a
+  # LINGTAI_* name, so a project whose own file is missing a line gets an
+  # *absent* value — which `required` refuses loudly — instead of silently
+  # inheriting Lingtai's.
   required:
-    - TEST_DATABASE_URL
-    - TEST_DIRECT_DATABASE_URL
+    - LINGTAI_TEST_DATABASE_URL
+    - LINGTAI_TEST_DIRECT_DATABASE_URL
   # `@lingtai/env` loads `.env.local` from the workspace root, so that is where
   # a worktree's copy has to land.
   plantAt: .env.local

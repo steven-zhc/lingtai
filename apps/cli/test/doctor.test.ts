@@ -32,11 +32,11 @@ function find<T extends { name: string }>(results: readonly T[], name: string): 
 
 describe("lingtai doctor — environment", () => {
   it("fails, and names which variable, when one is missing", async () => {
-    const report = await runDoctor(env({ DATABASE_URL: POOLED }));
+    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }));
     const e = find(report.results, "environment");
 
     expect(e.status).toBe("fail");
-    expect(e.detail).toContain("DIRECT_DATABASE_URL");
+    expect(e.detail).toContain("LINGTAI_DIRECT_DATABASE_URL");
     expect(report.failed).toBeGreaterThan(0);
   });
 
@@ -46,7 +46,7 @@ describe("lingtai doctor — environment", () => {
   });
 
   it("reports the two URLs separately, and never prints either", async () => {
-    const report = await runDoctor(env({ DATABASE_URL: POOLED, DIRECT_DATABASE_URL: DIRECT }));
+    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
     const detail = find(report.results, "environment").detail;
 
     expect(detail).toContain(":6543");
@@ -65,7 +65,7 @@ describe("lingtai doctor — environment", () => {
    */
   it("fails when the direct URL still carries pgbouncer=true", async () => {
     const report = await runDoctor(
-      env({ DATABASE_URL: POOLED, DIRECT_DATABASE_URL: `${DIRECT}?pgbouncer=true` }),
+      env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: `${DIRECT}?pgbouncer=true` }),
     );
     const e = find(report.results, "environment");
 
@@ -76,8 +76,8 @@ describe("lingtai doctor — environment", () => {
   it("fails when the two URLs are not the same database", async () => {
     const report = await runDoctor(
       env({
-        DATABASE_URL: POOLED,
-        DIRECT_DATABASE_URL: "postgresql://u:p@other.example.com:5432/postgres",
+        LINGTAI_DATABASE_URL: POOLED,
+        LINGTAI_DIRECT_DATABASE_URL: "postgresql://u:p@other.example.com:5432/postgres",
       }),
     );
     // A subscriber listening to one log while the writer appends to another is
@@ -136,7 +136,7 @@ describe("lingtai doctor — the declared environment", () => {
 
 describe("lingtai doctor — reporting", () => {
   it("lists the checks that cannot run yet, rather than omitting them", async () => {
-    // With no GITHUB_APP_ID in this environment, the credentials check is itself
+    // With no LINGTAI_GITHUB_APP_ID in this environment, the credentials check is itself
     // a skip rather than a failure — not being onboarded is a legitimate state.
     const report = await runDoctor(env({}));
     const skipped = report.results.filter((r) => r.status === "skip").map((r) => r.name);
@@ -190,7 +190,7 @@ describe("lingtai doctor — against the real database", () => {
    */
   it("is green", async () => {
     const report = await runDoctor(
-      env({ DATABASE_URL: databaseUrl(), DIRECT_DATABASE_URL: directDatabaseUrl() }),
+      env({ LINGTAI_DATABASE_URL: databaseUrl(), LINGTAI_DIRECT_DATABASE_URL: directDatabaseUrl() }),
     );
 
     const failures = report.results.filter((r) => r.status === "fail");

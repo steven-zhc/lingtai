@@ -419,8 +419,8 @@ pnpm typecheck
 `.env.local` lives at the repo root and is gitignored. A real environment
 variable beats it, which is what makes CI and launchd work with no file at all.
 
-**Two connection strings, one database.** `DATABASE_URL` is pooled, for ordinary
-queries; `DIRECT_DATABASE_URL` is session mode, for migrations, `LISTEN/NOTIFY`
+**Two connection strings, one database.** `LINGTAI_DATABASE_URL` is pooled, for
+ordinary queries; `LINGTAI_DIRECT_DATABASE_URL` is session mode, for migrations, `LISTEN/NOTIFY`
 and advisory locks. A transaction pooler breaks all three, and breaks them
 without erroring — see [ADR 0009](doc/decisions/0009-two-connections.md).
 
@@ -429,7 +429,7 @@ project — Lingtai has to keep running while a managed project is the thing
 being changed.
 
 **The tests need a third and fourth string, and refuse to run without them.**
-`TEST_DATABASE_URL` and `TEST_DIRECT_DATABASE_URL` point at a *different*
+`LINGTAI_TEST_DATABASE_URL` and `LINGTAI_TEST_DIRECT_DATABASE_URL` point at a *different*
 database. The suite is not mocked — it appends real events, runs real
 projections and takes real advisory locks — so pointed at your own log it
 leaves work items and board cards behind. It did: twenty-four cards from ten
@@ -478,7 +478,7 @@ pnpm db:bootstrap                 # apply notify.sql, then prove it worked
 ```
 
 The test database takes the same two, with `LINGTAI_TEST=1` in front of each
-so they resolve `TEST_DIRECT_DATABASE_URL` instead.
+so they resolve `LINGTAI_TEST_DIRECT_DATABASE_URL` instead.
 
 `db:bootstrap` is not optional and is not Prisma's job. Prisma models tables, not
 triggers, so `notify.sql` carries the two things the schema cannot express: the
@@ -551,7 +551,7 @@ Click **Create GitHub App**.
 
 On the App's **General** page:
 
-- **App ID** — a number near the top. This is `GITHUB_APP_ID`.
+- **App ID** — a number near the top. This is `LINGTAI_GITHUB_APP_ID`.
 - **Private keys → Generate a private key** — this downloads a `.pem` file, and
   GitHub will not show it to you again.
 
@@ -581,7 +581,7 @@ that repository (Settings → GitHub Apps → Configure), then run lingtai add a
 In `.env.local` at the repository root:
 
 ```bash
-GITHUB_APP_ID=123456
+LINGTAI_GITHUB_APP_ID=123456
 GITHUB_APP_PRIVATE_KEY_PATH=~/.lingtai-app.pem
 ```
 
@@ -716,12 +716,18 @@ Layer 3 exists because layer 2 has one global home: two projects wanting
 A `!` prefix on a value is reserved for a secret source (`SECRET=!op read
 op://…`), which is not built — quote a value that really does begin with one.
 
-**A name Lingtai uses for itself never comes from layer 2.** `DATABASE_URL`,
-`DIRECT_DATABASE_URL`, `TEST_*` and `GITHUB_APP_*` are refused there however a
-recipe declares them, because a recipe is written by the repository an agent is
-editing. Layer 3 is a file you wrote, so it is not blocked — which is what lets
-Lingtai's own recipe require `TEST_DATABASE_URL` while nobody else's can reach
-for it.
+**A name Lingtai uses for itself is one no application asks for.** Every one of
+them begins `LINGTAI_` — `LINGTAI_DATABASE_URL`, `LINGTAI_TEST_*`,
+`LINGTAI_GITHUB_APP_*` — so a recipe written by the repository an agent is
+editing has nothing generic to reach for, and a project whose own file is
+missing a `DATABASE_URL` line gets an **absent** value rather than silently
+inheriting Lingtai's log under a name its application would connect to.
+`required` refuses that loudly, before anything is claimed.
+
+There is still a denylist in the source (`RESERVED`) doing the same job the
+older way. [0021](doc/decisions/0021-the-recipe-decides-the-environment.md)
+decided to remove it and [#60](https://github.com/steven-zhc/lingtai/issues/60)
+is where that lands; the prefix is what makes removing it safe.
 
 **A declared name with no value refuses the whole project for that pass**, before
 the issue is claimed: no worktree, no agent, no money. This used to be a log

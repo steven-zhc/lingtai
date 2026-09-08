@@ -26,7 +26,7 @@ import { parsePayload } from "@lingtai/domain";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
-  const secret = process.env["GITHUB_WEBHOOK_SECRET"];
+  const secret = process.env["LINGTAI_GITHUB_WEBHOOK_SECRET"];
   if (!secret) {
     // Not configured is not an error to shout about — the sweep covers it — but
     // returning 200 would tell GitHub the delivery landed when it did not.

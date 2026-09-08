@@ -20,7 +20,7 @@
  *
  * Two independent checks, because one is a typo away from nothing. The test
  * flag must be set, *and* the resolved connection string must differ from the
- * one resolved without it. If someone points TEST_DATABASE_URL at their own
+ * one resolved without it. If someone points LINGTAI_TEST_DATABASE_URL at their own
  * database, the second check is what refuses.
  */
 import pg from "pg";
@@ -43,7 +43,7 @@ try {
 }
 
 if (mainUrl && mainUrl === testUrl) {
-  console.error("refusing: TEST_DIRECT_DATABASE_URL resolves to the same database as DIRECT_DATABASE_URL");
+  console.error("refusing: LINGTAI_TEST_DIRECT_DATABASE_URL resolves to the same database as LINGTAI_DIRECT_DATABASE_URL");
   process.exit(2);
 }
 

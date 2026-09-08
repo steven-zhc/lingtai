@@ -31,6 +31,13 @@ from what an older file says to what is on disk now.
 | `@lingtai/store` | `@lingtai/event-store` + `@lingtai/projector` | an event store offers resumption; it does not remember its readers |
 | `@lingtai/runtime` | `@lingtai/agent` | starting the process and hearing it back are one concern |
 
+`#63` prefixed every environment variable Lingtai reads for itself, so an older
+file quoting `DATABASE_URL`, `TEST_DATABASE_URL`, `GITHUB_APP_ID` or
+`GITHUB_WEBHOOK_SECRET` means `LINGTAI_DATABASE_URL`,
+`LINGTAI_TEST_DATABASE_URL`, `LINGTAI_GITHUB_APP_ID` and
+`LINGTAI_GITHUB_WEBHOOK_SECRET`. A **project's** own file is not covered and
+keeps its own names.
+
 Three packages came *out* of `conductor` on the same day, which no older ADR
 mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 **`@lingtai/agent`** (the runtime, the hook wiring and the hook socket) and

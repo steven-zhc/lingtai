@@ -96,7 +96,7 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
 
 function environment(pooled: string | undefined, direct: string | undefined): CheckResult {
   if (!pooled || !direct) {
-    const missing = [!pooled && "DATABASE_URL", !direct && "DIRECT_DATABASE_URL"].filter(Boolean);
+    const missing = [!pooled && "LINGTAI_DATABASE_URL", !direct && "LINGTAI_DIRECT_DATABASE_URL"].filter(Boolean);
     return {
       name: "environment",
       status: "fail",
@@ -108,8 +108,8 @@ function environment(pooled: string | undefined, direct: string | undefined): Ch
   const d = describeUrl(direct);
   const sameHost = p.host === d.host;
   const detail =
-    `DATABASE_URL :${p.port} db=${p.database} pgbouncer=${p.pgbouncer} · ` +
-    `DIRECT_DATABASE_URL :${d.port} db=${d.database} pgbouncer=${d.pgbouncer} · ` +
+    `LINGTAI_DATABASE_URL :${p.port} db=${p.database} pgbouncer=${p.pgbouncer} · ` +
+    `LINGTAI_DIRECT_DATABASE_URL :${d.port} db=${d.database} pgbouncer=${d.pgbouncer} · ` +
     `same host: ${sameHost ? "yes" : "NO"}`;
 
   // Two URLs against different databases is not a configuration this system has
@@ -122,7 +122,7 @@ function environment(pooled: string | undefined, direct: string | undefined): Ch
     return {
       name: "environment",
       status: "fail",
-      detail: `${detail} — DIRECT_DATABASE_URL still carries pgbouncer=true`,
+      detail: `${detail} — LINGTAI_DIRECT_DATABASE_URL still carries pgbouncer=true`,
     };
   }
   return { name: "environment", status: "ok", detail };
@@ -184,7 +184,7 @@ async function directIsSessionMode(url: string): Promise<CheckResult> {
         name,
         status: "fail",
         detail:
-          "a NOTIFY from a second connection never arrived — DIRECT_DATABASE_URL is not session mode. " +
+          "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. " +
           "LISTEN/NOTIFY and advisory locks will both fail silently through it (doc/decisions/0009).",
       };
     }
@@ -453,7 +453,7 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       name,
       status: "skip",
       detail:
-        "GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
+        "LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
         "See doc/decisions/0006-github-app.md.",
     };
   }
@@ -895,8 +895,8 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     detail: "core, config and store imported by this process",
   });
 
-  const pooled = env["DATABASE_URL"];
-  const direct = env["DIRECT_DATABASE_URL"];
+  const pooled = env["LINGTAI_DATABASE_URL"];
+  const direct = env["LINGTAI_DIRECT_DATABASE_URL"];
   const envResult = environment(pooled, direct);
   results.push(envResult);
 

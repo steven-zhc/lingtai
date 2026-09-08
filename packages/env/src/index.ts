@@ -70,18 +70,73 @@ function inTest(): boolean {
  * is how the test database gets its schema.
  */
 export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL"): string {
-  return inTest() ? `TEST_${name}` : name;
+  return inTest() ? `${PREFIX}TEST_${name}` : `${PREFIX}${name}`;
+}
+
+/**
+ * **Every name Lingtai reads for itself begins with this** (`#63`).
+ *
+ * Not tidiness. Since 0021 the agent's environment is `process.env` merged with
+ * the project's own file, the file winning — so a project whose file is missing
+ * a `DATABASE_URL` line got **Lingtai's own log** under a name its application
+ * connects to without hesitating, and `required: [DATABASE_URL]` could not tell
+ * that apart from a correct line because the merged data had a value either
+ * way. A missing line and a right one gave the same answer.
+ *
+ * `LINGTAI_DATABASE_URL` is a name no managed application asks for, so the
+ * missing line becomes an ordinary absent one, which `required` catches loudly
+ * before anything is claimed.
+ *
+ * [0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)
+ * decided to remove `RESERVED` — the denylist that stopped a recipe naming
+ * Lingtai's own credentials — on the grounds that exposure is the operator's to
+ * manage. That removal is `#60` and has not landed yet; this makes it safe to
+ * land, because after the prefix there is no generic name left in the
+ * conductor's environment worth reaching for. Structural, rather than
+ * remembered.
+ *
+ * `TEST_` goes *after* the prefix: `LINGTAI_TEST_DATABASE_URL`, so the rule
+ * "begins with `LINGTAI_`" has no exceptions and is therefore checkable — see
+ * `test/prefix.test.ts`, which reads this file.
+ *
+ * **A project's own file is not covered.** `DATABASE_URL` in
+ * `nextloom-ai-admin.env` stays `DATABASE_URL`, because that is what admin's
+ * application reads. This is only about the names Lingtai uses for itself.
+ */
+export const PREFIX = "LINGTAI_";
+
+/**
+ * The old, unprefixed name, when it is set and the new one is not.
+ *
+ * Only consulted on the path that was going to fail anyway, so an operator with
+ * a `DATABASE_URL` of their own for something else is never bothered. Without
+ * it the message is "LINGTAI_DATABASE_URL is not set" about a machine where
+ * `DATABASE_URL` is plainly set, which reads as a bug in Lingtai.
+ *
+ * **Delete this once no machine running Lingtai predates `#63`** — in practice,
+ * once this operator's `.env.local` and `~/.lingtai/env/lingtai.env` are
+ * renamed, which the same change did. It is kept only for a machine that
+ * upgrades later.
+ */
+function renamedFrom(name: string, from: NodeJS.ProcessEnv): string | null {
+  const old = name.startsWith(`${PREFIX}TEST_`)
+    ? `TEST_${name.slice(`${PREFIX}TEST_`.length)}`
+    : name.slice(PREFIX.length);
+  return from[old] ? old : null;
 }
 
 function testUrl(name: string): string {
-  const value = optional(`TEST_${name}`);
+  const full = `${PREFIX}TEST_${name}`;
+  const value = optional(full);
   if (!value) {
+    const was = renamedFrom(full, process.env);
     throw new Error(
-      `TEST_${name} is not set, and the tests will not run against ${name}. ` +
+      `${full} is not set, and the tests will not run against ${PREFIX}${name}. ` +
+        (was ? `${was} is set — it was renamed to ${full} (#63). ` : "") +
         "The suite writes real events, and writing them to the operator's own log " +
         "leaves work items and board cards that only deleting from an append-only " +
-        "table can remove. Point TEST_DATABASE_URL and TEST_DIRECT_DATABASE_URL at " +
-        "a database of their own — see .env.example.",
+        `table can remove. Point ${PREFIX}TEST_DATABASE_URL and ` +
+        `${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own — see .env.example.`,
     );
   }
   return value;
@@ -90,8 +145,13 @@ function testUrl(name: string): string {
 function required(name: string): string {
   const v = process.env[name];
   if (!v) {
+    const was = renamedFrom(name, process.env);
     throw new Error(
-      `${name} is not set. Copy .env.example to .env.local at the repo root and fill it in.`,
+      `${name} is not set. ` +
+        (was
+          ? `${was} is set — it was renamed to ${name} (#63), so that a project's own ` +
+            `${was} can never be confused with Lingtai's. Rename the line.`
+          : "Copy .env.example to .env.local at the repo root and fill it in."),
     );
   }
   return v;
@@ -99,7 +159,7 @@ function required(name: string): string {
 
 /** Pooled. Ordinary reads and writes. */
 export function databaseUrl(): string {
-  return inTest() ? testUrl("DATABASE_URL") : required("DATABASE_URL");
+  return inTest() ? testUrl("DATABASE_URL") : required(`${PREFIX}DATABASE_URL`);
 }
 
 /**
@@ -115,7 +175,7 @@ export function databaseUrl(): string {
  * On a plain Postgres this may be the same string as `databaseUrl()`.
  */
 export function directDatabaseUrl(): string {
-  return inTest() ? testUrl("DIRECT_DATABASE_URL") : required("DIRECT_DATABASE_URL");
+  return inTest() ? testUrl("DIRECT_DATABASE_URL") : required(`${PREFIX}DIRECT_DATABASE_URL`);
 }
 
 /** Set, or undefined. For values whose absence is a legitimate state. */
@@ -186,24 +246,27 @@ export function resolvePath(path: string): string {
  * started failing for a reason that had nothing to do with the code.
  */
 export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCredentials {
-  const appId = optional("GITHUB_APP_ID", from);
+  const appId = optional(`${PREFIX}GITHUB_APP_ID`, from);
   if (!appId) {
     throw new Error(
-      "GITHUB_APP_ID is not set. Copy .env.example to .env.local at the repo root and fill it in.",
+      `${PREFIX}GITHUB_APP_ID is not set. ` +
+        (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
+          ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
+          : "Copy .env.example to .env.local at the repo root and fill it in."),
     );
   }
-  const path = optional("GITHUB_APP_PRIVATE_KEY_PATH", from);
-  const inline = optional("GITHUB_APP_PRIVATE_KEY", from);
+  const path = optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from);
+  const inline = optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from);
 
   if (path) {
     return { appId, privateKey: readFileSync(resolvePath(path), "utf8"), keySource: path };
   }
   if (inline) {
     // Some hosts can only carry the key as one line; \n restores the PEM.
-    return { appId, privateKey: inline.replace(/\\n/g, "\n"), keySource: "GITHUB_APP_PRIVATE_KEY" };
+    return { appId, privateKey: inline.replace(/\\n/g, "\n"), keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY` };
   }
   throw new Error(
-    "Neither GITHUB_APP_PRIVATE_KEY_PATH nor GITHUB_APP_PRIVATE_KEY is set. " +
+    `Neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ${PREFIX}GITHUB_APP_PRIVATE_KEY is set. ` +
       "See doc/decisions/0006-github-app.md for creating the App.",
   );
 }
@@ -211,7 +274,7 @@ export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCrede
 /** Whether the App is configured at all, without throwing to find out. */
 export function hasGitHubApp(from: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(
-    optional("GITHUB_APP_ID", from) &&
-      (optional("GITHUB_APP_PRIVATE_KEY_PATH", from) || optional("GITHUB_APP_PRIVATE_KEY", from)),
+    optional(`${PREFIX}GITHUB_APP_ID`, from) &&
+      (optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from) || optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from)),
   );
 }

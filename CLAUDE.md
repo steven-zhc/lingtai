@@ -62,8 +62,11 @@ same transaction as its writes.
 The board's Queued column asks GitHub on render; every other column is the
 fold.
 
-The suite appends real events and refuses to run without `TEST_DATABASE_URL`.
-`DATABASE_URL` is this system's own log, and an agent is never given it.
+The suite appends real events and refuses to run without
+`LINGTAI_TEST_DATABASE_URL`. `LINGTAI_DATABASE_URL` is this system's own log,
+and an agent is never given it. **Every name Lingtai reads for itself begins
+`LINGTAI_`** (#63) — a project's own file keeps its own names, so `DATABASE_URL`
+there is the project's application, never this one.
 
 ## Commits
 

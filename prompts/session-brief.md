@@ -47,7 +47,7 @@ some were amended after #6 closed.
 
 **2. There are two connection strings, and using the wrong one fails silently.**
 
-`DATABASE_URL` is a pooled transaction-mode connection. `DIRECT_DATABASE_URL` is
+`LINGTAI_DATABASE_URL` is a pooled transaction-mode connection. `LINGTAI_DIRECT_DATABASE_URL` is
 session mode against the same database.
 
 Migrations, `LISTEN/NOTIFY` and session-level advisory locks **all require the
