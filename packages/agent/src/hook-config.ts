@@ -129,9 +129,15 @@ export async function writeHookWiring(options: RenderOptions): Promise<HookWirin
   return {
     settingsPath,
     socketPath,
+    // `LINGTAI_`-prefixed since `#63`, both ends. These are Lingtai's own names
+    // — set here, read by the compiled hook — and the rule that every such name
+    // carries the prefix is what makes "is this ours?" answerable without
+    // knowing the history. They were `ESC_*`, from before the project was
+    // renamed, and the guard test could not see them because it only read
+    // `packages/env`. It reads every `src/` now.
     env: {
-      ESC_HOOK_SOCKET: socketPath,
-      ESC_RUN_ID: options.runId,
+      LINGTAI_HOOK_SOCKET: socketPath,
+      LINGTAI_HOOK_RUN_ID: options.runId,
     },
   };
 }
@@ -163,7 +169,7 @@ export async function smokeTestFailClosed(
   const nowhere = join(stateDir(), "sockets", `smoke-${Date.now()}.sock`);
   const { code, stderr } = await run(
     hookBinary,
-    { ESC_HOOK_SOCKET: nowhere, ESC_RUN_ID: "run-smoke" },
+    { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: "run-smoke" },
     JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }),
   );
 

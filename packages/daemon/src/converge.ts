@@ -131,9 +131,11 @@ export interface ConvergeOptions {
 /**
  * Work items the log currently claims something about, on GitHub.
  *
- * Two SQL reads rather than a scan of every stream: the first is small because
- * a project has few live items at once, and the second is the same query
- * `doctor` uses to find what it could not hand to anybody.
+ * One read, and a narrow one: a `wi-` stream is a candidate only if something
+ * in it has moved a work item, which is far fewer streams than exist. Whether
+ * each candidate is *actually* diverged is decided per item below, against the
+ * log and then against GitHub — that part cannot be SQL, because the target
+ * comes from `labelsFor` rather than from a table.
  */
 async function candidates(url: string): Promise<Set<string>> {
   const client = new pg.Client({ connectionString: url });

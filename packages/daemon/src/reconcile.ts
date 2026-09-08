@@ -88,8 +88,9 @@ export interface ReconcileOptions {
    * Told, not discovered. A `checkpoints` row for a projection nobody runs any
    * more is not "behind" — it is dead, and reporting it as lag every startup
    * would be a permanent finding nobody can clear, which is the failure mode
-   * this file's own header warns about. (There is one such row today: `outbox`,
-   * whose projection 0022 deleted; `#72` removes it.)
+   * this file's own header warns about. There was one such row — `outbox`,
+   * whose projection 0022 deleted — and `#72` removed it; this stays because
+   * the next deleted projection will leave another.
    */
   projections?: readonly string[];
   /**

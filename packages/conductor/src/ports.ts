@@ -6,7 +6,7 @@
  * imported `provisionWorktree`, `git`, `integrate`, `createHookServer` and
  * `resolveAgentEnv` directly, so **the only way to test a decision was to
  * perform it** — which is why every one of this package's tests appends real
- * events and the suite refuses to start without `TEST_DATABASE_URL`.
+ * events and the suite refuses to start without `LINGTAI_TEST_DATABASE_URL`.
  *
  * `tellGitHub`'s `IssueChannel` (`f52229b`) drew the first port this way and
  * this copies its shape: the method set the caller actually uses, no wider.

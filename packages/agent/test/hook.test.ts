@@ -107,7 +107,7 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const env = () => ({ ESC_HOOK_SOCKET: server.socketPath, ESC_RUN_ID: runId });
+const env = () => ({ LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: runId });
 
 describe("lingtai-hook fails closed", () => {
   /**
@@ -122,7 +122,7 @@ describe("lingtai-hook fails closed", () => {
   });
 
   it("denies when the wiring is missing entirely", async () => {
-    const { code, stderr } = await runHook(binary, { ESC_HOOK_SOCKET: "", ESC_RUN_ID: "" }, preToolUse("ls"));
+    const { code, stderr } = await runHook(binary, { LINGTAI_HOOK_SOCKET: "", LINGTAI_HOOK_RUN_ID: "" }, preToolUse("ls"));
     expect(code).toBe(2);
     expect(stderr).toContain("refusing to allow anything");
   });
@@ -136,7 +136,7 @@ describe("lingtai-hook fails closed", () => {
   it("denies a run the conductor has never heard of", async () => {
     const { code, stderr } = await runHook(
       binary,
-      { ESC_HOOK_SOCKET: server.socketPath, ESC_RUN_ID: "run-nobody" },
+      { LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: "run-nobody" },
       preToolUse("ls"),
     );
     expect(code).toBe(2);
@@ -253,7 +253,7 @@ describe("lingtai-hook latency", () => {
 
     const { a: full, b: bare } = await paired(
       () => runHook(binary, env(), preToolUse("echo x")),
-      () => runHook(binary, { ESC_HOOK_SOCKET: nowhere, ESC_RUN_ID: runId }, preToolUse("echo x")),
+      () => runHook(binary, { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: runId }, preToolUse("echo x")),
     );
 
     console.log(
@@ -356,7 +356,7 @@ describe("hook wiring", () => {
     // configuration, so the file is never inside the repository.
     expect(wiring.settingsPath.startsWith(home)).toBe(true);
     expect(wiring.settingsPath).not.toContain("worktrees");
-    expect(wiring.env).toEqual({ ESC_HOOK_SOCKET: wiring.socketPath, ESC_RUN_ID: "run-w" });
+    expect(wiring.env).toEqual({ LINGTAI_HOOK_SOCKET: wiring.socketPath, LINGTAI_HOOK_RUN_ID: "run-w" });
   });
 
   it("wires the four shared hooks, and Claude Code's extras only when asked", () => {

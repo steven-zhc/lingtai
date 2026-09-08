@@ -888,11 +888,12 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   results.push({
     name: "packages load under Node",
     status: "ok",
-    // Not a freebie: this process imported @lingtai/domain, /config and /store
-    // through Node's type stripping to get here. A `.js` specifier in a barrel or
-    // a constructor parameter property would have stopped it, and neither `tsc`
-    // nor a board build notices either. See doc/decisions/0010.
-    detail: "core, config and store imported by this process",
+    // Not a freebie: to reach this line, Node's type stripping had to load
+    // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
+    // command imports. A `.js` specifier in a barrel or a constructor parameter
+    // property would have stopped it, and neither `tsc` nor a board build
+    // notices either. See doc/decisions/0010.
+    detail: "every package this command imports loaded under Node's type stripping",
   });
 
   const pooled = env["LINGTAI_DATABASE_URL"];

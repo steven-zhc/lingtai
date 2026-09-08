@@ -87,7 +87,7 @@ export function hostLooksProduction(host: string, patterns: readonly string[]): 
  *
  * **It blocks layer 2 only**, and that asymmetry is the whole point. Layer 3 is
  * a file the operator wrote on their own machine, so Lingtai managing itself can
- * put `TEST_DATABASE_URL` in `~/.lingtai/env/lingtai.env` while
+ * put `LINGTAI_TEST_DATABASE_URL` in `~/.lingtai/env/lingtai.env` while
  * `nextloom-ai-admin`'s recipe cannot reach for it by declaring the name.
  *
  * An entry ending in `*` is a prefix; everything else is an exact name.

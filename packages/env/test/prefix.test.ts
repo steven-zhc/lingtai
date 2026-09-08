@@ -8,14 +8,23 @@
  *
  * It reads the source rather than the behaviour, because the failure it guards
  * against is a *new* read — one no existing test would exercise.
+ *
+ * **It scans every package, not this one.** The first version read
+ * `packages/env/src/index.ts` alone, which is what `#63`'s checklist asked for
+ * — and the rule it was written to enforce is wider than that, so it missed
+ * three: the compiled hook read `ESC_HOOK_SOCKET`, `ESC_RUN_ID` and
+ * `ESC_HOOK_TIMEOUT_MS`, and `agent`'s wiring set them. A check that is present,
+ * reported, and not looking at the thing you think it is — the `#58` shape, in
+ * the file written to prevent it.
  */
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PREFIX, dbVar, githubApp, hasGitHubApp } from "../src/index.ts";
 
-const SOURCE = join(dirname(fileURLToPath(import.meta.url)), "../src/index.ts");
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "../../..");
 
 /**
  * Names read from the environment that are **not Lingtai's own**, and why.
@@ -25,8 +34,37 @@ const SOURCE = join(dirname(fileURLToPath(import.meta.url)), "../src/index.ts");
  */
 const NOT_OURS: Record<string, string> = {
   HOME: "the operating system's, read to find where a home directory is",
+  HOSTNAME: "the operating system's, read to say which machine a daemon is on",
+  USER: "the operating system's, read to attribute an approval to a person",
   VITEST: "set by the test runner, not by Lingtai",
 };
+
+/** Every `src` directory in the workspace. Tests and fixtures are not scanned:
+ *  a test may legitimately name a *project's* variable, which is not ours. */
+function sourceFiles(): string[] {
+  const out: string[] = [];
+  for (const area of ["packages", "apps"]) {
+    for (const pkg of readdirSync(join(ROOT, area), { withFileTypes: true })) {
+      if (!pkg.isDirectory()) continue;
+      const src = join(ROOT, area, pkg.name, "src");
+      const walk = (dir: string): void => {
+        let entries;
+        try {
+          entries = readdirSync(dir, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        for (const e of entries) {
+          const p = join(dir, e.name);
+          if (e.isDirectory()) walk(p);
+          else if (e.name.endsWith(".ts") || e.name.endsWith(".tsx")) out.push(p);
+        }
+      };
+      walk(src);
+    }
+  }
+  return out;
+}
 
 /** `process.env["X"]`, `from["X"]`, `optional("X"`, `required("X"`. */
 function namesRead(source: string): string[] {
@@ -41,13 +79,22 @@ function namesRead(source: string): string[] {
 }
 
 describe("the LINGTAI_ prefix", () => {
-  it("covers every name this package reads for itself", () => {
-    const read = namesRead(readFileSync(SOURCE, "utf8"));
-    // The scan has to find something, or it is asserting nothing.
-    expect(read.length).toBeGreaterThan(0);
+  it("covers every name any package reads for itself", () => {
+    const files = sourceFiles();
+    // The scan has to find files, or it is asserting nothing.
+    expect(files.length).toBeGreaterThan(20);
 
-    const unprefixed = read.filter((n) => !n.startsWith(PREFIX) && !(n in NOT_OURS));
-    expect(unprefixed, `not prefixed, and not listed as somebody else's: ${unprefixed.join(", ")}`)
+    const offenders: string[] = [];
+    let seen = 0;
+    for (const file of files) {
+      for (const name of namesRead(readFileSync(file, "utf8"))) {
+        seen += 1;
+        if (name.startsWith(PREFIX) || name in NOT_OURS) continue;
+        offenders.push(`${name} in ${file.slice(ROOT.length + 1)}`);
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+    expect(offenders, `not prefixed, and not listed as somebody else's:\n  ${offenders.join("\n  ")}`)
       .toEqual([]);
   });
 
@@ -89,7 +136,7 @@ describe("the LINGTAI_ prefix", () => {
 
   /** Every name in the example file is one this package would accept. */
   it("matches .env.example", () => {
-    const example = readFileSync(join(dirname(SOURCE), "../../../.env.example"), "utf8");
+    const example = readFileSync(join(ROOT, ".env.example"), "utf8");
     const declared = [...example.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!);
     expect(declared.length).toBeGreaterThan(0);
     expect(declared.filter((n) => !n.startsWith(PREFIX))).toEqual([]);

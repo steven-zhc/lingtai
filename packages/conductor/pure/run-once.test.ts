@@ -6,7 +6,7 @@
  * fake `agent` and a fake `event-store`, with no database — producing the
  * events it wants appended and the calls it wants made, for a test to assert?*
  * Before the ports it could not: every one of this package's tests appends real
- * events, and the suite refuses to start without `TEST_DATABASE_URL`.
+ * events, and the suite refuses to start without `LINGTAI_TEST_DATABASE_URL`.
  *
  * It runs under `vitest.pure.config.ts`, which has **no `globalSetup`**. That
  * is not tidiness — the shared teardown connects to Postgres, so a pure test

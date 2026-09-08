@@ -26,7 +26,7 @@
 import { connect } from "node:net";
 
 /** A hook that has not answered in this long is a hook that failed. */
-const TIMEOUT_MS = Number(process.env["ESC_HOOK_TIMEOUT_MS"] ?? 2_000);
+const TIMEOUT_MS = Number(process.env["LINGTAI_HOOK_TIMEOUT_MS"] ?? 2_000);
 
 const DENY = 2;
 const ALLOW = 0;
@@ -85,12 +85,12 @@ async function ask(socketPath: string, line: string): Promise<Reply> {
   });
 }
 
-const socketPath = process.env["ESC_HOOK_SOCKET"];
-const runId = process.env["ESC_RUN_ID"];
+const socketPath = process.env["LINGTAI_HOOK_SOCKET"];
+const runId = process.env["LINGTAI_HOOK_RUN_ID"];
 if (!socketPath || !runId) {
   // The conductor renders this configuration itself, outside the worktree, so
   // its absence means the wiring is wrong rather than that this run is exempt.
-  deny("lingtai-hook: ESC_HOOK_SOCKET and ESC_RUN_ID are not set — refusing to allow anything");
+  deny("lingtai-hook: LINGTAI_HOOK_SOCKET and LINGTAI_HOOK_RUN_ID are not set — refusing to allow anything");
 }
 
 const raw = await readStdin();

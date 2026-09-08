@@ -32,7 +32,7 @@
  *   vitest drops the unknown key without a word.
  * - This module runs *outside* the test files, so nothing has loaded
  *   `.env.local` yet. Importing `@lingtai/env` for its side effect is what makes
- *   `TEST_DATABASE_URL` exist here at all; without it the URL is `undefined`,
+ *   `LINGTAI_TEST_DATABASE_URL` exist here at all; without it the URL is `undefined`,
  *   the function returns at its first line, and every run looks like a run that
  *   cleaned up.
  * - `delete from events` does nothing unless `lingtai_events_no_delete` is
