@@ -60,6 +60,17 @@ export {
   type RepairInput,
   type RepairPolicy,
 } from "./repair.ts";
+export {
+  EVIDENCE_CHARS,
+  MAX_FINDINGS,
+  MAX_ROWS,
+  attemptBrief,
+  attemptOutcome,
+  priorAttempts,
+  promptVersionFor,
+  type AttemptOutcome,
+  type PriorAttempt,
+} from "./attempts.ts";
 export { landedWithoutGatePoints, type UnrunGatePoint } from "./gate-audit.ts";
 export {
   appendEndActions,

@@ -56,6 +56,7 @@ import { type Runtime, missingForTier } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, repairBrief } from "./repair.ts";
+import { attemptBrief, attemptOutcome, priorAttempts, promptVersionFor } from "./attempts.ts";
 import { type ToAppend, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
@@ -112,13 +113,15 @@ export interface RunOnceOptions {
  * others are substituted whether or not the template uses them, so a project
  * that writes its own prompt can leave any of them out.
  *
- * `{{failure}}` is empty on every ordinary run and carries the previous
- * attempt's refusal on a repair
+ * `{{failure}}` is empty on a **first** attempt and on nothing else. It carries
+ * what the earlier attempts did (`attempts.ts`, `#82`) and, on a repair, the
+ * refusal that bought this one
  * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). It is the
- * only thing that distinguishes a repair from a re-run, which is why it goes
- * through the same substitution as everything else rather than through a second
- * prompt: a repair *is* a run, and giving it its own template would be the
- * beginning of the sixth gate point 0016 closed the set against.
+ * only thing that distinguishes a second attempt from the first one again,
+ * which is why it goes through the same substitution as everything else rather
+ * than through a second prompt: a repair *is* a run, and giving it its own
+ * template would be the beginning of the sixth gate point 0016 closed the set
+ * against.
  *
  * **A template with no slot gets it appended, rather than losing it.** That is
  * the one placeholder this is true of, and deliberately: a project writing its
@@ -215,7 +218,12 @@ export function runOnce(
     const home = options.home ?? stateDir();
     const log = options.log ?? (() => {});
     const project = options.project.project!;
-    const promptVersion = options.promptVersion ?? "ticket@1";
+    /**
+     * The template's own version. What actually goes on the log is this plus
+     * the failure block's fingerprint, once that block is known — see
+     * `promptVersionFor` and `#82`'s fourth criterion.
+     */
+    const basePromptVersion = options.promptVersion ?? "ticket@1";
 
     /**
      * The log, as an `Effect`.
@@ -364,11 +372,51 @@ export function runOnce(
      * Read here rather than after the claim because the claim is what clears
      * it — `claimWorkItem` appends, and the fold moves it into `repairRun`.
      */
-    const repairOf = reduceWorkItem(yield* Effect.promise(() => store.read(workItemId)))
-      .pendingRepair;
+    const before = yield* Effect.promise(() => store.read(workItemId));
+    const repairOf = reduceWorkItem(before).pendingRepair;
     if (repairOf) {
       log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt})`);
     }
+
+    /**
+     * What the earlier attempts did, for this one's prompt.
+     *
+     * Read from the same envelopes and for the same reason `repairOf` is read
+     * here: the claim below appends, and this run must not appear in its own
+     * history. Empty for a first attempt, and then everything downstream —
+     * prompt bytes, `promptVersion` — is what it was before `#82` (`attempts.ts`).
+     *
+     * **One extra stream read, and only when there is a history.** The last
+     * attempt is the one whose evidence is quoted, because it is the one the
+     * worktree is next to; the earlier ones are a row each out of the work item
+     * stream already in hand. That is what keeps a fifth attempt from pasting
+     * four gate logs into a prompt.
+     */
+    const attempts = priorAttempts(before);
+    const previous = attempts[attempts.length - 1];
+    if (previous) {
+      previous.outcome = attemptOutcome(yield* Effect.promise(() => store.read(previous.runId)));
+      log(`attempt ${attempts.length + 1}: ${previous.runId} ended — ${previous.ended ?? "no ending recorded"}`);
+    }
+
+    /**
+     * What this run is told that a first attempt is not.
+     *
+     * Two blocks and not one. The history is what every second attempt has; the
+     * repair brief is one specific ending — the integrator refused a diff that
+     * exists — with an instruction about what to produce
+     * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). A
+     * repair has both, and neither stands in for the other — except for the one
+     * thing they would both quote. `repairBrief` prints the refusal that bought
+     * this run verbatim and at length, so the history defers to it rather than
+     * printing a second copy: a bound kept inside `attempts.ts` and undone by
+     * composition is not a bound.
+     */
+    if (previous && repairOf?.after === previous.runId) previous.refusal = null;
+    const failure = [attemptBrief(attempts), repairOf ? repairBrief(repairOf) : ""]
+      .filter((block) => block !== "")
+      .join("\n\n");
+    const promptVersion = promptVersionFor(basePromptVersion, failure);
 
     // The claim carries what the task is, because it is now the only place a
     // title enters the log at all.
@@ -667,15 +715,12 @@ export function runOnce(
                   options.runtime.run({
                     runId,
                     cwd: worktree.path,
-                    // The failure block is empty for every ordinary run. On a
-                    // repair it is the whole difference from a re-run: an agent
-                    // that is not told what the conflict was is the same agent
-                    // again, at the same price, arriving at the same place.
-                    prompt: renderPrompt(
-                      options.prompt,
-                      ticket,
-                      repairOf ? repairBrief(repairOf) : "",
-                    ),
+                    // The failure block is empty for a first attempt and for
+                    // nothing else. It is the whole difference between a second
+                    // attempt and the first one again: an agent that is not
+                    // told what went wrong is the same agent, at the same
+                    // price, arriving at the same place.
+                    prompt: renderPrompt(options.prompt, ticket, failure),
                     settingsPath: wiring.settingsPath,
                     env: runnableEnv({ ...env.values, ...wiring.env }),
                     limits: {
