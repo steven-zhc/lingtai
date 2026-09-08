@@ -9,9 +9,18 @@
  * It reads two streams: the task's own, and the run's. They are separate
  * aggregates on purpose (design.md §4), and joining them is a reader's job
  * rather than a reducer's.
+ *
+ * It also asks GitHub one question — what the ticket says — for the same
+ * reason the board's Queued column does (`board.ts`): the issue body and its
+ * labels are facts about GitHub and not about the log, so there is nothing to
+ * fold for them. That question is allowed to fail, and its failure is a line
+ * on the page rather than an absence (#76).
  */
 import { eventStore } from "@lingtai/event-store";
-import { GATE_POINTS, type Envelope } from "@lingtai/domain";
+import { GATE_POINTS, parseWorkItemStream, type Envelope } from "@lingtai/domain";
+import { loadProject } from "@lingtai/conductor/projects";
+import { githubClientFor } from "@lingtai/conductor/filter";
+import { type HistoryLine, toLine } from "./history.ts";
 
 export interface Finding {
   file: string;
@@ -51,8 +60,45 @@ export interface PointView {
   skipped: boolean;
 }
 
+/**
+ * What was asked, as against what was done.
+ *
+ * The page had no reference to a title, a body or a URL: it opened on Gates,
+ * and finding out what the ticket wanted meant going back to the board, reading
+ * the card, and opening GitHub (#87). A detail page is where somebody decides,
+ * and deciding needs the request and not only the response.
+ *
+ * Two sources, in this order. The **log** carries the title and the kind as
+ * they were when Lingtai took responsibility, which is true whether or not
+ * GitHub answers now. **GitHub** carries the body, the labels and the URL,
+ * which the log has never held and which 0012 is the reason not to start
+ * holding.
+ */
+export interface TicketView {
+  project: string;
+  /** The issue number, as GitHub numbers it. */
+  ref: string;
+  title: string | null;
+  kind: string | null;
+  labels: string[];
+  /** From GitHub, or built from the owner the project stream recorded. */
+  url: string | null;
+  body: string | null;
+  /**
+   * Why the body and the labels are not here, when they are not.
+   *
+   * Said rather than left blank. An unreachable App, an unregistered project
+   * and a deleted issue all render as a ticket with no body, and only the
+   * reason tells them apart — the same argument #76 made about an empty Queued
+   * column.
+   */
+  problem: string | null;
+}
+
 export interface TaskDetail {
   taskId: string;
+  /** Null only when the id is not `wi-<project>-<n>`. */
+  ticket: TicketView | null;
   runId: string | null;
   headSha: string | null;
   baseSha: string | null;
@@ -60,7 +106,7 @@ export interface TaskDetail {
   /** All five, in loop order, including the ones nothing was configured at. */
   points: PointView[];
   /** Everything, in order, for the question a summary did not anticipate. */
-  history: { at: string; type: string; actor: string; summary: string }[];
+  history: HistoryLine[];
 }
 
 const VERDICT: Record<string, string> = {
@@ -74,34 +120,56 @@ const VERDICT: Record<string, string> = {
   ApprovalRevoked: "pending",
 };
 
-/** A line of history. Deliberately terse — the raw payload is one click below. */
-function summarise(event: Envelope): string {
-  const d = (event.data ?? {}) as Record<string, unknown>;
-  switch (event.type) {
-    case "WorkItemClaimed":
-      return `run ${String(d["runId"]).slice(4, 12)}`;
-    case "WorkItemBlocked":
-      return String(d["question"] ?? "");
-    case "WorkItemLanded":
-      return `merged as ${String(d["mergeCommit"]).slice(0, 7)}`;
-    case "RunFinished":
-      return `${String(d["turns"])} turns, $${Number(d["costUsd"] ?? 0).toFixed(2)}`;
-    case "RunFailed":
-      return `${String(d["kind"])}: ${String(d["detail"] ?? "")}`;
-    case "RunProducedDiff":
-      return `${String(d["files"])} files +${String(d["insertions"])} −${String(d["deletions"])}`;
-    // Both of a failure's outcomes read on the history, including the one where
-    // nothing happened: "no agent was bought, and here is the rule that said
-    // so" is the half an operator otherwise has to guess at.
-    case "RepairRequested":
-      return `attempt ${String(d["attempt"])} on ${String(d["reason"])}`;
-    case "RepairDeclined":
-      return `${String(d["reason"])} — ${String(d["why"] ?? "")}`;
-    default: {
-      const gate = d["gate"];
-      if (typeof gate === "string") return gate;
-      return "";
+/**
+ * The ticket, from the log first and GitHub second.
+ *
+ * The order matters. A title recorded on `WorkItemClaimed` is what the ticket
+ * said when the run started, and it survives a repository the App can no longer
+ * reach — so it is read first and only overwritten by an answer. GitHub is
+ * asked once, for the three things the log has never carried, and a refusal
+ * costs the body and not the page.
+ */
+async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<TicketView | null> {
+  const parsed = parseWorkItemStream(taskId);
+  if (!parsed) return null;
+  const { project, issue } = parsed;
+
+  let title: string | null = null;
+  let kind: string | null = null;
+  let labels: string[] = [];
+  for (const e of own) {
+    const d = (e.data ?? {}) as Record<string, unknown>;
+    // `WorkItemDiscovered` is the queue's own event and predates 0012; a claim
+    // carries the same two fields precisely so a rebuilt projection has them.
+    if (e.type === "WorkItemDiscovered" || e.type === "WorkItemClaimed") {
+      title = (d["title"] as string | null) ?? title;
+      kind = (d["kind"] as string | null) ?? kind;
+      if (Array.isArray(d["labels"])) labels = d["labels"] as string[];
     }
+  }
+
+  const state = await loadProject(project).catch(() => null);
+  const base = { project, ref: issue, title, kind, labels };
+  if (!state) {
+    return { ...base, url: null, body: null, problem: `${project} is not a registered project` };
+  }
+
+  // Buildable without GitHub, and worth building: a link to the issue is the
+  // thing the page exists to save a trip for, and it does not need an answer.
+  const url = state.owner ? `https://github.com/${state.owner}/${project}/issues/${issue}` : null;
+  try {
+    const client = await githubClientFor(state);
+    const live = await client.getIssue(Number(issue));
+    return {
+      ...base,
+      title: live.title,
+      labels: live.labels,
+      url: live.url,
+      body: live.body,
+      problem: null,
+    };
+  } catch (err) {
+    return { ...base, url, body: null, problem: (err as Error).message };
   }
 }
 
@@ -116,7 +184,13 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     if (e.type === "WorkItemClaimed") runId = String((e.data as { runId: string }).runId);
   }
 
-  const run = runId ? await eventStore.read(runId) : [];
+  // Beside the run's stream rather than after it: one is a database read and
+  // the other is two calls to GitHub, and the page waits for the slower of the
+  // two instead of for both.
+  const [run, ticket] = await Promise.all([
+    runId ? eventStore.read(runId) : Promise.resolve([]),
+    loadTicket(taskId, own),
+  ]);
 
   let headSha: string | null = null;
   let baseSha: string | null = null;
@@ -156,12 +230,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
 
   const history = [...own, ...run]
     .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
-    .map((e) => ({
-      at: e.at.toISOString(),
-      type: e.type,
-      actor: e.actor,
-      summary: summarise(e),
-    }));
+    .map(toLine);
 
   // The plan the conductor wrote down when the run started. Without it the page
   // could only show points that reported, which is exactly the omission ADR
@@ -176,5 +245,5 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     return { point, planned, verdicts, skipped: planned.length === 0 && verdicts.length === 0 };
   });
 
-  return { taskId, runId, headSha, baseSha, gates: all, points, history };
+  return { taskId, ticket, runId, headSha, baseSha, gates: all, points, history };
 }

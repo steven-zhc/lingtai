@@ -361,6 +361,32 @@ details[open] > summary::before { content: "▾"; }
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 
+/* The ticket, at the top. What was asked, above what was done — a page you
+   decide on has to carry the request and not only the response (#87). */
+.tref { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }
+.ttitle { margin: 0 0 0.7rem; font-size: 1.05rem; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.tlink { font-family: var(--mono); font-size: 0.7rem; color: var(--accent-ink); text-decoration: none; }
+.tlink:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Collapsed, because the body is a document and a page that opens three
+   screens tall is its own kind of unreadable — the trade the evidence
+   disclosures already make. Absent would be a different thing entirely. */
+.tbodytext {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  /* Wrapped, not scrolled sideways: a ticket is prose, unlike a diff. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
 /* The five gate points. Every one is listed, including the empty ones — a
    point that is merely omitted looks exactly like one that was configured and
    silently did not run, and only the second is a bug (ADR 0016 §4). */
@@ -392,22 +418,50 @@ details[open] > summary::before { content: "▾"; }
   font-family: var(--mono);
   font-size: 0.78rem;
 }
-.history li {
+.history li { border-bottom: 1px solid var(--rule); }
+.history li:last-child { border-bottom: 0; }
+/* The row *is* the disclosure, so the columns live on the summary. The first
+   track is the marker every `details` in this app gets; the payload under it
+   is the click the history's docstring promised and the page did not have. */
+.history summary {
   display: grid;
-  grid-template-columns: 5rem 13rem 9rem 1fr;
+  grid-template-columns: 1rem 5rem 13rem 9rem 1fr;
   gap: 0.75rem;
   padding: 0.32rem 0;
-  border-bottom: 1px solid var(--rule);
   align-items: baseline;
+  font: inherit;
+  color: inherit;
 }
-.history li:last-child { border-bottom: 0; }
+.history summary:hover { background: var(--surface); }
 .history .when { color: var(--muted); font-variant-numeric: tabular-nums; }
 .history .what { color: var(--accent-ink); }
+/* The actor, and only the actor. Shortened rather than allowed to run into the
+   summary's column, with the whole of it on the row's title (#87). */
 .history .who { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .history .sum { color: var(--ink); overflow-wrap: anywhere; }
 
+/* Indented past the marker, so an open row reads as belonging to its line. */
+.history .hmeta { margin: 0 0 4px 1.75rem; font-size: 0.7rem; color: var(--muted); }
+.history .hraw {
+  margin: 0 0 0.5rem 1.75rem;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+  overflow-x: auto;
+  max-height: 20rem;
+  overflow-y: auto;
+  white-space: pre;
+}
+
 @media (max-width: 46rem) {
-  .history li { grid-template-columns: 1fr; gap: 0.1rem; padding: 0.5rem 0; }
+  /* Stacked, with the marker keeping its own column so the row still reads as
+     something that opens. */
+  .history summary { grid-template-columns: 1rem 1fr; gap: 0.1rem 0.75rem; padding: 0.5rem 0; }
+  .history summary > span { grid-column: 2; }
   .point { grid-template-columns: 1fr; }
 }
 
