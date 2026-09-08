@@ -25,12 +25,20 @@ export const dynamic = "force-dynamic";
 /**
  * The stripe down the left edge, from what the card is waiting on.
  *
- * Ordered by what a person needs to see first: a failed gate beats a question
- * beats a merge. A card with nothing to say gets the neutral rule, not a
- * colour — every stripe on the board would be the same as none.
+ * Ordered by what a person needs to see first: a failed gate beats an abandoned
+ * attempt beats a question beats a merge. A card with nothing to say gets the
+ * neutral rule, not a colour — every stripe on the board would be the same as
+ * none.
+ *
+ * `a-hold` is the one #78 added, and it is why a stripe was missing: a run
+ * killed from outside fails no gate, so `gatesFailed` stayed 0 and a ticket that
+ * had burned money and produced nothing came back to Queued looking new. A
+ * queued card carrying a note is exactly that card — the note is the release's
+ * reason, and the next claim clears it.
  */
 function accent(card: BoardCard): string {
   if (card.gatesFailed > 0) return "a-fail";
+  if (card.column === "queued" && card.note) return "a-hold";
   if (card.column === "waiting") return "a-sig";
   if (card.column === "landed") return "a-pass";
   if (card.column === "running") return "a-run";
@@ -58,8 +66,22 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
       <ul className="meta">
         {card.turns !== null ? <li className="pill">{card.turns} turns</li> : null}
         {card.costUsd !== null ? <li className="pill">${card.costUsd.toFixed(2)}</li> : null}
+        {/* Green is a gate that ran and went green. A waiver and an approval are
+            a person's word standing in for one, so they carry the held colour
+            and their own word — counting either as "passed" made an override of
+            a red build look identical to a green one. */}
         {card.gatesPassed > 0 ? <li className="pill pass">{card.gatesPassed} passed</li> : null}
         {card.gatesFailed > 0 ? <li className="pill fail">{card.gatesFailed} failed</li> : null}
+        {card.gatesWaived > 0 ? (
+          <li className="pill hold" title="a person overrode a failed gate">
+            {card.gatesWaived} waived
+          </li>
+        ) : null}
+        {card.gatesApproved > 0 ? (
+          <li className="pill hold" title="a person approved, rather than a gate passing">
+            {card.gatesApproved} approved
+          </li>
+        ) : null}
         {/* A card that keeps failing should read as one rather than looking new
             every time it comes back round. */}
         {card.attempts > 1 ? (

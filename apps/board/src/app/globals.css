@@ -149,6 +149,9 @@ body {
 .card.a-pass { border-left-color: var(--pass); }
 .card.a-fail { border-left-color: var(--fail); }
 .card.a-sig { border-left-color: var(--signal); }
+/* Back in the queue after an attempt that ended without landing. Its own colour
+   because the failure is not a gate's: a run killed from outside fails nothing,
+   and without this the card was indistinguishable from one nobody had run. */
 .card.a-hold { border-left-color: var(--held); }
 
 /* Reference and kind on one mono line. They are the same fact — which ticket —

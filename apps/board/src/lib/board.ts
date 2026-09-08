@@ -58,9 +58,16 @@ export interface BoardCard {
   tier: string;
   /** For the approve/reject controls, which are bound to a specific commit. */
   headSha: string | null;
-  /** Counts, not verdicts. The verdicts are on the task's own page. */
+  /**
+   * Counts, not verdicts, and only from the run this card names — the verdicts
+   * themselves are on the task's own page. Waived and approved are separate
+   * from passed because they are a person's word standing in for a gate's, and
+   * folding them together made an override read as a green build (#78).
+   */
   gatesPassed: number;
   gatesFailed: number;
+  gatesWaived: number;
+  gatesApproved: number;
   turns: number | null;
   costUsd: number | null;
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
@@ -116,6 +123,8 @@ export function toCard(t: TaskCard): BoardCard {
     headSha: t.headSha,
     gatesPassed: t.gatesPassed,
     gatesFailed: t.gatesFailed,
+    gatesWaived: t.gatesWaived,
+    gatesApproved: t.gatesApproved,
     turns: t.turns,
     costUsd: t.costUsd,
     note: t.note,
@@ -167,6 +176,8 @@ async function queuedCards(project?: string): Promise<BoardCard[]> {
           headSha: null,
           gatesPassed: 0,
           gatesFailed: 0,
+          gatesWaived: 0,
+          gatesApproved: 0,
           turns: null,
           costUsd: null,
           note: null,

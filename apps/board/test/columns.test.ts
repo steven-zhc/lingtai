@@ -27,6 +27,8 @@ function task(state: TaskCard["state"]): TaskCard {
     costUsd: null,
     gatesPassed: 0,
     gatesFailed: 0,
+    gatesWaived: 0,
+    gatesApproved: 0,
     baseSha: null,
     headSha: null,
     files: null,
