@@ -78,6 +78,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0022](decisions/0022-the-seams.md) | **Where the seams go: eleven packages, and four deletions** | accepted |
 | [0023](decisions/0023-effect-at-the-boundary.md) | Effect at the port boundary, and nowhere else | accepted |
 | [0024](decisions/0024-agent-env-is-its-own-package.md) | The agent's environment is its own package, and Effect is in | accepted |
+| [0025](decisions/0025-a-failure-buys-one-agent.md) | **A failure buys one agent, and the person approves a diff** | accepted |
 
 ## Experiments
 
