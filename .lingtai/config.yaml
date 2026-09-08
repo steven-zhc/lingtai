@@ -24,7 +24,7 @@ repo:
   submodules: false
 
 source:
-  kinds: [bug, tech-debt, feature, documentation]
+  kinds: [bug, tech-debt, feature]
 
   # `agent:hold` is on every open issue right now, deliberately. Self-hosting
   # starts with nothing runnable and one ticket unheld at a time, because the
