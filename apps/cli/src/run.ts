@@ -13,7 +13,9 @@ import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withProjector } from "./projector.ts";
+import { AgentHost, Repo, PortsLive } from "@lingtai/conductor";
+import { Data, Effect } from "effect";
+import { Projector, ProjectorLive } from "./projector.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -34,86 +36,113 @@ export interface RunOptions {
   promptPath?: string;
 }
 
+/**
+ * A refusal, in the error channel rather than as a `return 1` and a log line.
+ *
+ * [0023](../../../doc/decisions/0023-effect-at-the-boundary.md). There are five
+ * of these and each used to be `log(…); return 1` — which works, and which the
+ * type system cannot see. As a `Data.TaggedError` the compiler knows this
+ * function can refuse and knows the ways, and `Effect.catchTag` below turns
+ * each back into the same line and the same exit code, in one place.
+ *
+ * The gain is not the message. It is that a refusal raised **before** the
+ * projector was ever read still closes it, because release is the scope's job
+ * and not this function's.
+ */
+class Refused extends Data.TaggedError("Refused")<{ readonly detail: string }> {}
+
+const refuse = (detail: string) => new Refused({ detail });
+
 export async function run(options: RunOptions, log = console.log): Promise<number> {
-  if (!hasGitHubApp()) {
-    log("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
-    return 1;
-  }
+  const program = Effect.gen(function* () {
+    if (!hasGitHubApp()) {
+      return yield* refuse("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
+    }
 
-  const project = await loadProject(options.project);
-  if (!project) {
-    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
-    return 1;
-  }
-  if (!project.owner) {
-    log(`${options.project} has no owner recorded — re-run lingtai add to record it`);
-    return 1;
-  }
+    const project = yield* Effect.promise(() => loadProject(options.project));
+    if (!project) {
+      return yield* refuse(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
+    }
+    if (!project.owner) {
+      return yield* refuse(`${options.project} has no owner recorded — re-run lingtai add to record it`);
+    }
+    // Bound now: a property narrowing does not survive into the closure below.
+    const owner = project.owner;
 
-  const hookBinary = options.hookBinary ?? resolve(root, "packages/hook/bin/lingtai-hook");
-  try {
-    await readFile(hookBinary);
-  } catch {
-    // The hook is a compiled artefact and is not committed. It refuses nothing
-    // now (ADR 0016 §6) but carries every event a run produces, so a run
-    // without it is a run that records nothing — which must not start. There is
-    // no flag to skip this any more: there is nothing left to skip.
-    log(`no lingtai-hook binary at ${hookBinary} — run: pnpm --filter @lingtai/hook build`);
-    return 1;
-  }
+    const hookBinary = options.hookBinary ?? resolve(root, "packages/hook/bin/lingtai-hook");
+    yield* Effect.tryPromise({
+      try: () => readFile(hookBinary),
+      // The hook is a compiled artefact and is not committed. It refuses nothing
+      // now (ADR 0016 §6) but carries every event a run produces, so a run
+      // without it is a run that records nothing — which must not start. There is
+      // no flag to skip this any more: there is nothing left to skip.
+      catch: () => refuse(`no lingtai-hook binary at ${hookBinary} — run: pnpm --filter @lingtai/hook build`),
+    });
 
-  const promptPath = options.promptPath ?? resolve(root, "prompts/ticket.md");
-  let prompt: string;
-  try {
-    prompt = await readFile(promptPath, "utf8");
-  } catch {
-    log(`no prompt at ${promptPath}`);
-    return 1;
-  }
+    const promptPath = options.promptPath ?? resolve(root, "prompts/ticket.md");
+    const prompt = yield* Effect.tryPromise({
+      try: () => readFile(promptPath, "utf8"),
+      catch: () => refuse(`no prompt at ${promptPath}`),
+    });
 
-  const client = await createGitHubClient({
-    auth: githubApp(),
-    owner: project.owner,
-    repo: options.project,
-  });
+    const client = yield* Effect.promise(() =>
+      createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
+    );
 
-  // Held from here to whichever `return` is reached, including the recipe
-  // refusal below. Everything past this point appends, and an appending
-  // process follows the log while it runs — one behaviour, not a catch-up on
-  // the way out (`#64`). See `withProjector` for why it is a scope.
-  return withProjector(log, async () => {
-    const common = {
-      project,
-      client,
-      runtime: createClaudeCodeRuntime(),
-      // Both managed repositories are private. Without this every git command in
-      // the run is an anonymous one, and the clone fails before anything else
-      // gets a chance to. Passed as the client's token *function*, not a string:
-      // an installation token lasts an hour and a run's wall limit is two.
-      token: () => client.token(),
-      merge: options.merge,
-      hookBinary,
-      promptVersion: `ticket@${prompt.length}`,
-      log,
-    };
+    /**
+     * The work, with the world provided **around it and not around the
+     * refusals above**.
+     *
+     * A `Layer` is built when it is provided, so providing the projector to the
+     * whole program would acquire it before the first refusal could be raised —
+     * and `lingtai run no-such-project` would open a Postgres connection to say
+     * a project does not exist. It did, briefly, while this was being written.
+     * `Scope` guarantees release, not that acquisition was wanted; where the
+     * scope *starts* is still a decision, and this is it.
+     */
+    const work = Effect.gen(function* () {
+      // Asked for, not threaded through — and the release is the scope's, which
+      // is the whole of why `run()` no longer has to remember it on four paths.
+      yield* Projector;
+      const ports = { repo: yield* Repo, agent: yield* AgentHost };
 
-    // ---- the queue -----------------------------------------------------------
-    if (options.issue === undefined) {
-      // The project's *state*, not its name — the recipe is resolved from the
-      // base recorded at `lingtai add`.
-      const resolved = await currentRecipe(project, client).catch(() => null);
-      if (!resolved) {
-        log(`could not read ${options.project}'s recipe — run lingtai doctor`);
-        return 1;
-      }
+      return yield* Effect.promise(async () => {
+      const common = {
+        project,
+        client,
+        runtime: createClaudeCodeRuntime(),
+        // Both managed repositories are private. Without this every git command in
+        // the run is an anonymous one, and the clone fails before anything else
+        // gets a chance to. Passed as the client's token *function*, not a string:
+        // an installation token lasts an hour and a run's wall limit is two.
+        token: () => client.token(),
+        // What the tags held, handed on. `runOnce` still takes ports as a
+        // parameter — it is a function, not a host — and this is the one place
+        // that turns "provided" back into "passed".
+        ports,
+        merge: options.merge,
+        hookBinary,
+        promptVersion: `ticket@${prompt.length}`,
+        log,
+      };
 
-      const outcome = await runQueue({
-        ...common,
-        prompt,
-        // Asked rather than stored: a project that reorders its kinds, or adds
-        // an exclusion, must not need a projection rebuild.
-        recipe: resolved.recipe,
-        ...(options.max === undefined ? {} : { max: options.max }),
+      // ---- the queue -----------------------------------------------------------
+      if (options.issue === undefined) {
+        // The project's *state*, not its name — the recipe is resolved from the
+        // base recorded at `lingtai add`.
+        const resolved = await currentRecipe(project, client).catch(() => null);
+        if (!resolved) {
+          log(`could not read ${options.project}'s recipe — run lingtai doctor`);
+          return 1;
+        }
+
+        const outcome = await runQueue({
+          ...common,
+          prompt,
+          // Asked rather than stored: a project that reorders its kinds, or adds
+          // an exclusion, must not need a projection rebuild.
+          recipe: resolved.recipe,
+          ...(options.max === undefined ? {} : { max: options.max }),
       });
 
       // Read back, not counted up. An item this pass held and somebody approved
@@ -152,5 +181,22 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
   // an answer at the shell as well as on the board.
   log(`stopped at ${result.stage}: ${result.detail}`);
   return 1;
+      });
+    });
+
+    return yield* work.pipe(Effect.provide(ProjectorLive(log)), Effect.provide(PortsLive));
   });
+
+  // The edge, once. Everything above is a description; this is where it runs,
+  // and where a `Refused` becomes the line and the exit code it always was.
+  return Effect.runPromise(
+    program.pipe(
+      Effect.catchTag("Refused", (r) =>
+        Effect.sync(() => {
+          log(r.detail);
+          return 1;
+        }),
+      ),
+    ),
+  );
 }

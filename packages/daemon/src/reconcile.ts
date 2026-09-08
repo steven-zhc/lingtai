@@ -8,6 +8,14 @@
  * 3. expired claims are returned — a lease that ran out on a dead process
  * 4. GitHub says what the log says — see `converge.ts`
  *
+ * **Only the daemon runs this**, and that is a decision rather than an
+ * oversight. `#69` asked for "every long-lived host at startup"; `lingtai run`
+ * and the board do not call it, because this pass *appends* — it releases
+ * claims other runs are holding — and a one-shot command a person is watching
+ * should not have that side effect on work it was not asked about. The daemon
+ * is the process that takes work unattended, so it is the one that owes the
+ * repair.
+ *
  * A daemon that is killed mid-run leaves two things behind, and the claim's
  * self-repair is thinner than it looks. The **claim** has a lease, so nothing
  * has to release it for another process to take the item (`claim.ts`) — but

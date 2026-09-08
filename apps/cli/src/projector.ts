@@ -30,8 +30,8 @@
  * which is exactly what those paths need and what a pair of statements would
  * not give them.
  */
-import { taskViewProjection } from "@lingtai/projector";
-import { createProjectionRunner } from "@lingtai/projector";
+import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
+import { Context, Effect, Layer } from "effect";
 
 /**
  * Runs `work` with the projections following the log, and releases them after.
@@ -71,3 +71,49 @@ export async function withProjector<T>(
     await runner.close().catch(() => {});
   }
 }
+
+/**
+ * The same thing, as a resource with a lifetime.
+ *
+ * **This is where `Scope` earns what
+ * [0023](../../../doc/decisions/0023-effect-at-the-boundary.md) is for.** The
+ * `finally` above works, and it works because one function owns both the
+ * acquire and the release. `run()` does not have that shape: it refuses on four
+ * paths before the work begins, and each of those is a `return` that has to
+ * remember. `Layer.scoped` makes the release structural — the runner is closed
+ * when the scope closes, whichever way control left it, including a typed
+ * refusal raised before the projector was ever read.
+ */
+export class Projector extends Context.Tag("lingtai/cli/Projector")<
+  Projector,
+  { readonly following: boolean; readonly failure: unknown }
+>() {}
+
+export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projector> =>
+  Layer.scoped(
+    Projector,
+    Effect.acquireRelease(
+      Effect.promise(async () => {
+        const runner = createProjectionRunner({ projection: taskViewProjection });
+        let following = false;
+        try {
+          await runner.start();
+          following = true;
+        } catch (err) {
+          log(`the board will not follow this run: ${(err as Error).message}`);
+          log("the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct");
+        }
+        return { runner, following };
+      }),
+      ({ runner, following }) =>
+        Effect.promise(async () => {
+          if (following && runner.failure) {
+            log(`the projection stopped during this run: ${String(runner.failure)}`);
+            log("the board is behind until it is rebuilt — lingtai projection rebuild task_view");
+          }
+          await runner.close().catch(() => {});
+        }),
+    ).pipe(
+      Effect.map((held) => ({ following: held.following, failure: held.runner.failure })),
+    ),
+  );

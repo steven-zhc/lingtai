@@ -18,7 +18,8 @@ import {
 } from "@lingtai/agent";
 import { resolveAgentEnv } from "@lingtai/agent-env";
 import { git, integrate, provisionWorktree, removeWorktree } from "@lingtai/repo";
-import type { RunPorts } from "./ports.ts";
+import { Layer } from "effect";
+import { AgentHost, Repo, type RunPorts } from "./ports.ts";
 
 export function livePorts(): RunPorts {
   return {
@@ -36,3 +37,19 @@ export function livePorts(): RunPorts {
     },
   };
 }
+
+/**
+ * The same wiring as a `Layer`, for a host that provides rather than passes.
+ *
+ * `Layer.succeed` and not `Layer.effect`: neither of these acquires anything —
+ * they are records of functions, and the resources they *reach* (a worktree, a
+ * socket, a subprocess) are each acquired and released inside the call that
+ * needs them. The one thing a host genuinely holds for a whole run is the
+ * projector, and that is `Layer.scoped` in `apps/cli/src/projector.ts`, where
+ * `Scope` earns what it is for.
+ */
+export const RepoLive = Layer.succeed(Repo, livePorts().repo);
+export const AgentHostLive = Layer.succeed(AgentHost, livePorts().agent);
+
+/** Both, for a host that wants the real world and no choices. */
+export const PortsLive = Layer.merge(RepoLive, AgentHostLive);

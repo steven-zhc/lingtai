@@ -16,6 +16,7 @@
  * here would give one shape two definitions and a drift nobody would notice.
  * What must not be imported is the *implementation*, and none is.
  */
+import { Context } from "effect";
 import type { AgentEnv } from "@lingtai/agent-env";
 import type {
   HookServer,
@@ -79,3 +80,22 @@ export interface RunPorts {
   repo: RepoPort;
   agent: AgentHostPort;
 }
+
+/**
+ * The same two ports, as things a host **provides** rather than passes.
+ *
+ * [0023](../../../doc/decisions/0023-effect-at-the-boundary.md): `Context.Tag`
+ * names a port, `Layer` provides one. The interfaces above are unchanged and
+ * are still what a fake implements — a tag is a *name for a slot*, not a second
+ * definition of the shape.
+ *
+ * Why a tag rather than the parameter that already works: a parameter has to be
+ * threaded through every caller between the host that knows the implementation
+ * and the code that needs it, and `runOnce` is not the only thing that will
+ * need `repo`. A tag is asked for where it is used.
+ */
+export class Repo extends Context.Tag("@lingtai/conductor/Repo")<Repo, RepoPort>() {}
+export class AgentHost extends Context.Tag("@lingtai/conductor/AgentHost")<
+  AgentHost,
+  AgentHostPort
+>() {}

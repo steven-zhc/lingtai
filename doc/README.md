@@ -71,6 +71,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0021](decisions/0021-the-recipe-decides-the-environment.md) | The recipe decides the environment; the machine only holds it | accepted |
 | [0022](decisions/0022-the-seams.md) | **Where the seams go: eleven packages, and four deletions** | accepted |
 | [0023](decisions/0023-effect-at-the-boundary.md) | Effect at the port boundary, and nowhere else | accepted |
+| [0024](decisions/0024-agent-env-is-its-own-package.md) | The agent's environment is its own package, and Effect is in | accepted |
 
 ## Experiments
 

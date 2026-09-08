@@ -28,6 +28,8 @@ export {
   type Runnable,
   type RunnableOptions,
 } from "./queue.ts";
+export { AgentHost, Repo, type AgentHostPort, type RepoPort, type RunPorts } from "./ports.ts";
+export { AgentHostLive, PortsLive, RepoLive, livePorts } from "./live.ts";
 export { renderPrompt, runOnce, type RunOnceOptions, type RunOnceResult } from "./run-once.ts";
 export {
   runQueue,

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@lingtai/actions": "workspace:*",
+    "@lingtai/agent": "workspace:*",
     "@lingtai/agent-env": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
@@ -25,7 +26,7 @@
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
-    "@lingtai/agent": "workspace:*",
+    "effect": "^3.22.1",
     "pg": "^8.16.3"
   },
   "devDependencies": {

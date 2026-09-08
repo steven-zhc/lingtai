@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lingtai/agent": "workspace:*",
     "@lingtai/agent-env": "workspace:*",
     "@lingtai/conductor": "workspace:*",
     "@lingtai/daemon": "workspace:*",
@@ -21,7 +22,7 @@
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
-    "@lingtai/agent": "workspace:*",
+    "effect": "^3.22.1",
     "pg": "^8.16.3"
   },
   "devDependencies": {
