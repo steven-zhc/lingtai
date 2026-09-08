@@ -3,12 +3,9 @@
 **One agent loop, driven by an append-only event log. Everything else is a
 projection of that log or a subscriber to it.**
 
-This was called **Escapement** until [0017](doc/decisions/0017-the-project-is-called-lingtai.md),
-and the older name still says what it does. An escapement is the part of a clock
-that lets the mainspring out one tooth at a time; without it the spring releases
-all at once. That is the job: take a queue of work, hand each item to a coding
-agent, hold it at a series of gates, and release it only when every gate —
-including a human one — has passed.
+Lingtai takes a queue of work, hands one item at a time to a coding agent, holds
+it at a series of gates, and releases it only when every gate — including a human
+one — has passed. Nothing advances without leaving a record of why.
 
 ## Why
 
