@@ -50,10 +50,38 @@ const discovered = (n: number, title: string, kind = "bug") => ({
   },
 });
 
-const claimed = (n: number) => ({
+/**
+ * A second run id for the same issue, so two attempts can be told apart.
+ *
+ * `run(n)` is one per issue, which is fine while an issue is only ever run once
+ * — and the whole of #78 is what happens when it is not.
+ */
+const attempt = (n: number, which: string) => {
+  const id = `run-${PROJECT}-${n}${which}`;
+  created.add(id);
+  return id;
+};
+
+const claimedWith = (runId: string) => ({
   type: "WorkItemClaimed",
   actor: "conductor",
-  data: { runId: run(n), worker: "w", leaseUntilMs: Date.now() + 60_000, title: null, kind: null },
+  data: { runId, worker: "w", leaseUntilMs: Date.now() + 60_000, title: null, kind: null },
+});
+
+const claimed = (n: number) => claimedWith(run(n));
+
+const released = (runId: string, reason: string) => ({
+  type: "WorkItemReleased",
+  actor: "conductor",
+  data: { runId, reason },
+});
+
+const KILLED = "the run was killed by an operator timeout before it produced anything";
+
+const passed = (runId: string, point: string, action: string, onSha: string) => ({
+  type: "GatePassed",
+  actor: "conductor",
+  data: { gate: point, action, runId, onSha, evidence: "exit 0" },
 });
 
 const started = (n: number) => ({
@@ -109,12 +137,63 @@ async function seed(): Promise<void> {
     discovered(5, "landed a while ago"),
     { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "abc1234def", base: "develop" } },
   ]);
+
+  // 6 — attempt 1 passed a gate and was then killed from outside. Attempt 2
+  //     arrives in `secondAttempt`, after the rebuild, so the window this is
+  //     about is folded the way production folds it.
+  await store.append(wi(6), 0, [discovered(6, "killed, then run again"), claimedWith(attempt(6, "a"))]);
+  await store.append(attempt(6, "a"), 0, [started(6), passed(attempt(6, "a"), "prepared", "install", "sha-6a")]);
+
+  // 7 — the same kill, with nothing after it: still in the queue, and the only
+  //     thing it has to show for the attempt is the sentence the release gave.
+  await store.append(wi(7), 0, [discovered(7, "killed and not picked up again"), claimedWith(attempt(7, "a"))]);
+  await store.append(attempt(7, "a"), 0, [started(7), passed(attempt(7, "a"), "prepared", "install", "sha-7")]);
+  await store.append(wi(7), 2, [released(attempt(7, "a"), KILLED)]);
+
+  // 8 — a person's word, twice: a red build waived, and the merge approved.
+  await store.append(wi(8), 0, [discovered(8, "overridden by a person"), claimed(8)]);
+  await store.append(run(8), 0, [
+    started(8),
+    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-8" } },
+    {
+      type: "GateFailed",
+      actor: "conductor",
+      data: { gate: "proposed", action: "build", runId: run(8), onSha: "sha-8", evidence: "exit 1", findings: [] },
+    },
+    {
+      type: "GateWaived",
+      actor: "human:steven",
+      data: { gate: "proposed", action: "build", runId: run(8), onSha: "sha-8", by: "human:steven", reason: "known flake" },
+    },
+    {
+      type: "ApprovalGranted",
+      actor: "human:steven",
+      data: { gate: "merge", action: "human", runId: run(8), onSha: "sha-8", by: "human:steven", note: "" },
+    },
+  ]);
+}
+
+/** Appended after the rebuild, so `fold` is what folds it. */
+async function secondAttempt(): Promise<void> {
+  await store.append(wi(6), 2, [released(attempt(6, "a"), KILLED)]);
+  await store.append(wi(6), 3, [claimedWith(attempt(6, "b"))]);
+  await store.append(attempt(6, "b"), 0, [started(6)]);
 }
 
 async function build(): Promise<void> {
   const runner = createProjectionRunner({ projection: taskViewProjection, store });
   try {
     await runner.rebuild();
+  } finally {
+    await runner.close();
+  }
+}
+
+/** Forward from the checkpoint, which is what a live projector does. */
+async function fold(): Promise<void> {
+  const runner = createProjectionRunner({ projection: taskViewProjection, store });
+  try {
+    await runner.start();
   } finally {
     await runner.close();
   }
@@ -128,6 +207,10 @@ beforeAll(async () => {
   store = createEventStore(client);
   await seed();
   await build();
+  // Half the history is rebuilt and half is folded forward, so the rebuild case
+  // below compares the two paths rather than a rebuild against itself.
+  await secondAttempt();
+  await fold();
 }, 120_000);
 
 afterAll(async () => {
@@ -187,10 +270,70 @@ describe("task_view", () => {
   });
 
   /**
+   * #78. `wi-lingtai-59` read `1 passed · attempt 2` on the board, and the pass
+   * belonged to attempt 1 — a run an operator had killed eleven hours earlier,
+   * which produced nothing. The verdicts were keyed `point:action` with no run
+   * in the key, so the map was one shared set of cells and nothing ever cleared
+   * it.
+   */
+  it("counts only the gates of the run the card names", async () => {
+    const tasks = await readTasks({ project: PROJECT });
+    const six = card(tasks, 6)!;
+
+    expect(six.attempts).toBe(2);
+    expect(six.runId).toBe(`run-${PROJECT}-6b`);
+    // Attempt 2 has reached no gate. Attempt 1's `prepared:install` is still in
+    // the map, against the run that earned it, and is not this card's.
+    expect(six.gatesPassed).toBe(0);
+    expect(six.gatesFailed).toBe(0);
+  });
+
+  /**
+   * A run killed from outside fails no gate, so `gatesFailed` stayed 0 and the
+   * card came back to Queued with a green pill and nothing else — a ticket that
+   * had burned money and produced nothing, looking like a fresh one.
+   */
+  it("marks a task whose attempt ended without landing", async () => {
+    const tasks = await readTasks({ project: PROJECT });
+    const seven = card(tasks, 7)!;
+
+    expect(seven.state).toBe("queued");
+    // No run named, so no verdict is this card's to show.
+    expect(seven.runId).toBeNull();
+    expect(seven.gatesPassed).toBe(0);
+    // The sentence the release already carried.
+    expect(seven.note).toBe(KILLED);
+  });
+
+  /**
+   * A waiver records who and why precisely because it is not a pass. Counting
+   * it as one threw away the distinction the record exists for — and the same
+   * held for a human approval, which is not a build going green either.
+   */
+  it("does not read a person's word as a gate that ran", async () => {
+    const tasks = await readTasks({ project: PROJECT });
+    const eight = card(tasks, 8)!;
+
+    expect(eight.gatesPassed).toBe(0);
+    // The waiver replaced the failure in its own cell: one verdict per point
+    // per run, and the latest one is what stands.
+    expect(eight.gatesFailed).toBe(0);
+    expect(eight.gatesWaived).toBe(1);
+    expect(eight.gatesApproved).toBe(1);
+  });
+
+  /**
    * The property that makes this table's shape free to change. It only holds
    * because every timestamp comes from `event.at` — a projection that read the
    * clock would produce different rows on every rebuild, and the workflow for
    * changing a projection would stop being "rebuild it".
+   *
+   * `before` is genuinely the two paths mixed: `beforeAll` rebuilds most of the
+   * history and then folds the rest forward from the checkpoint. That is what
+   * makes this a claim about the incremental path and not a rebuild compared
+   * with itself — and it is the claim the run-scoped gate keys have to survive,
+   * since assignment into a keyed map is the only reason a replay lands on the
+   * same numbers.
    */
   it("rebuilds to exactly what the incremental path produced", async () => {
     const before = await readTasks({ project: PROJECT });
