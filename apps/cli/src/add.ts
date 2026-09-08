@@ -12,9 +12,14 @@
  * against is specific: a fine-grained PAT that covered the admin repository's
  * submodule but not the repository itself produced a day of 403s on CI, and
  * nothing anywhere said "wrong scope".
+ *
+ * The base is checked the same way and for the same reason. `--base` names the
+ * branch the recipe is read from, and the recipe's own `repo.base` names the
+ * branch it governs; this command is where those can be made to disagree, so it
+ * is where the disagreement is refused (`baseDivergence`).
  */
 import { projectStream } from "@lingtai/domain";
-import { RECIPE_PATH, RecipeMissingError, resolveRecipe } from "@lingtai/recipe";
+import { RECIPE_PATH, RecipeMissingError, baseDivergence, resolveRecipe } from "@lingtai/recipe";
 import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/domain";
 import {
   NotInstalledError,
@@ -89,6 +94,19 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
     }
     return 1;
   }
+
+  // 4. Does that recipe say it governs this branch? The same rule as the
+  //    permission check above, applied to the other thing this command decides:
+  //    refuse *before* anything is written, so a project whose rules come from
+  //    one branch and whose merges go to another is not a state that exists. The
+  //    divergence is otherwise created here in silence and only ever paid for by
+  //    a run — which obeys the wrong branch's gates and records nothing amiss.
+  const divergence = baseDivergence(resolved, `${owner}/${repo}`);
+  if (divergence) {
+    log(divergence);
+    return 1;
+  }
+
   const fromSha = await client.refSha(base);
   log(`recipe: ${RECIPE_PATH} at ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`);
   // All five points, including the empty ones. Onboarding is the first place a

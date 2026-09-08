@@ -380,6 +380,47 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
   }, 120_000);
 
   /**
+   * The case the test above cannot reach: the recipe *is* read from the recorded
+   * base, and says a different branch governs it.
+   *
+   * From there the run would be right about everything except the rules — it
+   * cuts from `main` and merges into `main`, under gates read from `develop`.
+   * Nothing downstream can see that, because `GatesResolved` is written from the
+   * same file the run obeyed; so the assertion that matters is the *absence*:
+   * the work item's stream is empty, which is the difference between a refusal
+   * and an agent that has already been started and paid for.
+   */
+  it("refuses when the recipe's own repo.base is a different branch, and claims nothing", async () => {
+    created.add(workItemStream(PROJECT, 122));
+    const other = issue2(122);
+
+    const result = await runOnce({
+      ...options(await agentThat("true")),
+      issue: 122,
+      client: fakeClient({
+        recipe: RECIPE.replace("base: develop", "base: main"),
+        getIssue: async () => other,
+        listOpenIssues: async () => [other],
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Alongside `env.required`, before anything is claimed — so there is no run
+    // to name either.
+    expect(result.stage).toBe("recipe");
+    expect(result.workItemId).toBeNull();
+    expect(result.runId).toBeNull();
+    // Both branches, and the exact command that settles which one is meant.
+    expect(result.detail).toContain("recipe read from develop declares repo.base: main");
+    expect(result.detail).toContain(`lingtai add steven-zhc/${PROJECT} --base main`);
+
+    // The whole point: nothing was claimed, so nothing was started and nothing
+    // has to be released.
+    expect(await store.read(workItemStream(PROJECT, 122))).toEqual([]);
+  }, 120_000);
+
+  /**
    * The point of the `prepared` point, stated as a test: whatever runs there,
    * the agent is looking at afterwards. Before it existed the agent got a
    * worktree with no node_modules and could not run the repository's own tests
