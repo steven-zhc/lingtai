@@ -45,6 +45,7 @@ const started = (taskId: string) => ({
     baseSha: "base000",
     configHash: "c",
     worktree: "/tmp/wt",
+    invocation: null,
   },
 });
 

@@ -278,16 +278,35 @@ describe("the lifecycle hooks", () => {
   const hookPayload = (name: string, extra: Record<string, unknown> = {}) =>
     JSON.stringify({ hook_event_name: name, ...extra });
 
-  it("records a prompt with the version that produced it", async () => {
+  /**
+   * The prompt, and not two numbers about it.
+   *
+   * This recorded `{ promptVersion, bytes }` and nothing else, so the most
+   * expensive thing the system does — handing a document to an agent — left no
+   * trace of the document (#88). `promptVersion` is a template name and the
+   * ticket body it was filled with lives on GitHub, where it can be edited
+   * afterwards, so nothing could answer *what did we actually ask it to do*.
+   */
+  it("records a prompt with the version that produced it, and the prompt itself", async () => {
     const before = (await store.read(runId)).filter((e) => e.type === "RunPrompted").length;
     const { code } = await runHook(binary, env(), hookPayload("UserPromptSubmit", { prompt: "do the thing" }));
 
     expect(code).toBe(0);
     const prompted = (await store.read(runId)).filter((e) => e.type === "RunPrompted");
     expect(prompted.length).toBe(before + 1);
+    const data = prompted[prompted.length - 1]!.data as {
+      promptVersion: string;
+      bytes: number;
+      prompt: string | null;
+    };
     // "Which prompt produced better work" is only answerable if the version is
     // on the event.
-    expect((prompted[prompted.length - 1]!.data as { promptVersion: string }).promptVersion).toBe("ticket@3");
+    expect(data.promptVersion).toBe("ticket@3");
+    // Verbatim and whole. A slice of a prompt explains nothing.
+    expect(data.prompt).toBe("do the thing");
+    // `bytes` still says what it always said, so a v1 event and this one are
+    // read the same way.
+    expect(data.bytes).toBe(12);
   });
 
   /**

@@ -10,6 +10,12 @@ const started = {
   baseSha: "base000",
   configHash: "cfg123",
   worktree: "/tmp/wt/117",
+  invocation: {
+    command: "claude",
+    args: ["-p", "<prompt: recorded as RunPrompted>", "--output-format", "json"],
+    tier: "guarded" as const,
+    limits: { turns: 150, wallMs: 3_600_000 },
+  },
 };
 
 describe("reduceRun", () => {
@@ -24,6 +30,34 @@ describe("reduceRun", () => {
     expect(s.lifecycle.status).toBe("running");
     expect(s.configHash).toBe("cfg123");
     expect(s.promptVersion).toBe("ticket@3");
+    // How it was invoked, and not only which runtime took it (#88).
+    expect(s.invocation?.command).toBe("claude");
+    expect(s.invocation?.tier).toBe("guarded");
+    expect(s.invocation?.limits).toEqual({ turns: 150, wallMs: 3_600_000 });
+  });
+
+  /**
+   * The prompt is the one input to a run that is not reconstructible from
+   * anything else (#88), so the fold carries it rather than only counting it.
+   */
+  it("carries the prompt itself, and still counts them", () => {
+    const e = makeStream("run-01JY");
+    const s = reduceRun([
+      e("RunStarted", started),
+      e("RunPrompted", { promptVersion: "ticket@3", bytes: 12, prompt: "do the thing" }),
+    ]);
+
+    expect(s.prompts).toBe(1);
+    expect(s.prompt).toBe("do the thing");
+  });
+
+  it("says nothing about the text of a prompt recorded before it was kept", () => {
+    const e = makeStream("run-01JZ");
+    // A v1 `RunPrompted`, upcast: the length survived, the document did not.
+    const s = reduceRun([e("RunPrompted", { promptVersion: "ticket@1911", bytes: 4593, prompt: null })]);
+
+    expect(s.prompts).toBe(1);
+    expect(s.prompt).toBeNull();
   });
 
   /**

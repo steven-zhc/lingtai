@@ -20,7 +20,15 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import type { AuthStatus, RunOutcome, RunRequest, Runtime, RuntimeCapabilities } from "./runtime.ts";
+import type {
+  AuthStatus,
+  Invocable,
+  RunOutcome,
+  RunRequest,
+  Runtime,
+  RuntimeCapabilities,
+  Spawned,
+} from "./runtime.ts";
 
 export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   id: "claude-code",
@@ -73,6 +81,56 @@ interface ClaudeResult {
   session_id?: string;
   subtype?: string;
   result?: string;
+}
+
+/**
+ * What stands in for the prompt in a recorded argv.
+ *
+ * `claude -p <prompt>` carries the whole document, and the whole document is
+ * already on the run's stream as `RunPrompted` (#88). Recording it twice would
+ * put 4.6 KB in front of the fields somebody opened `RunStarted` to read, and
+ * the two copies could then disagree.
+ */
+export const PROMPT_ELIDED = "<prompt: recorded as RunPrompted>";
+
+/**
+ * argv, in one place.
+ *
+ * `run` and `invocation` call this with the only thing that differs between
+ * them, so what the log says was run and what was run are the same list.
+ */
+function argsFor(request: Invocable, prompt: string, extraArgs: readonly string[]): string[] {
+  return [
+    "-p",
+    prompt,
+    // Parsed, not scraped. See the module header.
+    "--output-format",
+    "json",
+    // Outside the worktree: an agent that can edit its own hook
+    // configuration has no hook configuration.
+    "--settings",
+    request.settingsPath,
+    // The guard is the gate, so the runtime's own permission layer must not
+    // be a second one. Without this a run is not merely stricter, it is
+    // impossible: `-p` is non-interactive, so every Write, Edit and most
+    // Bash calls come back as "you haven't granted it yet" and there is no
+    // prompt to grant anything. One real run spent 45 turns and $3.35
+    // reading the repository, designing the change, and then reporting that
+    // it could not write a single file. lingtai-hook denied none of it — none
+    // of it ever reached lingtai-hook.
+    //
+    // Not a loosening. `guarded` has always meant the worktree plus the
+    // hook (see `providesTier` above, and ADR 0007): containment is the
+    // filtered environment and the disposable worktree, and the hook is
+    // what makes a tool call refusable. Deferring to it is the design, and
+    // leaving a second layer in front of it only hides the first.
+    "--permission-mode",
+    "bypassPermissions",
+    "--session-id",
+    sessionIdFor(request.runId),
+    ...(request.model ? ["--model", request.model] : []),
+    ...extraArgs,
+  ];
 }
 
 export interface ClaudeCodeOptions {
@@ -153,41 +211,16 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
       });
     },
 
+    /** The same list `run` spawns, with the prompt standing in. */
+    invocation(request: Invocable): Spawned {
+      return { command: binary, args: argsFor(request, PROMPT_ELIDED, options.extraArgs ?? []) };
+    },
+
     async run(request: RunRequest): Promise<RunOutcome> {
       const sessionId = sessionIdFor(request.runId);
       const started = Date.now();
 
-      const args = [
-        "-p",
-        request.prompt,
-        // Parsed, not scraped. See the module header.
-        "--output-format",
-        "json",
-        // Outside the worktree: an agent that can edit its own hook
-        // configuration has no hook configuration.
-        "--settings",
-        request.settingsPath,
-        // The guard is the gate, so the runtime's own permission layer must not
-        // be a second one. Without this a run is not merely stricter, it is
-        // impossible: `-p` is non-interactive, so every Write, Edit and most
-        // Bash calls come back as "you haven't granted it yet" and there is no
-        // prompt to grant anything. One real run spent 45 turns and $3.35
-        // reading the repository, designing the change, and then reporting that
-        // it could not write a single file. lingtai-hook denied none of it — none
-        // of it ever reached lingtai-hook.
-        //
-        // Not a loosening. `guarded` has always meant the worktree plus the
-        // hook (see `providesTier` below, and ADR 0007): containment is the
-        // filtered environment and the disposable worktree, and the hook is
-        // what makes a tool call refusable. Deferring to it is the design, and
-        // leaving a second layer in front of it only hides the first.
-        "--permission-mode",
-        "bypassPermissions",
-        "--session-id",
-        sessionId,
-        ...(request.model ? ["--model", request.model] : []),
-        ...(options.extraArgs ?? []),
-      ];
+      const args = argsFor(request, request.prompt, options.extraArgs ?? []);
 
       return new Promise<RunOutcome>((resolve) => {
         const child = spawn(binary, args, {

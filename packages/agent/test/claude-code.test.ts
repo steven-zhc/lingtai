@@ -11,7 +11,7 @@
  * json`, `--settings`, `--session-id`, `--model` — and the first supervised run
  * is what actually proves them.
  */
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ import {
   CLAUDE_CODE_CAPABILITIES,
   CODEX_CAPABILITIES,
   CodexNotImplementedError,
+  PROMPT_ELIDED,
   createClaudeCodeRuntime,
   createCodexRuntime,
   meetsTier,
@@ -128,6 +129,32 @@ describe("run", () => {
     expect(written).toContain("--settings");
     expect(written).toContain(sessionIdFor("run-01JX"));
     expect(written).toContain("claude-opus-5");
+  });
+
+  /**
+   * What the log records about the invocation is what was invoked.
+   *
+   * `RunStarted` carries the argv now (#88), asked of the adapter before the
+   * spawn. The failure that would make that worthless is the two drifting — a
+   * flag added to `run` and not to the recorded list — so this asserts them
+   * against each other rather than against a copy of the flags.
+   */
+  it("describes the invocation as the same list it spawns, minus the prompt", async () => {
+    const dump = join(root, "invocation-args.txt");
+    const binary = await fakeClaude(`printf '%s\n' "$@" > "${dump}"; echo '{}'`);
+    const runtime = createClaudeCodeRuntime({ binary });
+    const req = request({ model: "claude-opus-5" });
+
+    await runtime.run(req);
+    const spawned = (await readFile(dump, "utf8")).split("\n").slice(0, -1);
+    const described = runtime.invocation!(req);
+
+    expect(described.command).toBe(binary);
+    // The one difference, and the only one: the document itself is on the run's
+    // stream as `RunPrompted` rather than repeated here.
+    expect(spawned[1]).toBe("fix the thing");
+    expect(described.args[1]).toBe(PROMPT_ELIDED);
+    expect([...described.args].toSpliced(1, 1)).toEqual(spawned.toSpliced(1, 1));
   });
 
   /** The old loop's failures produced no event at all. Every ending has a kind. */

@@ -165,6 +165,32 @@ export const DispatchRefused = z.object({
 
 // ------------------------------------------------------------------- run ----
 
+/**
+ * How a runtime was actually invoked — not merely which one.
+ *
+ * `RunStarted` said `runtime: "claude-code"` and stopped there, so *"what
+ * command did we run"* had no answer: no argv, no flags, no tier as applied and
+ * no limits as applied. Every one of those is something a run can be explained
+ * by, and none of them was written down (#88).
+ *
+ * **The prompt is elided from `args`, deliberately.** `claude -p <prompt>` puts
+ * the whole document in argv, and the whole document is already on this stream
+ * as `RunPrompted`. One copy is the record; a second one in the event that is
+ * read first is 4.6 KB of noise in front of the seven fields somebody opened
+ * this to see.
+ */
+export const Invocation = z.object({
+  /** The executable, as spawned. */
+  command: z.string(),
+  /** argv as applied, with a placeholder where the prompt itself went. */
+  args: z.array(z.string()),
+  /** The containment this run executed at: the recipe's, matched before dispatch. */
+  tier: Tier,
+  /** The limits in force, in the units the runtime was handed them. */
+  limits: z.object({ turns: z.number().int(), wallMs: z.number().int() }),
+});
+export type Invocation = z.infer<typeof Invocation>;
+
 export const RunStarted = z.object({
   workItemId: z.string(),
   runtime: RuntimeId,
@@ -174,9 +200,52 @@ export const RunStarted = z.object({
   /** Hash of the recipe as read from origin/<base>, never from the agent's branch. */
   configHash: z.string(),
   worktree: z.string(),
+  /**
+   * Added in v2 (#88). Null for a v1 event, which recorded the runtime's name
+   * and nothing about how it was called — and null for a runtime that cannot
+   * describe its own invocation, because recording nothing is better than
+   * recording a reconstruction that might not be what ran.
+   */
+  invocation: Invocation.nullable(),
 });
 
-export const RunPrompted = z.object({ promptVersion: z.string(), bytes: z.number().int() });
+/**
+ * The prompt an agent was handed. The whole of it.
+ *
+ * This was `{ promptVersion, bytes }`: two numbers about a document, and not
+ * the document. Every other input to a run is reconstructible from the log —
+ * the recipe by `configHash`, the code by `baseSha`, the environment by the
+ * names the recipe required — and the prompt was the only one that was neither
+ * recorded nor recoverable. `promptVersion: "ticket@1911"` is a template name
+ * and a length, and the ticket body it was filled with can be edited on GitHub
+ * afterwards. So the single most expensive thing this system does could not be
+ * explained afterwards, which is #88.
+ *
+ * **Retention, measured rather than assumed.** `#59`'s prompt was 4,593 bytes
+ * and this log holds a few hundred events; a thousand runs of that is about
+ * 5 MB, against a table whose other rows are already tens of thousands of
+ * bytes of gate evidence. There is therefore no retention policy for this
+ * field, and inventing one now would be guessing at a shape nothing has. The
+ * number that would change that is the share of `events` it accounts for:
+ *
+ *     select pg_size_pretty(sum(pg_column_size(data))) from events
+ *      where type = 'RunPrompted';
+ *
+ * If that ever rivals the rest of the table the answer is to truncate at append
+ * time and say in the payload that it was truncated — never to delete, which
+ * the log's no-delete rule forbids in any case.
+ */
+export const RunPrompted = z.object({
+  promptVersion: z.string(),
+  bytes: z.number().int(),
+  /**
+   * Added in v2 (#88). Null for a v1 event, which recorded only the length.
+   *
+   * `bytes` stays rather than being derived from this, so a v1 event and a v2
+   * event answer "how big was it" the same way.
+   */
+  prompt: z.string().nullable(),
+});
 
 export const RunTouchedFile = z.object({ path: z.string(), op: z.enum(["edit", "write", "delete"]) });
 
@@ -630,6 +699,11 @@ const BUMPED: Partial<Record<EventType, number>> = {
   ProjectConfigured: 3,
   // 2: added `title` and `kind`, because the queue left the log. See above.
   WorkItemClaimed: 2,
+  // 2: added `invocation` — the command, the tier and the limits as applied,
+  // where there had only been the runtime's name (#88).
+  RunStarted: 2,
+  // 2: carries the prompt text and not only its length (#88). See above.
+  RunPrompted: 2,
   // 2: each finding gained `action`. See Reconciled above.
   Reconciled: 2,
   // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carry a

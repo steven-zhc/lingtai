@@ -123,6 +123,62 @@ describe("upcast", () => {
   });
 });
 
+/**
+ * The widening that made a run explainable (#88).
+ *
+ * Two types moved together for one reason: the log recorded *that* an agent was
+ * given a prompt and *which* runtime took it, and neither the document nor the
+ * command. Unlike the gate rename, a v1 payload here is not unparseable — it is
+ * merely silent — so the step's whole job is to say `null` where a reader might
+ * otherwise assume the field was empty.
+ */
+describe("the prompt and the invocation", () => {
+  it("walks a v1 RunStarted up, with a null invocation", () => {
+    const v1 = {
+      workItemId: "wi-lingtai-59",
+      runtime: "claude-code",
+      model: "",
+      promptVersion: "ticket@1911",
+      baseSha: "base000",
+      configHash: "cfg",
+      worktree: "/tmp/wt",
+    };
+    // Null, not a reconstruction. The argv of a run that happened in August is
+    // not recoverable from a payload that never held it, and a plausible guess
+    // at "what command did we run" is worse than the gap.
+    expect(parseStoredPayload("RunStarted", 1, v1)).toEqual({ ...v1, invocation: null });
+  });
+
+  it("walks a v1 RunPrompted up, keeping its length and admitting it has no text", () => {
+    // #59's, verbatim: a template name and a byte count.
+    const v1 = { promptVersion: "ticket@1911", bytes: 4593 };
+    expect(parseStoredPayload("RunPrompted", 1, v1)).toEqual({ ...v1, prompt: null });
+  });
+
+  it("leaves a v2 of either alone", () => {
+    const invocation = {
+      command: "claude",
+      args: ["-p", "<prompt: recorded as RunPrompted>"],
+      tier: "guarded",
+      limits: { turns: 150, wallMs: 3_600_000 },
+    };
+    const started = {
+      workItemId: "wi-lingtai-88",
+      runtime: "claude-code",
+      model: "",
+      promptVersion: "ticket@1932+a1b2c3d4",
+      baseSha: "base000",
+      configHash: "cfg",
+      worktree: "/tmp/wt",
+      invocation,
+    };
+    expect(parseStoredPayload("RunStarted", 2, started)).toEqual(started);
+
+    const prompted = { promptVersion: "ticket@12", bytes: 12, prompt: "do the thing" };
+    expect(parseStoredPayload("RunPrompted", 2, prompted)).toEqual(prompted);
+  });
+});
+
 describe("parseStoredPayload", () => {
   it("validates after upcasting, so a bad step is caught by the schema", () => {
     expect(parseStoredPayload("RunContextExhausted", 1, { turn: 41 })).toEqual({ turn: 41 });

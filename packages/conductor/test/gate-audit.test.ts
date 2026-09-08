@@ -79,6 +79,7 @@ async function landedItem(
         baseSha: SHA,
         configHash: "seeded",
         worktree: "/tmp/none",
+        invocation: null,
       }),
     },
     {

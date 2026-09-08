@@ -170,11 +170,23 @@ export function createHookServer(options: HookServerOptions): HookServer {
     // writes that at dispatch because it knows the work item, the model, the
     // base sha and the config hash, none of which the hook is told.
     if (hook === "UserPromptSubmit") {
-      const bytes = Buffer.byteLength(request.payload?.prompt ?? "", "utf8");
+      // The document, and not only its length (#88). This is the one input to a
+      // run that is otherwise unrecoverable: the template's name and byte count
+      // say nothing about the ticket body they were filled with, and that body
+      // can be edited on GitHub afterwards.
+      //
+      // Whole, and not sliced the way `RunAwaitingInput` is. A notification is a
+      // line of prose whose tail is noise; a prompt is the thing being
+      // explained, and half of one explains nothing. See the retention note on
+      // `RunPrompted` for what is being traded and what would change it.
+      const prompt = request.payload?.prompt ?? "";
+      const bytes = Buffer.byteLength(prompt, "utf8");
       options.onLifecycle?.(run.runId, hook, request.payload);
-      await append(run, "RunPrompted", { promptVersion: run.promptVersion, bytes }).catch(() => {
-        // Losing the record must not refuse the prompt.
-      });
+      await append(run, "RunPrompted", { promptVersion: run.promptVersion, bytes, prompt }).catch(
+        () => {
+          // Losing the record must not refuse the prompt.
+        },
+      );
       return { allow: true };
     }
 

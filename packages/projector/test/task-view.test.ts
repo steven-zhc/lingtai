@@ -95,6 +95,7 @@ const started = (n: number) => ({
     baseSha: "base000",
     configHash: "c",
     worktree: "/tmp/wt",
+    invocation: null,
   },
 });
 

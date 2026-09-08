@@ -46,6 +46,29 @@ export interface RunRequest {
   signal?: AbortSignal;
 }
 
+/**
+ * The command line a runtime would spawn, without spawning it.
+ *
+ * Separate from `run` because the conductor records *how* a run was invoked
+ * before it invokes it, and rebuilding argv at the call site would be a second
+ * place that has to agree with the adapter about every flag. This is the
+ * adapter's own answer, built by the same function `run` uses — so the two
+ * cannot drift.
+ */
+export interface Spawned {
+  /** The executable, as spawned. */
+  command: string;
+  /**
+   * argv as applied, except for the prompt: it stands in as `PROMPT_ELIDED`,
+   * because the document itself is on the run's stream as `RunPrompted` and
+   * does not want to be there twice (#88).
+   */
+  args: readonly string[];
+}
+
+/** What `invocation` is asked about: a run request, before it is a run. */
+export type Invocable = Omit<RunRequest, "prompt" | "signal">;
+
 /** What the adapter knows when the process is gone. */
 export interface RunOutcome {
   exitCode: number | null;
@@ -90,6 +113,14 @@ export interface AuthStatus {
 export interface Runtime {
   readonly capabilities: RuntimeCapabilities;
   run(request: RunRequest): Promise<RunOutcome>;
+  /**
+   * How this request would be spawned, for the log to record before it is.
+   *
+   * Optional for the same reason `checkAuth` is: a runtime that cannot say must
+   * not pretend. `RunStarted.invocation` is null when it does not answer, which
+   * reads as "not recorded" rather than as a reconstruction nobody ran.
+   */
+  invocation?(request: Invocable): Spawned;
   /**
    * Optional: a runtime that cannot be asked cheaply should not pretend.
    * `lingtai doctor` reports an absent check as deferred rather than as passing.

@@ -88,6 +88,27 @@ export const UPCASTERS: UpcastRegistry = {
      */
     1: (data) => ({ ...(data as object), title: null, kind: null }),
   },
+  RunStarted: {
+    /**
+     * 1 → 2: `invocation` was added because the log said *which* runtime and
+     * nothing about *how* it was called (#88). A v1 event recorded no argv, no
+     * tier and no limits, and null says so — the argv could not be
+     * reconstructed from the payload even in principle, and a plausible
+     * reconstruction of the one field that answers "what command did we run"
+     * would be worse than the gap.
+     */
+    1: (data) => ({ ...(data as object), invocation: null }),
+  },
+  RunPrompted: {
+    /**
+     * 1 → 2: the prompt text was added (#88). A v1 event recorded its length
+     * and nothing else, and the document is gone — the ticket body it was
+     * filled from lives on GitHub and can have been edited since. Null is the
+     * only honest reading; `bytes` is untouched and still answers what it
+     * always answered.
+     */
+    1: (data) => ({ ...(data as object), prompt: null }),
+  },
   GatesResolved: { 1: (data) => ({
     ...(data as object),
     points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>

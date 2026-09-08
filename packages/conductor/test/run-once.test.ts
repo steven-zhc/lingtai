@@ -19,7 +19,7 @@ import { integrationStream, reduceWorkItem, workItemStream } from "@lingtai/doma
 import { createProjectionRunner, readTasks, taskViewProjection } from "@lingtai/projector";
 import { directDatabaseUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { PROMPT_ELIDED, createClaudeCodeRuntime } from "@lingtai/agent";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -275,7 +275,11 @@ const options = (agent: string) => ({
 
 describe("runOnce", () => {
   it("takes one issue from discovery to a merge, and records the whole story", async () => {
+    // The prompt exactly as the agent was handed it — `claude -p <prompt>`, so
+    // `$2`. Captured outside the worktree, which is deleted when the run ends.
+    const dispatchedTo = join(root, "prompt-117.txt");
     const agent = await agentThat(`
+printf '%s' "$2" > ${dispatchedTo}
 mkdir -p src
 echo 'export const fix = 1;' > src/fix.ts
 git add -A
@@ -316,6 +320,46 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'fix the race'
 
     // The agent could see the allowlisted value and nothing else.
     expect(lines.join("\n")).toContain("worktree");
+
+    // ---- how it was invoked, which the log used only to hint at ----
+    //
+    // `RunStarted` said `runtime: "claude-code"` and stopped, so "what command
+    // did we run" had no answer (#88). It now carries the argv the adapter
+    // built, the tier that was matched before dispatch, and the limits as
+    // applied — `wall: 2m` resolved to milliseconds, which nothing else records.
+    const started = (await store.read(result.runId)).find((e) => e.type === "RunStarted")!;
+    const { invocation } = started.data as {
+      invocation: {
+        command: string;
+        args: string[];
+        tier: string;
+        limits: { turns: number; wallMs: number };
+      } | null;
+    };
+
+    expect(invocation, "RunStarted recorded no invocation").not.toBeNull();
+    expect(invocation!.command).toBe(agent);
+    expect(invocation!.args).toContain("--permission-mode");
+    expect(invocation!.args).toContain("bypassPermissions");
+    // The document itself is on this same stream as `RunPrompted`, not twice.
+    expect(invocation!.args).toContain(PROMPT_ELIDED);
+    expect(invocation!.tier).toBe("guarded");
+    expect(invocation!.limits).toEqual({ turns: 10, wallMs: 120_000 });
+
+    /**
+     * The prompt carries no environment value, asserted rather than assumed.
+     *
+     * [0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md):
+     * values reach an agent as a planted **file**, never through the prompt. So
+     * this should already hold — and it is a test rather than an assumption
+     * because `RunPrompted` now carries the prompt text (#88), which puts it in
+     * front of anyone who opens a task page. `ESC_TEST_VALUE=planted` is the one
+     * value this project's recipe requires, and the fixture writes it into the
+     * project's own env file exactly as an operator would.
+     */
+    const dispatched = await readFile(dispatchedTo, "utf8");
+    expect(dispatched).toContain("fix the race");
+    expect(dispatched).not.toContain("planted");
   }, 240_000);
 
   it("shows the landed card on the board with its receipt", async () => {

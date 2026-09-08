@@ -113,7 +113,7 @@ Source: `INTERSECTION_HOOKS` and `CLAUDE_ONLY_HOOKS` in `packages/conductor/src/
 | Hook | What Lingtai does with it |
 |---|---|
 | `SessionStart` | lifecycle; the event is `RunStarted`, written by the conductor |
-| `UserPromptSubmit` | `RunPrompted`, with the prompt version |
+| `UserPromptSubmit` | `RunPrompted`, carrying the prompt itself and the version that produced it |
 | `PostToolUse` | `RunTouchedFile`, for the four mutating tools only |
 | `Stop` | hands back to the conductor, which fires the gates |
 | `SessionEnd` | Claude-only; `RunFinished` comes from the process outcome |

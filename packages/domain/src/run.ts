@@ -16,7 +16,7 @@
  * invalidate anything; a new head simply has no verdicts yet.
  */
 import type { Envelope } from "./envelope.ts";
-import type { PayloadOf, RuntimeId } from "./events.ts";
+import type { Invocation, PayloadOf, RuntimeId } from "./events.ts";
 
 export type GateVerdict = "requested" | "running" | "passed" | "failed" | "waived";
 
@@ -75,6 +75,12 @@ export interface RunState {
   /** Hash of the recipe as read from `origin/<base>`, never from the agent's branch. */
   configHash: string | null;
   worktree: string | null;
+  /**
+   * How the runtime was actually invoked: the command, the argv, the tier and
+   * the limits as applied. Null for a v1 `RunStarted`, and for a runtime that
+   * cannot describe its own invocation (#88).
+   */
+  invocation: Invocation | null;
 
   /** Current head of the agent's branch. Changes invalidate gate verdicts. */
   headSha: string | null;
@@ -89,6 +95,16 @@ export interface RunState {
    */
   compactedAtTurns: readonly number[];
   prompts: number;
+  /**
+   * The prompt as handed over, which is the one input to a run that is
+   * otherwise unrecoverable (#88).
+   *
+   * Last one wins, and an unattended run submits exactly one — `claude -p` is a
+   * single prompt and the follow-ups only exist where a person is typing. Null
+   * until something records one, and null for a v1 `RunPrompted`, which carried
+   * only a length.
+   */
+  prompt: string | null;
 
   /** Latest verdict per gate name, each carrying the sha it was made against. */
   gates: Readonly<Record<string, GateState>>;
@@ -109,12 +125,14 @@ export const emptyRun: RunState = {
   baseSha: null,
   configHash: null,
   worktree: null,
+  invocation: null,
   headSha: null,
   branch: null,
   diff: null,
   touched: [],
   compactedAtTurns: [],
   prompts: 0,
+  prompt: null,
   gates: {},
   receipt: null,
   version: 0,
@@ -154,11 +172,17 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         baseSha: d.baseSha,
         configHash: d.configHash,
         worktree: d.worktree,
+        invocation: d.invocation,
       };
     }
 
-    case "RunPrompted":
-      return { ...state, ...at, prompts: state.prompts + 1 };
+    case "RunPrompted": {
+      const d = event.data as PayloadOf<"RunPrompted">;
+      // The count is what it always was; the text is what #88 added. A v1 event
+      // has none, and leaving the previous one in place would be a lie about
+      // which prompt this run was given.
+      return { ...state, ...at, prompts: state.prompts + 1, prompt: d.prompt };
+    }
 
     case "RunTouchedFile": {
       const d = event.data as PayloadOf<"RunTouchedFile">;

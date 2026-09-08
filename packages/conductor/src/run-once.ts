@@ -646,6 +646,38 @@ export function runOnce(
                 .pipe(failing("hook"));
 
               // ---- 8. RunStarted, then the agent --------------------------
+              /**
+               * The limits as applied, resolved once.
+               *
+               * The runtime is handed these and the log records these, from one
+               * expression — two readings of `recipe.runtime.limits` could
+               * disagree about what `2h` is, and the whole point of recording
+               * them is that they are what was actually in force.
+               */
+              const limits = {
+                turns: recipe.runtime.limits.turns,
+                wallMs: parseDuration(recipe.runtime.limits.wall),
+              };
+              const agentEnv = runnableEnv({ ...env.values, ...wiring.env });
+
+              /**
+               * How the agent is about to be invoked, asked of the adapter that
+               * will invoke it.
+               *
+               * `RunStarted` used to name the runtime and stop, so *"what
+               * command did we run"* was unanswerable (#88). It is asked here,
+               * before the spawn, from the same function that builds the argv —
+               * and a runtime with no answer records null rather than a
+               * reconstruction.
+               */
+              const spawned = options.runtime.invocation?.({
+                runId,
+                cwd: worktree.path,
+                settingsPath: wiring.settingsPath,
+                env: agentEnv,
+                limits,
+              });
+
               // Not version 0 any more: prepare wrote first. Asserting 0 here would
               // have failed the moment a recipe declared a single prepare step.
               yield* appendAtEnd(runId, [
@@ -660,6 +692,9 @@ export function runOnce(
                     baseSha: worktree.baseSha,
                     configHash: resolved.configHash,
                     worktree: worktree.path,
+                    invocation: spawned
+                      ? { command: spawned.command, args: [...spawned.args], tier, limits }
+                      : null,
                   }),
                 },
               ]);
@@ -722,11 +757,8 @@ export function runOnce(
                     // price, arriving at the same place.
                     prompt: renderPrompt(options.prompt, ticket, failure),
                     settingsPath: wiring.settingsPath,
-                    env: runnableEnv({ ...env.values, ...wiring.env }),
-                    limits: {
-                      turns: recipe.runtime.limits.turns,
-                      wallMs: parseDuration(recipe.runtime.limits.wall),
-                    },
+                    env: agentEnv,
+                    limits,
                     signal: abort.signal,
                   }),
                 catch: (err) =>

@@ -15,13 +15,16 @@ export {
   meetsTier,
   missingForTier,
   type AuthStatus,
+  type Invocable,
   type RunOutcome,
   type RunRequest,
   type Runtime,
   type RuntimeCapabilities,
+  type Spawned,
 } from "./runtime.ts";
 export {
   CLAUDE_CODE_CAPABILITIES,
+  PROMPT_ELIDED,
   createClaudeCodeRuntime,
   newRunId,
   parseResult,
