@@ -31,7 +31,7 @@ import {
   projectFilters,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
-import { baseDivergence } from "@lingtai/recipe";
+import { RUNTIME_LIMIT_NAMES, baseDivergence } from "@lingtai/recipe";
 import { isEventType } from "@lingtai/domain";
 import { STALE_AFTER_MS, findOrphans, readControl, readStatus } from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -420,6 +420,54 @@ async function settingsSources(): Promise<CheckResult> {
       `~/.claude/settings.json carries ${carries.join(", ")}, and every run sees it. ` +
       "Lingtai cannot set HOME (the runtime's credentials live there), so this is " +
       "reported rather than removed — the recipe alone does not describe a run on this machine.",
+  };
+}
+
+/**
+ * Every limit a recipe may declare, against the ones the runtime applies.
+ *
+ * The same shape as `gates: every point that was planned ran`, one layer down:
+ * **a control that is declared and does not run is Lingtai's bug**. That check
+ * compares a plan to the log after a run; this one compares the schema to the
+ * adapter before anybody spends anything, because a limit is not a plan — it
+ * has no verdict to be missing, and the only trace of an unapplied one is a
+ * number on a card that looks exactly like an applied one.
+ *
+ * `runtime.limits.turns` was in the schema, threaded to the runtime and
+ * referenced by nothing for as long as it existed. A run reached 172 turns
+ * against a declared 150 and cost $26.53, and every signal an operator had —
+ * the recipe, `lingtai add`'s output, `RunStarted`, the count on the card —
+ * said the limit was in force (#89).
+ *
+ * **A failure, not a note.** A recipe that declares a bound is a repository
+ * saying stop; accepting the sentence and not the bound is worse than refusing
+ * to parse it. The runtime is the one this installation dispatches to, which is
+ * the same one `runtime: signed in` asks about.
+ */
+function runtimeLimits(): CheckResult {
+  const name = "runtime: every limit a recipe can declare is one the runtime applies";
+  const runtime = createClaudeCodeRuntime();
+  const applied = runtime.capabilities.enforcesLimits;
+  const ignored = RUNTIME_LIMIT_NAMES.filter((limit) => !applied.includes(limit));
+
+  if (ignored.length === 0) {
+    return {
+      name,
+      status: "ok",
+      detail:
+        `${runtime.capabilities.id} stops a run at ${applied.join(" and ")} — ` +
+        `every limit runtime.limits accepts (${RUNTIME_LIMIT_NAMES.join(", ")})`,
+    };
+  }
+  return {
+    name,
+    status: "fail",
+    detail:
+      `runtime.limits accepts ${ignored.join(", ")} and ${runtime.capabilities.id} applies ` +
+      `${applied.length > 0 ? applied.join(", ") : "none of them"}: a recipe declaring ` +
+      `${ignored.join(", ")} is parsed, defaulted, printed by lingtai add and recorded on ` +
+      "RunStarted as a limit in force, and no run is stopped at it. Either the adapter " +
+      "applies it or the schema stops accepting it (#89).",
   };
 }
 
@@ -1043,6 +1091,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   results.push(...(await declaredEnvironment(env)));
   results.push(...(await recipeGovernsItsBase(env)));
   results.push(await settingsSources());
+  results.push(runtimeLimits());
   results.push(await runtimeAuth());
   for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });
 

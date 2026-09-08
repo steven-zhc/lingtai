@@ -82,6 +82,18 @@ describe("capabilities", () => {
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "sandboxed")).toEqual(["filesystem-sandbox"]);
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "guarded")).toEqual([]);
   });
+
+  /**
+   * A limit being carried is not a limit being obeyed, and for `turns` it was
+   * not (#89). `lingtai doctor` compares this against the limits a recipe is
+   * allowed to declare, so a schema that accepts one no adapter applies is a
+   * red check rather than a number on a card.
+   */
+  it("says which declared limits it applies, rather than leaving it to be assumed", () => {
+    expect(CLAUDE_CODE_CAPABILITIES.enforcesLimits).toEqual(["turns", "wall"]);
+    // The stub runs nothing, so it stops nothing.
+    expect(CODEX_CAPABILITIES.enforcesLimits).toEqual([]);
+  });
 });
 
 describe("sessionIdFor", () => {
@@ -126,6 +138,11 @@ describe("run", () => {
     const written = await args(join(root, "args.txt"), "utf8");
     expect(written).toContain("-p");
     expect(written).toContain("--output-format");
+    // The pair the turn limit rests on: the stream is where a turn is visible
+    // while there is still a run to stop, and `claude -p` refuses stream-json
+    // without `--verbose` — so dropping either is a run that does not start.
+    expect(written).toContain("stream-json");
+    expect(written).toContain("--verbose");
     expect(written).toContain("--settings");
     expect(written).toContain(sessionIdFor("run-01JX"));
     expect(written).toContain("claude-opus-5");
@@ -178,6 +195,90 @@ describe("run", () => {
     expect(outcome.failure?.kind).toBe("crash");
     expect(outcome.failure?.detail).toContain("the model refused");
     expect(outcome.turns).toBe(2);
+  });
+
+  /**
+   * The limit that was declared, carried, and enforced by nothing (#89).
+   *
+   * `runtime.limits.turns` reached `RunRequest` and was referenced by no line of
+   * the adapter: a run recorded 172 turns against a declared 150 and nothing
+   * refused, warned or noticed. The wall limit's test is the model, and so is
+   * the wall limit's shape — a limit low enough to reach, and an outcome with a
+   * kind rather than a truncated stream.
+   *
+   * The stand-in streams assistant messages, which is what the runtime emits
+   * per turn and what its receipt counts as `num_turns`.
+   */
+  it("stops a run that reaches the turn limit, and counts the turns it bought", async () => {
+    const binary = await fakeClaude(
+      `i=0
+while [ $i -lt 60 ]; do
+  echo '{"type":"assistant","message":{"role":"assistant"}}'
+  i=$((i + 1))
+  sleep 0.05
+done
+echo '{"type":"result","subtype":"success","is_error":false,"num_turns":60}'`,
+    );
+
+    const outcome = await createClaudeCodeRuntime({ binary }).run(
+      request({ limits: { turns: 3, wallMs: 30_000 } }),
+    );
+
+    expect(outcome.failure?.kind).toBe("turn-limit");
+    expect(outcome.failure?.detail).toContain("the turn limit is 3");
+    // Three turns were allowed and three were had; the fourth is where it was
+    // stopped, and nowhere near the 60 the stand-in would have run. Reported as
+    // the count it reached rather than as zero: a run stopped for going too
+    // long and a run that never started are not the same card.
+    expect(outcome.turns).toBe(4);
+  });
+
+  /**
+   * The distinction the log has to carry: *"it ran out of turns"* and *"it ran
+   * out of time"* are different findings about a ticket, and a run that is
+   * under both limits is neither.
+   */
+  it("leaves a run under the limit alone, and reads its turns off the receipt", async () => {
+    const binary = await fakeClaude(
+      `echo '{"type":"assistant"}'
+echo '{"type":"user"}'
+echo '{"type":"assistant"}'
+echo '{"type":"result","subtype":"success","is_error":false,"num_turns":2,"total_cost_usd":0.3}'`,
+    );
+
+    const outcome = await createClaudeCodeRuntime({ binary }).run(
+      request({ limits: { turns: 150, wallMs: 30_000 } }),
+    );
+
+    expect(outcome.failure).toBeNull();
+    // Two assistant messages, `num_turns: 2` — the counter and the receipt are
+    // counting the same thing, which is what makes the limit comparable to the
+    // number an operator reads on the card.
+    expect(outcome.turns).toBe(2);
+    expect(outcome.costUsd).toBe(0.3);
+  });
+
+  /**
+   * The limit stops a run that is still going. A run that spent its last
+   * allowed turn on its answer is not one of those: the receipt follows that
+   * message immediately, and reporting the run as stopped would throw away
+   * commits it had already made.
+   */
+  it("lets a run that finishes on its last allowed turn finish", async () => {
+    const binary = await fakeClaude(
+      `echo '{"type":"assistant"}'
+echo '{"type":"assistant"}'
+echo '{"type":"result","subtype":"success","is_error":false,"num_turns":2,"result":"done"}'
+sleep 0.2`,
+    );
+
+    const outcome = await createClaudeCodeRuntime({ binary }).run(
+      request({ limits: { turns: 2, wallMs: 30_000 } }),
+    );
+
+    expect(outcome.failure).toBeNull();
+    expect(outcome.turns).toBe(2);
+    expect(outcome.text).toBe("done");
   });
 
   it("turns a run that never ends into a timeout, not a hang", async () => {

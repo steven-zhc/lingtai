@@ -19,6 +19,15 @@
  */
 import type { RuntimeId, Tier } from "@lingtai/domain";
 
+/**
+ * A limit a recipe can declare, by the name `runtime.limits` gives it.
+ *
+ * `wall` is `wallMs` by the time it reaches a request; the name here is the
+ * recipe's, because the question this vocabulary answers is asked about a
+ * recipe — *is the thing I wrote down applied?*
+ */
+export type RuntimeLimit = "turns" | "wall";
+
 export interface RuntimeCapabilities {
   id: RuntimeId;
   /** The lifecycle hooks this runtime actually emits. */
@@ -29,6 +38,18 @@ export interface RuntimeCapabilities {
   canRewriteToolCall: boolean;
   /** The strongest containment this runtime provides on its own. */
   providesTier: Tier;
+  /**
+   * Which of `RunRequest.limits` this runtime actually stops a run at.
+   *
+   * Declared, rather than assumed from the field existing, because
+   * `runtime.limits.turns` was carried the whole way here and bounded nothing
+   * for as long as it existed (#89). Every signal an operator had said
+   * otherwise: the recipe declared it, `lingtai add` printed it, `RunStarted`
+   * recorded it as *the limits in force*, and the count came back on the card.
+   * A number being carried is not a number being obeyed, and this is the field
+   * `lingtai doctor` compares against what a recipe is allowed to declare.
+   */
+  enforcesLimits: readonly RuntimeLimit[];
 }
 
 export interface RunRequest {
@@ -79,8 +100,16 @@ export interface RunOutcome {
    * Set when the run did not complete normally. **Never null and silent** — the
    * old loop's failures produced no event at all, which is the thing this type
    * exists to make impossible.
+   *
+   * `turn-limit` is its own kind rather than a `timeout` with a different
+   * sentence: *"it ran out of turns"* and *"it ran out of time"* are different
+   * findings about a ticket, and only the first one says the work was going in
+   * circles rather than going slowly.
    */
-  failure: { kind: "timeout" | "crash" | "no-commits" | "aborted"; detail: string } | null;
+  failure: {
+    kind: "timeout" | "turn-limit" | "crash" | "no-commits" | "aborted";
+    detail: string;
+  } | null;
   /**
    * The model's final message.
    *

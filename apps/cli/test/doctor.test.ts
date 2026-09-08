@@ -115,6 +115,32 @@ describe("lingtai doctor — the runtime's own login", () => {
   }, 60_000);
 });
 
+describe("lingtai doctor — the limits a recipe declares", () => {
+  /**
+   * `runtime.limits.turns` was in the schema, threaded to the runtime and
+   * enforced by nothing: a run reached 172 turns against a declared 150 and
+   * cost $26.53, and the recipe, `lingtai add`, `RunStarted` and the card all
+   * reported the limit as being in force (#89). Nothing compared the two halves
+   * — which is the same gap `gates: every point that was planned ran` exists to
+   * close one layer up.
+   *
+   * Asserted as green rather than merely present: the whole value of this check
+   * is that it goes red the day the schema accepts a limit no adapter applies,
+   * and a test that only looked for the row would pass in exactly that case.
+   */
+  it("compares what a recipe may declare against what the runtime applies", async () => {
+    const report = await runDoctor(env({}));
+    const check = find(
+      report.results,
+      "runtime: every limit a recipe can declare is one the runtime applies",
+    );
+
+    expect(check.status).toBe("ok");
+    expect(check.detail).toContain("turns");
+    expect(check.detail).toContain("wall");
+  });
+});
+
 describe("lingtai doctor — the declared environment", () => {
   /**
    * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)

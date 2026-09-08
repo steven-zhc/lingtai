@@ -58,7 +58,7 @@ export type RunLifecycle =
    */
   | {
       status: "failed";
-      kind: "timeout" | "crash" | "no-commits" | "aborted" | "prepare-failed";
+      kind: "timeout" | "turn-limit" | "crash" | "no-commits" | "aborted" | "prepare-failed";
       detail: string;
     };
 

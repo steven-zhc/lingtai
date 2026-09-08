@@ -121,6 +121,33 @@ export function kindOfAction(action: GateAction): ActionKind {
   return "human";
 }
 
+/**
+ * What a run is allowed to spend before it is stopped.
+ *
+ * Named rather than inlined so the names can be read back out of it. Every one
+ * of these has to be a limit some runtime *applies*: `turns` sat here being
+ * parsed, defaulted, printed by `lingtai add` and recorded on `RunStarted` for
+ * as long as it existed while nothing anywhere stopped a run at it (#89), and a
+ * schema that accepts a bound nobody enforces is how that stays invisible.
+ * `lingtai doctor` compares `RUNTIME_LIMIT_NAMES` against the runtime's
+ * `enforcesLimits` so the next one cannot.
+ */
+const RuntimeLimits = z.object({
+  turns: z.number().int().positive().default(300),
+  wall: z.string().default("2h"),
+});
+
+/**
+ * The limits a recipe may declare, read off the schema itself.
+ *
+ * Off the schema rather than written out beside it: a hand-kept copy of this
+ * list would agree with `RuntimeLimits` right up to the commit that adds the
+ * third limit, which is the commit where doctor's comparison would need to be
+ * right.
+ */
+export type RuntimeLimitName = keyof typeof RuntimeLimits.shape;
+export const RUNTIME_LIMIT_NAMES = Object.keys(RuntimeLimits.shape) as readonly RuntimeLimitName[];
+
 export const Recipe = z.object({
   version: z.literal(1),
   /** Pulls install/build/test defaults from a preset shipped with Lingtai. */
@@ -275,9 +302,7 @@ export const Recipe = z.object({
      */
     tier: Tier.default("guarded"),
     prompt: z.string().optional(),
-    limits: z
-      .object({ turns: z.number().int().positive().default(300), wall: z.string().default("2h") })
-      .default({ turns: 300, wall: "2h" }),
+    limits: RuntimeLimits.default({ turns: 300, wall: "2h" }),
   }),
 });
 export type Recipe = z.infer<typeof Recipe>;

@@ -272,8 +272,18 @@ export const RunFinished = z.object({
   costUsd: z.number().nullable(),
 });
 
+/**
+ * `turn-limit` is not a `timeout` with a different sentence.
+ *
+ * *"It ran out of turns"* and *"it ran out of time"* are different findings
+ * about a ticket: the first says the work was going in circles, the second that
+ * it was going slowly, and a reader who cannot tell them apart learns the wrong
+ * thing about how the ticket was scoped. Added when the turn limit started
+ * being applied rather than merely declared (#89); nothing in the log before
+ * that seq can carry it, because nothing was ever stopped for it.
+ */
 export const RunFailed = z.object({
-  kind: z.enum(["timeout", "crash", "no-commits", "aborted"]),
+  kind: z.enum(["timeout", "turn-limit", "crash", "no-commits", "aborted"]),
   detail: z.string(),
 });
 

@@ -14,9 +14,17 @@
  * and stored; deriving it means there is nothing to store and nothing to lose —
  * given a run id, its transcript is computable forever.
  *
- * **Every ending produces an event.** Timeout, crash, non-zero exit and clean
- * completion each map to a kind. The old loop's failures produced no log line,
- * no comment and no label, and that silence is what `RunFailed` exists to end.
+ * **Every ending produces an event.** Timeout, turn limit, crash, non-zero exit
+ * and clean completion each map to a kind. The old loop's failures produced no
+ * log line, no comment and no label, and that silence is what `RunFailed`
+ * exists to end.
+ *
+ * **Both declared limits are applied here, and neither by the CLI.** The wall
+ * is a timer; the turns are counted off the stream. `claude` has no
+ * `--max-turns` and — the reason this is worth stating — accepts flags it does
+ * not know without a word, so handing it one would have produced exactly the
+ * failure #89 records: a limit declared, carried, printed on every screen, and
+ * bounding nothing.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -53,6 +61,8 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // filtered environment plus PreToolUse interception add up to, and it is what
   // carried the old loop's 73 runs.
   providesTier: "guarded",
+  // Both, and both applied by `run` rather than by the CLI. See the header.
+  enforcesLimits: ["turns", "wall"],
 };
 
 /**
@@ -94,6 +104,15 @@ interface ClaudeResult {
 export const PROMPT_ELIDED = "<prompt: recorded as RunPrompted>";
 
 /**
+ * How much of the stream's end is kept for a failure that has no receipt.
+ *
+ * A detail is read on a card and in a log line. The whole transcript is not a
+ * detail, and holding one to quote 500 characters of it is how a conductor
+ * running several runs ends up carrying tens of megabytes it never reads.
+ */
+const TAIL_LIMIT = 8_000;
+
+/**
  * argv, in one place.
  *
  * `run` and `invocation` call this with the only thing that differs between
@@ -104,8 +123,18 @@ function argsFor(request: Invocable, prompt: string, extraArgs: readonly string[
     "-p",
     prompt,
     // Parsed, not scraped. See the module header.
+    //
+    // `stream-json` rather than `json` because a turn limit cannot be applied
+    // to a receipt: `json` prints one object when the process is already gone,
+    // by which time 172 turns have been bought (#89). The stream carries the
+    // same object as its last line — so the receipt is unchanged, and
+    // `parseResult` still reads it — and carries each assistant message as it
+    // happens, which is the only thing that arrives while there is still a run
+    // to stop.
     "--output-format",
-    "json",
+    "stream-json",
+    // Required: `claude -p --output-format stream-json` refuses without it.
+    "--verbose",
     // Outside the worktree: an agent that can edit its own hook
     // configuration has no hook configuration.
     "--settings",
@@ -232,10 +261,68 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           stdio: ["ignore", "pipe", "pipe"],
         });
 
-        let stdout = "";
         let stderr = "";
         let settled = false;
-        child.stdout.on("data", (c) => (stdout += c.toString()));
+        /** The last line that parsed as an object: the receipt is the last of them. */
+        let receipt = "";
+        /** The end of the stream, for a failure with no receipt to quote. */
+        let tail = "";
+        /** Assistant messages seen. This is what the receipt calls `num_turns`. */
+        let turns = 0;
+        let unterminated = "";
+
+        /**
+         * One line of the stream, and only what is kept from it.
+         *
+         * Three things come off it and the transcript itself is dropped: the
+         * turn count, the last object (the receipt), and a bounded tail. A
+         * 172-turn transcript held in a string to read one number back off the
+         * end of it would be megabytes of the conductor's memory per run.
+         */
+        const consume = (line: string) => {
+          const text = line.trim();
+          if (!text) return;
+          tail = `${tail}${text}\n`.slice(-TAIL_LIMIT);
+          if (!text.startsWith("{")) return;
+          let event: { type?: string };
+          try {
+            event = JSON.parse(text) as { type?: string };
+          } catch {
+            // A line that is not JSON is noise from a wrapper, exactly as
+            // `parseResult` assumes. It counts as nothing and hides nothing.
+            return;
+          }
+          receipt = text;
+          // Verified against a real run: two assistant messages, and a receipt
+          // reading `num_turns: 2`. The tool result between them is a `user`
+          // message and is not a turn.
+          if (event.type === "assistant") turns += 1;
+        };
+
+        child.stdout.on("data", (c) => {
+          unterminated += c.toString();
+          for (let nl = unterminated.indexOf("\n"); nl !== -1; nl = unterminated.indexOf("\n")) {
+            consume(unterminated.slice(0, nl));
+            unterminated = unterminated.slice(nl + 1);
+          }
+          /**
+           * Stopped as it takes the turn past its budget, not as it finishes
+           * the last one it was allowed.
+           *
+           * The difference is a whole run. A run that spends its final allowed
+           * turn on its *answer* emits that message and its receipt one after
+           * the other, and stopping between them would report a finished run —
+           * commits, diff and all — as one that went on too long. A run that is
+           * still working says so by starting another turn, and that is the
+           * only signal that distinguishes the two.
+           */
+          if (turns > request.limits.turns) {
+            kill(
+              "turn-limit",
+              `stopped at turn ${turns}: the turn limit is ${request.limits.turns}`,
+            );
+          }
+        });
         child.stderr.on("data", (c) => (stderr += c.toString()));
 
         const finish = (outcome: RunOutcome) => {
@@ -246,7 +333,8 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           resolve(outcome);
         };
 
-        const kill = (kind: "timeout" | "aborted", detail: string) => {
+        const kill = (kind: "timeout" | "turn-limit" | "aborted", detail: string) => {
+          if (settled) return;
           child.kill("SIGTERM");
           // A SIGTERM the agent ignores must not become a hang. The event is the
           // point; a process that will not die is a detail for the next line.
@@ -254,7 +342,10 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           hard.unref?.();
           finish({
             exitCode: null,
-            turns: 0,
+            // What it got through before it was stopped. The receipt never
+            // arrives on this path, and "0 turns" would read as a run that
+            // never started rather than one that ran too long.
+            turns,
             durationMs: Date.now() - started,
             costUsd: null,
             text: null,
@@ -285,15 +376,22 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         );
 
         child.on("close", (code) => {
-          const parsed = parseResult(stdout);
+          // A last line with no newline behind it — the receipt itself, when a
+          // runtime does not terminate it. Counted, never killed on: the
+          // process is already gone, and stopping what has stopped is a lie
+          // about why.
+          consume(unterminated);
+          const parsed = parseResult(receipt);
           const durationMs = parsed?.duration_ms ?? Date.now() - started;
-          const turns = parsed?.num_turns ?? 0;
           const costUsd = parsed?.total_cost_usd ?? null;
+          // The receipt's own number when there is one, and the count off the
+          // stream when there is not.
+          const reported = parsed?.num_turns ?? turns;
 
           if (parsed && code === 0 && parsed.is_error !== true) {
             finish({
               exitCode: code,
-              turns,
+              turns: reported,
               durationMs,
               costUsd,
               text: parsed.result ?? null,
@@ -305,7 +403,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
 
           finish({
             exitCode: code,
-            turns,
+            turns: reported,
             durationMs,
             costUsd,
             text: parsed?.result ?? null,
@@ -315,7 +413,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
               // detail is the failure mode being replaced.
               detail:
                 parsed?.result?.slice(0, 500) ??
-                (stderr.trim() || stdout.trim()).slice(0, 500) ??
+                (stderr.trim() || tail.trim()).slice(0, 500) ??
                 `exited ${code}`,
             },
             sessionId,
