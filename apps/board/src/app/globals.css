@@ -86,6 +86,17 @@ body {
    error style: it is a true statement about the board, and it should read as
    one rather than as a crash. */
 .chip.warn { color: var(--fail); border-color: var(--fail); }
+/* Paused. Held, not failed — nothing is broken, somebody decided. Its own
+   colour because it is its own fact: a green `current` beside a held `paused`
+   is the board saying "up to date, and going nowhere", which is the sentence
+   #77 had no way to write. */
+.chip.held { color: var(--held); border-color: var(--held); background: var(--held-soft); }
+/* Who paused it and why, in the bar. Truncated rather than wrapped: the bar is
+   one line of context, and the whole sentence is its own title. */
+.bar .why {
+  color: var(--ink-2);
+  max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .cols {
   display: grid;
@@ -114,6 +125,10 @@ body {
 .empty {
   padding: 14px 4px; font-size: 12px; color: var(--muted); line-height: 1.6;
 }
+/* An empty lane that is empty *because* somebody stopped it. Matches the chip
+   in the bar, so the two read as one statement rather than two coincidences. */
+.empty.held { color: var(--held); }
+
 /* An empty column says nothing in muted grey. A column that could not be filled
    has to read as a fault, or it is the empty column again (#76). */
 .empty.broken {

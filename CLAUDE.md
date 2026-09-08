@@ -50,6 +50,9 @@ a projector while it runs** (0022), so there is nothing to start in a second
 terminal and nothing to wait for at the end. The chip in the bar says whether
 that is actually true — it reports the projection's lag and the daemon's
 beacon, not whether the socket is open, which is the distinction #64 turned on.
+A second chip appears beside it while the conductor is paused, naming who and
+why with a Resume on it: being current and being stopped are independent facts,
+and for four days the board only said the first (#77).
 
 A daemon is still what takes work unattended, and
 

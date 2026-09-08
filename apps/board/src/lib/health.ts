@@ -15,7 +15,7 @@
  * holds a projector of its own, so lag with no daemon is normal during a run
  * and a standing accusation after one.
  */
-import { STALE_AFTER_MS, readStatus } from "@lingtai/daemon";
+import { STALE_AFTER_MS, readStatus } from "@lingtai/daemon/control";
 import { projectionLag } from "@lingtai/projector";
 
 export interface Health {
