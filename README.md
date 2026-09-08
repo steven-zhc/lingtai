@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/logo-dark.png">
-  <img src="doc/logo.png" alt="" width="120" align="right">
+  <img src="doc/logo.png" alt="" width="64">
 </picture>
 
 # Lingtai
