@@ -13,7 +13,7 @@ import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentHost, Repo, PortsLive } from "@lingtai/conductor";
+import { PortsLive } from "@lingtai/conductor";
 import { Data, Effect } from "effect";
 import { Projector, ProjectorLive } from "./projector.ts";
 
@@ -59,7 +59,12 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       return yield* refuse("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
     }
 
-    const project = yield* Effect.promise(() => loadProject(options.project));
+    const project = yield* Effect.tryPromise({
+      try: () => loadProject(options.project),
+      // Reading the project list is reading the log, and a log this command
+      // cannot read is a refusal like any other rather than a stack trace.
+      catch: (err) => refuse(`could not read the projects: ${(err as Error).message}`),
+    });
     if (!project) {
       return yield* refuse(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
     }
@@ -85,13 +90,23 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       catch: () => refuse(`no prompt at ${promptPath}`),
     });
 
-    const client = yield* Effect.promise(() =>
-      createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
-    );
+    const client = yield* Effect.tryPromise({
+      try: () => createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
+      // `NotInstalledError` says what to do about it, and every other failure
+      // here is the App or the network. Either way a person reads one line.
+      catch: (err) => refuse((err as Error).message),
+    });
 
     /**
      * The work, with the world provided **around it and not around the
      * refusals above**.
+     *
+     * There is no conversion left inside it. `runQueue` and `runOnce` are
+     * `Effect`s that ask for `Repo` and `AgentHost` themselves
+     * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md));
+     * this used to be eleven lines of description wrapped around one
+     * `Effect.promise` call that turned "provided" straight back into
+     * "passed", so the guarantee below stopped one frame in.
      *
      * A `Layer` is built when it is provided, so providing the projector to the
      * whole program would acquire it before the first refusal could be raised —
@@ -104,9 +119,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       // Asked for, not threaded through — and the release is the scope's, which
       // is the whole of why `run()` no longer has to remember it on four paths.
       yield* Projector;
-      const ports = { repo: yield* Repo, agent: yield* AgentHost };
 
-      return yield* Effect.promise(async () => {
       const common = {
         project,
         client,
@@ -116,72 +129,71 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         // gets a chance to. Passed as the client's token *function*, not a string:
         // an installation token lasts an hour and a run's wall limit is two.
         token: () => client.token(),
-        // What the tags held, handed on. `runOnce` still takes ports as a
-        // parameter — it is a function, not a host — and this is the one place
-        // that turns "provided" back into "passed".
-        ports,
         merge: options.merge,
         hookBinary,
         promptVersion: `ticket@${prompt.length}`,
         log,
       };
 
-      // ---- the queue -----------------------------------------------------------
+      // ---- the queue ---------------------------------------------------------
       if (options.issue === undefined) {
         // The project's *state*, not its name — the recipe is resolved from the
         // base recorded at `lingtai add`.
-        const resolved = await currentRecipe(project, client).catch(() => null);
-        if (!resolved) {
-          log(`could not read ${options.project}'s recipe — run lingtai doctor`);
-          return 1;
-        }
+        const resolved = yield* Effect.tryPromise({
+          try: () => currentRecipe(project, client),
+          catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
+        });
 
-        const outcome = await runQueue({
+        const outcome = yield* runQueue({
           ...common,
           prompt,
           // Asked rather than stored: a project that reorders its kinds, or adds
           // an exclusion, must not need a projection rebuild.
           recipe: resolved.recipe,
           ...(options.max === undefined ? {} : { max: options.max }),
+        });
+
+        // Read back, not counted up. An item this pass held and somebody approved
+        // while the pass carried on has landed, and the log says so — see
+        // `tallyPass`. Counting the merges this process performed printed
+        // `0 landed` over a merge that had happened, and exited 1 on the count.
+        const { landed, held, stopped } = yield* Effect.tryPromise({
+          try: () => tallyPass(outcome.ran),
+          catch: (err) => refuse(`the pass ran, but its summary could not be read back: ${(err as Error).message}`),
+        });
+        log(
+          `${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`,
+        );
+        // Exit 0 unless something actually went wrong. An empty queue is not a
+        // failure, neither is a bounded run reaching its bound, and neither is an
+        // item waiting on a person.
+        return stopped > 0 ? 1 : 0;
+      }
+
+      // ---- one nominated issue -----------------------------------------------
+      const result = yield* runOnce({
+        ...common,
+        issue: options.issue,
+        // The raw template. `runOnce` fetches the ticket and fills it in — it is
+        // the only place that has the title and the body.
+        prompt,
       });
 
-      // Read back, not counted up. An item this pass held and somebody approved
-      // while the pass carried on has landed, and the log says so — see
-      // `tallyPass`. Counting the merges this process performed printed
-      // `0 landed` over a merge that had happened, and exited 1 on the count.
-      const { landed, held, stopped } = await tallyPass(outcome.ran);
-      log(`${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`);
-      // Exit 0 unless something actually went wrong. An empty queue is not a
-      // failure, neither is a bounded run reaching its bound, and neither is an
-      // item waiting on a person.
-      return stopped > 0 ? 1 : 0;
-    }
-
-    // ---- one nominated issue -------------------------------------------------
-    const result = await runOnce({
-      ...common,
-      issue: options.issue,
-      // The raw template. `runOnce` fetches the ticket and fills it in — it is
-      // the only place that has the title and the body.
-      prompt,
-  });
-
-  if (result.ok === true) {
-    log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`);
-    return 0;
-  }
-  if (result.ok === "held") {
-    // Exit 0: holding is what was asked for, and a non-zero code here would
-    // teach a person to ignore it.
-    log(`held at ${result.headSha.slice(0, 7)} — ${result.workItemId} is waiting on you`);
-    log(`nothing was merged. Re-run without --no-merge to merge it.`);
-    return 0;
-  }
-  // Every stage that can refuse names itself, so "why did nothing happen" has
-  // an answer at the shell as well as on the board.
-  log(`stopped at ${result.stage}: ${result.detail}`);
-  return 1;
-      });
+      if (result.ok === true) {
+        log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`);
+        return 0;
+      }
+      if (result.ok === "held") {
+        // Exit 0: holding is what was asked for, and a non-zero code here would
+        // teach a person to ignore it.
+        log(`held at ${result.headSha.slice(0, 7)} — ${result.workItemId} is waiting on you`);
+        log(`nothing was merged. Re-run without --no-merge to merge it.`);
+        return 0;
+      }
+      // Every stage that can refuse names itself, so "why did nothing happen" has
+      // an answer at the shell as well as on the board.
+      log(`stopped at ${result.stage}: ${result.detail}`);
+      return 1;
     });
 
     return yield* work.pipe(Effect.provide(ProjectorLive(log)), Effect.provide(PortsLive));

@@ -11,17 +11,20 @@
  * A decision about *whether* to merge belongs to `conductor`. Running the merge
  * belongs here.
  */
-export { git, type GitRunOptions, type TokenSource } from "./git.ts";
+export { RepoFailed, git, gitEffect, type GitRunOptions, type TokenSource } from "./git.ts";
 export {
   ensureMirror,
   provisionWorktree,
+  provisionWorktreeEffect,
   removeWorktree,
+  removeWorktreeEffect,
   worktreePath,
   type ProvisionOptions,
   type Worktree,
 } from "./worktree.ts";
 export {
   integrate,
+  integrateEffect,
   type IntegrateOptions,
   type IntegrateResult,
 } from "./integrate.ts";

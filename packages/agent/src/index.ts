@@ -30,20 +30,24 @@ export {
 } from "./claude-code.ts";
 export { CODEX_CAPABILITIES, CodexNotImplementedError, createCodexRuntime } from "./codex.ts";
 export {
+  AgentHostFailed,
   CLAUDE_ONLY_HOOKS,
   INTERSECTION_HOOKS,
   SUN_PATH_MAX,
   renderSettings,
   settingsPathFor,
   smokeTestFailClosed,
+  smokeTestFailClosedEffect,
   socketPathFor,
   writeHookWiring,
+  writeHookWiringEffect,
   type HookWiring,
   type RenderOptions,
 } from "./hook-config.ts";
 export {
   createHookServer,
   redact,
+  serveHookServer,
   type HookName,
   type HookServer,
   type HookServerOptions,

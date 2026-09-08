@@ -6,34 +6,51 @@
  * wants a fake never loads this module, and so never loads git, a socket or a
  * subprocess.
  *
- * `runOnce` defaults to this rather than demanding it, which is a deliberate
- * concession: making every caller wire three ports to run one issue would buy
- * purity with a worse command line. The default is the seam's cost, and it is
- * one line here rather than five imports there.
+ * Every name below is already an `Effect` in the package that owns it
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)), so
+ * this file is a table of names and not an adapter — except for one row, and
+ * the exception is stated rather than hidden.
  */
 import {
-  createHookServer,
-  smokeTestFailClosed,
-  writeHookWiring,
+  AgentHostFailed,
+  serveHookServer,
+  smokeTestFailClosedEffect,
+  writeHookWiringEffect,
 } from "@lingtai/agent";
 import { resolveAgentEnv } from "@lingtai/agent-env";
-import { git, integrate, provisionWorktree, removeWorktree } from "@lingtai/repo";
-import { Layer } from "effect";
+import {
+  gitEffect,
+  integrateEffect,
+  provisionWorktreeEffect,
+  removeWorktreeEffect,
+} from "@lingtai/repo";
+import { Effect, Layer } from "effect";
 import { AgentHost, Repo, type RunPorts } from "./ports.ts";
 
 export function livePorts(): RunPorts {
   return {
     repo: {
-      provision: provisionWorktree,
-      remove: removeWorktree,
-      git,
-      integrate,
+      provision: provisionWorktreeEffect,
+      remove: removeWorktreeEffect,
+      git: gitEffect,
+      integrate: integrateEffect,
     },
     agent: {
-      wire: writeHookWiring,
-      smokeTest: smokeTestFailClosed,
-      serve: createHookServer,
-      resolveEnv: resolveAgentEnv,
+      wire: writeHookWiringEffect,
+      smokeTest: smokeTestFailClosedEffect,
+      serve: serveHookServer,
+      // The one row that is wrapped here rather than in the package it comes
+      // from. `@lingtai/agent-env` decides what an agent may see; it acquires
+      // nothing and has no lifetime, so 0023's "plain functions that Effect
+      // code calls" applies to it as it does to `domain` and `recipe`. The
+      // conductor asks for it through `AgentHost` because from a run's point of
+      // view resolving the environment is something the host does.
+      resolveEnv: (options) =>
+        Effect.tryPromise({
+          try: () => resolveAgentEnv(options),
+          catch: (err) =>
+            new AgentHostFailed({ operation: "resolveEnv", detail: (err as Error).message }),
+        }),
     },
   };
 }

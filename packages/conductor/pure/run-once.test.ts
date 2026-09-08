@@ -22,9 +22,24 @@ import type { EventStore } from "@lingtai/event-store";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import type { Runtime } from "@lingtai/agent";
 import type { ProjectState } from "@lingtai/domain";
+import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
-import type { RunPorts } from "../src/ports.ts";
+import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
 import { runOnce } from "../src/run-once.ts";
+
+/**
+ * The two tags, from the plain shape.
+ *
+ * `runOnce` asks for `Repo` and `AgentHost` rather than taking a `RunPorts`
+ * parameter ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)),
+ * so a test provides them the way a host does. `RunPorts` survives as exactly
+ * this: the shape a `Layer` is built from.
+ */
+const withPorts = (ports: RunPorts) =>
+  Layer.merge(Layer.succeed(Repo, ports.repo), Layer.succeed(AgentHost, ports.agent));
+
+const once = (options: Parameters<typeof runOnce>[0], ports: RunPorts) =>
+  Effect.runPromise(runOnce(options).pipe(Effect.provide(withPorts(ports))));
 
 const PROJECT = "purecheck";
 
@@ -163,46 +178,64 @@ const runtime: Runtime = {
 function fakePorts(did: string[], store: EventStore): RunPorts {
   return {
     repo: {
-      provision: async (o) => {
-        did.push(`provision ${o.runId}`);
-        return { path: `/tmp/fake/${o.runId}`, branch: `agent/${o.runId}`, baseSha: "a".repeat(40) } as never;
-      },
-      remove: async (o) => { did.push(`remove ${o.runId}`); },
-      git: async (args) => {
-        did.push(`git ${args[0]}`);
-        // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
-        // is what the diff summary is counted from.
-        if (args[0] === "rev-parse") return "b".repeat(40);
-        if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
-        if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
-        return "";
-      },
-      integrate: async () => {
-        did.push("integrate");
-        throw new Error("a held run must not reach the integrator");
-      },
+      provision: (o) =>
+        Effect.sync(() => {
+          did.push(`provision ${o.runId}`);
+          return { path: `/tmp/fake/${o.runId}`, branch: `agent/${o.runId}`, baseSha: "a".repeat(40) } as never;
+        }),
+      remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
+      git: (args) =>
+        Effect.sync(() => {
+          did.push(`git ${args[0]}`);
+          // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
+          // is what the diff summary is counted from.
+          if (args[0] === "rev-parse") return "b".repeat(40);
+          if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
+          if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
+          return "";
+        }),
+      integrate: () =>
+        Effect.sync(() => {
+          did.push("integrate");
+          throw new Error("a held run must not reach the integrator");
+        }),
     },
     agent: {
-      wire: async () => { did.push("wire"); return { settingsPath: "/tmp/fake/settings.json", socketPath: "/tmp/fake/sock", env: {} } as never; },
-      smokeTest: async () => { did.push("smokeTest"); return { ok: true, detail: "refuses when it cannot reach the socket" }; },
-      serve: () => {
-        did.push("serve");
-        return {
-          socketPath: "/tmp/fake/sock",
-          register: (runId: string, version: number) => ({ runId, version }) as never,
-          unregister: () => undefined,
-          get: ((runId: string) => ({
-            runId,
-            // Where the stream actually is. The real server knows because it
-            // wrote the events itself.
-            version: (streams(store).get(runId) ?? []).length,
-          })) as never,
-          flush: async () => {},
-          listen: async () => {},
-          close: async () => {},
-        } as never;
-      },
-      resolveEnv: async () => ({ values: {}, names: [], refusal: null }) as never,
+      wire: () =>
+        Effect.sync(() => {
+          did.push("wire");
+          return { settingsPath: "/tmp/fake/settings.json", socketPath: "/tmp/fake/sock", env: {} } as never;
+        }),
+      smokeTest: () =>
+        Effect.sync(() => {
+          did.push("smokeTest");
+          return { ok: true, detail: "refuses when it cannot reach the socket" };
+        }),
+      // Acquired and released, because that is what the port now says it is.
+      // The `close` this records is the one `run-once.ts` used to make in a
+      // `finally`; here nothing calls it, and it still happens.
+      serve: () =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            did.push("serve");
+            return {
+              socketPath: "/tmp/fake/sock",
+              register: (runId: string, version: number) => ({ runId, version }) as never,
+              unregister: () => undefined,
+              get: ((runId: string) => ({
+                runId,
+                // Where the stream actually is. The real server knows because it
+                // wrote the events itself.
+                version: (streams(store).get(runId) ?? []).length,
+              })) as never,
+              flush: async () => {},
+              listen: async () => {},
+              close: async () => {},
+            } as never;
+          }),
+          () => Effect.sync(() => void did.push("close")),
+        ),
+      resolveEnv: () => Effect.succeed({ values: {}, names: [], refusal: null }) as never,
     },
   };
 }
@@ -213,18 +246,20 @@ describe("runOnce, with no world to run in", () => {
     const did: string[] = [];
     const said: string[] = [];
 
-    const result = await runOnce({
-      project,
-      client: fakeGitHub(said),
-      runtime,
-      issue: 7,
-      hookBinary: "/tmp/fake/lingtai-hook",
-      prompt: "fix {{issue}}",
-      merge: false,
-      home: "/tmp/fake-home",
-      store,
-      ports: fakePorts(did, store),
-    });
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
 
     // Say what it actually did before asserting, so a refusal names its stage
     // rather than reading as `false`.
@@ -251,5 +286,105 @@ describe("runOnce, with no world to run in", () => {
 
     // The hook was wired and proved to fail closed before the agent started.
     expect(did.indexOf("smokeTest")).toBeLessThan(did.indexOf("git rev-parse"));
+    // The socket was closed, by the scope and not by a `finally`, and before
+    // the worktree it outlived — releases run in the reverse of acquisition.
+    expect(did.indexOf("close")).toBeLessThan(did.indexOf(`remove ${result.runId}`));
+  });
+
+  /**
+   * **Where the scope starts is a decision**, and this is the assertion of it.
+   *
+   * 0024 recorded what the first conversion taught: a `Layer` is built where it
+   * is provided, so a scope opened too early acquires what a refusal would have
+   * made unnecessary — `lingtai run no-such-project` opening a Postgres
+   * connection to say a project does not exist. `runOnce` refuses on the
+   * recipe, the environment, the dispatch tier and the claim before it
+   * provisions anything, and the way to prove that is not to read the file: it
+   * is to reach a refusal and find that the worktree was never asked for.
+   */
+  it("refuses before it acquires anything, so there is no worktree to release", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        // No recipe on the base branch. The first refusal there is.
+        client: { ...fakeGitHub(said), fileAt: async () => null } as GitHubClient,
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("recipe");
+    // Nothing was claimed, so there is nothing to release …
+    expect(result.workItemId).toBeNull();
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
+    // … and nothing was acquired, so there is nothing to unwind.
+    expect(did).toEqual([]);
+  });
+
+  /**
+   * **"Every exit appends", as a test rather than as a comment.**
+   *
+   * It was a `catch (err)` whose own comment admitted what it was: *"the
+   * catch-all that keeps 'every exit appends' true for anything unforeseen"*.
+   * A defect is what "unforeseen" means once the failures have types, so this
+   * throws one from a port that the type system says cannot fail, and asks the
+   * log the question the comment was answering.
+   */
+  it("releases and appends when something no type predicted goes wrong", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const ports = fakePorts(did, store);
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      {
+        ...ports,
+        agent: {
+          ...ports.agent,
+          // Not a refusal — `smokeTest` answers `{ ok: false }` for that. This
+          // is the port breaking its own contract, which is a defect.
+          smokeTest: () =>
+            Effect.sync(() => {
+              throw new Error("the socket directory is not writable");
+            }),
+        },
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("unexpected");
+    expect(result.detail).toContain("not writable");
+
+    // The item is back in the queue rather than claimed by a run that is over,
+    // and the log says so. That is the whole of the guarantee.
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(item).toContain("WorkItemClaimed");
+    expect(item).toContain("WorkItemReleased");
+
+    // And the worktree it had already taken went with it.
+    expect(did).toContain(`remove ${result.runId}`);
   });
 });

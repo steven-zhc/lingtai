@@ -12,7 +12,8 @@ import { renderEnvFile } from "@lingtai/agent-env";
 import { stateDir } from "@lingtai/env";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { type TokenSource, git } from "./git.ts";
+import { Effect } from "effect";
+import { RepoFailed, type TokenSource, git } from "./git.ts";
 
 // -------------------------------------------------------------- worktrees ----
 
@@ -148,3 +149,32 @@ export async function removeWorktree(options: {
     // No mirror, nothing registered. Not worth failing a cleanup over.
   });
 }
+
+/**
+ * The two above, as `Effect`s — which is what a `Scope` is built out of.
+ *
+ * They are a pair on purpose. `runOnce` acquires the worktree and releases it
+ * with `Effect.acquireRelease`, so the removal that used to be a `finally` two
+ * frames up now happens because the scope closed, whichever way control left it
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
+ *
+ * The removal swallows its own failure, as the `.catch(() => {})` it replaces
+ * did: a cleanup must not replace the failure it is cleaning up after.
+ */
+export const provisionWorktreeEffect = (
+  options: ProvisionOptions,
+): Effect.Effect<Worktree, RepoFailed> =>
+  Effect.tryPromise({
+    try: () => provisionWorktree(options),
+    catch: (err) => new RepoFailed({ operation: "provision", detail: (err as Error).message }),
+  });
+
+export const removeWorktreeEffect = (options: {
+  project: string;
+  runId: string;
+  home?: string;
+}): Effect.Effect<void> =>
+  Effect.tryPromise({
+    try: () => removeWorktree(options),
+    catch: (err) => new RepoFailed({ operation: "remove", detail: (err as Error).message }),
+  }).pipe(Effect.ignore);

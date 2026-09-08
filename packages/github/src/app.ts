@@ -23,6 +23,7 @@
  * No dependency for the JWT: `node:crypto` signs RS256, which is the whole of
  * what GitHub asks for.
  */
+import { Cause, Effect, Exit } from "effect";
 import { createSign } from "node:crypto";
 
 export const GITHUB_API = "https://api.github.com";
@@ -193,34 +194,69 @@ interface CachedToken {
 }
 
 /**
- * A source of valid installation tokens for one repository.
+ * A source of valid installation tokens for one repository, as an `Effect`.
  *
  * Refreshes a minute before expiry rather than on a 401, so a token never
  * expires mid-merge — the one moment where retrying is least welcome.
+ *
+ * **One refresh at a time**, and that is the part that changed. A burst of
+ * calls after expiry should not become a burst of token requests; it used to be
+ * an in-flight promise cleared in a `.finally()`, which covers the two endings
+ * a promise has and no others. A semaphore's permit is released when the effect
+ * *leaves*, interruption included, and the second check inside the permit is
+ * what turns "one at a time" into "one request"
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
+ */
+export function installationToken(
+  auth: AppAuth,
+  installationId: number,
+): Effect.Effect<string, GitHubError> {
+  let cached: CachedToken | null = null;
+  const refreshing = Effect.runSync(Effect.makeSemaphore(1));
+  const fresh = () => cached !== null && cached.expiresAtMs - Date.now() > 60_000;
+
+  const fetchToken = Effect.tryPromise({
+    try: async () => {
+      const raw = await githubJson<{ token: string; expires_at: string }>(
+        `/app/installations/${installationId}/access_tokens`,
+        { method: "POST", token: appJwt(auth), tokenKind: "bearer" },
+      );
+      cached = { token: raw.token, expiresAtMs: Date.parse(raw.expires_at) };
+      return raw.token;
+    },
+    catch: (err) =>
+      err instanceof GitHubError
+        ? err
+        : new GitHubError(0, `/app/installations/${installationId}/access_tokens`, (err as Error).message),
+  });
+
+  return Effect.suspend(() =>
+    fresh()
+      ? Effect.succeed(cached!.token)
+      : refreshing.withPermits(1)(
+          // Checked again inside the permit: whoever was queued behind the one
+          // request wants its answer, not another request.
+          Effect.suspend(() => (fresh() ? Effect.succeed(cached!.token) : fetchToken)),
+        ),
+  );
+}
+
+/**
+ * The same source, as the `() => Promise<string>` that `TokenSource` means.
+ *
+ * `git` passes it to a child process's environment and the board calls it from
+ * a server action; neither has a runtime to run an `Effect` in. The rejection
+ * is the `GitHubError` itself rather than a fiber's wrapper, because a caller
+ * that reads `.status` should not have to know which face it took.
  */
 export function createTokenSource(
   auth: AppAuth,
   installationId: number,
 ): () => Promise<string> {
-  let cached: CachedToken | null = null;
-  let inFlight: Promise<string> | null = null;
-
-  async function fetchToken(): Promise<string> {
-    const raw = await githubJson<{ token: string; expires_at: string }>(
-      `/app/installations/${installationId}/access_tokens`,
-      { method: "POST", token: appJwt(auth), tokenKind: "bearer" },
-    );
-    cached = { token: raw.token, expiresAtMs: Date.parse(raw.expires_at) };
-    return raw.token;
-  }
-
+  const token = installationToken(auth, installationId);
   return async function tokenFor(): Promise<string> {
-    if (cached && cached.expiresAtMs - Date.now() > 60_000) return cached.token;
-    // One refresh at a time: a burst of calls after expiry should not become a
-    // burst of token requests.
-    inFlight ??= fetchToken().finally(() => {
-      inFlight = null;
-    });
-    return inFlight;
+    const exit = await Effect.runPromiseExit(token);
+    if (Exit.isSuccess(exit)) return exit.value;
+    throw Cause.squash(exit.cause);
   };
 }

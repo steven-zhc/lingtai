@@ -4,6 +4,7 @@ export {
   GITHUB_API,
   GitHubError,
   installationForRepo,
+  installationToken,
   NotInstalledError,
   permissionGaps,
   REQUIRED_PERMISSIONS,

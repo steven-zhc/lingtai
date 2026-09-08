@@ -29,11 +29,35 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appendEndActions, approve, reject, renderPrompt, runOnce, runQueue, waive } from "../src/index.ts";
+import { Effect } from "effect";
+import {
+  PortsLive,
+  appendEndActions,
+  approve,
+  reject,
+  renderPrompt,
+  runOnce,
+  runQueue,
+  waive,
+} from "../src/index.ts";
 import type { GateAction, Recipe } from "@lingtai/recipe";
 import type { ProjectState } from "@lingtai/domain";
 
 const exec = promisify(execFile);
+
+/**
+ * The host's edge, in a test.
+ *
+ * `runOnce` and `runQueue` are `Effect`s that ask for `Repo` and `AgentHost`
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). This
+ * file wants the real world, so it provides the real layer and runs once at the
+ * edge — the same two lines `apps/cli/src/run.ts` uses, which is the point of
+ * them being two lines.
+ */
+const once = (options: Parameters<typeof runOnce>[0]) =>
+  Effect.runPromise(runOnce(options).pipe(Effect.provide(PortsLive)));
+const queue = (options: Parameters<typeof runQueue>[0]) =>
+  Effect.runPromise(runQueue(options).pipe(Effect.provide(PortsLive)));
 const here = dirname(fileURLToPath(import.meta.url));
 const authored = {
   GIT_AUTHOR_NAME: "t",
@@ -244,7 +268,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'fix the race'
 `);
 
     const lines: string[] = [];
-    const result = await runOnce({ ...options(agent), log: (l) => lines.push(l) });
+    const result = await once({ ...options(agent), log: (l) => lines.push(l) });
 
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
@@ -314,7 +338,7 @@ git add -A
 git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
 `);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 118,
       client: fakeClient({
@@ -359,7 +383,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
    */
   it("reads the recipe from the recorded base, not the default branch", async () => {
     let askedFor: string[] = [];
-    const result = await runOnce({
+    const result = await once({
       ...options(await agentThat("true")),
       issue: 121,
       client: fakeClient({
@@ -394,7 +418,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
     created.add(workItemStream(PROJECT, 122));
     const other = issue2(122);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(await agentThat("true")),
       issue: 122,
       client: fakeClient({
@@ -444,7 +468,7 @@ mkdir -p src && echo "export const x = 1;" > src/fix.ts
 git add -A && git commit -q -m "fix the race"
 `);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 122,
       client: fakeClient({ recipe, getIssue: async () => ({ ...issue, number: 122 }) }),
@@ -470,7 +494,7 @@ git add -A && git commit -q -m "fix the race"
     // If this ever runs, the test fails loudly rather than quietly passing.
     const agent = await agentThat(`echo "the agent must not have started"; exit 1`);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 123,
       client: fakeClient({ recipe, getIssue: async () => ({ ...issue, number: 123 }) }),
@@ -513,7 +537,7 @@ git add -A && git commit -q -m "fix the race"
 `);
     const before = await g(["rev-parse", "develop"], originPath);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 124,
       merge: false,
@@ -575,7 +599,7 @@ git add -A && git commit -q -m "fix the race"
 `);
     const before = await g(["rev-parse", "develop"], originPath);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 127,
       // No `merge: false`. The recipe is the only thing asking.
@@ -647,7 +671,7 @@ mkdir -p src && echo "export const held = 126;" > src/fix.ts
 git add -A && git commit -q -m "fix the race"
 `);
 
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 126,
       merge: false,
@@ -714,7 +738,7 @@ git add -A && git commit -q -m "fix the race"
 mkdir -p src && echo "export const held = 125;" > src/fix.ts
 git add -A && git commit -q -m "fix the race"
 `);
-    const result = await runOnce({
+    const result = await once({
       ...options(agent),
       issue: 125,
       merge: false,
@@ -755,7 +779,7 @@ git add -A && git commit -q -m "fix the race"
 mkdir -p src && echo "export const held = ${marker};" > src/fix.ts
 git add -A && git commit -q -m "fix the race"
 `);
-      const result = await runOnce({
+      const result = await once({
         ...options(agent),
         issue,
         merge: false,
@@ -894,7 +918,7 @@ mkdir -p src && echo "export const q = $RANDOM;" > src/fix.ts
 git add -A && git commit -q -m "fix"
 `);
 
-      const outcome = await runQueue({
+      const outcome = await queue({
         project: schedProject,
         client: offering([140, 141]),
         runtime: createClaudeCodeRuntime({ binary: agent }),
@@ -926,7 +950,7 @@ git add -A && git commit -q -m "fix"
       // Fails every time, and is released every time.
       const agent = await agentThat(`echo "no commits from me"; exit 0`);
 
-      const outcome = await runQueue({
+      const outcome = await queue({
         project: schedProject,
         client: offering([142]),
         runtime: createClaudeCodeRuntime({ binary: agent }),
@@ -971,7 +995,7 @@ git add -A && git commit -q -m "fix"
   });
 
   it("refuses before claiming anything when the recipe cannot be read", async () => {
-    const result = await runOnce({
+    const result = await once({
       ...options(await agentThat("true")),
       issue: 119,
       client: fakeClient({ fileAt: async () => null }),

@@ -23,6 +23,8 @@
  * than a permission.
  */
 import { type PayloadOf, parsePayload } from "@lingtai/domain";
+import { Effect, type Scope } from "effect";
+import { AgentHostFailed } from "./hook-config.ts";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { mkdir, rm } from "node:fs/promises";
 import { type Server, createServer } from "node:net";
@@ -314,3 +316,31 @@ export function createHookServer(options: HookServerOptions): HookServer {
     },
   };
 }
+
+/**
+ * The same server, with a lifetime.
+ *
+ * The socket is one of the three things a run acquires, and it was released by
+ * a `finally` in `run-once.ts` — correct, and correct only because that
+ * function remembered. As an `Effect.acquireRelease` the close happens because
+ * the scope closed: on the happy path, on a typed refusal, on a defect and on
+ * an interruption alike
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
+ *
+ * The release swallows its own failure, as the `.catch(() => {})` it replaces
+ * did. A socket that will not close must not become the run's reported reason.
+ */
+export const serveHookServer = (
+  options: HookServerOptions,
+): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope> =>
+  Effect.acquireRelease(
+    Effect.tryPromise({
+      try: async () => {
+        const server = createHookServer(options);
+        await server.listen();
+        return server;
+      },
+      catch: (err) => new AgentHostFailed({ operation: "serve", detail: (err as Error).message }),
+    }),
+    (server) => Effect.promise(() => server.close().catch(() => {})),
+  );

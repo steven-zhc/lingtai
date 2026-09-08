@@ -7,6 +7,7 @@
  * with no log, no comment and no label — five re-runs and about $29 on #58/#59.
  */
 import { execFile } from "node:child_process";
+import { Data, Effect } from "effect";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -53,3 +54,38 @@ export async function git(args: string[], options: GitRunOptions = {}): Promise<
   const { stdout } = await exec("git", args, { cwd: options.cwd, env, maxBuffer: 32 * 1024 * 1024 });
   return stdout.trim();
 }
+
+/**
+ * Anything this package could not do to a repository, in a channel a caller
+ * can see.
+ *
+ * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md): the
+ * point of the conversion is not that `git` returns an `Effect` — it is that a
+ * caller's type says this can fail. `Effect.promise` erases exactly that, which
+ * is why the seam it was holding stopped one frame in.
+ *
+ * One error for the package rather than one per function: the *operation* is a
+ * field, so a new call site adds a value and not a type.
+ */
+export class RepoFailed extends Data.TaggedError("RepoFailed")<{
+  /** `git fetch`, `provision`, `integrate` — what was being attempted. */
+  readonly operation: string;
+  readonly detail: string;
+}> {}
+
+/**
+ * The same command, as an `Effect`.
+ *
+ * `git` itself stays a promise: `apps/board/src/app/actions.ts` is a Next.js
+ * server action and has no runtime to run an `Effect` in. The boundary 0023
+ * drew is the port, not the process.
+ */
+export const gitEffect = (
+  args: string[],
+  options: GitRunOptions = {},
+): Effect.Effect<string, RepoFailed> =>
+  Effect.tryPromise({
+    try: () => git(args, options),
+    catch: (err) =>
+      new RepoFailed({ operation: `git ${args[0] ?? ""}`, detail: (err as Error).message }),
+  });

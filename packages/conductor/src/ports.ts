@@ -15,10 +15,18 @@
  * data — a worktree's path and base sha, a merge's outcome — and copying them
  * here would give one shape two definitions and a drift nobody would notice.
  * What must not be imported is the *implementation*, and none is.
+ *
+ * **Every method returns an `Effect`**
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). Two
+ * things follow from that and neither is available from a `Promise`: the
+ * failure is in a channel the caller's type can see — `RepoFailed`,
+ * `AgentHostFailed` — and `serve` can ask for a `Scope`, which is how the
+ * socket's close stopped being something `runOnce` had to remember.
  */
-import { Context } from "effect";
+import { Context, type Effect, type Scope } from "effect";
 import type { AgentEnv } from "@lingtai/agent-env";
 import type {
+  AgentHostFailed,
   HookServer,
   HookServerOptions,
   HookWiring,
@@ -29,12 +37,13 @@ import type {
   IntegrateOptions,
   IntegrateResult,
   ProvisionOptions,
+  RepoFailed,
   Worktree,
 } from "@lingtai/repo";
 
 /** Everything a run does to a git repository. */
 export interface RepoPort {
-  provision(options: ProvisionOptions): Promise<Worktree>;
+  provision(options: ProvisionOptions): Effect.Effect<Worktree, RepoFailed>;
   /**
    * Removing is separate from provisioning and never optional.
    *
@@ -43,14 +52,14 @@ export interface RepoPort {
    * path including a refusal. That ordering is the reason this is a port and
    * not a convenience: a fake can assert it.
    */
-  remove(options: { project: string; runId: string; home?: string }): Promise<void>;
-  git(args: string[], options?: GitRunOptions): Promise<string>;
-  integrate(options: IntegrateOptions): Promise<IntegrateResult>;
+  remove(options: { project: string; runId: string; home?: string }): Effect.Effect<void>;
+  git(args: string[], options?: GitRunOptions): Effect.Effect<string, RepoFailed>;
+  integrate(options: IntegrateOptions): Effect.Effect<IntegrateResult>;
 }
 
 /** Everything a run needs to start an agent and hear what it reports. */
 export interface AgentHostPort {
-  wire(options: RenderOptions): Promise<HookWiring>;
+  wire(options: RenderOptions): Effect.Effect<HookWiring, AgentHostFailed>;
   /**
    * Proves the hook refuses when it cannot reach the socket.
    *
@@ -64,8 +73,17 @@ export interface AgentHostPort {
       code: number | null;
       stderr: string;
     }>,
-  ): Promise<{ ok: boolean; detail: string }>;
-  serve(options: HookServerOptions): HookServer;
+  ): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed>;
+  /**
+   * A listening server, for as long as the scope that asked for it.
+   *
+   * The one method whose *shape* the conversion changed. It returned a
+   * `HookServer` the caller then had to `listen()` and `close()`; it now hands
+   * back one already listening, and closes it when the scope closes. A fake
+   * implements the same pair, which is what lets `pure/run-once.test.ts` assert
+   * that the close happened at all.
+   */
+  serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>;
   resolveEnv(options: {
     project: string;
     /** `env.required` — a check against the merged data, not a filter. */
@@ -77,10 +95,16 @@ export interface AgentHostPort {
     machine?: Record<string, string>;
     home?: string;
     patterns?: readonly string[];
-  }): Promise<AgentEnv>;
+  }): Effect.Effect<AgentEnv, AgentHostFailed>;
 }
 
-/** The two together, which is what a run is handed. */
+/**
+ * The two together.
+ *
+ * Not what a run is handed any more — `runOnce` asks for `Repo` and `AgentHost`
+ * where it uses them. This is the plain shape a `Layer` is *built from*:
+ * `livePorts()` returns one, and a test's fakes are one.
+ */
 export interface RunPorts {
   repo: RepoPort;
   agent: AgentHostPort;
@@ -97,7 +121,10 @@ export interface RunPorts {
  * Why a tag rather than the parameter that already works: a parameter has to be
  * threaded through every caller between the host that knows the implementation
  * and the code that needs it, and `runOnce` is not the only thing that will
- * need `repo`. A tag is asked for where it is used.
+ * need `repo`. A tag is asked for where it is used — which since
+ * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md) is what
+ * `runOnce` actually does, rather than taking a `RunPorts` parameter a host
+ * had to unpack from these same two tags.
  */
 export class Repo extends Context.Tag("@lingtai/conductor/Repo")<Repo, RepoPort>() {}
 export class AgentHost extends Context.Tag("@lingtai/conductor/AgentHost")<

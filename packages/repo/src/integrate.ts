@@ -24,14 +24,22 @@
  * **The lane is a session-level advisory lock**, not a file. Two integrations
  * against one base serialise in Postgres, and a process that dies holding the
  * lock drops it when its connection closes — there is nothing to unwind.
+ *
+ * Both of the things it holds — that lock, and the worktree it cuts to merge in
+ * — are `Effect.acquireRelease` pairs inside one `Scope`
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). They
+ * were a pair of nested `finally` blocks, which is the same guarantee written
+ * out by hand: correct here, and correct only because one function happened to
+ * own both ends of both resources.
  */
 import { integrationStream } from "@lingtai/domain";
 import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/domain";
 import { directDatabaseUrl } from "@lingtai/env";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
+import { Effect, Either } from "effect";
 import pg from "pg";
 import { stateDir } from "@lingtai/env";
-import { type TokenSource, git } from "./git.ts";
+import { RepoFailed, type TokenSource, gitEffect } from "./git.ts";
 import { worktreePath } from "./worktree.ts";
 
 export interface IntegrateOptions {
@@ -67,11 +75,24 @@ export type IntegrateResult =
 /** Files whose presence in a diff means a human applies the migration, not the agent. */
 const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i;
 
-export async function integrate(options: IntegrateOptions): Promise<IntegrateResult> {
+/**
+ * The promise face, for callers that are not Effect.
+ *
+ * `conductor/src/approve.ts` and the board reach the integrator from ordinary
+ * `async` code. The error channel below is `never` — every path appends and
+ * returns an `IntegrateResult` — so running it here cannot throw for a reason
+ * the type did not already say.
+ */
+export function integrate(options: IntegrateOptions): Promise<IntegrateResult> {
+  return Effect.runPromise(integrateEffect(options));
+}
+
+export function integrateEffect(options: IntegrateOptions): Effect.Effect<IntegrateResult> {
   const store = options.store ?? eventStore;
   const home = options.home ?? stateDir();
   const stream = integrationStream(options.project, options.base);
   const run = { token: options.token, env: options.gitEnv };
+  const key = `merge:${options.project}:${options.base}`;
 
   // Every exit goes through one of these two. There is no `return` in this
   // function that does not append first.
@@ -100,115 +121,146 @@ export async function integrate(options: IntegrateOptions): Promise<IntegrateRes
     throw new Error(`could not record ${type} on ${stream} after 8 attempts`);
   }
 
-  async function refuse(reason: RefusalReason, detail: string): Promise<IntegrateResult> {
-    await append("IntegrationRefused", {
-      workItemId: options.workItemId,
-      branch: options.branch,
-      reason,
-      detail: detail.slice(0, 2_000),
-    });
-    return { ok: false, reason, detail };
-  }
-
-  async function succeed(mergeCommit: string): Promise<IntegrateResult> {
-    await append("IntegrationSucceeded", {
-      workItemId: options.workItemId,
-      branch: options.branch,
-      base: options.base,
-      mergeCommit,
-    });
-    return { ok: true, mergeCommit };
-  }
-
-  // ---- the lane ------------------------------------------------------------
-  // Session mode, because a transaction pooler hands the connection to someone
-  // else between statements and the lock goes with it — silently (0009).
-  const lock = new pg.Client({
-    connectionString: options.url ?? directDatabaseUrl(),
-    application_name: `lingtai-merge-${options.project}`,
-  });
-  await lock.connect();
-
-  const key = `merge:${options.project}:${options.base}`;
-  const held = await lock.query<{ ok: boolean }>(
-    "select pg_try_advisory_lock(hashtext($1)::bigint) as ok",
-    [key],
-  );
-  if (held.rows[0]?.ok !== true) {
-    await lock.end();
-    // Not a queue: the caller retries. Two integrations against one base must
-    // never overlap, and saying so is better than blocking a scheduler thread.
-    return refuse("lane-busy", `another integration holds ${key}`);
-  }
-
-  try {
-    await append("IntegrationAttempted", {
-      workItemId: options.workItemId,
-      branch: options.branch,
-      headSha: options.headSha,
+  const refuse = (reason: RefusalReason, detail: string): Effect.Effect<IntegrateResult> =>
+    Effect.promise(async () => {
+      await append("IntegrationRefused", {
+        workItemId: options.workItemId,
+        branch: options.branch,
+        reason,
+        detail: detail.slice(0, 2_000),
+      });
+      return { ok: false, reason, detail } as IntegrateResult;
     });
 
-    // The gates' verdict is the integrator's business only in that it refuses.
-    if (!options.gatesPassed) {
-      return await refuse("gate-failed", options.gateDetail ?? "a gate refused this diff");
-    }
-
-    const mirror = `${home}/repos/${options.project}.git`;
-    const cwd = worktreePath(home, options.project, `integrator-${options.base.replace(/\//g, ".")}`);
-
-    // Only the two refs this merge is about, rather than `+refs/heads/*`.
-    // A wildcard fetch refuses to update any branch checked out in *some other*
-    // worktree of the same mirror — which the agent's is, holding exactly this
-    // branch. Narrowing it removes the whole class of collision rather than the
-    // one instance.
-    await git(
-      [
-        "fetch",
-        "--prune",
-        "origin",
-        `+refs/heads/${options.base}:refs/heads/${options.base}`,
-        `+refs/heads/${options.branch}:refs/heads/${options.branch}`,
-      ],
-      { ...run, cwd: mirror },
-    );
-    await git(["worktree", "add", "--force", "-B", `integrate/${options.base}`, cwd, options.base], {
-      ...run,
-      cwd: mirror,
+  const succeed = (mergeCommit: string): Effect.Effect<IntegrateResult> =>
+    Effect.promise(async () => {
+      await append("IntegrationSucceeded", {
+        workItemId: options.workItemId,
+        branch: options.branch,
+        base: options.base,
+        mergeCommit,
+      });
+      return { ok: true, mergeCommit } as IntegrateResult;
     });
 
-    try {
-      const dirty = await git(["status", "--porcelain"], { ...run, cwd });
+  const at = (args: string[], cwd: string) => gitEffect(args, { ...run, cwd });
+
+  return Effect.scoped(
+    Effect.gen(function* () {
+      // ---- the lane ----------------------------------------------------------
+      // Session mode, because a transaction pooler hands the connection to
+      // someone else between statements and the lock goes with it — silently
+      // (0009).
+      //
+      // Releasing explicitly is tidy; the lock would drop when the connection
+      // closes anyway, which is what makes a crash mid-merge recoverable with
+      // nothing to clean up. What the scope buys is that "closes anyway" no
+      // longer has to mean "the process died".
+      const lane = yield* Effect.acquireRelease(
+        Effect.promise(async () => {
+          const client = new pg.Client({
+            connectionString: options.url ?? directDatabaseUrl(),
+            application_name: `lingtai-merge-${options.project}`,
+          });
+          await client.connect();
+          const held = await client.query<{ ok: boolean }>(
+            "select pg_try_advisory_lock(hashtext($1)::bigint) as ok",
+            [key],
+          );
+          return { client, held: held.rows[0]?.ok === true };
+        }),
+        ({ client, held }) =>
+          Effect.promise(async () => {
+            if (held) {
+              await client
+                .query("select pg_advisory_unlock(hashtext($1)::bigint)", [key])
+                .catch(() => {});
+            }
+            await client.end().catch(() => {});
+          }),
+      );
+
+      if (!lane.held) {
+        // Not a queue: the caller retries. Two integrations against one base must
+        // never overlap, and saying so is better than blocking a scheduler thread.
+        return yield* refuse("lane-busy", `another integration holds ${key}`);
+      }
+
+      yield* Effect.promise(() =>
+        append("IntegrationAttempted", {
+          workItemId: options.workItemId,
+          branch: options.branch,
+          headSha: options.headSha,
+        }),
+      );
+
+      // The gates' verdict is the integrator's business only in that it refuses.
+      if (!options.gatesPassed) {
+        return yield* refuse("gate-failed", options.gateDetail ?? "a gate refused this diff");
+      }
+
+      const mirror = `${home}/repos/${options.project}.git`;
+      const cwd = worktreePath(
+        home,
+        options.project,
+        `integrator-${options.base.replace(/\//g, ".")}`,
+      );
+
+      // Only the two refs this merge is about, rather than `+refs/heads/*`.
+      // A wildcard fetch refuses to update any branch checked out in *some other*
+      // worktree of the same mirror — which the agent's is, holding exactly this
+      // branch. Narrowing it removes the whole class of collision rather than the
+      // one instance.
+      yield* at(
+        [
+          "fetch",
+          "--prune",
+          "origin",
+          `+refs/heads/${options.base}:refs/heads/${options.base}`,
+          `+refs/heads/${options.branch}:refs/heads/${options.branch}`,
+        ],
+        mirror,
+      );
+
+      // The worktree is disposable; the mirror is the expensive part. Acquired
+      // and released as one thing, so no path below has to remember it.
+      yield* Effect.acquireRelease(
+        at(["worktree", "add", "--force", "-B", `integrate/${options.base}`, cwd, options.base], mirror),
+        () => at(["worktree", "remove", "--force", cwd], mirror).pipe(Effect.ignore),
+      );
+
+      const dirty = yield* at(["status", "--porcelain"], cwd);
       if (dirty.trim()) {
         // Cannot happen with a worktree Lingtai just cut, which is the point
         // — the check is here so that if it ever does, it is an event and not a
         // mystery. The old loop merged in a checkout it did not own and this was
         // the failure it could not report.
-        return await refuse("dirty-base", `the integrator's worktree is not clean:\n${dirty}`);
+        return yield* refuse("dirty-base", `the integrator's worktree is not clean:\n${dirty}`);
       }
 
-      const localBase = await git(["rev-parse", options.base], { ...run, cwd: mirror });
-      const remoteBase = await git(["rev-parse", `refs/heads/${options.base}`], { ...run, cwd: mirror });
+      const localBase = yield* at(["rev-parse", options.base], mirror);
+      const remoteBase = yield* at(["rev-parse", `refs/heads/${options.base}`], mirror);
       if (localBase !== remoteBase) {
-        return await refuse("unpushed-base", `${options.base} is ${localBase} locally and ${remoteBase} on origin`);
+        return yield* refuse(
+          "unpushed-base",
+          `${options.base} is ${localBase} locally and ${remoteBase} on origin`,
+        );
       }
 
-      const ahead = await git(["rev-list", "--count", `${options.base}..${options.branch}`], {
-        ...run,
-        cwd: mirror,
-      });
+      const ahead = yield* at(["rev-list", "--count", `${options.base}..${options.branch}`], mirror);
       if (Number(ahead) === 0) {
-        return await refuse("no-commits", `${options.branch} has nothing ${options.base} does not`);
+        return yield* refuse("no-commits", `${options.branch} has nothing ${options.base} does not`);
       }
 
-      const changed = await git(["diff", "--name-only", `${options.base}...${options.branch}`], {
-        ...run,
-        cwd: mirror,
-      });
+      const changed = yield* at(
+        ["diff", "--name-only", `${options.base}...${options.branch}`],
+        mirror,
+      );
       const migrations = changed.split("\n").filter((f) => f && MIGRATION_GLOB.test(f));
       if (migrations.length > 0) {
         // The hold that caught #117, generalised. A migration is applied by a
         // person who has looked at it, not by a merge.
-        return await refuse(
+        return yield* refuse(
           "pending-migration",
           `the diff adds migration files, which need applying by hand first:\n${migrations.join("\n")}`,
         );
@@ -216,53 +268,61 @@ export async function integrate(options: IntegrateOptions): Promise<IntegrateRes
 
       // Merge base in first, so a conflict is discovered here rather than
       // halfway through writing to the base branch.
-      try {
-        await git(["merge", "--no-edit", options.branch], { ...run, cwd });
-      } catch (err) {
-        const conflicts = await git(["diff", "--name-only", "--diff-filter=U"], { ...run, cwd }).catch(
-          () => "",
+      const mergedIn = yield* Effect.either(at(["merge", "--no-edit", options.branch], cwd));
+      if (Either.isLeft(mergedIn)) {
+        const conflicts = yield* at(["diff", "--name-only", "--diff-filter=U"], cwd).pipe(
+          Effect.orElseSucceed(() => ""),
         );
-        await git(["merge", "--abort"], { ...run, cwd }).catch(() => {
+        yield* at(["merge", "--abort"], cwd).pipe(
           // Nothing to abort; the merge failed before it started one.
-        });
-        return await refuse(
+          Effect.ignore,
+        );
+        return yield* refuse(
           "conflict",
-          `${options.branch} does not merge into ${options.base}:\n${conflicts || (err as Error).message}`,
+          `${options.branch} does not merge into ${options.base}:\n${conflicts || mergedIn.left.detail}`,
         );
       }
 
       if (options.verify) {
-        const verified = await options.verify(cwd);
+        const verify = options.verify;
+        const verified = yield* Effect.tryPromise({
+          try: () => verify(cwd),
+          catch: (err) => new RepoFailed({ operation: "verify", detail: (err as Error).message }),
+        });
         if (!verified.ok) {
           // The gates ran against the agent's head. This is the different
           // question of whether it still works beside what landed since.
-          return await refuse("gate-failed", `verification after merging ${options.base} in failed:\n${verified.evidence}`);
+          return yield* refuse(
+            "gate-failed",
+            `verification after merging ${options.base} in failed:\n${verified.evidence}`,
+          );
         }
       }
 
-      const mergeCommit = await git(["rev-parse", "HEAD"], { ...run, cwd });
-      await git(["push", "origin", `HEAD:refs/heads/${options.base}`], { ...run, cwd });
+      const mergeCommit = yield* at(["rev-parse", "HEAD"], cwd);
+      yield* at(["push", "origin", `HEAD:refs/heads/${options.base}`], cwd);
       // The mirror is Lingtai's own copy of the truth; leaving it stale would
       // make the next integration compute against a base that has moved.
-      await git(["fetch", "origin", `+refs/heads/${options.base}:refs/heads/${options.base}`], {
-        ...run,
-        cwd: mirror,
-      });
+      yield* at(["fetch", "origin", `+refs/heads/${options.base}:refs/heads/${options.base}`], mirror);
 
-      return await succeed(mergeCommit);
-    } finally {
-      // The worktree is disposable; the mirror is the expensive part.
-      await git(["worktree", "remove", "--force", cwd], { ...run, cwd: mirror }).catch(() => {});
-    }
-  } catch (err) {
-    // The catch-all that makes the rule true. Anything unforeseen still leaves
-    // an event behind, which is the entire difference from six silent `return 1`s.
-    return await refuse("conflict", `the integration failed unexpectedly: ${(err as Error).message}`);
-  } finally {
-    // Releasing explicitly is tidy; the lock would drop when the connection
-    // closes anyway, which is what makes a crash mid-merge recoverable with
-    // nothing to clean up.
-    await lock.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});
-    await lock.end().catch(() => {});
-  }
+      return yield* succeed(mergeCommit);
+    }).pipe(
+      // The typed channel, where the catch-all used to be. A git command that
+      // refused anywhere above still leaves an event behind — which is the
+      // entire difference from six silent `return 1`s — and now the compiler
+      // knows that is the only thing it has to answer for.
+      Effect.catchTag("RepoFailed", (err) =>
+        refuse("conflict", `the integration failed unexpectedly: ${err.detail}`),
+      ),
+      // And the defect channel, for what is not a git failure at all. It is the
+      // remains of the catch-all rather than the catch-all: everything the type
+      // system can see has already been handled one line up.
+      Effect.catchAllDefect((defect) =>
+        refuse(
+          "conflict",
+          `the integration failed unexpectedly: ${defect instanceof Error ? defect.message : String(defect)}`,
+        ),
+      ),
+    ),
+  );
 }
