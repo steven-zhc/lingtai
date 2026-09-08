@@ -7,6 +7,8 @@
   回路与日志 —— Lingtai 的各个部分如何拼在一起。
 
   2026-09-03 依 aa3733f 的代码绘制；这里标出的四处缺口，是那天靠运行系统发现的，不是靠读代码发现的。
+  2026-09-08 依 8f43cc3 重写：0022 的接缝已经落地，outbox、队列缓存、退出时补投影都已从代码里删掉，
+  所以也从图里删掉。这一页不再有任何「提案」。
   中文版由英文版 doc/architecture.html 生成，两者内容一致 —— 改动请两边一起改。
 
   用浏览器打开。单文件，无构建、无资源、无脚本。唯一会去取的是字体（中日韩字形走系统字体）。
@@ -219,9 +221,9 @@
   .gap p { margin: 0; max-width: 68ch; }
   .gap p + p { margin-top: 10px; }
 
-  /* ---------- proposal callout ---------- */
-  /* Sibling of .gap on purpose: red marks a finding about the system that runs,
-     indigo marks something that does not exist yet. A page drawing both has to
+  /* ---------- open-question callout ---------- */
+  /* Sibling of .gap on purpose: red marks a finding from a real run, indigo
+     marks something true today and not yet fixed. A page drawing both has to
      keep them apart by more than a caption. */
   .prop {
     margin-top: 26px;
@@ -288,282 +290,400 @@
   <header class="mast">
     <p class="eyebrow">Lingtai · 灵台 —— 各部分如何拼合 · <a href="architecture.html">English</a></p>
     <h1>回路与日志</h1>
-    <p class="sub">四个名字常被当成四个程序来说，它们不是。这一页画的是：真正在跑的是什么，谁写日志，以及日志变了谁会知道。
-      最后一节是一份提案，并且明确说明它是提案。</p>
+    <p class="sub">有四个名字常被当成四个程序来说。它们不是。这一页画的是：真正在跑的是什么，谁往日志里写，
+      以及日志变了之后谁会知道。页面上的每一样东西，都出自已经存在的代码。</p>
   </header>
 
   <div class="thesis">
-    <p><b>conductor 不是一个进程。</b>它是回路跑一趟所需的代码 —— 发现、认领、工作树、agent、闸口、集成。
-      它运行在任何调用它的进程内部。</p>
-    <p><b>daemon 和 CLI 才是进程。</b>两者都调用 conductor。daemon 在它周围还多做四件事 ——
-      今天所有让人意外的行为差异，都住在那道缝里。</p>
+    <p><b>conductor 不是一个进程。</b>它是回路跑一趟的代码 —— 发现、认领、工作树、代理、闸口、并入。
+      它在哪个进程里被调用，就在哪个进程里跑。</p>
+    <p><b>daemon 和 CLI 才是进程</b>，而自 <a href="decisions/0022-the-seams.md">0022</a> 起，
+      两者的差别比从前小了：都调用 conductor，也都在运行期间持有一个 projector。
+      daemon 多出来的是一把锁、一次心跳、启动时的一次修复，以及一个不断取活干的循环。</p>
   </div>
 
   <section>
-    <h2>一个库，两个宿主</h2>
-    <p class="lede">daemon 不等于「conductor 在跑」。它是 conductor，加上四个常驻工作 —— 正是这四个让系统其余部分保持最新。</p>
+    <h2>十三个包，和那支朝左的箭头</h2>
+    <p class="lede">左边一列做决定。右边一列碰进程之外的东西。左边没有任何一个包叫得出右边的名字。</p>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 760 330" role="img" aria-label="lingtai daemon 进程包含一次 conductor pass，外加投影跟随器、outbox 投递器、心跳和 reconcile。lingtai run 进程只包含一次 conductor pass。两者调用同一个 conductor 库。">
+        <svg viewBox="0 0 820 470" role="img" aria-label="三个宿主 —— CLI、daemon 和看板 —— 位于两列包之上。左列做决定：domain、recipe、actions、agent-env 和 conductor。右列触碰外部世界：event-store、projector、github、repo、agent、env 和 hook。一支标着「实现」的箭头由右列指向左列。">
           <defs>
             <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
             </marker>
           </defs>
 
-          <!-- daemon process -->
-          <rect x="20" y="20" width="340" height="200" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
-          <text x="34" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai daemon</text>
-          <text x="34" y="61" font-size="11.5" fill="currentColor" opacity=".6">长活 · 持有一把咨询锁</text>
+          <text x="20" y="20" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">宿主 · 两列都由它装配</text>
+          <rect x="20" y="30" width="250" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".7"/>
+          <text x="145" y="48" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">apps/cli</text>
+          <text x="145" y="64" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">run · add · approve · end · doctor</text>
 
-          <rect x="34" y="76" width="150" height="34" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="109" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">conductor pass</text>
+          <rect x="285" y="30" width="250" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".7"/>
+          <text x="410" y="48" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">packages/daemon</text>
+          <text x="410" y="64" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">锁 · 跟随 · 修复 · 取活循环</text>
 
-          <rect x="196" y="76" width="150" height="34" fill="none" stroke="currentColor" opacity=".75"/>
-          <text x="271" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">投影跟随器</text>
-          <rect x="34" y="120" width="150" height="34" fill="none" stroke="currentColor" opacity=".75"/>
-          <text x="109" y="142" text-anchor="middle" font-size="12.5" fill="currentColor">outbox 投递器</text>
-          <rect x="196" y="120" width="150" height="34" fill="none" stroke="currentColor" opacity=".75"/>
-          <text x="271" y="142" text-anchor="middle" font-size="12.5" fill="currentColor">心跳</text>
-          <rect x="34" y="164" width="150" height="34" fill="none" stroke="currentColor" opacity=".75"/>
-          <text x="109" y="186" text-anchor="middle" font-size="12.5" fill="currentColor">reconcile</text>
-          <text x="271" y="186" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".5">每 5 分钟扫一次</text>
+          <rect x="550" y="30" width="250" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".7"/>
+          <text x="675" y="48" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">apps/board</text>
+          <text x="675" y="64" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">读 task_view · 写入决定</text>
 
-          <!-- cli process -->
-          <rect x="400" y="20" width="340" height="200" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
-          <text x="414" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai run</text>
-          <text x="414" y="61" font-size="11.5" fill="currentColor" opacity=".6">你的终端 · 跑一趟就退出</text>
+          <line x1="145" y1="72" x2="145" y2="104" stroke="currentColor" opacity=".4" marker-end="url(#a1)"/>
+          <line x1="410" y1="72" x2="410" y2="104" stroke="currentColor" opacity=".4" marker-end="url(#a1)"/>
+          <line x1="675" y1="72" x2="675" y2="104" stroke="currentColor" opacity=".4" marker-end="url(#a1)"/>
 
-          <rect x="414" y="76" width="150" height="34" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="489" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">conductor pass</text>
+          <text x="20" y="120" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#96701F" style="fill:var(--brass)">做决定 · 自己不做 I/O</text>
+          <rect x="20" y="132" width="340" height="44" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="34" y="152" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">conductor</text>
+          <text x="34" y="168" font-size="11" fill="currentColor" opacity=".65">一趟回路的顺序，以及它需要的端口</text>
 
-          <text x="590" y="99" font-size="12.5" fill="currentColor" opacity=".45">—— 别的什么都没有 ——</text>
-          <line x1="414" y1="128" x2="726" y2="128" stroke="currentColor" stroke-dasharray="3 5" opacity=".3"/>
-          <text x="414" y="152" font-size="12" fill="#9C3A31" style="fill:var(--gap)">没有跟随器 · 没有投递器 · 没有心跳</text>
-          <text x="414" y="172" font-size="12" fill="#9C3A31" style="fill:var(--gap)">所以看板停在原地</text>
+          <rect x="20" y="184" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="34" y="202" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">actions</text>
+          <text x="34" y="217" font-size="11" fill="currentColor" opacity=".65">一个点上跑什么，它的判定又意味着什么</text>
 
-          <!-- shared library -->
-          <path d="M 34 93 L 27 93 L 27 266" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="1.5" marker-end="url(#a1)" color="#96701F"/>
-          <path d="M 414 93 L 407 93 L 407 266" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="1.5" marker-end="url(#a1)" color="#96701F"/>
-          <rect x="20" y="270" width="720" height="42" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="380" y="290" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">packages/conductor</text>
-          <text x="380" y="306" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">discover · claim · worktree · agent · gates · integrate</text>
+          <rect x="20" y="232" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="34" y="250" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">agent-env</text>
+          <text x="34" y="265" font-size="11" fill="currentColor" opacity=".65">代理的环境里装什么 —— 而不是这环境是谁的</text>
+
+          <rect x="20" y="280" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="34" y="298" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">recipe</text>
+          <text x="34" y="313" font-size="11" fill="currentColor" opacity=".65">被托管仓库要求了什么</text>
+
+          <rect x="20" y="328" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="34" y="346" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">domain</text>
+          <text x="34" y="361" font-size="11" fill="currentColor" opacity=".65">词汇表：事件类型、流、reducer</text>
+
+          <text x="460" y="120" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#2C6B67" style="fill:var(--flow)">触碰外部世界 · 每个只碰一样</text>
+          <g font-size="11">
+            <rect x="460" y="132" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="147" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">event-store</text>
+            <text x="474" y="161" fill="currentColor" opacity=".65">Postgres · 带版本追加，从某个 seq 起订阅</text>
+
+            <rect x="460" y="174" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="189" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">projector</text>
+            <text x="474" y="203" fill="currentColor" opacity=".65">折叠，以及同一事务里推进的检查点</text>
+
+            <rect x="460" y="216" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="231" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">github</text>
+            <text x="474" y="245" fill="currentColor" opacity=".65">App、安装令牌、issue 与标签</text>
+
+            <rect x="460" y="258" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="273" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">repo</text>
+            <text x="474" y="287" fill="currentColor" opacity=".65">git：镜像、工作树、并入通道</text>
+
+            <rect x="460" y="300" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="315" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">agent</text>
+            <text x="474" y="329" fill="currentColor" opacity=".65">把进程拉起来，并在套接字上听它回话</text>
+
+            <rect x="460" y="342" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="357" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">env</text>
+            <text x="474" y="371" fill="currentColor" opacity=".65">这台<tspan font-style="italic">机器自己的</tspan>凭据，以及它的状态目录</text>
+
+            <rect x="460" y="384" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="399" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">hook</text>
+            <text x="474" y="413" fill="currentColor" opacity=".65">一个 Bun 单文件，跑在代理的沙箱里</text>
+          </g>
+
+          <path d="M 456 154 L 402 154" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" stroke-width="1.5" marker-end="url(#a1)"/>
+          <text x="428" y="144" text-anchor="middle" font-size="10.5" fill="#2C6B67" style="fill:var(--flow)">实现</text>
+
+          <text x="20" y="400" font-size="11.5" fill="currentColor" opacity=".7">conductor 声明 <tspan font-family="IBM Plex Mono, monospace">RepoPort</tspan>、<tspan font-family="IBM Plex Mono, monospace">AgentHostPort</tspan>、<tspan font-family="IBM Plex Mono, monospace">IssueChannel</tspan>。</text>
+          <text x="20" y="418" font-size="11.5" fill="currentColor" opacity=".7"><tspan font-family="IBM Plex Mono, monospace">conductor/src/live.ts</tspan> 是唯一叫得出实现名字的文件，</text>
+          <text x="20" y="434" font-size="11.5" fill="currentColor" opacity=".7">而宿主把它作为一个 <tspan font-family="IBM Plex Mono, monospace">Layer</tspan> 提供进来。</text>
         </svg>
       </div>
-      <figcaption><b>两边的 conductor 是同一份代码。</b>不同的是围在它周围的那四件事 —— 这就是为什么手动跑一趟能写出完全正确的日志，
-        却让看板什么都不显示。</figcaption>
+      <figcaption><b>箭头朝左，这就是整个设计。</b>分层的画法把它藏住了：<code>conductor</code>
+        会调用 GitHub，于是读的人看见纯逻辑层<em>向上</em>伸进适配器，这条规则看起来自相矛盾。
+        其实不是 —— <code>conductor</code> 声明它需要的接口，右列去实现，宿主把两边接起来。
+        右列里有三个包是拆出来的、而不是新写的：<code>projector</code> 从 <code>event-store</code>
+        里拆出（一个知道 <code>WorkItemClaimed</code> 是什么意思的事件存储，就不是事件存储了），
+        <code>repo</code> 和 <code>agent</code> 从 <code>conductor</code> 里拆出。
+        <code>agent-env</code> 之所以在左边，是因为「决定一个环境里装什么」不是文件系统操作 ——
+        它是一个决定，之后由 <code>repo</code> 去落盘。</figcaption>
     </figure>
 
-    <h3 class="sub-h">这几件事各自是干什么的</h3>
-    <p class="lede">每条定义里有用的是后半句：它不跑的时候你会看到什么。今天它们中的大多数都缺席过。</p>
-
-    <ul class="rules defs">
-      <li>
-        <b>conductor pass</b>
-        <span>向 GitHub 问每个已登记项目有哪些可跑，取一个，跑到出结论为止。一趟处理一个，或者一个都不处理。</span>
-        <span class="absent">没有它：没有任何活被干。这是五件事里唯一 <code>lingtai run</code> 也会做的一件。</span>
-      </li>
-      <li>
-        <b>projection follower · 投影跟随器</b>
-        <span>事件一落地就读，并推进 <code>task_view</code> 和 <code>outbox</code> —— 看板渲染所依据的表，以及 GitHub 投递所依据的表。
-          它只读；从不写日志。</span>
-        <span class="absent">没有它：日志完全正确，而每一块屏幕都冻在它最后看到的样子。九次运行里看板一片空白就是因为这个 ——
-          当时的办法是再起一个进程：<code>lingtai daemon --no-conduct</code>。</span>
-      </li>
-      <li>
-        <b>outbox deliverer · 投递器</b>
-        <span>拿 outbox 投影写下的行，真正去调 GitHub：打标签、发评论、关 issue。带退避重试；六次之后这一行判死，
-          <code>doctor</code> 会点名报错。</span>
-        <span class="absent">没有它：决定永远出不了这台机器。合并发生了，日志是对的，而 GitHub 上那个 issue 依然开着、没有标签，
-          像是没人碰过。</span>
-      </li>
-      <li>
-        <b>heartbeat · 心跳</b>
-        <span>每五秒写一次 <code>daemon_status</code>；超过十五秒就算陈旧。刻意放在日志<em>之外</em>。</span>
-        <span class="absent">因为日志回答不了「还有东西活着吗」。死掉的 daemon 什么都不 append —— 闲着的也一样。
-          没有事件不等于没有 daemon，所以存活性需要一个「什么都没发生时也会被写」的地方。</span>
-      </li>
-      <li>
-        <b>reconcile</b>
-        <span>启动时把机器的实际状态与日志比对，并把差异<em>记录下来</em>。被中途杀掉的 daemon 会留下一个工作树，
-          那里还检出着一个分支，导致下一次 git 无法更新那个 ref。认领会自己过期；目录不会。</span>
-        <span class="absent">它把「删除」append 下来，而不是悄悄收拾干净 —— 因为一个默默自我清理的系统没法告诉你它一直在崩：
-          磁盘越来越干净，症状消失了，某个东西连着六周每晚杀掉 daemon，直到它以别的面目冒出来。</span>
-      </li>
-      <li>
-        <b>the lock · 那把锁</b>
-        <span>一把会话级的 Postgres 咨询锁，<code>lingtai:daemon</code>。第二个 daemon 不会启动，只会告诉你谁持有它。</span>
-        <span class="absent">没有它：两个 daemon 抢同一份活。认领机制能挡住大部分，但合并通道和工作树目录挡不住。</span>
-      </li>
-    </ul>
+    <h3 class="sub-h">两个最容易混的名字，是被刻意分开的</h3>
+    <p><code>@lingtai/env</code> 装的是<b>机器的</b>环境：两个连接串、App 私钥、状态目录。
+      <code>@lingtai/agent-env</code> 装的是<b>代理的</b>：分层、过滤、要落进工作树的那个文件。
+      在 <a href="decisions/0024-agent-env-is-its-own-package.md">0024</a> 之前，它们同住一个文件 ——
+      而这种「挨着」正是机器凭据流进子进程的那条路径的形状。现在名字直接说清了各自是谁的环境；
+      这才是要紧的区分，也正是它们共处一文件时看不见的那一个。</p>
   </section>
 
   <section>
-    <h2>谁改变状态</h2>
-    <p class="lede">四个写入者，一张表，以及一个例外 —— 一整类意外都由它解释。</p>
+    <h2>两个宿主，一条规则</h2>
+    <p class="lede">每一个会往日志里追加的进程，在其运行期间都持有一个 projector。
+      正是这条规则，抹掉了大家一再被绊到的那处差别。</p>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 400" role="img" aria-label="conductor、board、CLI 和 agent 都向 events 表 append。投影读 events 表，写 task_view 和 outbox。syncQueued 直接写 task_view，不 append 任何事件。">
+        <svg viewBox="0 0 780 350" role="img" aria-label="lingtai daemon 进程持有一趟 conductor、一个 projector、一次心跳、启动时的一次修复、一把咨询锁和一个通知器。lingtai run 进程只持有一趟 conductor 和一个 projector。两者调用同一份 conductor 库。">
           <defs>
             <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
             </marker>
           </defs>
 
-          <!-- writers -->
-          <text x="20" y="26" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">写入者</text>
+          <rect x="20" y="20" width="350" height="220" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
+          <text x="34" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai daemon</text>
+          <text x="34" y="61" font-size="11.5" fill="currentColor" opacity=".6">长驻 · 持有一把咨询锁</text>
 
-          <rect x="20" y="44" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="108" y="61" text-anchor="middle" font-size="12.5" fill="currentColor">conductor</text>
-          <text x="108" y="76" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">claim · gates · merge · land</text>
+          <rect x="34" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="112" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">一趟 conductor</text>
+          <rect x="200" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="278" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">projector</text>
 
-          <rect x="20" y="100" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="108" y="117" text-anchor="middle" font-size="12.5" fill="currentColor">board</text>
-          <text x="108" y="132" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">approve · reject · waive</text>
+          <rect x="34" y="118" width="156" height="32" fill="none" stroke="currentColor" opacity=".75"/>
+          <text x="112" y="138" text-anchor="middle" font-size="12.5" fill="currentColor">取活循环</text>
+          <rect x="200" y="118" width="156" height="32" fill="none" stroke="currentColor" opacity=".75"/>
+          <text x="278" y="138" text-anchor="middle" font-size="12.5" fill="currentColor">心跳</text>
 
-          <rect x="20" y="156" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="108" y="173" text-anchor="middle" font-size="12.5" fill="currentColor">CLI</text>
-          <text x="108" y="188" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">add · pause · resume · now</text>
+          <rect x="34" y="160" width="156" height="32" fill="none" stroke="currentColor" opacity=".75"/>
+          <text x="112" y="180" text-anchor="middle" font-size="12.5" fill="currentColor">启动时修复</text>
+          <rect x="200" y="160" width="156" height="32" fill="none" stroke="currentColor" opacity=".75"/>
+          <text x="278" y="180" text-anchor="middle" font-size="12.5" fill="currentColor">那把锁</text>
 
-          <rect x="20" y="212" width="176" height="40" fill="none" stroke="currentColor" opacity=".8" stroke-dasharray="4 3"/>
-          <text x="108" y="229" text-anchor="middle" font-size="12.5" fill="currentColor">agent</text>
-          <text x="108" y="244" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">经由 hook socket</text>
+          <text x="34" y="216" font-size="11.5" fill="currentColor" opacity=".6">外加一个通知器，用于「瓶颈是你」的时候</text>
 
-          <line x1="196" y1="64" x2="292" y2="140" stroke="currentColor" opacity=".7" marker-end="url(#a2)"/>
-          <line x1="196" y1="120" x2="292" y2="146" stroke="currentColor" opacity=".7" marker-end="url(#a2)"/>
-          <line x1="196" y1="176" x2="292" y2="154" stroke="currentColor" opacity=".7" marker-end="url(#a2)"/>
-          <line x1="196" y1="232" x2="292" y2="162" stroke="currentColor" opacity=".7" stroke-dasharray="4 3" marker-end="url(#a2)"/>
-          <text x="243" y="98" text-anchor="middle" font-size="11" fill="currentColor" opacity=".55">append</text>
+          <rect x="410" y="20" width="350" height="220" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
+          <text x="424" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai run</text>
+          <text x="424" y="61" font-size="11.5" fill="currentColor" opacity=".6">你的终端 · 跑一趟，然后退出</text>
 
-          <!-- the log -->
-          <rect x="300" y="112" width="170" height="86" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <text x="385" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="14" fill="currentColor">events</text>
-          <text x="385" y="158" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">按规则只增不改</text>
-          <text x="385" y="176" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">唯一的权威</text>
+          <rect x="424" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="502" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">一趟 conductor</text>
+          <rect x="590" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="668" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">projector</text>
 
-          <!-- readers -->
-          <text x="560" y="26" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">读取者</text>
-          <line x1="470" y1="146" x2="558" y2="120" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" stroke-width="1.5" marker-end="url(#a2)"/>
-          <line x1="470" y1="164" x2="558" y2="192" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" stroke-width="1.5" marker-end="url(#a2)"/>
-          <text x="514" y="112" text-anchor="middle" font-size="11" fill="#2C6B67" style="fill:var(--flow)">读</text>
+          <line x1="424" y1="128" x2="746" y2="128" stroke="currentColor" stroke-dasharray="3 5" opacity=".3"/>
+          <text x="424" y="150" font-size="12" fill="#2C6B67" style="fill:var(--flow)">手动跑一趟，看板也能实时跟上</text>
+          <text x="424" y="170" font-size="12" fill="currentColor" opacity=".6">没有取活循环 · 没有心跳 · 没有锁</text>
+          <text x="424" y="190" font-size="12" fill="currentColor" opacity=".6">也不做修复 —— 那一趟会写日志，而一条命令</text>
+          <text x="424" y="206" font-size="12" fill="currentColor" opacity=".6">不该去释放别人手上的认领</text>
 
-          <rect x="562" y="96" width="196" height="44" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
-          <text x="660" y="114" text-anchor="middle" font-size="12.5" fill="currentColor">task_view 投影</text>
-          <text x="660" y="130" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">看板渲染的内容</text>
-
-          <rect x="562" y="172" width="196" height="44" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
-          <text x="660" y="190" text-anchor="middle" font-size="12.5" fill="currentColor">outbox 投影</text>
-          <text x="660" y="206" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">要发往 GitHub 的效果</text>
-
-          <text x="660" y="240" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".55">投影从不 append</text>
-
-          <!-- the exception -->
-          <line x1="108" y1="84" x2="108" y2="316" stroke="#9C3A31" style="stroke:var(--gap)" color="#9C3A31" stroke-width="1.5" stroke-dasharray="6 4"/>
-          <line x1="108" y1="316" x2="656" y2="316" stroke="#9C3A31" style="stroke:var(--gap)" color="#9C3A31" stroke-width="1.5" stroke-dasharray="6 4"/>
-          <line x1="656" y1="316" x2="656" y2="146" stroke="#9C3A31" style="stroke:var(--gap)" color="#9C3A31" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a2)"/>
-          <rect x="236" y="330" width="330" height="46" fill="none" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="1.5"/>
-          <text x="401" y="349" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="#9C3A31" style="fill:var(--gap)">syncQueued</text>
-          <text x="401" y="366" text-anchor="middle" font-size="11.5" fill="#9C3A31" style="fill:var(--gap)">写队列 —— 不 append 任何事件</text>
+          <path d="M 34 92 L 27 92 L 27 286" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="1.5" marker-end="url(#a2)" color="#96701F"/>
+          <path d="M 424 92 L 417 92 L 417 286" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="1.5" marker-end="url(#a2)" color="#96701F"/>
+          <rect x="20" y="290" width="740" height="42" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="390" y="310" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">packages/conductor</text>
+          <text x="390" y="326" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">发现 · 认领 · 工作树 · 代理 · 闸口 · 并入 · 告知</text>
         </svg>
       </div>
-      <figcaption><b>日志记录的是 Lingtai 做了什么。</b>GitHub 当下提供哪些 issue 不属于这个范畴 —— 那是一份缓存，
-        直接写进 <code>task_view</code>，背后没有事件。这一页其余所有内容，都从那一条虚线推导而来。</figcaption>
+      <figcaption><b>现在两个框里都有 projector，这就是那处改动。</b>从前一条命令是「追加、返回，
+        然后在退出的路上把投影补上」—— 一件事两套机制，而 <code>run</code> 拿的是差的那套：
+        整趟运行期间看板一动不动，命令退出的瞬间才跳到最新（<code>#64</code>）。
+        同一份日志上跑两个 projector 是构造上安全的：<code>apply</code> 幂等，
+        检查点又在写入的同一个事务里推进，所以后到的那个会发现无事可做。不用锁，也不用协调。</figcaption>
     </figure>
 
-    <ul class="rules">
-      <li><b>只有 conductor 写「活」的事。</b> <span>认领、闸口结论、集成、落地。别的谁都不许写。</span></li>
-      <li><b>看板也写。</b> <span>approve、reject、waive 都是 append。看板不是只读的 —— 它是人的决定进入日志的入口。</span></li>
-      <li><b>agent 经由 hook 写。</b> <span>一个挂在 unix socket 上的瘦二进制；由 conductor 代它 append，actor 是 run id。</span></li>
-      <li><b>投影从不写日志。</b> <span>它们读日志，维护自己的表。会 append 的投影等于历史的第二个作者。</span></li>
+    <h3 class="sub-h">daemon 的每项常驻工作是干什么的</h3>
+    <p class="lede">每条定义里有用的是后半句：它不在的时候，你会看见什么。</p>
+
+    <ul class="rules defs">
+      <li>
+        <b>一趟 conductor</b>
+        <span>为每个已注册的项目问 GitHub 现在有什么可跑，取一件，跑到出结论为止。一趟处理一件，或者一件也不处理。</span>
+        <span class="absent">没有它：没有活被干。这是 <code>lingtai run</code> 也会做的那一项。</span>
+      </li>
+      <li>
+        <b>projector</b>
+        <span>事件一落地就读，并推进 <code>task_view</code> —— 唯一的那个投影，也是看板渲染的那张表。
+          它是读者；它从不往日志里写。</span>
+        <span class="absent">没有它：日志完全正确，而每一块屏幕都停在它最后看到的地方。
+          现在每个会追加的进程都持有它，所以这已经不再是两个宿主之间的差别。</span>
+      </li>
+      <li>
+        <b>取活循环</b>
+        <span>靠追加唤醒，而不是靠定时器；每次先问日志「是不是被暂停了」，然后跑一趟。
+          暂停本身是一个事件，所以 daemon 不在时发出的暂停，会在它回来时等着它。</span>
+        <span class="absent">没有它 —— 也就是 <code>--no-conduct</code> —— 你得到一个只把看板刷新、
+          不取活的 daemon，这正是该在已经有一趟在跑时另开的那一个。</span>
+      </li>
+      <li>
+        <b>心跳</b>
+        <span>每几秒写一次 <code>daemon_status</code>；超过十五秒就算陈旧。刻意放在日志<em>之外</em>，
+          也是全系统唯一可变的运行态。</span>
+        <span class="absent">因为日志回答不了「还有东西活着吗」。死掉的 daemon 什么都不追加 ——
+          闲着的那个也一样。没有事件不等于没有 daemon，所以「活着」需要一个即使什么都没发生也会被写的存储。</span>
+      </li>
+      <li>
+        <b>启动时修复</b>
+        <span>拿日志说的和世界实际有的做四项比对：投影是否跟上、有没有工作树成了孤儿、
+          有没有认领已经过了租期、GitHub 说的是不是日志说的。每一项在拿不到自己的输入时就空转，
+          而不是去猜一次全局扫描。</span>
+        <span class="absent">它把修复<em>追加</em>下来，而不是悄悄收拾干净：一个默默给自己擦屁股的系统
+          没法告诉你它一直在崩 —— 磁盘越来越干净，症状消失，然后「有东西每晚在杀 daemon」这件事
+          六周后以别的面目冒出来。<em>只有 daemon 会跑它</em>：这一趟会释放别的运行持有的认领，
+          而一条有人盯着的一次性命令，不该对它没被问到的活产生这种副作用。</span>
+      </li>
+      <li>
+        <b>那把锁</b>
+        <span>一把会话级的 Postgres 咨询锁，<code>lingtai:daemon</code>。第二个 daemon 不会启动；
+          它会说出锁在谁手里，然后以 0 退出。</span>
+        <span class="absent">没有它：两个 daemon 抢同一件活。认领能挡下大部分，但并入通道和工作树目录挡不住。</span>
+      </li>
     </ul>
   </section>
 
   <section>
-    <h2>谁通知谁</h2>
-    <p class="lede">通知通道有且只有一条，而且由数据库触发，不是任何一个进程。</p>
+    <h2>谁改状态</h2>
+    <p class="lede">四个写者、一张表、一个投影 —— 而 GitHub 站在回路的两侧，既是输入也是输出，
+      唯独不是「Lingtai 做过什么」的存储。</p>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 300" role="img" aria-label="events 表上的一个 Postgres 触发器在 lingtai 通道上发出 NOTIFY。store 的 subscribe 把它桥接给三个消费者：看板的 SSE 路由、daemon 的 work loop，以及投影 runner。写 task_view 不触发任何东西。">
+        <svg viewBox="0 0 900 300" role="img" aria-label="conductor、看板、CLI 和代理都往 events 表追加，唯一的投影 task_view 读它。GitHub 位于写者左侧，与 conductor 之间有两支箭头：发现只读它、什么都不存；运行则把日志说的告诉它，并记下这次尝试。">
           <defs>
             <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
             </marker>
           </defs>
 
-          <rect x="20" y="72" width="128" height="52" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <text x="84" y="94" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">events</text>
-          <text x="84" y="111" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">一次 append</text>
+          <text x="210" y="18" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">写者</text>
 
-          <line x1="148" y1="98" x2="212" y2="98" stroke="currentColor" marker-end="url(#a3)"/>
-          <text x="180" y="88" text-anchor="middle" font-size="11" fill="currentColor" opacity=".55">触发器</text>
+          <rect x="210" y="30" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="298" y="47" text-anchor="middle" font-size="12.5" fill="currentColor">conductor</text>
+          <text x="298" y="62" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">认领 · 闸口 · 并入 · 落地</text>
 
-          <rect x="216" y="72" width="150" height="52" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="291" y="94" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">NOTIFY lingtai</text>
-          <text x="291" y="111" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">一条通道，带着 seq</text>
+          <rect x="210" y="86" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="298" y="103" text-anchor="middle" font-size="12.5" fill="currentColor">看板</text>
+          <text x="298" y="118" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">批准 · 驳回 · 豁免</text>
 
-          <line x1="366" y1="98" x2="424" y2="98" stroke="currentColor" marker-end="url(#a3)"/>
-          <rect x="428" y="72" width="112" height="52" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="484" y="102" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">subscribe()</text>
+          <rect x="210" y="142" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="298" y="159" text-anchor="middle" font-size="12.5" fill="currentColor">CLI</text>
+          <text x="298" y="174" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">add · pause · resume · now</text>
 
-          <line x1="540" y1="88" x2="600" y2="42" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" marker-end="url(#a3)"/>
-          <line x1="540" y1="98" x2="600" y2="98" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" marker-end="url(#a3)"/>
-          <line x1="540" y1="108" x2="600" y2="154" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" marker-end="url(#a3)"/>
+          <rect x="210" y="198" width="176" height="40" fill="none" stroke="currentColor" opacity=".8" stroke-dasharray="4 3"/>
+          <text x="298" y="215" text-anchor="middle" font-size="12.5" fill="currentColor">代理</text>
+          <text x="298" y="230" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">经由 hook 套接字</text>
 
-          <rect x="604" y="20" width="156" height="42" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
-          <text x="682" y="38" text-anchor="middle" font-size="12.5" fill="currentColor">看板 SSE</text>
-          <text x="682" y="53" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">按 seq 续传</text>
+          <line x1="386" y1="50"  x2="444" y2="128" stroke="currentColor" opacity=".7" marker-end="url(#a3)"/>
+          <line x1="386" y1="106" x2="444" y2="136" stroke="currentColor" opacity=".7" marker-end="url(#a3)"/>
+          <line x1="386" y1="162" x2="444" y2="150" stroke="currentColor" opacity=".7" marker-end="url(#a3)"/>
+          <line x1="386" y1="218" x2="444" y2="158" stroke="currentColor" opacity=".7" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+          <text x="412" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity=".55">追加</text>
 
-          <rect x="604" y="77" width="156" height="42" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
-          <text x="682" y="95" text-anchor="middle" font-size="12.5" fill="currentColor">daemon work loop</text>
-          <text x="682" y="110" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">完成事件唤醒</text>
+          <rect x="450" y="100" width="170" height="86" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <text x="535" y="128" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="14" fill="currentColor">events</text>
+          <text x="535" y="146" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">按规矩只追加</text>
+          <text x="535" y="164" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">唯一的权威</text>
 
-          <rect x="604" y="134" width="156" height="42" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
-          <text x="682" y="152" text-anchor="middle" font-size="12.5" fill="currentColor">投影 runner</text>
-          <text x="682" y="167" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">推进 checkpoint</text>
+          <text x="660" y="18" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">读者</text>
+          <line x1="620" y1="143" x2="656" y2="143" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" stroke-width="1.5" marker-end="url(#a3)"/>
+          <text x="638" y="134" text-anchor="middle" font-size="11" fill="#2C6B67" style="fill:var(--flow)">读</text>
 
-          <!-- the dead end -->
-          <rect x="20" y="212" width="128" height="52" fill="none" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="1.5"/>
-          <text x="84" y="234" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="#9C3A31" style="fill:var(--gap)">task_view</text>
-          <text x="84" y="251" text-anchor="middle" font-size="11" fill="#9C3A31" style="fill:var(--gap)">一次队列写入</text>
-          <line x1="148" y1="238" x2="272" y2="238" stroke="#9C3A31" style="stroke:var(--gap)" stroke-dasharray="6 4"/>
-          <line x1="278" y1="228" x2="292" y2="248" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="2"/>
-          <line x1="292" y1="228" x2="278" y2="248" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="2"/>
-          <text x="310" y="235" font-size="12.5" fill="#9C3A31" style="fill:var(--gap)">没有触发器，没有通道，没人被告知</text>
-          <text x="310" y="253" font-size="11.5" fill="currentColor" opacity=".6">开着的看板会一直显示旧队列，直到被重新加载</text>
+          <rect x="660" y="120" width="225" height="46" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+          <text x="772" y="139" text-anchor="middle" font-size="12.5" fill="currentColor">task_view —— 唯一的投影</text>
+          <text x="772" y="155" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">看板渲染的东西</text>
+          <text x="772" y="188" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".55">投影从不追加</text>
+          <text x="772" y="205" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".55">每一行背后都有一个事件</text>
+
+          <rect x="20" y="170" width="160" height="56" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="100" y="195" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">GitHub</text>
+          <text x="100" y="212" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">有哪些活存在</text>
+
+          <path d="M 92 170 L 92 44 L 204 44" fill="none" stroke="currentColor" opacity=".7" stroke-width="1.5" marker-end="url(#a3)"/>
+          <text x="100" y="96"  font-size="11" fill="currentColor" opacity=".6">发现只读它，</text>
+          <text x="100" y="112" font-size="11" fill="currentColor" opacity=".6">什么都不存</text>
+
+          <path d="M 204 60 L 192 60 L 192 198 L 184 198" fill="none" stroke="#96701F" style="stroke:var(--brass)" color="#96701F" stroke-width="1.5" marker-end="url(#a3)"/>
+          <text x="20" y="252" font-size="11" fill="#96701F" style="fill:var(--brass)">运行把日志说的告诉它，</text>
+          <text x="20" y="268" font-size="11" fill="#96701F" style="fill:var(--brass)">并把这次尝试的结果追加下来</text>
         </svg>
       </div>
-      <figcaption><b>下游的一切都挂在一次 append 上。</b>不 append 的改动谁也到达不了 —— 这就是为什么把一个标签从 issue 上摘掉
-        不会让开着的看板动一下，尽管 <code>lingtai status</code> 立刻就能看到。</figcaption>
+      <figcaption><b>从前画在这里的那条红色虚线，已经没有了。</b>这一页的早前版本画着
+        <code>syncQueued</code> 把队列直接写进 <code>task_view</code>、背后没有任何事件，
+        并称它是页面上其余一切的源头。队列缓存被删掉了（<code>#57</code>）：可跑集合就是
+        GitHub 此刻说的，减去日志说已被认领的，在有人需要它的那一刻算出来，哪儿也不存。
+        <code>outbox</code> 表跟着一起走了（<code>#56</code>），于是只剩一个投影。</figcaption>
     </figure>
+
+    <ul class="rules">
+      <li><b>只有 conductor 写「活」的事。</b> <span>认领、闸口判定、并入、落地。别的都不许。</span></li>
+      <li><b>看板也写。</b> <span>批准、驳回、豁免都是追加。看板不是只读的 —— 它是人的决定进入日志的地方。</span></li>
+      <li><b>代理经由 hook 写。</b> <span>一个跑在 unix 套接字上的瘦二进制；conductor 代它追加，actor 记为 run id。</span></li>
+      <li><b>投影从不往日志里写。</b> <span>它们读日志，维护自己的表。会追加的投影就是历史的第二作者。</span></li>
+      <li><b>投影只有一个。</b> <span><code>task_view</code>。一份「只有一项的清单」，唯一的作用就是让人能写出一个投影、又悄悄把它漏在清单外 —— 没有表、没有检查点、也没有会失败的检查。要加第二个，就公开地按名字加，否则它不存在。</span></li>
+    </ul>
   </section>
 
   <section>
-    <h2>一个工作项，从头到尾</h2>
-    <p class="lede">五个闸口位置是固定且封闭的。每个位置上跑什么，由被托管仓库的 recipe 决定；append 出来的是什么，由 Lingtai 决定。</p>
+    <h2>谁通知谁</h2>
+    <p class="lede">通知通道只有一条，而且是由数据库触发的，不是由任何一个进程触发的。</p>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 250" role="img" aria-label="一个工作项依次经过 admit、prepared、agent、proposed、merge、integrate 和 end。每一步都列出它 append 的事件。merge 位置会跑自己的闸口流水线 —— 在 proposed 通过之后、进入合并通道之前。">
+        <svg viewBox="0 0 780 220" role="img" aria-label="events 表上的一个 Postgres 触发器在 lingtai 通道上发出 NOTIFY。事件存储的 subscribe 把它接到三个消费者：看板的 SSE 路由、daemon 的取活循环，以及当前持有 projector 的那个进程。">
           <defs>
             <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
             </marker>
           </defs>
 
+          <rect x="20" y="72" width="128" height="52" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <text x="84" y="94" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">events</text>
+          <text x="84" y="111" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">一次追加</text>
+
+          <line x1="148" y1="98" x2="212" y2="98" stroke="currentColor" marker-end="url(#a4)"/>
+          <text x="180" y="88" text-anchor="middle" font-size="11" fill="currentColor" opacity=".55">触发器</text>
+
+          <rect x="216" y="72" width="150" height="52" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
+          <text x="291" y="94" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">NOTIFY lingtai</text>
+          <text x="291" y="111" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">一条通道，带上 seq</text>
+
+          <line x1="366" y1="98" x2="424" y2="98" stroke="currentColor" marker-end="url(#a4)"/>
+          <rect x="428" y="72" width="112" height="52" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="484" y="102" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">subscribe()</text>
+
+          <line x1="540" y1="88" x2="600" y2="42" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" marker-end="url(#a4)"/>
+          <line x1="540" y1="98" x2="600" y2="98" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" marker-end="url(#a4)"/>
+          <line x1="540" y1="108" x2="600" y2="154" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" marker-end="url(#a4)"/>
+
+          <rect x="604" y="20" width="156" height="42" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+          <text x="682" y="38" text-anchor="middle" font-size="12.5" fill="currentColor">看板 SSE</text>
+          <text x="682" y="53" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">按 seq 续传</text>
+
+          <rect x="604" y="77" width="156" height="42" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+          <text x="682" y="95" text-anchor="middle" font-size="12.5" fill="currentColor">daemon 取活循环</text>
+          <text x="682" y="110" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">在完成时醒来</text>
+
+          <rect x="604" y="134" width="156" height="42" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+          <text x="682" y="152" text-anchor="middle" font-size="12.5" fill="currentColor">projector</text>
+          <text x="682" y="167" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">谁持有就在谁那里</text>
+
+          <text x="20" y="168" font-size="11.5" fill="currentColor" opacity=".7">这里没有任何定时器。<tspan font-family="IBM Plex Mono, monospace">subscribe</tspan> 从检查点续传，</text>
+          <text x="20" y="186" font-size="11.5" fill="currentColor" opacity=".7">所以睡过去或者死掉的进程，回来时是补上，</text>
+          <text x="20" y="204" font-size="11.5" fill="currentColor" opacity=".7">而不是跳过错过的那一段。</text>
+        </svg>
+      </div>
+      <figcaption><b>下游的一切都挂在一次追加上。</b>这同时也是「不追加的改动谁也通知不到」的原因 ——
+        也是为什么把一个 issue 的标签摘掉，并不会让开着的看板动一下。
+        daemon 死了，看板是<em>落后</em>，不是出错。</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>一件活，从头到尾</h2>
+    <p class="lede">五个闸口点是固定且封闭的。每个点上跑什么由被托管仓库的 recipe 说了算；
+      追加下来的是什么，由 Lingtai 说了算。</p>
+
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 900 250" role="img" aria-label="一件活依次经过队列、认领、prepared、代理、proposed、merge、并入与 end。每一步列出它追加的事件。merge 点在 proposed 通过之后、工作树被移除之前，跑自己的闸口流水线。">
+          <defs>
+            <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
           <line x1="20" y1="70" x2="878" y2="70" stroke="currentColor" opacity=".3"/>
 
-          <!-- steps: x centers -->
           <g font-size="12.5" fill="currentColor">
             <circle cx="60"  cy="70" r="5" fill="currentColor"/>
-            <text x="60"  y="52" text-anchor="middle">queue</text>
-            <text x="60" y="96" text-anchor="middle" font-size="10.5" opacity=".55">来自 GitHub</text>
-            <text x="60" y="112" text-anchor="middle" font-size="10.5" opacity=".55">没有事件</text>
+            <text x="60"  y="52" text-anchor="middle">队列</text>
+            <text x="60"  y="96" text-anchor="middle" font-size="10.5" opacity=".55">来自 GitHub</text>
+            <text x="60"  y="112" text-anchor="middle" font-size="10.5" opacity=".55">无事件，无缓存</text>
 
             <circle cx="185" cy="70" r="5" fill="currentColor"/>
-            <text x="185" y="52" text-anchor="middle">claim</text>
+            <text x="185" y="52" text-anchor="middle">认领</text>
             <text x="185" y="96" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemClaimed</text>
 
             <circle cx="310" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
@@ -571,7 +691,7 @@
             <text x="310" y="96" text-anchor="middle" font-size="10.5" opacity=".55">Gate*  ×3</text>
 
             <circle cx="435" cy="70" r="5" fill="currentColor"/>
-            <text x="435" y="52" text-anchor="middle">agent</text>
+            <text x="435" y="52" text-anchor="middle">代理</text>
             <text x="435" y="96" text-anchor="middle" font-size="10.5" opacity=".55">RunStarted · RunFinished</text>
 
             <circle cx="560" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
@@ -582,380 +702,208 @@
             <text x="685" y="52" text-anchor="middle">merge</text>
             <text x="685" y="96" text-anchor="middle" font-size="10.5" opacity=".55">Gate*  ×3</text>
 
-            <circle cx="810" cy="70" r="5" fill="currentColor"/>
-            <text x="810" y="52" text-anchor="middle">integrate → end</text>
+            <circle cx="810" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
+            <text x="810" y="52" text-anchor="middle">并入 → end</text>
             <text x="810" y="96" text-anchor="middle" font-size="10.5" opacity=".55">IntegrationSucceeded</text>
-            <text x="810" y="111" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemLanded</text>
+            <text x="810" y="111" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemLanded · IssueUpdated</text>
           </g>
 
-          <line x1="66" y1="70" x2="178" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a4)"/>
-          <line x1="191" y1="70" x2="303" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a4)"/>
-          <line x1="316" y1="70" x2="428" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a4)"/>
-          <line x1="441" y1="70" x2="553" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a4)"/>
-          <line x1="566" y1="70" x2="678" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a4)"/>
-          <line x1="691" y1="70" x2="803" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a4)"/>
+          <line x1="66" y1="70" x2="178" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
+          <line x1="191" y1="70" x2="303" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
+          <line x1="316" y1="70" x2="428" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
+          <line x1="441" y1="70" x2="553" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
+          <line x1="566" y1="70" x2="678" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
+          <line x1="691" y1="70" x2="803" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
 
           <rect x="596" y="150" width="282" height="72" fill="none" stroke="currentColor" opacity=".25" stroke-width="1.5"/>
           <line x1="685" y1="80" x2="685" y2="150" stroke="currentColor" opacity=".25" stroke-dasharray="5 4"/>
-          <text x="612" y="171" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".75">proposed 通过了才会跑</text>
-          <text x="612" y="190" font-size="11.5" fill="currentColor" opacity=".75">和前两个一样的流水线，跑在工作树里，</text>
-          <text x="612" y="206" font-size="11.5" fill="currentColor" opacity=".75">在它被删除之前</text>
+          <text x="612" y="171" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".75">仅当 proposed 通过才跑</text>
+          <text x="612" y="190" font-size="11.5" fill="currentColor" opacity=".75">和前两个一样的一条流水线，在工作树里，</text>
+          <text x="612" y="206" font-size="11.5" fill="currentColor" opacity=".75">在它被移除之前</text>
 
-          <text x="20" y="171" font-size="11.5" fill="currentColor" opacity=".6">恰好三条路径会让一次运行停下来等人：</text>
-          <text x="20" y="190" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">proposed</tspan> 或 <tspan font-family="IBM Plex Mono, monospace">merge</tspan> 上的动作返回 needs-approval</text>
-          <text x="20" y="206" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">--no-merge</tspan> 这个开关</text>
+          <text x="20" y="150" font-size="11.5" fill="currentColor" opacity=".6">「挂起等人」恰好只有三条路径：</text>
+          <text x="20" y="169" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">proposed</tspan> 上某个动作判定为需要批准</text>
+          <text x="20" y="185" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">merge</tspan> 上的动作同样如此</text>
+          <text x="20" y="201" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">--no-merge</tspan> 这个开关</text>
+          <text x="20" y="222" font-size="11" fill="currentColor" opacity=".55">同一套词汇：三者都发出 ApprovalRequested。</text>
         </svg>
       </div>
-      <figcaption><b>五个位置里有四个会真的跑它的动作；<code>admit</code> 不会。</b><code>prepared</code>、<code>proposed</code> 和
-        <code>merge</code> 各自构建一条真正的闸口流水线，<code>end</code> 解析进 outbox。<code>admit</code>
-        目前仍然只是被读一下，好把名字写进 <code>GatesResolved</code>。</figcaption>
+      <figcaption><b>五个点里有四个会跑自己的动作；<code>admit</code> 不会。</b>
+        <code>prepared</code>、<code>proposed</code> 和 <code>merge</code> 各自搭起一条真的闸口流水线，
+        <code>end</code> 则在这件活自己的流上落成若干追加 —— 和落地在同一个事务里，
+        所以不管一件活是从哪条路落的地，这个点都会被结清。<code>admit</code> 至今只被读来
+        为 <code>GatesResolved</code> 贡献名字。</figcaption>
     </figure>
 
     <div class="gap">
-      <h3>2026-09-03 发现 · 2026-09-04 修复（#58）</h3>
-      <p>Lingtai 自己的 recipe 在 <code>merge</code> 上放了一个 <code>human:</code> 动作 —— 每次合并本来都该等人点头。
-        它从来没有执行过。两个改动在构建闸口通过五秒之后，无人批准地合进了 <code>main</code>。</p>
-      <p>这个位置被声明了、被 <code>lingtai add</code> 打印出来、被记进 <code>GatesResolved</code>、还被看板渲染出来。
-        所有这些信号读起来都像是「它在工作」的证据。<b>配置了却没有运行</b>正是这个系统明确认定为自身 bug 的那种失败，
-        而这是迄今为止代价最大的一例。</p>
-      <p>现在这个位置会像其他位置一样构建流水线，并且 <code>lingtai doctor</code> 对每一个闸口位置做了 <code>#55</code>
-        当初对 <code>end</code> 提出的那个比对：一个已经落地的工作项，它的 <code>GatesResolved</code> 在某个位置计划了动作，
-        而它的运行在那里没有留下任何结论。<b>能推广的是那个比对</b> —— 修复只关掉一个实例，比对关掉的是一整类。</p>
+      <h3>2026-09-03 发现 · 这个系统称之为「自己的 bug」的那种形状</h3>
+      <p>Lingtai 自己的 recipe 在 <code>merge</code> 上放了一个 <code>human:</code> 动作 ——
+        每一次并入本该等一个人。它从来没跑过。两次对 <code>main</code> 的改动无人批准就并了进去，
+        在构建闸口通过之后五秒。</p>
+      <p>这个点被声明了、被 <code>lingtai add</code> 打印了、被记进 <code>GatesResolved</code>、
+        也画在了看板上。所有这些看起来都像是「它在工作」的证据。
+        <b>配置了却没跑</b>正是这个系统称之为自己 bug 的那种失败，而这是迄今代价最高的一例。</p>
+      <p>现在这个点和别的点一样搭一条流水线（<code>run-once.ts</code> 第 11 步），
+        而 <code>gate-audit.ts</code> 对每一个闸口点做同一项比对：一件已落地的活，
+        它的 <code>GatesResolved</code> 在某个点上规划了动作，而它那次运行在该点没有留下任何判定。
+        <b>能推广的是这项检查</b> —— 修复关掉的是一个实例，比对关掉的是一整类。
+        修复之前的那几次落地仍然留在日志上，所以 <code>lingtai doctor</code> 至今仍会点名它们；
+        对一份不能被改写的记录来说，这才是正确的行为。</p>
+      <p>同一种形状至今已经出现六次：一项检查存在、会报告，但看的并不是你以为它在看的那样东西。
+        这一页值得为这个模式来读，而不是为这些个别的 bug。</p>
     </div>
   </section>
 
   <section>
-    <h2>状态住在哪里</h2>
-    <p class="lede">八个地方。其中只有一个是权威的；其余的都可以重建、重新拉取，或者直接扔掉。</p>
-
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th>存储</th><th>装了什么</th><th>谁写</th><th>可否重建</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="k">events</td><td>关于 Lingtai 做过什么的每一个事实</td><td class="who">conductor、board、CLI、agent</td><td class="who">不能 —— 它就是源头</td></tr>
-          <tr><td class="k">checkpoints</td><td>每个投影读到哪儿了</td><td class="who">投影 runner</td><td class="who">可以</td></tr>
-          <tr><td class="k">task_view</td><td>看板的卡片，以及队列缓存</td><td class="who">投影 runner + <code>syncQueued</code></td><td class="who">部分 —— 队列那一半要靠 GitHub</td></tr>
-          <tr><td class="k">outbox</td><td>欠 GitHub 的效果，带重试次数</td><td class="who">投影 runner、投递器</td><td class="who">可以</td></tr>
-          <tr><td class="k">daemon_status</td><td>心跳</td><td class="who">daemon</td><td class="who">刻意放在日志之外</td></tr>
-          <tr><td class="k">~/.lingtai/repos</td><td>每个项目一份裸镜像</td><td class="who">工作树置备</td><td class="who">可以 —— 重新 clone</td></tr>
-          <tr><td class="k">~/.lingtai/worktrees</td><td>每次运行一份检出，也就是爆炸半径</td><td class="who">agent</td><td class="who">运行结束就删</td></tr>
-          <tr><td class="k">GitHub</td><td>有哪些 issue，它们带什么标签</td><td class="who">你，以及 outbox</td><td class="who">不归我们重建</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section>
-    <h2>解释其余一切的那条规则</h2>
-    <p>有两个问题长得很像，其实不是一回事：<em>存在哪些活</em>，和 <em>Lingtai 对它做了什么</em>。第一个由 GitHub 回答，
-      而且 GitHub 就是它的权威 —— 这就是为什么队列是一份缓存而不是一串事件，也是为什么 GitHub 不再列出的队列行会被直接丢掉。
-      第二个由日志回答，别的谁都不许答。</p>
-    <p>这一页上的每一处困惑，都是那条边界被不声不响地越过的地方：一次谁也到达不了的队列写入；一条跳过了刷新的命令 ——
-      而它那个长活的孪生兄弟会做这件事；一个在某个仓库里被声明、却在两边都没被执行的闸口位置。</p>
-  </section>
-
-  <section>
-    <h2>提案 —— 十一个包，四处删除</h2>
-    <p class="lede">以上所有内容都照着真实存在的代码画。这一节不是：一份提案，日期 2026-09-04，待评审。里面没有一样东西是已经建成的。</p>
-
-    <div class="prop">
-      <h3>这是提案 · 不是系统</h3>
-      <p>下面这些模块名来自代码之外，是对「Lingtai 应该由什么组成」的一次猜测。其中大多数已经存在，只是叫别的名字 —— 但<b>有四处边界划错了，还有四整套机制其实根本不需要。</b>删除的那一半，是这份提案里更大的一半。</p>
-      <p>这一节的上一稿自己造了两个词，<code>effects</code> 和 <code>ports</code>，并且保留了 outbox。两个词都删掉了。<b>一份需要先教你它自己的词汇才能被读懂的提案，已经在它主张的那件事上失败了。</b></p>
-    </div>
-
-    <p class="sub-h">诊断：最后一块，总是住在 application 里</p>
+    <h2>告知 GitHub：收敛，而不是重放</h2>
+    <p class="lede">outbox 没有了 —— 一张表、一个投影、一个 worker、一套退避和一个死信队列，
+      背后只站着三次调用。取代它的东西更小也更强，差别在于它算出目标，而不是记住那次尝试。</p>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 240" role="img" aria-label="两个概念，每一个都被拆散在多个包里。投影：runner 在 store，定义在 conductor，宿主在 daemon，而「有哪些投影」的名单在 apps/cli。daemon：零件在 packages/daemon，装配在 apps/cli。">
-          <text x="20" y="30" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">投影 PROJECTIONS</text>
-          <rect x="20" y="42" width="170" height="46" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="105" y="64" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">store/projection</text>
-          <text x="105" y="80" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">引擎</text>
-          <rect x="204" y="42" width="170" height="46" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="289" y="64" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">conductor/task-view</text>
-          <text x="289" y="80" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">定义</text>
-          <rect x="388" y="42" width="160" height="46" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="468" y="64" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">daemon/daemon</text>
-          <text x="468" y="80" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">长活宿主</text>
-          <rect x="562" y="42" width="198" height="46" fill="none" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="1.5"/>
-          <text x="661" y="64" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#9C3A31" style="fill:var(--gap)">apps/cli/projections</text>
-          <text x="661" y="80" text-anchor="middle" font-size="11" fill="#9C3A31" style="fill:var(--gap)">有哪些投影</text>
-
-          <text x="20" y="138" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">DAEMON 本身</text>
-          <rect x="20" y="150" width="390" height="46" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="215" y="172" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">packages/daemon</text>
-          <text x="215" y="188" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">lock · heartbeat · work-loop · reconcile —— 零件</text>
-          <rect x="428" y="150" width="332" height="46" fill="none" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="1.5"/>
-          <text x="594" y="172" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#9C3A31" style="fill:var(--gap)">apps/cli → daemonCommand()</text>
-          <text x="594" y="188" text-anchor="middle" font-size="11" fill="#9C3A31" style="fill:var(--gap)">装配 —— 约 100 行把零件接起来</text>
-
-          <text x="390" y="228" text-anchor="middle" font-size="11.5" fill="#9C3A31" style="fill:var(--gap)">红色 = 住在 application 里的那一块</text>
-        </svg>
-      </div>
-      <figcaption><b>第一行散在四个包里，第二行两个。</b>数量不是发现 —— 最后一块落在哪里才是。第一行收拢进 <code>projector</code>，第二行并进 <code>daemon</code>，两行都不再以 application 收尾。outbox 投递本来是这里的第三行，这一稿把它拿掉了：因为它的答案不是「换个更好的家」。</figcaption>
-    </figure>
-
-    <div class="gap">
-      <h3>它已经付出的代价</h3>
-      <p><b>看板在跑 git。</b><code>apps/board/src/app/actions.ts</code> 从 <code>@lingtai/conductor/worktree</code> 导入 <code>git</code> 和 <code>stateDir</code> —— 一个页面伸手到编排器里去拿一个 shell 辅助函数，因为那是它唯一存在的地方。</p>
-      <p><b>两个缺口叠在一起。</b><code>#58</code> 今天早上合并了。它的 <code>close</code> 至今还没被算出来，因为 <code>approve</code> 之后没有任何东西推进投影 —— 而且就算算出来了也没人投递，因为投递器在五个入口里只有两个够得到。</p>
-      <p><b>「有哪些投影」是在 CLI 里决定的。</b>daemon 是被喂进去的 —— <code>startDaemon({ projections: Object.values(PROJECTIONS) })</code> —— 所以「看板为什么是旧的」答案取决于你从哪个入口进来（<code>#64</code>）。更糟的是：一个写好了却忘了加进那份名单的投影，没有表、没有 checkpoint、也不会让任何检查失败。<b>它和一个根本不存在的投影，从外部完全分辨不出来。</b></p>
-    </div>
-
-    <p class="sub-h">什么被删掉</p>
-    <div class="prop">
-      <h3>四处删除</h3>
-      <p style="opacity:.75"><b>四处全部落地，改名也落地了</b> —— outbox 在 2026-09-03（<code>442f513</code>），队列缓存、「退出前追平」和投影名单在 2026-09-04，四处改名和 <code>store</code> 的拆分在 2026-09-07。上面第 1&ndash;6 节画的是这一切<em>之前</em>的系统，outbox、队列和旧包名都还在图上。抽取那一步也在 2026-09-07 落地了，0022 至此全部建成，这几张图是它最后欠下的东西。</p>
-      <p><b><code>outbox</code> —— 表、投影、投递 worker、退避重试、死信、两个事件类型，散在 <code>conductor</code>、<code>daemon</code> 和 <code>apps/cli</code> 三个包里。全部只为三种调用：发评论、设标签、关 issue</b><br><code>conductor</code> 直接调 <code>github</code>，成败各 append 一条。没落地的，由 <code>reconcile</code> 收敛。</p>
-      <p><b>队列缓存 —— <code>syncQueued</code>、<code>queued</code> 行、<code>refreshQueue</code></b><br>要用的时候现问 GitHub。它的主要消费者本来就在每次读之前刚刚刷新过它。</p>
-      <p><b>「退出前追平一次」这个特例 —— <code>advanceBoard</code>、<code>catchUpProjections</code></b><br>每个 append 的宿主，在运行期间都持有一个 <code>projector</code>。一种行为，不是两种。</p>
-      <p><b>投影名单 —— <code>PROJECTIONS</code></b><br>只剩一个投影。只有一项的名单不是名单。</p>
-    </div>
-    <p>outbox 这处删除留了尾巴，写在这里。它里面有两样东西不是脚手架，必须有地方落。<b>第一样是 <code>labelsFor</code></b> —— 二十行代码，把一个工作项的状态换算成它的 issue 该带的标签：机器拿着它时是 <code>lingtai:working</code>，等你时是 <code>lingtai:waiting</code>，其余情况没有标签。<b>这就是「GitHub 该长什么样」的全部定义</b>，而那正是 <code>reconcile</code> 要用来收敛的东西，并且它是纯的。它属于 <code>conductor</code>，和其他关于工作项的判断放在一起。不纯的那一半留在右边：要和别人打在 issue 上的标签取并集，就得读 GitHub 的现状，所以那一步住在 <code>github</code>。<b>第二样是顶替 <code>OutboxDelivered</code> 和 <code>OutboxFailed</code> 的那对事件</b>：<code>IssueUpdated { project, issue, change, detail }</code> 和 <code>IssueUpdateFailed { project, issue, change, error }</code>，<code>change</code> 取 <code>comment</code>、<code>labels</code>、<code>closed</code> 之一。名词选 issue 而不是 outbox，因为队列马上就不存在了，而事件名不该背着一个实现细节。<b>失败那条事件要活过所有重试机制的删除</b> —— 旧回路 inline 调 <code>gh</code>，调用失败什么都不剩，事后分不清「我们没评论过」和「评论了但没用」。<b>留记录，不留机器。</b></p>
-
-    <p>队列这一处才是值得争论的，所以把理由写在这里。<code>conductorPass</code> 每一趟开头本来就已经向 GitHub 问过一次可跑集合，然后立刻从表里读回来 —— 这份缓存是同一趟 pass 内部的一个中转站。唯一因它持久化而受益的消费者是看板的 Queued 那一栏，而看板本来就是每次请求在服务端渲染的。而且正因为它<em>被存下来了</em>，两个入口对「要不要先刷新」产生了分歧：那就是 <code>#57</code>。把缓存拿掉，就没有什么可分歧的了。将来真的被速率限制咬到，缓存可以再加回来 —— 那时它会有一个理由，也会有人盯着它。</p>
-
-    <p class="sub-h">提案</p>
-    <p>十一个包，一条边界。<b>决策在线以上，碰外部世界的一切在线以下。</b>十一个名字里有八个已经以某种形式存在；三个是新增或抽出来的，而这三个都是某样东西不再是决策之后剩下来的。今天的包里有两个不在表上：<code>@lingtai/runtime</code> 并进 <code>agent</code> —— 它就是「启动它 · 听它说」的前半句；<code>@lingtai/hook</code> 原样不动 —— 它是种进工作树的编译二进制，不是库，<code>agent</code> 是跟它说话的那一端。</p>
-
-    <figure>
-      <div class="canvas">
-        <svg viewBox="0 0 780 440" role="img" aria-label="三个宿主横排在上方 —— daemon、cli 和 board —— 各有一条箭头向下指向下面的两列，标注「装配」。左边是纯包：conductor、domain、recipe、actions 和 agent-env，不用 Postgres、git 或网络就能跑。右边是碰外部世界的包：event-store、projector、github、repo、agent 和 secrets，有一条箭头指向左边的纯包列，标注「实现接口」。">
+        <svg viewBox="0 0 800 280" role="img" aria-label="运行期间，conductor 直接调用 GitHub 发表评论、设置标签和关闭 issue，并为每次尝试追加 IssueUpdated 或 IssueUpdateFailed。启动时 daemon 做收敛：算出日志说这个 issue 该带哪些标签，与 GitHub 当前所报的比较，把差额写回去。失败的评论无法计算，因此只作报告。">
           <defs>
             <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
             </marker>
           </defs>
 
-          <text x="20" y="24" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">宿主 HOSTS —— 下面两列都由它们装配</text>
-          <rect x="20" y="38" width="232" height="46" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="136" y="60" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">daemon</text>
-          <text x="136" y="76" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">长活 · 装配</text>
-          <rect x="274" y="38" width="232" height="46" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="390" y="60" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">cli</text>
-          <text x="390" y="76" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">跑一趟</text>
-          <rect x="528" y="38" width="232" height="46" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="644" y="60" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">board</text>
-          <text x="644" y="76" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">读 · 人的决定</text>
-          <line x1="190" y1="84" x2="190" y2="128" stroke="currentColor" opacity=".5" marker-end="url(#a6)"/>
-          <line x1="590" y1="84" x2="590" y2="128" stroke="currentColor" opacity=".5" marker-end="url(#a6)"/>
-          <text x="390" y="112" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">装配</text>
-          <text x="20" y="152" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">纯 PURE</text>
-          <text x="420" y="152" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">碰外部世界</text>
-          <rect x="20" y="162" width="340" height="174" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".35"/>
-          <rect x="420" y="162" width="340" height="254" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".35"/>
-          <rect x="32" y="172" width="316" height="34" fill="none" stroke="currentColor" opacity=".8" stroke-width="1.5"/>
-          <text x="48" y="194" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">conductor</text>
-          <text x="332" y="194" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">claim · actions · integrate</text>
-          <rect x="32" y="212" width="316" height="34" fill="none" stroke="currentColor" opacity=".8" stroke-width="1.5"/>
-          <text x="48" y="234" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">domain</text>
-          <text x="332" y="234" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">事件目录 · reducer · upcast</text>
-          <rect x="32" y="252" width="316" height="34" fill="none" stroke="currentColor" opacity=".8" stroke-width="1.5"/>
-          <text x="48" y="274" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">recipe</text>
-          <text x="332" y="274" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">加载 · 校验 · 解算</text>
-          <rect x="32" y="292" width="316" height="34" fill="none" stroke="currentColor" opacity=".8" stroke-width="1.5"/>
-          <text x="48" y="314" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">actions</text>
-          <text x="332" y="314" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">四种动作 · 证明跑了</text>
-          <rect x="432" y="172" width="316" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="2"/>
-          <text x="448" y="194" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">event-store</text>
-          <text x="732" y="194" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">append · subscribe</text>
-          <rect x="432" y="212" width="316" height="34" fill="none" stroke="#4C5B9A" style="stroke:var(--prop)" stroke-width="2"/>
-          <text x="448" y="234" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="#4C5B9A" style="fill:var(--prop)">projector</text>
-          <text x="732" y="234" text-anchor="end" font-size="10" fill="#4C5B9A" style="fill:var(--prop)" opacity=".8">checkpoint → task_view</text>
-          <rect x="432" y="252" width="316" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="2"/>
-          <text x="448" y="274" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">github</text>
-          <text x="732" y="274" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">读写 issue</text>
-          <rect x="432" y="292" width="316" height="34" fill="none" stroke="#4C5B9A" style="stroke:var(--prop)" stroke-width="2"/>
-          <text x="448" y="314" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="#4C5B9A" style="fill:var(--prop)">repo</text>
-          <text x="732" y="314" text-anchor="end" font-size="10" fill="#4C5B9A" style="fill:var(--prop)" opacity=".8">镜像 · 工作树 · 合并</text>
-          <rect x="432" y="332" width="316" height="34" fill="none" stroke="#4C5B9A" style="stroke:var(--prop)" stroke-width="2"/>
-          <text x="448" y="354" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="#4C5B9A" style="fill:var(--prop)">agent</text>
-          <text x="732" y="354" text-anchor="end" font-size="10" fill="#4C5B9A" style="fill:var(--prop)" opacity=".8">启动它 · 听它说</text>
-          <rect x="432" y="372" width="316" height="34" fill="none" stroke="currentColor" opacity=".8" stroke-width="1.5"/>
-          <text x="448" y="394" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">env</text>
-          <text x="732" y="394" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">process.env + &lt;project&gt;.env</text>
-          <line x1="412" y1="270" x2="368" y2="270" stroke="currentColor" opacity=".55" marker-end="url(#a6)"/>
-          <text x="390" y="256" text-anchor="middle" font-size="10" fill="currentColor" opacity=".6">实现接口</text>
-          <text x="390" y="432" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".55">左列不用 Postgres、git 或网络就能跑 · 靛蓝表示新增或拆出</text>
+          <text x="20" y="24" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">运行期间</text>
+          <rect x="20" y="36" width="350" height="96" fill="none" stroke="currentColor" opacity=".8"/>
+          <text x="34" y="58" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">tellGitHubAbout</text>
+          <text x="34" y="76" font-size="11.5" fill="currentColor" opacity=".7">评论 · 设标签 · 关 issue</text>
+          <text x="34" y="96" font-size="11.5" fill="currentColor" opacity=".7">每次尝试都把结果追加下来：</text>
+          <text x="34" y="114" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#96701F" style="fill:var(--brass)">IssueUpdated · IssueUpdateFailed</text>
+
+          <text x="34" y="152" font-size="11.5" fill="currentColor" opacity=".7">这里从不抛异常。一个没贴上的标签，不能</text>
+          <text x="34" y="169" font-size="11.5" fill="currentColor" opacity=".7">把一次真的并入变成一次失败的运行 ——</text>
+          <text x="34" y="186" font-size="11.5" fill="currentColor" opacity=".7">活是真干了的，说不是，才是更贵的那个</text>
+          <text x="34" y="203" font-size="11.5" fill="currentColor" opacity=".7">谎。</text>
+
+          <text x="430" y="24" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#2C6B67" style="fill:var(--flow)">DAEMON 下次启动时</text>
+          <rect x="430" y="36" width="350" height="96" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+          <text x="444" y="58" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">convergeIssues</text>
+          <text x="444" y="78" font-size="11.5" fill="currentColor" opacity=".75">目标 = labelsFor（日志折出的状态）</text>
+          <text x="444" y="96" font-size="11.5" fill="currentColor" opacity=".75">实际 = GitHub 此刻所报的</text>
+          <text x="444" y="116" font-size="11.5" fill="#2C6B67" style="fill:var(--flow)">写下去的是两者之差</text>
+
+          <line x1="370" y1="84" x2="424" y2="84" stroke="currentColor" opacity=".45" stroke-dasharray="4 4" marker-end="url(#a6)"/>
+
+          <text x="444" y="152" font-size="11.5" fill="currentColor" opacity=".75">· 有人手工修好的 issue，一个字都不用写</text>
+          <text x="444" y="169" font-size="11.5" fill="currentColor" opacity=".75">· 因三件事漂移的 issue，一趟就修好</text>
+          <text x="444" y="186" font-size="11.5" fill="currentColor" opacity=".75">· 没有尝试计数，所以没有东西会耗尽</text>
+
+          <rect x="20" y="224" width="760" height="44" fill="none" stroke="#9C3A31" style="stroke:var(--gap)" stroke-width="1.5"/>
+          <text x="34" y="243" font-size="12" fill="#9C3A31" style="fill:var(--gap)">评论无法计算。它的正文是一次性的 —— 一个提问、一个并入的 sha —— 日志里没有任何东西能让后来的一趟</text>
+          <text x="34" y="260" font-size="12" fill="#9C3A31" style="fill:var(--gap)">既重建它、<tspan font-style="italic">又重新判断</tspan>它此刻仍该被说出来。所以失败的评论只作报告、评为 warn，留给人处理。</text>
         </svg>
       </div>
-      <figcaption><b>宿主装配下面两列，而两列之间那条箭头指向左。</b>这样画是因为依赖真的是这个方向，而叠成一摞的层把它藏住了：<code>conductor</code> 要调 GitHub，于是读者看到纯的那一层往<em>上</em>去够一个适配器，规则看起来自破。其实不是 —— <code>conductor</code> 声明它需要的接口，右列提供实现，由宿主把两者接起来。<b>左列里没有任何东西点名右边的包。</b>三个包是新增或抽出来的 —— <code>projector</code>、<code>repo</code>、<code>agent</code> —— 每一个都是某样东西不再是决策之后剩下来的。<code>projector</code> 从 <code>event-store</code> 里分出来，因为一个认识 <code>WorkItemClaimed</code> 是什么意思的 event store，就不是 event store。</figcaption>
+      <figcaption><b>记录留下，机器拿走。</b>老回路是内联调用 <code>gh</code>，一次失败的调用什么都不留下，
+        事后没人分得清「我们从没评论过」和「我们评论了但没用」。这才是 outbox 真正买到的东西，
+        它被保留了下来 —— 以两个事件类型的形式。它<em>没有</em>买到的是重试：
+        那一整套机器所重试的失败，一次都没被观测到过。删除它所依据的论点是<b>目标是可计算的</b>，
+        而在 <code>#69</code> 之前，让这个论点成立的代码并不存在 —— 这正是
+        <code>doctor</code> 会有一项能永久失败、却没人可以把这份偏差交出去的检查的原因。</figcaption>
     </figure>
+  </section>
 
-    <p><b>接线不该手搓。</b>一个包声明接口、由宿主递给它一个实现，这就是依赖注入；今天的做法是把对象当参数传 —— <code>runOnce</code> 已经接收 <code>client</code>、<code>runtime</code>、<code>token</code> 和 <code>store</code>。这对<em>值</em>有效，对<em>生命周期</em>无效：必须有东西保证「为一趟运行打开的 projector，在运行结束时被关掉」，而且是在<b>每一条</b>退出路径上，包括那些提前的拒绝。今天没有任何东西保证这一点 —— 这正是为什么一个泄漏的 follower 会占着一条会话连接、让进程永远不退出。<b>Effect</b>（那个 TypeScript 库）正是为这道缝提议的：<code>Context.Tag</code> 给端口命名，<code>Layer</code> 提供实现，<code>Scope</code> 把获取到的资源绑到一段生命周期上 —— 于是<b>释放是结构性的，而不是靠记得</b>。这一页最后那个测试要的就是 <code>Layer</code>：把真的换成假的，同一个 <code>conductor</code> 在没有数据库的情况下跑起来。<b>代价是真实的，而且是这个项目特有的。</b>design.md §8 的立场是「不到具体的失败逼上门，不上仪式」，而预先引入一个框架正是那份清单要挡的形状；Effect 还有传染性 —— <code>conductor</code> 一旦返回 <code>Effect</code>，调用它的一切都得跟着。而这个仓库是<b>由 agent 写的</b>，一套陡峭的写法要在此后每一趟运行里重新付费。<b>所以：只在缝上用，不铺满。</b><code>domain</code>、<code>recipe</code>、<code>actions</code> 仍然是被 Effect 代码调用的普通函数；端口和 <code>conductor</code> 用 Effect；宿主在最外层调 <code>runPromise</code>。<b>这件事值得单独一份 ADR，而不是提案里的一行。</b></p>
+  <section>
+    <h2>代理拿到什么</h2>
+    <p class="lede">两个文件，合并、按 recipe 过滤，以 <code>0600</code> 落进工作树。
+      conductor 恰好跑在哪个 shell 里，不是一层。</p>
 
     <div class="tablewrap">
       <table>
         <thead>
-          <tr><th>包</th><th>拥有什么</th><th>今天在哪</th><th>改动</th></tr>
+          <tr><th>层</th><th>在哪</th><th>装什么</th><th>会到代理手上吗</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">domain</td><td>事件目录 · schema 版本 · upcast · reducer · 五个 point 的名字</td><td class="who"><code>@lingtai/core</code></td><td class="mv">改名 —— core 说的是「重要」，不是「是什么」</td></tr>
-          <tr><td class="k">recipe</td><td>加载 · 校验 · 解算</td><td class="who"><code>@lingtai/config</code></td><td class="mv">改名 —— recipe 不是「配置」</td></tr>
-          <tr><td class="k">actions</td><td>四种动作 · 跑它们 · 证明它们跑了</td><td class="who"><code>@lingtai/gates</code></td><td class="mv">改名 —— <code>end</code> 不 gate 任何东西</td></tr>
-          <tr><td class="k">conductor</td><td>pickup · claim · 跑 agent · 过 action · 集成 —— 只做决策</td><td class="who">15 个文件；约 2 400 行是 git、IPC 和投影</td><td class="mv">抽出 <code>repo</code> 和 <code>agent</code></td></tr>
-          <tr><td class="k">event-store</td><td>append · read · 从任意 seq 续读 —— 没有 <code>checkpoints</code> 表</td><td class="who"><code>@lingtai/store</code> 的一部分</td><td class="mv">保留，减去投影 runner</td></tr>
-          <tr><td class="k">projector</td><td><code>checkpoints</code> 表，以及折进 <code>task_view</code> 的那一步</td><td class="who">runner 在 store，定义在 conductor，名单在 <code>apps/cli</code></td><td class="mv">收拢成一个 —— 名单随之消失</td></tr>
-          <tr><td class="k">github</td><td>读写 issue</td><td class="who"><code>@lingtai/github</code> + CLI 里的 <code>deliverer()</code></td><td class="mv">吸收标签规则；投递器连同队列一起消失</td></tr>
-          <tr><td class="k">repo</td><td>镜像 · 工作树 · 分支 · push · 合并通道</td><td class="who">在 <code>conductor</code> 里 —— 看板从它 import git</td><td class="mv">抽出</td></tr>
-          <tr><td class="k">agent</td><td>启动 claude-code · hook socket 接住它说的话</td><td class="who"><code>@lingtai/runtime</code> + conductor 里的 hook socket</td><td class="mv">吸收 runtime；把 socket 抽出来</td></tr>
-          <tr><td class="k">env</td><td>两件规则相反的东西：机器凭据，以及 agent 的 allow/deny/required</td><td class="who"><code>@lingtai/env</code></td><td class="mv">暂缓 —— 拆分未定</td></tr>
-          <tr><td class="k">daemon</td><td>锁 · work loop · heartbeat · reconcile —— <em>以及装配</em></td><td class="who">零件在这里，装配在 <code>apps/cli</code></td><td class="mv">把装配吸收进来</td></tr>
+          <tr><td class="k">机器文件</td><td><code>~/.lingtai/env/&lt;project&gt;.env</code></td><td>这台机器能供给该项目的东西</td><td class="who">会 —— 除非它是 Lingtai 自己的</td></tr>
+          <tr><td class="k">项目文件</td><td>工作区的 <code>.env.local</code>，其次 <code>.env</code></td><td>仓库自己声明的东西</td><td class="who">会</td></tr>
+          <tr><td class="k">conductor 的 shell</td><td><code>process.env</code></td><td>你碰巧 export 了什么</td><td class="who">不会 —— 按决定，它不是一层</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>有一行要加个限定。<code>actions</code> 的职责里有「证明它们跑了」，而五个位置中有一个从来没跑过：<code>admit</code> 只被读一下，好把名字写进 <code>GatesResolved</code>，从没有人为它建过流水线。它和 <code>#58</code> 是同一个形状，至今没炸只是因为还没有任何 recipe 在那里声明过动作。今天下午合进来的 <code>gate-audit</code> 已经瞄准了它：第一个在 <code>admit</code> 上放动作的 recipe，会在那个 item 落地之后被告知 —— 它对合进去的东西没有产生任何影响。</p>
-
-    <p class="sub-h">顺序</p>
-    <ul class="rules steps">
-      <li><b>删掉 outbox。</b> <span>整份提案里最大的一处净减，而且是删除不是搬家。它顺便让 <code>projector</code> 只剩一张目标表。</span></li>
-      <li><b>删掉队列缓存。</b> <span><code>#56</code> 和 <code>#57</code> 都是缓存失效的 bug。它们随缓存一起消失。</span></li>
-      <li><b>一种行为，两个宿主。</b> <span>每个 append 的进程，在它活着的整段时间里都持有一个 <code>projector</code> —— daemon 本来就是，<code>lingtai run</code> 也变成这样。这是<b>把「退出前追平一次」这个特例删掉</b>，而不是在它旁边再加一套机制；<code>#64</code> 就是这样关掉的：事件驱动 projector，谁持有它都一样。<b>同一条日志上跑两个 projector 从此是常态，而它按构造就是安全的</b> —— <code>apply</code> 幂等，checkpoint 与它的写在同一个事务里推进，所以第二个只会发现没活可干。这一点本来就成立；它从边缘情况变成了设计本身。<b>board 是这条规则唯一够不到的宿主</b> —— 它的写是 request 级的，所以它 append 之后只能依赖 daemon。这可以接受，前提是它得说出来，而今天它没有：<em>live</em> 那个芯片报的是 SSE 连接是否打开，正是今早那个谎 —— 芯片写着 live，板子冻着。它该报的是投影的 lag 和心跳：<em>落后 7 条</em>，或者<em>没有 daemon</em>。<b>延迟一旦可见，延迟就没问题。</b></span></li>
-      <li><b>改名与拆分。</b> <span><code>store</code> → <code>event-store</code> + <code>projector</code>；<code>env</code> → <code>agent-env</code> + <code>secrets</code>；<code>config</code> → <code>recipe</code>；<code>gates</code> → <code>actions</code>；<code>core</code> → <code>domain</code>。机械操作，而且趁别的都不动时最便宜。</span></li>
-      <li><b>抽出 <code>repo</code> 和 <code>agent</code>。</b> <span>最大的一步。<code>conductor</code> 声明它需要的接口，两个包提供实现。用注入，不是搬文件。</span></li>
-      <li><b>扩宽 <code>reconcile</code>。</b> <span>启动时让四件事归位：投影追平、工作树清理、过期 claim 归还、GitHub 向日志说的样子收敛。</span></li>
-    </ul>
-
-    <p class="sub-h">提案之后</p>
-    <p>上面那四张图画的是今天真的在跑的系统，这里不会去改写它们 —— 一页描述着自己并不拥有的系统，正是这一页本身在讲的那种失败。其中两张的变化值得重画，而且两张都是因为<b>少了东西</b>而变。另外两张会怎样，列在表格后面。</p>
-
-    <figure>
-      <div class="canvas">
-        <svg viewBox="0 0 760 330" role="img" aria-label="提案之后的一个库两个宿主。lingtai daemon 进程持有一次 conductor pass，外加三件常驻工作：推进投影、心跳和 reconcile。lingtai run 进程持有同样的两件：取一件活、推进投影。两者调用同样的三个包：conductor、event-store 和 projector。">
-          <defs>
-            <marker id="a8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
-            </marker>
-          </defs>
-
-          <rect x="20" y="20" width="340" height="160" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
-          <text x="34" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai daemon</text>
-          <text x="34" y="61" font-size="11.5" fill="currentColor" opacity=".6">长活 · 持有一把咨询锁</text>
-          <rect x="34" y="76" width="150" height="34" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="109" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">取一件活</text>
-          <rect x="196" y="76" width="150" height="34" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="271" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">推进投影</text>
-          <rect x="34" y="120" width="150" height="34" fill="none" stroke="currentColor" opacity=".75"/>
-          <text x="109" y="142" text-anchor="middle" font-size="12.5" fill="currentColor">心跳</text>
-          <rect x="196" y="120" width="150" height="34" fill="none" stroke="currentColor" opacity=".75"/>
-          <text x="271" y="142" text-anchor="middle" font-size="12.5" fill="currentColor">reconcile</text>
-
-          <rect x="400" y="20" width="340" height="160" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
-          <text x="414" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai run</text>
-          <text x="414" y="61" font-size="11.5" fill="currentColor" opacity=".6">你的终端 · 跑一趟就退出</text>
-          <rect x="414" y="76" width="150" height="34" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="489" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">取一件活</text>
-          <rect x="576" y="76" width="150" height="34" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="651" y="98" text-anchor="middle" font-size="12.5" fill="currentColor">推进投影</text>
-          <line x1="414" y1="124" x2="726" y2="124" stroke="currentColor" stroke-dasharray="3 5" opacity=".3"/>
-          <text x="414" y="146" font-size="12" fill="currentColor" opacity=".6">剩下的差别只有「长活」本身：</text>
-          <text x="414" y="166" font-size="12" fill="currentColor" opacity=".6">心跳，以及启动时的 reconcile</text>
-
-          <line x1="190" y1="180" x2="190" y2="228" stroke="#96701F" style="stroke:var(--brass)" stroke-width="1.5" marker-end="url(#a8)" color="#96701F"/>
-          <line x1="570" y1="180" x2="570" y2="228" stroke="#96701F" style="stroke:var(--brass)" stroke-width="1.5" marker-end="url(#a8)" color="#96701F"/>
-
-          <rect x="20" y="232" width="720" height="76" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".4"/>
-          <rect x="32" y="244" width="225" height="52" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="144" y="266" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">conductor</text>
-          <text x="144" y="283" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">claim · actions · integrate</text>
-          <rect x="269" y="244" width="225" height="52" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="2"/>
-          <text x="381" y="266" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">event-store</text>
-          <text x="381" y="283" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">append · subscribe</text>
-          <rect x="506" y="244" width="222" height="52" fill="none" stroke="#4C5B9A" style="stroke:var(--prop)" stroke-width="2"/>
-          <text x="617" y="266" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="#4C5B9A" style="fill:var(--prop)">projector</text>
-          <text x="617" y="283" text-anchor="middle" font-size="10.5" fill="#4C5B9A" style="fill:var(--prop)">checkpoint → task_view</text>
-
-          <text x="380" y="324" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".55">repo 和 agent 由发起这趟运行的宿主注入</text>
-        </svg>
-      </div>
-      <figcaption><b>论点站得住，算术站不住。</b>标题说<em>一个</em>库，那从来就不成立 —— <code>lingtai run</code> 今天就直接调 store 去追平投影，<code>lingtai add</code> 也是经它 append 的。<b>三个共享包，两个宿主，一直如此。</b>真正把两个进程区分开的东西，缩到只剩「长活」本身：一个心跳，加一次启动时的 reconcile。取活和推进投影在两边<em>完全一样</em> —— <code>#64</code> 就是这样关掉的：<b>不是给 <code>lingtai run</code> 补第二套机制，而是把特例删掉</b> —— 事件驱动 projector，谁持有它都一样。<b>进程里的框是动词，包才是名词。</b><code>conductor pass</code> 难读，是因为它长得像名词，而你分不清它指的是包、是函数、还是一件工作。<code>projection follower</code> 有同样的毛病 —— 这一稿的第一次修法也一样：<em>跟随日志</em>名的是一种<b>能力</b>，而跟随日志正是 <code>event-store</code> 提供的东西。daemon 拿它去<em>做</em>的事，是把一批事件折叠、并在同一个事务里推进 checkpoint。<b>能力属于包，工作属于进程。</b></figcaption>
-    </figure>
-
-    <figure>
-      <div class="canvas">
-        <svg viewBox="0 0 780 300" role="img" aria-label="提案之后，谁改变状态。conductor、board、cli 和 agent 向 events 表 append。一个 projector 读它，写 task_view。那个不带事件就写队列的 syncQueued 例外没有了。">
-          <defs>
-            <marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
-            </marker>
-          </defs>
-
-          <text x="20" y="26" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">写入者</text>
-          <rect x="20" y="44" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="108" y="69" text-anchor="middle" font-size="12.5" fill="currentColor">conductor</text>
-          <rect x="20" y="100" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="108" y="125" text-anchor="middle" font-size="12.5" fill="currentColor">board</text>
-          <rect x="20" y="156" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
-          <text x="108" y="181" text-anchor="middle" font-size="12.5" fill="currentColor">cli</text>
-          <rect x="20" y="212" width="176" height="40" fill="none" stroke="currentColor" opacity=".8" stroke-dasharray="4 3"/>
-          <text x="108" y="237" text-anchor="middle" font-size="12.5" fill="currentColor">agent</text>
-
-          <line x1="196" y1="64" x2="292" y2="140" stroke="currentColor" opacity=".7" marker-end="url(#a7)"/>
-          <line x1="196" y1="120" x2="292" y2="146" stroke="currentColor" opacity=".7" marker-end="url(#a7)"/>
-          <line x1="196" y1="176" x2="292" y2="154" stroke="currentColor" opacity=".7" marker-end="url(#a7)"/>
-          <line x1="196" y1="232" x2="292" y2="162" stroke="currentColor" opacity=".7" stroke-dasharray="4 3" marker-end="url(#a7)"/>
-          <text x="243" y="98" text-anchor="middle" font-size="11" fill="currentColor" opacity=".55">append</text>
-
-          <rect x="300" y="112" width="170" height="86" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <text x="385" y="147" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="14" fill="currentColor">events</text>
-          <text x="385" y="168" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".6">依然是唯一的权威</text>
-
-          <text x="560" y="26" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="currentColor" opacity=".55">读取者</text>
-          <line x1="470" y1="155" x2="558" y2="155" stroke="#2C6B67" style="stroke:var(--flow)" color="#2C6B67" stroke-width="1.5" marker-end="url(#a7)"/>
-          <rect x="562" y="132" width="198" height="46" fill="none" stroke="#4C5B9A" style="stroke:var(--prop)" stroke-width="2"/>
-          <text x="661" y="152" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="#4C5B9A" style="fill:var(--prop)">projector</text>
-          <text x="661" y="168" text-anchor="middle" font-size="11" fill="#4C5B9A" style="fill:var(--prop)">→ task_view，没有别的</text>
-
-          <rect x="220" y="254" width="384" height="40" fill="none" stroke="#4C5B9A" style="stroke:var(--prop)" stroke-width="1.5" stroke-dasharray="5 4"/>
-          <text x="412" y="279" text-anchor="middle" font-size="11.5" fill="#4C5B9A" style="fill:var(--prop)">没有任何东西能不带事件地写 task_view</text>
-        </svg>
-      </div>
-      <figcaption><b>把这张和上面那张《谁改变状态》并排看。</b>写入者一样、日志一样 —— 两个投影变成一个，而那条「写队列、背后没有事件」的红色虚线<b>没有被任何东西顶替</b>。那条线是 <code>#56</code> 的源头，也是那张图的图注里说的「这一页其余所有内容」的源头。</figcaption>
-    </figure>
-
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th>存储</th><th>装了什么</th><th>谁写</th><th>可否重建</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="k">events</td><td>关于 Lingtai 做过什么的每一个事实</td><td class="who">conductor、board、cli、agent</td><td class="who">不能 —— 它就是源头</td></tr>
-          <tr><td class="k">checkpoints</td><td>投影读到哪儿了</td><td class="who"><code>projector</code></td><td class="who">可以</td></tr>
-          <tr><td class="k">task_view</td><td>看板的卡片</td><td class="who"><code>projector</code> —— 唯一的写入者</td><td class="who">可以 —— 整张表</td></tr>
-          <tr><td class="k">daemon_status</td><td>心跳</td><td class="who">daemon</td><td class="who">刻意放在日志之外</td></tr>
-          <tr><td class="k">~/.lingtai/repos</td><td>每个项目一份裸镜像</td><td class="who"><code>repo</code></td><td class="who">可以 —— 重新 clone</td></tr>
-          <tr><td class="k">~/.lingtai/worktrees</td><td>每次运行一份检出，也就是爆炸半径</td><td class="who"><code>repo</code> 和 <code>agent</code></td><td class="who">运行结束就删</td></tr>
-          <tr><td class="k">GitHub</td><td>有哪些 issue，它们带什么标签</td><td class="who">你，以及 <code>conductor</code></td><td class="who">不归我们重建</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p><b>八处变成七处，而且每一处派生的都变成完全可重建。</b><code>task_view</code> 那个「部分」没有了 —— 队列缓存一走，它就只是一次折叠，于是 <code>rebuild</code> 真的等于重建。</p>
-
-    <p class="sub-h">上面那四张图，各自会怎样</p>
     <ul class="rules">
-      <li><b>一个库，两个宿主</b> <span>上面已经重画。daemon 少一件常驻工作，活下来的里面两件改名，而 <code>lingtai run</code> 最后持有的，和 daemon 是同样的两件。</span></li>
-      <li><b>谁改变状态</b> <span>上面已经重画。两个投影变成一个，那条例外消失。</span></li>
-      <li><b>谁通知谁</b> <span><b>那条死路没有了。</b>一个触发器、一条通道、三个消费者 —— 不变。删掉的是底下那条红色箭头：一次不触发任何东西、谁也到达不了的 <code>task_view</code> 队列写入。队列缓存一走，就不存在绕过日志的写入了，于是那张图上的每一次变化，按构造都会到达三个消费者。</span></li>
-      <li><b>一个工作项，从头到尾</b> <span><b>一张图都不用改。</b>五个闸口位置是领域词汇，不是模块结构。只变一行：<code>end</code> 解析成一次直接调用，而不再是进一个队列。</span></li>
+      <li><b>recipe 决定，机器只是持有。</b> <span><code>env.allow</code> 和 <code>env.deny</code> 是过滤器，<code>env.required</code> 是检查 —— 声明了名字却没有值，会在认领任何东西<em>之前</em>就拒掉整个项目，也就是在花钱之前。</span></li>
+      <li><b><code>LINGTAI_</code> 开头的名字，永远不会从机器文件里过去。</b> <span>那个前缀是机器自己的命名空间。没有哪个被托管的应用会要一个这样的名字，所以某个项目的文件少了一行时，它拿到的是一个<em>缺失</em>的值 —— <code>required</code> 会大声拒绝 —— 而不是悄悄继承了 Lingtai 的。</span></li>
+      <li><b>项目保留自己的名字。</b> <span>项目文件里的 <code>DATABASE_URL</code> 就是那个项目的数据库，原样透过。<code>LINGTAI_DATABASE_URL</code> 是这个系统自己的日志，代理永远拿不到它。</span></li>
+      <li><b>这份清单不再写死在代码里。</b> <span>从前是一个 <code>RESERVED</code> 常量说了算。它随 <code>#60</code> 被删掉了：一道从 recipe 里看不见的护栏，就是一道从它所保护的那个仓库里审计不了的护栏。</span></li>
     </ul>
+  </section>
+
+  <section>
+    <h2>状态住在哪里</h2>
+    <p class="lede">七个地方。其中只有一个是权威的；其余都能重建、重取，或者直接扔掉。</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>存储</th><th>装什么</th><th>谁写</th><th>可重建</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">events</td><td>关于 Lingtai 做过什么的每一个事实</td><td class="who">conductor、看板、CLI、代理</td><td class="who">不 —— 它就是源头</td></tr>
+          <tr><td class="k">checkpoints</td><td>那个投影读到哪儿了</td><td class="who">projector，在折叠自己的事务里</td><td class="who">可以</td></tr>
+          <tr><td class="k">task_view</td><td>看板上的卡片</td><td class="who">projector，别无他者</td><td class="who">可以 —— <code>lingtai projection rebuild task_view</code></td></tr>
+          <tr><td class="k">daemon_status</td><td>心跳</td><td class="who">daemon</td><td class="who">刻意放在日志之外</td></tr>
+          <tr><td class="k">~/.lingtai/repos</td><td>每个项目一份裸镜像</td><td class="who">工作树置备</td><td class="who">可以 —— 重新 clone</td></tr>
+          <tr><td class="k">~/.lingtai/worktrees</td><td>每次运行一份检出，也就是爆炸半径</td><td class="who">代理</td><td class="who">运行结束即删；没删掉的由修复处理</td></tr>
+          <tr><td class="k">GitHub</td><td>有哪些 issue，以及它们贴着什么标签</td><td class="who">你，和每一次运行</td><td class="who">不归我们重建 —— 靠收敛</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:22px">从前在这里、现在不在的那一行是 <code>outbox</code>。
+      它的表在迁移 <code>20260904T2359_drop_outbox</code> 里被删掉了，
+      而 <code>task_view</code> 那一行也不再写着「以及队列缓存」。</p>
+  </section>
+
+  <section>
+    <h2>解释其余一切的那条规则</h2>
+    <p>有两个问题长得很像，其实不是一回事：<em>有哪些活存在</em>，和 <em>Lingtai 对它做了什么</em>。
+      GitHub 回答第一个，并且是它的权威 —— 这正是发现只读标签、什么都不存的原因，
+      也是 GitHub 不再提供某个 issue 时它就直接不再可跑的原因。第二个由日志回答，别的都不许。</p>
+    <p>这一页记下的每一个 bug，都是那条边界被越过却没说出口的地方：一份写进投影、背后却没有事件的队列；
+      一条跳过了它长驻孪生兄弟所做刷新的命令；一个在一个仓库里被声明、却在两边都没被执行的闸口点；
+      一个因为没人注意到目标是可计算的、于是去记住尝试的 outbox。</p>
+    <p>由此还得出一条读法：<b>行为上的断言由读 <code>events</code> 来定案</b>，
+      不是由对代码的推理来定案。一份引了 seq 号的发现，胜过一份讲道理的。</p>
+  </section>
+
+  <section>
+    <h2>还没关掉的</h2>
+    <p class="lede">用靛蓝标出；在这一页上它表示<em>今天为真、且尚未修</em> ——
+      与之相对的红色，标的是靠运行系统发现的东西。</p>
 
     <div class="prop">
-      <h3>判定这件事成没成的那个测试</h3>
-      <p>能不能给 <code>conductor</code> 一个假的 <code>repo</code>、一个假的 <code>agent</code>、一个假的 <code>event-store</code>，在没有数据库的情况下跑完一整趟 —— 产出「它想 append 哪些事件」和「它想做哪些调用」，交给测试去断言？</p>
-      <p>今天不能，而且 recipe 自己把话说明了：没有 <code>TEST_DATABASE_URL</code> 测试套件就拒绝启动，因为<em>每一个</em>测试都会 append 真实事件。仅这一个包里就有 23 处 append，分布在 6 个文件中。<b>如果搬完之后答案依然是「不能」，那就等于没搬</b> —— 不管目录列表长成什么样。</p>
+      <h3>把它写成事实，而不是留给以后被发现</h3>
+      <p><b><code>runOnce</code> 仍然是 <code>async</code>/<code>await</code>。</b>
+        <a href="decisions/0023-effect-at-the-boundary.md">0023</a> 说适配器包和 <code>conductor</code>
+        都是 Effect；今天只有接缝是。端口是 <code>Context.Tag</code>，projector 是
+        <code>Layer.scoped</code>，<code>run()</code> 的五处拒绝走的是带类型的错误通道 ——
+        再往下一行，<code>Effect.promise</code> 就把控制权交给了 754 行代码，
+        那里的释放由两个 <code>finally</code> 块把着，「每条出口都会追加」由一个兜底 catch 把着。
+        <code>#73</code>。</p>
+      <p><b><code>admit</code> 什么都不跑。</b>它是五个点之一，会被解析进 <code>GatesResolved</code>、
+        也画在看板上，却没有为它搭任何流水线。这和 <code>#58</code> 是同一句话 ——
+        所以 <code>gate-audit</code> 把它包含在内，而不是给它开例外。</p>
+      <p><b><code>seq</code> 不是无洞的。</b>Postgres 序列在 <code>INSERT</code> 执行时取号、
+        在事务提交时才公开，所以在并发写者下，订阅者可能看见 <code>seq</code> 6 而 5 还在途中，
+        推进到 6 的检查点会永远跳过 5。只要 conductor 是唯一写者，它就咬不到人。
+        <code>#4</code> 必须去解决它，而不是假设它不存在。</p>
+      <p><b>向前兼容只做到存储为止。</b>reducer 会忽略它不认识的事件类型，
+        所以旧投影能在新 conductor 下活下来。存储不会 —— 它在读的时候就抛，
+        所以实际上它先把这个事件拒了。目前这是刻意的，但这意味着那份宽容要等两边一致之后才真的存在。</p>
+      <p><b><code>tier: sandboxed</code> 还没做。</b>把整条工具链容器化本身就是一件独立的活；
+        第一个项目跑的是 <code>guarded</code>。</p>
     </div>
   </section>
 
   <footer>
-    依 <span class="m">aa3733f</span> · 2026-09-03 的代码绘制，并在 <span class="m">4a645bf</span> · 2026-09-04 修订。
-    组件名、事件名和闸口位置一律沿用 <span class="m">packages/</span> 里的写法；红色标出的缺口来自真实运行，不是设计。
-    靛蓝的一切都只是提案，尚未建成。英文原版见 <span class="m">doc/architecture.html</span>。
+    2026-09-03 依 <span class="m">aa3733f</span> 的代码绘制；2026-09-08 于
+    <span class="m">8f43cc3</span> 在 <a href="decisions/0022-the-seams.md">0022</a> 落地之后重写。
+    包名、事件名与闸口点均与 <span class="m">packages/</span> 中一致。
+    红色标的是来自真实运行的发现，不是设计；靛蓝标的是今天为真、且尚未修的东西。
   </footer>
 
 </div>

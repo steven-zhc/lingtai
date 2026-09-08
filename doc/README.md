@@ -1,11 +1,14 @@
 # Documentation
 
-**[architecture.html](architecture.html)** — one page, four diagrams: which
-processes exist, who appends to the log, who is told when it changes, and
-where every piece of state lives, plus a proposal for where the module seams
-should go. Open it in a browser. Also in Chinese:
-**[architecture.zh.html](architecture.zh.html)** — the same page, translated;
-a change to either belongs in both.
+**[architecture.html](architecture.html)** — one page, six diagrams: where the
+thirteen packages' seams are, which processes exist, who appends to the log,
+who is told when it changes, how a work item crosses the five points, and how
+GitHub is brought back into line. Then three tables: what an agent is given,
+where every piece of state lives, and what is still open. **Everything on it is
+drawn from code that exists** — the proposal section is gone, because
+[0022](decisions/0022-the-seams.md) was built. Open it in a browser. Also in
+Chinese: **[architecture.zh.html](architecture.zh.html)** — the same page,
+translated; a change to either belongs in both.
 
 Three kinds of thing live here, and the distinction matters.
 
