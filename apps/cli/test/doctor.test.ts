@@ -5,7 +5,7 @@
  * The last one does need it, and it is the one that matters — it is Phase 0's
  * exit criterion written as an assertion.
  */
-import { databaseUrl, directDatabaseUrl } from "@lingtai/store";
+import { databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
 import { describe, expect, it } from "vitest";
 import { formatReport, runDoctor } from "../src/doctor.ts";
 

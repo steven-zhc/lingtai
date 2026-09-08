@@ -1,4 +1,4 @@
-import { databaseUrl, directDatabaseUrl } from "@lingtai/store";
+import { databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
 import pg from "pg";
 for (const [label, get] of [["pooled", databaseUrl], ["direct", directDatabaseUrl]] as const) {
   let host = "?";

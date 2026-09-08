@@ -17,7 +17,7 @@
  * and records `DispatchRefused` when the combination cannot meet the tier — it
  * never silently downgrades. See doc/decisions/0007-dual-runtime.md.
  */
-import type { RuntimeId, Tier } from "@lingtai/core";
+import type { RuntimeId, Tier } from "@lingtai/domain";
 
 export interface RuntimeCapabilities {
   id: RuntimeId;

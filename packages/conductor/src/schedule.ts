@@ -30,13 +30,13 @@
  * it to an append-only log would make a restart inherit a grudge. A new pass
  * starts fresh, which is what you want after a fix.
  */
-import type { Recipe } from "@lingtai/config";
+import type { Recipe } from "@lingtai/recipe";
 import type { GitHubClient } from "@lingtai/github";
 import type { Runtime } from "@lingtai/runtime";
-import { type EventStore, eventStore } from "@lingtai/store";
-import { type ProjectState, reduceWorkItem } from "@lingtai/core";
+import { type EventStore, eventStore } from "@lingtai/event-store";
+import { type ProjectState, reduceWorkItem } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
-import { selectRunnable } from "./task-view.ts";
+import { selectRunnable } from "./queue.ts";
 import { type RunOnceResult, runOnce } from "./run-once.ts";
 import type { TokenSource } from "./worktree.ts";
 

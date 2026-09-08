@@ -9,6 +9,6 @@ export default defineConfig({
     // it the residue outlives the run, and `lingtai doctor`'s own test — which
     // asserts the whole database is green — fails on rows an earlier package's
     // tests left behind. See the file for what that looked like.
-    globalSetup: ["../../packages/store/test-support/teardown.ts"],
+    globalSetup: ["../../packages/event-store/test-support/teardown.ts"],
   },
 });

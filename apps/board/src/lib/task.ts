@@ -10,8 +10,8 @@
  * aggregates on purpose (design.md §4), and joining them is a reader's job
  * rather than a reducer's.
  */
-import { eventStore } from "@lingtai/store";
-import { GATE_POINTS, type Envelope } from "@lingtai/core";
+import { eventStore } from "@lingtai/event-store";
+import { GATE_POINTS, type Envelope } from "@lingtai/domain";
 
 export interface Finding {
   file: string;

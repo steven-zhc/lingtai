@@ -23,7 +23,8 @@
 // The subpath, not the barrel: importing the barrel pulls in the gate
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
-import { readTasks, selectRunnable, type TaskCard } from "@lingtai/conductor/task-view";
+import { readTasks, type TaskCard } from "@lingtai/projector/task-view";
+import { selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { currentRecipe, loadProjects } from "@lingtai/conductor/projects";
 import { githubApp, hasGitHubApp } from "@lingtai/env";

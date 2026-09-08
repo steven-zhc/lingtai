@@ -25,8 +25,8 @@
  * nobody checks — and the incident that motivated all of this was two work
  * items merging for real while their cards sat still, which nothing reported.
  */
-import type { Projection, ProjectionRunner } from "@lingtai/store";
-import { createProjectionRunner } from "@lingtai/store";
+import type { Projection, ProjectionRunner } from "@lingtai/projector";
+import { createProjectionRunner } from "@lingtai/projector";
 import { type DaemonLock, acquireDaemonLock } from "./lock.ts";
 
 export interface DaemonOptions {

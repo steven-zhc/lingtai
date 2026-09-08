@@ -30,7 +30,7 @@
  * clickable would be a small lie repeated every time.
  */
 import { spawn } from "node:child_process";
-import type { Envelope } from "@lingtai/core";
+import type { Envelope } from "@lingtai/domain";
 
 /** What the operator is being told, and where to go about it. */
 export interface Notification {

@@ -13,8 +13,9 @@
  * submodule but not the repository itself produced a day of 403s on CI, and
  * nothing anywhere said "wrong scope".
  */
-import { RECIPE_PATH, RecipeMissingError, resolveRecipe } from "@lingtai/config";
-import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/core";
+import { projectStream } from "@lingtai/domain";
+import { RECIPE_PATH, RecipeMissingError, resolveRecipe } from "@lingtai/recipe";
+import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/domain";
 import {
   NotInstalledError,
   createGitHubClient,
@@ -23,7 +24,7 @@ import {
   permissionGaps,
 } from "@lingtai/github";
 import { githubApp } from "@lingtai/env";
-import { eventStore } from "@lingtai/store";
+import { eventStore } from "@lingtai/event-store";
 
 export interface AddOptions {
   slug: string;
@@ -32,14 +33,6 @@ export interface AddOptions {
   /** Containment floor. `guarded` is what the first project runs at (0007). */
 }
 
-/**
- * A project's own stream: what Lingtai records *about* a project — its owner,
- * its base branch, and the hash of the recipe it last resolved. The recipe
- * itself is not here; it stays in the managed repository.
- */
-export function projectStream(project: string): string {
-  return `prj-${project}`;
-}
 
 export async function add(options: AddOptions, log = console.log): Promise<number> {
   const { owner, repo } = parseSlug(options.slug);

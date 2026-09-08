@@ -21,21 +21,22 @@
  * with a question. The old loop could end in silence in at least seven places;
  * that is the thing being replaced, so `finally` blocks here are not tidiness.
  */
-import { type ResolvedRecipe, parseDuration } from "@lingtai/config";
-import { type Tier, parsePayload } from "@lingtai/core";
-import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/gates";
+import { type ResolvedRecipe, parseDuration } from "@lingtai/recipe";
+import { type Tier, parsePayload } from "@lingtai/domain";
+import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
 import { type Runtime, missingForTier } from "@lingtai/runtime";
-import { type EventStore, eventStore } from "@lingtai/store";
+import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
-import { runnableNow, workItemStream } from "./discover.ts";
+import { workItemStream } from "@lingtai/domain";
+import { runnableNow } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { smokeTestFailClosed, writeHookWiring } from "./hook-config.ts";
 import { createHookServer } from "./hook-socket.ts";
 import { integrate } from "./integrate.ts";
-import { GATE_POINTS, type ProjectState } from "@lingtai/core";
+import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
 import { type AgentEnv, type TokenSource, git, provisionWorktree, removeWorktree, resolveAgentEnv, runnableEnv, stateDir } from "./worktree.ts";
 import { spawn } from "node:child_process";
 
@@ -133,7 +134,7 @@ export async function runOnce(options: RunOnceOptions): Promise<RunOnceResult> {
     // another is exactly the confusion 0005 exists to prevent.
     const from = options.project.base ?? (await options.client.defaultBranch());
     resolved = await (
-      await import("@lingtai/config")
+      await import("@lingtai/recipe")
     ).resolveRecipe((p, r) => options.client.fileAt(p, r), from);
   } catch (err) {
     // Refusing here is the point of 0005: an unreadable or non-compliant recipe

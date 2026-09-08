@@ -13,12 +13,12 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",
     "lingtai": "node apps/cli/src/lingtai.ts",
-    "contract:emit": "pnpm --filter @lingtai/store contract:emit",
-    "db:plan": "pnpm --filter @lingtai/store db:plan",
-    "db:init": "pnpm --filter @lingtai/store db:init",
-    "db:bootstrap": "pnpm --filter @lingtai/store db:bootstrap",
-    "db:migrate": "pnpm --filter @lingtai/store db:migrate",
-    "db:verify": "pnpm --filter @lingtai/store db:verify"
+    "contract:emit": "pnpm --filter @lingtai/event-store contract:emit",
+    "db:plan": "pnpm --filter @lingtai/event-store db:plan",
+    "db:init": "pnpm --filter @lingtai/event-store db:init",
+    "db:bootstrap": "pnpm --filter @lingtai/event-store db:bootstrap",
+    "db:migrate": "pnpm --filter @lingtai/event-store db:migrate",
+    "db:verify": "pnpm --filter @lingtai/event-store db:verify"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

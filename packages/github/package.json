@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lingtai/core": "workspace:*",
+    "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*"
   },
   "devDependencies": {

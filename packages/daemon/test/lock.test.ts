@@ -9,7 +9,7 @@
  * — or itself.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { taskViewProjection } from "@lingtai/conductor";
+import { taskViewProjection } from "@lingtai/projector";
 import { describe, expect, it } from "vitest";
 import { acquireDaemonLock, startDaemon } from "../src/index.ts";
 

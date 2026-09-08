@@ -5,13 +5,14 @@
  * or a network. `runnableNow` gets the real store anyway, because "it appends
  * nothing" is a claim about the log rather than about a return value.
  */
-import type { Recipe } from "@lingtai/config";
+import type { Recipe } from "@lingtai/recipe";
 import type { GitHubClient, Issue } from "@lingtai/github";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { directDatabaseUrl } from "@lingtai/env";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { considerIssue, kindOf, runnableNow, workItemStream } from "../src/index.ts";
+import { workItemStream } from "@lingtai/domain";
+import { considerIssue, kindOf, runnableNow } from "../src/index.ts";
 
 const recipe = {
   version: 1,

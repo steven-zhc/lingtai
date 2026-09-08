@@ -23,9 +23,9 @@
  * satisfies it with four functions and no network — which is the whole point of
  * a caller naming its own requirement.
  */
-import { parseWorkItemStream } from "./discover.ts";
-import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/core";
-import type { EventStore } from "@lingtai/store";
+import { parseWorkItemStream } from "@lingtai/domain";
+import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
+import type { EventStore } from "@lingtai/event-store";
 import { foreignLabels } from "./labels.ts";
 
 /** What this needs of GitHub, and nothing more. */

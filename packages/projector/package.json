@@ -1,0 +1,26 @@
+{
+  "name": "@lingtai/projector",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./task-view": "./src/task-view.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lingtai/domain": "workspace:*",
+    "@lingtai/env": "workspace:*",
+    "@lingtai/event-store": "workspace:*",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/pg": "^8.15.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

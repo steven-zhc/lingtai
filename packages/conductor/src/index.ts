@@ -10,9 +10,7 @@ export {
 export {
   considerIssue,
   kindOf,
-  parseWorkItemStream,
   runnableNow,
-  workItemStream,
   type Considered,
   type Offered,
   type RunnableNowOptions,
@@ -23,8 +21,6 @@ export {
   listProjectStreams,
   loadProject,
   loadProjects,
-  projectStream,
-  PROJECT_STREAM_PREFIX,
 } from "./projects.ts";
 export {
   DEFAULT_PRODUCTION_PATTERNS,
@@ -75,23 +71,15 @@ export {
 } from "./hook-config.ts";
 export {
   integrate,
-  integrationStream,
   type IntegrateOptions,
   type IntegrateResult,
 } from "./integrate.ts";
 export {
   DEFAULT_BACKOFF_MS,
-  DEFAULT_RETENTION_DAYS,
-  TASK_VIEW_TABLE,
-  readTasks,
   selectRunnable,
-  taskViewProjection,
-  type ReadTasksOptions,
   type Runnable,
   type RunnableOptions,
-  type TaskCard,
-  type TaskState,
-} from "./task-view.ts";
+} from "./queue.ts";
 export { renderPrompt, runOnce, type RunOnceOptions, type RunOnceResult } from "./run-once.ts";
 export {
   runQueue,
@@ -110,5 +98,5 @@ export {
   type TerminalOutcome,
   type UnresolvedEnd,
 } from "./end-point.ts";
-export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor, type LabelState } from "./labels.ts";
+export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
 export { tellGitHub, tellGitHubAbout, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";

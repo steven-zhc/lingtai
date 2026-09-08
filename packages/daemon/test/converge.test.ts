@@ -13,8 +13,8 @@
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
-import type { ProjectState } from "@lingtai/core";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import type { ProjectState } from "@lingtai/domain";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { convergeIssues, findIssueDrift } from "../src/index.ts";

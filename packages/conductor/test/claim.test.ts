@@ -6,7 +6,7 @@
  * produce exactly one winner**, and **an expired lease needs no cleanup**.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { claimWorkItem, releaseWorkItem } from "../src/index.ts";

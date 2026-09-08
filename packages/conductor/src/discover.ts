@@ -20,32 +20,11 @@
  * any `agent:*` label is one the old loop has touched, so Lingtai does not
  * discover it at all.
  */
-import type { Recipe } from "@lingtai/config";
-import { type WorkKind, WorkKind as WorkKindSchema } from "@lingtai/core";
+import type { Recipe } from "@lingtai/recipe";
+import { type WorkKind, WorkKind as WorkKindSchema } from "@lingtai/domain";
 import type { GitHubClient, Issue } from "@lingtai/github";
-
-/** `wi-{project}-{n}`, the work item's own stream. */
-export function workItemStream(project: string, externalRef: string | number): string {
-  return `wi-${project}-${externalRef}`;
-}
-
-/**
- * The inverse, beside its constructor so the two cannot drift.
- *
- * Null when the id is not one of ours. A project name may contain `-`, so the
- * split is on the *last* one — which is also why this is a function and not a
- * regex written out at each call site. It was three copies before `#69` needed
- * a fourth.
- */
-export function parseWorkItemStream(id: string): { project: string; issue: string } | null {
-  const body = id.startsWith("wi-") ? id.slice(3) : id;
-  const cut = body.lastIndexOf("-");
-  if (cut < 0) return null;
-  const project = body.slice(0, cut);
-  const issue = body.slice(cut + 1);
-  if (!project || !issue) return null;
-  return { project, issue };
-}
+// `workItemStream` and its inverse moved to `domain` (0022): the projector
+// needs them and must not depend on this package.
 
 const KINDS = new Set<string>(WorkKindSchema.options);
 

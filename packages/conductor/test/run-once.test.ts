@@ -15,10 +15,12 @@
  * claim, worktree, hook, run, diff, gates, merge and board, all genuinely
  * executed.
  */
+import { integrationStream, workItemStream } from "@lingtai/domain";
+import { createProjectionRunner, readTasks, taskViewProjection } from "@lingtai/projector";
 import { directDatabaseUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/runtime";
-import { createDb, createEventStore, createProjectionRunner, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,9 +29,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appendEndActions, approve, integrationStream, readTasks, reject, renderPrompt, runOnce, runQueue, taskViewProjection, waive, workItemStream } from "../src/index.ts";
-import type { GateAction, Recipe } from "@lingtai/config";
-import type { ProjectState } from "@lingtai/core";
+import { appendEndActions, approve, reject, renderPrompt, runOnce, runQueue, waive } from "../src/index.ts";
+import type { GateAction, Recipe } from "@lingtai/recipe";
+import type { ProjectState } from "@lingtai/domain";
 
 const exec = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));

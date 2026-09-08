@@ -40,7 +40,7 @@
  * check exists to surface rather than an exception to it: a recipe that names
  * actions there is being told they had no effect on what merged.
  */
-import { GATE_POINTS } from "@lingtai/core";
+import { GATE_POINTS } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import pg from "pg";
 import { splitWorkItem } from "./end-point.ts";

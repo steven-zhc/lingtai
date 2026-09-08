@@ -16,6 +16,20 @@ Three kinds of thing live here, and the distinction matters.
 | [`decisions/`](decisions/) | One decision per file, with its context and its consequences. **Append-only in spirit** — a decision that turns out wrong gets a new file that supersedes it, not an edit. |
 | [`experiments/`](experiments/) | Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument. |
 
+## The packages were renamed
+
+[0022](decisions/0022-the-seams.md) renamed four packages and split one, on
+2026-09-07. **The ADRs are not rewritten** — they are append-only in spirit and
+record the names that were in force when each was decided — so this is the map
+from what an older file says to what is on disk now.
+
+| an older ADR says | on disk now | why |
+|---|---|---|
+| `@lingtai/core` | `@lingtai/domain` | "core" names importance, not content |
+| `@lingtai/config` | `@lingtai/recipe` | a recipe is not "config" |
+| `@lingtai/gates` | `@lingtai/actions` | `end` gates nothing; it runs for effect |
+| `@lingtai/store` | `@lingtai/event-store` + `@lingtai/projector` | an event store offers resumption; it does not remember its readers |
+
 ## Decisions
 
 | | | |

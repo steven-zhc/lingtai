@@ -24,12 +24,12 @@
  *
  *   node --experimental-strip-types apps/cli/scripts/rung-1.ts <owner>/<repo>
  */
-import { resolveRecipe } from "@lingtai/config";
-import type { Envelope, ToAppend } from "@lingtai/core";
+import { resolveRecipe } from "@lingtai/recipe";
+import type { Envelope, ToAppend } from "@lingtai/domain";
 import { prepareWorktree, provisionWorktree, removeWorktree, resolveAgentEnv, runnableEnv } from "@lingtai/conductor";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
-import type { EventStore } from "@lingtai/store";
+import type { EventStore } from "@lingtai/event-store";
 
 const memory = (): EventStore & { events: Envelope[] } => {
   const events: Envelope[] = [];

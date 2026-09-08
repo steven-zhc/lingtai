@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
  * Loads the environment from the workspace root rather than from whichever
  * directory a command happened to start in.
  *
- * `dotenv/config` alone would only read `packages/store/.env`, which is wrong
+ * `dotenv/config` alone would only read `packages/event-store/.env`, which is wrong
  * twice over: the file belongs at the root, where the board and the CLI will
  * also want it, and it should be `.env.local` so that `.env.example` can stay
  * committed as the template.
@@ -65,7 +65,7 @@ function inTest(): boolean {
  * the variable rather than demanding it. They still have to obey the same rule
  * about which variable, and this is that rule, written once.
  *
- *   LINGTAI_TEST=1 pnpm --filter @lingtai/store db:bootstrap
+ *   LINGTAI_TEST=1 pnpm --filter @lingtai/event-store db:bootstrap
  *
  * is how the test database gets its schema.
  */

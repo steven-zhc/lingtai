@@ -8,7 +8,7 @@
  * spawned as a process, which is exactly how a runtime invokes it.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

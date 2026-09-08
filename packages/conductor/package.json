@@ -8,22 +8,23 @@
     "./projects": "./src/projects.ts",
     "./decide": "./src/approve.ts",
     "./worktree": "./src/worktree.ts",
-    "./task-view": "./src/task-view.ts",
     "./discover": "./src/discover.ts",
-    "./labels": "./src/labels.ts"
+    "./labels": "./src/labels.ts",
+    "./queue": "./src/queue.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@lingtai/config": "workspace:*",
-    "@lingtai/core": "workspace:*",
+    "@lingtai/actions": "workspace:*",
+    "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
-    "@lingtai/gates": "workspace:*",
+    "@lingtai/event-store": "workspace:*",
     "@lingtai/github": "workspace:*",
+    "@lingtai/projector": "workspace:*",
+    "@lingtai/recipe": "workspace:*",
     "@lingtai/runtime": "workspace:*",
-    "@lingtai/store": "workspace:*",
     "pg": "^8.16.3"
   },
   "devDependencies": {

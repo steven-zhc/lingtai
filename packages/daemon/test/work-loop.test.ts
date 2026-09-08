@@ -6,7 +6,7 @@
  * wakes it" is a claim about Postgres notifying, and "it does not replay
  * history" is a claim about where the subscription started.
  */
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { directDatabaseUrl } from "@lingtai/env";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

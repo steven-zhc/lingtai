@@ -43,9 +43,10 @@
  */
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/core";
+import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
-import { projectionLag, type EventStore, eventStore } from "@lingtai/store";
+import { type EventStore, eventStore } from "@lingtai/event-store";
+import { projectionLag } from "@lingtai/projector";
 import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
 import pg from "pg";

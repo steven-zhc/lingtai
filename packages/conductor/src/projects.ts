@@ -5,18 +5,13 @@
  * events, is a stream to fold rather than a projection to maintain. If that ever
  * stops being true it becomes one, which costs a truncate and a replay.
  */
-import { type ResolvedRecipe, resolveRecipe } from "@lingtai/config";
-import { type ProjectState, isRegistered, reduceProject } from "@lingtai/core";
+import { PROJECT_STREAM_PREFIX, projectStream } from "@lingtai/domain";
+import { type ResolvedRecipe, resolveRecipe } from "@lingtai/recipe";
+import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import type { GitHubClient } from "@lingtai/github";
-import { type EventStore, eventStore } from "@lingtai/store";
+import { type EventStore, eventStore } from "@lingtai/event-store";
 import pg from "pg";
-
-export const PROJECT_STREAM_PREFIX = "prj-";
-
-export function projectStream(project: string): string {
-  return `${PROJECT_STREAM_PREFIX}${project}`;
-}
 
 /** Every project stream that has ever been written to. */
 export async function listProjectStreams(url = databaseUrl()): Promise<string[]> {

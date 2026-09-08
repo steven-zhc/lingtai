@@ -16,7 +16,7 @@
  * and a standing accusation after one.
  */
 import { STALE_AFTER_MS, readStatus } from "@lingtai/daemon";
-import { projectionLag } from "@lingtai/store";
+import { projectionLag } from "@lingtai/projector";
 
 export interface Health {
   /** Events between the projection and the head. Null when it was never built. */

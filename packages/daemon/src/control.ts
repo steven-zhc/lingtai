@@ -27,8 +27,8 @@
  * quietly means Pause.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { type EventStore, eventStore } from "@lingtai/store";
-import { parsePayload } from "@lingtai/core";
+import { type EventStore, eventStore } from "@lingtai/event-store";
+import { parsePayload } from "@lingtai/domain";
 import pg from "pg";
 
 /** One stream for the whole installation. Control is not per-project. */

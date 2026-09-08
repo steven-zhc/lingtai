@@ -461,7 +461,7 @@ its cost is the log's length. After a few weeks that test crossed its 60s
 timeout and started failing for reasons unrelated to the code it covers.
 
 ```bash
-LINGTAI_TEST=1 pnpm --filter @lingtai/store db:reset-test
+LINGTAI_TEST=1 pnpm --filter @lingtai/event-store db:reset-test
 ```
 
 It refuses twice over if you point it at anything else: the flag has to be set,

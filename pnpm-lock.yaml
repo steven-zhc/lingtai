@@ -20,21 +20,24 @@ importers:
       '@lingtai/conductor':
         specifier: workspace:*
         version: link:../../packages/conductor
-      '@lingtai/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@lingtai/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@lingtai/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@lingtai/event-store':
+        specifier: workspace:*
+        version: link:../../packages/event-store
       '@lingtai/github':
         specifier: workspace:*
         version: link:../../packages/github
-      '@lingtai/store':
+      '@lingtai/projector':
         specifier: workspace:*
-        version: link:../../packages/store
+        version: link:../../packages/projector
       next:
         specifier: 16.3.3
         version: 16.3.3(@types/node@26.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -63,27 +66,30 @@ importers:
       '@lingtai/conductor':
         specifier: workspace:*
         version: link:../../packages/conductor
-      '@lingtai/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@lingtai/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@lingtai/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@lingtai/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@lingtai/event-store':
+        specifier: workspace:*
+        version: link:../../packages/event-store
       '@lingtai/github':
         specifier: workspace:*
         version: link:../../packages/github
+      '@lingtai/projector':
+        specifier: workspace:*
+        version: link:../../packages/projector
+      '@lingtai/recipe':
+        specifier: workspace:*
+        version: link:../../packages/recipe
       '@lingtai/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
-      '@lingtai/store':
-        specifier: workspace:*
-        version: link:../../packages/store
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -94,6 +100,28 @@ importers:
       '@types/pg':
         specifier: ^8.15.6
         version: 8.23.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/actions:
+    dependencies:
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@lingtai/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+      '@lingtai/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      '@types/node':
+        specifier: ^26.4.0
+        version: 26.4.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -103,27 +131,30 @@ importers:
 
   packages/conductor:
     dependencies:
-      '@lingtai/config':
+      '@lingtai/actions':
         specifier: workspace:*
-        version: link:../config
-      '@lingtai/core':
+        version: link:../actions
+      '@lingtai/domain':
         specifier: workspace:*
-        version: link:../core
+        version: link:../domain
       '@lingtai/env':
         specifier: workspace:*
         version: link:../env
-      '@lingtai/gates':
+      '@lingtai/event-store':
         specifier: workspace:*
-        version: link:../gates
+        version: link:../event-store
       '@lingtai/github':
         specifier: workspace:*
         version: link:../github
+      '@lingtai/projector':
+        specifier: workspace:*
+        version: link:../projector
+      '@lingtai/recipe':
+        specifier: workspace:*
+        version: link:../recipe
       '@lingtai/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@lingtai/store':
-        specifier: workspace:*
-        version: link:../store
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -134,50 +165,6 @@ importers:
       '@types/pg':
         specifier: ^8.15.6
         version: 8.23.1
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
-
-  packages/config:
-    dependencies:
-      '@lingtai/core':
-        specifier: workspace:*
-        version: link:../core
-      picomatch:
-        specifier: ^4.0.7
-        version: 4.0.7
-      yaml:
-        specifier: ^2.8.1
-        version: 2.9.0
-      zod:
-        specifier: ^4.5.4
-        version: 4.5.4
-    devDependencies:
-      '@types/node':
-        specifier: ^26.4.0
-        version: 26.4.0
-      '@types/picomatch':
-        specifier: ^4.0.2
-        version: 4.0.3
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
-
-  packages/core:
-    dependencies:
-      zod:
-        specifier: ^4.5.4
-        version: 4.5.4
-    devDependencies:
-      '@types/node':
-        specifier: ^26.4.0
-        version: 26.4.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -190,18 +177,21 @@ importers:
       '@lingtai/conductor':
         specifier: workspace:*
         version: link:../conductor
-      '@lingtai/core':
+      '@lingtai/domain':
         specifier: workspace:*
-        version: link:../core
+        version: link:../domain
       '@lingtai/env':
         specifier: workspace:*
         version: link:../env
+      '@lingtai/event-store':
+        specifier: workspace:*
+        version: link:../event-store
       '@lingtai/github':
         specifier: workspace:*
         version: link:../github
-      '@lingtai/store':
+      '@lingtai/projector':
         specifier: workspace:*
-        version: link:../store
+        version: link:../projector
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -212,6 +202,22 @@ importers:
       '@types/pg':
         specifier: ^8.15.5
         version: 8.23.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/domain:
+    dependencies:
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: ^26.4.0
+        version: 26.4.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -235,21 +241,33 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
-  packages/gates:
+  packages/event-store:
     dependencies:
-      '@lingtai/config':
+      '@lingtai/domain':
         specifier: workspace:*
-        version: link:../config
-      '@lingtai/core':
+        version: link:../domain
+      '@lingtai/env':
         specifier: workspace:*
-        version: link:../core
-      '@lingtai/runtime':
-        specifier: workspace:*
-        version: link:../runtime
+        version: link:../env
+      '@prisma/orm-postgres':
+        specifier: 8.0.0-rc.8
+        version: 8.0.0-rc.8(@prisma/cli-engine@0.2.3(magicast@0.5.4))(magicast@0.5.4)(typanion@3.14.0)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+      pg:
+        specifier: ^8.16.3
+        version: 8.23.0
     devDependencies:
+      '@prisma/cli-engine':
+        specifier: 0.2.3
+        version: 0.2.3(magicast@0.5.4)
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.23.1
+      prisma:
+        specifier: 8.0.0-rc.10
+        version: 8.0.0-rc.10(@types/node@26.4.0)(@types/react@19.2.18)(@vercel/nft@1.11.0)(magicast@0.5.4)(pg@8.23.0)(typanion@3.14.0)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(vitest@4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(ws@8.21.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -259,9 +277,9 @@ importers:
 
   packages/github:
     dependencies:
-      '@lingtai/core':
+      '@lingtai/domain':
         specifier: workspace:*
-        version: link:../core
+        version: link:../domain
       '@lingtai/env':
         specifier: workspace:*
         version: link:../env
@@ -288,15 +306,27 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
-  packages/runtime:
+  packages/projector:
     dependencies:
-      '@lingtai/core':
+      '@lingtai/domain':
         specifier: workspace:*
-        version: link:../core
+        version: link:../domain
+      '@lingtai/env':
+        specifier: workspace:*
+        version: link:../env
+      '@lingtai/event-store':
+        specifier: workspace:*
+        version: link:../event-store
+      pg:
+        specifier: ^8.16.3
+        version: 8.23.0
     devDependencies:
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.23.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -304,33 +334,43 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
-  packages/store:
+  packages/recipe:
     dependencies:
-      '@lingtai/core':
+      '@lingtai/domain':
         specifier: workspace:*
-        version: link:../core
-      '@lingtai/env':
-        specifier: workspace:*
-        version: link:../env
-      '@prisma/orm-postgres':
-        specifier: 8.0.0-rc.8
-        version: 8.0.0-rc.8(@prisma/cli-engine@0.2.3(magicast@0.5.4))(magicast@0.5.4)(typanion@3.14.0)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
-      pg:
-        specifier: ^8.16.3
-        version: 8.23.0
+        version: link:../domain
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
-      '@prisma/cli-engine':
-        specifier: 0.2.3
-        version: 0.2.3(magicast@0.5.4)
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0
-      '@types/pg':
-        specifier: ^8.15.6
-        version: 8.23.1
-      prisma:
-        specifier: 8.0.0-rc.10
-        version: 8.0.0-rc.10(@types/node@26.4.0)(@types/react@19.2.18)(@vercel/nft@1.11.0)(magicast@0.5.4)(pg@8.23.0)(typanion@3.14.0)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(vitest@4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(ws@8.21.3)
+      '@types/picomatch':
+        specifier: ^4.0.2
+        version: 4.0.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/runtime:
+    dependencies:
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: ^26.4.0
+        version: 26.4.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

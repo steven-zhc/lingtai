@@ -1,0 +1,36 @@
+{
+  "name": "@lingtai/event-store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test-support": "./test/support.ts"
+  },
+  "scripts": {
+    "contract:emit": "prisma contract emit",
+    "db:plan": "prisma migration plan",
+    "db:init": "prisma db init",
+    "db:migrate": "prisma db migrate",
+    "db:verify": "prisma db verify",
+    "db:status": "prisma migration status",
+    "typecheck": "tsc --noEmit",
+    "db:bootstrap": "node scripts/bootstrap.mjs",
+    "test": "vitest run",
+    "db:reset-test": "node scripts/reset-test-log.mjs"
+  },
+  "dependencies": {
+    "@lingtai/domain": "workspace:*",
+    "@lingtai/env": "workspace:*",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@prisma/cli-engine": "0.2.3",
+    "@types/node": "^26.4.0",
+    "@types/pg": "^8.15.6",
+    "prisma": "8.0.0-rc.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

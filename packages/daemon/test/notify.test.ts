@@ -6,7 +6,7 @@
  * how the useful ones stop being read) and that the message carries the
  * question rather than the fact.
  */
-import type { Envelope } from "@lingtai/core";
+import type { Envelope } from "@lingtai/domain";
 import { describe as describeTest, expect, it } from "vitest";
 import {
   DEFAULT_SUBSCRIPTIONS,

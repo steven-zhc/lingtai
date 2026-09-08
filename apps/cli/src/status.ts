@@ -7,9 +7,10 @@
  * worked has a reason, and until now the reason was never written down anywhere.
  */
 import { hasGitHubApp, githubApp } from "@lingtai/env";
-import { currentRecipe, loadProjects, readTasks, runnableNow, selectRunnable } from "@lingtai/conductor";
+import { currentRecipe, loadProjects, runnableNow, selectRunnable } from "@lingtai/conductor";
+import { readTasks } from "@lingtai/projector";
 import { createGitHubClient } from "@lingtai/github";
-import type { WorkKind } from "@lingtai/core";
+import type { WorkKind } from "@lingtai/domain";
 
 export interface StatusOptions {
   /** Restrict to one project. */

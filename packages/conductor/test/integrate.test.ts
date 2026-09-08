@@ -10,8 +10,9 @@
  * The remote is a bare repository in a temp directory. Real git, real merges,
  * real conflicts, no network.
  */
+import { integrationStream } from "@lingtai/domain";
 import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,7 +20,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ensureMirror, integrate, integrationStream } from "../src/index.ts";
+import { ensureMirror, integrate } from "../src/index.ts";
 
 const exec = promisify(execFile);
 const authored = {

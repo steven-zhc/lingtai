@@ -27,7 +27,7 @@
  * A `health` frame goes out on connect, on the keep-alive tick, and shortly
  * after a burst of appends settles.
  */
-import { subscribe } from "@lingtai/store";
+import { subscribe } from "@lingtai/event-store";
 import { readHealth } from "@/lib/health";
 
 export const dynamic = "force-dynamic";

@@ -44,13 +44,19 @@
 // Subpaths, never the barrel. `@lingtai/conductor`'s index pulls in the gate
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
-import { foreignLabels, labelsFor, type LabelState } from "@lingtai/conductor/labels";
+import { foreignLabels, labelsFor } from "@lingtai/conductor/labels";
 import { loadProjects } from "@lingtai/conductor/projects";
-import { parseWorkItemStream } from "@lingtai/conductor/discover";
-import { reduceWorkItem, parsePayload, type ProjectState, type WorkItemStatus } from "@lingtai/core";
+import {
+  parseWorkItemStream,
+  parsePayload,
+  reduceWorkItem,
+  type LabelState,
+  type ProjectState,
+  type WorkItemStatus,
+} from "@lingtai/domain";
 import { databaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { type EventStore, eventStore } from "@lingtai/store";
+import { type EventStore, eventStore } from "@lingtai/event-store";
 import pg from "pg";
 
 /**

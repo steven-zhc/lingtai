@@ -7,11 +7,11 @@ const config: NextConfig = {
   // with no build step (doc/decisions/0010), so Turbopack compiles them here.
   transpilePackages: [
     "@lingtai/conductor",
-    "@lingtai/config",
-    "@lingtai/core",
+    "@lingtai/recipe",
+    "@lingtai/domain",
     "@lingtai/env",
     "@lingtai/github",
-    "@lingtai/store",
+    "@lingtai/event-store",
   ],
 };
 

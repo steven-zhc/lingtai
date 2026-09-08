@@ -12,10 +12,11 @@
   },
   "dependencies": {
     "@lingtai/conductor": "workspace:*",
-    "@lingtai/core": "workspace:*",
+    "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
+    "@lingtai/event-store": "workspace:*",
     "@lingtai/github": "workspace:*",
-    "@lingtai/store": "workspace:*",
+    "@lingtai/projector": "workspace:*",
     "pg": "^8.16.3"
   },
   "devDependencies": {

@@ -22,8 +22,8 @@
  * per-run, and a request carrying an unknown run id is a misconfiguration rather
  * than a permission.
  */
-import { type PayloadOf, parsePayload } from "@lingtai/core";
-import { type EventStore, eventStore } from "@lingtai/store";
+import { type PayloadOf, parsePayload } from "@lingtai/domain";
+import { type EventStore, eventStore } from "@lingtai/event-store";
 import { mkdir, rm } from "node:fs/promises";
 import { type Server, createServer } from "node:net";
 import { dirname } from "node:path";

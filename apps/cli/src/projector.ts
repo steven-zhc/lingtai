@@ -30,8 +30,8 @@
  * which is exactly what those paths need and what a pair of statements would
  * not give them.
  */
-import { taskViewProjection } from "@lingtai/conductor";
-import { createProjectionRunner } from "@lingtai/store";
+import { taskViewProjection } from "@lingtai/projector";
+import { createProjectionRunner } from "@lingtai/projector";
 
 /**
  * Runs `work` with the projections following the log, and releases them after.

@@ -17,19 +17,7 @@
  * on an issue is somebody else's and is left alone.
  */
 
-/**
- * The states a label set can be asked for.
- *
- * The same five `task_view` folds to, declared *here* rather than imported from
- * the projection: this file has no imports at all, which is what lets the board
- * and the daemon reach it without dragging Postgres in behind it.
- *
- * A union rather than `string`, since `#71`. Every unlisted state falls to "no
- * labels", so with a `string` a typo and a deliberate clear were the same
- * expression — and the one state nobody ever passed went unnoticed for the
- * whole life of the outbox.
- */
-export type LabelState = "queued" | "running" | "gates" | "waiting" | "landed";
+import type { LabelState } from "@lingtai/domain";
 
 /** Every label Lingtai owns starts with this. Everything else is somebody else's. */
 export const LINGTAI_LABEL_PREFIX = "lingtai:";

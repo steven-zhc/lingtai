@@ -13,7 +13,7 @@
  * "what is happening"; this answers "what exactly was appended", which is a
  * debugging question and should look like one.
  */
-import { eventStore } from "@lingtai/store";
+import { eventStore } from "@lingtai/event-store";
 
 const id = process.argv[2] ?? "";
 if (!id) {

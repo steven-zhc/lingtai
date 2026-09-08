@@ -31,12 +31,12 @@ import {
   runnableEnv,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
-import { isEventType } from "@lingtai/core";
+import { isEventType } from "@lingtai/domain";
 import { STALE_AFTER_MS, findOrphans, readControl, readStatus } from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/runtime";
-import { projectionLag } from "@lingtai/store";
+import { projectionLag } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -272,7 +272,7 @@ async function schema(url: string): Promise<CheckResult[]> {
         detail:
           ruleNames.length === 2
             ? "UPDATE and DELETE on events do nothing"
-            : `only ${ruleNames.join(", ") || "no"} rule(s) present — run pnpm --filter @lingtai/store db:bootstrap`,
+            : `only ${ruleNames.join(", ") || "no"} rule(s) present — run pnpm --filter @lingtai/event-store db:bootstrap`,
       });
 
       const trig = await c.query(
@@ -517,7 +517,8 @@ const DEFERRED: { name: string; detail: string }[] = [
     detail:
       "per repository: lingtai add checks the App's permissions before it records anything, so the " +
       "gap a startup check would look for stops the one command that can act on it. Labels are " +
-      "written out by the github_mirror projection and never read back, so there is no drift to find",
+      "computed from the work item's state and written whole, and reconcile converges what did not " +
+      "land (#69) — so label drift has an owner rather than needing a check here",
   },
 ];
 
@@ -888,7 +889,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   results.push({
     name: "packages load under Node",
     status: "ok",
-    // Not a freebie: this process imported @lingtai/core, /config and /store
+    // Not a freebie: this process imported @lingtai/domain, /config and /store
     // through Node's type stripping to get here. A `.js` specifier in a barrel or
     // a constructor parameter property would have stopped it, and neither `tsc`
     // nor a board build notices either. See doc/decisions/0010.

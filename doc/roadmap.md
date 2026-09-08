@@ -29,8 +29,8 @@ Two sequencing constraints drive the whole shape:
 **Goal.** The parts that need no agent, no GitHub and no judgement: the log, the
 projections, and a command that tells you what is broken.
 
-Already done and committed: repository, `@lingtai/core` event catalogue,
-`@lingtai/config` recipe schema, the Postgres contract under Prisma 8 with
+Already done and committed: repository, `@lingtai/domain` event catalogue,
+`@lingtai/recipe` recipe schema, the Postgres contract under Prisma 8 with
 its migration applied, the Next.js board shell, the decision records, and the
 log's write side — `append` / `read` / `readAll` with optimistic concurrency
 (#1) — and the subscriber, which reconnects and resumes without gap or duplicate

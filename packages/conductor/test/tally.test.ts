@@ -8,7 +8,7 @@
  * `0 landed` over a merge and exited 1 on the count.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tallyPass } from "../src/index.ts";

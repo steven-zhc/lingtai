@@ -6,8 +6,8 @@
  * nothing about it needs a merge lane, a worktree or GitHub. The path that
  * lands an item through an approval is exercised for real in `run-once.test.ts`.
  */
-import type { GateAction } from "@lingtai/config";
-import type { Envelope } from "@lingtai/core";
+import type { GateAction } from "@lingtai/recipe";
+import type { Envelope } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import { resolveEndActions } from "../src/end-point.ts";
 

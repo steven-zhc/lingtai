@@ -20,8 +20,8 @@
  */
 import { verifyWebhook, DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER } from "@lingtai/github";
 import { CONTROL_STREAM } from "@lingtai/daemon";
-import { eventStore } from "@lingtai/store";
-import { parsePayload } from "@lingtai/core";
+import { eventStore } from "@lingtai/event-store";
+import { parsePayload } from "@lingtai/domain";
 
 export const dynamic = "force-dynamic";
 

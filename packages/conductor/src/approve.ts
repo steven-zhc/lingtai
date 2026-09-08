@@ -17,11 +17,11 @@
  * than two vocabularies for one idea. What is here is what makes `--no-merge`
  * mean something before then.
  */
-import { type GateAction, resolveRecipe } from "@lingtai/config";
-import { parsePayload, reduceRun, reduceWorkItem } from "@lingtai/core";
+import { type GateAction, resolveRecipe } from "@lingtai/recipe";
+import { parsePayload, reduceRun, reduceWorkItem } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { type EventStore, eventStore } from "@lingtai/store";
-import { workItemStream } from "./discover.ts";
+import { type EventStore, eventStore } from "@lingtai/event-store";
+import { workItemStream } from "@lingtai/domain";
 import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";

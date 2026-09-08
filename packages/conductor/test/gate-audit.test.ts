@@ -12,12 +12,12 @@
  * nobody's approval.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { parsePayload } from "@lingtai/core";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/store";
+import { parsePayload } from "@lingtai/domain";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { landedWithoutGatePoints } from "../src/gate-audit.ts";
-import { workItemStream } from "../src/discover.ts";
+import { workItemStream } from "@lingtai/domain";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();

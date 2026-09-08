@@ -38,10 +38,11 @@
  * A project that configures no `end` at all still writes nothing. There the
  * skip is the user's decision, and `GatesResolved` already records it.
  */
-import type { GateAction } from "@lingtai/config";
-import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/core";
+import { workItemStream } from "@lingtai/domain";
+import type { GateAction } from "@lingtai/recipe";
+import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
-import type { EventStore } from "@lingtai/store";
+import type { EventStore } from "@lingtai/event-store";
 import pg from "pg";
 
 /**

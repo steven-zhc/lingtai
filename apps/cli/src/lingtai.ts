@@ -6,18 +6,18 @@
  * not being built until a specific failure demands them, and a dependency for
  * three subcommands is exactly the kind of thing it is warning about.
  *
- * Everything here loads `@lingtai/store`, which loads the environment from
- * the repository root — see `packages/store/src/env.ts`. Never read
+ * Everything here loads `@lingtai/event-store`, which loads the environment from
+ * the repository root — see `packages/event-store/src/env.ts`. Never read
  * `process.env` for a connection string directly.
  */
+import { createProjectionRunner, projectionLag } from "@lingtai/projector";
 import {
-  createProjectionRunner,
   databaseUrl,
   directDatabaseUrl,
-  projectionLag,
-} from "@lingtai/store";
-import { loadProjects, taskViewProjection } from "@lingtai/conductor";
-import type { Tier } from "@lingtai/core";
+} from "@lingtai/event-store";
+import { loadProjects } from "@lingtai/conductor";
+import { taskViewProjection } from "@lingtai/projector";
+import type { Tier } from "@lingtai/domain";
 import {
   HEARTBEAT_MS,
   beat,

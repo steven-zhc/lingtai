@@ -13,9 +13,10 @@
  * the two things worth asserting are that the work sees a current projection
  * *during* it, and that the process can still exit afterwards.
  */
-import { readTasks } from "@lingtai/conductor";
+import { readTasks } from "@lingtai/projector";
 import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, projectionLag, type Db, type EventStore } from "@lingtai/store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { projectionLag } from "@lingtai/projector";
 import { execFile } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

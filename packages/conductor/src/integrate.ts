@@ -25,16 +25,12 @@
  * against one base serialise in Postgres, and a process that dies holding the
  * lock drops it when its connection closes — there is nothing to unwind.
  */
-import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/core";
+import { integrationStream } from "@lingtai/domain";
+import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/domain";
 import { directDatabaseUrl } from "@lingtai/env";
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/store";
+import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { type TokenSource, git, stateDir, worktreePath } from "./worktree.ts";
-
-/** `int-{project}-{base}` — one lane per base branch, forever. */
-export function integrationStream(project: string, base: string): string {
-  return `int-${project}-${base.replace(/\//g, ".")}`;
-}
 
 export interface IntegrateOptions {
   project: string;

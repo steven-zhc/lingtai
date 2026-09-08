@@ -30,7 +30,7 @@ import {
 import { tellGitHubAbout } from "@lingtai/conductor";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { eventStore } from "@lingtai/store";
+import { eventStore } from "@lingtai/event-store";
 import { withProjector } from "./projector.ts";
 
 export interface EndReplayOptions {

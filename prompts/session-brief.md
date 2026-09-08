@@ -78,7 +78,7 @@ A real environment variable beats both. Use `databaseUrl()` and
 pnpm install
 pnpm contract:emit                              # offline
 pnpm typecheck                                  # all four packages
-pnpm --filter @lingtai/store db:bootstrap    # 10 assertions against the live database
+pnpm --filter @lingtai/event-store db:bootstrap    # 10 assertions against the live database
 ```
 
 `db:bootstrap` is the one that catches real breakage — it asserts the append-only
