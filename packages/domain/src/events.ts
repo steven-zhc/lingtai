@@ -314,6 +314,66 @@ export const IntegrationSucceeded = z.object({
   mergeCommit: z.string(),
 });
 
+// -------------------------------------------------------------- repair ----
+
+/**
+ * A failure of the managed repository's bought one agent.
+ *
+ * **Not a sixth gate point** ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)).
+ * The five stay closed; this is what happens *after* a failure, and the repair
+ * it buys is an ordinary run — same claim, same worktree, same gates. The only
+ * thing that distinguishes it is that its prompt was told what went wrong.
+ *
+ * On the **work item's** stream, immediately before the release that puts it
+ * back in the queue, because that ordering is the whole mechanism: the fold
+ * sees a repair pending, and the next claim is that repair.
+ *
+ * Three fields carry the bound, and all three are needed (0025 §3):
+ *
+ *   `fingerprint`  the failure, hashed. One agent per **distinct** failure, not
+ *                  one per pass — a second `conflict` on the same files is the
+ *                  same failure and buys nothing.
+ *   `attempt`      1-based, against the recipe's ceiling.
+ *   `runId`        the run that failed. A repair whose own run fails is
+ *                  recognisable from this, and does not buy an analysis of the
+ *                  analysis.
+ *
+ * `detail` is the refusal verbatim, not a summary of it: the raw failure has to
+ * stay reachable, which is the `#112` complaint inverted.
+ */
+export const RepairRequested = z.object({
+  /** The run whose failure bought this. */
+  runId: z.string(),
+  reason: RefusalReason,
+  detail: z.string(),
+  fingerprint: z.string(),
+  attempt: z.number().int().positive(),
+});
+
+/**
+ * A failure that bought nothing, and why.
+ *
+ * Appended beside the block rather than instead of it, because **an item whose
+ * integration failed must never be left with no path forward**. A card that
+ * says only `conflict: agent/112 does not merge into develop` is the thing
+ * `#84` is about; one that also says *no repair: this is Lingtai's own failure
+ * and an agent has nothing it could change* tells an operator what is left to
+ * do.
+ *
+ * Every decline is recorded, including the ordinary one where a recipe simply
+ * does not repair. "Nothing happened because nobody asked for it" and "nothing
+ * happened and we do not know why" are the two things a log exists to keep
+ * apart.
+ */
+export const RepairDeclined = z.object({
+  runId: z.string(),
+  reason: RefusalReason,
+  detail: z.string(),
+  fingerprint: z.string(),
+  /** The sentence the card shows. Names the rule that refused, not just "no". */
+  why: z.string(),
+});
+
 // --------------------------------------------------------------- control ----
 
 /**
@@ -544,6 +604,8 @@ export const EVENTS = {
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,
+  RepairRequested,
+  RepairDeclined,
   ConductorPaused,
   ConductorResumed,
   OutboxDelivered,

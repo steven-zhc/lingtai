@@ -48,7 +48,18 @@ export {
   type ScheduleResult,
   type StoppedBecause,
 } from "./schedule.ts";
-export { approve, reject, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
+export { approve, reject, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
+export {
+  decideRepair,
+  repairBrief,
+  repairFingerprint,
+  whoseFailure,
+  type Failure,
+  type FailureOwner,
+  type RepairDecision,
+  type RepairInput,
+  type RepairPolicy,
+} from "./repair.ts";
 export { landedWithoutGatePoints, type UnrunGatePoint } from "./gate-audit.ts";
 export {
   appendEndActions,

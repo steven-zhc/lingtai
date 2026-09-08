@@ -15,14 +15,14 @@
  * claim, worktree, hook, run, diff, gates, merge and board, all genuinely
  * executed.
  */
-import { integrationStream, workItemStream } from "@lingtai/domain";
+import { integrationStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { createProjectionRunner, readTasks, taskViewProjection } from "@lingtai/projector";
 import { directDatabaseUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +36,7 @@ import {
   approve,
   reject,
   renderPrompt,
+  requeue,
   runOnce,
   runQueue,
   waive,
@@ -138,6 +139,20 @@ runtime: {`,
 const REFUSING_RECIPE = RECIPE.replace(
   'run: "test -f src/fix.ts"',
   'run: "echo the build is broken; exit 1"',
+);
+
+/**
+ * The same, for a project that has said it does not repair.
+ *
+ * `repair.on` defaults to true
+ * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) §2), so this
+ * is the recipe that gets the *other* outcome of a failure — a block carrying
+ * the reason no agent was bought.
+ */
+const NO_REPAIR_RECIPE = REFUSING_RECIPE.replace(
+  "runtime: {",
+  `repair: { on: false }
+runtime: {`,
 );
 
 /** GitHub, minus GitHub. Serves the issue and the recipe from the base branch. */
@@ -323,7 +338,17 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'fix the race'
     }
   }, 120_000);
 
-  it("blocks with the typed reason when a gate refuses, and does not merge", async () => {
+  /**
+   * A red gate is the managed repository's failure, so it buys one agent.
+   *
+   * The old assertion here — claim, block, and stop — is what `#84` is about:
+   * an item whose merge lane refused sat in "Waiting on you" with a line of git
+   * output and no move. Since 0025 the failure has an outcome instead: it is
+   * recorded, the item goes back to the queue, and the next claim is the repair
+   * that was bought. Nothing merges either way, which is the part that has not
+   * changed.
+   */
+  it("buys one agent when a gate refuses, and still does not merge", async () => {
     // A second issue, so the first one's history stays intact.
     const other = { ...issue, number: 118 };
     created.add(workItemStream(PROJECT, 118));
@@ -356,6 +381,130 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
     // The evidence travels with the refusal: the board shows why, not that.
     expect(result.detail).toContain("the build is broken");
 
+    // Recorded, *then* released — and the order is the mechanism, not a
+    // preference: between the two the fold carries a pending repair, and the
+    // next claim is that repair.
+    const events = await store.read(workItemStream(PROJECT, 118));
+    expect(events.map((e) => e.type)).toEqual([
+      "WorkItemClaimed",
+      "IssueUpdated",
+      "RepairRequested",
+      "WorkItemReleased",
+      "IssueUpdated",
+    ]);
+
+    const bought = events.find((e) => e.type === "RepairRequested")!;
+    expect(bought.data).toMatchObject({ reason: "gate-failed", attempt: 1 });
+    // The refusal verbatim, because that is what the next attempt's prompt is
+    // given. A summary that hid the gate's output would make the repair a
+    // re-run with extra steps.
+    expect((bought.data as { detail: string }).detail).toContain("the build is broken");
+
+    // The item is queueable again, and the one thing it must not be is merged.
+    expect(reduceWorkItem(events).lifecycle.status).toBe("backlog");
+    expect(reduceWorkItem(events).pendingRepair?.fingerprint).toHaveLength(12);
+
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("wrong change");
+  }, 240_000);
+
+  /**
+   * The repair itself, and the two things that make it one.
+   *
+   * It runs straight after the test above, on the same work item, because that
+   * is the whole mechanism: the release put `#118` back in the queue carrying a
+   * pending repair, and the next claim *is* it. Nothing nominates it as such.
+   *
+   * **Told what went wrong** — the previous refusal reaches the prompt, which
+   * is the difference between a repair and a re-run at the same price.
+   *
+   * **Ends by asking** — `ApprovalRequested` on the head it produced, from a
+   * recipe that declares nothing at `merge` and without `--no-merge`. This is
+   * the requirement the two stuck items prove was missing: fixing the branch is
+   * not enough, because the run whose approval was consumed is still `gating`
+   * and nothing re-offers the decision.
+   */
+  it("tells the repair what went wrong, and ends it by asking for approval", async () => {
+    const other = { ...issue, number: 118 };
+    // The prompt the agent was handed, written out so the test can read it.
+    // `-p <prompt>` is argv 2; see `claude-code.ts`.
+    const seen = join(root, "repair-prompt.txt");
+    const agent = await agentThat(`
+printf '%s' "$2" > ${seen}
+mkdir -p src
+echo 'export const repaired = 1;' > src/repaired.ts
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm 'the repair'
+`);
+
+    const result = await once({
+      ...options(agent),
+      issue: 118,
+      // A recipe whose gate passes now. The failure is behind it; what is under
+      // test is what the repair is told and how it ends.
+      client: fakeClient({ getIssue: async () => other, listOpenIssues: async () => [other] }),
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
+
+    // The template here names no `{{failure}}` slot, which is the case that
+    // must not lose it: a repair whose failure never reached the agent is a
+    // re-run at the same price.
+    const prompt = await readFile(seen, "utf8");
+    expect(prompt).toContain("fix the race");
+    expect(prompt).toContain("this one is the repair");
+    expect(prompt).toContain("gate-failed");
+    // Verbatim, not summarised: the raw failure has to stay reachable.
+    expect(prompt).toContain("the build is broken");
+
+    // The approval is bound to the commit the repair produced, so a person is
+    // approving *this* diff and a force-push invalidates it by arithmetic.
+    const run = await store.read(result.runId);
+    const asked = run.find((e) => e.type === "ApprovalRequested");
+    expect(asked, "a repair that does not ask has not repaired anything").toBeDefined();
+    expect(asked!.data).toMatchObject({ gate: "merge", action: "repair", onSha: result.headSha });
+    expect((asked!.data as { question: string }).question).toContain("A repair for gate-failed");
+
+    // And it did not merge itself. The person approves the diff.
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("the repair");
+  }, 240_000);
+
+  /**
+   * The other outcome, and the one that must never be an absence.
+   *
+   * A project that says it does not repair still has to end up somewhere a
+   * person can act. So the block carries the reason no agent was bought —
+   * `#84`'s *"the card says so and offers whatever the remaining move is,
+   * rather than a control that refuses"*.
+   */
+  it("blocks with the typed reason, and says why no agent was bought", async () => {
+    const other = { ...issue, number: 134 };
+    created.add(workItemStream(PROJECT, 134));
+
+    const agent = await agentThat(`
+echo 'a change like any other' > NOTES.md
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired change'
+`);
+
+    const result = await once({
+      ...options(agent),
+      issue: 134,
+      client: fakeClient({
+        recipe: NO_REPAIR_RECIPE,
+        getIssue: async () => other,
+        listOpenIssues: async () => [other],
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    created.add(result.runId!);
+    expect(result.stage).toBe("integrate");
+
     // Blocked with a question, not silently dropped — the board's "Waiting on
     // you" column is where a refusal goes.
     //
@@ -363,17 +512,28 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
     // a comment, then `lingtai:waiting` replacing `working`. The third is
     // `#71` — for the whole life of the outbox a blocked item kept `working`
     // on GitHub while the board showed it waiting on a person.
-    const wi = (await store.read(workItemStream(PROJECT, 118))).map((e) => e.type);
-    expect(wi).toEqual([
+    const events = await store.read(workItemStream(PROJECT, 134));
+    expect(events.map((e) => e.type)).toEqual([
       "WorkItemClaimed",
       "IssueUpdated",
+      "RepairDeclined",
       "WorkItemBlocked",
       "IssueUpdated",
       "IssueUpdated",
     ]);
 
+    expect(events.find((e) => e.type === "RepairDeclined")!.data).toMatchObject({
+      reason: "gate-failed",
+      why: expect.stringContaining("repair.on: false"),
+    });
+    // And the sentence reaches the card, which is the whole point of recording
+    // it: a question with no reason in it is the thing being replaced.
+    const item = reduceWorkItem(events).lifecycle;
+    expect(item.status).toBe("blocked");
+    expect(item.status === "blocked" && item.question).toContain("no repair:");
+
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("wrong change");
+    expect(log.stdout).not.toContain("unrepaired change");
   }, 240_000);
 
   /**
@@ -381,6 +541,53 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
    * Falling back to it would read a run's rules from one branch while merging
    * into another — the confusion 0005 exists to prevent.
    */
+  /**
+   * The move that is left, on the item the test above blocked.
+   *
+   * `#84`'s last requirement: an item whose integration failed is never left in
+   * a state with no path forward. The run is `gating` — its approval, if it had
+   * one, is spent — so `approve()` refuses; putting it back in the queue is the
+   * thing that can actually happen, and the next attempt is cut from a base
+   * that has moved since.
+   */
+  it("puts a blocked item a repair could not help back in the queue", async () => {
+    const before = await approve({
+      project: PROJECT,
+      issue: 134,
+      base: "develop",
+      client: fakeClient(),
+      by: "human:test",
+      store,
+    });
+    // The control the board used to offer here, refusing exactly as #84 says.
+    expect(before.ok).toBe(false);
+    expect(before.ok === false && before.reason).toBe("not-awaiting-approval");
+
+    const back = await requeue({
+      project: PROJECT,
+      issue: 134,
+      by: "human:test",
+      note: "develop has moved; a fresh branch should merge",
+      store,
+    });
+    expect(back.ok).toBe(true);
+    expect(reduceWorkItem(await store.read(workItemStream(PROJECT, 134))).lifecycle.status).toBe(
+      "backlog",
+    );
+
+    // And it refuses what is not a question: an item nobody is holding is not
+    // one to hand back.
+    const again = await requeue({
+      project: PROJECT,
+      issue: 134,
+      by: "human:test",
+      note: "again",
+      store,
+    });
+    expect(again.ok).toBe(false);
+    expect(again.detail).toContain("backlog");
+  }, 60_000);
+
   it("reads the recipe from the recorded base, not the default branch", async () => {
     let askedFor: string[] = [];
     const result = await once({

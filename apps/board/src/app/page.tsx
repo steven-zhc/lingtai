@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { emptyNote, loadBoard, type BoardCard } from "@/lib/board";
 import { loadProjects } from "@lingtai/conductor/projects";
@@ -5,7 +6,7 @@ import { loadProjects } from "@lingtai/conductor/projects";
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
 import { readControl } from "@lingtai/daemon/control";
-import { Decide } from "./decide.tsx";
+import { Decide, Requeue } from "./decide.tsx";
 import { Live } from "./live.tsx";
 import { Paused } from "./paused.tsx";
 
@@ -87,6 +88,14 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
             {card.gatesApproved} approved
           </li>
         ) : null}
+        {/* Apart from the work's cost, deliberately. A repair is default-on and
+            spends an agent without being asked again, so folding it into the
+            number beside it would make it an invisible bill (#84). */}
+        {card.repairCostUsd !== null ? (
+          <li className="pill sig" title="what diagnosing this has cost, apart from the work">
+            ${card.repairCostUsd.toFixed(2)} repair
+          </li>
+        ) : null}
         {/* A card that keeps failing should read as one rather than looking new
             every time it comes back round. */}
         {card.attempts > 1 ? (
@@ -100,21 +109,34 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
 
       {/* Only where a person is actually the thing being waited on. A card in
           Gates is waiting on a process, and offering to approve it would invite
-          a decision nobody is being asked for. */}
-      {card.column === "waiting" && card.headSha ? (
+          a decision nobody is being asked for.
+
+          And only where Approve can *work*. "Waiting, and there is a head sha"
+          was also true of an item whose approved merge had hit a conflict: the
+          approval consumed, the run back to `gating`, and every click refused
+          with `not-awaiting-approval` (#84). That card gets the move it
+          actually has — back to the queue, where the next attempt is cut from a
+          base that has since moved — rather than a control that cannot act.
+
+          `blocked` and not the column, for the same reason: the lane also holds
+          a refused dispatch and a run that asked a question mid-flight, and
+          neither is an item anybody can hand back. */}
+      {card.blocked && card.headSha && card.awaitingApproval ? (
         <Decide
           project={card.project}
           issue={Number(card.ref)}
           onSha={card.headSha}
           gates={card.gatesFailed > 0 ? ["build"] : []}
         />
+      ) : card.blocked ? (
+        <Requeue project={card.project} issue={Number(card.ref)} />
       ) : null}
     </article>
   );
 }
 
 export default async function Page() {
-  const columns = await loadBoard();
+  const { columns, repair } = await loadBoard();
   const projects = await loadProjects().catch(() => []);
   // Not caught. A control read that fails would render as "nothing is paused",
   // which is the exact silence #77 is about; and it reads the same database
@@ -139,6 +161,30 @@ export default async function Page() {
         <span className={`chip ${total > 0 ? "" : "idle"}`}>
           {total > 0 ? `${total} items` : "nothing in the log yet"}
         </span>
+        {/* Whether a failure of this repository's buys an agent — shown when it
+            is off as well as when it is on, the way an unconfigured gate point
+            is shown as `skipped` rather than omitted (0025 §2). A default that
+            spends money and is invisible until it fires is one nobody can
+            audit. */}
+        {repair.map((r) => (
+          // A fragment, not a wrapper: `.bar` lays its children out directly,
+          // and an element around the pair would be one flex item instead of
+          // two.
+          <Fragment key={r.project}>
+            <span className="sep" />
+            <span
+              className={`chip ${r.on ? "" : "idle"}`}
+              title={
+                r.on
+                  ? `a failure of ${r.project}'s buys an agent to fix it, at most ${r.maxAttempts} time(s) per item`
+                  : `${r.project} does not repair — a failure waits for you`
+              }
+            >
+              {repair.length > 1 ? `${r.project}: ` : ""}
+              {r.on ? `repairs ×${r.maxAttempts}` : "no repair"}
+            </span>
+          </Fragment>
+        ))}
         <span className="sep" />
         {/* Says whether what you are looking at is current. A board that has
             silently stopped updating is worse than one that admits it. */}

@@ -104,6 +104,33 @@ export const taskViewProjection: Projection = {
         -- One line for the card: what it is waiting on, or why it stopped.
         note         text,
 
+        -- Whether a person is actually being asked something, as opposed to
+        -- merely being the one left holding it. The board used to infer this
+        -- from "waiting, and there is a head sha", which was true of an item
+        -- whose approved merge had hit a conflict — the approval consumed, the
+        -- run back to gating, and an Approve button that could not work (#84).
+        -- Two different facts, so two different fields.
+        awaiting_approval boolean not null default false,
+
+        -- Whether a person is holding a *question*, as opposed to being in the
+        -- waiting lane for some other reason. The lane also holds a dispatch
+        -- that was refused and a run that asked something mid-flight, and
+        -- neither of those is an item anybody can hand back — offering a
+        -- control that would refuse is the shape #58 records and #84 must not
+        -- reintroduce.
+        blocked      boolean not null default false,
+
+        -- A repair bought and not yet claimed. It exempts the row from the
+        -- queue's backoff: that guard exists to stop *blind* retries, and a
+        -- repair is told what went wrong and bounded by construction (0025 §3).
+        repair_pending boolean not null default false,
+        -- Which run is the repair, so its spend is counted apart from the
+        -- work's. Set by the claim that consumes repair_pending.
+        repair_run_id  text,
+        -- { "run-abc": 1.42 }. A map for the reason the gates column is one:
+        -- assignment replays to the same number and += does not.
+        repair_costs   jsonb not null default '{}'::jsonb,
+
         -- Retention and ordering. From the event's own clock, never now().
         updated_at   timestamptz not null,
         closed_at    timestamptz,
@@ -200,18 +227,37 @@ export const taskViewProjection: Projection = {
             state: "queued",
             run_id: null,
             note: d.reason,
+            blocked: false,
           });
           break;
         }
 
         case "WorkItemBlocked": {
           const d = event.data as PayloadOf<"WorkItemBlocked">;
-          await set(ctx, event.streamId, seq, at, { state: "waiting", note: d.question });
+          await set(ctx, event.streamId, seq, at, {
+            state: "waiting",
+            note: d.question,
+            blocked: true,
+          });
           break;
         }
 
         case "WorkItemUnblocked":
-          await set(ctx, event.streamId, seq, at, { state: "queued", note: null });
+          await set(ctx, event.streamId, seq, at, {
+            state: "queued",
+            note: null,
+            awaiting_approval: false,
+            blocked: false,
+          });
+          break;
+
+        /**
+         * A failure bought an agent. The row is still `running` here — the
+         * release that follows moves it to `queued` and writes the note — so
+         * the only thing to record is the exemption from the backoff.
+         */
+        case "RepairRequested":
+          await set(ctx, event.streamId, seq, at, { repair_pending: true });
           break;
 
         case "WorkItemLanded": {
@@ -220,6 +266,8 @@ export const taskViewProjection: Projection = {
             state: "landed",
             note: d.mergeCommit,
             closed_at: at,
+            awaiting_approval: false,
+            blocked: false,
           });
           break;
         }
@@ -281,9 +329,34 @@ export const taskViewProjection: Projection = {
           break;
         }
 
+        /**
+         * Turns and cost — and a repair's cost is not the work's.
+         *
+         * "An operator must be able to see what diagnosis is costing them"
+         * (#84), which a single `cost_usd` cannot say: a default-on agent whose
+         * spend is folded into the number beside it is an invisible bill. So a
+         * run that is this item's repair writes into `repair_costs` and leaves
+         * `cost_usd` alone, and the card shows the two apart.
+         *
+         * One statement rather than a read-then-write, because which of the two
+         * columns to write is a fact the row holds and the projector does not.
+         */
         case "RunFinished": {
           const d = event.data as PayloadOf<"RunFinished">;
-          await viaRun(ctx, event.streamId, seq, at, { turns: d.turns, cost_usd: d.costUsd });
+          await viaRunQuery(
+            ctx,
+            event.streamId,
+            `update task_view
+             set turns = $4::int,
+                 cost_usd = case when repair_run_id = $5 then cost_usd else $6::double precision end,
+                 repair_costs = case when repair_run_id = $5
+                                     then repair_costs || jsonb_build_object($5::text, $6::double precision)
+                                     else repair_costs end,
+                 updated_at = $3,
+                 updated_seq = $2::bigint
+             where task_id = $1 and updated_seq <= $2::bigint`,
+            [seq, at, d.turns, event.streamId, d.costUsd],
+          );
           break;
         }
 
@@ -313,7 +386,17 @@ export const taskViewProjection: Projection = {
             await viaRun(ctx, event.streamId, seq, at, {
               state: "waiting",
               note: (event.data as PayloadOf<"ApprovalRequested">).question,
+              // The card may offer Approve, because there is a question open.
+              awaiting_approval: true,
             });
+          }
+          // Granted spends it; revoked opens it again — the run reducer says the
+          // same, and the card has to agree with the thing that will refuse it.
+          if (event.type === "ApprovalGranted") {
+            await viaRun(ctx, event.streamId, seq, at, { awaiting_approval: false });
+          }
+          if (event.type === "ApprovalRevoked") {
+            await viaRun(ctx, event.streamId, seq, at, { awaiting_approval: true });
           }
           break;
         }
@@ -325,6 +408,10 @@ export const taskViewProjection: Projection = {
           await set(ctx, d.workItemId, seq, at, {
             state: "waiting",
             note: `${d.reason}: ${d.detail}`,
+            // The approval, if there was one, has been spent on this attempt.
+            // The run is back to `gating` and `approve()` refuses it — so the
+            // card must stop offering a button that cannot work (#84).
+            awaiting_approval: false,
           });
           break;
         }
@@ -335,6 +422,8 @@ export const taskViewProjection: Projection = {
             state: "landed",
             note: d.mergeCommit,
             closed_at: at,
+            awaiting_approval: false,
+            blocked: false,
           });
           break;
         }
@@ -428,6 +517,15 @@ async function upsert(
            attempts = task_view.attempts + $10::int,
            last_attempt_at = case when $10::int > 0 then excluded.updated_at else task_view.last_attempt_at end,
            note = case when $10::int > 0 then null else task_view.note end,
+           -- A fresh attempt is nobody's question yet.
+           awaiting_approval = case when $10::int > 0 then false else task_view.awaiting_approval end,
+           blocked = case when $10::int > 0 then false else task_view.blocked end,
+           -- The claim is what consumes a pending repair, exactly as the fold
+           -- in work-item.ts does: this run *is* the repair, and naming it here
+           -- is what lets its spend be counted apart from the work's.
+           repair_run_id = case when $10::int > 0 and task_view.repair_pending
+                                then excluded.run_id else task_view.repair_run_id end,
+           repair_pending = case when $10::int > 0 then false else task_view.repair_pending end,
            updated_at = excluded.updated_at,
            updated_seq = excluded.updated_seq
      where task_view.updated_seq < excluded.updated_seq`,
@@ -474,6 +572,32 @@ async function viaRun(
   // A run whose start was never seen has no row to update. That is a gap in the
   // log, not a reason to invent a task.
   if (taskId) await set(ctx, taskId, seq, at, values);
+}
+
+/**
+ * The same lookup, for a write `set` cannot express.
+ *
+ * One case needs it: which column a run's cost lands in depends on the row's
+ * own `repair_run_id`, which the projector does not know and must not read
+ * separately — a read-then-write would be two statements over a value that
+ * decides money, and the second could see a different row than the first.
+ *
+ * `$1` is the task id, `$2` the seq and `$3` the timestamp; the caller's own
+ * parameters start at `$4`.
+ */
+async function viaRunQuery(
+  ctx: ProjectionContext,
+  runId: string,
+  sql: string,
+  values: readonly unknown[],
+): Promise<void> {
+  const rows = await ctx.query<{ task_id: string }>(
+    "select task_id from task_view_run where run_id = $1",
+    [runId],
+  );
+  const taskId = rows[0]?.task_id;
+  if (!taskId) return;
+  await ctx.query(sql, [taskId, ...values]);
 }
 
 /**
@@ -544,6 +668,24 @@ export interface TaskCard {
   closedAt: Date | null;
   attempts: number;
   lastAttemptAt: Date | null;
+  /**
+   * Whether a person is being asked something, rather than merely left holding
+   * it. `waiting` says where the card sits; this says whether Approve can work.
+   */
+  /**
+   * Whether a person is holding a question. `waiting` says which lane the card
+   * is in; this says whether there is anything on it to answer.
+   */
+  blocked: boolean;
+  awaitingApproval: boolean;
+  /** A repair bought and not yet claimed. Exempt from the queue's backoff. */
+  repairPending: boolean;
+  /**
+   * What diagnosis has cost, apart from the work. Null when nothing has been
+   * spent on one — which is most cards, and has to read as absence rather than
+   * as zero.
+   */
+  repairCostUsd: number | null;
 }
 
 export interface ReadTasksOptions {
@@ -595,6 +737,13 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
             .map(([, verdict]) => verdict)
         : [];
       const count = (v: string) => verdicts.filter((x) => x === v).length;
+      // Summed on read, for the reason the map exists: one item may buy more
+      // than one repair, and an operator asking what diagnosis cost means all
+      // of it. Null rather than 0 when nothing was spent — no repair and a free
+      // repair are different facts, and only one of them has ever happened.
+      const spent = Object.values((row.repair_costs ?? {}) as Record<string, number | null>).filter(
+        (v): v is number => typeof v === "number",
+      );
       return {
         taskId: row.task_id,
         project: row.project,
@@ -620,6 +769,10 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         closedAt: row.closed_at,
         attempts: row.attempts,
         lastAttemptAt: row.last_attempt_at,
+        blocked: row.blocked === true,
+        awaitingApproval: row.awaiting_approval === true,
+        repairPending: row.repair_pending === true,
+        repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
       };
     });
   } finally {

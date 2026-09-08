@@ -96,6 +96,18 @@ gates:
       when: landed
       close: true
 
+# A failure of this repository's buys one agent to fix it, and Lingtai's own
+# never do ([0025](../doc/decisions/0025-a-failure-buys-one-agent.md)).
+#
+# Written out rather than left to the default, because this is the repository
+# that has to be able to read its own policy without opening its own source —
+# and because one is a deliberate number here. Every merge already waits for a
+# person, so a repair produces a diff that is read before it lands; what the
+# ceiling bounds is how much is spent producing it.
+repair:
+  on: true
+  maxAttempts: 1
+
 runtime:
   agent: claude-code
   # Lower than admin's 300. A change here is meant to be small enough to read in

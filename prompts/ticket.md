@@ -27,6 +27,8 @@ Make the change and commit it on the branch you are already on.
 - **Migrations are held for a person.** Write the migration file if the change
   needs one, and expect the merge to stop for review rather than apply it.
 
+{{failure}}
+
 ## What to do
 
 1. Read the code the ticket points at.

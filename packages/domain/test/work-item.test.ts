@@ -131,6 +131,64 @@ describe("reduceWorkItem", () => {
     expect(s.lifecycle.status).toBe("backlog");
   });
 
+  /**
+   * How a run learns it is a repair, and it is only this.
+   *
+   * `RepairRequested` is appended just before the release, so between the two
+   * the item carries a pending repair; the next claim consumes it. There is no
+   * flag on `RunStarted` and no second event, because
+   * [0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) keeps a
+   * repair an ordinary run — the only thing that differs is what its prompt was
+   * told.
+   */
+  it("hands a pending repair to the next claim, and to no other", () => {
+    const e = makeStream("wi-p-1");
+    const bought = {
+      runId: "run-a",
+      reason: "conflict" as const,
+      detail: "agent/1 does not merge into main: page.tsx",
+      fingerprint: "0123456789ab",
+      attempt: 1,
+    };
+
+    const pending = reduceWorkItem([
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing conflict (attempt 1)" }),
+    ]);
+    // Queued, and carrying what the next attempt has to be told.
+    expect(pending.lifecycle.status).toBe("backlog");
+    expect(pending.pendingRepair?.after).toBe("run-a");
+    expect(pending.repairs).toHaveLength(1);
+
+    const claimed = reduceWorkItem([
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+    ]);
+    expect(claimed.pendingRepair).toBeNull();
+    // `after` is the run that *failed*; `runId` on the record is the run that
+    // is repairing it. Two different runs, so two different names.
+    const { runId: _bought, ...rest } = bought;
+    expect(claimed.repairRun).toEqual({ runId: "run-b", of: { after: "run-a", ...rest } });
+
+    // And the claim after *that* is an ordinary run again. Without this a
+    // failure three attempts later would still count as an analysis of the
+    // analysis and buy nothing.
+    const later = reduceWorkItem([
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemReleased", { runId: "run-b", reason: "no commits" }),
+      e("WorkItemClaimed", { runId: "run-c", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+    ]);
+    expect(later.repairRun).toBeNull();
+    // The ceiling still counts it: the repair happened, whatever came after.
+    expect(later.repairs).toHaveLength(1);
+  });
+
   it("ignores an event type it has never heard of, but still advances", () => {
     const e = makeStream("wi-p-1");
     const first = e("WorkItemDiscovered", discovered);

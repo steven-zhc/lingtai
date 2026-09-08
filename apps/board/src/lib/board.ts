@@ -74,6 +74,46 @@ export interface BoardCard {
   updatedAt: string;
   /** Attempts so far, so a card that keeps failing reads as one. */
   attempts: number;
+  /**
+   * Whether Approve can actually work.
+   *
+   * The card used to infer this from "waiting, and there is a head sha", which
+   * is also true of an item whose approved merge hit a conflict: the approval
+   * spent, the run back to `gating`, and `approve()` refusing every click
+   * (#84). Sitting in the column and being asked a question are two facts.
+   */
+  awaitingApproval: boolean;
+  /**
+   * Whether a person is holding a question at all. The waiting lane also holds
+   * a refused dispatch and a run that asked something mid-flight, and neither
+   * is an item anybody can hand back.
+   */
+  blocked: boolean;
+  /**
+   * What diagnosis has cost, separately from the work. Null on the cards that
+   * have never bought one, which is nearly all of them.
+   */
+  repairCostUsd: number | null;
+}
+
+/**
+ * Whether a project repairs, as the board says so.
+ *
+ * On the bar rather than on a card, because it is a fact about the repository
+ * and not about any one ticket — and shown whether it is on or off, the way an
+ * unconfigured gate point is shown as `skipped` rather than omitted (0025 §2).
+ * A default that is invisible when it is off is a default nobody can audit.
+ */
+export interface RepairPolicyView {
+  project: string;
+  on: boolean;
+  maxAttempts: number;
+}
+
+export interface Board {
+  columns: BoardColumn[];
+  /** One per project whose recipe could be read. */
+  repair: RepairPolicyView[];
 }
 
 /**
@@ -166,6 +206,9 @@ export function toCard(t: TaskCard): BoardCard {
     note: t.note,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
+    awaitingApproval: t.awaitingApproval,
+    blocked: t.blocked,
+    repairCostUsd: t.repairCostUsd,
   };
 }
 
@@ -187,19 +230,28 @@ export function toCard(t: TaskCard): BoardCard {
  */
 async function queuedCards(
   project?: string,
-): Promise<{ cards: BoardCard[]; problems: QueueProblem[] }> {
+): Promise<{ cards: BoardCard[]; problems: QueueProblem[]; repair: RepairPolicyView[] }> {
   const projects = (await loadProjects().catch(() => [])).filter(
     (p) => project === undefined || p.project === project,
   );
 
   const cards: BoardCard[] = [];
   const problems: QueueProblem[] = [];
+  // Gathered here rather than by a second pass over the projects: this loop
+  // already resolves every recipe, and asking GitHub twice for a fact that
+  // arrived with the first answer is how a render gets expensive.
+  const repair: RepairPolicyView[] = [];
   for (const p of projects) {
     const filter = await projectFilter(p);
     if (!filter.ok) {
       problems.push({ project: filter.project, reason: filter.problem });
       continue;
     }
+    repair.push({
+      project: filter.project,
+      on: filter.repair.on,
+      maxAttempts: filter.repair.maxAttempts,
+    });
     try {
       const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
       const runnable = await selectRunnable({
@@ -228,6 +280,9 @@ async function queuedCards(
           note: null,
           updatedAt: new Date().toISOString(),
           attempts: 0,
+          awaitingApproval: false,
+          blocked: false,
+          repairCostUsd: null,
         });
       }
     } catch (err) {
@@ -236,7 +291,7 @@ async function queuedCards(
       problems.push({ project: filter.project, reason: (err as Error).message });
     }
   }
-  return { cards, problems };
+  return { cards, problems, repair };
 }
 
 /**
@@ -246,7 +301,7 @@ async function queuedCards(
  * state the system can be in, and it is the state it is in before the first
  * run. Showing fictional work would be worse than showing none.
  */
-export async function loadBoard(project?: string): Promise<BoardColumn[]> {
+export async function loadBoard(project?: string): Promise<Board> {
   let tasks: TaskCard[] = [];
   try {
     tasks = await readTasks(project === undefined ? {} : { project });
@@ -262,7 +317,7 @@ export async function loadBoard(project?: string): Promise<BoardColumn[]> {
   const queued = await queuedCards(project);
   const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))];
 
-  return toColumns(cards, queued.problems);
+  return { columns: toColumns(cards, queued.problems), repair: queued.repair };
 }
 
 /**

@@ -43,6 +43,15 @@ export type ProjectFilter =
       /** The labels that keep an agent off a ticket. */
       exclude: readonly string[];
       /**
+       * Whether a failure of this repository's buys an agent, and how many.
+       *
+       * Lifted out of the recipe for the same reason `kinds` is: this is a
+       * thing an operator has to be able to read without opening Lingtai's
+       * source (0025 §2), and every place that says what a project will do
+       * reads this shape rather than the recipe.
+       */
+      repair: { on: boolean; maxAttempts: number };
+      /**
        * The recipe and the client that read it, carried so a caller that wants
        * to go on and ask GitHub what is offered does not fetch either twice.
        */
@@ -93,6 +102,7 @@ export async function projectFilter(
       ref: resolved.ref,
       kinds: resolved.recipe.source.kinds,
       exclude: resolved.recipe.source.exclude,
+      repair: resolved.recipe.repair,
       recipe: resolved.recipe,
       client,
     };
@@ -145,6 +155,14 @@ export function describeFilter(filter: ProjectFilter): string[] {
     `${name} recipe ${filter.configHash.slice(0, 12)} from ${filter.ref}`,
     `  picks up     ${filter.kinds.join(" > ")}${order}`,
     `  excludes     ${filter.exclude.length > 0 ? filter.exclude.join(", ") : "nothing"}`,
+    // Printed whether it is on or off, like a `skipped` gate point: a default
+    // that only appears when it is doing something is a default nobody can
+    // audit, and this one spends money (0025 §2).
+    `  repairs      ${
+      filter.repair.on
+        ? `yes — at most ${filter.repair.maxAttempts} agent(s) per item`
+        : "no — a failure of this repository's buys nothing"
+    }`,
   ];
 }
 

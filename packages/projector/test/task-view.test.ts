@@ -171,6 +171,52 @@ async function seed(): Promise<void> {
       data: { gate: "merge", action: "human", runId: run(8), onSha: "sha-8", by: "human:steven", note: "" },
     },
   ]);
+
+  // 9 — approved, the merge hit a conflict, and the failure bought an agent.
+  //     The whole of #84 in one stream: the approval is spent, the item goes
+  //     back to the queue as a repair, and the repair's spend is its own.
+  await store.append(wi(9), 0, [discovered(9, "approved, then conflicted"), claimedWith(attempt(9, "a"))]);
+  await store.append(attempt(9, "a"), 0, [
+    started(9),
+    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-9a" } },
+    {
+      type: "ApprovalRequested",
+      actor: "conductor",
+      data: { gate: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", question: "Merge?", artifacts: [] },
+    },
+    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
+    {
+      type: "ApprovalGranted",
+      actor: "human:steven",
+      data: { gate: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", by: "human:steven", note: "" },
+    },
+  ]);
+  await store.append(lane, 2, [
+    {
+      type: "IntegrationRefused",
+      actor: "conductor",
+      data: { workItemId: wi(9), branch: "agent/9", reason: "conflict", detail: "agent/9 does not merge into develop: page.tsx" },
+    },
+  ]);
+  await store.append(wi(9), 2, [
+    {
+      type: "RepairRequested",
+      actor: "conductor",
+      data: {
+        runId: attempt(9, "a"),
+        reason: "conflict",
+        detail: "agent/9 does not merge into develop: page.tsx",
+        fingerprint: "0123456789ab",
+        attempt: 1,
+      },
+    },
+    released(attempt(9, "a"), "repairing conflict (attempt 1)"),
+    claimedWith(attempt(9, "b")),
+  ]);
+  await store.append(attempt(9, "b"), 0, [
+    started(9),
+    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
+  ]);
 }
 
 /** Appended after the rebuild, so `fold` is what folds it. */
@@ -320,6 +366,47 @@ describe("task_view", () => {
     expect(eight.gatesFailed).toBe(0);
     expect(eight.gatesWaived).toBe(1);
     expect(eight.gatesApproved).toBe(1);
+  });
+
+  /**
+   * The dead end `#84` is about, as the card sees it.
+   *
+   * "Waiting, and there is a head sha" was true of this row while `approve()`
+   * would refuse every click — the approval had been spent on the merge that
+   * conflicted, and the run was back to `gating`. Sitting in the column and
+   * being asked a question are two facts, and the card now carries both.
+   */
+  it("stops offering an approval once the merge that consumed it failed", async () => {
+    const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 });
+    const nine = card(tasks, 9)!;
+
+    expect(nine.awaitingApproval).toBe(false);
+    // And the repair it bought has been claimed, so the exemption is spent too.
+    expect(nine.repairPending).toBe(false);
+    // Queued again, and therefore nobody's question at the moment.
+    expect(nine.blocked).toBe(false);
+
+    // The lane holds more than questions: a refused dispatch is `waiting` and
+    // is not an item anybody can hand back, so the card must not offer to.
+    expect(card(tasks, 4)!.state).toBe("waiting");
+    expect(card(tasks, 4)!.blocked).toBe(false);
+  });
+
+  /**
+   * What diagnosis costs, apart from the work.
+   *
+   * A repair is on by default and spends an agent without being asked again, so
+   * folding its cost into the number beside it would make it an invisible bill.
+   */
+  it("counts a repair's spend separately from the work's", async () => {
+    const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 });
+    const nine = card(tasks, 9)!;
+
+    expect(nine.costUsd).toBe(2.1);
+    expect(nine.repairCostUsd).toBe(0.75);
+    // And a card that never bought one says nothing rather than zero: no repair
+    // and a free repair are different facts.
+    expect(card(tasks, 2)!.repairCostUsd).toBeNull();
   });
 
   /**

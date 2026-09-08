@@ -51,6 +51,23 @@ export interface Worktree {
   baseSha: string;
   /** The env file that was written, so a caller can say what the agent can see. */
   plantedAt: string;
+  /**
+   * What origin had for this branch when the worktree was cut, or null when the
+   * branch did not exist there — the lease a later force-push has to satisfy.
+   *
+   * It exists because `--force-with-lease` **with no value cannot work here**.
+   * The lease it computes on its own comes from a remote-tracking ref, and this
+   * mirror is bare and fetches `+refs/heads/*:refs/heads/*`, so there is no
+   * `refs/remotes/origin/*` for it to read: git refuses with `stale info` the
+   * moment the branch already exists on origin. Nothing hit it while every run
+   * was an issue's first, and `#84` makes a second run on the same branch the
+   * ordinary case — a repair is exactly that.
+   *
+   * Read *before* `worktree add -B`, which moves the mirror's own copy of the
+   * ref, and read from a mirror that has just been fetched, which is what makes
+   * it origin's value rather than a stale local one.
+   */
+  remoteHead: string | null;
 }
 
 function mirrorPath(home: string, project: string): string {
@@ -114,6 +131,11 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
   // From the base branch as the mirror has it, which is `origin/<base>` — never
   // from anything local, and never from the agent's previous branch.
   const baseSha = await git(["rev-parse", options.base], { ...run, cwd: mirror });
+  // Before `-B` moves it. See `Worktree.remoteHead`.
+  const remoteHead = await git(["rev-parse", "--verify", `refs/heads/${options.branch}`], {
+    ...run,
+    cwd: mirror,
+  }).catch(() => null);
   await git(["worktree", "add", "--force", "-B", options.branch, path, baseSha], {
     ...run,
     cwd: mirror,
@@ -130,7 +152,7 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
   await mkdir(dirname(plantedAt), { recursive: true });
   await writeFile(plantedAt, renderEnvFile(options.env), { mode: 0o600 });
 
-  return { path, branch: options.branch, baseSha, plantedAt };
+  return { path, branch: options.branch, baseSha, plantedAt, remoteHead };
 }
 
 /** Removes a run's worktree. The mirror stays; it is the expensive part. */

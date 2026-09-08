@@ -90,6 +90,13 @@ function summarise(event: Envelope): string {
       return `${String(d["kind"])}: ${String(d["detail"] ?? "")}`;
     case "RunProducedDiff":
       return `${String(d["files"])} files +${String(d["insertions"])} −${String(d["deletions"])}`;
+    // Both of a failure's outcomes read on the history, including the one where
+    // nothing happened: "no agent was bought, and here is the rule that said
+    // so" is the half an operator otherwise has to guess at.
+    case "RepairRequested":
+      return `attempt ${String(d["attempt"])} on ${String(d["reason"])}`;
+    case "RepairDeclined":
+      return `${String(d["reason"])} — ${String(d["why"] ?? "")}`;
     default: {
       const gate = d["gate"];
       if (typeof gate === "string") return gate;

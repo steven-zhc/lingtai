@@ -90,6 +90,16 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
       // person, or finished. GitHub still listing the issue does not overrule
       // the log about what Lingtai is doing with it.
       if (row.state !== "queued") return false;
+      // A repair jumps the backoff, and only a repair.
+      //
+      // The guard above exists to stop *blind* retries — the same ticket at the
+      // top of the queue, failing the same way, at agent prices. A repair is
+      // neither blind nor unbounded: it is told what went wrong, there is at
+      // most one per distinct failure, and the recipe caps how many an item may
+      // buy (0025 §3). Making it wait an hour would leave the thing this is for
+      // — an item stuck with no path forward — stuck for an hour longer, which
+      // is the complaint rather than the fix.
+      if (row.repairPending) return true;
       return row.lastAttemptAt === null || now - row.lastAttemptAt.getTime() >= backoff;
     })
     .map((o) => ({ taskId: workItemStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))

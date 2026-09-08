@@ -39,6 +39,10 @@ function task(state: TaskCard["state"]): TaskCard {
     closedAt: null,
     attempts: 0,
     lastAttemptAt: null,
+    awaitingApproval: false,
+    blocked: false,
+    repairPending: false,
+    repairCostUsd: null,
   };
 }
 

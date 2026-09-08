@@ -121,6 +121,16 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
     const actions = resolved.recipe.gates[point];
     log(`  ${point.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(", ") : "(skipped)"}`);
   }
+  // Printed here for the reason the empty points above are: a policy that is
+  // only visible when it fires is one nobody can audit, and this one spends an
+  // agent's worth of money on a failure without being asked again
+  // ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) §2).
+  const repair = resolved.recipe.repair;
+  log(
+    `  ${"repair".padEnd(9)} ${
+      repair.on ? `on — at most ${repair.maxAttempts} agent(s) per item` : "(off)"
+    }`,
+  );
   log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${resolved.recipe.source.kinds.join(" > ")}`);
 
   log(`  tier ${resolved.recipe.runtime.tier}`);

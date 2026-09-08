@@ -36,6 +36,26 @@ export type WorkItemLifecycle =
 
 export type WorkItemStatus = WorkItemLifecycle["status"];
 
+/**
+ * A failure that bought an agent, as `RepairRequested` recorded it.
+ *
+ * `after` is the run that failed, not the run that will repair it — the second
+ * does not exist yet when this is written down.
+ */
+export interface RepairRecord {
+  after: string;
+  reason: string;
+  detail: string;
+  fingerprint: string;
+  attempt: number;
+}
+
+/** A run that is a repair, and the failure it was bought for. */
+export interface RepairRun {
+  runId: string;
+  of: RepairRecord;
+}
+
 /** How this item is connected to another — a filed bug to the merge that caused it. */
 export interface WorkItemLink {
   relation: "caused-by" | "follows-up" | "duplicates";
@@ -66,6 +86,34 @@ export interface WorkItemState {
   /** Runs that have held this item, oldest first. A re-run appends. */
   runs: readonly string[];
 
+  /**
+   * Every repair this item has bought, oldest first.
+   *
+   * **The ceiling is counted here rather than remembered anywhere.** 0025 §3
+   * calls the bound structural and not aspirational, and a length against a
+   * number from the recipe is as structural as it gets: a restart inherits it,
+   * a rebuild recomputes it, and there is no counter to forget to increment.
+   */
+  repairs: readonly RepairRecord[];
+
+  /**
+   * A repair asked for and not yet claimed. The next claim is that repair.
+   *
+   * This is the whole of how a run learns it is one. `RepairRequested` is
+   * appended just before the release, so between the two the item carries a
+   * pending repair; the claim consumes it into `repairRun` and it is gone.
+   */
+  pendingRepair: RepairRecord | null;
+
+  /**
+   * The run holding this item, when that run is a repair.
+   *
+   * Kept past the run's ending on purpose — it is what makes *an analysis that
+   * fails does not trigger an analysis of the analysis* checkable at the moment
+   * the repair fails. Only the next claim replaces it.
+   */
+  repairRun: RepairRun | null;
+
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number;
   /** Global position of the last event applied. */
@@ -83,6 +131,9 @@ export const emptyWorkItem: WorkItemState = {
   links: [],
   dispatchRefusals: [],
   runs: [],
+  repairs: [],
+  pendingRepair: null,
+  repairRun: null,
   version: 0,
   lastSeq: null,
 };
@@ -120,7 +171,29 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
           leaseUntilMs: d.leaseUntilMs,
         },
         runs: state.runs.includes(d.runId) ? state.runs : [...state.runs, d.runId],
+        // The claim consumes whatever repair was pending. This run *is* it, and
+        // there is no second event saying so — which is deliberate: a repair is
+        // an ordinary run and 0025 refuses to give it a vocabulary of its own.
+        pendingRepair: null,
+        repairRun: state.pendingRepair
+          ? { runId: d.runId, of: state.pendingRepair }
+          : null,
       };
+    }
+
+    case "RepairRequested": {
+      const d = event.data as PayloadOf<"RepairRequested">;
+      const record: RepairRecord = {
+        after: d.runId,
+        reason: d.reason,
+        detail: d.detail,
+        fingerprint: d.fingerprint,
+        attempt: d.attempt,
+      };
+      // The lifecycle is untouched. A repair is not a state an item is in — the
+      // release that follows this puts it back in the queue, and being queued is
+      // the state.
+      return { ...state, ...at, repairs: [...state.repairs, record], pendingRepair: record };
     }
 
     case "WorkItemReleased":

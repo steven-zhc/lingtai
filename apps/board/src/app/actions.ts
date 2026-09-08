@@ -26,7 +26,7 @@
 // Subpaths, not the barrel. The root export pulls in `run-once`, which pulls
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
-import { approve, reject, waive } from "@lingtai/conductor/decide";
+import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
 import { loadProject } from "@lingtai/conductor/projects";
 import { resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
@@ -117,6 +117,40 @@ export async function rejectCard(input: {
       by: actor(),
       onSha: input.onSha,
       reason: input.reason,
+    });
+
+    revalidatePath("/");
+    return { ok: result.ok, detail: result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * Back to the queue, for a card that has nothing to approve.
+ *
+ * The fourth card action, and the one `#84` is about: an item whose approved
+ * merge failed is `blocked` with its run back at `gating`, so Approve refuses
+ * every click. This is the move it actually has — the next attempt is cut from
+ * a base that has since moved.
+ *
+ * No `onSha`, and that is not an oversight. The other three agree to a specific
+ * diff; this one throws the diff away and asks for another, which is a decision
+ * about the *ticket*. A stale sha is the reason to do it, not a reason to
+ * refuse.
+ */
+export async function requeueCard(input: {
+  project: string;
+  issue: number;
+  note: string;
+}): Promise<ActionResult> {
+  try {
+    if (!input.note.trim()) return { ok: false, detail: "say why, so the log can" };
+    const result = await requeue({
+      project: input.project,
+      issue: input.issue,
+      by: actor(),
+      note: input.note,
     });
 
     revalidatePath("/");

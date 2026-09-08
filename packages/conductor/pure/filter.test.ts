@@ -93,15 +93,19 @@ describe("projectFilter", () => {
 });
 
 describe("describeFilter", () => {
-  it("names the recipe, what it picks up and what it excludes", async () => {
+  it("names the recipe, what it picks up, what it excludes and whether it repairs", async () => {
     const filter = await projectFilter(project, async () => client(RECIPE));
     const lines = describeFilter(filter);
 
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toMatch(/^lingtai\s+recipe [0-9a-f]{12} from main$/);
     expect(lines[1]).toContain("picks up     bug > tech-debt > documentation");
     expect(lines[1]).toContain("(in priority order)");
     expect(lines[2]).toContain("excludes     blocked, agent:hold");
+    // Printed by a recipe that never mentions it, which is the point: a default
+    // that spends money has to be readable without opening Lingtai's source
+    // (0025 §2), and a line that only appears when it is on is not that.
+    expect(lines[3]).toContain("repairs      yes — at most 1 agent(s) per item");
   });
 
   /**

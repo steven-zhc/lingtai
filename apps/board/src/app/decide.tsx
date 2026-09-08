@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import { useState, useTransition } from "react";
-import { approveCard, rejectCard, waiveGate } from "./actions.ts";
+import { approveCard, rejectCard, requeueCard, waiveGate } from "./actions.ts";
 import type { ActionResult } from "@/lib/diff";
 
 type Pending = "approve" | "reject" | "waive" | null;
@@ -116,6 +116,86 @@ export function Decide({
             Waive
           </button>
         ) : null}
+      </div>
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The move that is left when there is no diff to approve.
+ *
+ * A card in "Waiting on you" whose run is not actually asking anything —
+ * because its approved merge hit a conflict, and the approval went with it —
+ * used to render Approve, and Approve could not work: `approve()` accepts only
+ * `awaiting-approval` and the run is back to `gating`. Three items sat like
+ * that, one of them for four days (#84).
+ *
+ * So the card offers what it really has. Putting it back in the queue means the
+ * next attempt is cut from a base that has since moved, which for the
+ * commonest case — a conflict nobody chose to repair — is the fix. The reason
+ * is required for the same reason a waiver's is: a person overruling a block
+ * without saying why is how a system stops being able to explain itself.
+ */
+export function Requeue({ project, issue }: { project: string; issue: number }) {
+  const [pending, setPending] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const [, startTransition] = useTransition();
+
+  if (done) return <p className="decided">{done}</p>;
+
+  if (!asking) {
+    return (
+      <div className="decide">
+        <div className="btnrow">
+          <button className="btn" onClick={() => setAsking(true)}>
+            Back to the queue
+          </button>
+        </div>
+        {refusal ? <p className="refusal">{refusal}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="decide">
+      <label className="reason">
+        <span>Why?</span>
+        <input
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="main has moved; a fresh branch should merge"
+        />
+      </label>
+      <div className="btnrow">
+        <button
+          className="btn pri"
+          disabled={!note.trim() || pending}
+          onClick={() => {
+            setPending(true);
+            setRefusal(null);
+            startTransition(async () => {
+              const result = await requeueCard({ project, issue, note });
+              setPending(false);
+              if (result.ok) {
+                setDone(result.detail);
+                return;
+              }
+              // Reverted, with the server's own sentence. "It didn't work"
+              // sends an operator nowhere.
+              setRefusal(result.detail);
+            });
+          }}
+        >
+          {pending ? "…" : "Requeue"}
+        </button>
+        <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
+          Cancel
+        </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>

@@ -229,6 +229,39 @@ export const Recipe = z.object({
   // not a recipe mentions them, and writing that here says so once.
   gates: GateMap.default({ admit: [], prepared: [], proposed: [], merge: [], end: [] }),
 
+  /**
+   * Whether a failure of **this repository's** buys an agent to fix it, and how
+   * many times ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)).
+   *
+   * Here rather than compiled into Lingtai for the reason 0016 §7 deleted the
+   * hardcoded skip: this is a policy about a repository, and a repository knows
+   * things about itself that the core cannot see. Whether a red build is worth
+   * an agent is one of them.
+   *
+   * **Defaulted rather than optional, and rendered either way.** `lingtai add`
+   * prints it and the board shows it, exactly as an empty gate point is printed
+   * and shown as `skipped` — a repository must be able to see whether it
+   * repairs without reading Lingtai's source. A field that is absent from the
+   * output when it is off would be the same invisibility 0016 §4 forbids.
+   *
+   * Only Lingtai's *own* failures are excluded unconditionally, in code
+   * (`whoseFailure`), because no recipe can make an agent able to fix a
+   * database it cannot reach.
+   */
+  repair: z
+    .strictObject({
+      on: z.boolean().default(true),
+      /**
+       * The ceiling, per work item, across every distinct failure.
+       *
+       * One by default. The failure mode this bounds is unbounded spend rather
+       * than a wrong answer (0025 §3), so the default is the smallest number
+       * that makes the feature exist, and raising it is the repository's call.
+       */
+      maxAttempts: z.number().int().positive().default(1),
+    })
+    .default({ on: true, maxAttempts: 1 }),
+
   runtime: z.object({
     agent: RuntimeId.default("claude-code"),
     /**

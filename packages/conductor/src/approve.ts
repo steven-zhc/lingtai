@@ -22,8 +22,10 @@ import { parsePayload, reduceRun, reduceWorkItem } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
-import { resolveEndActions } from "./end-point.ts";
+import { releaseWorkItem } from "./claim.ts";
+import { appendEndActions, resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
+import { decideRepair, type RepairPolicy } from "./repair.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
 
@@ -139,9 +141,15 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   // merging rather than landing a change whose `end` point silently could not
   // run. That silence is the defect this is fixing.
   let end: readonly GateAction[];
+  let repairPolicy: RepairPolicy;
   try {
     const recipe = await resolveRecipe((p, r) => options.client.fileAt(p, r), options.base);
     end = recipe.recipe.gates.end;
+    // From the same read, because this is the path the two stuck items took: an
+    // approval is granted, the merge hits a conflict, and the approval has been
+    // consumed. Whether that failure buys an agent is the recipe's, and this is
+    // where it has to be known.
+    repairPolicy = recipe.recipe.repair;
   } catch (err) {
     return {
       ok: false,
@@ -188,10 +196,87 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   });
 
   if (!merged.ok) {
+    /**
+     * **This is the dead end `#84` is about.**
+     *
+     * The approval has been consumed — `ApprovalGranted` is three lines above —
+     * and the run is back to `gating`, which `approve()` refuses. No command
+     * anywhere re-requested one, so once an approved merge failed on a conflict
+     * that item could never be approved again. Three items sat here, one of
+     * them for four days.
+     *
+     * So the failure gets an outcome rather than a headstone: if it belongs to
+     * the managed repository and the bound is not spent, it buys an agent and
+     * the item goes back to the queue as a repair — which ends by requesting
+     * approval on the head it produced. If it does not, the block carries the
+     * reason no agent was bought, so the card has a sentence and a move instead
+     * of a control that refuses.
+     */
+    const failed = await store.read(workItemId);
+    const decision = decideRepair({
+      failure: { source: "integration", reason: merged.reason, detail: merged.detail },
+      policy: repairPolicy,
+      item: reduceWorkItem(failed),
+      runId,
+    });
+
+    if (decision.repair) {
+      // Recorded then released, in that order: the fold carries a pending
+      // repair between the two and the next claim is it.
+      await store.append(workItemId, failed.length, [
+        {
+          type: "RepairRequested",
+          actor: "conductor",
+          data: parsePayload("RepairRequested", {
+            runId,
+            reason: merged.reason,
+            detail: merged.detail.slice(0, 4_000),
+            fingerprint: decision.fingerprint,
+            attempt: decision.attempt,
+          }),
+        },
+      ]);
+      const reason = `repairing ${merged.reason} (attempt ${decision.attempt})`;
+      await releaseWorkItem(workItemId, runId, reason, store);
+      // On its own append, because the release owns the one above — the same
+      // shape `run-once`'s release uses, and for the same reason.
+      const ended = await appendEndActions(store, workItemId, end, "failed");
+      await tellGitHubAbout({
+        store,
+        github: options.client,
+        workItemId,
+        labels: labelsFor("queued"),
+        appended: ended,
+      });
+      log(`bought a repair for ${merged.reason} — attempt ${decision.attempt}`);
+      // The merge did not happen, so this is a refusal — but the operator has
+      // to be told that something is going to be done about it, or the button
+      // reads as the dead end it used to be.
+      return {
+        ok: false,
+        workItemId,
+        reason: merged.reason,
+        detail:
+          `${merged.detail}\n\nNothing was merged. A repair was bought (attempt ` +
+          `${decision.attempt}); it will come back asking you to approve its diff.`,
+      };
+    }
+
     const blocked = await store.read(workItemId);
-    const question = `${merged.reason}: ${merged.detail.slice(0, 500)}`;
+    const question = `${merged.reason}: ${merged.detail.slice(0, 400)} — no repair: ${decision.why}`;
     const ended = resolveEndActions(blocked, end, "blocked");
     await store.append(workItemId, blocked.length, [
+      {
+        type: "RepairDeclined",
+        actor: "conductor",
+        data: parsePayload("RepairDeclined", {
+          runId,
+          reason: merged.reason,
+          detail: merged.detail.slice(0, 4_000),
+          fingerprint: decision.fingerprint,
+          why: decision.why,
+        }),
+      },
       {
         type: "WorkItemBlocked",
         actor: "conductor",
@@ -267,6 +352,62 @@ export async function reject(
   ]);
 
   return { ok: true, workItemId, detail: `${gate} on ${onSha.slice(0, 7)} was withdrawn by ${options.by}` };
+}
+
+/**
+ * Putting a blocked item back in the queue: the move that is left when there is
+ * no diff to approve.
+ *
+ * **A card must never offer only a control that refuses.** That is the `#84`
+ * complaint stated as a rule: an item whose integration failed and whose repair
+ * was declined — because the recipe says the project does not repair, or
+ * because the ceiling is spent — is `blocked` with a question, its run is
+ * `gating`, and `approve()` will not touch it. Before this, the board rendered
+ * Approve on it anyway and the button could not work.
+ *
+ * The move is not a new mechanism. `WorkItemUnblocked` has been in the
+ * catalogue since the beginning and means exactly this: a person answered the
+ * question, and the item is queueable again. The next pass cuts a fresh branch
+ * from a base that has since moved, which for the commonest case — a conflict
+ * nobody chose to repair — is the whole of the fix.
+ *
+ * No GitHub call. `labelsFor("queued")` is empty, so there is nothing to say
+ * that is not already implied, and `reconcile` converges the label an earlier
+ * block left behind. A decision here does not need a network round trip to
+ * count.
+ */
+export async function requeue(options: {
+  project: string;
+  issue: number;
+  by: string;
+  /** Why, on the record. A person overruling a block is not anonymous either. */
+  note: string;
+  store?: EventStore;
+}): Promise<{ ok: boolean; workItemId: string; detail: string }> {
+  const store = options.store ?? eventStore;
+  const workItemId = workItemStream(options.project, options.issue);
+
+  const events = await store.read(workItemId);
+  const item = reduceWorkItem(events);
+  if (item.lifecycle.status !== "blocked") {
+    // Saying which state it is in, for the reason `approve` does: "not blocked"
+    // sends somebody nowhere, and "it is already running" answers the question.
+    return {
+      ok: false,
+      workItemId,
+      detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
+    };
+  }
+
+  await store.append(workItemId, item.version, [
+    {
+      type: "WorkItemUnblocked",
+      actor: options.by,
+      data: parsePayload("WorkItemUnblocked", { by: options.by, note: options.note }),
+    },
+  ]);
+
+  return { ok: true, workItemId, detail: `back in the queue, by ${options.by}` };
 }
 
 /**
