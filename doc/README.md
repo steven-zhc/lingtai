@@ -80,6 +80,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0024](decisions/0024-agent-env-is-its-own-package.md) | The agent's environment is its own package, and Effect is in | accepted; §2's "what is not built" superseded by 0026 |
 | [0025](decisions/0025-a-failure-buys-one-agent.md) | **A failure buys one agent, and the person approves a diff** | accepted |
 | [0026](decisions/0026-the-conversion-past-the-seam.md) | **The conversion goes past the seam: `runOnce` and the adapters are Effect** | accepted |
+| [0027](decisions/0027-the-lease-is-deleted.md) | **The lease is deleted: the constraint excludes, the lock proves liveness** | accepted; supersedes 0013's claim-recovery paragraph |
 
 ## Experiments
 
