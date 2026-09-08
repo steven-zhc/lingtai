@@ -17,7 +17,7 @@
  * What must not be imported is the *implementation*, and none is.
  *
  * **Every method returns an `Effect`**
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)). Two
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). Two
  * things follow from that and neither is available from a `Promise`: the
  * failure is in a channel the caller's type can see — `RepoFailed`,
  * `AgentHostFailed` — and `serve` can ask for a `Scope`, which is how the
@@ -122,7 +122,7 @@ export interface RunPorts {
  * threaded through every caller between the host that knows the implementation
  * and the code that needs it, and `runOnce` is not the only thing that will
  * need `repo`. A tag is asked for where it is used — which since
- * [0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md) is what
+ * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md) is what
  * `runOnce` actually does, rather than taking a `RunPorts` parameter a host
  * had to unpack from these same two tags.
  */

@@ -59,7 +59,7 @@ export async function git(args: string[], options: GitRunOptions = {}): Promise<
  * Anything this package could not do to a repository, in a channel a caller
  * can see.
  *
- * [0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md): the
+ * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md): the
  * point of the conversion is not that `git` returns an `Effect` — it is that a
  * caller's type says this can fail. `Effect.promise` erases exactly that, which
  * is why the seam it was holding stopped one frame in.

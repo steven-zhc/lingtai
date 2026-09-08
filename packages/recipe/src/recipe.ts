@@ -17,7 +17,7 @@
  * See doc/decisions/0005-config-in-target-repo.md.
  */
 import { z } from "zod";
-import { Tier, WorkKind, RuntimeId } from "@lingtai/domain";
+import { Tier, RuntimeId } from "@lingtai/domain";
 
 /**
  * One thing that runs at a gate.
@@ -147,8 +147,24 @@ export const Recipe = z.object({
    * written anything and holds no verdict about anything.
    */
   source: z.object({
-    /** Also the priority order: earlier wins. */
-    kinds: z.array(WorkKind).min(1),
+    /**
+     * Labels of yours that mark an issue as work, **most wanted first**.
+     *
+     * One list doing three jobs, and that is the design rather than an
+     * economy: it is the vocabulary (a label outside it is not a kind at all),
+     * the filter (`kindOf` matches against exactly this), and the priority
+     * order (earlier wins).
+     *
+     * Free-form since #76, and `exclude` always was. There used to be a
+     * `WorkKind` enum in the core — `bug` · `feature` · `enhancement` ·
+     * `tech-debt` — and a recipe naming any other label failed to resolve,
+     * which took *every* issue in the project down with it rather than the one
+     * label. It also contained `enhancement`, which no recipe had ever used,
+     * and omitted `documentation`, which one wanted. Which of a repository's
+     * labels name work is a fact that repository has and this schema does not,
+     * which is 0016 §7 exactly.
+     */
+    kinds: z.array(z.string()).min(1),
     /**
      * Labels of yours that must keep the agent off a ticket, matched
      * case-insensitively by whole name.

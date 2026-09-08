@@ -15,8 +15,8 @@
  * the write-side setup step. The one exception is `NOTIFY`, which is a
  * transient signal and touches no table.
  *
- * **A check that cannot run yet says so.** The checks for the recipe, the
- * repository, the hook and GitHub are listed as `skip` rather than omitted — a
+ * **A check that cannot run yet says so.** The checks for the repository, the
+ * hook and GitHub are listed as `skip` rather than omitted — a
  * check you cannot see is a check you will forget you never had. Each carries
  * the reason it is not a startup check, which is a fact about the design and
  * not about what happened to be installed the day it was written: see
@@ -28,8 +28,10 @@ import {
   landedWithoutEndActions,
   landedWithoutGatePoints,
   loadProjects,
+  projectFilters,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
+import { baseDivergence } from "@lingtai/recipe";
 import { isEventType } from "@lingtai/domain";
 import { STALE_AFTER_MS, findOrphans, readControl, readStatus } from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -492,13 +494,6 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
  */
 const DEFERRED: { name: string; detail: string }[] = [
   {
-    name: "recipe: schema",
-    detail:
-      "a recipe governs one project and is read from origin/<base> through the API as a run starts; " +
-      "resolveRecipe validates it there and refuses the run when it does not parse, so a copy read " +
-      "here would be a different commit's (doc/decisions/0005-config-in-target-repo.md)",
-  },
-  {
     name: "repository, base branch, submodules",
     detail:
       "only a clone settles these: every run cuts its branch from origin/<base> in the mirror and " +
@@ -800,6 +795,57 @@ async function unconverged(url: string): Promise<CheckResult> {
 }
 
 /**
+ * Per project: does its recipe resolve at all, and what will it therefore take.
+ *
+ * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
+ * recipe read here would be "a different commit's" than the one a run reads.
+ * That argument was about the wrong thing. The run reads `origin/<base>` through
+ * the API and so does this, via the same `currentRecipe`; and the question being
+ * asked is not "will this exact commit's gates pass", it is "does the file that
+ * governs the next run parse" — which was `no` on `main` for long enough that
+ * every issue in the project sat unpicked, with doctor green throughout.
+ *
+ * The detail is `ProjectFilter`'s, the same value `lingtai daemon` prints at
+ * startup and `lingtai status` prints per project. Three commands, one answer.
+ */
+async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+  const name = "recipe: resolves for every project";
+  if (!hasGitHubApp(env)) {
+    return [
+      {
+        name,
+        status: "skip",
+        detail: "no App configured, and a recipe is read from the repository through the API",
+      },
+    ];
+  }
+
+  const projects = await loadProjects().catch(() => null);
+  if (projects === null) {
+    return [{ name, status: "skip", detail: "the project streams could not be read" }];
+  }
+  if (projects.length === 0) {
+    return [{ name, status: "ok", detail: "nothing is registered, so no recipe governs anything" }];
+  }
+
+  return (await projectFilters(projects)).map((f) =>
+    f.ok
+      ? {
+          name: `recipe: ${f.project}`,
+          status: "ok" as const,
+          detail:
+            `${f.configHash.slice(0, 12)} from ${f.ref} · picks up ${f.kinds.join(" > ")} · ` +
+            `excludes ${f.exclude.length > 0 ? f.exclude.join(", ") : "nothing"}`,
+        }
+      : {
+          name: `recipe: ${f.project}`,
+          status: "fail" as const,
+          detail: `${f.problem} — nothing will be taken from this project`,
+        },
+  );
+}
+
+/**
  * Per project: every name its recipe requires, and **which layer answered**.
  *
  * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)
@@ -892,6 +938,68 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
   return results;
 }
 
+/**
+ * Per project: is the branch the rules are read from the branch they govern?
+ *
+ * `runOnce` refuses this at `stage: "recipe"` and `lingtai add` refuses to
+ * record it, so a project onboarded from here on cannot be in this state. A
+ * project registered *before* those existed can be, and nothing else would say
+ * so: the divergence is invisible until a run merges into `repo.base` under
+ * gates it read from somewhere else, and every event that run writes is
+ * internally consistent — `GatesResolved` carries the hash of the recipe it
+ * obeyed, so `gates: every point that was planned ran` compares a plan against
+ * itself and finds nothing wrong. Comparing the plan's *origin* to the merge
+ * target is the only thing that sees it, and this is where that happens without
+ * waiting for a run to pay for it.
+ *
+ * **A failure, and one with no repair behind it.** Both branches are recorded
+ * decisions and doctor never writes; which one is meant is a person's answer,
+ * given by re-running `lingtai add --base`.
+ */
+async function recipeGovernsItsBase(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+  const name = "recipe: the rules and the merge target are one branch";
+  if (!hasGitHubApp(env)) {
+    return [{ name, status: "skip", detail: "no App configured, so no recipe can be read to compare" }];
+  }
+
+  const projects = await loadProjects().catch(() => null);
+  if (projects === null) {
+    return [{ name, status: "skip", detail: "the project streams could not be read" }];
+  }
+  if (projects.length === 0) {
+    return [{ name, status: "ok", detail: "no project has a recorded base to disagree with a recipe yet" }];
+  }
+
+  const results: CheckResult[] = [];
+  for (const project of projects) {
+    if (!project.project || !project.owner) continue;
+    const label = `base: ${project.project}`;
+    try {
+      const client = await createGitHubClient({
+        auth: githubApp(env),
+        owner: project.owner,
+        repo: project.project,
+      });
+      const resolved = await currentRecipe(project, client);
+      const divergence = baseDivergence(resolved, `${project.owner}/${project.project}`);
+      results.push(
+        divergence
+          ? { name: label, status: "fail", detail: divergence }
+          : {
+              name: label,
+              status: "ok",
+              detail: `read from ${resolved.ref}, and repo.base says ${resolved.recipe.repo.base}`,
+            },
+      );
+    } catch (err) {
+      // A skip, not a second failure: an unreadable recipe is already red in the
+      // check above, and the comparison genuinely could not be made.
+      results.push({ name: label, status: "skip", detail: `no recipe to compare — ${(err as Error).message}` });
+    }
+  }
+  return results;
+}
+
 export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -931,7 +1039,9 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   }
 
   results.push(githubCredentials(env));
+  results.push(...(await projectRecipes(env)));
   results.push(...(await declaredEnvironment(env)));
+  results.push(...(await recipeGovernsItsBase(env)));
   results.push(await settingsSources());
   results.push(await runtimeAuth());
   for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });

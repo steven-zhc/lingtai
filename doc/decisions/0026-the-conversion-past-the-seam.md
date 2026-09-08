@@ -1,4 +1,4 @@
-# 0025 — The conversion goes past the seam: `runOnce` and the adapters are Effect
+# 0026 — The conversion goes past the seam: `runOnce` and the adapters are Effect
 
 **Status** accepted · 2026-09-08 · supersedes the *"What is not built"* paragraph
 of [0024 §2](0024-agent-env-is-its-own-package.md); implements

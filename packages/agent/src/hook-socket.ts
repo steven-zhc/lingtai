@@ -325,7 +325,7 @@ export function createHookServer(options: HookServerOptions): HookServer {
  * function remembered. As an `Effect.acquireRelease` the close happens because
  * the scope closed: on the happy path, on a typed refusal, on a defect and on
  * an interruption alike
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)).
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
  *
  * The release swallows its own failure, as the `.catch(() => {})` it replaces
  * did. A socket that will not close must not become the run's reported reason.

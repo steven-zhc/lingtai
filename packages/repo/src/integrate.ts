@@ -27,7 +27,7 @@
  *
  * Both of the things it holds — that lock, and the worktree it cuts to merge in
  * — are `Effect.acquireRelease` pairs inside one `Scope`
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)). They
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). They
  * were a pair of nested `finally` blocks, which is the same guarantee written
  * out by hand: correct here, and correct only because one function happened to
  * own both ends of both resources.

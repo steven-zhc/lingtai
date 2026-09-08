@@ -133,3 +133,35 @@ export async function resolveRecipe(
     preset: applied.preset,
   };
 }
+
+/**
+ * The comparison nothing was making: does the recipe read from a ref name that
+ * same ref as the branch it governs?
+ *
+ * Two different branches were both called "the base". `resolveRecipe` reads from
+ * one — the branch recorded at `lingtai add` — and `repo.base` inside the file
+ * it returns names another, which is what the worktree is cut from and what the
+ * merge goes back into. When they disagree the run is right about everything
+ * except the rules: it merges into `repo.base` under gates read from somewhere
+ * else. A `human:` action at `merge` declared on one branch and not the other is
+ * then a control that is declared and does not run.
+ *
+ * No audit after the fact can see that. `GatesResolved` is written from the same
+ * recipe the run obeyed and carries that recipe's hash, so plan and execution
+ * agree perfectly; it is the plan's *origin* that is wrong. Only this comparison,
+ * made before anything is claimed, catches it — see
+ * doc/decisions/0005-config-in-target-repo.md, which assumed one base.
+ *
+ * Returns the refusal rather than throwing, and never repairs: every caller says
+ * it in its own vocabulary — a refused run stage, a failed onboarding, a red
+ * doctor check — and none of them may pick a winner between the two branches.
+ */
+export function baseDivergence(resolved: ResolvedRecipe, slug: string): string | null {
+  const declared = resolved.recipe.repo.base;
+  if (declared === resolved.ref) return null;
+  return (
+    `recipe read from ${resolved.ref} declares repo.base: ${declared} — ` +
+    "the rules and the merge target are different branches. " +
+    `Re-register: lingtai add ${slug} --base ${declared}`
+  );
+}

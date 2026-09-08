@@ -17,7 +17,13 @@ import { considerIssue, kindOf, runnableNow } from "../src/index.ts";
 const recipe = {
   version: 1,
   repo: { base: "develop", submodules: false },
-  source: { kinds: ["bug", "feature"], exclude: ["blocked", "needs-design", "agent:wip", "agent:review"] },
+  // `documentation` is here on purpose: it is not a member of any enum, and
+  // before #76 a recipe naming it did not parse at all — which took the two
+  // `bug`s down with it rather than the one label.
+  source: {
+    kinds: ["bug", "feature", "documentation"],
+    exclude: ["blocked", "needs-design", "agent:wip", "agent:review"],
+  },
   env: { required: [], plantAt: ".env.local" },
   gates: { admit: [], prepared: [], proposed: [{ name: "build", run: "pnpm verify", timeout: "15m" }], merge: [], end: [] },
   runtime: { agent: "claude-code", limits: { turns: 300, wall: "2h" } },
@@ -33,16 +39,36 @@ const issue = (over: Partial<Issue> & { number: number }): Issue => ({
 });
 
 describe("kindOf", () => {
+  const kinds = ["bug", "tech-debt", "documentation"];
+
   it("reads the kind from a label, however it is cased or spaced", () => {
-    expect(kindOf(issue({ number: 1, labels: ["Bug"] }))).toBe("bug");
-    expect(kindOf(issue({ number: 2, labels: ["tech debt"] }))).toBe("tech-debt");
-    expect(kindOf(issue({ number: 3, labels: ["enhancement"] }))).toBe("enhancement");
+    expect(kindOf(issue({ number: 1, labels: ["Bug"] }), kinds)).toBe("bug");
+    expect(kindOf(issue({ number: 2, labels: ["tech debt"] }), kinds)).toBe("tech-debt");
   });
 
-  it("is null when nothing says, rather than guessing", () => {
-    // Guessing `bug` would put every unclassified issue at the front of a queue
-    // whose priority order is by kind.
-    expect(kindOf(issue({ number: 4, labels: ["documentation", "good first issue"] }))).toBeNull();
+  /**
+   * The whole of #76 in one assertion. `documentation` was not in the core's
+   * `WorkKind` enum, and a recipe that named it did not fail to take
+   * documentation — it failed to resolve, so the project offered nothing at all.
+   */
+  it("takes any label the recipe names, not a vocabulary of its own", () => {
+    expect(kindOf(issue({ number: 3, labels: ["documentation"] }), kinds)).toBe("documentation");
+    expect(kindOf(issue({ number: 4, labels: ["chore"] }), ["chore"])).toBe("chore");
+  });
+
+  it("is null for a label the recipe does not name, rather than guessing", () => {
+    // Guessing the first kind would put every unclassified issue at the front
+    // of a queue whose priority order is by kind. `enhancement` used to be in
+    // the enum and is in no recipe here, which is the asymmetry #76 removed.
+    expect(kindOf(issue({ number: 5, labels: ["enhancement"] }), kinds)).toBeNull();
+    expect(kindOf(issue({ number: 6, labels: ["good first issue"] }), kinds)).toBeNull();
+  });
+
+  it("resolves an issue carrying two by the recipe's order, not the issue's", () => {
+    expect(kindOf(issue({ number: 7, labels: ["documentation", "bug"] }), kinds)).toBe("bug");
+    expect(kindOf(issue({ number: 8, labels: ["documentation", "bug"] }), ["documentation", "bug"])).toBe(
+      "documentation",
+    );
   });
 });
 
@@ -81,10 +107,16 @@ describe("considerIssue", () => {
     );
   });
 
+  it("takes a label of the repository's own that no enum ever had", () => {
+    expect(considerIssue(issue({ number: 9, labels: ["documentation"] }), recipe).skip).toBeNull();
+  });
+
   it("skips a kind this project does not want, and says which reason", () => {
-    expect(considerIssue(issue({ number: 6, labels: ["tech-debt"] }), recipe).skip).toBe(
-      "kind-not-wanted",
-    );
+    // One reason, not two: with the recipe's `kinds` as the whole vocabulary
+    // there is no difference between "unclassified" and "classified as
+    // something this project does not take". `kind-not-wanted` named that gap
+    // and the gap is gone (#76).
+    expect(considerIssue(issue({ number: 6, labels: ["tech-debt"] }), recipe).skip).toBe("no-kind");
     expect(considerIssue(issue({ number: 7, labels: [] }), recipe).skip).toBe("no-kind");
     expect(considerIssue(issue({ number: 8, labels: ["bug"], state: "closed" }), recipe).skip).toBe(
       "closed",

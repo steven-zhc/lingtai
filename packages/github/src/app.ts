@@ -205,7 +205,7 @@ interface CachedToken {
  * a promise has and no others. A semaphore's permit is released when the effect
  * *leaves*, interruption included, and the second check inside the permit is
  * what turns "one at a time" into "one request"
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)).
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
  */
 export function installationToken(
   auth: AppAuth,

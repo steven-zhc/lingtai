@@ -31,7 +31,7 @@ import { runOnce } from "../src/run-once.ts";
  * The two tags, from the plain shape.
  *
  * `runOnce` asks for `Repo` and `AgentHost` rather than taking a `RunPorts`
- * parameter ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)),
+ * parameter ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)),
  * so a test provides them the way a host does. `RunPorts` survives as exactly
  * this: the shape a `Layer` is built from.
  */

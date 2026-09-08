@@ -49,7 +49,7 @@ const exec = promisify(execFile);
  * The host's edge, in a test.
  *
  * `runOnce` and `runQueue` are `Effect`s that ask for `Repo` and `AgentHost`
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)). This
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). This
  * file wants the real world, so it provides the real layer and runs once at the
  * edge — the same two lines `apps/cli/src/run.ts` uses, which is the point of
  * them being two lines.
@@ -401,6 +401,47 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
     expect(askedFor).not.toContain("feature/062-user-suggested-skills");
     // It got past the recipe stage, which is all this case is about.
     if (!result.ok) expect(result.stage).not.toBe("recipe");
+  }, 120_000);
+
+  /**
+   * The case the test above cannot reach: the recipe *is* read from the recorded
+   * base, and says a different branch governs it.
+   *
+   * From there the run would be right about everything except the rules — it
+   * cuts from `main` and merges into `main`, under gates read from `develop`.
+   * Nothing downstream can see that, because `GatesResolved` is written from the
+   * same file the run obeyed; so the assertion that matters is the *absence*:
+   * the work item's stream is empty, which is the difference between a refusal
+   * and an agent that has already been started and paid for.
+   */
+  it("refuses when the recipe's own repo.base is a different branch, and claims nothing", async () => {
+    created.add(workItemStream(PROJECT, 122));
+    const other = issue2(122);
+
+    const result = await once({
+      ...options(await agentThat("true")),
+      issue: 122,
+      client: fakeClient({
+        recipe: RECIPE.replace("base: develop", "base: main"),
+        getIssue: async () => other,
+        listOpenIssues: async () => [other],
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Alongside `env.required`, before anything is claimed — so there is no run
+    // to name either.
+    expect(result.stage).toBe("recipe");
+    expect(result.workItemId).toBeNull();
+    expect(result.runId).toBeNull();
+    // Both branches, and the exact command that settles which one is meant.
+    expect(result.detail).toContain("recipe read from develop declares repo.base: main");
+    expect(result.detail).toContain(`lingtai add steven-zhc/${PROJECT} --base main`);
+
+    // The whole point: nothing was claimed, so nothing was started and nothing
+    // has to be released.
+    expect(await store.read(workItemStream(PROJECT, 122))).toEqual([]);
   }, 120_000);
 
   /**

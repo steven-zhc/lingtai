@@ -77,8 +77,9 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0021](decisions/0021-the-recipe-decides-the-environment.md) | The recipe decides the environment; the machine only holds it | accepted |
 | [0022](decisions/0022-the-seams.md) | **Where the seams go: eleven packages, and four deletions** | accepted |
 | [0023](decisions/0023-effect-at-the-boundary.md) | Effect at the port boundary, and nowhere else | accepted |
-| [0024](decisions/0024-agent-env-is-its-own-package.md) | The agent's environment is its own package, and Effect is in | accepted; §2's "what is not built" superseded by 0025 |
-| [0025](decisions/0025-the-conversion-past-the-seam.md) | **The conversion goes past the seam: `runOnce` and the adapters are Effect** | accepted |
+| [0024](decisions/0024-agent-env-is-its-own-package.md) | The agent's environment is its own package, and Effect is in | accepted; §2's "what is not built" superseded by 0026 |
+| [0025](decisions/0025-a-failure-buys-one-agent.md) | **A failure buys one agent, and the person approves a diff** | accepted |
+| [0026](decisions/0026-the-conversion-past-the-seam.md) | **The conversion goes past the seam: `runOnce` and the adapters are Effect** | accepted |
 
 ## Experiments
 

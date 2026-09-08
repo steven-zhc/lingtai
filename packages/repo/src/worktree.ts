@@ -156,7 +156,7 @@ export async function removeWorktree(options: {
  * They are a pair on purpose. `runOnce` acquires the worktree and releases it
  * with `Effect.acquireRelease`, so the removal that used to be a `finally` two
  * frames up now happens because the scope closed, whichever way control left it
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)).
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
  *
  * The removal swallows its own failure, as the `.catch(() => {})` it replaces
  * did: a cleanup must not replace the failure it is cleaning up after.

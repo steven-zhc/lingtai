@@ -5,7 +5,8 @@
  * its own tests and its own reasons. What is here is the *order*, and the order
  * is the part that has to be right:
  *
- *   resolve the recipe from origin/<base>   never from the agent's branch
+ *   resolve the recipe from origin/<base>   never from the agent's branch, and
+ *                                           it must name that branch as its own
  *   resolve the environment                 a declared name with no value
  *                                           refuses here, before the money
  *   discover, claim                         the constraint decides the race
@@ -23,7 +24,7 @@
  *
  * It used to say so and then keep the promise by hand: two nested `finally`
  * blocks and a `catch (err)` whose own comment admitted what it was. Since
- * [0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md) the
+ * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md) the
  * promise is structural instead.
  *
  * **Three things a run acquires, and one scope each.** The worktree, the hook
@@ -39,7 +40,7 @@
  * recorded about where a scope *starts*, kept here as a test rather than as an
  * intention.
  */
-import { type ResolvedRecipe, parseDuration } from "@lingtai/recipe";
+import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/recipe";
 import { type Tier, parsePayload } from "@lingtai/domain";
 import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
@@ -225,6 +226,18 @@ export function runOnce(
     }
     const resolved = recipeAt.right;
     const recipe = resolved.recipe;
+    // The other half of that comment, which the code above did not do: the ref the
+    // rules came from and the branch they say they govern have to be one branch.
+    // Here rather than beside the merge, and for the same reason the `env.required`
+    // refusal below is where it is — nothing is claimed yet, so a project whose two
+    // bases disagree costs a fetch and stops. It refuses rather than picking a
+    // winner: both branches are recorded decisions, and nothing here repairs a
+    // recorded decision silently (0024 §3).
+    const divergence = baseDivergence(resolved, `${options.client.owner}/${options.client.repo}`);
+    if (divergence) {
+      return { ok: false, workItemId: null, runId: null, stage: "recipe", detail: divergence };
+    }
+    // Safe now, and only now: past the refusal these two are the same branch.
     const base = recipe.repo.base;
     log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`);
 

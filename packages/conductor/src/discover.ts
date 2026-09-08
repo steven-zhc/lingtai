@@ -21,34 +21,49 @@
  * discover it at all.
  */
 import type { Recipe } from "@lingtai/recipe";
-import { type WorkKind, WorkKind as WorkKindSchema } from "@lingtai/domain";
 import type { GitHubClient, Issue } from "@lingtai/github";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
-const KINDS = new Set<string>(WorkKindSchema.options);
-
 /**
- * Which kind of work an issue is, from its labels.
+ * Which kind of work an issue is, from its labels — **the recipe's labels**.
  *
- * Null when nothing says. That is not a defaulting opportunity: an issue nobody
- * has classified is not work the scheduler can prioritise, and guessing `bug`
- * would put unclassified issues at the front of the queue.
+ * `kinds` is passed in rather than read from a set this file keeps, because
+ * one list has to be the vocabulary, the filter and the priority order at once
+ * (#76). A global enum made them three lists that could disagree, and the way
+ * they disagreed was fatal: a recipe naming a label the enum did not have
+ * failed to resolve, so the project offered nothing at all instead of offering
+ * the kinds it did name.
+ *
+ * Matched case-insensitively, with whitespace folded to a hyphen, so a recipe
+ * saying `tech-debt` takes an issue labelled `Tech Debt`. Earlier in `kinds`
+ * wins when an issue carries two.
+ *
+ * Null when nothing says. That is not a defaulting opportunity: an issue this
+ * recipe has no label for is not work the scheduler can prioritise, and
+ * guessing the first kind would put unclassified issues at the front of the
+ * queue.
  */
-export function kindOf(issue: Issue): WorkKind | null {
-  for (const label of issue.labels) {
-    const normalised = label.toLowerCase().replace(/\s+/g, "-");
-    if (KINDS.has(normalised)) return normalised as WorkKind;
+export function kindOf(issue: Issue, kinds: readonly string[]): string | null {
+  const carried = new Set(issue.labels.map(normaliseLabel));
+  for (const kind of kinds) {
+    if (carried.has(normaliseLabel(kind))) return kind;
   }
   return null;
 }
 
-export type SkipReason =
-  | "closed"
-  | "no-kind"
-  | "kind-not-wanted"
-  | "excluded-label"
-  | "already-discovered";
+function normaliseLabel(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, "-");
+}
+
+/**
+ * `kind-not-wanted` is gone, and could not survive #76: it named the gap
+ * between a global vocabulary and the recipe's subset of it, and there is no
+ * global vocabulary any more. An issue labelled with something this recipe does
+ * not list is `no-kind` — which is the honest reading, since the recipe is the
+ * only thing that ever knew what a kind was.
+ */
+export type SkipReason = "closed" | "no-kind" | "excluded-label" | "already-discovered";
 
 export interface Considered {
   issue: Issue;
@@ -81,9 +96,7 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   const excluded = new Set(recipe.source.exclude.map((l) => l.toLowerCase()));
   if (labels.some((l) => excluded.has(l))) return { issue, skip: "excluded-label" };
 
-  const kind = kindOf(issue);
-  if (kind === null) return { issue, skip: "no-kind" };
-  if (!recipe.source.kinds.includes(kind)) return { issue, skip: "kind-not-wanted" };
+  if (kindOf(issue, recipe.source.kinds) === null) return { issue, skip: "no-kind" };
 
   return { issue, skip: null };
 }
@@ -136,7 +149,7 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
       ref: String(issue.number),
       title: issue.title,
       // `considerIssue` already refused a null kind, so this is a string.
-      kind: kindOf(issue)!,
+      kind: kindOf(issue, recipe.source.kinds)!,
     });
   }
 

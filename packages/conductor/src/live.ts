@@ -7,7 +7,7 @@
  * subprocess.
  *
  * Every name below is already an `Effect` in the package that owns it
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)), so
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)), so
  * this file is a table of names and not an adapter — except for one row, and
  * the exception is stated rather than hidden.
  */

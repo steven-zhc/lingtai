@@ -103,7 +103,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
      *
      * There is no conversion left inside it. `runQueue` and `runOnce` are
      * `Effect`s that ask for `Repo` and `AgentHost` themselves
-     * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md));
+     * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md));
      * this used to be eleven lines of description wrapped around one
      * `Effect.promise` call that turned "provided" straight back into
      * "passed", so the guarantee below stopped one frame in.

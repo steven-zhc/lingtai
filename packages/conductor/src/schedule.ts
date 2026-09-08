@@ -115,7 +115,7 @@ export interface ScheduleResult {
  *
  * It takes the same world `runOnce` does and for the same reason: this is a
  * loop over that function, so it needs whatever that function needs and adds
- * nothing of its own ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)).
+ * nothing of its own ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
  * A host provides `Repo` and `AgentHost` once, around the pass.
  */
 export function runQueue(

@@ -57,7 +57,7 @@ export interface PassOutcome {
  * A pass, with the world provided around each item it takes.
  *
  * `runOnce` and `runQueue` ask for `Repo` and `AgentHost`
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)), so a
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)), so a
  * pass is a host as much as `lingtai run` is: it provides `PortsLive` and calls
  * `runPromise` at its own edge. The projector is the daemon's, held for as long
  * as the daemon runs, which is why there is no scope of that kind here.

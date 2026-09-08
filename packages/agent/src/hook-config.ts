@@ -191,7 +191,7 @@ export async function smokeTestFailClosed(
  * Anything the host could not do for a run, in a channel a caller can see.
  *
  * The mirror of `@lingtai/repo`'s `RepoFailed`, and for the same reason
- * ([0025](../../../doc/decisions/0025-the-conversion-past-the-seam.md)): the
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)): the
  * conversion is worth something because the type says a call can fail, not
  * because it returns an `Effect`.
  */

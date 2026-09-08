@@ -20,7 +20,7 @@
  * function's.
  */
 import type { Envelope } from "./envelope.ts";
-import type { PayloadOf, Tier, WorkKind } from "./events.ts";
+import type { PayloadOf, Tier } from "./events.ts";
 
 export type WorkItemLifecycle =
   | { status: "backlog" }
@@ -50,7 +50,8 @@ export interface WorkItemState {
   source: "github-issue" | "manual" | "agent-followup" | null;
   externalRef: string | null;
   title: string | null;
-  kind: WorkKind | null;
+  /** Whatever label the recipe's `source.kinds` matched. Null until discovered. */
+  kind: string | null;
   labels: readonly string[];
 
   links: readonly WorkItemLink[];
