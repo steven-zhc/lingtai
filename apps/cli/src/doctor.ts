@@ -37,7 +37,7 @@ import { STALE_AFTER_MS, findOrphans, readControl, readStatus } from "@lingtai/d
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
-import { projectionLag } from "@lingtai/projector";
+import { describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -333,6 +333,33 @@ async function projections(url: string): Promise<CheckResult> {
     return { name: "projections: lag", status: "ok", detail };
   } catch (err) {
     return { name: "projections: lag", status: "fail", detail: (err as Error).message };
+  }
+}
+
+/**
+ * The columns the projection's DDL declares, against the columns the table has.
+ *
+ * The check above looks at **lag**, and lag is the wrong instrument for this:
+ * #84 added `awaiting_approval` to `task_view`'s `create table`, which only runs
+ * when the table is absent, and the live table had been made days earlier. Lag
+ * was zero right up to the append that needed the column — then the projector
+ * threw, the daemon stopped with it at 933 against a head of 941, and the board
+ * was stale overnight with a run orphaned in it. The one check that covered
+ * projections could not have seen the one thing that was wrong.
+ *
+ * A **fail**, not a warn or a skip. The daemon will stop over this the moment
+ * the wrong event arrives, and the fix costs a replay rather than a decision —
+ * which is why the detail names it (`describeDrift`). Reads
+ * `information_schema` only, so it obeys the rule at the top of this file and
+ * runs on every doctor.
+ */
+async function projectionShapes(url: string): Promise<CheckResult> {
+  const name = "projections: shape";
+  try {
+    const shape = await projectionShape(taskViewProjection, url);
+    return { name, status: shape.drift.length === 0 ? "ok" : "fail", detail: describeShape(shape) };
+  } catch (err) {
+    return { name, status: "fail", detail: (err as Error).message };
   }
 }
 
@@ -1024,6 +1051,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     results.push(await directIsSessionMode(direct));
     results.push(...(await schema(direct)));
     results.push(await projections(pooled));
+    results.push(await projectionShapes(pooled));
     results.push(await daemonLiveness());
     results.push(await readableTypes(direct));
     results.push(await orphans());

@@ -223,5 +223,11 @@ describe("lingtai doctor — against the real database", () => {
     expect(find(report.results, "schema: optimistic concurrency").status).toBe("ok");
     expect(find(report.results, "schema: append-only").status).toBe("ok");
     expect(find(report.results, "schema: notify trigger").status).toBe("ok");
+
+    // Lag is not the instrument for a shape that has drifted — it read zero
+    // right up to the append that needed the column #84 added (#90). Both
+    // checks are listed, so neither can stand in for the other.
+    expect(find(report.results, "projections: lag").status).toBe("ok");
+    expect(find(report.results, "projections: shape").status).toBe("ok");
   }, 60_000);
 });
