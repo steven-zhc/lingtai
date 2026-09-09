@@ -77,6 +77,42 @@ interface ToolCall {
   input: Record<string, unknown>;
 }
 
+/**
+ * A tool call as a watcher sees it: what, and on what.
+ *
+ * The socket's own decisions do not need this — `MUTATIONS` above is the whole
+ * of what it reads an input for. It exists because `onDecision` used to carry
+ * the hook name and a verdict and nothing else, which is enough to count calls
+ * and not enough to say what the agent is *doing*, and 0034's whole claim is
+ * that the live picture is already arriving.
+ */
+export interface ObservedCall {
+  /** `Bash`, `Read`, `Write`, … */
+  tool: string;
+  /** The path, the command, the pattern — whatever this tool is about. Never multi-line. */
+  target: string;
+}
+
+/**
+ * What a tool call is about, in one clipped and redacted string.
+ *
+ * Redacted because a `Bash` command is exactly where a connection string turns
+ * up, and this now reaches a file on disk rather than only a counter in memory
+ * — the same reason `redact` survived the guard's deletion.
+ */
+export function observedCall(call: ToolCall): ObservedCall {
+  const first = (...keys: string[]): string => {
+    for (const key of keys) {
+      const value = call.input[key];
+      if (typeof value === "string" && value !== "") return value;
+    }
+    return "";
+  };
+  const command = first("command");
+  const target = command === "" ? first("file_path", "path", "pattern", "url", "query") : redact(command);
+  return { tool: call.tool, target: target.slice(0, 500) };
+}
+
 const MUTATIONS: Record<string, "write" | "edit" | undefined> = {
   Write: "write",
   Edit: "edit",
@@ -100,8 +136,22 @@ export interface RegisteredRun {
 export interface HookServerOptions {
   socketPath: string;
   store?: EventStore;
-  /** Overridable so a test can watch what the server decided. */
-  onDecision?: (runId: string, hook: HookName, verdict: "allow" | "deny") => void;
+  /**
+   * Every tool call, as it happens.
+   *
+   * Overridable so a test can watch what the server decided, and — since
+   * [0034](../../../doc/decisions/0034-the-run-log.md) — so the conductor can
+   * write the run's log from it. The events this hook produces are deliberately
+   * buffered (`run.touched`, flushed at the end) because the board wants what
+   * the agent *changed* rather than every read it made; this is the other
+   * audience, which wants exactly the reads.
+   */
+  onDecision?: (
+    runId: string,
+    hook: HookName,
+    verdict: "allow" | "deny",
+    call: ObservedCall,
+  ) => void;
   /**
    * Called for a lifecycle hook the conductor has to act on rather than merely
    * record — `Stop` is the moment the gate pipeline fires, and firing it needs a
@@ -231,7 +281,7 @@ export function createHookServer(options: HookServerOptions): HookServer {
       const op = MUTATIONS[call.tool];
       const path = (call.input["file_path"] ?? call.input["path"]) as string | undefined;
       if (op && path) run.touched.push({ path, op });
-      options.onDecision?.(run.runId, hook, "allow");
+      options.onDecision?.(run.runId, hook, "allow", observedCall(call));
       return { allow: true };
     }
 
@@ -245,7 +295,7 @@ export function createHookServer(options: HookServerOptions): HookServer {
     // what `RunContextExhausted` reports a turn number from.
     run.calls += 1;
     run.allowed += 1;
-    options.onDecision?.(run.runId, hook, "allow");
+    options.onDecision?.(run.runId, hook, "allow", observedCall(call));
     return { allow: true };
   }
 

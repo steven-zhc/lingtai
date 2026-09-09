@@ -51,6 +51,7 @@ export {
 export {
   exists,
   findLaggingProjections,
+  findOrphanLogs,
   findOrphans,
   killWorker,
   reconcile,

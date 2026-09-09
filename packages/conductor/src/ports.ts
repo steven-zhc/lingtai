@@ -30,7 +30,9 @@ import type {
   HookServer,
   HookServerOptions,
   HookWiring,
+  OpenRunLogOptions,
   RenderOptions,
+  RunLog,
 } from "@lingtai/agent";
 import type {
   GitRunOptions,
@@ -84,6 +86,21 @@ export interface AgentHostPort {
    * that the close happened at all.
    */
   serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>;
+  /**
+   * The run's log file, open for writing
+   * ([0034](../../../doc/decisions/0034-the-run-log.md)).
+   *
+   * **The path comes in.** The conductor knows where `~/.lingtai` is and the
+   * agent package does not; this port carries the decision across rather than
+   * letting the far side compute it.
+   *
+   * The one acquisition that is deliberately *not* scoped here, unlike `serve`.
+   * Its close carries a judgement — landed → delete, did not land → keep — and
+   * the moment that judgement is known is the moment `run-once.ts`'s scope
+   * closes, not before. So the pair is made there, in the open, where a fake
+   * can assert which way it went.
+   */
+  runLog(options: OpenRunLogOptions): Effect.Effect<RunLog, AgentHostFailed>;
   resolveEnv(options: {
     project: string;
     /** `env.required` — a check against the merged data, not a filter. */

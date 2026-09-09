@@ -4,7 +4,9 @@
  * **Four things at startup**, and until `#69` only the second was checked:
  *
  * 1. the projection is caught up — the checkpoint against the log's head
- * 2. worktrees are cleaned — the original job
+ * 2. worktrees are cleaned — the original job, and since
+ *    [0034](../../../doc/decisions/0034-the-run-log.md) the run logs beside
+ *    them, which are the same shape on purpose
  * 3. foreign claims are returned — held by a conductor that no longer exists
  * 4. GitHub says what the log says — see `converge.ts`
  *
@@ -244,6 +246,104 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
 }
 
 /**
+ * Run logs whose run is over and whose ticket is done.
+ *
+ * The second thing `~/.lingtai` holds that outlives every process that knew
+ * about it, and it is deliberately the worktree's shape —
+ * `runs/<project>/<runId>.log` beside `worktrees/<project>/<runId>/` — so this
+ * is the same walk in the same pass rather than a second mechanism
+ * ([0034](../../../doc/decisions/0034-the-run-log.md) §1).
+ *
+ * **The rule is not the worktree's rule, and it must not be.** A worktree
+ * belonging to a run that is over is *always* wrong: it holds a branch checked
+ * out and stops git updating that ref. A log belonging to a run that is over is
+ * the ordinary case and the whole point — 0034 §4 keeps exactly those, because
+ * the log worth reading is the one from the run that just failed.
+ *
+ * So what is reaped here is narrower: **a log whose work item has landed**
+ * (§5). These files exist to explain why an item is not done; when it lands and
+ * its issue closes there is nothing left to explain. `run-once.ts` deletes its
+ * own on the way out, so in the ordinary case this finds nothing. It catches
+ * the two cases that release cannot: a daemon killed mid-run, and an item that
+ * landed by some other route — an approval, on the CLI or the board.
+ *
+ * A log with **no run stream behind it** is reported and never removed, which
+ * is `findOrphans`' rule verbatim and for its reason: a run that never got as
+ * far as saying what it was for is a mystery, and deleting mysteries is how you
+ * stop being able to explain them.
+ *
+ * Nothing here reads what is *in* a file. 0034 §8 — the log is a trace and not
+ * a record, so no behaviour may depend on its contents, and the only question
+ * asked of one is whether it is still owed an explanation.
+ */
+export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
+  const store = options.store ?? eventStore;
+  const home = options.home ?? defaultHome();
+  const root = join(home, "runs");
+
+  let projects: string[];
+  try {
+    projects = (await readdir(root, { withFileTypes: true }))
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+
+  const findings: Finding[] = [];
+
+  for (const project of projects) {
+    let logs: string[];
+    try {
+      // Only `<runId>.log`. `runs/` also holds `settingsPathFor`'s
+      // `runs/<runId>/settings.json`, which is a directory named for a run —
+      // the two shapes share a parent and never each other's names.
+      logs = (await readdir(join(root, project), { withFileTypes: true }))
+        .filter((e) => e.isFile() && e.name.endsWith(".log"))
+        .map((e) => e.name);
+    } catch {
+      continue;
+    }
+
+    for (const name of logs) {
+      const path = join(root, project, name);
+      const runId = name.slice(0, -".log".length);
+
+      const run = await store.read(runId).catch(() => []);
+      const taskId = run
+        .map((e) => (e.data as { workItemId?: string } | undefined)?.workItemId)
+        .find((id): id is string => typeof id === "string");
+
+      if (!taskId) {
+        findings.push({
+          stream: runId,
+          expected: "a run that named its task",
+          actual: `a log at ${path} for a run with no RunStarted`,
+          action: "reported",
+          path,
+        });
+        continue;
+      }
+
+      const task = reduceWorkItem(await store.read(taskId).catch(() => []));
+      // Landed and nothing else. `blocked` is a question somebody has to
+      // answer, and the log is half of what they answer it with.
+      if (task.lifecycle.status !== "landed") continue;
+
+      findings.push({
+        stream: runId,
+        expected: `no log — ${taskId} landed on ${task.lifecycle.base}`,
+        actual: `a log at ${path}`,
+        action: options.dryRun ? "reported" : "removed",
+        path,
+      });
+    }
+  }
+
+  return findings;
+}
+
+/**
  * Is the projection at the head of the log?
  *
  * **Reported, never repaired here.** Since `#66` every process that appends
@@ -462,6 +562,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
   const findings = [
     ...(await findLaggingProjections(options)),
     ...(await findOrphans({ ...options, abandoned })),
+    ...(await findOrphanLogs(options)),
     ...foreign,
   ];
 

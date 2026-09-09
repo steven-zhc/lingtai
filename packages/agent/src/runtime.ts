@@ -39,6 +39,31 @@ export interface RunRequest {
   model?: string;
   /** Rendered by the conductor, outside the worktree. */
   settingsPath: string;
+  /**
+   * The run's log file, chosen by the conductor and handed here.
+   *
+   * Beside `cwd`, `env` and `settingsPath` because it is the same kind of
+   * thing: a path the conductor decided and the adapter is told
+   * ([0034](../../../doc/decisions/0034-the-run-log.md) §1). `packages/agent`
+   * must not learn where `~/.lingtai` is — a runtime adapter that computed this
+   * would have crossed the seam 0022 drew.
+   *
+   * **Also outside the worktree, and for a reason that is not the same one.**
+   * `settingsPath` is outside it because an agent that can edit its own hook
+   * configuration has no hook configuration. This is outside it because the
+   * worktree is removed *before* the merge, so a log inside one dies before the
+   * run has an outcome — and the log worth reading is always the one from the
+   * run that just failed. The agent also commits from there, and a `git add -A`
+   * would sweep its own log into the diff (0034 §2).
+   *
+   * What writes to it today is the hook socket's trace, from the conductor.
+   * `#109` adds the agent's own output, which is what this field is for and why
+   * the adapter is handed it now: that change rewrites the parse path producing
+   * `RunFinished`, and is its own decision.
+   *
+   * Absent for a run with no log — a review agent at a gate, or `discuss`.
+   */
+  logPath?: string;
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
   env: Record<string, string>;
   limits: { turns: number; wallMs: number };

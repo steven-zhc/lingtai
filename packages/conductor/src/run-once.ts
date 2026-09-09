@@ -35,12 +35,18 @@
  * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md) the
  * promise is structural instead.
  *
- * **Three things a run acquires, and one scope each.** The worktree, the hook
+ * **Four things a run acquires, and one scope each.** The worktree, the hook
  * socket and the agent process are `Effect.acquireRelease` pairs, so each is
  * released because its scope closed — on the happy path, on a typed refusal, on
  * a defect and on an interruption alike. The scopes also encode an ordering
  * that used to be a comment beside an explicit call: *the worktree is gone
  * before the integrator runs*, because the integrator is outside its scope.
+ *
+ * The fourth is the run's log file
+ * ([0034](../../../doc/decisions/0034-the-run-log.md)), and its scope is wider
+ * than the other three for the reason the others' are narrow: its release
+ * decides **keep or delete**, and that turns on whether the run landed, which
+ * is not known until after the worktree is gone.
  *
  * **And one ending stops the conductor rather than the item.** A run that never
  * started ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)) met
@@ -60,7 +66,7 @@ import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/rec
 import { type Tier, parsePayload } from "@lingtai/domain";
 import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
-import { type Runtime, missingForTier } from "@lingtai/agent";
+import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
@@ -88,6 +94,30 @@ import type { TokenSource } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
 import { AgentHost, Repo } from "./ports.ts";
 import { spawn } from "node:child_process";
+import { join } from "node:path";
+
+/**
+ * Where a run's log lives, and it is the worktree's shape on purpose.
+ *
+ * ```
+ * ~/.lingtai/worktrees/<project>/<runId>/     already
+ * ~/.lingtai/runs/<project>/<runId>.log       this
+ * ```
+ *
+ * `reconcile` already walks `join(home, "worktrees")` as `<project>/<runId>`
+ * ([0034](../../../doc/decisions/0034-the-run-log.md) §1), so reaping the
+ * second is the same code in the same pass rather than a second mechanism. It
+ * shares `runs/` with `settingsPathFor`'s `runs/<runId>/settings.json`, which
+ * is a directory named for a run and never a `.log` — the two do not collide
+ * and `findOrphanLogs` is written to see only the second.
+ *
+ * **The conductor names it, and nothing below the seam does.** `packages/agent`
+ * is handed the path as `RunRequest.logPath`; a runtime adapter that knew where
+ * `~/.lingtai` is would have crossed 0022's seam.
+ */
+export function runLogPath(home: string, project: string, runId: string): string {
+  return join(home, "runs", project, `${runId}.log`);
+}
 
 export interface RunOnceOptions {
   project: ProjectState;
@@ -623,7 +653,72 @@ export function runOnce(
         ),
       );
 
+    /**
+     * A fourth scope, outside the other three, and it is the log's.
+     *
+     * The worktree, the socket and the agent process each have one already.
+     * This one is wider than all of them because what closes it has to know
+     * something none of them does: **whether the run landed**
+     * ([0034](../../../doc/decisions/0034-the-run-log.md) §4). The worktree's
+     * scope ends before the merge lane — that is what "before the integrator"
+     * means and it cannot be relaxed — so a decision taken there would be taken
+     * while the answer is still unknowable.
+     *
+     * It still runs on every outcome, which is the property 0034 asked for:
+     * landed, held, failed, crashed, interrupted. The `catchTag`,
+     * `catchAllDefect` and `ensuring` below are outside it, so the file is
+     * closed before the release they perform is even attempted.
+     */
     const claimed = Effect.gen(function* () {
+      /**
+       * Whether this run's diff reached the base branch.
+       *
+       * Read by the release below and set in exactly one place — beside the
+       * `WorkItemLanded` append, which is the only sentence in this file that
+       * means it. A mutable flag rather than a returned value because the
+       * release is a `finally` in every sense: it runs on the paths that never
+       * return anything at all.
+       */
+      let didLand = false;
+
+      /**
+       * The run's log, and the keep-or-delete that ends it.
+       *
+       * **Landed → delete. Did not land → keep.** The diff is on the branch and
+       * the events are on the log, so what an agent was thinking during a run
+       * that worked has the least marginal value of anything here; what is kept
+       * is exactly the investigable set, and the rule needs no timer, no
+       * sweeper and no retention period. `#84` cost $26.53 and, once landed,
+       * what it was thinking is gone — that cost is real and is accepted.
+       *
+       * A log that could not be opened is `NO_RUN_LOG` rather than a refusal.
+       * The observability of a run is not worth failing it for, and the events
+       * — which are the half that settles anything — are unaffected.
+       */
+      const runLog = yield* Effect.acquireRelease(
+        host
+          .runLog({ path: runLogPath(home, project, runId) })
+          .pipe(
+            Effect.catchAll((err) =>
+              Effect.sync(() => {
+                log(`no run log: ${err.detail}`);
+                return NO_RUN_LOG satisfies RunLog;
+              }),
+            ),
+          ),
+        (opened) =>
+          Effect.promise(async () => {
+            opened.note(
+              "run",
+              didLand
+                ? "landed — the diff is on the branch and the events are on the log, so this file goes"
+                : "did not land — this file is kept, and is the only account of why",
+            );
+            await opened.close(didLand ? "delete" : "keep");
+          }),
+      );
+      runLog.note("run", `${runId} · ${workItemId} · ${branch} → ${base}`);
+
       /**
        * Everything that needs the worktree, and nothing that does not.
        *
@@ -737,8 +832,30 @@ export function runOnce(
                 .serve({
                   socketPath: wiring.socketPath,
                   store,
+                  /**
+                   * The live picture, given somewhere to go (0034 §3).
+                   *
+                   * This callback has existed since the socket did and nothing
+                   * consumed it: the events the hook derives are deliberately
+                   * buffered — `run.touched`, flushed at the end — because the
+                   * board wants what the agent *changed* rather than every read
+                   * it made. So a live view of every tool call was already
+                   * arriving and was being thrown away, while the only
+                   * observable of a running agent was `ps`.
+                   *
+                   * Writing here is free: `note` returns immediately and the
+                   * write happens behind it, so the hook's reply is not waiting
+                   * on a disk. The verdict is on the line because the day
+                   * something is denied, that line has to look different.
+                   */
+                  onDecision: (_r, hook, verdict, call) =>
+                    runLog.note(
+                      call.tool === "" ? hook : call.tool,
+                      `${verdict.padEnd(6)}${call.target}`,
+                    ),
                   onLifecycle: (_r, hook) => {
                     if (hook === "Stop") proposedSha = "pending";
+                    runLog.note("hook", hook);
                   },
                 })
                 .pipe(failing("hook"));
@@ -855,6 +972,11 @@ export function runOnce(
                     // price, arriving at the same place.
                     prompt: renderPrompt(options.prompt, ticket, failure),
                     settingsPath: wiring.settingsPath,
+                    // Chosen here, written to by the hook trace above, and
+                    // handed across the seam because `#109` puts the agent's
+                    // own stream in the same file and the adapter is the only
+                    // thing that holds it (0034 §1, §3).
+                    logPath: runLog.path,
                     env: agentEnv,
                     limits,
                     signal: abort.signal,
@@ -876,6 +998,7 @@ export function runOnce(
           const { outcome, ticket, version } = ran;
 
           if (outcome.failure) {
+            runLog.note("run", `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`);
             // Never silence. Every ending has a kind.
             yield* Effect.promise(() =>
               store.append(runId, version, [
@@ -939,6 +1062,10 @@ export function runOnce(
             ]),
           );
           log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`);
+          runLog.note(
+            "run",
+            `finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`,
+          );
 
           // ---- 9. the diff the `proposed` gates will be about ----------------
           const headSha = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
@@ -1422,10 +1549,17 @@ export function runOnce(
         }),
       );
       log(`landed ${merged.mergeCommit.slice(0, 7)} on ${base}`);
+      // The one sentence in this file that means the run landed, and so the one
+      // place the log's keep-or-delete can be decided from (0034 §4, §5). The
+      // release above reads it when the scope closes, a few lines from now.
+      didLand = true;
       return { ok: true, workItemId, runId, mergeCommit: merged.mergeCommit } satisfies RunOnceResult;
     });
 
-    return yield* claimed.pipe(
+    // `Effect.scoped` here and not around the generator's body: the scope the
+    // log is acquired in has to close before the handlers below run, and after
+    // the merge lane above them.
+    return yield* Effect.scoped(claimed).pipe(
       // Every typed refusal, in one place: it releases with the reason it
       // carries and reports the stage it names. There is no `release(...)` call
       // beside a `return` anywhere above, which is the point.

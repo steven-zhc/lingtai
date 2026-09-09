@@ -172,6 +172,22 @@ Not the recipe's, and each row says why.
 | `EVIDENCE_LINES` / `EVIDENCE_BYTES` (`packages/actions/src/command.ts`) | `60` lines / `8000` bytes | the log tail a failed command keeps as its evidence | it is written into `GateFailed.evidence` — an **event payload**. A recipe may decide what a run is told; it may not decide how much a project writes into a log that is never rewritten. `runtime.budget.evidence` then clips that tail again on the way into a prompt, and that is the bound that is about cost |
 | `DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts`) | `2` days | how long a landed task stays on the board — **a query, not a rebuild** | one board across every project, so no single recipe is the place to decide it. [0012](decisions/0012-one-task-view.md) settled the concept — *"Retention must not be in the projection, and this is the part that is easy to get wrong"* — and only the number was unrecorded |
 | `BUFFER_BYTES` (`packages/actions/src/command.ts`) | `2000000` bytes | above this, older output is dropped **while the command is still running** | a runaway process can print faster than anything reads it. This bounds memory, not meaning |
+| `RUN_LOG_MAX_BYTES` (`packages/agent/src/run-log.ts`) | `8000000` bytes | where a run's log file stops, saying so in itself on the line it stops at | it bounds a file on the operator's disk, not what a run is told or may spend. A trace line is about sixty bytes, so this is ~130,000 tool calls — the cap is not for the trace but for `#109`'s agent stream, which can be tens of megabytes for one run. Past this it stops being a file somebody opens to find out why a run failed ([0034](decisions/0034-the-run-log.md) §7) |
+
+**And this row is why the section exists.** `RUN_LOG_MAX_BYTES` is the first
+constant of this kind added since `#96` was filed, and 0034 §7 wrote the
+requirement into the decision rather than into anybody's intentions: *that
+number goes into `doc/reference.md`'s policy section on the day it is written*.
+Six of the rows above spent months deciding behaviour with no mention anywhere
+in `doc/`, `README.md` or `CLAUDE.md`; being well commented where it sits is not
+the same as being findable.
+
+The two files a run leaves outside the repository are `0600` and `0700`
+respectively — `RUN_LOG_MODE` and `RUN_LOG_DIR_MODE`, the standard
+`agent-env`'s `ENV_FILE_MODE` set. The log holds whatever the agent printed,
+which includes values it read from its filtered environment and contents of
+files it opened; that output is parsed and discarded today, so persisting it is
+a **new** exposure rather than a wider view of an existing one.
 
 **The bounds are passed in, never defaulted at the point of use.**
 `attemptBrief`, `attemptOutcome` and `buildReviewPrompt` take the number as an

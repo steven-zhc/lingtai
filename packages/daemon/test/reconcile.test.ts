@@ -16,7 +16,7 @@ import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/e
 import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { exists, findOrphans, reconcile } from "../src/index.ts";
+import { exists, findOrphanLogs, findOrphans, reconcile } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
@@ -25,6 +25,13 @@ let store: EventStore;
 let home: string;
 
 const wt = (runId: string) => join(home, "worktrees", PROJECT, runId);
+/** The worktree's shape, one directory over. That is the whole point of it. */
+const rl = (runId: string) => join(home, "runs", PROJECT, `${runId}.log`);
+
+async function plantLog(runId: string): Promise<void> {
+  await mkdir(join(home, "runs", PROJECT), { recursive: true });
+  await writeFile(rl(runId), "12:00:00  Read    src/x.ts\n", { mode: 0o600 });
+}
 
 async function plant(runId: string): Promise<void> {
   await mkdir(wt(runId), { recursive: true });
@@ -157,6 +164,70 @@ describe("reconciliation", () => {
 
     expect(it_?.action).toBe("reported");
     expect(await exists(wt(nameless))).toBe(true);
+  });
+
+  /**
+   * **A log is kept until its ticket is done, and that is not the worktree's
+   * rule.**
+   *
+   * A worktree belonging to a run that is over is always wrong — it holds a
+   * branch checked out. A log belonging to a run that is over is the ordinary
+   * case and the whole point: it exists to explain why an item is *not* done
+   * ([0034](../../../doc/decisions/0034-the-run-log.md) §5). So the three
+   * fixtures here are the three answers, side by side, and the assertion is
+   * about the set.
+   */
+  it("reaps a landed item's log, keeps an unfinished one's, and reports a mystery", async () => {
+    const landed = `run-${PROJECT}-log-landed`;
+    const waiting = `run-${PROJECT}-log-waiting`;
+    const nameless = `run-${PROJECT}-log-nameless`;
+    const landedTask = `wi-${PROJECT}-10`;
+    const waitingTask = `wi-${PROJECT}-11`;
+    for (const id of [landed, waiting, landedTask, waitingTask]) created.add(id);
+
+    await store.append(landedTask, 0, [
+      claim(landed, ME),
+      { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "def5678", base: "main" } },
+    ]);
+    await store.append(landed, 0, [started(landedTask)]);
+
+    // Blocked on a person. The log is half of what they answer the question
+    // with, so it must survive a reconcile that runs while they think.
+    await store.append(waitingTask, 0, [
+      claim(waiting, ME),
+      {
+        type: "WorkItemBlocked",
+        actor: "conductor",
+        data: {
+          question: "merge it?",
+          needsFrom: "human",
+          runId: waiting,
+          needs: "judgement",
+          diagnosis: null,
+        },
+      },
+    ]);
+    await store.append(waiting, 0, [started(waitingTask)]);
+
+    for (const id of [landed, waiting, nameless]) await plantLog(id);
+
+    // Reported before anything is touched, so a `lingtai doctor` reading the
+    // same function says what would happen without making it happen.
+    const dry = await findOrphanLogs({ home, store, dryRun: true });
+    expect(dry.find((f) => f.stream === landed)?.action).toBe("reported");
+
+    const found = await reconcile({ home, store, worker: ME });
+
+    expect(found.find((f) => f.stream === landed)?.action).toBe("removed");
+    expect(await exists(rl(landed))).toBe(false);
+
+    // Not a finding at all: nothing has diverged, the file is doing its job.
+    expect(found.map((f) => f.stream)).not.toContain(waiting);
+    expect(await exists(rl(waiting))).toBe(true);
+
+    // Deleting mysteries is how you stop being able to explain them.
+    expect(found.find((f) => f.stream === nameless)?.action).toBe("reported");
+    expect(await exists(rl(nameless))).toBe(true);
   });
 
   it("appends nothing when there is nothing to say", async () => {

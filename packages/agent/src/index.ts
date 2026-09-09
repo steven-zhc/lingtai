@@ -51,10 +51,23 @@ export {
 } from "./hook-config.ts";
 export {
   createHookServer,
+  observedCall,
   redact,
   serveHookServer,
   type HookName,
   type HookServer,
   type HookServerOptions,
+  type ObservedCall,
   type RegisteredRun,
 } from "./hook-socket.ts";
+export {
+  NO_RUN_LOG,
+  RUN_LOG_DIR_MODE,
+  RUN_LOG_MAX_BYTES,
+  RUN_LOG_MODE,
+  openRunLog,
+  openRunLogEffect,
+  runLogLine,
+  type OpenRunLogOptions,
+  type RunLog,
+} from "./run-log.ts";

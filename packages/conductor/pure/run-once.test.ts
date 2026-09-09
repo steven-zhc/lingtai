@@ -198,7 +198,7 @@ const quotaRuntime: Runtime = {
  * this fake was a stub, and is the fake being right about the design rather
  * than the design being awkward.
  */
-function fakePorts(did: string[], store: EventStore): RunPorts {
+function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
   return {
     repo: {
       provision: (o) =>
@@ -220,7 +220,8 @@ function fakePorts(did: string[], store: EventStore): RunPorts {
       integrate: () =>
         Effect.sync(() => {
           did.push("integrate");
-          throw new Error("a held run must not reach the integrator");
+          if (!merges) throw new Error("a held run must not reach the integrator");
+          return { ok: true, mergeCommit: "c".repeat(40) } as never;
         }),
     },
     agent: {
@@ -259,6 +260,24 @@ function fakePorts(did: string[], store: EventStore): RunPorts {
           () => Effect.sync(() => void did.push("close")),
         ),
       resolveEnv: () => Effect.succeed({ values: {}, names: [], refusal: null }) as never,
+      /**
+       * The run's log, as a list of what was written to it and how it ended.
+       *
+       * Nothing is opened: the point of the fake is that the *fate* is
+       * assertable — landed → delete, did not land → keep
+       * ([0034](../../../doc/decisions/0034-the-run-log.md) §4) — and a real
+       * file would put that decision behind a `stat` in a test whose whole
+       * claim is that it needs no world to run in.
+       */
+      runLog: (o) =>
+        Effect.sync(() => {
+          did.push(`runLog ${o.path}`);
+          return {
+            path: o.path,
+            note: (label: string, detail = "") => void did.push(`note ${label} ${detail}`.trimEnd()),
+            close: async (fate: "keep" | "delete") => void did.push(`runLog ${fate}`),
+          };
+        }),
     },
   };
 }
@@ -312,6 +331,64 @@ describe("runOnce, with no world to run in", () => {
     // The socket was closed, by the scope and not by a `finally`, and before
     // the worktree it outlived — releases run in the reverse of acquisition.
     expect(did.indexOf("close")).toBeLessThan(did.indexOf(`remove ${result.runId}`));
+
+    /**
+     * **The log outlives the worktree, and a run that did not land keeps it.**
+     *
+     * Both halves of 0034 §2 and §4. The worktree is removed before the merge —
+     * git refuses to update a ref some worktree has checked out — so a log
+     * inside it would die before the run had an outcome, and the log worth
+     * reading is always the one from the run that just failed. This one held at
+     * the merge for a person: nothing landed, so nothing is deleted.
+     */
+    expect(did).toContain(`runLog /tmp/fake-home/runs/${PROJECT}/${result.runId}.log`);
+    expect(did.indexOf(`remove ${result.runId}`)).toBeLessThan(did.indexOf("runLog keep"));
+    expect(did).not.toContain("runLog delete");
+    // And the hook socket's live view reached it — the callback that has
+    // existed since the socket did and had no consumer until now.
+    expect(did).toContain(`note run finished: 3 turns, 0.42 usd`);
+  });
+
+  /**
+   * **Landed → delete**, which is the other half of the rule and the expensive
+   * one to get wrong.
+   *
+   * `#84` cost $26.53 and, once landed, what it was thinking is gone. That is
+   * accepted rather than regretted (0034 §4): the diff is on the branch and the
+   * events are on the log, so an agent's account of a run that *worked* has the
+   * least marginal value of anything here. What the rule buys is that no timer,
+   * no sweeper and no retention period is needed — what survives on disk is
+   * exactly the set somebody might have to explain.
+   */
+  it("deletes the log of a run that landed, and keeps nothing else to sweep", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    expect(result.ok).toBe(true);
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemLanded");
+
+    // The decision is taken *after* the integrator, which is the whole reason
+    // this scope is wider than the worktree's: at the moment the worktree goes,
+    // whether the run landed is not yet a fact about the world.
+    expect(did.indexOf("integrate")).toBeLessThan(did.indexOf("runLog delete"));
+    expect(did).not.toContain("runLog keep");
   });
 
   /**

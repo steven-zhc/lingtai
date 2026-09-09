@@ -13,6 +13,7 @@
  */
 import {
   AgentHostFailed,
+  openRunLogEffect,
   serveHookServer,
   smokeTestFailClosedEffect,
   writeHookWiringEffect,
@@ -39,6 +40,7 @@ export function livePorts(): RunPorts {
       wire: writeHookWiringEffect,
       smokeTest: smokeTestFailClosedEffect,
       serve: serveHookServer,
+      runLog: openRunLogEffect,
       // The one row that is wrapped here rather than in the package it comes
       // from. `@lingtai/agent-env` decides what an agent may see; it acquires
       // nothing and has no lifetime, so 0023's "plain functions that Effect
