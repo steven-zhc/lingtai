@@ -45,7 +45,10 @@ import { status } from "./status.ts";
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
-    --base <branch>             default: the repository's own default branch
+    --base <branch>             where to *read the recipe from*, not what the
+                                base is — the recipe's own repo.base says that,
+                                and a --base contradicting it is refused.
+                                default: the repository's own default branch
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -139,8 +142,8 @@ async function addCommand(args: string[]): Promise<number> {
     console.error("lingtai add <owner>/<repo>");
     return 2;
   }
-  // Tier and gates are the recipe's, in the managed repository, which is why
-  // this takes a slug and a branch and nothing else.
+  // Tier, gates and the base are the recipe's, in the managed repository, which
+  // is why this takes a slug and — at most — the branch to find the file on.
   return add({ slug, base: flags["base"] });
 }
 

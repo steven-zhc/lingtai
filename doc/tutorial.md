@@ -82,6 +82,12 @@ run it is part of.
 pnpm lingtai add <owner>/<repo> --base main
 ```
 
+`--base` says where to *read the recipe from*, not what the base is — the
+recipe's own `repo.base` decides that, and this command records what it says.
+Leave the flag out and the recipe is looked for on the repository's default
+branch; name a branch whose recipe declares a different `repo.base` and this
+refuses rather than overruling either of you.
+
 It checks the App's installation and permissions **before** it writes anything,
 then reads the recipe, hashes it, and prints what it found:
 

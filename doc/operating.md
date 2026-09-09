@@ -430,12 +430,33 @@ pnpm lingtai add steven-zhc/nextloom-ai-admin
 ```
 
 It checks the installation and its permissions **before** it writes anything, so
-a half-onboarded project is not a state that exists. Then it reads the recipe
-from the base branch, hashes it, and records `ProjectConfigured`.
+a half-onboarded project is not a state that exists. Then it reads the recipe,
+hashes it, and records `ProjectConfigured`.
 
-There is nothing else to write. The tier, the gates and the priority order are
-all the recipe's, in the managed repository — which is why this command takes a
-slug and a branch and nothing more.
+There is nothing else to write. The tier, the gates, the priority order **and the
+base** are all the recipe's, in the managed repository — which is why this
+command takes a slug and nothing more.
+
+`--base` is the one exception, and it is not a second way of saying what the base
+is: you have to be on *some* branch to read `.lingtai/config.yaml` at all, and
+`--base` says which. The file's own `repo.base` then decides, and that is what
+gets recorded:
+
+| `--base` | what happens |
+|---|---|
+| omitted | the recipe is read from the repository's default branch; if it declares another `repo.base`, it is read again there and **that** branch is recorded |
+| given, agreeing with `repo.base` | unchanged |
+| given, disagreeing | refused, naming both branches, before anything is written |
+
+```
+pnpm lingtai add steven-zhc/nextloom-ai-admin --base main
+--base main, but .lingtai/config.yaml there declares repo.base: develop. …
+```
+
+So reach for `--base` when the recipe is not on the default branch — never to
+override what the recipe says. Editing `repo.base` afterwards re-creates the
+disagreement, and a run refuses on it rather than obeying rules from the wrong
+branch (`lingtai doctor` has the same check).
 
 ### 3. Check it
 
