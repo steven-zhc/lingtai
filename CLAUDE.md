@@ -54,13 +54,17 @@ A second chip appears beside it while the conductor is paused, naming who and
 why with a Resume on it: being current and being stopped are independent facts,
 and for four days the board only said the first (#77).
 
-A daemon is still what takes work unattended, and
+A daemon is still what takes work unattended, and it is the *only* other
+conductor: `lingtai run` takes the same advisory lock the daemon does (#93), so
+one conducts at a time and the second is turned away rather than racing for the
+same ticket. Beside a pass already in flight,
 
     pnpm lingtai daemon --no-conduct
 
-is still safe beside a pass already in flight — two projectors on one log
-converge, because `apply` is idempotent and the checkpoint moves inside the
-same transaction as its writes.
+exits immediately with `another daemon holds the lock — nothing to do`. It used
+to be described here as safe, on the grounds that two projectors on one log
+converge — which is true, and is not what the lock is about. There is nothing
+to start anyway: the run in flight is already holding a projector.
 
 The board's Queued column asks GitHub on render; every other column is the
 fold.

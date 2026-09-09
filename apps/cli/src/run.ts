@@ -5,6 +5,12 @@
  * deliberately not "take the queue": `agent-loop.sh` is still working the same
  * repository on an hourly cycle, and the two must never both claim a ticket.
  * Nominating by number is the safety rule, not a limitation of the plumbing.
+ *
+ * It takes the queue now, and nomination is no longer the safety rule — the
+ * conductor lock is (#93). **This command is a conductor**: it runs the same
+ * `runQueue` the daemon's pass does, so it holds the same advisory lock, and a
+ * second one is turned away rather than racing for the same ticket. See
+ * `conductor-lock.ts`.
  */
 import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from "@lingtai/conductor";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -15,6 +21,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PortsLive } from "@lingtai/conductor";
 import { Data, Effect } from "effect";
+import { ConductorLock, ConductorLockLive } from "./conductor-lock.ts";
 import { Projector, ProjectorLive } from "./projector.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -34,6 +41,11 @@ export interface RunOptions {
   /** Defaults to the compiled hook in `packages/hook/bin`. */
   hookBinary?: string;
   promptPath?: string;
+  /**
+   * The conductor lock's key. The suite passes its own so a test does not fight
+   * the operator's daemon; nothing else should set it.
+   */
+  lockKey?: string;
 }
 
 /**
@@ -55,6 +67,22 @@ const refuse = (detail: string) => new Refused({ detail });
 
 export async function run(options: RunOptions, log = console.log): Promise<number> {
   const program = Effect.gen(function* () {
+    /**
+     * **First, before anything is read and long before anything is claimed.**
+     *
+     * `lingtai run` is a conductor — it takes the queue through the same
+     * `runQueue` the daemon's pass does — and there was nothing stopping two of
+     * them from claiming the same ticket (#93). This is the exclusion, and it is
+     * ahead of every refusal below rather than tucked in beside the claim,
+     * because everything below is work a second conductor would be doing
+     * concurrently: reading the projects, minting an installation token, asking
+     * GitHub what is runnable.
+     *
+     * It is one statement on one connection, which is why it can go here and the
+     * projector — which creates tables and replays to the head — cannot.
+     */
+    yield* ConductorLock;
+
     if (!hasGitHubApp()) {
       return yield* refuse("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
     }
@@ -203,9 +231,27 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
   // and where a `Refused` becomes the line and the exit code it always was.
   return Effect.runPromise(
     program.pipe(
+      Effect.provide(ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey })),
       Effect.catchTag("Refused", (r) =>
         Effect.sync(() => {
           log(r.detail);
+          return 1;
+        }),
+      ),
+      // Exit 0. Typing this while the daemon is up is a reasonable thing to do,
+      // and answering it with an error would teach people to ignore errors —
+      // `lingtai daemon` has said so since it grew the lock.
+      Effect.catchTag("ConductorBusy", (busy) =>
+        Effect.sync(() => {
+          log(`another conductor holds the lock${busy.holder ? ` (${busy.holder})` : ""} — nothing to do`);
+          return 0;
+        }),
+      ),
+      // Not a busy signal: the log could not be reached at all. One line and a
+      // non-zero code, the same shape as every other refusal.
+      Effect.catchTag("LockUnreadable", (err) =>
+        Effect.sync(() => {
+          log(`could not reach the log to take the conductor lock: ${err.detail}`);
           return 1;
         }),
       ),

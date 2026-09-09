@@ -67,6 +67,9 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
   const log = options.log ?? (() => {});
 
   const held = await acquireDaemonLock({
+    // Named, so that a `lingtai run` turned away by this lock — and
+    // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
+    name: "lingtai daemon",
     ...(options.lockUrl === undefined ? {} : { url: options.lockUrl }),
     ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
   });

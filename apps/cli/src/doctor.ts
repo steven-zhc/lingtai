@@ -33,7 +33,7 @@ import {
 import { createGitHubClient } from "@lingtai/github";
 import { baseDivergence } from "@lingtai/recipe";
 import { isEventType } from "@lingtai/domain";
-import { STALE_AFTER_MS, findOrphans, readControl, readStatus } from "@lingtai/daemon";
+import { STALE_AFTER_MS, conductorLockHolder, findOrphans, readControl, readStatus } from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
@@ -601,6 +601,40 @@ async function daemonLiveness(): Promise<CheckResult> {
 }
 
 /**
+ * Who is conducting.
+ *
+ * Liveness above is a beacon — a row somebody wrote — and it answers "is a
+ * daemon up". This answers the different question 0027 rests its recovery on:
+ * **is anything conducting right now**, whatever it is called. A `lingtai run`
+ * in a terminal holds the same lock as the daemon (#93), and before it did, the
+ * two questions had the same answer for the wrong reason.
+ *
+ * Read, never taken — the rule at the top of this file, applied to a lock. A
+ * diagnostic that acquired it to find out whether it was free would lock out
+ * the thing it is diagnosing, and would itself be a conductor for as long as
+ * the check ran.
+ *
+ * Always `ok`. A lock that is held is the normal state of a machine with a
+ * daemon on it, and a lock that is free is the normal state of one without.
+ * What would be wrong is not being able to say which.
+ */
+async function conductorLock(direct: string): Promise<CheckResult> {
+  let holder: string | null;
+  try {
+    holder = await conductorLockHolder({ url: direct });
+  } catch (err) {
+    return { name: "conductor: lock", status: "ok", detail: `could not be read — ${(err as Error).message}` };
+  }
+  return {
+    name: "conductor: lock",
+    status: "ok",
+    detail: holder
+      ? `held by ${holder} — lingtai run and lingtai daemon both stand down while it is`
+      : "nobody holds it — the next lingtai run or lingtai daemon conducts",
+  };
+}
+
+/**
  * What a restart would tidy up, without tidying it up.
  *
  * `dryRun` is the whole point: a check that changed the thing it was checking
@@ -1053,6 +1087,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     results.push(await projections(pooled));
     results.push(await projectionShapes(pooled));
     results.push(await daemonLiveness());
+    results.push(await conductorLock(direct));
     results.push(await readableTypes(direct));
     results.push(await orphans());
     results.push(await unconverged(direct));

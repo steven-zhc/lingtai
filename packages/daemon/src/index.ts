@@ -1,6 +1,7 @@
 export {
   DAEMON_LOCK_KEY,
   acquireDaemonLock,
+  conductorLockHolder,
   type AcquireOptions,
   type DaemonLock,
   type LockResult,
