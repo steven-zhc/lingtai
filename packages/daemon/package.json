@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./control": "./src/control.ts"
+    "./control": "./src/control.ts",
+    "./currency": "./src/currency.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -18,6 +19,7 @@
     "@lingtai/event-store": "workspace:*",
     "@lingtai/github": "workspace:*",
     "@lingtai/projector": "workspace:*",
+    "@lingtai/repo": "workspace:*",
     "pg": "^8.16.3"
   },
   "devDependencies": {

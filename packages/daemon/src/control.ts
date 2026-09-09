@@ -29,6 +29,7 @@
 import { directDatabaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { parsePayload } from "@lingtai/domain";
+import type { CodeVersion } from "./currency.ts";
 import pg from "pg";
 
 /** One stream for the whole installation. Control is not per-project. */
@@ -112,6 +113,18 @@ export interface DaemonStatus {
   lastSeenAt: Date;
   state: string;
   currentRunId: string | null;
+  /**
+   * The commit `HEAD` pointed at when this process started, and whether its
+   * worktree was dirty.
+   *
+   * Null when the daemon is older than `#98` and never recorded one — which is
+   * itself the finding, and is reported rather than smoothed over. Liveness and
+   * currency are independent facts and this row now carries both: for
+   * thirty-nine minutes a daemon beat happily while holding code that could not
+   * produce the event the log had been fixed to record.
+   */
+  codeSha: string | null;
+  codeDirty: boolean;
 }
 
 /**
@@ -141,29 +154,52 @@ export async function createStatusTable(url = directDatabaseUrl()): Promise<void
         state          text not null,
         current_run_id text
       )`);
+    // Added by #98, to a table that already exists on every installation. Not a
+    // migration under 0004's rules — `daemon_status` is the one mutable
+    // operational row and is deliberately outside the write model's contract,
+    // so it is created and widened here, idempotently, where it is read.
+    await client.query(`alter table daemon_status add column if not exists code_sha text`);
+    await client.query(
+      `alter table daemon_status add column if not exists code_dirty boolean not null default false`,
+    );
   } finally {
     await client.end();
   }
 }
 
-export async function beat(
-  state: string,
-  currentRunId: string | null = null,
-  url = directDatabaseUrl(),
-): Promise<void> {
+export interface BeatOptions {
+  /** The run this daemon is hosting, when it is hosting one. */
+  currentRunId?: string | null;
+  /**
+   * What code this process is running, read once at startup.
+   *
+   * Passed in rather than read here: a beacon that asked git every five seconds
+   * would report the checkout as it is *now*, which is exactly the value that
+   * has moved on underneath the modules Node already loaded.
+   */
+  code?: CodeVersion | null;
+  /** Session-mode connection. Defaults to the configured one. */
+  url?: string;
+}
+
+export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
+  const { currentRunId = null, code = null, url = directDatabaseUrl() } = options;
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
     await client.query(
-      `insert into daemon_status (id, pid, host, started_at, last_seen_at, state, current_run_id)
-       values (1, $1, $2, now(), now(), $3, $4)
+      `insert into daemon_status
+         (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
+       values (1, $1, $2, now(), now(), $3, $4, $5, $6)
        on conflict (id) do update
          set pid = excluded.pid,
              host = excluded.host,
              last_seen_at = excluded.last_seen_at,
              state = excluded.state,
-             current_run_id = excluded.current_run_id`,
-      [process.pid, hostname(), state, currentRunId],
+             current_run_id = excluded.current_run_id,
+             code_sha = excluded.code_sha,
+             code_dirty = excluded.code_dirty`,
+      [process.pid, hostname(), state, currentRunId, code?.sha ?? null, code?.dirty ?? false],
     );
   } finally {
     await client.end();
@@ -185,6 +221,10 @@ export async function readStatus(url = directDatabaseUrl()): Promise<DaemonStatu
       lastSeenAt: row.last_seen_at,
       state: row.state,
       currentRunId: row.current_run_id,
+      // Coalesced rather than assumed: a beacon written by a daemon older than
+      // #98 has neither column, and "it did not say" is the answer to report.
+      codeSha: row.code_sha ?? null,
+      codeDirty: row.code_dirty ?? false,
     };
   } catch (err) {
     // The table not existing means no daemon has ever started, which is a

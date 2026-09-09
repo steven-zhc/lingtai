@@ -603,6 +603,65 @@ To keep it running across logout, sleep and crashes:
 ./scripts/launchd.sh uninstall
 ```
 
+**A running daemon holds the code it started with. Merging is not deploying —
+restarting is.** [0010](decisions/0010-source-runs-unbuilt.md) says the source
+runs unbuilt, and that is easy to read as *there is no deploy step*. It removes
+the build, not the restart: Node caches a module the first time it is imported,
+so a long-lived process goes on running whatever `HEAD` pointed at when it
+started, however many times you merge afterwards.
+
+Nothing else in the system works that way, which is what makes it hard to see:
+
+| | lifetime | code |
+|---|---|---|
+| **daemon** — conductor, claim, hook socket, run-once, queue | one long-lived process | **frozen at startup** |
+| `lingtai doctor` / `status` / `run` | fresh per invocation | current |
+| gates (`sh -c pnpm typecheck && pnpm test`) | fresh per invocation | current |
+| the board (`next dev`) | hot reload | current |
+| the recipe | read from `origin/main` each pass | current |
+
+So a system left alone schedules with old logic, verifies with new code and
+reads new config — and that mix is worse than being uniformly stale. It cost 52
+prompts: `#88` fixed what a run records about its prompt, landed thirty-nine
+minutes after the daemon started, and never executed once
+([`#98`](https://github.com/steven-zhc/lingtai/issues/98)).
+
+The daemon now says which commit it is on as it starts, and two places compare
+that against `origin/main`:
+
+```bash
+pnpm lingtai doctor
+```
+
+```
+  ok   daemon: liveness
+         up, last beat 2s ago
+ note   daemon: currency
+         running 8f3a1c2 — 3 commit(s) behind origin/main, which has not taken
+         effect in this process: 2b45637 fix(attempts): a second attempt is told
+         what ended the first; … Unbuilt removes the build, not the restart —
+         restart the daemon to take them
+```
+
+The board's bar says the same thing on its own chip, beside the one that says
+whether the projection is current and the one that says whether the conductor
+is paused. Three chips because three independent facts: a board can be perfectly
+current, taking work, and driven by code you replaced an hour ago.
+
+Neither restarts anything. `lingtai doctor` never writes, and whether a daemon
+should restart itself when `main` moves is deliberately still open — 0030 made
+a shutdown safe, and the restart is a decision that wants an ADR first. Take the
+commits by hand:
+
+```bash
+./scripts/launchd.sh uninstall && ./scripts/launchd.sh install   # or ^C and re-run
+```
+
+`daemon: currency` is a `note`, not a failure. Being a commit behind is normal
+for the minutes between a merge and a restart; a doctor that went red for it
+would be red most afternoons, and a check that is always red is one nobody
+reads.
+
 ### Decide, on the board
 
 Open <http://localhost:3200>. The card is in **Waiting on you** — title, state,

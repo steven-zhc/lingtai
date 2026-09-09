@@ -11,6 +11,7 @@ import { readControl } from "@lingtai/daemon/control";
 import { Decide, Requeue } from "./decide.tsx";
 import { Live } from "./live.tsx";
 import { Paused } from "./paused.tsx";
+import { Stale } from "./stale.tsx";
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the
@@ -314,6 +315,12 @@ export default async function Page() {
             <Paused by={control.by} reason={control.reason} />
           </>
         ) : null}
+        {/* And a third fact, independent of both: whether the process that
+            moves things is running the code we merged. A daemon holds its
+            modules from the moment it started, so `current` and `not paused`
+            were both true for thirty-nine minutes in which the fix that had
+            landed could not run (#98). Draws nothing when it is level. */}
+        <Stale />
       </div>
 
       <div className="cols">

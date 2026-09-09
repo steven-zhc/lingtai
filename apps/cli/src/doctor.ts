@@ -33,7 +33,15 @@ import {
 import { createGitHubClient } from "@lingtai/github";
 import { baseDivergence } from "@lingtai/recipe";
 import { isEventType } from "@lingtai/domain";
-import { STALE_AFTER_MS, conductorLockHolder, findOrphans, readControl, readStatus } from "@lingtai/daemon";
+import {
+  STALE_AFTER_MS,
+  codeCurrency,
+  conductorLockHolder,
+  describeCurrency,
+  findOrphans,
+  readControl,
+  readStatus,
+} from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
@@ -601,6 +609,73 @@ async function daemonLiveness(): Promise<CheckResult> {
 }
 
 /**
+ * Is the daemon running the code the repository holds?
+ *
+ * Liveness above answers *is a daemon up*. This answers the independent
+ * question nothing was measuring: *is it up on the current code*. They came
+ * apart on 2026-09-08. A daemon started at 17:22:53; `#88` — the fix that
+ * records a run's prompt instead of its length — landed on `main` at 18:01:32;
+ * and doctor went on saying `up, last beat 2s ago` while 52 prompts were
+ * written by the old code and lost for good. Node caches a module at import, so
+ * the running process could not produce the new event at all.
+ *
+ * **[0010](../../../doc/decisions/0010-source-runs-unbuilt.md) reads as "there
+ * is no deploy step", and that is half true.** *The source runs unbuilt*
+ * removes the build; the restart is still the deploy. Everything else in the
+ * system is a fresh process per invocation — the CLI, the gates — or hot
+ * reloads — the board — or is re-read from `origin/main` each pass — the
+ * recipe. The daemon alone is frozen, so the system schedules with old logic
+ * and verifies with new code, which is worse than being uniformly stale.
+ *
+ * **A `warn`, never a `fail`.** Running a commit behind is normal for the
+ * minutes between a merge and a restart, and a doctor that went red for it
+ * would be red most afternoons. It is also not `ok`: `ok` is where this hid.
+ *
+ * It reports and stops there. Whether a daemon should restart itself when
+ * `main` moves is left open deliberately —
+ * [0030](../../../doc/decisions/0030-shutting-down-safely.md) made the shutdown
+ * safe, and the restart is a decision that wants an ADR before an
+ * implementation.
+ */
+async function daemonCurrency(): Promise<CheckResult> {
+  const name = "daemon: currency";
+  const status = await readStatus().catch(() => null);
+  if (!status) {
+    return { name, status: "ok", detail: "no daemon has run — nothing is holding code open" };
+  }
+
+  const age = Date.now() - status.lastSeenAt.getTime();
+  if (age > STALE_AFTER_MS) {
+    // Nothing is holding stale modules if nothing is running. Said rather than
+    // omitted, because a check that disappears is one nobody misses.
+    return { name, status: "ok", detail: `no daemon is up (last beat ${Math.round(age / 1000)}s ago) — no process is holding old code` };
+  }
+
+  if (!status.codeSha) {
+    return {
+      name,
+      status: "warn",
+      // The state this check was written for, seen from the other side: a
+      // daemon old enough to predate the column cannot say what it is running,
+      // and that it cannot say is the finding.
+      detail:
+        "the running daemon recorded no commit — it started before the beacon carried one, so how far behind it is cannot be known from here. Restart it (pnpm lingtai daemon) and this check can answer",
+    };
+  }
+
+  const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty });
+  const sentence = describeCurrency(currency);
+  if (currency.unknown || currency.behind.length === 0) {
+    return { name, status: "ok", detail: sentence };
+  }
+  return {
+    name,
+    status: "warn",
+    detail: `${sentence}. Unbuilt removes the build, not the restart — restart the daemon to take them`,
+  };
+}
+
+/**
  * Who is conducting.
  *
  * Liveness above is a beacon — a row somebody wrote — and it answers "is a
@@ -1087,6 +1162,9 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     results.push(await projections(pooled));
     results.push(await projectionShapes(pooled));
     results.push(await daemonLiveness());
+    // Beside liveness, never folded into it: up and current are two facts, and
+    // for thirty-nine minutes only one of them was measured.
+    results.push(await daemonCurrency());
     results.push(await conductorLock(direct));
     results.push(await readableTypes(direct));
     results.push(await orphans());

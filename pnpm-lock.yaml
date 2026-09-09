@@ -263,6 +263,9 @@ importers:
       '@lingtai/projector':
         specifier: workspace:*
         version: link:../projector
+      '@lingtai/repo':
+        specifier: workspace:*
+        version: link:../repo
       pg:
         specifier: ^8.16.3
         version: 8.23.0

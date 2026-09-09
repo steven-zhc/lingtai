@@ -27,6 +27,7 @@ import {
   createWorkLoop,
   macNotifier,
   pauseConductor,
+  readCodeVersion,
   readControl,
   reconcile,
   requestRun,
@@ -234,7 +235,18 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // and a board that is broken. Two work items merged for real while their
   // cards sat still and nothing reported it; this is what makes that a glance.
   await createStatusTable();
-  await beat("starting");
+
+  // Read once, here, and carried on every beat afterwards. Node caches a module
+  // at import, so this process runs whatever `HEAD` pointed at now for as long
+  // as it lives — a merge into `main` reaches the CLI, the gates and the board
+  // and does not reach this. #88 landed thirty-nine minutes after a daemon
+  // started and never executed once; nothing in the beacon could have said so.
+  const code = await readCodeVersion();
+  await beat("starting", { code });
+  console.log(
+    `running ${code.sha ? code.sha.slice(0, 7) : "an unrecorded commit"}` +
+      `${code.dirty ? " (worktree dirty)" : ""} — lingtai doctor says how far behind that is`,
+  );
 
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
@@ -274,7 +286,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   });
   if (found.length > 0) console.log(`reconciled ${found.length} divergence(s)`);
   const heartbeat = setInterval(() => {
-    void beat("up").catch(() => {});
+    void beat("up", { code }).catch(() => {});
   }, HEARTBEAT_MS);
 
   // Taking work is the default now that there is a way to stop it (#45).
@@ -321,7 +333,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
 
   const stop = () => {
     clearInterval(heartbeat);
-    void beat("stopping").catch(() => {});
+    void beat("stopping", { code }).catch(() => {});
     void loop?.stop();
     started.daemon.stop();
   };

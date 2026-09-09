@@ -229,5 +229,13 @@ describe("lingtai doctor — against the real database", () => {
     // checks are listed, so neither can stand in for the other.
     expect(find(report.results, "projections: lag").status).toBe("ok");
     expect(find(report.results, "projections: shape").status).toBe("ok");
+
+    // Up and current are two facts, and folding them into one is the whole of
+    // #98: a daemon beat happily for thirty-nine minutes while holding code
+    // that could not produce the event the log had been fixed to record, and
+    // `up, last beat 2s ago` was the only thing anything said about it. Both
+    // are listed here so neither can be quietly absorbed into the other.
+    expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
+    expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
   }, 60_000);
 });

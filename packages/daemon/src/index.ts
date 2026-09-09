@@ -31,9 +31,19 @@ export {
   readStatus,
   requestRun,
   resumeConductor,
+  type BeatOptions,
   type ControlState,
   type DaemonStatus,
 } from "./control.ts";
+export {
+  codeCurrency,
+  codeRoot,
+  describeCurrency,
+  readCodeVersion,
+  type CodeVersion,
+  type Currency,
+  type CurrencyOptions,
+} from "./currency.ts";
 export {
   exists,
   findExpiredClaims,

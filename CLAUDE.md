@@ -66,6 +66,15 @@ to be described here as safe, on the grounds that two projectors on one log
 converge — which is true, and is not what the lock is about. There is nothing
 to start anyway: the run in flight is already holding a projector.
 
+**A running daemon holds the code it started with.** 0010's *the source runs
+unbuilt* removes the build, not the restart: Node caches a module at import, so
+a merge into `main` reaches the CLI, the gates, the board and the recipe and
+does not reach the process that is conducting. `#88` landed thirty-nine minutes
+after a daemon started and never once ran, costing 52 prompts (#98). The beacon
+now carries the commit the daemon started at; `lingtai doctor`'s
+`daemon: currency` and a chip on the board say how far behind `origin/main` that
+is. Neither restarts it — that is still yours, and whether it should be is open.
+
 The board's Queued column asks GitHub on render; every other column is the
 fold.
 

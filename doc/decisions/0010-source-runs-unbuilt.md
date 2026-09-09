@@ -64,6 +64,19 @@ Concretely:
   fewest reasons to be different from everything else.
 - If a build step ever becomes necessary, this decision is what gets superseded,
   and the `.ts` specifiers are what has to change back.
+- **It removes the build, not the restart.** Added after this was read as
+  *there is no deploy step*, which is not the same claim. Node caches a module
+  at import, so a long-lived process runs whatever `HEAD` pointed at when it
+  started and goes on doing so through every merge afterwards. Everything else
+  here is a fresh process per invocation — the CLI, the gates — or hot reloads
+  — the board — or is re-read from `origin/main` each pass — the recipe. The
+  daemon alone is frozen, so a system left alone schedules with old logic and
+  verifies with new code, which is worse than being uniformly stale: `#88`
+  landed thirty-nine minutes after a daemon started and never once executed,
+  and 52 prompts were written by the old code and lost. The beacon carries the
+  daemon's commit and `lingtai doctor`'s `daemon: currency` compares it against
+  `origin/main` ([#98](https://github.com/steven-zhc/lingtai/issues/98)); the
+  restart itself is still a person's, and whether it should be is open.
 
 ## Note on method
 
