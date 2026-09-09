@@ -1,127 +1,157 @@
-# The task detail page, redesigned
+# The task detail page, settled
 
-**Status** proposal · 2026-09-09 · three directions, for choosing between
+**Status** settled · 2026-09-09 · the design the tickets implement
 
-Mockups exist for all three, drawn at fidelity against `wi-lingtai-89` as it
-stood at 04:12 UTC, in the board's own palette and faces. They are a private
-artifact rather than a file here: they are for choosing between and are thrown
-away once one direction wins.
+Mockups exist at fidelity, drawn against `wi-lingtai-89` as it stood at 04:12
+UTC in the board's own palette and faces. They are a private artifact rather
+than a file here — a picture of a decision, not the decision.
 
-Not an ADR. An ADR records a decision; this asks for one. What is settled here
-is the problem and the evidence; the three directions are alternatives and at
-most one survives.
-
-## The job
-
-One page explains one work item. It is the only place in Lingtai where a person
-can find out what happened, and everything on it is folded from the event
-stream when the page opens — nothing is maintained in a table
-([0012](../decisions/0012-one-task-view.md)).
-
-## What people actually arrive to ask
+## What people arrive to ask
 
 Not guessed. Taken from every time this page was opened, or wanted and not
-opened, during the session of 2026-09-08:
+opened, during 2026-09-08:
 
-| the question | how often | can the page answer it |
-|---|---|---|
-| **Why is this not moving?** | `#80` `#87` `#89` `#94` | **no** — the page never states the item's state |
-| **What has it cost?** | `#84` ($26.53), `#89` ($13.04 over two runs) | **no** — not one figure appears |
-| What did the agent actually do? | every investigation | half — the prompt is there, escaped into one line (`#101`) |
-| **How many attempts, and how did each end?** | `#87` (3 claims), `#89` (2) | **no** — see below |
-| What should I do now? | every blocked item | **no** |
+| the question | can the page answer it today |
+|---|---|
+| **Why is this not moving?** | no — the state is never stated |
+| **What has it cost?** | no — not one figure appears |
+| What did the agent actually do? | half — the prompt is there, escaped into one line |
+| **How many attempts, and how did each end?** | no |
+| What should I do now? | no |
 
-Five questions; the page answers half of one.
+Five questions; half of one answered.
 
-## The structural defect: there is no run on this page
+## The structural defect
 
 ```ts
 export interface TaskDetail {   // lib/task.ts:99
   runId: string | null;         // ← singular. Only the most recent.
-  ...
   history: HistoryLine[];       // ← every run's events, flattened into one list
 }
 ```
 
-`wi-lingtai-87` was claimed three times; `wi-lingtai-89` twice. Their events
-interleave into a single 30–80 row list, and the only marker of which attempt a
-row belongs to is a 36-character uuid inside the row's collapsed body.
+`#87` was claimed three times, `#89` twice. **The log keeps one stream per run
+and the page flattens what the log divided**, so every reader rebuilds that
+division by hand. Two things follow: gates are page-level sections though a
+gate runs once *per attempt*, and nothing is ever totalled although
+`RunFinished` carries `costUsd`, `turns` and `durationMs` on every run.
 
-**The log keeps these separate — one stream per run.** The page flattens what
-the log was careful to divide, and recovering the division is manual work every
-reader repeats. Reconstructing it by hand is where most of the time went
-diagnosing `#89`.
+## The page, in two halves
 
-Two consequences follow from the same flattening:
+**A decision column** — no frame, marked by a single amber rule, ending in the
+thing that will actually run:
 
-- **Gates and Verdicts are page-level sections**, but a gate runs once *per
-  attempt*. Attempt 1's failing `proposed` and attempt 2's have nothing to do
-  with each other, and sit in one list.
-- **Nothing is ever totalled.** `RunFinished` carries `costUsd`, `turns` and
-  `durationMs` on every run. The page shows none of them, individually or
-  summed — on a system whose entire risk is spend.
+```
+┃ BLOCKED │ 4h 12m
+┃ waiting on you · since 04:12 UTC        from attempt 2 of 2 · run-706151d7
+┃ ────────────────────────────────────────────────────────────────
+┃ <the question, verbatim — a diagnosis and a recommendation once #83 lands>
+┃ ▍proposed / build · exit 2   error TS2741 …          in attempt 1 ↓
+┃ ┌ WILL BE SENT ─────────┐  ┌ DISCUSSION ───────────┐
+┃ │ the prompt, editable  │  │ reads log and code    │
+┃ └───────────────────────┘  └───────────────────────┘
+┃ [Send attempt 3]  [Reject]  [Leave blocked]
+```
 
-## What the page has to work with
+**A record**, organised the way the log already is:
 
-Already on the log, already loaded, currently unused:
+```
+TICKET      #89 · bug · 2,140 bytes
+ATTEMPTS    2 attempts + 3 discussions · 147 turns · 23m 25s · $14.10
+HISTORY     36 events · grouped by run
+```
 
-`costUsd` · `turns` · `durationMs` · `exitCode` · `failure.kind` ·
-`failure.detail` · `RunTouchedFile` (path, op) · `RunPrompted.prompt` (since
-`#88`) · `promptVersion` · `WorkItemClaimed.worker` · `RepairRequested.reason`
-· `WorkItemBlocked.question` · every gate verdict with its `onSha`
+## The decisions, and why
 
-Nothing below needs a new event.
+### 1. The skeleton is the attempt
 
-## Three directions
+The ledger, and the history grouped by run. The log already divides them;
+the page agrees. Everything else follows — money totals because there is
+something to total on, and gates land under the run that ran them.
 
-Each organises the same facts differently, and each is best for a different
-reader. They are alternatives, not layers.
+### 2. Evidence is a pointer, not a copy
 
-### A — Attempts
+The verdict carries the one deciding line and names the attempt it came from;
+that attempt holds the whole of it. Printing the failing gate twice is how two
+copies of one fact come to disagree.
 
-The skeleton is the attempt. A status banner states the item's state and the
-action; the ticket follows; then a ledger — *2 attempts · $13.04 · 147 turns ·
-23m* — with one row per run that opens into that run's whole arc: its prompt,
-its files, its gates, its outcome. History stays at the bottom, unchanged.
+### 3. The verdict has two renderings, and degrades
 
-*Best for* understanding a history. *Costs* height, and a fresh item with one
-attempt carries scaffolding it does not need.
+Today: state, age, the question verbatim, the actions. Once `#83` lands, two
+fields fill into the same component. **A block with no diagnosis renders
+exactly as it does today** — `#83`'s own requirement.
 
-### B — Triage
+### 4. The control is the prompt, editable
 
-The page opens as an answer, not a record. A verdict block states in one
-sentence what is wrong, what was done, and what is recommended, with the action
-as the primary control and the failing evidence inline beneath it. Attempts are
-a compact strip; history is collapsed.
+A recommendation is the system's sentence about what it intends; the prompt is
+what runs. Editing it turns approval from *yes / no* into *yes, but*.
 
-*Best for* clearing a queue of blocked cards quickly. *Costs* depth — an
-investigation needs two more clicks than in A, and the summary has to be right
-or it is worse than no summary.
+- **The version names the edit** — `ticket@1924+failure@1c5708ba+human@a91f2e`,
+  hashing the final text. Unedited, it falls back to today's form. One field
+  still answers "what produced this prompt" alone.
+- **`PromptEdited` on the work item stream.** A force-push voids an approval by
+  `onSha` arithmetic; the edit outlives it, because an edit is about *what to
+  do*, not *which diff to merge*.
+- **It applies to the next run only**, whoever starts it. Something meant to
+  last belongs in the GitHub ticket, where everyone can see it and it versions
+  as `ticket@NNNN`. A durable override living only inside Lingtai is a shadow
+  ticket body.
 
-### C — Investigation
+### 5. The discussion assistant is a third kind of agent
 
-Two panes. A left rail lists the item and each run; the right pane is whatever
-is selected, in full. Selecting a run scopes the history to that run rather
-than filtering a global list.
+Not a run agent, not a gate agent. Scoped to one work item, and its conclusion
+is one of the two artefacts §4 already defines — an edit for the next run, or
+an addition to the ticket. It introduces no third carrier.
 
-*Best for* deep investigation and comparing two attempts. *Costs* the
-single-scroll reading of the page, and it is the most work to build.
+- **Reads the log, the ticket, and files from the mirror** (`main` and the
+  attempt's branch). **No command execution.** Commands would make it a run,
+  and runs have worktrees, hooks and gates for reasons.
+- **Hosted by the daemon**, requested over `ctl-conductor` like `pause` and
+  `now`. [0013](../decisions/0013-daemon-hosts-the-work.md)'s line does not
+  move.
+- **No spend limit; a meter instead.** A run is unattended and needs a hard
+  bound; a discussion is attended and the person is the loop. But a person can
+  only be the limit if the person can see the number, so the running cost is on
+  screen and the total is in the ledger.
+- **The conversation is its own stream** (`chat-<id>`); the work item gets one
+  `DiscussionHeld { chatId, costUsd, outcome }`. The ticket's history grows by
+  two lines, not forty, and no money is spent without a record.
 
-## Settled regardless of which direction wins
+### 6. Markdown by source, never by sniffing
 
-- **State first.** Whatever the layout, the item's state and its reason are the
-  first thing on the page, not something inferred from the last row of a list.
-- **History stays whole, and last.** It is *"what actually happened, in order,
-  with who did it"*. Structure may lead a reader to it; nothing may replace it.
-- **Documents render as documents** (`#101`) — real newlines, collapsed,
-  allowed to break the 62rem measure that the prose keeps.
-- **Times are relative and dated.** `h.at.slice(11, 19)` gives a bare
-  `HH:MM:SS`: a run from three days ago is indistinguishable from one ten
-  minutes old.
-- **Money is shown.** Per attempt and totalled.
+| content | render |
+|---|---|
+| ticket body — a GitHub issue body | **rendered**, sanitised, no raw HTML, remote images blocked |
+| the prompt | **raw by default**; the log's copy is the record and the edit box is raw text |
+| gate output, `RunFailed.detail`, `RepairRequested.detail` | **never** — markdown eats `_`, `#` and `{}`; a log rendered as markdown is not that log |
 
-## The decision this asks for
+A build log is not markdown. The rule is per-source, and a hand-rolled subset
+renderer is the wrong tool for an untrusted issue body.
 
-1. Which direction — A, B or C.
-2. Whether gates move under the attempt that ran them, or stay page-level. This
-   is the largest single change and it is what makes A and C possible.
+### 7. What the page must not pretend
+
+- **The assistant says what it cannot do.** Reading the bundle reaches
+  "`error_max_turns` is among the subtypes" and no further; proving the binary
+  accepts a flag needs a command it does not have. Guessing from `--help` is
+  what cost `#89` two attempts and cost this session an hour.
+- **An attempt may have left no branch.** `worktree.ts` resets it with `-B` on
+  every run, and an attempt that committed nothing never had one. The assistant
+  must say *"attempt 2 left no branch; I am reading main"* — that blind spot is
+  what killed the repair, and it must not be reproduced silently.
+
+## Not in this design
+
+- **No `blocked` lane.** `waiting` already means *will not be taken again*.
+  What reads alike is three states inside Queued, which is `#100`.
+- **No two-pane investigation view.** Right for an item with fifty runs;
+  Lingtai's worst so far is three.
+
+## Layout notes worth keeping
+
+- The decision column has **no frame** — one amber rule states its extent.
+  Inside it only two objects are boxed: the outgoing prompt and the discussion.
+- **Amber appears once per screen.** It means "a human is being waited on" and
+  a second decorative use dilutes it, so every divider is neutral.
+- Section labels are display-scale mono caps with the section's one fact at the
+  right of the same rule — which is why there is no separate summary band.
+- The prose measure stays. Documents and logs may break it; paragraphs may not.
