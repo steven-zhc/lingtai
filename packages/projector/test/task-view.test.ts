@@ -218,6 +218,34 @@ async function seed(): Promise<void> {
     started(9),
     { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
   ]);
+
+  // 10 — the branch was repaired and approval re-requested on the new head.
+  //      The run produced `sha-10a` and is asking about `sha-10b`, which is
+  //      the whole of #92: the card held only the first and offered it as the
+  //      second, so the board's Approve refused what the CLI accepted.
+  await store.append(wi(10), 0, [discovered(10, "repaired, then re-offered"), claimed(10)]);
+  await store.append(run(10), 0, [
+    started(10),
+    { type: "RunProducedDiff", actor: "conductor", data: { branch: "agent/10", headSha: "sha-10a", files: 1, insertions: 2, deletions: 0 } },
+    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-10a" } },
+    {
+      type: "ApprovalRequested",
+      actor: "conductor",
+      data: { gate: "merge", action: "no-merge", runId: run(10), onSha: "sha-10a", question: "Merge?", artifacts: [] },
+    },
+    {
+      type: "ApprovalRequested",
+      actor: "conductor",
+      data: { gate: "merge", action: "repair", runId: run(10), onSha: "sha-10b", question: "Merge the repair?", artifacts: [] },
+    },
+  ]);
+  await store.append(wi(10), 2, [
+    {
+      type: "WorkItemBlocked",
+      actor: "conductor",
+      data: { question: "a repair is waiting on you", needsFrom: "human", runId: run(10) },
+    },
+  ]);
 }
 
 /** Appended after the rebuild, so `fold` is what folds it. */
@@ -391,6 +419,31 @@ describe("task_view", () => {
     // is not an item anybody can hand back, so the card must not offer to.
     expect(card(tasks, 4)!.state).toBe("waiting");
     expect(card(tasks, 4)!.blocked).toBe(false);
+  });
+
+  /**
+   * #92. The card sent `head_sha` to `approve()`, which compares against what
+   * the run is *asking* about — so an item whose branch had been repaired and
+   * re-offered refused every click on the board while `lingtai approve`, which
+   * sends no sha and falls through to the run's own, landed it.
+   *
+   * Two facts, so the row carries both, and the one a control has to send is
+   * the one the question is bound to.
+   */
+  it("carries the sha the run is asking about, apart from the one it produced", async () => {
+    const tasks = await readTasks({ project: PROJECT });
+    const ten = card(tasks, 10)!;
+
+    expect(ten.headSha).toBe("sha-10a");
+    expect(ten.awaitingSha).toBe("sha-10b");
+    // And a question is open exactly when there is a sha it is about, so the
+    // card cannot offer Approve without the value Approve needs.
+    expect(ten.awaitingApproval).toBe(true);
+    expect(ten.blocked).toBe(true);
+
+    // Granted spends it: #84's row is asking nothing and carries nothing.
+    expect(card(tasks, 9)!.awaitingSha).toBeNull();
+    expect(card(tasks, 9)!.awaitingApproval).toBe(false);
   });
 
   /**

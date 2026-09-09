@@ -1115,6 +1115,110 @@ git add -A && git commit -q -m "fix the race"
       expect(item).not.toContain("WorkItemReleased");
     }, 180_000);
 
+    /**
+     * #92 — the board and `lingtai approve` gave two answers to one approval.
+     *
+     * The card sent `task_view.head_sha`, which is what the run *produced*. A
+     * branch repaired and re-offered leaves that where it was and asks about a
+     * new head, so `approve()` refused the button and accepted the CLI, which
+     * sends no sha and falls through to the run's own `onSha`. `wi-lingtai-73`
+     * and `wi-lingtai-77` sat like that.
+     *
+     * End to end, in the order it happens: request on a new head, read the
+     * card, approve from what the card carries, land. The stale guard is
+     * exercised on the way past with the value the old card sent, because the
+     * fix must not be "stop checking".
+     */
+    it("approves a repaired head from the card's own inputs, and still refuses a stale one", async () => {
+      created.add(workItemStream(PROJECT, 134));
+      const r = await held(134, "134");
+      created.add(r.runId);
+      const before = (await g(["rev-parse", "develop"], originPath)).stdout;
+
+      // The branch is repaired by hand — the path #84 made routine — and
+      // approval is re-requested on the head that repair produced.
+      const scratch = join(root, "repair-134");
+      await exec("git", ["clone", "-q", "-b", "agent/134", originPath, scratch]);
+      await writeFile(join(scratch, "src", "repaired.ts"), "export const repaired = 134;\n");
+      await g(["add", "-A"], scratch);
+      await g(["commit", "-qm", "repair agent/134 by hand"], scratch);
+      await g(["push", "-q", "origin", "agent/134"], scratch);
+      const repaired = (await g(["rev-parse", "HEAD"], scratch)).stdout.trim();
+      expect(repaired).not.toBe(r.headSha);
+
+      const run = await store.read(r.runId);
+      await store.append(r.runId, run.length, [
+        {
+          type: "ApprovalRequested",
+          actor: "conductor",
+          data: {
+            gate: "merge",
+            action: "repair",
+            runId: r.runId,
+            onSha: repaired,
+            question: "Merge agent/134 into develop?",
+            artifacts: [`agent/134@${repaired}`],
+          },
+        },
+      ]);
+
+      // What the board renders from, read the way the board reads it.
+      const runner = createProjectionRunner({ projection: taskViewProjection, store });
+      let card: Awaited<ReturnType<typeof readTasks>>[number] | undefined;
+      try {
+        await runner.start();
+        card = (await readTasks({ project: PROJECT })).find((c) => c.issue === "134");
+      } finally {
+        await runner.close();
+      }
+
+      expect(card, "the held item never reached the board").toBeDefined();
+      // The two facts, apart: what the run produced, and what it is asking
+      // about. The card used to hold only the first and offer it as the second.
+      expect(card!.headSha).toBe(r.headSha);
+      expect(card!.awaitingSha).toBe(repaired);
+      expect(card!.awaitingApproval).toBe(true);
+
+      // The old card's value, which is a diff nobody is being asked about. Still
+      // refused, and the refusal names both shas rather than saying "no".
+      const stale = await approve({
+        project: PROJECT,
+        issue: 134,
+        base: "develop",
+        client: fakeClient({ refSha: async () => repaired }),
+        by: "human:test",
+        onSha: card!.headSha!,
+        store,
+        home,
+        gitEnv: { ...process.env, ...authored },
+      });
+      expect(stale.ok).toBe(false);
+      if (stale.ok) return;
+      expect(stale.reason).toBe("stale");
+      expect(stale.detail).toContain(r.headSha.slice(0, 7));
+      expect(stale.detail).toContain(repaired.slice(0, 7));
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+
+      // And the card's own value lands it — the answer `lingtai approve`, which
+      // sends no sha at all, has been giving all along.
+      const approved = await approve({
+        project: PROJECT,
+        issue: 134,
+        base: "develop",
+        client: fakeClient({ refSha: async () => repaired }),
+        by: "human:test",
+        onSha: card!.awaitingSha!,
+        store,
+        home,
+        gitEnv: { ...process.env, ...authored },
+      });
+
+      expect(approved.ok, JSON.stringify(approved)).toBe(true);
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).not.toBe(before);
+      const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+      expect(log.stdout).toContain("repair agent/134 by hand");
+    }, 240_000);
+
   });
 
   /**

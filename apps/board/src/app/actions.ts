@@ -77,9 +77,12 @@ export async function approveCard(input: {
       base: state.base ?? (await client.defaultBranch()),
       client,
       by: actor(),
-      // What the card was showing. Checked server-side against what the run is
-      // actually asking about, so a click on a stale card refuses instead of
-      // approving a diff nobody read.
+      // The sha the card was offering, which is the one the run is *asking*
+      // about (`task_view.awaiting_sha`) and not the one it produced. Checked
+      // server-side against the run's own `onSha`, so a click on a card the log
+      // has moved past refuses instead of approving a diff nobody read — and a
+      // card that is current agrees with `lingtai approve` rather than refusing
+      // what the CLI accepts (#92).
       onSha: input.onSha,
       note: input.note,
       token: () => client.token(),

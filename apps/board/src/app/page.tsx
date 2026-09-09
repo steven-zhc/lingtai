@@ -130,12 +130,18 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
 
           `blocked` and not the column, for the same reason: the lane also holds
           a refused dispatch and a run that asked a question mid-flight, and
-          neither is an item anybody can hand back. */}
-      {card.blocked && card.headSha && card.awaitingApproval ? (
+          neither is an item anybody can hand back.
+
+          `awaitingSha` and not `headSha`: a question is open exactly when there
+          is a sha it is about, and that sha is the one the controls have to
+          send. Sending what the run *produced* is what made the board refuse
+          approvals the CLI accepted (#92). */}
+      {card.blocked && card.awaitingSha ? (
         <Decide
           project={card.project}
           issue={Number(card.ref)}
-          onSha={card.headSha}
+          onSha={card.awaitingSha}
+          headSha={card.headSha ?? ""}
           gates={card.gatesFailed > 0 ? ["build"] : []}
         />
       ) : card.blocked ? (

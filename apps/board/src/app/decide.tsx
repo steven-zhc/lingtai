@@ -23,12 +23,24 @@ export function Decide({
   project,
   issue,
   onSha,
+  headSha,
   gates,
 }: {
   project: string;
   issue: number;
-  /** What the card is showing. The server refuses if the branch has moved. */
+  /**
+   * The sha the run is *asking* about. Approve and reject answer that question,
+   * and `approve()` compares this against the run's own `onSha` — so sending
+   * what the run produced instead refused approvals `lingtai approve` accepted
+   * (#92).
+   */
   onSha: string;
+  /**
+   * The sha the run *produced*. A waiver is a verdict about that diff and
+   * `waive()` compares against it, which is a different value the moment a
+   * branch is repaired and approval re-requested on a new head.
+   */
+  headSha: string;
   /** Gate names that could be waived, so the reason can name one. */
   gates: string[];
 }) {
@@ -83,7 +95,7 @@ export function Decide({
               run(asking, () =>
                 asking === "reject"
                   ? rejectCard({ project, issue, onSha, reason })
-                  : waiveGate({ project, issue, gate: gates[0] ?? "build", onSha, reason }),
+                  : waiveGate({ project, issue, gate: gates[0] ?? "build", onSha: headSha, reason }),
               )
             }
           >

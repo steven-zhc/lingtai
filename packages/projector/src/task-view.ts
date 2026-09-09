@@ -104,13 +104,23 @@ export const taskViewProjection: Projection = {
         -- One line for the card: what it is waiting on, or why it stopped.
         note         text,
 
-        -- Whether a person is actually being asked something, as opposed to
-        -- merely being the one left holding it. The board used to infer this
-        -- from "waiting, and there is a head sha", which was true of an item
-        -- whose approved merge had hit a conflict — the approval consumed, the
-        -- run back to gating, and an Approve button that could not work (#84).
-        -- Two different facts, so two different fields.
-        awaiting_approval boolean not null default false,
+        -- The sha the open question is about, and null when nothing is being
+        -- asked. Written from ApprovalRequested.onSha, which is the value
+        -- approve() compares a caller's onSha against.
+        --
+        -- Not head_sha. That one is what the last run *produced*, and it is a
+        -- different fact: the two agree right up until a branch is repaired and
+        -- approval re-requested on a new head, and then the board sent the
+        -- produced sha, approve() refused it as stale, and the same approval
+        -- through the CLI — which sends no sha at all — landed. Two answers to
+        -- one question (#92).
+        --
+        -- Whether a person is being asked something is read off this rather
+        -- than kept beside it: a card cannot then offer Approve without the sha
+        -- Approve needs. That is the "waiting, and there is a head sha"
+        -- inference #84 replaced, and this is what it should have been replaced
+        -- with.
+        awaiting_sha text,
 
         -- Whether a person is holding a *question*, as opposed to being in the
         -- waiting lane for some other reason. The lane also holds a dispatch
@@ -246,7 +256,7 @@ export const taskViewProjection: Projection = {
           await set(ctx, event.streamId, seq, at, {
             state: "queued",
             note: null,
-            awaiting_approval: false,
+            awaiting_sha: null,
             blocked: false,
           });
           break;
@@ -266,7 +276,7 @@ export const taskViewProjection: Projection = {
             state: "landed",
             note: d.mergeCommit,
             closed_at: at,
-            awaiting_approval: false,
+            awaiting_sha: null,
             blocked: false,
           });
           break;
@@ -379,24 +389,29 @@ export const taskViewProjection: Projection = {
           // run an action of the same name; the run is there because two
           // attempts can run the same point, and without it the second silently
           // inherited the first's verdicts (#78).
-          const d = event.data as { gate: string; action: string; question?: string };
+          const d = event.data as { gate: string; action: string; onSha: string; question?: string };
           const verdict = VERDICT[event.type];
           if (verdict) await setGate(ctx, event.streamId, seq, at, `${d.gate}:${d.action}`, verdict);
           if (event.type === "ApprovalRequested") {
             await viaRun(ctx, event.streamId, seq, at, {
               state: "waiting",
               note: (event.data as PayloadOf<"ApprovalRequested">).question,
-              // The card may offer Approve, because there is a question open.
-              awaiting_approval: true,
+              // The card may offer Approve, and this is the sha it must send:
+              // the one the run is asking about, not the one it produced. A
+              // re-request on a repaired head moves this and leaves `head_sha`
+              // where it was, which is the divergence #92 is about.
+              awaiting_sha: d.onSha,
             });
           }
           // Granted spends it; revoked opens it again — the run reducer says the
           // same, and the card has to agree with the thing that will refuse it.
           if (event.type === "ApprovalGranted") {
-            await viaRun(ctx, event.streamId, seq, at, { awaiting_approval: false });
+            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: null });
           }
           if (event.type === "ApprovalRevoked") {
-            await viaRun(ctx, event.streamId, seq, at, { awaiting_approval: true });
+            // On the sha the withdrawal names, which is the one the reducer puts
+            // the run back to awaiting.
+            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: d.onSha });
           }
           break;
         }
@@ -411,7 +426,7 @@ export const taskViewProjection: Projection = {
             // The approval, if there was one, has been spent on this attempt.
             // The run is back to `gating` and `approve()` refuses it — so the
             // card must stop offering a button that cannot work (#84).
-            awaiting_approval: false,
+            awaiting_sha: null,
           });
           break;
         }
@@ -422,7 +437,7 @@ export const taskViewProjection: Projection = {
             state: "landed",
             note: d.mergeCommit,
             closed_at: at,
-            awaiting_approval: false,
+            awaiting_sha: null,
             blocked: false,
           });
           break;
@@ -518,7 +533,7 @@ async function upsert(
            last_attempt_at = case when $10::int > 0 then excluded.updated_at else task_view.last_attempt_at end,
            note = case when $10::int > 0 then null else task_view.note end,
            -- A fresh attempt is nobody's question yet.
-           awaiting_approval = case when $10::int > 0 then false else task_view.awaiting_approval end,
+           awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
            blocked = case when $10::int > 0 then false else task_view.blocked end,
            -- The claim is what consumes a pending repair, exactly as the fold
            -- in work-item.ts does: this run *is* the repair, and naming it here
@@ -669,14 +684,26 @@ export interface TaskCard {
   attempts: number;
   lastAttemptAt: Date | null;
   /**
-   * Whether a person is being asked something, rather than merely left holding
-   * it. `waiting` says where the card sits; this says whether Approve can work.
-   */
-  /**
    * Whether a person is holding a question. `waiting` says which lane the card
    * is in; this says whether there is anything on it to answer.
    */
   blocked: boolean;
+  /**
+   * The sha the open question is about, and null when there is none.
+   *
+   * This is what a control has to send, not `headSha`: `approve()` binds its
+   * verdict to what the run is *asking* about, and the card was sending what
+   * the run *produced* (#92). They differ the moment a branch is repaired and
+   * approval re-requested on a new head.
+   */
+  awaitingSha: string | null;
+  /**
+   * Whether a person is being asked something, rather than merely left holding
+   * it. `waiting` says where the card sits; this says whether Approve can work.
+   *
+   * Read off `awaitingSha` rather than stored beside it, so the card cannot
+   * offer Approve without the sha Approve needs.
+   */
   awaitingApproval: boolean;
   /** A repair bought and not yet claimed. Exempt from the queue's backoff. */
   repairPending: boolean;
@@ -770,7 +797,8 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         attempts: row.attempts,
         lastAttemptAt: row.last_attempt_at,
         blocked: row.blocked === true,
-        awaitingApproval: row.awaiting_approval === true,
+        awaitingSha: row.awaiting_sha,
+        awaitingApproval: row.awaiting_sha !== null,
         repairPending: row.repair_pending === true,
         repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
       };

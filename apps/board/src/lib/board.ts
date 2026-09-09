@@ -55,8 +55,15 @@ export interface BoardCard {
   kind: string;
   title: string;
   tier: string;
-  /** For the approve/reject controls, which are bound to a specific commit. */
+  /** What the last run produced. The diff a person reads is this one. */
   headSha: string | null;
+  /**
+   * What the run is *asking* about, for the controls that are bound to a
+   * commit. Not `headSha`: a branch repaired and re-offered moves this and
+   * leaves that where it was, and sending the wrong one is an Approve that
+   * refuses what `lingtai approve` accepts (#92).
+   */
+  awaitingSha: string | null;
   /**
    * Counts, not verdicts, and only from the run this card names — the verdicts
    * themselves are on the task's own page. Waived and approved are separate
@@ -74,15 +81,6 @@ export interface BoardCard {
   updatedAt: string;
   /** Attempts so far, so a card that keeps failing reads as one. */
   attempts: number;
-  /**
-   * Whether Approve can actually work.
-   *
-   * The card used to infer this from "waiting, and there is a head sha", which
-   * is also true of an item whose approved merge hit a conflict: the approval
-   * spent, the run back to `gating`, and `approve()` refusing every click
-   * (#84). Sitting in the column and being asked a question are two facts.
-   */
-  awaitingApproval: boolean;
   /**
    * Whether a person is holding a question at all. The waiting lane also holds
    * a refused dispatch and a run that asked something mid-flight, and neither
@@ -213,6 +211,7 @@ export function toCard(t: TaskCard, runnableAt: Date | null = null): BoardCard {
     title: t.title,
     tier: t.tier,
     headSha: t.headSha,
+    awaitingSha: t.awaitingSha,
     gatesPassed: t.gatesPassed,
     gatesFailed: t.gatesFailed,
     gatesWaived: t.gatesWaived,
@@ -222,7 +221,6 @@ export function toCard(t: TaskCard, runnableAt: Date | null = null): BoardCard {
     note: t.note,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
-    awaitingApproval: t.awaitingApproval,
     blocked: t.blocked,
     repairCostUsd: t.repairCostUsd,
     runnableAt: runnableAt === null ? null : runnableAt.toISOString(),
@@ -295,6 +293,7 @@ async function queuedCards(project?: string): Promise<{
           // will actually run at is decided when it runs, not now.
           tier: "guarded",
           headSha: null,
+          awaitingSha: null,
           gatesPassed: 0,
           gatesFailed: 0,
           gatesWaived: 0,
@@ -304,7 +303,6 @@ async function queuedCards(project?: string): Promise<{
           note: null,
           updatedAt: new Date().toISOString(),
           attempts: 0,
-          awaitingApproval: false,
           blocked: false,
           repairCostUsd: null,
           // These are the ones `selectRunnable` just said *are* runnable.
