@@ -62,6 +62,7 @@
  */
 import { chatStream, parsePayload, type Envelope, type ToAppend } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
+import { editHash } from "./attempts.ts";
 import { tellGitHub, type IssueChannel } from "./tell.ts";
 
 export type { IssueChannel } from "./tell.ts";
@@ -656,7 +657,17 @@ export async function concludeDiscussion(
       {
         type: "PromptEdited",
         actor: by,
-        data: parsePayload("PromptEdited", { text, by, chatId }),
+        // `basedOn` is null and that is the honest value: the assistant
+        // proposes a sentence, not a change to a document, so nobody was
+        // looking at a composed prompt when this was adopted. The board's own
+        // box is the one that records what it was written against (#104).
+        data: parsePayload("PromptEdited", {
+          text,
+          hash: editHash(text),
+          by,
+          basedOn: null,
+          chatId,
+        }),
       },
     ]);
     detail = "the next attempt's prompt carries it";

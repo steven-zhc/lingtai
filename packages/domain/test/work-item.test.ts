@@ -278,14 +278,14 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-p-1");
     const edited = reduceWorkItem([
       e("WorkItemDiscovered", discovered),
-      e("PromptEdited", { text: "pass --max-turns", by: "human:steven", chatId: "chat-1" }),
+      e("PromptEdited", { text: "pass --max-turns", hash: "a91f2e", by: "human:steven", basedOn: "ticket@1924", chatId: "chat-1" }),
     ]);
     expect(edited.pendingPrompt).toEqual({ text: "pass --max-turns", by: "human:steven" });
 
     const f = makeStream("wi-p-2");
     const consumed = reduceWorkItem([
       f("WorkItemDiscovered", discovered),
-      f("PromptEdited", { text: "pass --max-turns", by: "human:steven", chatId: "chat-1" }),
+      f("PromptEdited", { text: "pass --max-turns", hash: "a91f2e", by: "human:steven", basedOn: "ticket@1924", chatId: "chat-1" }),
       f("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
     ]);
     expect(consumed.pendingPrompt).toBeNull();
@@ -296,10 +296,26 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-p-3");
     const state = reduceWorkItem([
       e("WorkItemDiscovered", discovered),
-      e("PromptEdited", { text: "first", by: "human:steven", chatId: null }),
-      e("PromptEdited", { text: "second", by: "human:steven", chatId: null }),
+      e("PromptEdited", { text: "first", hash: "f1", by: "human:steven", basedOn: null, chatId: null }),
+      e("PromptEdited", { text: "second", hash: "f2", by: "human:steven", basedOn: null, chatId: null }),
     ]);
     expect(state.pendingPrompt?.text).toBe("second");
+  });
+
+  /**
+   * *Remove the edit* is an append, not a deletion. The page offers it beside
+   * the box (#104) and this is the whole of what it does — which also closes a
+   * gap in the version: a blank edit produced no block in the prompt, because
+   * `humanBrief` trims, and still a `human@…` in `promptVersion`.
+   */
+  it("takes the edit back off when the text is blank", () => {
+    const e = makeStream("wi-p-4");
+    const state = reduceWorkItem([
+      e("WorkItemDiscovered", discovered),
+      e("PromptEdited", { text: "pass --max-turns", hash: "a91f2e", by: "human:steven", basedOn: null, chatId: null }),
+      e("PromptEdited", { text: "  \n ", hash: null, by: "human:steven", basedOn: null, chatId: null }),
+    ]);
+    expect(state.pendingPrompt).toBeNull();
   });
 
 });

@@ -63,9 +63,12 @@ import type { GitHubClient } from "@lingtai/github";
 import { type Runtime, missingForTier } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
-import { decideRepair, diagnoseRefusal, repairBrief } from "./repair.ts";
+import { decideRepair, diagnoseRefusal } from "./repair.ts";
 import { standDown } from "./never-started.ts";
-import { attemptBrief, attemptOutcome, humanBrief, priorAttempts, promptVersionFor } from "./attempts.ts";
+import { priorAttempts } from "./attempts.ts";
+// The one composer, shared with the board. See `prompt.ts` for why it is not
+// here any more.
+import { nextPrompt, renderPrompt } from "./prompt.ts";
 import {
   CONTROL_STREAM,
   type ToAppend,
@@ -119,44 +122,6 @@ export interface RunOnceOptions {
    */
   merge?: boolean;
   log?: (line: string) => void;
-}
-
-/**
- * Fills the ticket into the prompt.
- *
- * `{{issue}}` was the only placeholder, and a number is not a ticket. The
- * others are substituted whether or not the template uses them, so a project
- * that writes its own prompt can leave any of them out.
- *
- * `{{failure}}` is empty on a **first** attempt and on nothing else. It carries
- * what the earlier attempts did (`attempts.ts`, `#82`) and, on a repair, the
- * refusal that bought this one
- * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). It is the
- * only thing that distinguishes a second attempt from the first one again,
- * which is why it goes through the same substitution as everything else rather
- * than through a second prompt: a repair *is* a run, and giving it its own
- * template would be the beginning of the sixth gate point 0016 closed the set
- * against.
- *
- * **A template with no slot gets it appended, rather than losing it.** That is
- * the one placeholder this is true of, and deliberately: a project writing its
- * own prompt can leave `{{title}}` out and mean it, but a repair whose failure
- * silently did not reach the agent is a run that costs the same and knows
- * nothing — a control the recipe claims and the code does not have, which is
- * `#58`'s shape and the thing this feature must not reintroduce.
- */
-export function renderPrompt(
-  template: string,
-  ticket: { number: number; title: string; body: string },
-  failure = "",
-): string {
-  const filled = template
-    .replaceAll("{{issue}}", String(ticket.number))
-    .replaceAll("{{title}}", ticket.title)
-    .replaceAll("{{body}}", ticket.body)
-    .replaceAll("{{failure}}", failure);
-  if (failure === "" || template.includes("{{failure}}")) return filled;
-  return `${filled}\n\n${failure}\n`;
 }
 
 export type RunOnceResult =
@@ -434,41 +399,36 @@ export function runOnce(
      * stream already in hand. That is what keeps a fifth attempt from pasting
      * four gate logs into a prompt.
      */
-    const attempts = priorAttempts(before);
-    const previous = attempts[attempts.length - 1];
-    if (previous) {
-      previous.outcome = attemptOutcome(
-        yield* Effect.promise(() => store.read(previous.runId)),
-        recipe.runtime.budget,
-      );
-      log(`attempt ${attempts.length + 1}: ${previous.runId} ended — ${previous.ended ?? "no ending recorded"}`);
-    }
+    const previous = priorAttempts(before).at(-1);
+    const lastRun = previous
+      ? yield* Effect.promise(() => store.read(previous.runId))
+      : null;
 
     /**
      * What this run is told that a first attempt is not.
      *
-     * Two blocks and not one. The history is what every second attempt has; the
-     * repair brief is one specific ending — the integrator refused a diff that
-     * exists — with an instruction about what to produce
-     * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). A
-     * repair has both, and neither stands in for the other — except for the one
-     * thing they would both quote. `repairBrief` prints the refusal that bought
-     * this run verbatim and at length, so the history defers to it rather than
-     * printing a second copy: a bound kept inside `attempts.ts` and undone by
-     * composition is not a bound.
+     * Composed by `prompt.ts` and not here, because the board composes the same
+     * document to show a person before they approve it (`#104`) — and a page
+     * that builds its own approximation of the prompt invites somebody to
+     * approve a document that is not the one that runs.
+     *
+     * Settled **before the claim**, like `repairOf` and `edit`: the claim is
+     * what consumes both, so a version computed afterwards would describe a
+     * prompt this run is not getting. The ticket is filled in much later, from
+     * inside the scope that has a worktree, which is why `renderPrompt` is a
+     * second call rather than part of this one.
      */
-    if (previous && repairOf?.after === previous.runId) previous.refusal = null;
-    const failure = [
-      attemptBrief(attempts, recipe.runtime.budget),
-      repairOf ? repairBrief(repairOf) : "",
-      humanBrief(edit),
-    ]
-      .filter((block) => block !== "")
-      .join("\n\n");
-    // `human` is named apart from `failure` even though both are inside the one
-    // block: an attempt told a different sentence is a different attempt, and
-    // the version has to say which of the two kinds moved (0032 §5).
-    const promptVersion = promptVersionFor(basePromptVersion, failure, edit?.text ?? "");
+    const next = nextPrompt({
+      base: basePromptVersion,
+      budget: recipe.runtime.budget,
+      item: before,
+      lastRun,
+    });
+    const failure = next.failure;
+    const promptVersion = next.version;
+    if (previous) {
+      log(`attempt ${next.attempt}: ${previous.runId} ended — ${previous.ended ?? "no ending recorded"}`);
+    }
 
     // The claim carries what the task is, because it is now the only place a
     // title enters the log at all.

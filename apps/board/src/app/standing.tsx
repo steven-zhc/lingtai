@@ -5,8 +5,10 @@ import { inWords } from "@lingtai/conductor/queue";
 // the same hold rather than keeping three copies of the words.
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import type { DiscussionView, StandingView } from "@/lib/task";
+import type { OutgoingView } from "@/lib/prompt";
 import { Decide, Requeue } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
+import { Outgoing } from "./outgoing.tsx";
 
 /**
  * Why this task is not moving, above everything else.
@@ -38,8 +40,15 @@ import { Discussion } from "./discussion.tsx";
  * here: printing the failing gate twice, at the top and inside its attempt, is
  * how two copies of one fact come to disagree.
  *
- * **The discussion is inside this block**, and it is one of the two objects the
- * layout notes allow a frame in it. That is where the design puts it and it is
+ * **It ends in the thing that will actually run** (design §4). A recommendation
+ * is the system's sentence about what it intends; the prompt is what runs, so
+ * it is shown here — before the buttons that send it, and editable. That is
+ * what turns approval from *yes / no* into *yes, but*, which is the answer a
+ * person usually has and until `#104` could not give.
+ *
+ * **The discussion is inside this block**, and it is the second of the two
+ * objects the layout notes allow a frame in it — the outgoing prompt is the
+ * first. That is where the design puts it and it is
  * the right place for the reason the block exists: this is where somebody
  * decides, and *"why is this stuck"* is a question asked at the moment of
  * deciding rather than at the bottom of the page (0033).
@@ -54,6 +63,7 @@ export function Standing({
   issue,
   taskId,
   discussions,
+  outgoing,
 }: {
   standing: StandingView;
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
@@ -61,6 +71,8 @@ export function Standing({
   issue: number | null;
   taskId: string;
   discussions: DiscussionView[];
+  /** What the next attempt will be handed. Null when there will not be one. */
+  outgoing: OutgoingView | null;
 }) {
   const held = describeHold(standing);
   const acting = project !== null && issue !== null;
@@ -123,16 +135,21 @@ export function Standing({
         </div>
       ) : null}
 
-      {/* The move that will actually run, and only where it can run. The card's
-          own reading (#84, #92): a question is open exactly when there is a sha
-          it is about, and an item whose approved merge hit a conflict has none
-          — Approve would refuse every click, so it gets the move it has. */}
+      {/* The document that will actually run, above the buttons that send it.
+          Only where there is a next attempt to be handed one — a run in flight
+          has already been given its prompt (`loadTask`). */}
+      {outgoing !== null ? <Outgoing taskId={taskId} outgoing={outgoing} /> : null}
+
       {/* Offered whatever the state, deliberately. The commonest question is
           about something that has stopped, but "what did attempt 1 actually
           change" is asked of a landed item too, and a box that appeared only on
           a blocked card would be one more thing to find out about. */}
       <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} />
 
+      {/* The move that will actually run, and only where it can run. The card's
+          own reading (#84, #92): a question is open exactly when there is a sha
+          it is about, and an item whose approved merge hit a conflict has none
+          — Approve would refuse every click, so it gets the move it has. */}
       {acting && standing.state === "blocked" ? (
         standing.awaitingSha !== null ? (
           <Decide

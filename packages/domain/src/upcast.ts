@@ -140,6 +140,20 @@ export const UPCASTERS: UpcastRegistry = {
      */
     1: (data) => ({ ...(data as object), prompt: null }),
   },
+  PromptEdited: {
+    /**
+     * 1 → 2: `hash` and `basedOn` were added when the board grew the box that
+     * writes these (#104). Both null, and neither is guessable from the payload:
+     * the digest could be recomputed from `text`, but recomputing it and
+     * recording it are different claims — one says *this is what that text
+     * hashes to now*, the other says *this is the number the writer put on the
+     * log* — and only the second is what the field is for.
+     *
+     * Written for the rule rather than for any row, like `Reconciled`'s: the
+     * type is one commit old and nothing has appended a v1 one.
+     */
+    1: (data) => ({ ...(data as object), hash: null, basedOn: null }),
+  },
   GatesResolved: { 1: (data) => ({
     ...(data as object),
     points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>

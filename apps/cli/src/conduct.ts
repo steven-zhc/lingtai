@@ -14,8 +14,7 @@
  * supposed to be hosting.
  */
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import {
   PortsLive,
   currentRecipe,
@@ -29,10 +28,11 @@ import {
 import { Effect } from "effect";
 import { readControl } from "@lingtai/daemon";
 import { createGitHubClient } from "@lingtai/github";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+/** Lingtai's own checkout — the hook binary and the prompt template. */
+const root = repoRoot();
 
 export interface ConductOptions {
   /** False holds every item at the merge instead of landing it. */

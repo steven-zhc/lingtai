@@ -255,6 +255,24 @@ export function resolvePath(path: string): string {
 }
 
 /**
+ * The checkout Lingtai is running from — where `.env.local`, `prompts/` and the
+ * hook binary live.
+ *
+ * Already the anchor `resolvePath` and the dotenv load above use; exported
+ * because it is now read by something other than a command. `#104` shows the
+ * next attempt's prompt on the board before it is sent, and the template is
+ * `prompts/ticket.md` at this root — the same file `conduct.ts` reads to run
+ * one. Two ways of finding it would be two prompts the moment either moved.
+ *
+ * **Not the managed project's checkout.** That is a clone under `stateDir()`,
+ * and a mirror of it under `repos/`; this is Lingtai's own source, which 0010
+ * runs unbuilt.
+ */
+export function repoRoot(): string {
+  return root;
+}
+
+/**
  * `from` exists so that a caller which was *handed* an environment reports on
  * that one. `lingtai doctor` takes an environment as an argument and is supposed to
  * be a function of it; reading past it to `process.env` made its report partly

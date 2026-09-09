@@ -264,7 +264,7 @@ describe("the block, rendered", () => {
    * those have to keep rendering.
    */
   it("degrades to the state, the age, the question and the move when nothing is diagnosed", () => {
-    const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} />);
+    const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} />);
 
     expect(html).toContain("blocked");
     expect(html).toContain("from attempt 2 of 2");
@@ -293,6 +293,7 @@ describe("the block, rendered", () => {
         issue={112}
         taskId="wi-lingtai-112"
         discussions={[]}
+        outgoing={null}
       />,
     );
 
@@ -306,7 +307,7 @@ describe("the block, rendered", () => {
   });
 
   it("points at the attempt rather than reprinting it", () => {
-    const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} />);
+    const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} />);
     expect(html).toContain('href="#attempt-1"');
     expect(html).toContain("in attempt 1");
   });
@@ -317,7 +318,7 @@ describe("the block, rendered", () => {
    * kind of item — and the block itself is drawn for all of them.
    */
   it("spends its amber only when a person is the thing being waited on", () => {
-    const on = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} />);
+    const on = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} />);
     expect(on).toContain('class="standing onyou"');
 
     const off = renderToStaticMarkup(
@@ -327,6 +328,7 @@ describe("the block, rendered", () => {
         issue={112}
         taskId="wi-lingtai-112"
         discussions={[]}
+        outgoing={null}
       />,
     );
     expect(off).toContain('class="standing"');
@@ -336,7 +338,7 @@ describe("the block, rendered", () => {
   });
 
   it("states the state with no move at all when the id is not a work item", () => {
-    const html = renderToStaticMarkup(<Standing standing={HELD} project={null} issue={null} taskId="wi-lingtai-112" discussions={[]} />);
+    const html = renderToStaticMarkup(<Standing standing={HELD} project={null} issue={null} taskId="wi-lingtai-112" discussions={[]} outgoing={null} />);
     expect(html).toContain("blocked");
     expect(html).not.toContain("Back to the queue");
   });

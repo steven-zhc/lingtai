@@ -260,7 +260,16 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const cost = typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "";
     return `${need(d, "chatId")} → ${need(d, "outcome")}${cost}`;
   },
-  PromptEdited: (d) => `${need(d, "by")} added ${String(d["text"] ?? "").length} bytes for the next run`,
+  // Blank is the removal, and the row says so — an edit taken back off the next
+  // attempt is a decision somebody made, not the absence of one (#104).
+  PromptEdited: (d) => {
+    const text = String(d["text"] ?? "");
+    const hash = typeof d["hash"] === "string" ? ` · human@${d["hash"]}` : "";
+    const on = typeof d["basedOn"] === "string" ? ` on ${d["basedOn"]}` : "";
+    return text.trim() === ""
+      ? `${need(d, "by")} removed the edit from the next run${on}`
+      : `${need(d, "by")} added ${text.length} bytes for the next run${on}${hash}`;
+  },
 
   // -------------------------------------------------------------- project --
   ProjectConfigured: (d) =>

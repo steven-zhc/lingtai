@@ -854,11 +854,42 @@ export const DiscussionHeld = z.object({
  * `#104` owns the editable prompt box on the board. This is the carrier it and
  * the discussion assistant share, and it is here because `#105`'s first output
  * is exactly this event.
+ *
+ * **schemaVer 2 — `hash` and `basedOn`.** `#104` asks this event to carry *the
+ * text, the hash, who wrote it and what it was based on*, and the two that were
+ * missing are the two that make it auditable. Without `hash` the number in the
+ * next run's `promptVersion` is recomputed by a reader and believed; without
+ * `basedOn` an edit is a sentence with no statement of what it was a change to,
+ * which for a *yes, but* is most of the meaning.
  */
 export const PromptEdited = z.object({
-  /** The text the next run's prompt carries, whole. */
+  /**
+   * The text the next run's prompt carries, whole.
+   *
+   * **Empty is the removal.** `reduceWorkItem` clears `pendingPrompt` on a blank
+   * one, so *Remove the edit* is an append like every other decision here and
+   * who withdrew it is on the log rather than only its absence being.
+   */
   text: z.string(),
+  /**
+   * The digest of `text` — the `human@…` half of the next run's `promptVersion`.
+   *
+   * Recorded and not merely derivable: the version is what the log uses to say
+   * two runs were told different things, and a number the event carries can be
+   * checked against the one the run recorded. Null on a removal, which has no
+   * text to hash, and on a schemaVer 1 event, which recorded neither.
+   */
+  hash: z.string().nullable(),
   by: z.string(),
+  /**
+   * The composed version this was written against — `ticket@1924+failure@1c5708ba`.
+   *
+   * What the person was looking at when they typed. Null when there was no
+   * composed prompt in front of them, which is every edit a discussion
+   * concludes with: the assistant proposes a sentence, not a change to a
+   * document.
+   */
+  basedOn: z.string().nullable(),
   /** The discussion it came out of, when one did. */
   chatId: z.string().nullable(),
 });
@@ -1002,6 +1033,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   RunStarted: 2,
   // 2: carries the prompt text and not only its length (#88). See above.
   RunPrompted: 2,
+  // 2: added `hash` and `basedOn`, so an edit says which number it contributed
+  // to the next run's `promptVersion` and what it was a change to (#104).
+  PromptEdited: 2,
   // 2: each finding gained `action`. See Reconciled above.
   Reconciled: 2,
   // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carry a

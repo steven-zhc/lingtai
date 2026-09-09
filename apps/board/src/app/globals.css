@@ -603,6 +603,102 @@ details[open] > summary::before { content: "▾"; }
 .sptr { margin-left: auto; font-family: var(--mono); color: var(--accent-ink); text-decoration: none; }
 .sptr:hover { text-decoration: underline; text-underline-offset: 2px; }
 
+/* --- what will be sent ----------------------------------------------------
+   The other of the two objects the decision column allows a frame around, and
+   the one the layout notes name first: the outgoing prompt. Boxed for the
+   discussion's reason — it is a place you do something.
+
+   Neutral, like the discussion. The amber on this page is the rule at the left
+   and the primary button inside the editor; the box itself carrying it would
+   dilute both. */
+.outgoing {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+.outhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.7rem;
+}
+.outname {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-2);
+}
+/* How long the edit lasts, on the box that makes it. Not amber: it is a bound,
+   not a thing waiting on anybody. */
+.outonly {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+  color: var(--muted);
+}
+.outfact {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The version, on screen rather than only in a payload. Two runs sharing one
+   `promptVersion` that did not share a prompt is the log lying about what
+   produced a result (0032 §5), so the field a reader would check is shown. */
+.outver {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* Raw, and bounded. What is here is what will be sent, byte for byte — no
+   markdown, no collapsed whitespace — and it scrolls rather than hides, because
+   a document behind a disclosure is one somebody approves without opening. */
+.outtext {
+  margin: 0;
+  max-height: 17rem;
+  overflow: auto;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+  background: var(--surface);
+  font: 0.68rem/1.55 var(--mono);
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* What the edit did to it, counted. Lingtai's composed prompt hashes back to a
+   ticket body or a failure; hand-written prose does not, and this is what keeps
+   the difference visible. */
+.outedit {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.outwho { margin-right: 0.45rem; color: var(--muted); }
+.outbox { display: grid; gap: 0.35rem; }
+.outbox textarea {
+  font: 0.75rem/1.55 var(--mono);
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+}
+.outnote { margin: 0; font-size: 0.68rem; line-height: 1.5; color: var(--muted); }
+
 /* --- the discussion -------------------------------------------------------
    One of the two objects the decision column allows a frame around — a place
    you do something, rather than a thing you read (layout notes).

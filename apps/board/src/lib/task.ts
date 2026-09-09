@@ -52,6 +52,7 @@ import { loadProject } from "@lingtai/conductor/projects";
 import { githubClientFor } from "@lingtai/conductor/filter";
 import { issueUrl } from "./board.ts";
 import { type HistoryLine, toLine } from "./history.ts";
+import { outgoingFor, type OutgoingView } from "./prompt.ts";
 
 export interface Finding {
   file: string;
@@ -477,6 +478,15 @@ export interface TaskDetail {
   runs: RunView[];
   /** Every conversation held about this item, oldest first. */
   discussions: DiscussionView[];
+  /**
+   * What the next attempt will be handed, and null when there will not be one.
+   *
+   * Null for an item that has landed or is running: the prompt for a run in
+   * flight was already sent, and a box offering to edit it would be offering
+   * something the code cannot do. See `prompt.ts` for what composing it costs
+   * and why it is composed by the conductor's own function rather than here.
+   */
+  outgoing: OutgoingView | null;
   totals: Totals;
   /**
    * Everything, in order, for the question a summary did not anticipate — and
@@ -984,12 +994,23 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))));
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held));
 
+  const standing = standingOf(own, runs);
+  // Only where a next attempt is possible. A run in flight has already been
+  // handed its prompt and a landed item will never be handed another, so the
+  // file read and the recipe fetch are spent on the two states that can still
+  // take one — the person pressing Send, and the loop after a backoff (0032 §5).
+  const outgoing =
+    standing.state === "blocked" || standing.state === "queued"
+      ? await outgoingFor({ own, streams, ticket })
+      : null;
+
   return {
     taskId,
-    standing: standingOf(own, runs),
+    standing,
     ticket,
     runs,
     discussions,
+    outgoing,
     totals: totalsOf(runs, discussions),
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is

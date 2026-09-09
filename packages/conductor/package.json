@@ -12,6 +12,7 @@
     "./discuss": "./src/discuss.ts",
     "./filter": "./src/filter.ts",
     "./labels": "./src/labels.ts",
+    "./prompt": "./src/prompt.ts",
     "./queue": "./src/queue.ts"
   },
   "scripts": {

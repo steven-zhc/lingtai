@@ -347,6 +347,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           standing={task.standing}
           taskId={task.taskId}
           discussions={task.discussions}
+          outgoing={task.outgoing}
           project={task.ticket?.project ?? null}
           // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`
           // has none, and the block states the state without offering a move.

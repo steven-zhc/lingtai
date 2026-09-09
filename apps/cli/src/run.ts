@@ -13,18 +13,18 @@
  * `conductor-lock.ts`.
  */
 import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from "@lingtai/conductor";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { PortsLive } from "@lingtai/conductor";
 import { Data, Effect } from "effect";
 import { ConductorLock, ConductorLockLive } from "./conductor-lock.ts";
 import { Projector, ProjectorLive } from "./projector.ts";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+/** Lingtai's own checkout — the hook binary and the prompt template. */
+const root = repoRoot();
 
 export interface RunOptions {
   project: string;

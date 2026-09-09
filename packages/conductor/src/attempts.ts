@@ -404,8 +404,20 @@ function cell(text: string): string {
 export function promptVersionFor(base: string, failure: string, human = ""): string {
   const parts = [base];
   if (failure !== "") parts.push(`failure@${digest(failure)}`);
-  if (human !== "") parts.push(`human@${digest(human)}`);
+  if (human !== "") parts.push(`human@${editHash(human)}`);
   return parts.join("+");
+}
+
+/**
+ * The `human@…` in a `promptVersion`, and the `hash` a `PromptEdited` carries.
+ *
+ * One function for both so the event and the version can never name different
+ * numbers for one edit — which is the only way `PromptEdited.hash` is worth
+ * recording at all. See that field for why it is recorded rather than left to
+ * be recomputed.
+ */
+export function editHash(text: string): string {
+  return digest(text);
 }
 
 function digest(text: string): string {

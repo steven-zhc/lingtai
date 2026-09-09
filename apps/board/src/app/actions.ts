@@ -28,6 +28,7 @@
 // the same reason `./board` and `./projects` exist.
 import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
+import { editHash } from "@lingtai/conductor/prompt";
 import { CONTROL_STREAM, parsePayload, parseWorkItemStream } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
@@ -313,6 +314,73 @@ export async function concludeChat(input: {
 
     revalidatePath(`/task/${input.taskId}`);
     return result;
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * A sentence added to the next attempt's prompt — or taken back off it.
+ *
+ * The move `#104` exists for. Approving a blocked item was *yes* or *no*, and
+ * the answer a person usually has is *yes, but*: `#89` cost two attempts and
+ * $13.04 chasing a flag one editable sentence would have settled.
+ *
+ * **On the work item stream, never on the approval.** `approve()` binds to
+ * `onSha` and a force-push voids it by arithmetic; an edit is about *what to
+ * do*, not about which diff to merge, so it outlives the diff (0032 §5). Which
+ * is also why there is no `onSha` in this input: nothing is being agreed to.
+ *
+ * **It applies to the next run only**, whoever starts it. `reduceWorkItem`
+ * holds it as `pendingPrompt` and the next `WorkItemClaimed` consumes it —
+ * anything meant to last belongs in the GitHub ticket, where it versions as
+ * `ticket@NNNN` and everybody can see it (§6).
+ *
+ * An empty `text` is *Remove the edit*: the reducer clears `pendingPrompt` on a
+ * blank one, so a withdrawal is an append like every other decision here rather
+ * than an absence somebody has to notice.
+ */
+export async function editPrompt(input: {
+  taskId: string;
+  /** Raw. What is typed is what the attempt is told, byte for byte. */
+  text: string;
+  /**
+   * The composed version the box was showing — `ticket@1924+failure@1c5708ba`.
+   *
+   * Recorded, not checked. Unlike `onSha` this is not a claim about what may
+   * still be merged: the log is being told what the person was reading when
+   * they wrote, and a prompt that has moved since is a difference a reader can
+   * see rather than a reason to refuse.
+   */
+  basedOn: string;
+}): Promise<ActionResult> {
+  try {
+    if (!parseWorkItemStream(input.taskId)) return { ok: false, detail: "this id is not a work item" };
+    const text = input.text;
+    const by = actor();
+    const events = await eventStore.read(input.taskId);
+    await eventStore.append(input.taskId, events.length, [
+      {
+        type: "PromptEdited",
+        actor: by,
+        data: parsePayload("PromptEdited", {
+          text,
+          // The same digest the next run's `promptVersion` will carry, from the
+          // same function, so the event and the version cannot name different
+          // numbers for one edit. Null on a removal: there is nothing to hash.
+          hash: text.trim() === "" ? null : editHash(text),
+          by,
+          basedOn: input.basedOn || null,
+          chatId: null,
+        }),
+      },
+    ]);
+
+    revalidatePath(`/task/${input.taskId}`);
+    return {
+      ok: true,
+      detail: text.trim() === "" ? "the edit is off the next attempt" : "the next attempt carries it",
+    };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }

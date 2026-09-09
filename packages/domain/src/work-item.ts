@@ -236,7 +236,17 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // which state the item is in — the next claim is what consumes it, and a
       // second edit before that claim replaces the first rather than stacking:
       // two sentences nobody re-read is a prompt nobody approved.
-      return { ...state, ...at, pendingPrompt: { text: d.text, by: d.by } };
+      //
+      // **Blank is the removal**, which is why the page's *Remove the edit* is
+      // an append and not a deletion. It also closes a gap the version had: an
+      // edit of nothing but whitespace produced no block in the prompt —
+      // `humanBrief` trims — and still a `human@…` in `promptVersion`, so the
+      // log claimed a difference the agent was never told about.
+      return {
+        ...state,
+        ...at,
+        pendingPrompt: d.text.trim() === "" ? null : { text: d.text, by: d.by },
+      };
     }
 
     case "WorkItemReleased":
