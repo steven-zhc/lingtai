@@ -31,7 +31,7 @@ import {
 } from "@lingtai/projector/task-view";
 import type { BlockDiagnosis, ProjectState } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
-import { heldUntil, selectRunnable } from "@lingtai/conductor/queue";
+import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
@@ -633,6 +633,72 @@ export function toColumns(cards: BoardCard[], problems: QueueProblem[] = []): Bo
       ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
     };
   });
+}
+
+/**
+ * Why a Queued card is not moving, when something is stopping it.
+ *
+ * Typed alongside the sentence rather than only as one, for the reason
+ * `describeHold` gives about a hold: what it *is* has to be assertable without
+ * a test depending on the wording, and the wording has to be decided in one
+ * place so two readers of the same row cannot be told different things.
+ */
+export interface QueuedStanding {
+  state: "paused" | "backing-off";
+  /** What the card says. The whole of what is rendered. */
+  text: string;
+  /** The hover, carrying the instant the phrase rounds off. */
+  title: string;
+}
+
+/**
+ * Which of the three a Queued card is, said in one phrase — or null when it is
+ * simply next.
+ *
+ * Three states sat in this column reading identically (`#100`, 0031's closing
+ * table): one nobody has tried, one whose last attempt failed and which comes
+ * back at 23:45, and one that is not going anywhere because the conductor has
+ * been stopped. `board.ts` admitted the first pair in its own comment for the
+ * whole of #95, and the third had no owner until 0031 §3 gave it one.
+ *
+ * **Null is the answer for the card that is simply next**, and it is the point
+ * rather than an omission: a card with nothing holding it back has nothing to
+ * say about when it starts, and `runnable now` on every ordinary queued card
+ * would bury the two that mean something.
+ *
+ * **A pause outranks a backoff.** They can both hold at once and only one of
+ * them decides anything: an item whose backoff lifts in a minute still does not
+ * move while the conductor is taking nothing, so promising a time would be the
+ * more precise of two answers and the wrong one.
+ *
+ * The pause's wording is `emptyNote`'s, because it is the same fact the empty
+ * Running column already says (#77) — and its who, why and Resume stay on the
+ * chip in the bar, which is where 0031 §5 leaves them. Nothing here is new UI;
+ * it is a fact reaching the column it was missing from.
+ */
+export function queuedStanding(
+  card: Pick<BoardCard, "column" | "runnableAt">,
+  paused: boolean,
+  now: number = Date.now(),
+): QueuedStanding | null {
+  // Only Queued. Every other lane is describing something that is running or
+  // over, and neither the backoff nor the pause says anything about those.
+  if (card.column !== "queued") return null;
+  if (paused) {
+    return {
+      state: "paused",
+      text: "paused — nothing will start",
+      title: "the conductor has been told to take no new work; this card keeps its place",
+    };
+  }
+  if (card.runnableAt === null) return null;
+  return {
+    state: "backing-off",
+    // `lingtai status`'s own phrase, from the package that owns the rule, so
+    // the two places this is asked cannot come to word it differently again.
+    text: backingOff(new Date(card.runnableAt), now),
+    title: `backing off until ${card.runnableAt}`,
+  };
 }
 
 /**

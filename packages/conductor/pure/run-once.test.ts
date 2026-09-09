@@ -403,8 +403,20 @@ describe("runOnce, with no world to run in", () => {
     expect(endings).toEqual(Array.from({ length: 6 }, () => "never-started"));
 
     // The items keep their place: each attempt released, as any failed run does.
-    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
-    expect(item.filter((t) => t === "WorkItemReleased")).toHaveLength(6);
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const releases = item.filter((e) => e.type === "WorkItemReleased");
+    expect(releases).toHaveLength(6);
+
+    // **And each release says what happened, which is the card's whole line.**
+    // `WorkItemReleased.reason` overwrites the note the projection wrote from
+    // `RunFailed`, so `run failed: ${kind}` was where the reason stopped: the
+    // prose was in the history and the card said `run failed: crash` (0031 §6,
+    // `#100`). Both halves are asserted because both were missing — the
+    // runtime's own words, and that this attempt cost nothing, which is what
+    // separates it from one that spent an agent and produced nothing.
+    const reason = (releases[0]!.data as { reason: string }).reason;
+    expect(reason).toContain("You've hit your session limit");
+    expect(reason).toContain("nothing was spent");
 
     // And the account-wide answer was given exactly once.
     const control = await store.read("ctl-conductor");

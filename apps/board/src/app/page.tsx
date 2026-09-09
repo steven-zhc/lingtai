@@ -5,6 +5,7 @@ import {
   groupQueue,
   issueUrl,
   loadBoard,
+  queuedStanding,
   spend,
   type BoardCard,
   LANDED_OPEN,
@@ -202,11 +203,20 @@ function Card({
   card,
   showProject,
   issue,
+  paused,
 }: {
   card: BoardCard;
   showProject: boolean;
   issue: string | null;
+  /**
+   * Whether the conductor is taking anything at all — one fact about the whole
+   * installation, and one of the three states a Queued card can be in (#100).
+   * Passed to every card because `queuedStanding` is what decides it matters,
+   * and it matters in exactly one column.
+   */
+  paused: boolean;
 }) {
+  const standing = queuedStanding(card, paused);
   return (
     <article className={`card ${accent(card)}`}>
       {/* Reference and kind are one fact — which ticket — so they are one line.
@@ -284,13 +294,16 @@ function Card({
             attempt {card.attempts}
           </li>
         ) : null}
-        {/* When, not whether (#95). A card the backoff is holding sits in Queued
-            looking like one nobody has got to yet, and it is the one that will
-            not be taken next — so the time is the whole of the difference. The
-            recipe's `source.backoff` from the last attempt (0028). */}
-        {card.runnableAt ? (
-          <li className="pill hold" title={`backing off until ${card.runnableAt}`}>
-            runnable in {inWords(Date.parse(card.runnableAt) - Date.now())}
+        {/* When, not whether (#95) — and, since #100, which of the three a
+            Queued card is. A card the backoff is holding, a card nothing will
+            start because the conductor is stopped, and a card nobody has got to
+            yet all sat here reading identically; the third says nothing, which
+            is what makes the other two worth reading. The sentences are
+            `queuedStanding`'s and the backoff's is `lingtai status`'s own, so
+            the two places this is asked cannot drift apart again. */}
+        {standing ? (
+          <li className="pill hold" title={standing.title}>
+            {standing.text}
           </li>
         ) : null}
       </ul>
@@ -502,11 +515,13 @@ function Queued({
   order,
   showProject,
   issue,
+  paused,
 }: {
   cards: BoardCard[];
   order: string[];
   showProject: boolean;
   issue: (card: BoardCard) => string | null;
+  paused: boolean;
 }) {
   return (
     <>
@@ -520,7 +535,13 @@ function Queued({
             {group.next ? <span className="qnext"> — taken first</span> : null}
           </p>
           {group.cards.map((card) => (
-            <Card key={card.taskId} card={card} showProject={showProject} issue={issue(card)} />
+            <Card
+              key={card.taskId}
+              card={card}
+              showProject={showProject}
+              issue={issue(card)}
+              paused={paused}
+            />
           ))}
         </Fragment>
       ))}
@@ -758,7 +779,13 @@ export default async function Page({
               ) : col.id === "landed" ? (
                 <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
               ) : col.id === "queued" ? (
-                <Queued cards={col.cards} order={queueOrder} showProject={onBoard.size > 1} issue={ticket} />
+                <Queued
+                  cards={col.cards}
+                  order={queueOrder}
+                  showProject={onBoard.size > 1}
+                  issue={ticket}
+                  paused={control.paused}
+                />
               ) : (
                 col.cards.map((card) => (
                   <Card
@@ -766,6 +793,7 @@ export default async function Page({
                     card={card}
                     showProject={onBoard.size > 1}
                     issue={ticket(card)}
+                    paused={control.paused}
                   />
                 ))
               )}

@@ -161,3 +161,21 @@ export function inWords(ms: number): string {
   return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
 }
 
+/**
+ * What a queued item the backoff is holding says, in one phrase.
+ *
+ * **The words, not the arithmetic.** `heldUntil` already stops the CLI and the
+ * board having their own versions of *when*; this stops them having their own
+ * versions of *what to call it*. `lingtai status` has printed
+ * `[backing off — runnable in 32m]` since 0028 §4 and the board printed
+ * `runnable in 32m` beside a hover nobody hovers, so the two places an operator
+ * asks *why is this not moving* answered the same question in different words
+ * (`#100`). They are one string now.
+ *
+ * `until` is `heldUntil`'s answer and is never null here: a row nothing is
+ * holding has no backing-off to describe, and saying "runnable in now" would be
+ * a phrase for a state that is not one.
+ */
+export function backingOff(until: Date, now: number = Date.now()): string {
+  return `backing off — runnable in ${inWords(until.getTime() - now)}`;
+}

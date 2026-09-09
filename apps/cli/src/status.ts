@@ -7,9 +7,9 @@
  * worked has a reason, and until now the reason was never written down anywhere.
  */
 import {
+  backingOff,
   describeFilter,
   heldUntil,
-  inWords,
   loadProjects,
   projectFilter,
   runnableNow,
@@ -168,7 +168,9 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       // runnable-but-not-yet, and `[backing off]` on its own is a state a person
       // can see and cannot act on: nothing said how long it lasted or what ended
       // it. The arithmetic is the recipe's `source.backoff` from the last
-      // attempt, so it is said here rather than left to be looked up (0028).
+      // attempt, so it is said here rather than left to be looked up (0028) —
+      // and the sentence is `backingOff`'s rather than this file's, so the card
+      // that shows the same row shows it in the same words (#100).
       const held =
         t.state === "queued"
           ? heldUntil(
@@ -188,7 +190,7 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
         t.state !== "queued"
           ? `  [${t.state}]`
           : held
-            ? `  [backing off — runnable in ${inWords(held.getTime() - now)}]`
+            ? `  [${backingOff(held, now)}]`
             : unoffered
               ? "  [not offered]"
               : "";

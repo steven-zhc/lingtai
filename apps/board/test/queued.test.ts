@@ -9,7 +9,7 @@
  * grouping at all.
  */
 import { describe, expect, it } from "vitest";
-import { groupQueue, toCard } from "../src/lib/board.ts";
+import { groupQueue, queuedStanding, toCard } from "../src/lib/board.ts";
 import type { TaskCard } from "@lingtai/projector/task-view";
 
 function queued(over: Partial<TaskCard> & { issue: string; kind: string }): TaskCard {
@@ -102,5 +102,70 @@ describe("the Queued column, grouped", () => {
   it("has no order to show when no recipe could be read, and still shows every card", () => {
     const groups = groupQueue([card("74", "bug"), card("62", "feature")], []);
     expect(groups.flatMap((g) => g.cards.map((c) => c.ref)).sort()).toEqual(["62", "74"]);
+  });
+});
+
+/**
+ * The three states that read identically, rendered
+ * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)'s closing
+ * table, `#100`).
+ *
+ * `run failed: crash` was on the card whether the run would be back at 23:45 or
+ * whether the conductor had been stopped and nothing here would move at all,
+ * and a card nobody had tried said nothing — which is right, and was
+ * indistinguishable from the other two because they said nothing about *when*
+ * either.
+ */
+describe("what a Queued card says about whether it will come back", () => {
+  const held = new Date("2026-09-09T04:32:00Z");
+  const now = Date.parse("2026-09-09T04:00:00Z");
+
+  it("says nothing at all about a card that is simply next", () => {
+    expect(queuedStanding(card("74", "bug"), false, now)).toBeNull();
+  });
+
+  it("says when a backing-off card returns, in `lingtai status`'s own words", () => {
+    const said = queuedStanding(card("74", "bug", held), false, now);
+    expect(said?.state).toBe("backing-off");
+    // The exact line `lingtai status` prints inside its brackets, so the two
+    // cannot come to word the same row differently again.
+    expect(said?.text).toBe("backing off — runnable in 32m");
+    expect(said?.title).toBe(`backing off until ${held.toISOString()}`);
+  });
+
+  it("says nothing will start while the conductor is paused", () => {
+    const said = queuedStanding(card("74", "bug"), true, now);
+    expect(said?.state).toBe("paused");
+    expect(said?.text).toBe("paused — nothing will start");
+  });
+
+  /** The whole complaint, as one assertion: three states, three readings. */
+  it("gives the three of them three different readings", () => {
+    const readings = [
+      queuedStanding(card("74", "bug"), false, now),
+      queuedStanding(card("74", "bug", held), false, now),
+      queuedStanding(card("74", "bug"), true, now),
+    ].map((s) => s?.text ?? null);
+
+    expect(new Set(readings).size).toBe(3);
+  });
+
+  /**
+   * A pause outranks a backoff, because only one of them decides anything: an
+   * item whose backoff lifts in a minute still does not move while the
+   * conductor is taking nothing, and `runnable in 32m` would be the more
+   * precise of two answers and the wrong one.
+   */
+  it("says the pause, not the backoff, when both hold", () => {
+    expect(queuedStanding(card("74", "bug", held), true, now)?.state).toBe("paused");
+  });
+
+  /**
+   * Neither fact is about any other lane. A running card is not backing off and
+   * a paused conductor does not stop the run already in flight (0013).
+   */
+  it("says nothing about a card that is not queued", () => {
+    const running = toCard(queued({ issue: "74", kind: "bug", state: "running" }));
+    expect(queuedStanding(running, true, now)).toBeNull();
   });
 });

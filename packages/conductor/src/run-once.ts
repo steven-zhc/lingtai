@@ -188,6 +188,21 @@ class Stopped extends Data.TaggedError("Stopped")<{
   readonly release: string;
 }> {}
 
+/**
+ * A failure's own words, at the width one line on a card survives.
+ *
+ * The same 300 the repair's handover question clips to, and for its reason: a
+ * `detail` is the runtime's output verbatim, a release reason is a sentence
+ * somebody reads in a column, and the whole of it is on the log a click away.
+ * Whitespace is flattened because the output has newlines in it and the card
+ * does not.
+ */
+function said(detail: string, n = 300): string {
+  const one = detail.replace(/\s+/g, " ").trim();
+  if (one === "") return "no detail was recorded";
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one;
+}
+
 /** How a runtime is spawned for the fail-closed smoke test. */
 function runBinary(
   bin: string,
@@ -901,7 +916,35 @@ export function runOnce(
             return yield* new Stopped({
               stage: "run",
               detail: outcome.failure.detail,
-              release: `run failed: ${outcome.failure.kind}`,
+              /**
+               * The card's own line, and it says what happened rather than only
+               * what class it was.
+               *
+               * `WorkItemReleased.reason` *is* the card's sentence — the release
+               * follows the `RunFailed` and overwrites the note the projection
+               * wrote from it — so `run failed: ${kind}` was where the reason
+               * stopped. `history.ts` renders the same event as
+               * `${kind}: ${detail}`, which is how `You've hit your session
+               * limit · resets 11pm (America/Chicago)` came to be in the history
+               * and nowhere a person scanning the board would find it (0031 §6,
+               * `#100`). One interpolation, and the whole of an incident was
+               * unreadable from the board.
+               *
+               * **What it cost is part of what happened.** A run that never
+               * started took no turns and spent nothing (0031 §1); a crash
+               * halfway through spent an agent. Neither appends `RunFinished`,
+               * so neither card carries a cost pill — the sentence is the only
+               * place the difference can be said, and a card that cost nothing
+               * must not read like one that bought an hour of agent.
+               *
+               * Clipped where `repairOf`'s question above is clipped, and for
+               * its reason: a crash's detail is the runtime's output verbatim,
+               * and the whole of it is on the log a click away.
+               */
+              release:
+                outcome.failure.kind === "never-started"
+                  ? `the run never started — nothing was spent: ${said(outcome.failure.detail)}`
+                  : `run failed — ${outcome.failure.kind}: ${said(outcome.failure.detail)}`,
             });
           }
 

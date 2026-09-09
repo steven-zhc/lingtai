@@ -36,6 +36,7 @@ export {
   type ProjectFilter,
 } from "./filter.ts";
 export {
+  backingOff,
   heldUntil,
   inWords,
   selectRunnable,
