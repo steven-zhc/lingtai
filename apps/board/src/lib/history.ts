@@ -28,6 +28,7 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { Envelope, EventType } from "@lingtai/domain";
+import { sourceOfPayloadDocument, type DocumentSource } from "./markdown.ts";
 
 /** One row: the four columns, plus everything the disclosure shows. */
 export interface HistoryLine {
@@ -63,6 +64,14 @@ export interface PayloadDocument {
   text: string;
   /** Its size, in the unit `RunPrompted.bytes` already reports. */
   bytes: number;
+  /**
+   * Who wrote it, which is the only thing that settles how it may be rendered.
+   *
+   * Carried on the document rather than worked out where it is displayed, so a
+   * document cannot arrive at a renderer having lost its provenance on the way.
+   * See `markdown.ts` for the rule and for why `log` is the default.
+   */
+  source: DocumentSource;
 }
 
 type Payload = Record<string, unknown>;
@@ -342,15 +351,25 @@ function mark(bytes: number): string {
  * and the document is still there, byte for byte, in the one form you can copy
  * into `claude -p`. What is not reproduced is the JSON escaping, which is how
  * the value travels and not what is stored.
+ *
+ * The event's `type` is taken so each document can be stamped with its source
+ * — the same argument one step on: whether a document may be *rendered* is a
+ * fact about who wrote it, and the payload is where that is still known. Omit
+ * it and every document is `log`, which is the reading that is never wrong
+ * (`markdown.ts`).
  */
-export function splitPayload(data: unknown): { raw: string; documents: PayloadDocument[] } {
+export function splitPayload(
+  data: unknown,
+  type?: string,
+): { raw: string; documents: PayloadDocument[] } {
   const documents: PayloadDocument[] = [];
 
   function lift(value: unknown, path: string): unknown {
     if (typeof value === "string" && value.includes("\n")) {
       const bytes = new TextEncoder().encode(value).length;
+      const field = path || "(the payload)";
       // A payload that is itself a document has no key to be named by.
-      documents.push({ field: path || "(the payload)", text: value, bytes });
+      documents.push({ field, text: value, bytes, source: sourceOfPayloadDocument(type, field) });
       return mark(bytes);
     }
     if (Array.isArray(value)) return value.map((v, i) => lift(v, `${path}[${i}]`));
@@ -367,7 +386,7 @@ export function splitPayload(data: unknown): { raw: string; documents: PayloadDo
 
 /** One event, as a row. */
 export function toLine(event: Envelope): HistoryLine {
-  const { raw, documents } = splitPayload(event.data);
+  const { raw, documents } = splitPayload(event.data, event.type);
   return {
     at: event.at.toISOString(),
     type: event.type,

@@ -12,23 +12,28 @@
  * tall things.
  */
 import { shortActor, type HistoryLine } from "@/lib/history";
+import { DocumentBody } from "./markdown.tsx";
 
 /**
  * A document, collapsed, labelled with its field and its size.
  *
  * The same trade the ticket body one section up makes: a page that opens three
  * screens tall is its own kind of unreadable, and a history of them is worse.
- * The `pre` wraps rather than escapes, so selecting it yields the document —
- * the thing somebody reproducing a run by hand pastes into `claude -p`.
+ *
+ * **Everything here is raw**, and the two that are not the same thing are still
+ * not the same: a prompt offers "read as markdown" under it, and a gate's
+ * stdout does not, because markdown eats the `_`, the `#` and the `{ }` a
+ * typecheck error is made of. Which of the two this is came off the payload
+ * with the document (`markdown.ts`); this row does not decide and cannot.
  */
-function Document({ field, text, bytes }: HistoryLine["documents"][number]) {
+function Document({ field, text, bytes, source }: HistoryLine["documents"][number]) {
   return (
     <details className="hdoc">
       <summary>
         <span className="hdocname">{field}</span>
         <span className="hdocsize">{bytes} bytes</span>
       </summary>
-      <pre className="hdoctext">{text}</pre>
+      <DocumentBody source={source} text={text} rawClass="hdoctext" />
     </details>
   );
 }

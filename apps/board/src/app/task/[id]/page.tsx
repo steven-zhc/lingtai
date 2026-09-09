@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { loadTask, type TicketView } from "@/lib/task";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
+import { DocumentBody } from "../../markdown.tsx";
 
 /**
  * One task, in full.
@@ -33,6 +34,11 @@ export const dynamic = "force-dynamic";
  * the link are the fact of which ticket this is and belong in one glance; the
  * body is a document, and a page that opens three screens tall is its own kind
  * of unreadable — the same trade the evidence disclosures make.
+ *
+ * The body renders as markdown, sanitised, because it *is* markdown: somebody
+ * wrote it on GitHub in a box that says so. It is also the one thing on this
+ * page written by whoever can file an issue on a managed repository, so how it
+ * is rendered is a security question and is answered once, in `markdown.tsx`.
  */
 function Ticket({ ticket }: { ticket: TicketView }) {
   return (
@@ -57,7 +63,7 @@ function Ticket({ ticket }: { ticket: TicketView }) {
       {ticket.body ? (
         <details className="tbody">
           <summary>The ticket, as it was written</summary>
-          <pre className="tbodytext">{ticket.body}</pre>
+          <DocumentBody source="ticket-body" text={ticket.body} rawClass="tbodytext" />
         </details>
       ) : null}
 

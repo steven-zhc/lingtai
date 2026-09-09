@@ -632,6 +632,108 @@ details[open] > summary::before { content: "▾"; }
   overflow-y: auto;
 }
 
+/* Markdown, rendered — and rendered for exactly two of the three sources a
+   document on this page can have (`lib/markdown.ts`). A ticket body always, a
+   prompt when asked; a gate's stdout never, because markdown eats the `_`, the
+   `#` and the `{ }` a typecheck error is made of.
+
+   Proportional, not mono: this is the one thing on the page that is prose
+   somebody wrote rather than something a program printed, and it should not
+   have to look like output to be trusted. The box is the ticket body's, so
+   opening it changes the type and not the furniture. */
+.md {
+  margin: 6px 0 0;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  max-height: 30rem;
+  overflow-y: auto;
+}
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md blockquote, .md table, .md pre { margin: 0 0 0.7rem; }
+/* A heading inside a document is a heading *in that document*. It must not
+   compete with the section labels the page navigates by, so the whole scale is
+   compressed into a half-step above the body and told apart by weight. */
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+  margin: 1.1rem 0 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.md h1, .md h2 { padding-bottom: 0.25rem; border-bottom: 1px solid var(--rule); }
+.md ul, .md ol { padding-left: 1.35rem; }
+.md li { margin: 0.15rem 0; }
+.md li input[type="checkbox"] { margin-right: 0.4rem; }
+.md blockquote {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--rule-2);
+  color: var(--muted);
+}
+.md code {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.05rem 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+}
+/* Scrolls inside itself. A fenced block in an issue body is usually the log
+   somebody pasted, and a long line in it must not make the page scroll. */
+.md pre {
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow-x: auto;
+}
+.md pre code { padding: 0; background: none; border: 0; }
+.md table { border-collapse: collapse; font-size: 0.76rem; }
+.md th, .md td { padding: 0.25rem 0.55rem; border: 1px solid var(--rule); text-align: left; }
+.md th { background: var(--surface); color: var(--ink); }
+.md hr { border: 0; border-top: 1px solid var(--rule); margin: 1rem 0; }
+
+/* A link somebody else wrote, and it must not read as this page's own. `.tlink`
+   is accent ink because the page vouches for where it goes; this is neither
+   accent nor amber, is underlined so it is still obviously a link, and carries
+   a mark saying it leaves. `rel` is set in `markdown.tsx`, where it cannot be
+   forgotten. */
+.mdlink, .mdimg {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.mdlink:hover, .mdimg:hover { text-decoration-style: solid; }
+.mdout { color: var(--muted); }
+/* An image that was never fetched. It reads as the placeholder it is rather
+   than as something that failed to load. */
+.mdimg {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* "Read as markdown", under a prompt. Quiet, because the raw text above it is
+   the record and this is a convenience — #88's whole argument is that the log
+   holds the exact document the agent was given. */
+.mdask { margin: 4px 0 0; }
+.mdask > summary {
+  padding: 0.15rem 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  cursor: default;
+}
+.mdask > summary:hover { color: var(--ink-2); }
+
 @media (max-width: 46rem) {
   /* Stacked, with the marker keeping its own column so the row still reads as
      something that opens. */

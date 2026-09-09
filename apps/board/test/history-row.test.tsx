@@ -68,7 +68,10 @@ describe("a payload that carries a document", () => {
     expect(JSON.parse(raw).prompt).toMatch(/^‹document, \d+ bytes/);
     expect(raw).not.toContain("\\n");
     expect(documents).toEqual([
-      { field: "prompt", text: PROMPT, bytes: Buffer.byteLength(PROMPT, "utf8") },
+      // `log` because nothing said otherwise: `splitPayload` is given the event
+      // type when there is one, and the reading that is never wrong when there
+      // is not (#106).
+      { field: "prompt", text: PROMPT, bytes: Buffer.byteLength(PROMPT, "utf8"), source: "log" },
     ]);
   });
 
