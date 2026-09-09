@@ -1,7 +1,13 @@
 /* Instrument palette: cool neutrals, one teal accent for structure, amber
    reserved exclusively for "a human is the thing being waited on". Semantic
    pass/fail/held are separate from the accent so a verdict never reads as
-   decoration. */
+   decoration.
+
+   The mark carries a coral #FD5D3F and that colour is deliberately *not* here.
+   Teal is structure and amber is "you are being waited on"; a third strong hue
+   in the palette would make the reader ask what it means, and the honest answer
+   is "nothing — it is the logo". It stays inside the image, at the size the bar
+   gives it, and never names a state. */
 :root {
   --ground: #f1f4f4;
   --surface: #ffffff;
@@ -22,6 +28,10 @@
   --fail-soft: #f6e1de;
   --held: #63549e;
   --held-soft: #e8e4f4;
+  /* The mark is a palette entry, not a choice made once in the markup: the two
+     files are the same shape with the ink recoloured for the ground it sits on,
+     which is exactly what every line above this one is. */
+  --mark: url("/logo.png");
   --sans: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: light;
@@ -48,6 +58,7 @@
     --fail-soft: #331816;
     --held: #a797da;
     --held-soft: #221d36;
+    --mark: url("/logo-dark.png");
     color-scheme: dark;
   }
 }
@@ -72,7 +83,28 @@ body {
   border-bottom: 1px solid var(--rule);
   font-size: 12px; color: var(--muted);
 }
-.bar .brand { font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+/* Mark and word are one lockup, so they sit inside `.brand` on their own gap
+   rather than as two children of `.bar` — `.bar`'s 12px is the gap between
+   facts, and the mark is not a separate fact from the name. */
+.bar .brand {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 600; color: var(--ink); letter-spacing: -0.01em;
+}
+/* Sized to the bar's furniture rather than to the bar: a shade over the 14px
+   separator standing beside it, which is as much room as 12px text has. The
+   file is trimmed to the mark with a 6% margin, so it sits optically smaller
+   than its box. Scaled up it stops being a mark and becomes a banner, and its
+   coral square — the one warm thing on the page besides `waiting` — grows with
+   it. At this size that square is about two pixels: a detail of the logo, not a
+   signal. */
+.bar .mark {
+  flex: none;
+  width: 15px; height: 15px;
+  background-image: var(--mark);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
 .bar .sep { width: 1px; height: 14px; background: var(--rule-2); }
 
 .chip {

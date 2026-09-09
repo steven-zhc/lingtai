@@ -426,7 +426,14 @@ export default async function Page({
   return (
     <main>
       <div className="bar">
-        <span className="brand">Lingtai</span>
+        {/* An empty span carrying a background, not an `<img>`: which file the
+            mark is comes from `--mark`, so it follows the palette instead of
+            being decided here. `aria-hidden` because the word beside it already
+            says what it says. */}
+        <span className="brand">
+          <span className="mark" aria-hidden="true" />
+          Lingtai
+        </span>
         <span className="sep" />
         {/* A filter, not a caption. With one project there is nothing to choose
             between, so it stays the sentence it was. */}
