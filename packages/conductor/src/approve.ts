@@ -25,7 +25,7 @@ import { workItemStream } from "@lingtai/domain";
 import { releaseWorkItem } from "./claim.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
-import { decideRepair, type RepairPolicy } from "./repair.ts";
+import { decideRepair, diagnoseRefusal, type RepairPolicy } from "./repair.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
 
@@ -264,6 +264,16 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
 
     const blocked = await store.read(workItemId);
     const question = `${merged.reason}: ${merged.detail.slice(0, 400)} — no repair: ${decision.why}`;
+    // Beside the question, the same reading of the refusal `run-once`'s merge
+    // lane writes — from the one function, so an approval that failed and a pass
+    // that failed cannot describe the same conflict differently (#83).
+    const diagnosis = diagnoseRefusal({
+      reason: merged.reason,
+      detail: merged.detail,
+      branch,
+      base: options.base,
+      why: decision.why,
+    });
     const ended = resolveEndActions(blocked, end, "blocked");
     await store.append(workItemId, blocked.length, [
       {
@@ -280,7 +290,16 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
       {
         type: "WorkItemBlocked",
         actor: "conductor",
-        data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
+        data: parsePayload("WorkItemBlocked", {
+          question,
+          needsFrom: "human",
+          runId,
+          // The approval was spent and the merge still failed. Nothing is being
+          // asked of anybody's judgement — this is a failure to acknowledge,
+          // and the diagnosis carries the move that is left.
+          needs: "acknowledgement",
+          diagnosis,
+        }),
       },
       ...ended,
     ]);

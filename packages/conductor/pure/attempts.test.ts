@@ -128,6 +128,8 @@ describe("priorAttempts", () => {
         question: "conflict: agent/59 does not merge into main",
         needsFrom: "human",
         runId: "run-1",
+        needs: null,
+        diagnosis: null,
       }),
     ]);
 

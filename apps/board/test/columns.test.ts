@@ -42,6 +42,8 @@ function task(state: TaskCard["state"]): TaskCard {
     awaitingSha: null,
     awaitingApproval: false,
     blocked: false,
+    needs: null,
+    diagnosis: null,
     repairPending: false,
     repairCostUsd: null,
   };

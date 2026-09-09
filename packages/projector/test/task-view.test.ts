@@ -19,7 +19,7 @@ import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/e
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { integrationStream } from "@lingtai/domain";
-import { createProjectionRunner, readTasks, taskViewProjection } from "../src/index.ts";
+import { createProjectionRunner, describeHold, readTasks, taskViewProjection } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
@@ -242,9 +242,67 @@ async function seed(): Promise<void> {
   await store.append(wi(10), 2, [
     {
       type: "WorkItemBlocked",
+      // Deliberately the shape every block on the log had before #83: a
+      // question and nothing else. The assertions below are what "a block with
+      // no diagnosis still renders exactly as it does today" is checked by.
       actor: "conductor",
-      data: { question: "a repair is waiting on you", needsFrom: "human", runId: run(10) },
+      data: {
+        question: "a repair is waiting on you",
+        needsFrom: "human",
+        runId: run(10),
+        needs: null,
+        diagnosis: null,
+      },
     },
+  ]);
+
+  // 11 — a block that carries a diagnosis and a recommended action (#83). 12 is
+  //      the same block answered, because the diagnosis has to *go* when the
+  //      hold does: one left behind would report last week's failure on a card
+  //      nobody is being asked about.
+  await store.append(wi(11), 0, [discovered(11, "diagnosed, with a move"), claimed(11)]);
+  await store.append(wi(11), 2, [
+    {
+      type: "WorkItemBlocked",
+      actor: "conductor",
+      data: {
+        question: "conflict: agent/11 does not merge into develop: page.tsx",
+        needsFrom: "human",
+        runId: run(11),
+        needs: "acknowledgement",
+        diagnosis: {
+          what: "agent/11 does not merge into develop.",
+          done: "develop was merged in first and it still would not merge. No agent was bought: the bound is spent",
+          raw: "CONFLICT (content): Merge conflict in apps/web/src/page.tsx",
+          recommendation: {
+            action: "requeue",
+            why: "the next attempt is cut from a base that has since moved",
+          },
+        },
+      },
+    },
+  ]);
+
+  // 12 — diagnosed, then unblocked by a person.
+  await store.append(wi(12), 0, [discovered(12, "diagnosed, then answered"), claimed(12)]);
+  await store.append(wi(12), 2, [
+    {
+      type: "WorkItemBlocked",
+      actor: "conductor",
+      data: {
+        question: "conflict: agent/12 does not merge into develop",
+        needsFrom: "human",
+        runId: run(12),
+        needs: "acknowledgement",
+        diagnosis: {
+          what: "agent/12 does not merge into develop.",
+          done: "No agent was bought: the bound is spent",
+          raw: "CONFLICT (content): Merge conflict in apps/web/src/other.tsx",
+          recommendation: { action: "requeue", why: "the base has moved" },
+        },
+      },
+    },
+    { type: "WorkItemUnblocked", actor: "human:steven", data: { by: "human:steven", note: "requeued" } },
   ]);
 }
 
@@ -444,6 +502,60 @@ describe("task_view", () => {
     // Granted spends it: #84's row is asking nothing and carries nothing.
     expect(card(tasks, 9)!.awaitingSha).toBeNull();
     expect(card(tasks, 9)!.awaitingApproval).toBe(false);
+  });
+
+  /**
+   * A block carries what was worked out about it, or says it carries nothing.
+   *
+   * #83: the whole vocabulary was `question`, so a conflict reached a person as
+   * a git message with a colon in it and a `human:` gate reached them as the
+   * same event — no diagnosis, no recommendation, and the card's only honest
+   * control was one that could not act. The projection is where the card and
+   * `lingtai status` both read it from, which is what stops the two of them
+   * describing one block differently.
+   */
+  it("surfaces a block's diagnosis and its recommended action", async () => {
+    const eleven = card(await readTasks({ project: PROJECT }), 11)!;
+
+    expect(eleven.blocked).toBe(true);
+    expect(eleven.needs).toBe("acknowledgement");
+    expect(eleven.diagnosis?.what).toBe("agent/11 does not merge into develop.");
+    expect(eleven.diagnosis?.done).toContain("No agent was bought");
+    // The raw failure is still reachable: a summary that hides the git output is
+    // worse than the git output.
+    expect(eleven.diagnosis?.raw).toContain("CONFLICT (content)");
+    expect(eleven.diagnosis?.recommendation?.action).toBe("requeue");
+    // And the question is untouched — the widening added to the block rather
+    // than replacing what it always said.
+    expect(eleven.note).toContain("conflict: agent/11 does not merge into develop");
+    // The same four facts, as the sentences the card and `status` share.
+    expect(describeHold(eleven).map((l) => l.part)).toEqual(["needs", "what", "did", "rec"]);
+  });
+
+  /**
+   * The degradation case, which is most of the log: **every** block written
+   * before #83 carries only a question, and one of those has to render exactly
+   * as it did — no kind, no diagnosis, and the controls it always had.
+   */
+  it("leaves a block that carries only a question exactly as it was", async () => {
+    const ten = card(await readTasks({ project: PROJECT }), 10)!;
+
+    expect(ten.blocked).toBe(true);
+    expect(ten.note).toBe("a repair is waiting on you");
+    expect(ten.needs).toBeNull();
+    expect(ten.diagnosis).toBeNull();
+    // Nothing to say about the hold, so nothing is said about it.
+    expect(describeHold(ten)).toEqual([]);
+  });
+
+  /** And the diagnosis goes when the hold is answered, not one lap later. */
+  it("drops the diagnosis when the block is answered", async () => {
+    const twelve = card(await readTasks({ project: PROJECT }), 12)!;
+
+    expect(twelve.state).toBe("queued");
+    expect(twelve.blocked).toBe(false);
+    expect(twelve.needs).toBeNull();
+    expect(twelve.diagnosis).toBeNull();
   });
 
   /**

@@ -19,12 +19,23 @@ import type { ActionResult } from "@/lib/diff";
 
 type Pending = "approve" | "reject" | "waive" | null;
 
+/**
+ * The recommended move, as `WorkItemBlocked.diagnosis.recommendation` named it.
+ *
+ * It decides which button is primary and nothing else. A recommendation is not
+ * an action taken — the click is still a person's — but a card that recommends
+ * approving and dresses Approve as the same weight as Reject is asking the
+ * question #83 says it should stop asking: *work out what to do.*
+ */
+export type Recommended = "approve" | "reject" | "requeue" | null;
+
 export function Decide({
   project,
   issue,
   onSha,
   headSha,
   gates,
+  recommended,
 }: {
   project: string;
   issue: number;
@@ -43,6 +54,14 @@ export function Decide({
   headSha: string;
   /** Gate names that could be waived, so the reason can name one. */
   gates: string[];
+  /**
+   * What the diagnosis recommends, when it recommends anything.
+   *
+   * Amber stays on the move that was recommended. Approve keeps it when nothing
+   * was recommended at all — which is every block written before #83, and is
+   * the behaviour those cards have always had.
+   */
+  recommended?: Recommended;
 }) {
   const [pending, setPending] = useState<Pending>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -114,13 +133,17 @@ export function Decide({
     <div className="decide">
       <div className="btnrow">
         <button
-          className="btn pri"
+          className={recommended === "reject" ? "btn" : "btn pri"}
           disabled={pending !== null}
           onClick={() => run("approve", () => approveCard({ project, issue, onSha }))}
         >
           {pending === "approve" ? "merging…" : "Approve"}
         </button>
-        <button className="btn" disabled={pending !== null} onClick={() => setAsking("reject")}>
+        <button
+          className={recommended === "reject" ? "btn pri" : "btn"}
+          disabled={pending !== null}
+          onClick={() => setAsking("reject")}
+        >
           Reject
         </button>
         {gates.length > 0 ? (
@@ -149,7 +172,21 @@ export function Decide({
  * is required for the same reason a waiver's is: a person overruling a block
  * without saying why is how a system stops being able to explain itself.
  */
-export function Requeue({ project, issue }: { project: string; issue: number }) {
+export function Requeue({
+  project,
+  issue,
+  recommended,
+}: {
+  project: string;
+  issue: number;
+  /**
+   * `requeue` is the one value that means anything here — it is the only move
+   * this control has — and it promotes the button to primary. Without a
+   * recommendation the button stays as it was: the move is available, and
+   * nothing is telling you to take it.
+   */
+  recommended?: Recommended;
+}) {
   const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -163,7 +200,10 @@ export function Requeue({ project, issue }: { project: string; issue: number }) 
     return (
       <div className="decide">
         <div className="btnrow">
-          <button className="btn" onClick={() => setAsking(true)}>
+          <button
+            className={recommended === "requeue" ? "btn pri" : "btn"}
+            onClick={() => setAsking(true)}
+          >
             Back to the queue
           </button>
         </div>

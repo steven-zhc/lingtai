@@ -108,7 +108,20 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   WorkItemDiscovered: (d) => `#${need(d, "externalRef")} ${need(d, "kind")} — ${clip(need(d, "title"))}`,
   WorkItemClaimed: (d) => `run ${runShort(d, "runId")}`,
   WorkItemReleased: (d) => `run ${runShort(d, "runId")}: ${clip(need(d, "reason"))}`,
-  WorkItemBlocked: (d) => clip(need(d, "question")),
+  /**
+   * Which kind of hold, then the question, then the move that was recommended.
+   *
+   * The kind leads because it is what the log could not say (#83): *held at the
+   * merge gate* and *conflict: agent/112 does not merge into develop* were both
+   * `WorkItemBlocked` with a string, and they are opposite kinds of thing. A v1
+   * block recorded neither, so it prints the question alone, exactly as before.
+   */
+  WorkItemBlocked: (d) => {
+    const said = [d["needs"] ? `${String(d["needs"])}:` : null, clip(need(d, "question"))];
+    const rec = (d["diagnosis"] as { recommendation?: { action?: string } } | null)?.recommendation;
+    if (rec?.action) said.push(`— recommends ${rec.action}`);
+    return said.filter((s) => s !== null).join(" ");
+  },
   WorkItemUnblocked: (d) => `${need(d, "by")}: ${clip(d["note"])}`,
   WorkItemLinked: (d) => `${need(d, "relation")} ${need(d, "otherRef")}`,
   WorkItemLanded: (d) => `merged as ${sha(d, "mergeCommit")}`,

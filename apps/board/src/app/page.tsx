@@ -9,6 +9,10 @@ import {
   LANDED_OPEN,
 } from "@/lib/board";
 import { AGENT, elapsed, type RunProgress } from "@/lib/progress";
+// The subpath, for the reason `board.ts` gives: the barrel pulls the gate
+// pipeline in behind it. `describeHold` is pure and lives beside the field it
+// reads, so the card and `lingtai status` say the same thing about a hold.
+import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { inWords } from "@lingtai/conductor/queue";
 // The subpath, not the barrel: the board reads the control stream and hosts
@@ -262,6 +266,8 @@ function Card({
 
       {card.note ? <p className="question">{card.note}</p> : null}
 
+      <Held card={card} />
+
       {/* Only where a person is actually the thing being waited on. A card in
           Gates is waiting on a process, and offering to approve it would invite
           a decision nobody is being asked for.
@@ -288,13 +294,75 @@ function Card({
           onSha={card.awaitingSha}
           headSha={card.headSha ?? ""}
           gates={card.gatesFailed > 0 ? ["build"] : []}
+          recommended={card.diagnosis?.recommendation?.action ?? null}
         />
       ) : card.blocked ? (
-        <Requeue project={card.project} issue={Number(card.ref)} />
+        <Requeue
+          project={card.project}
+          issue={Number(card.ref)}
+          recommended={card.diagnosis?.recommendation?.action ?? null}
+        />
       ) : null}
     </article>
   );
 }
+
+/**
+ * What is known about a hold, beyond the question.
+ *
+ * The question is rendered above this and is unchanged. Everything here is
+ * absent on a block that carries only one — which is every block on the log at
+ * the time #83 was written — so a card that has nothing to add reads exactly as
+ * it did: the question, and the move it actually has.
+ *
+ * Order is what an operator does with it. Which *kind* of hold it is first,
+ * because *a decision is yours* and *something failed and nobody has decided*
+ * are opposite situations and the controls below mean different things in each.
+ * Then what happened, then what was already done about it, then the
+ * recommendation — which is also which button is primary (`decide.tsx`).
+ *
+ * The raw failure is last and collapsed, and it is not optional. A summary that
+ * hides the git output is worse than the git output: the sentence is somebody's
+ * reading of the failure, and the failure itself has to stay reachable from the
+ * same card rather than only from the log.
+ */
+function Held({ card }: { card: BoardCard }) {
+  // The sentences are `describeHold`'s, not this file's, so the card and
+  // `lingtai status` cannot come to describe the same hold differently. What
+  // this component decides is the weight each one is given.
+  const lines = describeHold(card);
+  const raw = card.diagnosis?.raw ?? null;
+  if (lines.length === 0 && raw === null) return null;
+  return (
+    <div className="held">
+      {lines.map((line) => (
+        <p key={line.part} className={HELD_CLASS[line.part]}>
+          {line.text}
+        </p>
+      ))}
+      {raw !== null ? (
+        <details>
+          <summary>the failure, as it arrived</summary>
+          <pre className="gevidence">{raw}</pre>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Which sentence gets which weight.
+ *
+ * `what` is ink because it is the answer; `did` is muted because it is context;
+ * `rec` carries the signal colour because it is the sentence the primary button
+ * is the end of. A card where all four shout says nothing.
+ */
+const HELD_CLASS: Record<HoldLine["part"], string> = {
+  needs: "needs",
+  what: "diag",
+  did: "did",
+  rec: "rec",
+};
 
 /**
  * One landed item, on one line.

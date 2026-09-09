@@ -47,7 +47,7 @@
  * assignment is still idempotent, and `readTasks` shows only the run the card
  * names.
  */
-import type { LabelState, PayloadOf } from "@lingtai/domain";
+import type { BlockDiagnosis, LabelState, PayloadOf } from "@lingtai/domain";
 import { parseWorkItemStream } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "./projection.ts";
@@ -121,6 +121,22 @@ export const taskViewProjection: Projection = {
         -- inference #84 replaced, and this is what it should have been replaced
         -- with.
         awaiting_sha text,
+
+        -- Which kind of hold this is: 'judgement' when the decision is
+        -- genuinely a person's, 'acknowledgement' when something failed and
+        -- nobody has decided what to do. Null on a block that did not say —
+        -- every block written before #83 — and the card renders one of those
+        -- exactly as it always did.
+        needs        text,
+
+        -- { what, done, raw, recommendation }, as WorkItemBlocked.diagnosis.
+        -- One column rather than five, because it is written and cleared as one
+        -- thing: a block either carries a diagnosis or does not, and half a
+        -- diagnosis is not a state the card has to render.
+        --
+        -- Null is the common case and has to stay cheap to ask about: every
+        -- block on the log right now has only a question.
+        diagnosis    jsonb,
 
         -- Whether a person is holding a *question*, as opposed to being in the
         -- waiting lane for some other reason. The lane also holds a dispatch
@@ -238,16 +254,24 @@ export const taskViewProjection: Projection = {
             run_id: null,
             note: d.reason,
             blocked: false,
+            needs: null,
+            diagnosis: null,
           });
           break;
         }
 
         case "WorkItemBlocked": {
           const d = event.data as PayloadOf<"WorkItemBlocked">;
+          // The question is still the card's line, unchanged. What the block
+          // now *may* carry beside it is which kind of hold it is and a
+          // diagnosis; both are null on every block written before #83, and a
+          // null one leaves the row exactly as this case has always left it.
           await set(ctx, event.streamId, seq, at, {
             state: "waiting",
             note: d.question,
             blocked: true,
+            needs: d.needs,
+            diagnosis: d.diagnosis === null ? null : JSON.stringify(d.diagnosis),
           });
           break;
         }
@@ -258,6 +282,11 @@ export const taskViewProjection: Projection = {
             note: null,
             awaiting_sha: null,
             blocked: false,
+            // The hold is answered, so the diagnosis of it goes with the
+            // question. Leaving it would put last week's failure on a card
+            // nobody is being asked about.
+            needs: null,
+            diagnosis: null,
           });
           break;
 
@@ -278,6 +307,10 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             blocked: false,
+            // Landed answers whatever was being held. A diagnosis that outlived
+            // the merge would be a failure reported on finished work.
+            needs: null,
+            diagnosis: null,
           });
           break;
         }
@@ -439,6 +472,10 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             blocked: false,
+            // Landed answers whatever was being held. A diagnosis that outlived
+            // the merge would be a failure reported on finished work.
+            needs: null,
+            diagnosis: null,
           });
           break;
         }
@@ -535,6 +572,11 @@ async function upsert(
            -- A fresh attempt is nobody's question yet.
            awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
            blocked = case when $10::int > 0 then false else task_view.blocked end,
+           -- And nobody's failure yet either. The diagnosis belongs to the block
+           -- it explained; carrying it into the next attempt would put the last
+           -- run's conflict on a card that is running.
+           needs = case when $10::int > 0 then null else task_view.needs end,
+           diagnosis = case when $10::int > 0 then null else task_view.diagnosis end,
            -- The claim is what consumes a pending repair, exactly as the fold
            -- in work-item.ts does: this run *is* the repair, and naming it here
            -- is what lets its spend be counted apart from the work's.
@@ -689,6 +731,20 @@ export interface TaskCard {
    */
   blocked: boolean;
   /**
+   * Which kind of hold it is: a person's `judgement`, or a failure that needs
+   * `acknowledgement`. Null on a block that did not say, which is every one
+   * written before #83 — and a card with a null here reads as it always did.
+   */
+  needs: "judgement" | "acknowledgement" | null;
+  /**
+   * What happened, what was done about it, and what is recommended.
+   *
+   * Null when nobody has diagnosed it. The card and `lingtai status` read this
+   * one value, which is what stops the two of them describing the same block
+   * differently — the failure this repository keeps finding.
+   */
+  diagnosis: BlockDiagnosis | null;
+  /**
    * The sha the open question is about, and null when there is none.
    *
    * This is what a control has to send, not `headSha`: `approve()` binds its
@@ -713,6 +769,56 @@ export interface TaskCard {
    * as zero.
    */
   repairCostUsd: number | null;
+}
+
+/**
+ * One sentence of a hold, and which of the four it is.
+ *
+ * Typed parts rather than formatted lines, so the card and `lingtai status` can
+ * render the same sentences differently without keeping their own copies of the
+ * words. That is what #83's last condition asks for: *two places that disagree
+ * about why something is blocked is the failure this repository keeps finding* —
+ * so the wording is decided once, here, beside the field it is read from.
+ */
+export interface HoldLine {
+  part: "needs" | "what" | "did" | "rec";
+  text: string;
+}
+
+/**
+ * What is known about a hold, in the order an operator uses it.
+ *
+ * Empty for a block that carries only a question — every block written before
+ * #83 — which is what makes those render exactly as they did: the question is
+ * the card's `note` and is not this function's business.
+ *
+ * `diagnosis.raw` is deliberately **not** here. It is the git output verbatim,
+ * it belongs behind a disclosure rather than in a sentence, and a reader that
+ * cannot collapse it should link to the log instead of pasting a hundred lines
+ * into a queue listing.
+ */
+export function describeHold(card: Pick<TaskCard, "needs" | "diagnosis">): HoldLine[] {
+  const lines: HoldLine[] = [];
+  if (card.needs !== null) {
+    lines.push({
+      part: "needs",
+      text:
+        card.needs === "judgement"
+          ? "your judgement is needed"
+          : "a failure needs acknowledging",
+    });
+  }
+  const d = card.diagnosis;
+  if (d === null) return lines;
+  lines.push({ part: "what", text: d.what });
+  if (d.done !== null) lines.push({ part: "did", text: d.done });
+  if (d.recommendation !== null) {
+    lines.push({
+      part: "rec",
+      text: `recommends ${d.recommendation.action} — ${d.recommendation.why}`,
+    });
+  }
+  return lines;
 }
 
 export interface ReadTasksOptions {
@@ -797,6 +903,10 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         attempts: row.attempts,
         lastAttemptAt: row.last_attempt_at,
         blocked: row.blocked === true,
+        needs: row.needs ?? null,
+        // Written from a parsed payload and read back as it was written, so the
+        // shape is the event's rather than this reader's guess about it.
+        diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
         awaitingSha: row.awaiting_sha,
         awaitingApproval: row.awaiting_sha !== null,
         repairPending: row.repair_pending === true,

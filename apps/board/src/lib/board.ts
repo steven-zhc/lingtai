@@ -24,6 +24,7 @@
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
 import { readTasks, type TaskCard, type TaskState } from "@lingtai/projector/task-view";
+import type { BlockDiagnosis } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
@@ -100,6 +101,23 @@ export interface BoardCard {
    * is an item anybody can hand back.
    */
   blocked: boolean;
+  /**
+   * Which kind of hold this is — `judgement` when the decision is a person's,
+   * `acknowledgement` when something failed and nobody has decided what to do.
+   *
+   * Null on every block written before #83, and the card renders one of those
+   * exactly as it did then: the question, and the move it actually has.
+   */
+  needs: "judgement" | "acknowledgement" | null;
+  /**
+   * What happened, what was done about it, and what is recommended.
+   *
+   * The card's own sentence used to be whatever string a conductor put in
+   * `question`, which on a conflict was a git error with a colon in it — an
+   * operator being asked to diagnose, in a UI with no diagnosis in it (#83).
+   * Null when nobody has written one, which is most blocks.
+   */
+  diagnosis: BlockDiagnosis | null;
   /**
    * What diagnosis has cost, separately from the work. Null on the cards that
    * have never bought one, which is nearly all of them.
@@ -261,6 +279,8 @@ export function toCard(
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     blocked: t.blocked,
+    needs: t.needs,
+    diagnosis: t.diagnosis,
     repairCostUsd: t.repairCostUsd,
     runnableAt: runnableAt === null ? null : runnableAt.toISOString(),
     progress,
@@ -351,6 +371,9 @@ async function queuedCards(project?: string): Promise<{
           note: null,
           attempts: 0,
           blocked: false,
+          // Nothing has run, so nothing is held and nothing has been diagnosed.
+          needs: null,
+          diagnosis: null,
           repairCostUsd: null,
           // Nothing in the log has touched this one, so there is no time to
           // show. See the field: the render clock is not an answer.

@@ -56,6 +56,7 @@ export {
 export { approve, reject, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
 export {
   decideRepair,
+  diagnoseRefusal,
   repairBrief,
   repairFingerprint,
   whoseFailure,
