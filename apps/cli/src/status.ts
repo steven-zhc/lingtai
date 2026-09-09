@@ -8,6 +8,8 @@
  */
 import {
   describeFilter,
+  heldUntil,
+  inWords,
   loadProjects,
   projectFilter,
   runnableNow,
@@ -56,6 +58,8 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
     // What GitHub is offering. Empty when it could not be asked, which is not
     // the same as an empty queue and is said differently below.
     let offered: { ref: string; title: string; kind: string }[] = [];
+    /** Whether GitHub answered at all. An empty offer means nothing without it. */
+    let asked = false;
     if (filter.ok) {
       try {
         const { client, recipe } = filter;
@@ -66,6 +70,7 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
         // claims nothing and appends no event.
         const found = await runnableNow({ client, recipe });
         offered = found.runnable;
+        asked = true;
         const reasons = new Map<string, number>();
         for (const s of found.skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
         const passed = [...reasons]
@@ -87,8 +92,14 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       }
     }
 
-    // What GitHub offers minus what the log says is claimed.
-    const runnable = await selectRunnable({ project: name, offered, kinds });
+    // What GitHub offers minus what the log says is claimed — including
+    // anything the backoff is still holding, which the listing below names.
+    //
+    // Zero when the recipe would not resolve, and it changes no answer: nothing
+    // was offered either, so there is nothing for a window to apply to. It is
+    // not a fallback for the recipe's value (0028) — there is no such thing.
+    const backoffMs = filter.ok ? filter.backoffMs : 0;
+    const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs });
     const queuedRows = runnable.map((r) => ({ ...r, state: "queued" as const }));
     const known = await readTasks({ project: name });
 
@@ -115,8 +126,16 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
     // `--all` widens the listing to everything the project has a row for,
     // which is how you see what is running, held or landed rather than only
     // what could start next.
-    let rows: { taskId: string; issue: string; kind: string; title: string; state: string }[] =
-      queuedRows;
+    let rows: {
+      taskId: string;
+      issue: string;
+      kind: string;
+      title: string;
+      state: string;
+      /** Only ever on a row the log wrote; an offer GitHub made carries neither. */
+      lastAttemptAt?: Date | null;
+      repairPending?: boolean;
+    }[] = queuedRows;
     if (options.all) {
       const ids = new Set(known.map((t) => t.taskId));
       // An issue GitHub offers that Lingtai has never touched has no row at
@@ -124,11 +143,36 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       rows = [...known, ...queuedRows.filter((r) => !ids.has(r.taskId))];
     }
     if (rows.length === 0) continue;
+    const now = Date.now();
     for (const t of rows) {
-      // A task inside the backoff window is runnable-but-not-yet, and saying so
-      // is the difference between "nothing to do" and "not for a while".
-      const waiting = t.state === "queued" && !runnable.some((r) => r.taskId === t.taskId);
-      const note = t.state === "queued" ? (waiting ? "  [backing off]" : "") : `  [${t.state}]`;
+      // **When, not whether** (`#95`). A task inside the backoff window is
+      // runnable-but-not-yet, and `[backing off]` on its own is a state a person
+      // can see and cannot act on: nothing said how long it lasted or what ended
+      // it. The arithmetic is the recipe's `source.backoff` from the last
+      // attempt, so it is said here rather than left to be looked up (0028).
+      const held =
+        t.state === "queued"
+          ? heldUntil(
+              { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
+              backoffMs,
+              now,
+            )
+          : null;
+      // A queued row that is not runnable and not held is one GitHub is not
+      // offering — closed by hand, relabelled, excluded. That is not the clock
+      // and never was, and calling it `[backing off]` was the second thing this
+      // line got wrong. Said only when GitHub actually answered: with no answer
+      // every row looks unoffered, and the line above already says so.
+      const unoffered =
+        t.state === "queued" && asked && !runnable.some((r) => r.taskId === t.taskId);
+      const note =
+        t.state !== "queued"
+          ? `  [${t.state}]`
+          : held
+            ? `  [backing off — runnable in ${inWords(held.getTime() - now)}]`
+            : unoffered
+              ? "  [not offered]"
+              : "";
       log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`);
     }
   }

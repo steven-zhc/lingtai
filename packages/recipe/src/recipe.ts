@@ -181,6 +181,34 @@ export const Recipe = z.object({
      * and an exclude list with negation in it is a small language. List them.
      */
     exclude: z.array(z.string()).default([]),
+    /**
+     * How long a failed attempt keeps its own ticket out of the queue
+     * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+     *
+     * A failed run releases its task, a release is a completion event, and a
+     * completion event is what tells the conductor to look again — so without
+     * this the top of the queue is the ticket that just failed, forever, at
+     * agent prices. The old harness re-ran #58 and #59 five times for roughly
+     * $29 exactly that way.
+     *
+     * Here rather than compiled into Lingtai for the reason `repair` is: how
+     * long a failure of *this* repository's is worth waiting out depends on
+     * what its failures usually are, and that is a thing the repository knows
+     * and the core cannot see (0016 §7). One hour by default, flat — the wait
+     * does not grow with attempts, because what changes between attempts is
+     * what the next one is told (#82) and not how long it sat.
+     *
+     * A duration like `runtime.limits.wall`, and it must be a positive one:
+     * zero is not a shorter backoff, it is the absence of the guard, and the
+     * thing a person wants when they reach for it is `lingtai now`.
+     */
+    backoff: z
+      .string()
+      .default("1h")
+      // Checked here rather than left to throw at the point of use: a recipe
+      // that will not resolve names the key it failed on, and an exception out
+      // of the middle of a queue pass names nothing.
+      .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 1h" }),
   }),
 
   /**
@@ -296,4 +324,13 @@ export function parseDuration(text: string): number {
   const n = Number(m[1]);
   const unit = m[2] as "ms" | "s" | "m" | "h";
   return n * { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[unit];
+}
+
+/** `parseDuration`, as a predicate: for a schema, where throwing is the wrong shape. */
+function positiveDuration(text: string): boolean {
+  try {
+    return parseDuration(text) > 0;
+  } catch {
+    return false;
+  }
 }

@@ -19,7 +19,7 @@
 import type { ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import type { Recipe } from "@lingtai/recipe";
+import { parseDuration, type Recipe } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 
 /**
@@ -51,6 +51,17 @@ export type ProjectFilter =
        * reads this shape rather than the recipe.
        */
       repair: { on: boolean; maxAttempts: number };
+      /**
+       * How long a failed attempt keeps its own ticket out of the queue,
+       * `source.backoff` in milliseconds
+       * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+       *
+       * Lifted out for the reason `repair` is, and it is the same kind of
+       * thing: a default that spends money — or, here, one that decides when
+       * money is spent next — has to be readable without opening Lingtai's
+       * source. Parsed once here so that no caller reads a duration string.
+       */
+      backoffMs: number;
       /**
        * The recipe and the client that read it, carried so a caller that wants
        * to go on and ask GitHub what is offered does not fetch either twice.
@@ -103,6 +114,7 @@ export async function projectFilter(
       kinds: resolved.recipe.source.kinds,
       exclude: resolved.recipe.source.exclude,
       repair: resolved.recipe.repair,
+      backoffMs: parseDuration(resolved.recipe.source.backoff),
       recipe: resolved.recipe,
       client,
     };
@@ -163,6 +175,11 @@ export function describeFilter(filter: ProjectFilter): string[] {
         ? `yes — at most ${filter.repair.maxAttempts} agent(s) per item`
         : "no — a failure of this repository's buys nothing"
     }`,
+    // In the recipe's own words, for the same reason. The backoff decides when
+    // this project spends money again and it was in none of the four places
+    // that describe a project (#95) — a rule nobody can read is one nobody can
+    // change on purpose.
+    `  retries      after ${filter.recipe.source.backoff}, unless a repair is pending`,
   ];
 }
 

@@ -13,9 +13,6 @@
 import { workItemStream } from "@lingtai/domain";
 import { readTasks } from "@lingtai/projector";
 
-/** Long enough that a failing ticket stops costing money; short enough to retry today. */
-export const DEFAULT_BACKOFF_MS = 60 * 60_000;
-
 /** What a caller needs to run one: enough to nominate it, and nothing more. */
 export interface Runnable {
   taskId: string;
@@ -48,8 +45,16 @@ export interface RunnableOptions {
    * In the table rather than in memory on purpose: an in-memory set forgets on
    * restart, and a daemon that crashes on a bad ticket would come back and
    * spend the money again.
+   *
+   * **Required, and it comes from `source.backoff`**
+   * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)). It was
+   * an optional overriding a `DEFAULT_BACKOFF_MS` constant here, which made the
+   * hour a fact of Lingtai's source that no recipe stated and no output named —
+   * the shape 0027 deleted the lease for. Naming it at each call site is what
+   * makes the recipe the only place it is decided; `0` is a caller saying *this
+   * one is not blind*, and `lingtai now` is the caller that says it.
    */
-  backoffMs?: number;
+  backoffMs: number;
   /** Injectable so a test does not have to wait an hour. */
   now?: Date;
   url?: string;
@@ -78,7 +83,7 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
   );
 
   const now = (options.now ?? new Date()).getTime();
-  const backoff = options.backoffMs ?? DEFAULT_BACKOFF_MS;
+  const backoff = options.backoffMs;
 
   return options.offered
     .filter((o) => kinds.includes(o.kind))
@@ -90,17 +95,7 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
       // person, or finished. GitHub still listing the issue does not overrule
       // the log about what Lingtai is doing with it.
       if (row.state !== "queued") return false;
-      // A repair jumps the backoff, and only a repair.
-      //
-      // The guard above exists to stop *blind* retries — the same ticket at the
-      // top of the queue, failing the same way, at agent prices. A repair is
-      // neither blind nor unbounded: it is told what went wrong, there is at
-      // most one per distinct failure, and the recipe caps how many an item may
-      // buy (0025 §3). Making it wait an hour would leave the thing this is for
-      // — an item stuck with no path forward — stuck for an hour longer, which
-      // is the complaint rather than the fix.
-      if (row.repairPending) return true;
-      return row.lastAttemptAt === null || now - row.lastAttemptAt.getTime() >= backoff;
+      return heldUntil(row, backoff, now) === null;
     })
     .map((o) => ({ taskId: workItemStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
     .sort((a, b) => {
@@ -109,5 +104,49 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
       // Numerically, not lexically: #402 comes before #409 and both before #4100.
       return Number(a.issue) - Number(b.issue);
     });
+}
+
+/** The bit of a `task_view` row the backoff reads, and nothing more. */
+export interface BackoffInput {
+  lastAttemptAt: Date | null;
+  repairPending: boolean;
+}
+
+/**
+ * When the backoff stops holding this row — `null` when it is not holding it.
+ *
+ * The same rule `selectRunnable` filters on, read forwards so that something
+ * can be *said* about a held item rather than only subtracted. `[backing off]`
+ * with no time on it is a state a person can see and cannot act on, which is
+ * `#95`; the answer is one addition, and it belongs beside the subtraction that
+ * uses it rather than in the CLI and again in the board.
+ *
+ * **A repair jumps the backoff, and only a repair.** The guard exists to stop
+ * *blind* retries — the same ticket at the top of the queue, failing the same
+ * way, at agent prices. A repair is neither blind nor unbounded: it is told
+ * what went wrong, there is at most one per distinct failure, and the recipe
+ * caps how many an item may buy (0025 §3). Making it wait an hour would leave
+ * the thing this is for — an item stuck with no path forward — stuck for an
+ * hour longer, which is the complaint rather than the fix.
+ */
+export function heldUntil(row: BackoffInput, backoffMs: number, now: number = Date.now()): Date | null {
+  if (row.repairPending) return null;
+  if (row.lastAttemptAt === null) return null;
+  const until = row.lastAttemptAt.getTime() + backoffMs;
+  return until > now ? new Date(until) : null;
+}
+
+/**
+ * `2_700_000` → `45m`. What a person needs from a backoff is *when*, not how
+ * many milliseconds — and both the CLI and the board have to say it, so they
+ * say it the same way and in the units the recipe writes.
+ */
+export function inWords(ms: number): string {
+  if (ms <= 0) return "now";
+  if (ms < 60_000) return "under a minute";
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.round((ms % 3_600_000) / 60_000);
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 

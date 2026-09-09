@@ -134,6 +134,16 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // Asked, not read back: GitHub says what it is offering right now, so a
       // request for an issue that was closed or relabelled by hand since it was
       // made simply does not match.
+      //
+      // **`backoffMs: 0` — the command is called `now`** (0028). The backoff
+      // stops *blind* retries, and a person naming an issue is not blind; every
+      // other subtraction still applies, so a request for something already
+      // claimed or landed still matches nothing. Until #95 this said
+      // `source.backoff` like the pass below, and the two failures it produced
+      // were both silent: the request matched nothing, so the daemon ran
+      // whatever was at the top of the queue instead, and the request stayed
+      // pending — because the only thing that consumes one is the item ceasing
+      // to be queued.
       const offered = await runnableNow({ client, recipe: resolved.recipe });
       const queued = new Set(
         (
@@ -141,6 +151,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
             project: name,
             offered: offered.runnable,
             kinds: resolved.recipe.source.kinds,
+            backoffMs: 0,
           })
         ).map((t) => t.issue),
       );

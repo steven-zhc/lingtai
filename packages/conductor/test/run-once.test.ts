@@ -1133,7 +1133,9 @@ git add -A && git commit -q -m "fix the race"
     const SCHED_RECIPE = {
       version: 1,
       repo: { base: "develop", submodules: false },
-      source: { kinds: ["bug"], exclude: ["blocked"] },
+      // `backoff` as the schema resolves it. Hand-built and cast, so nothing
+      // fills a default in for it — and `runQueue` reads it every pass (0028).
+      source: { kinds: ["bug"], exclude: ["blocked"], backoff: "1h" },
       env: { required: [], plantAt: ".env.local" },
       gates: { admit: [], prepared: [], proposed: [], merge: [], end: [] },
       runtime: { agent: "claude-code", limits: { turns: 10, wall: "2m" } },

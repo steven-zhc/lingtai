@@ -53,6 +53,36 @@ describe("projectFilter", () => {
     expect(filter.exclude).toEqual(["blocked", "agent:hold"]);
     expect(filter.ref).toBe("main");
     expect(filter.configHash).toMatch(/^[0-9a-f]{64}$/);
+    // Parsed here so that no caller reads a duration string, and defaulted by
+    // the schema rather than by a constant in the queue (0028).
+    expect(filter.backoffMs).toBe(60 * 60_000);
+  });
+
+  /** The recipe decides it, so a recipe that says something else is obeyed. */
+  it("takes the backoff from the recipe, in milliseconds", async () => {
+    const filter = await projectFilter(project, async () =>
+      client(RECIPE.replace("exclude:", "backoff: 15m\n  exclude:")),
+    );
+
+    expect(filter.ok).toBe(true);
+    if (!filter.ok) return;
+    expect(filter.backoffMs).toBe(15 * 60_000);
+  });
+
+  /**
+   * Zero is not a shorter backoff, it is the absence of the guard the $29 loop
+   * bought — so it fails to resolve, naming the key, rather than throwing from
+   * the middle of a queue pass.
+   */
+  it("refuses a backoff that is not a positive duration", async () => {
+    const filter = await projectFilter(project, async () =>
+      client(RECIPE.replace("exclude:", "backoff: 0s\n  exclude:")),
+    );
+
+    expect(filter.ok).toBe(false);
+    if (filter.ok) return;
+    expect(filter.problem).toContain("source.backoff");
+    expect(filter.problem).toContain("positive duration");
   });
 
   /**
@@ -93,11 +123,11 @@ describe("projectFilter", () => {
 });
 
 describe("describeFilter", () => {
-  it("names the recipe, what it picks up, what it excludes and whether it repairs", async () => {
+  it("names the recipe, what it picks up and excludes, whether it repairs and when it retries", async () => {
     const filter = await projectFilter(project, async () => client(RECIPE));
     const lines = describeFilter(filter);
 
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(5);
     expect(lines[0]).toMatch(/^lingtai\s+recipe [0-9a-f]{12} from main$/);
     expect(lines[1]).toContain("picks up     bug > tech-debt > documentation");
     expect(lines[1]).toContain("(in priority order)");
@@ -106,6 +136,10 @@ describe("describeFilter", () => {
     // that spends money has to be readable without opening Lingtai's source
     // (0025 §2), and a line that only appears when it is on is not that.
     expect(lines[3]).toContain("repairs      yes — at most 1 agent(s) per item");
+    // And for the same reason again: the backoff decides when this project
+    // spends money next, and it was in none of the four places that describe a
+    // project (#95).
+    expect(lines[4]).toContain("retries      after 1h, unless a repair is pending");
   });
 
   /**

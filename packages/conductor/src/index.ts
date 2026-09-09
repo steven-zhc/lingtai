@@ -32,8 +32,10 @@ export {
   type ProjectFilter,
 } from "./filter.ts";
 export {
-  DEFAULT_BACKOFF_MS,
+  heldUntil,
+  inWords,
   selectRunnable,
+  type BackoffInput,
   type Runnable,
   type RunnableOptions,
 } from "./queue.ts";

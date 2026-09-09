@@ -39,6 +39,16 @@ source:
     - agent:review
     - agent:wip
 
+  # How long a failed attempt keeps its own ticket out of the queue
+  # ([0028](../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+  #
+  # Written out rather than left to the default, for the reason `repair` is:
+  # this is the repository that has to be able to read its own policy without
+  # opening its own source. An hour is the default and the right number here —
+  # self-hosting runs one unheld ticket at a time, so a ticket that fails and
+  # comes straight back is the whole queue.
+  backoff: 1h
+
 env:
   # The test database, and nothing else.
   #

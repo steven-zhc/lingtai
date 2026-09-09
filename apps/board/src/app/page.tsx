@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { emptyNote, loadBoard, type BoardCard } from "@/lib/board";
 import { loadProjects } from "@lingtai/conductor/projects";
+import { inWords } from "@lingtai/conductor/queue";
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
@@ -101,6 +102,15 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
         {card.attempts > 1 ? (
           <li className="pill sig" title="attempts so far">
             attempt {card.attempts}
+          </li>
+        ) : null}
+        {/* When, not whether (#95). A card the backoff is holding sits in Queued
+            looking like one nobody has got to yet, and it is the one that will
+            not be taken next — so the time is the whole of the difference. The
+            recipe's `source.backoff` from the last attempt (0028). */}
+        {card.runnableAt ? (
+          <li className="pill hold" title={`backing off until ${card.runnableAt}`}>
+            runnable in {inWords(Date.parse(card.runnableAt) - Date.now())}
           </li>
         ) : null}
       </ul>

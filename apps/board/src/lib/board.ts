@@ -24,7 +24,7 @@
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
 import { readTasks, type TaskCard, type TaskState } from "@lingtai/projector/task-view";
-import { selectRunnable } from "@lingtai/conductor/queue";
+import { heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { projectFilter } from "@lingtai/conductor/filter";
@@ -94,6 +94,17 @@ export interface BoardCard {
    * have never bought one, which is nearly all of them.
    */
   repairCostUsd: number | null;
+  /**
+   * When the backoff stops holding this card, ISO. Null when nothing is holding
+   * it — which is every card that is not queued, and most that are.
+   *
+   * A card whose last attempt failed sits in Queued looking exactly like one
+   * nobody has got to yet, and it is the one that will *not* be taken next
+   * (`#95`). The time is the only thing that distinguishes them, so it is on
+   * the card rather than derived at render: the rule that produced it is
+   * `heldUntil`, and the board does not get to have its own version of it.
+   */
+  runnableAt: string | null;
 }
 
 /**
@@ -187,7 +198,12 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
   landed: "landed",
 };
 
-export function toCard(t: TaskCard): BoardCard {
+/**
+ * `runnableAt` is passed in rather than computed: it needs the project's
+ * `source.backoff`, which is in the recipe, which is a network call away —
+ * and this function is the pure part.
+ */
+export function toCard(t: TaskCard, runnableAt: Date | null = null): BoardCard {
   return {
     taskId: t.taskId,
     project: t.project,
@@ -209,6 +225,7 @@ export function toCard(t: TaskCard): BoardCard {
     awaitingApproval: t.awaitingApproval,
     blocked: t.blocked,
     repairCostUsd: t.repairCostUsd,
+    runnableAt: runnableAt === null ? null : runnableAt.toISOString(),
   };
 }
 
@@ -228,9 +245,13 @@ export function toCard(t: TaskCard): BoardCard {
  * `projectFilter` is the shared answer: resolved, or refused with the reason,
  * in the same wording `lingtai daemon` and `lingtai status` use.
  */
-async function queuedCards(
-  project?: string,
-): Promise<{ cards: BoardCard[]; problems: QueueProblem[]; repair: RepairPolicyView[] }> {
+async function queuedCards(project?: string): Promise<{
+  cards: BoardCard[];
+  problems: QueueProblem[];
+  repair: RepairPolicyView[];
+  /** `source.backoff` per project, for the held cards `loadBoard` folds from the log. */
+  backoffMs: Map<string, number>;
+}> {
   const projects = (await loadProjects().catch(() => [])).filter(
     (p) => project === undefined || p.project === project,
   );
@@ -241,6 +262,7 @@ async function queuedCards(
   // already resolves every recipe, and asking GitHub twice for a fact that
   // arrived with the first answer is how a render gets expensive.
   const repair: RepairPolicyView[] = [];
+  const backoffMs = new Map<string, number>();
   for (const p of projects) {
     const filter = await projectFilter(p);
     if (!filter.ok) {
@@ -252,12 +274,14 @@ async function queuedCards(
       on: filter.repair.on,
       maxAttempts: filter.repair.maxAttempts,
     });
+    backoffMs.set(filter.project, filter.backoffMs);
     try {
       const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
       const runnable = await selectRunnable({
         project: filter.project,
         offered: offered.runnable,
         kinds: filter.kinds,
+        backoffMs: filter.backoffMs,
       });
       for (const r of runnable) {
         cards.push({
@@ -283,6 +307,8 @@ async function queuedCards(
           awaitingApproval: false,
           blocked: false,
           repairCostUsd: null,
+          // These are the ones `selectRunnable` just said *are* runnable.
+          runnableAt: null,
         });
       }
     } catch (err) {
@@ -291,7 +317,7 @@ async function queuedCards(
       problems.push({ project: filter.project, reason: (err as Error).message });
     }
   }
-  return { cards, problems, repair };
+  return { cards, problems, repair, backoffMs };
 }
 
 /**
@@ -310,11 +336,20 @@ export async function loadBoard(project?: string): Promise<Board> {
     if (!/does not exist/i.test((err as Error).message)) throw err;
   }
 
-  const fromLog = tasks.map(toCard);
+  // Before the fold, because the fold needs what it learned: a card the backoff
+  // is holding is a card the log wrote, and how long it is held for is in the
+  // recipe this just read (0028).
+  const queued = await queuedCards(project);
+  const now = Date.now();
+  const fromLog = tasks.map((t) =>
+    toCard(
+      t,
+      t.state === "queued" ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
+    ),
+  );
   // A task released back to the queue has a row *and* is offered by GitHub, so
   // it would otherwise appear twice. The row wins: it carries the attempts.
   const known = new Set(fromLog.map((c) => c.taskId));
-  const queued = await queuedCards(project);
   const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))];
 
   return { columns: toColumns(cards, queued.problems), repair: queued.repair };

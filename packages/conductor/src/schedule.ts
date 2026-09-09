@@ -30,7 +30,7 @@
  * it to an append-only log would make a restart inherit a grudge. A new pass
  * starts fresh, which is what you want after a fix.
  */
-import type { Recipe } from "@lingtai/recipe";
+import { parseDuration, type Recipe } from "@lingtai/recipe";
 import type { GitHubClient } from "@lingtai/github";
 import type { Runtime } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
@@ -162,6 +162,10 @@ export function runQueue(
           project: name,
           offered: offered.runnable,
           kinds: options.recipe.source.kinds,
+          // The recipe's, not a constant's (0028). Read here rather than held
+          // on `ScheduleOptions`, beside the `kinds` it belongs with — both are
+          // the same recipe answering the same question about the same pass.
+          backoffMs: parseDuration(options.recipe.source.backoff),
         }),
       );
       if (queue.length === 0) return finish("empty");
