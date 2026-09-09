@@ -85,6 +85,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0031](decisions/0031-a-run-that-never-started.md) | **A run that never started is its own outcome, and a quota stops the conductor** | accepted |
 | [0032](decisions/0032-the-page-is-organised-by-attempt.md) | **The task page is organised by attempt, and its control is the prompt** | accepted |
 | [0033](decisions/0033-the-third-kind-of-agent.md) | **The third kind of agent: one that reads, and cannot run** | accepted |
+| [0034](decisions/0034-the-run-log.md) | **A run leaves a log you can watch, and it is a trace, not a record** | accepted |
 | [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
 | [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
 
