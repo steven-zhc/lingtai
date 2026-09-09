@@ -238,6 +238,25 @@ body {
   color: var(--muted);
 }
 .ti { color: var(--ink); }
+/* The kind, in the repository's own label colour (#85).
+
+   A dot, and never a filled pill. GitHub's default `bug` is `#d73a4a` and
+   `--fail` here is `#a33029`: a pill in the repository's colour would read as
+   *this one failed*, and the rule at the top of this file is that a verdict
+   never reads as decoration. A 6px mark is scannable and is not a verdict.
+
+   The colour is inline, because it is the repository's and not the palette's —
+   it is the one colour on this board that does not come from a token above, and
+   putting it anywhere else would suggest it was ours to choose. What it may
+   *be* is decided in `kind-colour.ts`: a contrast floor for both themes, and
+   amber refused outright, because amber means a person is being waited on. */
+.kdot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 0.5px;
+}
 /* Quieter than the reference beside it: which repository is context, which
    ticket is the subject. */
 .proj { color: var(--rule-2); }
@@ -273,6 +292,25 @@ body {
    link on every card would compete with the title, which is the subject. */
 .iss { color: inherit; text-decoration: none; }
 .iss:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+
+/* --- queued ---------------------------------------------------------------
+   The priority order, said out loud.
+
+   `source.kinds` is the order the conductor takes work in — earlier wins — and
+   until #85 the only way to know that was to read the recipe. A heading per
+   kind makes the column's position mean something; the note on the first group
+   that has anything runnable in it says which one is next.
+
+   Muted, and never `--signal`: this is a fact about the queue's order, and
+   amber is reserved for a person being waited on. */
+.qgroup {
+  margin: 6px 0 0; padding: 0 3px 3px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--rule);
+}
+.qgroup:first-child { margin-top: 0; }
+.qnext { color: var(--ink-2); }
 
 /* --- landed ---------------------------------------------------------------
    History, at the weight history deserves.

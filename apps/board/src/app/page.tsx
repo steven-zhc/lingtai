@@ -2,12 +2,14 @@ import { Fragment } from "react";
 import Link from "next/link";
 import {
   emptyNote,
+  groupQueue,
   issueUrl,
   loadBoard,
   spend,
   type BoardCard,
   LANDED_OPEN,
 } from "@/lib/board";
+import { kindDot } from "@/lib/kind-colour";
 import { AGENT, elapsed, type RunProgress } from "@/lib/progress";
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
 // pipeline in behind it. `describeHold` is pure and lives beside the field it
@@ -166,6 +168,35 @@ function IssueRef({ href, issue }: { href: string | null; issue: string }) {
   );
 }
 
+/**
+ * The kind, in the repository's own colour, as a dot.
+ *
+ * **A dot and not a pill.** GitHub's default `bug` is `#d73a4a` and this
+ * board's `--fail` is `#a33029`; a filled pill in a repository's own colour
+ * would read as *this one failed*, which is a verdict, and the palette's rule
+ * is that a verdict never reads as decoration (`globals.css:1`). A small mark
+ * beside the reference is visible and scannable and cannot be mistaken for one.
+ *
+ * Nothing is drawn when `kindDot` returns null — GitHub had no colour, or the
+ * colour is amber, which the board reserves. The kind then renders as it did
+ * before #85: grey text on the same line, and no dot to explain.
+ */
+function KindDot({ card }: { card: BoardCard }) {
+  const colour = kindDot(card.kindColor);
+  if (colour === null) return null;
+  // `aria-hidden`, because the kind is written out in the words beside it: the
+  // dot is a second encoding of a fact already said, which is what makes it
+  // safe to have no meaning of its own to a reader who cannot see it.
+  return (
+    <span
+      className="kdot"
+      style={{ background: colour }}
+      title={`${card.kind}, in the colour ${card.project} gives that label`}
+      aria-hidden="true"
+    />
+  );
+}
+
 function Card({
   card,
   showProject,
@@ -183,6 +214,10 @@ function Card({
         {/* Only when the board holds more than one project. With a single
             project the bar already says which, and repeating it on every card
             is noise. */}
+        {/* First on the line, before the project name, so the dots line up
+            down a column whatever else a card carries — scanning by kind is
+            the whole thing this is for (#85). */}
+        <KindDot card={card} />
         {showProject ? <span className="proj">{card.project} </span> : null}
         <IssueRef href={issue} issue={card.ref} /> · {card.kind}
       </span>
@@ -450,6 +485,49 @@ function Landed({
 }
 
 /**
+ * Queued, grouped by kind, in the order the recipe takes them.
+ *
+ * **Order beats colour here, and it is the only column where that is true.**
+ * `source.kinds` is a priority order — earlier wins — so in this column the
+ * kind *is* the position, and a heading that says which group is taken next
+ * carries what a hue cannot: it tells you what happens, not what a card is.
+ * A person had to know that `source.kinds` was ordered to read any of it.
+ *
+ * The grouping is `groupQueue`'s, not this component's, so the column and
+ * `selectRunnable` cannot come to disagree about which ticket is first.
+ */
+function Queued({
+  cards,
+  order,
+  showProject,
+  issue,
+}: {
+  cards: BoardCard[];
+  order: string[];
+  showProject: boolean;
+  issue: (card: BoardCard) => string | null;
+}) {
+  return (
+    <>
+      {groupQueue(cards, order).map((group) => (
+        <Fragment key={group.kind}>
+          {/* Not amber, and not any of the state colours. "This is taken first"
+              is a fact about the queue's order, not about a person being
+              waited on — the one thing amber is allowed to mean. */}
+          <p className="qgroup">
+            {group.kind}
+            {group.next ? <span className="qnext"> — taken first</span> : null}
+          </p>
+          {group.cards.map((card) => (
+            <Card key={card.taskId} card={card} showProject={showProject} issue={issue(card)} />
+          ))}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
  * The board, optionally narrowed to one project.
  *
  * `loadBoard` has taken a project since it was written and the bar rendered the
@@ -463,7 +541,7 @@ export default async function Page({
   searchParams: Promise<{ project?: string }>;
 }) {
   const only = (await searchParams).project;
-  const { columns, repair } = await loadBoard(only);
+  const { columns, repair, queueOrder } = await loadBoard(only);
   const projects = await loadProjects().catch(() => []);
   // Not caught. A control read that fails would render as "nothing is paused",
   // which is the exact silence #77 is about; and it reads the same database
@@ -655,6 +733,8 @@ export default async function Page({
                 </p>
               ) : col.id === "landed" ? (
                 <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
+              ) : col.id === "queued" ? (
+                <Queued cards={col.cards} order={queueOrder} showProject={onBoard.size > 1} issue={ticket} />
               ) : (
                 col.cards.map((card) => (
                   <Card

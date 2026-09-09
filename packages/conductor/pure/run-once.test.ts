@@ -103,7 +103,7 @@ const issue: Issue = {
   number: 7,
   title: "a race in the importer",
   body: "fix it",
-  labels: ["bug"],
+  labels: [{ name: "bug", color: "#d73a4a" }],
   state: "open",
   url: "https://example.invalid/7",
 };

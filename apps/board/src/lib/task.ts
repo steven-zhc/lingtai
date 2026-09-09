@@ -165,7 +165,11 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     return {
       ...base,
       title: live.title,
-      labels: live.labels,
+      // Names only. The colours GitHub sends with them are the board's, for the
+      // dot on a card (#85); this page lists every label a ticket carries, and
+      // a row of coloured pills here would be the filled pill that ticket
+      // refused — a taxonomy wearing the palette's verdict colours.
+      labels: live.labels.map((l) => l.name),
       url: live.url,
       body: live.body,
       problem: null,

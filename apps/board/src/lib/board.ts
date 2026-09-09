@@ -56,6 +56,24 @@ export interface BoardCard {
   column: ColumnId;
   ref: string;
   kind: string;
+  /**
+   * What colour *this repository* gives the label this kind is read from,
+   * `#rrggbb`, or null when GitHub has none for it.
+   *
+   * Read, never invented. Kinds are unbounded since #76, so a colour Lingtai
+   * generated would have to be hashed from the name and would eventually land
+   * on the amber the palette reserves for "a person is being waited on" (#85) —
+   * silently, and by luck. The repository's team already chose a colour in
+   * GitHub's own UI, so the board reads that instead, which is 0016 §7's rule
+   * about not guessing on behalf of a repository you cannot see.
+   *
+   * Null is the ordinary case for a kind nobody has an open issue for, and it
+   * renders as the kind rendered before this existed: grey text, no dot.
+   * Whether a non-null colour can actually be drawn is a separate question and
+   * a separate file — `kind-colour.ts` holds the contrast floor and the one
+   * hue the board refuses.
+   */
+  kindColor: string | null;
   title: string;
   tier: string;
   /** What the last run produced. The diff a person reads is this one. */
@@ -164,6 +182,22 @@ export interface Board {
   columns: BoardColumn[];
   /** One per project whose recipe could be read. */
   repair: RepairPolicyView[];
+  /**
+   * The priority order the Queued column groups by — `source.kinds`, earlier
+   * first, which is the order `selectRunnable` sorts on.
+   *
+   * On the board rather than derived at render because it is the recipe's and
+   * the board does not get to have its own version of it, the same argument
+   * `runnableAt` makes. With more than one project it is the union of their
+   * orders, projects in the order `loadProjects` gives and first mention
+   * winning: two repositories can disagree about whether `bug` outranks
+   * `feature`, and one column can only be in one order.
+   *
+   * Empty when no recipe could be read — every group then falls through to the
+   * unordered tail, which is the honest rendering of "nothing said what comes
+   * first".
+   */
+  queueOrder: string[];
 }
 
 /**
@@ -250,14 +284,16 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
 };
 
 /**
- * `runnableAt` and `progress` are passed in rather than computed: one needs the
- * project's `source.backoff` and the other the run's own stream, and both are
- * a call away — this function is the pure part.
+ * `runnableAt`, `progress` and `kindColor` are passed in rather than computed:
+ * one needs the project's `source.backoff`, one the run's own stream and one
+ * the repository's labels, and all three are a call away — this function is
+ * the pure part.
  */
 export function toCard(
   t: TaskCard,
   runnableAt: Date | null = null,
   progress: RunProgress | null = null,
+  kindColor: string | null = null,
 ): BoardCard {
   return {
     taskId: t.taskId,
@@ -265,6 +301,7 @@ export function toCard(
     column: COLUMN_OF[t.state],
     ref: t.issue,
     kind: t.kind,
+    kindColor,
     title: t.title,
     tier: t.tier,
     headSha: t.headSha,
@@ -315,6 +352,15 @@ async function queuedCards(project?: string): Promise<{
    * every recipe, and reading one twice is how a render gets expensive.
    */
   plans: Map<string, GatePlan>;
+  /**
+   * What each project's repository calls each kind's colour, keyed by project
+   * and then by kind. Off the issues `runnableNow` has already read, for the
+   * reason above: it is a fact that arrived with an answer this loop needed
+   * anyway, so carrying it costs no request.
+   */
+  kindColors: Map<string, Record<string, string>>;
+  /** The kinds each project prioritises, in order, for the Queued grouping. */
+  kindOrder: string[];
 }> {
   const projects = (await loadProjects().catch(() => [])).filter(
     (p) => project === undefined || p.project === project,
@@ -328,6 +374,10 @@ async function queuedCards(project?: string): Promise<{
   const repair: RepairPolicyView[] = [];
   const backoffMs = new Map<string, number>();
   const plans = new Map<string, GatePlan>();
+  const kindColors = new Map<string, Record<string, string>>();
+  // First mention wins, so two projects that order their kinds differently give
+  // one column one order rather than an order that changes as rows arrive.
+  const kindOrder: string[] = [];
   for (const p of projects) {
     const filter = await projectFilter(p);
     if (!filter.ok) {
@@ -341,8 +391,13 @@ async function queuedCards(project?: string): Promise<{
     });
     backoffMs.set(filter.project, filter.backoffMs);
     plans.set(filter.project, filter.plan);
+    for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind);
     try {
       const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
+      // What the repository says each of its kinds looks like. A project whose
+      // queue could not be listed contributes none, and its cards render the
+      // way every card did before #85 — the failure costs a dot, not a card.
+      kindColors.set(filter.project, offered.kindColors);
       const runnable = await selectRunnable({
         project: filter.project,
         offered: offered.runnable,
@@ -356,6 +411,7 @@ async function queuedCards(project?: string): Promise<{
           column: "queued",
           ref: r.issue,
           kind: r.kind,
+          kindColor: offered.kindColors[r.kind] ?? null,
           title: r.title,
           // The column default the deleted cache also relied on. Which tier it
           // will actually run at is decided when it runs, not now.
@@ -390,7 +446,7 @@ async function queuedCards(project?: string): Promise<{
       problems.push({ project: filter.project, reason: (err as Error).message });
     }
   }
-  return { cards, problems, repair, backoffMs, plans };
+  return { cards, problems, repair, backoffMs, plans, kindColors, kindOrder };
 }
 
 /**
@@ -452,6 +508,10 @@ export async function loadBoard(project?: string): Promise<Board> {
       t,
       t.state === "queued" ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
       progress.get(t.taskId) ?? null,
+      // By kind and by project, because a label's colour is the repository's:
+      // two projects can both have a `bug` and colour it differently, and the
+      // cards say which repository they are from for the same reason.
+      queued.kindColors.get(t.project)?.[t.kind] ?? null,
     ),
   );
   // A task released back to the queue has a row *and* is offered by GitHub, so
@@ -459,7 +519,11 @@ export async function loadBoard(project?: string): Promise<Board> {
   const known = new Set(fromLog.map((c) => c.taskId));
   const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))];
 
-  return { columns: toColumns(cards, queued.problems), repair: queued.repair };
+  return {
+    columns: toColumns(cards, queued.problems),
+    repair: queued.repair,
+    queueOrder: queued.kindOrder,
+  };
 }
 
 /**
@@ -489,6 +553,82 @@ export function toColumns(cards: BoardCard[], problems: QueueProblem[] = []): Bo
       ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
     };
   });
+}
+
+/**
+ * One kind's worth of the Queued column, and whether it is the group the next
+ * claim comes out of.
+ */
+export interface QueueGroup {
+  kind: string;
+  cards: BoardCard[];
+  /**
+   * Whether the conductor's next claim comes from here.
+   *
+   * The first group in priority order that holds a card nothing is holding
+   * back — not simply the first group. A kind whose only queued items are
+   * backing off is not the kind that gets taken next, and saying it was would
+   * be the same lie #95 removed from the cards themselves: a held item looks
+   * exactly like one nobody has got to yet, and the difference is the whole
+   * point of showing it.
+   *
+   * It says nothing about *when*. A paused conductor takes nothing at all, and
+   * the bar says so (#77).
+   */
+  next: boolean;
+}
+
+/**
+ * The Queued column, grouped by kind in the order the recipe prioritises them.
+ *
+ * **In Queued, order beats colour.** `source.kinds` is the priority order —
+ * earlier wins — so within this column the kind *is* the position, and a
+ * grouping says what a hue cannot: which work gets taken next. Nothing here is
+ * a new rule; it is `selectRunnable`'s own sort, rendered. The kinds come from
+ * the recipes (`Board.queueOrder`) rather than from the cards, so a kind with
+ * nothing queued does not silently reorder the ones that have.
+ *
+ * A kind the order does not name goes after the ones it does, in the order the
+ * cards arrived. That is a real case rather than a defensive one: a recipe that
+ * drops a kind leaves the items already claimed under it in the log, and they
+ * return to the queue named by a label the recipe no longer prioritises.
+ *
+ * Within a group, by issue number — `selectRunnable`'s own tiebreak, so the
+ * card at the top of a group is the one that would actually be claimed first.
+ */
+export function groupQueue(
+  cards: readonly BoardCard[],
+  order: readonly string[],
+): QueueGroup[] {
+  const byKind = new Map<string, BoardCard[]>();
+  for (const card of cards) {
+    const group = byKind.get(card.kind);
+    if (group) group.push(card);
+    else byKind.set(card.kind, [card]);
+  }
+
+  const named = order.filter((kind) => byKind.has(kind));
+  const rest = [...byKind.keys()].filter((kind) => !order.includes(kind));
+
+  const groups = [...named, ...rest].map((kind) => ({
+    kind,
+    cards: [...(byKind.get(kind) ?? [])].sort(byIssueNumber),
+    next: false,
+  }));
+
+  const takenNext = groups.find((g) => g.cards.some((c) => c.runnableAt === null));
+  if (takenNext) takenNext.next = true;
+  return groups;
+}
+
+/**
+ * Numerically, not lexically: #402 comes before #409 and both before #4100 —
+ * `selectRunnable` says the same thing about the same refs, and the column is
+ * only readable as a priority if the two agree.
+ */
+function byIssueNumber(a: BoardCard, b: BoardCard): number {
+  const n = (c: BoardCard) => (Number.isFinite(Number(c.ref)) ? Number(c.ref) : Number.MAX_SAFE_INTEGER);
+  return n(a) - n(b);
 }
 
 /**

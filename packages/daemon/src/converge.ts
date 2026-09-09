@@ -217,8 +217,12 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
     const current = await client.getIssue(issue).catch(() => null);
     if (!current) continue;
 
-    const target = [...new Set([...foreignLabels(current.labels), ...wanted])].sort();
-    const actual = [...current.labels].sort();
+    // Names. GitHub sends each label's colour too, and convergence has no use
+    // for it: what the log implies is a set of names, and the difference this
+    // computes is between two sets of names.
+    const carried = current.labels.map((l) => l.name);
+    const target = [...new Set([...foreignLabels(carried), ...wanted])].sort();
+    const actual = [...carried].sort();
     if (target.join(",") !== actual.join(",")) {
       found.push({
         workItemId,

@@ -43,7 +43,7 @@ function fakeGitHub(start: { labels: string[]; state?: "open" | "closed" }) {
       number: n,
       title: "a ticket",
       body: "",
-      labels: [...world.labels],
+      labels: world.labels.map((name) => ({ name, color: null })),
       state: world.state,
       url: `https://example.invalid/${n}`,
     }),

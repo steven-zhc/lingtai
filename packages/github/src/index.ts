@@ -18,6 +18,7 @@ export {
   type CreateClientOptions,
   type GitHubClient,
   type Issue,
+  type Label,
 } from "./client.ts";
 export {
   DELIVERY_HEADER,

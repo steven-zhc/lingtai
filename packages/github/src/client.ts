@@ -19,11 +19,42 @@ import {
   installationForRepo,
 } from "./app.ts";
 
+/**
+ * A label as GitHub holds it: the name a recipe matches on, and the colour the
+ * repository's own team chose for it in GitHub's UI.
+ *
+ * The colour is carried for the reason the name is — it is the repository's
+ * fact and not Lingtai's. A board that wants to tell kinds apart has two
+ * options, and inventing a hue per kind is the one that breaks: kinds are
+ * unbounded since #76, so an invented hue has to be derived from the name, and
+ * a hash eventually lands on the colour a palette has reserved for something
+ * else. Reading the repository's choice is the rule
+ * [0016 §7](../../../doc/decisions/0016-the-settled-model.md) already states —
+ * do not guess on behalf of a repository you cannot see.
+ *
+ * Nothing here decides that a colour is *usable*. Whether it can be rendered
+ * against a particular background, and whether it collides with a hue that
+ * already means something, are the renderer's questions, and the board answers
+ * them where it draws (#85).
+ */
+export interface Label {
+  name: string;
+  /**
+   * `#rrggbb`, lower case. GitHub returns six hex digits with no `#`; the hash
+   * is added here so nothing downstream has to know that.
+   *
+   * Null when GitHub gives none, or gives something that is not six hex digits.
+   * That is an answer rather than a gap: a label nobody coloured has no colour,
+   * and supplying one would be exactly the guess this field exists to avoid.
+   */
+  color: string | null;
+}
+
 export interface Issue {
   number: number;
   title: string;
   body: string;
-  labels: string[];
+  labels: Label[];
   state: "open" | "closed";
   url: string;
 }
@@ -166,11 +197,26 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     });
   }
 
+  /**
+   * GitHub's `color` as a CSS colour, or null.
+   *
+   * Six hex digits, no `#`, is what the REST API documents and what it has
+   * always sent. Anything else — an empty string, a name, a shorthand — is
+   * refused rather than repaired: a renderer that is handed a colour it cannot
+   * parse has to invent one, and not having a colour is a case it already
+   * handles.
+   */
+  function hexColour(raw: string | null | undefined): string | null {
+    if (typeof raw !== "string") return null;
+    const hex = raw.startsWith("#") ? raw.slice(1) : raw;
+    return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null;
+  }
+
   function toIssue(raw: {
     number: number;
     title: string;
     body: string | null;
-    labels: ({ name?: string } | string)[];
+    labels: ({ name?: string; color?: string | null } | string)[];
     state: string;
     html_url: string;
   }): Issue {
@@ -178,7 +224,13 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       number: raw.number,
       title: raw.title,
       body: raw.body ?? "",
-      labels: raw.labels.map((l) => (typeof l === "string" ? l : (l.name ?? ""))).filter(Boolean),
+      labels: raw.labels
+        .map((l) =>
+          typeof l === "string"
+            ? { name: l, color: null }
+            : { name: l.name ?? "", color: hexColour(l.color) },
+        )
+        .filter((l) => l.name !== ""),
       state: raw.state === "closed" ? "closed" : "open",
       url: raw.html_url,
     };

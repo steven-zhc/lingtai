@@ -6,7 +6,7 @@
  * nothing" is a claim about the log rather than about a return value.
  */
 import type { Recipe } from "@lingtai/recipe";
-import type { GitHubClient, Issue } from "@lingtai/github";
+import type { GitHubClient, Issue, Label } from "@lingtai/github";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { directDatabaseUrl } from "@lingtai/env";
@@ -29,13 +29,21 @@ const recipe = {
   runtime: { agent: "claude-code", limits: { turns: 300, wall: "2h" } },
 } as unknown as Recipe;
 
-const issue = (over: Partial<Issue> & { number: number }): Issue => ({
+/**
+ * Labels are given here as names, and coloured only where a test is about the
+ * colour. GitHub sends `{ name, color }` and `Issue` carries both (#85); a
+ * fixture that made every case say so would put a colour in twenty-five
+ * assertions that are about which *label* names a kind.
+ */
+const issue = (
+  over: Omit<Partial<Issue>, "labels"> & { number: number; labels?: (string | Label)[] },
+): Issue => ({
   title: `issue ${over.number}`,
   body: "",
-  labels: [],
   state: "open",
   url: `https://example.invalid/${over.number}`,
   ...over,
+  labels: (over.labels ?? []).map((l) => (typeof l === "string" ? { name: l, color: null } : l)),
 });
 
 describe("kindOf", () => {
@@ -216,6 +224,56 @@ describe("runnableNow", () => {
       { ref: 103, reason: "excluded-label" },
       { ref: 104, reason: "no-kind" },
     ]);
+  });
+
+  /**
+   * The colour is the repository's and is read, never invented (#85). Kinds are
+   * unbounded since #76, so a colour Lingtai generated would have to be hashed
+   * from the name — and a hash lands on the palette's reserved amber sooner or
+   * later, silently. It comes off the issues this call already read, so asking
+   * for it costs no request.
+   */
+  it("reports what colour the repository gives each kind it offers", async () => {
+    const PROJECT = newProject();
+    const issues = [
+      issue({ number: 401, labels: [{ name: "bug", color: "#d73a4a" }] }),
+      issue({ number: 402, labels: [{ name: "feature", color: "#a2eeef" }] }),
+    ];
+
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+
+    expect(result.kindColors).toEqual({ bug: "#d73a4a", feature: "#a2eeef" });
+  });
+
+  /**
+   * A kind's colour is a fact about the repository, not about whether this
+   * particular ticket can be run — and a held ticket is often the only open
+   * issue a kind has. Learning colours only from runnable issues would lose a
+   * kind's colour the moment its last queued item was claimed.
+   */
+  it("learns a kind's colour from an issue it is passing over", async () => {
+    const PROJECT = newProject();
+    const issues = [issue({ number: 403, labels: [{ name: "bug", color: "#d73a4a" }, "blocked"] })];
+
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+
+    expect(result.runnable).toEqual([]);
+    expect(result.skipped).toEqual([{ ref: 403, reason: "excluded-label" }]);
+    expect(result.kindColors).toEqual({ bug: "#d73a4a" });
+  });
+
+  /**
+   * Absent, not defaulted. No colour is exactly what a renderer needs to hear
+   * to render none — the kind stays grey text, which is what every kind was
+   * before this existed.
+   */
+  it("says nothing about a label GitHub gives no colour for", async () => {
+    const PROJECT = newProject();
+    const issues = [issue({ number: 404, labels: ["bug"] })];
+
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+
+    expect(result.kindColors).toEqual({});
   });
 
   it("appends nothing at all", async () => {

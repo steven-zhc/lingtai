@@ -30,7 +30,13 @@ import { foreignLabels } from "./labels.ts";
 
 /** What this needs of GitHub, and nothing more. */
 export interface IssueChannel {
-  getIssue(number: number): Promise<{ labels: string[] }>;
+  /**
+   * The labels as GitHub holds them — names, and the colours it sends beside
+   * them. Only the names matter here: what Lingtai writes back is a set of
+   * names, and a repository's colour is a fact for the board to read (#85), not
+   * one a write has any business carrying.
+   */
+  getIssue(number: number): Promise<{ labels: readonly { name: string }[] }>;
   comment(issue: number, body: string): Promise<{ id: number }>;
   setLabels(issue: number, labels: readonly string[]): Promise<void>;
   closeIssue(issue: number): Promise<void>;
@@ -93,7 +99,8 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
       }
       case "labels": {
         const current = await github.getIssue(issue);
-        const whole = [...new Set([...foreignLabels(current.labels), ...change.labels])];
+        const carried = current.labels.map((l) => l.name);
+        const whole = [...new Set([...foreignLabels(carried), ...change.labels])];
         await github.setLabels(issue, whole);
         detail = change.labels.join(",");
         break;

@@ -21,7 +21,7 @@
  * discover it at all.
  */
 import type { Recipe } from "@lingtai/recipe";
-import type { GitHubClient, Issue } from "@lingtai/github";
+import type { GitHubClient, Issue, Label } from "@lingtai/github";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
@@ -45,9 +45,25 @@ import type { GitHubClient, Issue } from "@lingtai/github";
  * queue.
  */
 export function kindOf(issue: Issue, kinds: readonly string[]): string | null {
-  const carried = new Set(issue.labels.map(normaliseLabel));
+  return kindLabelOf(issue, kinds)?.kind ?? null;
+}
+
+/**
+ * The same match, with the label it was read from.
+ *
+ * Separate from `kindOf` only because the label carries the repository's own
+ * colour for that kind (#85) and the matching rule must not be written twice:
+ * a second loop that folded whitespace differently would colour a card by a
+ * label the queue did not prioritise it by.
+ */
+export function kindLabelOf(
+  issue: Issue,
+  kinds: readonly string[],
+): { kind: string; label: Label } | null {
+  const carried = new Map(issue.labels.map((l) => [normaliseLabel(l.name), l]));
   for (const kind of kinds) {
-    if (carried.has(normaliseLabel(kind))) return kind;
+    const label = carried.get(normaliseLabel(kind));
+    if (label) return { kind, label };
   }
   return null;
 }
@@ -80,7 +96,7 @@ export interface Considered {
 export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   if (issue.state === "closed") return { issue, skip: "closed" };
 
-  const labels = issue.labels.map((l) => l.toLowerCase());
+  const labels = issue.labels.map((l) => l.name.toLowerCase());
 
   // Every reason an issue is not this agent's comes from the recipe. There used
   // to be one more, hardcoded here: any label starting `agent:` meant the issue
@@ -106,6 +122,24 @@ export interface Offered {
   runnable: { ref: string; title: string; kind: string }[];
   /** Every issue that was not runnable, with the reason. */
   skipped: { ref: number; reason: SkipReason }[];
+  /**
+   * What colour this repository gives each kind, `#rrggbb`, keyed by the kind
+   * as the recipe names it.
+   *
+   * A fact about the *repository* rather than about any one issue — a label has
+   * one colour, and every issue carrying it carries the same one — so it is
+   * returned once here instead of on each runnable item. It comes off the
+   * issues this call already read, which is why asking for it costs nothing.
+   *
+   * Gathered from every issue that carries one of the recipe's labels, not only
+   * the runnable ones: an issue held back by `agent:hold` still says what
+   * colour `bug` is, and a board that only learned from runnable issues would
+   * lose the colour of a kind the moment its last queued item was claimed.
+   *
+   * A kind nobody has an open issue for is simply absent. Nothing invents an
+   * entry: no colour is what a renderer needs to hear to render none (#85).
+   */
+  kindColors: Record<string, string>;
 }
 
 export interface RunnableNowOptions {
@@ -137,9 +171,17 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
     ? await Promise.all(options.only.map((n) => client.getIssue(n)))
     : await client.listOpenIssues();
 
-  const result: Offered = { runnable: [], skipped: [] };
+  const result: Offered = { runnable: [], skipped: [], kindColors: {} };
 
   for (const issue of issues) {
+    const matched = kindLabelOf(issue, recipe.source.kinds);
+    // Before the skip, deliberately: the colour of `bug` is the same whether or
+    // not this particular bug can be run, and a held ticket is often the only
+    // open issue a kind has.
+    if (matched && matched.label.color && !(matched.kind in result.kindColors)) {
+      result.kindColors[matched.kind] = matched.label.color;
+    }
+
     const { skip } = considerIssue(issue, recipe);
     if (skip) {
       result.skipped.push({ ref: issue.number, reason: skip });
@@ -149,7 +191,7 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
       ref: String(issue.number),
       title: issue.title,
       // `considerIssue` already refused a null kind, so this is a string.
-      kind: kindOf(issue, recipe.source.kinds)!,
+      kind: matched!.kind,
     });
   }
 
