@@ -20,6 +20,7 @@ import { eventStore } from "@lingtai/event-store";
 import { GATE_POINTS, parseWorkItemStream, type Envelope } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { githubClientFor } from "@lingtai/conductor/filter";
+import { issueUrl } from "./board.ts";
 import { type HistoryLine, toLine } from "./history.ts";
 
 export interface Finding {
@@ -156,7 +157,8 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
 
   // Buildable without GitHub, and worth building: a link to the issue is the
   // thing the page exists to save a trip for, and it does not need an answer.
-  const url = state.owner ? `https://github.com/${state.owner}/${project}/issues/${issue}` : null;
+  // The same shape the cards link to, said once (`board.ts`).
+  const url = issueUrl(state.owner, project, issue);
   try {
     const client = await githubClientFor(state);
     const live = await client.getIssue(Number(issue));

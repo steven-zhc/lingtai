@@ -91,6 +91,10 @@ body {
    is the board saying "up to date, and going nowhere", which is the sentence
    #77 had no way to write. */
 .chip.held { color: var(--held); border-color: var(--held); background: var(--held-soft); }
+/* A human is the thing being waited on — the bar's version of the lane's own
+   colour, so "1 waiting on you" and the column it counts read as one
+   statement. The headline, because it is the only count anybody acts on (#81). */
+.chip.sig { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
 /* Who paused it and why, in the bar. Truncated rather than wrapped: the bar is
    one line of context, and the whole sentence is its own title. */
 .bar .why {
@@ -98,21 +102,38 @@ body {
   max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* The projects, as a control. They were a joined string beside a `loadBoard`
+   that has always taken a project (#81). Only drawn where there is more than
+   one — with a single project there is nothing to choose between, and a tab
+   that cannot narrow anything is a button that does nothing. */
+.filter { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
+.tab {
+  font-family: var(--mono); font-size: 10.5px;
+  padding: 2px 7px; border-radius: 2px;
+  border: 1px solid transparent; color: var(--muted); text-decoration: none;
+}
+.tab:hover { color: var(--ink); border-color: var(--rule-2); }
+.tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+
 .cols {
-  display: grid;
-  /* Sized from the number of lanes there actually are, not a number written
-     here. This said `repeat(5, ...)` and the board dropped to four (ADR 0016
-     §8), which left a dead column on the right and squeezed the cards — a lane
-     count in two places is a lane count that will disagree. */
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(200px, 1fr);
+  /* Flex rather than equal grid tracks, because since #81 the lanes are not
+     equal: Landed is a list of one-line rows and does not need a card's width,
+     and the room it was taking belongs to the lanes where something is
+     happening. Still sized from the lanes that exist and never from a number
+     written here — `flex: 1` shares out whatever is left, so a lane added or
+     removed cannot leave a dead column behind, which is what `repeat(5, ...)`
+     did when the board dropped to four (ADR 0016 §8). */
+  display: flex;
   gap: 1px;
   background: var(--rule);
   border-bottom: 1px solid var(--rule);
   overflow-x: auto;
   min-height: calc(100vh - 41px);
 }
-.col { background: var(--surface-2); padding: 11px 10px 20px; min-width: 200px; }
+.col { flex: 1 1 0; background: var(--surface-2); padding: 11px 10px 20px; min-width: 200px; }
+/* The lane that needs the least attention takes the least room — wide enough
+   for a row to say its whole line, and no wider. */
+.col.quiet { flex: 0 1 18rem; min-width: 15rem; }
 .col-h {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
@@ -214,6 +235,39 @@ body {
    did not run, and only the second is Lingtai's bug (0016 §4). Faded and not
    struck through — nothing was cancelled, there was never anything there. */
 .pill.skip { opacity: 0.4; }
+
+/* The reference, now that it goes somewhere. Inherits the `.id` line's colour
+   rather than taking the accent: which ticket is context, and a second coloured
+   link on every card would compete with the title, which is the subject. */
+.iss { color: inherit; text-decoration: none; }
+.iss:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+
+/* --- landed ---------------------------------------------------------------
+   History, at the weight history deserves.
+
+   A card each made the column that needs the least attention the heaviest thing
+   on the page: six full-height cards of finished work, filling the screen,
+   beside one waiting card taking about a twelfth of the ink (#81). One line per
+   item, newest first, and everything past the most recent few behind a
+   disclosure — collapsed rather than dropped, because what landed is the record
+   this system exists to keep. */
+.landed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lrow {
+  display: flex; gap: 5px; align-items: baseline;
+  font-family: var(--mono); font-size: 10.5px;
+  color: var(--muted);
+  padding: 3.5px 2px;
+  border-bottom: 1px solid var(--rule);
+}
+.lrow:last-child { border-bottom: 0; }
+/* The rest of the line is the task page. Clipped rather than wrapped: a row
+   that wraps is a card again, in two lines instead of one. */
+.lmeta {
+  color: inherit; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lmeta:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.older > summary { padding: 7px 2px 3px; font-family: var(--mono); font-size: 10.5px; }
 
 .diff {
   margin: 0;

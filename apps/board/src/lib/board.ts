@@ -176,6 +176,18 @@ export interface BoardColumn {
   problems?: QueueProblem[];
 }
 
+/**
+ * How many landed items stay open before the rest fold away.
+ *
+ * Landed is the lane that needs the least attention and it was the heaviest
+ * thing on the page: six full cards of finished work against one waiting card
+ * that took about a twelfth of the ink (#81), on a board whose own design note
+ * says `waiting` "is the lane the board exists for" (0016 §8). The most recent
+ * few answer *did the last thing work*; everything under them is a record, and
+ * a record is something you open rather than something you scan.
+ */
+export const LANDED_OPEN = 3;
+
 export const COLUMNS: { id: ColumnId; label: string }[] = [
   { id: "queued", label: "Queued" },
   { id: "running", label: "Running" },
@@ -440,9 +452,76 @@ export async function loadBoard(project?: string): Promise<Board> {
  * answered.
  */
 export function toColumns(cards: BoardCard[], problems: QueueProblem[] = []): BoardColumn[] {
-  return COLUMNS.map((c) => ({
-    ...c,
-    cards: cards.filter((card) => card.column === c.id),
-    ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
-  }));
+  return COLUMNS.map((c) => {
+    const mine = cards.filter((card) => card.column === c.id);
+    return {
+      ...c,
+      // Landed only. `readTasks` orders the other lanes deliberately — waiting
+      // by how long it has waited, the rest by ticket number — and none of that
+      // is this function's to undo. Landed is the one lane whose question is
+      // *what just happened*, and it is also the one that folds away past the
+      // most recent few (#81): "the most recent" is only a sentence the order
+      // can make true.
+      cards: c.id === "landed" ? mine.sort(newestFirst) : mine,
+      ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
+    };
+  });
+}
+
+/**
+ * Newest first, by when the log last moved the card.
+ *
+ * A card with no `updatedAt` sorts last. Only a queued card can be missing one
+ * — GitHub is offering it and the log has never touched it — so this never
+ * fires on Landed; it is here so the comparator is total rather than because
+ * the case arises.
+ */
+function newestFirst(a: BoardCard, b: BoardCard): number {
+  const when = (c: BoardCard) => (c.updatedAt === null ? 0 : Date.parse(c.updatedAt));
+  return when(b) - when(a);
+}
+
+/**
+ * What the board in front of you has cost.
+ *
+ * The cards on the screen and nothing else — not a window over the log, not the
+ * project's lifetime. Every card has carried its own dollars since 0012 and
+ * nobody ever added them up (#81), so the one number an operator acts on was on
+ * the page eleven times and stated once, never.
+ *
+ * Repair is a second number for the reason the card keeps it as one: it is
+ * default-on and spends an agent without being asked again, and folding it into
+ * the figure beside it makes it an invisible bill (#84).
+ */
+export interface Spend {
+  /** What the work itself cost, over every card on the board. */
+  work: number;
+  /** What diagnosing it cost, over the same cards. */
+  repair: number;
+  /** How many cards that is, so the total can say what it totals. */
+  cards: number;
+}
+
+export function spend(columns: readonly BoardColumn[]): Spend {
+  const cards = columns.flatMap((c) => c.cards);
+  return {
+    work: cards.reduce((n, c) => n + (c.costUsd ?? 0), 0),
+    repair: cards.reduce((n, c) => n + (c.repairCostUsd ?? 0), 0),
+    cards: cards.length,
+  };
+}
+
+/**
+ * Where a ticket lives on GitHub, or null when the project predates `owner`
+ * being recorded.
+ *
+ * Built rather than asked for: it needs no answer from GitHub, so a card can
+ * carry it without the board spending a request per card per render. The card's
+ * title goes to the task page and its reference comes here — two destinations,
+ * because *what Lingtai did* and *what was asked, and what people said about
+ * it* are different questions and the second one had no link at all (#81).
+ */
+export function issueUrl(owner: string | null, project: string, ref: string): string | null {
+  if (owner === null) return null;
+  return `https://github.com/${owner}/${project}/issues/${encodeURIComponent(ref)}`;
 }

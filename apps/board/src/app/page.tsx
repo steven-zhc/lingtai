@@ -1,6 +1,13 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import { emptyNote, loadBoard, type BoardCard } from "@/lib/board";
+import {
+  emptyNote,
+  issueUrl,
+  loadBoard,
+  spend,
+  type BoardCard,
+  LANDED_OPEN,
+} from "@/lib/board";
 import { AGENT, elapsed, type RunProgress } from "@/lib/progress";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { inWords } from "@lingtai/conductor/queue";
@@ -28,6 +35,15 @@ import { Stale } from "./stale.tsx";
  * The controls stay on the card. Deciding is the thing this exists for, and
  * making somebody open a page to approve would put back the cost that the 45
  * items measured.
+ *
+ * **Weight follows attention, and it used not to.** Landed rendered a card each
+ * and was the heaviest thing on the page while one waiting card took about a
+ * twelfth of the ink; the bar led with `11 items`, a sum of four columns that
+ * mean different things and that nobody acts on (#81). So history is one line
+ * per item and folds away past the most recent few, the room that frees goes to
+ * the lanes where something is happening, and the bar leads with the two numbers
+ * an operator does act on: how many need a person, and what this has cost.
+ * None of that changes what a card *means* — that is #78 and #79.
  */
 export const dynamic = "force-dynamic";
 
@@ -126,7 +142,35 @@ function Now({ progress }: { progress: RunProgress }) {
   );
 }
 
-function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) {
+/**
+ * The reference, as the other destination.
+ *
+ * The title opens `/task/<id>` — what Lingtai did — and that is right. The
+ * number beside it went nowhere at all (#81), and the issue is the other thing
+ * you want from a card: what was asked, and what people have said since. Two
+ * destinations, both reachable, neither one guessing which you meant.
+ *
+ * Plain text where the project predates `owner` being recorded. There is no
+ * link to build then, and a dead one is worse than none.
+ */
+function IssueRef({ href, issue }: { href: string | null; issue: string }) {
+  if (href === null) return <>#{issue}</>;
+  return (
+    <a className="iss" href={href} target="_blank" rel="noreferrer" title="the issue on GitHub">
+      #{issue}
+    </a>
+  );
+}
+
+function Card({
+  card,
+  showProject,
+  issue,
+}: {
+  card: BoardCard;
+  showProject: boolean;
+  issue: string | null;
+}) {
   return (
     <article className={`card ${accent(card)}`}>
       {/* Reference and kind are one fact — which ticket — so they are one line.
@@ -135,7 +179,8 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
         {/* Only when the board holds more than one project. With a single
             project the bar already says which, and repeating it on every card
             is noise. */}
-        {showProject ? <span className="proj">{card.project} </span> : null}#{card.ref} · {card.kind}
+        {showProject ? <span className="proj">{card.project} </span> : null}
+        <IssueRef href={issue} issue={card.ref} /> · {card.kind}
       </span>
 
       {/* The whole card title is the link. Anything smaller is a target you
@@ -251,8 +296,106 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
   );
 }
 
-export default async function Page() {
-  const { columns, repair } = await loadBoard();
+/**
+ * One landed item, on one line.
+ *
+ * `#150 · enhancement · 25 turns · $1.46 · 2d` — the same facts a card carried,
+ * at the weight finished work deserves. Nothing here is a new claim: the
+ * numbers, their words and their absences are the card's (#78, #79), and only
+ * the ink they take has changed.
+ *
+ * The title is not on the row and is on its hover, which is the one real cost
+ * of the density. Both destinations survive it: the number goes to GitHub and
+ * the rest of the line goes to the task page, so a landed item is still opened
+ * from where it is listed.
+ */
+function LandedRow({
+  card,
+  showProject,
+  issue,
+}: {
+  card: BoardCard;
+  showProject: boolean;
+  issue: string | null;
+}) {
+  const said = [
+    card.kind,
+    card.turns === null ? null : `${card.turns} turns`,
+    card.costUsd === null ? null : `$${card.costUsd.toFixed(2)}`,
+    // The lane's own word is on the card; here the column heading is already
+    // saying "landed", so the row says only how long ago (#79).
+    card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),
+  ].filter((s): s is string => s !== null);
+
+  return (
+    <li className="lrow">
+      {showProject ? <span className="proj">{card.project}</span> : null}
+      <IssueRef href={issue} issue={card.ref} />
+      <Link
+        className="lmeta"
+        href={`/task/${encodeURIComponent(card.taskId)}`}
+        title={card.title}
+      >
+        · {said.join(" · ")}
+      </Link>
+    </li>
+  );
+}
+
+/**
+ * Landed, in full: the most recent few, and a disclosure over the rest.
+ *
+ * Collapsed rather than truncated. What has landed is the record this system
+ * exists to keep and dropping it off the page would be a different kind of lie
+ * than showing too much of it — the trade every `details` on the board already
+ * makes.
+ */
+function Landed({
+  cards,
+  showProject,
+  issue,
+}: {
+  cards: BoardCard[];
+  showProject: boolean;
+  issue: (card: BoardCard) => string | null;
+}) {
+  const rows = (some: BoardCard[]) => (
+    <ul className="landed">
+      {some.map((c) => (
+        <LandedRow key={c.taskId} card={c} showProject={showProject} issue={issue(c)} />
+      ))}
+    </ul>
+  );
+  const older = cards.slice(LANDED_OPEN);
+
+  return (
+    <>
+      {rows(cards.slice(0, LANDED_OPEN))}
+      {older.length > 0 ? (
+        <details className="older">
+          <summary>{older.length} older</summary>
+          {rows(older)}
+        </details>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The board, optionally narrowed to one project.
+ *
+ * `loadBoard` has taken a project since it was written and the bar rendered the
+ * names as static text anyway (#81). Two projects is bearable — the cards carry
+ * their own project name — and four is not, so the names in the bar are the
+ * control that does it.
+ */
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
+  const only = (await searchParams).project;
+  const { columns, repair } = await loadBoard(only);
   const projects = await loadProjects().catch(() => []);
   // Not caught. A control read that fails would render as "nothing is paused",
   // which is the exact silence #77 is about; and it reads the same database
@@ -263,20 +406,97 @@ export default async function Page() {
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)));
 
+  // The two numbers an operator acts on: how many need me, and what has this
+  // cost. Neither was on the page (#81).
+  const waiting = columns.find((c) => c.id === "waiting")?.cards.length ?? 0;
+  const cost = spend(columns);
+  // And the rest, which is what `11 items` was a sum of. Said as its parts,
+  // because the parts mean different things and the sum meant nothing.
+  const rest = columns
+    .filter((c) => c.id !== "waiting" && c.cards.length > 0)
+    .map((c) => `${c.cards.length} ${c.label.toLowerCase()}`)
+    .join(" · ");
+
+  // Where each card's ticket lives, from the owners already loaded — a lookup,
+  // not a request per card.
+  const owners = new Map(projects.map((p) => [p.project, p.owner]));
+  const ticket = (card: BoardCard) => issueUrl(owners.get(card.project) ?? null, card.project, card.ref);
+  const named = projects.map((p) => p.project).filter((p): p is string => p !== null);
+
   return (
     <main>
       <div className="bar">
         <span className="brand">Lingtai</span>
         <span className="sep" />
-        <span>
-          {projects.length === 0
-            ? "no project configured"
-            : projects.map((p) => p.project).join(", ")}
+        {/* A filter, not a caption. With one project there is nothing to choose
+            between, so it stays the sentence it was. */}
+        {named.length === 0 ? (
+          <span>no project configured</span>
+        ) : named.length === 1 ? (
+          <span>{named[0]}</span>
+        ) : (
+          <span className="filter">
+            <Link className={`tab${only === undefined ? " on" : ""}`} href="/">
+              all
+            </Link>
+            {named.map((p) => (
+              <Link
+                key={p}
+                className={`tab${only === p ? " on" : ""}`}
+                href={`/?project=${encodeURIComponent(p)}`}
+              >
+                {p}
+              </Link>
+            ))}
+          </span>
+        )}
+        <span className="sep" />
+        {/* The headline, because it is the only column that is asking for a
+            person. Amber for the same reason the lane is amber: it is reserved
+            for "a human is the thing being waited on". */}
+        <span
+          className={`chip ${waiting > 0 ? "sig" : "idle"}`}
+          title={
+            waiting > 0
+              ? "items that will not move until you decide"
+              : "nothing on this board is blocked on a person"
+          }
+        >
+          {waiting > 0 ? `${waiting} waiting on you` : "nothing waiting on you"}
         </span>
         <span className="sep" />
-        <span className={`chip ${total > 0 ? "" : "idle"}`}>
-          {total > 0 ? `${total} items` : "nothing in the log yet"}
+        {/* And what it has cost. The cards on this board, said plainly, because
+            a total whose window is unstated is a total nobody can use. */}
+        <span
+          className="chip"
+          title={`what the ${cost.cards} card(s) on this board cost — the visible cards, not a window over the log`}
+        >
+          ${cost.work.toFixed(2)}
         </span>
+        {/* Apart from the work, the way the card keeps it apart: a repair is
+            default-on and spends an agent without being asked again (#84). */}
+        {cost.repair > 0 ? (
+          <span className="chip sig" title="what diagnosing them cost, apart from the work">
+            ${cost.repair.toFixed(2)} repair
+          </span>
+        ) : null}
+        {/* Then the rest, last, and as its parts. `11 items` was the sum of
+            four columns that mean different things, and adding them produced a
+            number nobody could act on (#81). Nothing at all is still worth a
+            word: an empty board and an unbuilt projection look alike. */}
+        {total === 0 ? (
+          <>
+            <span className="sep" />
+            <span className="chip idle">nothing in the log yet</span>
+          </>
+        ) : rest === "" ? null : (
+          <>
+            <span className="sep" />
+            <span className="chip" title="everything that is not waiting on you">
+              {rest}
+            </span>
+          </>
+        )}
         {/* Whether a failure of this repository's buys an agent — shown when it
             is off as well as when it is on, the way an unconfigured gate point
             is shown as `skipped` rather than omitted (0025 §2). A default that
@@ -325,7 +545,14 @@ export default async function Page() {
 
       <div className="cols">
         {columns.map((col) => (
-          <section key={col.id} className={`col${col.id === "waiting" ? " hot" : ""}`}>
+          // `quiet` is the width half of the same decision the rows below are
+          // the weight half of: Landed is a list of one-line rows and does not
+          // need a card's column, and what it gives back goes to the lanes
+          // where something is happening (#81).
+          <section
+            key={col.id}
+            className={`col${col.id === "waiting" ? " hot" : ""}${col.id === "landed" ? " quiet" : ""}`}
+          >
             <header className="col-h">
               <span>{col.label}</span>
               <span className="ct">{col.cards.length}</span>
@@ -351,9 +578,16 @@ export default async function Page() {
                 <p className={`empty${col.id === "running" && control.paused ? " held" : ""}`}>
                   {emptyNote(col.id, control.paused)}
                 </p>
+              ) : col.id === "landed" ? (
+                <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
               ) : (
                 col.cards.map((card) => (
-                  <Card key={card.taskId} card={card} showProject={onBoard.size > 1} />
+                  <Card
+                    key={card.taskId}
+                    card={card}
+                    showProject={onBoard.size > 1}
+                    issue={ticket(card)}
+                  />
                 ))
               )}
             </div>
