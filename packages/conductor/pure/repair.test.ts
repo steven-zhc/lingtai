@@ -14,7 +14,12 @@
  * decision that needed one would be the wrong shape.
  */
 import { describe, expect, it } from "vitest";
-import { type RefusalReason, type WorkItemState, emptyWorkItem } from "@lingtai/domain";
+import {
+  RUN_FAILURE_KINDS,
+  type RefusalReason,
+  type WorkItemState,
+  emptyWorkItem,
+} from "@lingtai/domain";
 import {
   decideRepair,
   diagnoseRefusal,
@@ -114,6 +119,41 @@ describe("whose failure it is", () => {
       expect(["repository", "lingtai", "person"], reason).toContain(
         whoseFailure({ ...conflict, reason }),
       );
+    }
+  });
+
+  /**
+   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §2, and the
+   * clause that had been missing.
+   *
+   * A quota burned six tickets in ninety-two seconds and bought no agent — by
+   * luck, because nothing here said a run failure was not the repository's.
+   * `never-started` is the strongest case in the class: an agent sent at the
+   * same wall cannot start either, so it would be a second charge for a report
+   * addressed to the one person who did not need it.
+   */
+  it("calls a run that never started Lingtai's, so no agent is sent at the same wall", () => {
+    const quota = {
+      source: "run" as const,
+      reason: "never-started",
+      detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
+    };
+    expect(whoseFailure(quota)).toBe("lingtai");
+
+    const decision = decideRepair({ failure: quota, policy, item: item(), runId: "run-1" });
+    expect(decision.repair).toBe(false);
+    if (decision.repair) return;
+    expect(decision.why).toContain("Lingtai's own failure");
+  });
+
+  /**
+   * Total over `RunFailed.kind` for the reason the integration map is total
+   * over `RefusalReason`: a sixth kind must not default into spending money
+   * because nobody remembered this file existed.
+   */
+  it("has an answer for every way a run can end badly, and none of them buys an agent", () => {
+    for (const reason of RUN_FAILURE_KINDS) {
+      expect(whoseFailure({ source: "run", reason, detail: "" }), reason).not.toBe("repository");
     }
   });
 });

@@ -24,6 +24,7 @@ import {
   createCodexRuntime,
   meetsTier,
   missingForTier,
+  neverStarted,
   parseResult,
   sessionIdFor,
 } from "../src/index.ts";
@@ -205,6 +206,68 @@ describe("run", () => {
     const outcome = await createClaudeCodeRuntime({ binary: join(root, "not-here") }).run(request());
     expect(outcome.failure?.kind).toBe("crash");
     expect(outcome.failure?.detail.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The six runs of
+   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md), as one.
+   *
+   * Every field the adapter is given here is the shape a quota actually
+   * produced: an error, no turns, no cost, and a sentence assembled from a
+   * table of prefixes that no schema describes. The classification reads the
+   * first three and not the fourth — which is why the assertion below is that
+   * the sentence survives *whole* rather than that it was recognised.
+   */
+  it("turns an error that took no turns and spent nothing into never-started", async () => {
+    const said = "You've hit your session limit \u00b7 resets 11pm (America/Chicago)";
+    // A heredoc rather than `echo '…'`: the sentence has an apostrophe in it,
+    // which is the sort of thing that makes a fixture quietly stop being the
+    // string it is standing in for.
+    const binary = await fakeClaude(
+      [
+        "cat <<'JSON'",
+        JSON.stringify({ is_error: true, num_turns: 0, total_cost_usd: 0, result: said }),
+        "JSON",
+        "exit 1",
+      ].join("\n"),
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.failure?.kind).toBe("never-started");
+    // Evidence, not a verdict: the prose is kept, and nothing was decided by it.
+    expect(outcome.failure?.detail).toBe(said);
+    expect(outcome.turns).toBe(0);
+    expect(outcome.costUsd).toBe(0);
+  });
+
+  /**
+   * The false positive that would matter: output nobody can parse leaves turns
+   * at zero and cost at null out of *ignorance*, and reading that as "never
+   * started" would stop the whole conductor over one broken run.
+   */
+  it("leaves an unparseable ending a crash, however little it appears to have spent", async () => {
+    const binary = await fakeClaude(`echo "Segmentation fault" >&2; exit 139`);
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.turns).toBe(0);
+    expect(outcome.costUsd).toBeNull();
+    expect(outcome.failure?.kind).toBe("crash");
+  });
+});
+
+describe("neverStarted", () => {
+  /** Zero turns, zero cost, an error. Three facts, and no words. */
+  it("is the three facts and nothing else", () => {
+    expect(neverStarted({ turns: 0, costUsd: 0, isError: true })).toBe(true);
+    // A receipt that recorded no cost recorded no spend.
+    expect(neverStarted({ turns: 0, costUsd: null, isError: true })).toBe(true);
+
+    // A run that took a turn failed at its task, not at beginning.
+    expect(neverStarted({ turns: 1, costUsd: 0, isError: true })).toBe(false);
+    // A run that spent money started.
+    expect(neverStarted({ turns: 0, costUsd: 0.02, isError: true })).toBe(false);
+    // And a clean ending is not a failure at all.
+    expect(neverStarted({ turns: 0, costUsd: 0, isError: false })).toBe(false);
   });
 });
 

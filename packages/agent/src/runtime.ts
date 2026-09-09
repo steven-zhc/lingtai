@@ -17,7 +17,7 @@
  * and records `DispatchRefused` when the combination cannot meet the tier — it
  * never silently downgrades. See doc/decisions/0007-dual-runtime.md.
  */
-import type { RuntimeId, Tier } from "@lingtai/domain";
+import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
 
 export interface RuntimeCapabilities {
   id: RuntimeId;
@@ -80,7 +80,7 @@ export interface RunOutcome {
    * old loop's failures produced no event at all, which is the thing this type
    * exists to make impossible.
    */
-  failure: { kind: "timeout" | "crash" | "no-commits" | "aborted"; detail: string } | null;
+  failure: { kind: RunFailureKind; detail: string } | null;
   /**
    * The model's final message.
    *
@@ -91,6 +91,36 @@ export interface RunOutcome {
   text: string | null;
   /** The runtime's own session identifier, for finding its transcript. */
   sessionId: string;
+}
+
+/**
+ * Whether a receipt describes a run that failed to **begin** rather than to
+ * finish ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1).
+ *
+ * Three facts and nothing else: **zero turns, zero cost, an error**. Not one
+ * word of the message is read, and that is the decision rather than an
+ * omission. Claude Code 2.1.263's result subtypes carry no quota member —
+ * `success`, `error_during_execution`, `error_max_turns`,
+ * `error_max_budget_usd`, `error_max_structured_output_retries` — and the
+ * sentence a person sees is assembled from a table of prefixes ("You've hit
+ * your", "You've reached your", "You're out of usage credits", …). Codex is
+ * worse: `rate_limits` is always null in exec mode. A classification resting on
+ * any of that is one re-wording away from being wrong, and being wrong here
+ * means either spending an agent at a wall or stopping a conductor that was
+ * fine.
+ *
+ * `costUsd` null counts as zero: a receipt that recorded no cost recorded no
+ * spend, and a run with an error and no turns has nothing it could have spent
+ * it on. What must **not** be inferred is the error — an unparseable receipt
+ * leaves turns at zero and cost at null by ignorance rather than by evidence,
+ * so a caller has to have actually seen the runtime say so.
+ */
+export function neverStarted(receipt: {
+  turns: number;
+  costUsd: number | null;
+  isError: boolean;
+}): boolean {
+  return receipt.isError && receipt.turns === 0 && (receipt.costUsd ?? 0) === 0;
 }
 
 /**

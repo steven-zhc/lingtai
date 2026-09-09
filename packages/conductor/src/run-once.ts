@@ -42,6 +42,14 @@
  * that used to be a comment beside an explicit call: *the worktree is gone
  * before the integrator runs*, because the integrator is outside its scope.
  *
+ * **And one ending stops the conductor rather than the item.** A run that never
+ * started ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)) met
+ * something account-wide, so the item is released like any other failure and
+ * `ctl-conductor` is told to take nothing at all until the limit lifts. It is
+ * the only place in this file that appends outside the run and the work item,
+ * and it is deliberate: per-item backoff answering an account-wide condition is
+ * what eighty events in ninety-two seconds looked like.
+ *
  * **The refusals come first, deliberately.** Everything up to the claim
  * acquires nothing, so a run that stops at an unreadable recipe or a missing
  * environment value has provisioned no worktree to release — the lesson 0024
@@ -56,8 +64,15 @@ import { type Runtime, missingForTier } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal, repairBrief } from "./repair.ts";
+import { standDown } from "./never-started.ts";
 import { attemptBrief, attemptOutcome, priorAttempts, promptVersionFor } from "./attempts.ts";
-import { type ToAppend, reduceWorkItem, workItemStream } from "@lingtai/domain";
+import {
+  CONTROL_STREAM,
+  type ToAppend,
+  reduceControl,
+  reduceWorkItem,
+  workItemStream,
+} from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
@@ -558,6 +573,65 @@ export function runOnce(
         );
       });
 
+    /**
+     * The conductor stops, because the item backing off is the wrong instrument.
+     *
+     * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3. What
+     * a run that never started met is account-wide: every queued item would
+     * meet it identically, and six of them did — eighty events in ninety-two
+     * seconds, six claims, six worktrees, six branches, nothing spent. Per-item
+     * backoff answered an account-wide condition one item at a time, and that
+     * is what it looks like when it does.
+     *
+     * The item itself is *released* as any failed run's is; it keeps its place
+     * and nothing is taken from anybody. What changes is that nothing else is
+     * taken either, until the pause lifts.
+     *
+     * **Once, not once per item.** A pause already holding is left exactly as
+     * it is — which is the assertion the whole thing is for, and is also what
+     * keeps this from overwriting a pause a person made. A person's pause has
+     * no expiry (0031 §5); replacing it with one that lifts itself would end a
+     * hold they meant to keep.
+     */
+    const standDownConductor = (detail: string): Effect.Effect<void> =>
+      Effect.promise(async () => {
+        const events = await store.read(CONTROL_STREAM);
+        const control = reduceControl(events);
+        if (control.paused) {
+          log(`a run never started; the conductor is already paused — ${control.reason ?? "no reason given"}`);
+          return;
+        }
+        const { until, reason } = standDown({
+          detail,
+          backoffMs: parseDuration(recipe.source.backoff),
+        });
+        await store.append(CONTROL_STREAM, events.length, [
+          {
+            type: "ConductorPaused",
+            actor: "conductor",
+            // `by` is Lingtai and not a person, which is what the board's chip
+            // and `lingtai doctor` will say. A pause with nobody's name on it
+            // would read as a bug rather than as a decision.
+            data: parsePayload("ConductorPaused", {
+              by: "lingtai",
+              reason,
+              until: until.toISOString(),
+            }),
+          },
+        ]);
+        log(`a run never started — conductor paused until ${until.toISOString()}`);
+      }).pipe(
+        // A pause that would not append must not replace the reason the run
+        // ended with the reason the pause failed: the run's own `RunFailed` is
+        // already down, and the release below still has to happen. It is logged
+        // rather than thrown for the reason the release's own catches are.
+        Effect.catchAllDefect((defect) =>
+          Effect.sync(() =>
+            log(`could not pause the conductor: ${defect instanceof Error ? defect.message : String(defect)}`),
+          ),
+        ),
+      );
+
     const claimed = Effect.gen(function* () {
       /**
        * Everything that needs the worktree, and nothing that does not.
@@ -821,6 +895,9 @@ export function runOnce(
                 },
               ]),
             );
+            if (outcome.failure.kind === "never-started") {
+              yield* standDownConductor(outcome.failure.detail);
+            }
             return yield* new Stopped({
               stage: "run",
               detail: outcome.failure.detail,

@@ -16,7 +16,7 @@
  * invalidate anything; a new head simply has no verdicts yet.
  */
 import type { Envelope } from "./envelope.ts";
-import type { Invocation, PayloadOf, RuntimeId } from "./events.ts";
+import type { Invocation, PayloadOf, RunFailureKind, RuntimeId } from "./events.ts";
 
 export type GateVerdict = "requested" | "running" | "passed" | "failed" | "waived";
 
@@ -58,7 +58,12 @@ export type RunLifecycle =
    */
   | {
       status: "failed";
-      kind: "timeout" | "crash" | "no-commits" | "aborted" | "prepare-failed";
+      /**
+       * Every `RunFailed.kind`, and the one the lifecycle adds. Read off the
+       * catalogue rather than written out again, so a kind gained there — as
+       * `never-started` was (0031 §1) — is a kind a card can already be in.
+       */
+      kind: RunFailureKind | "prepare-failed";
       detail: string;
     };
 

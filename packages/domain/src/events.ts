@@ -340,8 +340,38 @@ export const RunFinished = z.object({
   costUsd: z.number().nullable(),
 });
 
+/**
+ * How a run ended when it did not end well.
+ *
+ * The list is the value and the type is read off it, for the reason
+ * `LABEL_STATES` is: a kind that has to be enumerated at runtime — by
+ * `repair.ts`'s total record of whose failure each one is — cannot be a bare
+ * union written out twice.
+ *
+ * `never-started` is [0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * §1, and it is **named for what is checkable and not for the cause we
+ * inferred**: zero turns, zero cost, `is_error`. A run that spent nothing and
+ * took no turns did not fail at its task, it failed to begin — which covers a
+ * quota, a signed-out runtime and an expired credential alike, in a way no
+ * wording can take away. Naming it `quota` would put a reading of English prose
+ * in the log, and the first re-worded message would turn the name into a lie.
+ * The prose is kept whole in `detail`: evidence, not a verdict.
+ *
+ * Additive to the enum. No stored event is rewritten and no version is bumped —
+ * every payload a previous build wrote still parses against this.
+ */
+export const RUN_FAILURE_KINDS = [
+  "timeout",
+  "crash",
+  "no-commits",
+  "aborted",
+  "never-started",
+] as const;
+
+export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];
+
 export const RunFailed = z.object({
-  kind: z.enum(["timeout", "crash", "no-commits", "aborted"]),
+  kind: z.enum(RUN_FAILURE_KINDS),
   detail: z.string(),
 });
 
@@ -531,6 +561,21 @@ export const RepairDeclined = z.object({
 export const ConductorPaused = z.object({
   by: z.string(),
   reason: z.string(),
+  /**
+   * When this pause lifts by itself, as an ISO instant — or null, which is
+   * every pause a person makes.
+   *
+   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §5: a run
+   * that never started is an account-wide condition with a *time* attached, and
+   * the alternative to folding that time is what happened — the limit lifted at
+   * 23:00 and the queue was still idle at 23:12, waiting out a guess. A
+   * person's pause carries no expiry and must not start carrying one: the whole
+   * point of it is that it holds until they say otherwise.
+   *
+   * Defaulted rather than required, so that every `ConductorPaused` written
+   * before this field existed still parses as the pause it was.
+   */
+  until: z.string().nullable().default(null),
 });
 
 export const ConductorResumed = z.object({ by: z.string() });

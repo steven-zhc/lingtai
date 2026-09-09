@@ -43,99 +43,41 @@
  * `ConductorResumed` lifts a shutdown request as it lifts a pause, and it has
  * to: the request outlives the daemon it was aimed at, so without something to
  * withdraw it the next daemon to start would read it and stop again.
+ *
+ * ## The one pause nobody has to lift
+ *
+ * A run that never started is an account-wide condition, so it stops the
+ * conductor rather than backing off the item that met it
+ * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3). That
+ * pause is the only one that carries an expiry, and the expiry is folded rather
+ * than acted on: `reduceControl` reports the conductor as unpaused once it is
+ * past, so the resume needs no timer, no second event, and nobody awake.
+ *
+ * The loop asks `paused` before every pass and sweeps every `SWEEP_MS` even
+ * when nothing is appending, so the lag between the limit lifting and work
+ * being taken is bounded by the sweep. That is the number 0031 is replacing:
+ * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
-import { parsePayload } from "@lingtai/domain";
+import { CONTROL_STREAM, type ControlState, parsePayload, reduceControl } from "@lingtai/domain";
 import { readTasks } from "@lingtai/projector";
 import type { CodeVersion } from "./currency.ts";
 import pg from "pg";
 
-/** One stream for the whole installation. Control is not per-project. */
-export const CONTROL_STREAM = "ctl-conductor";
-
-/** A standing request to drain and exit. Null when nobody has asked. */
-export interface ShutdownRequest {
-  by: string;
-  reason: string;
-  /**
-   * How long the drain may take before the daemon gives up on it, or null.
-   *
-   * Null is the ordinary case and the safe one (0030 §6). A timeout that trips
-   * leaves the agent running on purpose — the orphan `reconcile` now kills.
-   */
-  timeoutMs: number | null;
-}
-
-export interface ControlState {
-  paused: boolean;
-  /** Who paused it and why, when it is paused. */
-  by: string | null;
-  reason: string | null;
-  /**
-   * Who asked it to stop and why, when somebody has.
-   *
-   * Separate from `paused` because they are separate facts: a paused conductor
-   * is still there to be resumed, and a draining one is on its way out. The
-   * board keeps them as separate chips for the same reason (#77).
-   */
-  shutdown: ShutdownRequest | null;
-  /** Tasks somebody asked for by hand, oldest first, not yet taken. */
-  requested: { project: string; issue: string; by: string }[];
-}
+// The stream name, the state and the fold moved to `@lingtai/domain` when
+// `conductor` needed to ask whether the conductor is already paused (0031 §3)
+// — `daemon` depends on `conductor`, so the fold could not stay here. What
+// stays here is what it always was: the I/O, and the commands that append.
+export {
+  CONTROL_STREAM,
+  type ControlState,
+  type ShutdownRequest,
+} from "@lingtai/domain";
 
 /** Folds the control stream. Cheap: it is a handful of events, not a history. */
 export async function readControl(store: EventStore = eventStore): Promise<ControlState> {
-  const events = await store.read(CONTROL_STREAM);
-  const state: ControlState = {
-    paused: false,
-    by: null,
-    reason: null,
-    shutdown: null,
-    requested: [],
-  };
-
-  for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, string>;
-    switch (e.type) {
-      case "ConductorPaused":
-        state.paused = true;
-        state.by = d["by"] ?? null;
-        state.reason = d["reason"] ?? null;
-        break;
-      case "ConductorShutdownRequested": {
-        // Read off the payload rather than `d`, which is the string view every
-        // other case wants: the one field here that is not a string is the one
-        // that decides whether the drain is bounded.
-        const timeout = (e.data as { timeoutMs?: number } | null)?.timeoutMs;
-        state.shutdown = {
-          by: d["by"] ?? "",
-          reason: d["reason"] ?? "",
-          timeoutMs: typeof timeout === "number" ? timeout : null,
-        };
-        break;
-      }
-      case "ConductorResumed":
-        state.paused = false;
-        state.by = null;
-        state.reason = null;
-        // Resume is the only way to withdraw a shutdown, and it must be one:
-        // the request is in the stream for ever, so a daemon started after it
-        // would find it waiting and stop again, and again.
-        state.shutdown = null;
-        break;
-      case "RunRequested":
-        state.requested.push({
-          project: d["project"] ?? "",
-          issue: d["issue"] ?? "",
-          by: d["by"] ?? "",
-        });
-        break;
-      default:
-        break;
-    }
-  }
-  return state;
+  return reduceControl(await store.read(CONTROL_STREAM));
 }
 
 async function append(type: string, data: unknown, store: EventStore): Promise<void> {
@@ -145,12 +87,22 @@ async function append(type: string, data: unknown, store: EventStore): Promise<v
   ]);
 }
 
+/**
+ * Stop taking work.
+ *
+ * `until` is null for everything a person asks for, and that is the decision
+ * rather than the default (0031 §5): a pause somebody made holds until they
+ * lift it. The conductor's own — the one a run that never started appends — is
+ * the only kind that carries a time, and it carries it so that nobody has to
+ * be awake at 23:00 to type `lingtai resume`.
+ */
 export async function pauseConductor(
   by: string,
   reason: string,
   store: EventStore = eventStore,
+  until: Date | null = null,
 ): Promise<void> {
-  await append("ConductorPaused", { by, reason }, store);
+  await append("ConductorPaused", { by, reason, until: until?.toISOString() ?? null }, store);
 }
 
 export async function resumeConductor(by: string, store: EventStore = eventStore): Promise<void> {

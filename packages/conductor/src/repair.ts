@@ -21,7 +21,13 @@
  * reason: a rule about spending money that lives inside an `if` in a 1,000-line
  * file is a rule nobody can check.
  */
-import type { BlockDiagnosis, BlockRecommendation, RefusalReason, WorkItemState } from "@lingtai/domain";
+import type {
+  BlockDiagnosis,
+  BlockRecommendation,
+  RefusalReason,
+  RunFailureKind,
+  WorkItemState,
+} from "@lingtai/domain";
 import { createHash } from "node:crypto";
 
 /**
@@ -53,20 +59,27 @@ export type FailureOwner = "repository" | "lingtai" | "person";
 /**
  * A failure, as something that could buy a repair.
  *
- * Two sources and only two, because those are the two the seam already draws
- * (0025 §1): project-level refusals are Lingtai's, and `IntegrationRefused` is
- * the repository's. A **gate** verdict needs no third source — a diff whose
+ * Two of the three sources are the two the seam already draws (0025 §1):
+ * project-level refusals are Lingtai's, and `IntegrationRefused` is the
+ * repository's. A **gate** verdict needs no source of its own — a diff whose
  * gates refused reaches the integrator with `gatesPassed: false` and comes back
  * out as `gate-failed`, so the gates arrive here already in this vocabulary.
  *
- * A **run** failure is deliberately not modelled. A run that timed out or
- * crashed is released and retried under the queue's backoff, and calling that a
- * repair would make it a re-run wearing a better name — which is the one thing
- * 0025 says a repair must not be.
+ * A **run** failure was deliberately not modelled, and that was the gap
+ * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) closed. The
+ * reasoning had not changed — a run that timed out or crashed is released and
+ * retried under the queue's backoff, and calling that a repair would make it a
+ * re-run wearing a better name, which is the one thing 0025 says a repair must
+ * not be. What had changed is that nothing here *said* so: a quota burned six
+ * tickets and bought no agent by luck, because no clause named a run failure as
+ * anything. Modelling the source is what turns that into a rule.
  */
 export interface Failure {
-  source: "integration" | "project";
-  /** A `RefusalReason` for `integration`; free text for `project`. */
+  source: "integration" | "project" | "run";
+  /**
+   * A `RefusalReason` for `integration`, a `RunFailed.kind` for `run`; free
+   * text for `project`.
+   */
   reason: string;
   detail: string;
 }
@@ -104,15 +117,44 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
 };
 
 /**
+ * Every way a run can end badly, and whose it is.
+ *
+ * A total record for the reason `INTEGRATION_OWNER` is one, and this is the
+ * record 0031 says was missing: `decideRepair` had no clause about a run at
+ * all, so *nothing bought a repair* was true by luck and would have stayed true
+ * only for as long as nobody added a call site.
+ *
+ * None of them is the repository's, and each is not for its own reason.
+ * `never-started` is 0031 §2: the agent could not begin, so a second agent sent
+ * at the same wall cannot either — it would be a second charge for a report
+ * addressed to the one person who did not need it. The other four are 0025's
+ * older point: an ending the queue already answers with a backoff and a better
+ * prompt (#82) is not a thing to buy an analysis of, and a repair for one would
+ * be a re-run wearing a better name.
+ *
+ * `lingtai` rather than `person` because none of these is a hold anybody meant
+ * — the card should say something is wrong, and only `repository` ever buys an
+ * agent, so the choice between the other two is only about what is said.
+ */
+const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
+  "never-started": "lingtai",
+  timeout: "lingtai",
+  crash: "lingtai",
+  aborted: "lingtai",
+  "no-commits": "lingtai",
+};
+
+/**
  * Whose failure this is.
  *
- * An unrecognised integration reason is Lingtai's, not the repository's. The
- * safe default for a rule that spends money is the one that spends none, and a
- * reason this build does not know is a reason it cannot claim an agent could
- * act on.
+ * An unrecognised reason — of either kind that has a vocabulary — is Lingtai's,
+ * not the repository's. The safe default for a rule that spends money is the
+ * one that spends none, and a reason this build does not know is a reason it
+ * cannot claim an agent could act on.
  */
 export function whoseFailure(failure: Failure): FailureOwner {
   if (failure.source === "project") return "lingtai";
+  if (failure.source === "run") return RUN_OWNER[failure.reason as RunFailureKind] ?? "lingtai";
   return INTEGRATION_OWNER[failure.reason as RefusalReason] ?? "lingtai";
 }
 

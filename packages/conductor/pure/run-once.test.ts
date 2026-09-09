@@ -165,6 +165,29 @@ const runtime: Runtime = {
 };
 
 /**
+ * The six runs of ninety-two seconds, as one runtime.
+ *
+ * Zero turns, zero cost, an error — the three facts
+ * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1 names, and
+ * the prose it refuses to classify on, kept whole as the detail.
+ */
+const quotaRuntime: Runtime = {
+  ...runtime,
+  run: async () => ({
+    exitCode: 1,
+    turns: 0,
+    durationMs: 25_000,
+    costUsd: 0,
+    failure: {
+      kind: "never-started",
+      detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
+    },
+    text: null,
+    sessionId: "sess-quota",
+  }),
+};
+
+/**
  * The world, as a list of what was asked of it.
  *
  * The hook server takes the store because the real one does something a stub
@@ -330,6 +353,71 @@ describe("runOnce, with no world to run in", () => {
     expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
     // … and nothing was acquired, so there is nothing to unwind.
     expect(did).toEqual([]);
+  });
+
+  /**
+   * **Eighty events in ninety-two seconds, answered once.**
+   *
+   * Six runs, six claims, six worktrees, six branches and `costUsd` of nothing
+   * on every one of them — because per-item backoff was answering a condition
+   * that was never about the item
+   * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3). Each
+   * attempt still releases its own item and keeps its place; what is asserted
+   * here is that the *account-wide* answer is given once, on the first one, and
+   * that the five after it leave the pause exactly as they found it.
+   *
+   * A `run-once` cannot prove the other half — that nothing is taken while the
+   * pause holds — because it is the daemon's loop that asks. That is
+   * `work-loop.test.ts`'s, and this is the half that appends.
+   */
+  it("pauses the conductor once, however many runs never start", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said),
+          runtime: quotaRuntime,
+          issue: 7,
+          hookBinary: "/tmp/fake/lingtai-hook",
+          prompt: "fix {{issue}}",
+          merge: false,
+          home: "/tmp/fake-home",
+          store,
+        },
+        fakePorts(did, store),
+      );
+      expect(result.ok, `attempt ${attempt + 1}`).toBe(false);
+    }
+
+    // Every run said what it was, in the vocabulary that is checkable. `crash`
+    // is what all six of them said before, which is why the night was
+    // unreadable from the log.
+    const runs = [...streams(store)].filter(([id]) => id.startsWith("run-"));
+    const endings = runs.flatMap(([, events]) =>
+      events.filter((e) => e.type === "RunFailed").map((e) => (e.data as { kind: string }).kind),
+    );
+    expect(endings).toEqual(Array.from({ length: 6 }, () => "never-started"));
+
+    // The items keep their place: each attempt released, as any failed run does.
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(item.filter((t) => t === "WorkItemReleased")).toHaveLength(6);
+
+    // And the account-wide answer was given exactly once.
+    const control = await store.read("ctl-conductor");
+    const paused = control.filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+
+    const d = paused[0]!.data as { by: string; reason: string; until: string };
+    expect(d.by).toBe("lingtai");
+    // Read out of the message, not guessed at: 11pm in Chicago, as an instant.
+    expect(new Date(d.until).getUTCHours()).toBe(4);
+    // The evidence the classification would not read is on the pause, because
+    // this is the only place a person can learn what actually stopped the queue.
+    expect(d.reason).toContain("You've hit your session limit");
   });
 
   /**

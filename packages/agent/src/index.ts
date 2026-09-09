@@ -14,6 +14,7 @@
 export {
   meetsTier,
   missingForTier,
+  neverStarted,
   type AuthStatus,
   type Invocable,
   type RunOutcome,

@@ -237,4 +237,51 @@ describe("the work loop", () => {
       await loop.stop();
     }
   });
+
+  /**
+   * The other half of
+   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3 and §5:
+   * `run-once` appends the pause, and this is what makes it mean something.
+   *
+   * A pause is asked before every pass and never cached, so a quota pause lands
+   * on the pass after the run that met it and nothing else is taken. And
+   * because the *expiry* is folded rather than acted on, the loop needs no
+   * timer for the resume — the same question, asked again, simply answers
+   * differently once the reset has gone by. That is the twelve minutes 0031 is
+   * replacing: nobody has to type `lingtai resume`.
+   */
+  it("takes nothing while a pause holds, and takes work again when it lifts by itself", async () => {
+    let passes = 0;
+    // Stands in for `reduceControl` reaching the expiry: the same fold, asked
+    // twice, over a clock that moved.
+    let lifted = false;
+
+    const loop = createWorkLoop({
+      // No sweep, so every pass here is one an event asked for. The real daemon
+      // sweeps as well, which is what bounds how late the automatic resume can
+      // be on a queue that is otherwise silent.
+      sweepMs: 0,
+      paused: async () => !lifted,
+      pass: async () => void (passes += 1),
+    });
+
+    await loop.start();
+    try {
+      expect(passes).toBe(0);
+
+      const id = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`;
+      created.add(id);
+      await store.append(id, 0, [landed(id)]);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(passes).toBe(0);
+
+      lifted = true;
+      const next = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`;
+      created.add(next);
+      await store.append(next, 0, [landed(next)]);
+      await until(() => passes > 0);
+    } finally {
+      await loop.stop();
+    }
+  });
 });

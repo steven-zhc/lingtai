@@ -17,6 +17,12 @@
  * **Every ending produces an event.** Timeout, crash, non-zero exit and clean
  * completion each map to a kind. The old loop's failures produced no log line,
  * no comment and no label, and that silence is what `RunFailed` exists to end.
+ *
+ * Five kinds now rather than four: `crash` used to absorb every ending that was
+ * not a clean result, so a quota, a segfault and a bad flag were one word and
+ * six tickets burned in ninety-two seconds looked like six crashes
+ * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)). What told
+ * them apart was never the message — it is `neverStarted`'s three facts.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -29,6 +35,7 @@ import type {
   RuntimeCapabilities,
   Spawned,
 } from "./runtime.ts";
+import { neverStarted } from "./runtime.ts";
 
 export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   id: "claude-code",
@@ -324,9 +331,21 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             costUsd,
             text: parsed?.result ?? null,
             failure: {
-              kind: "crash",
+              // A run that spent nothing and took no turns did not fail at its
+              // task; it failed to begin (0031 §1). Asked of the parsed receipt
+              // and only of it: `is_error` is the runtime saying so, and output
+              // that would not parse leaves turns at zero for a reason that is
+              // ignorance rather than evidence — which is a crash, as it was.
+              kind:
+                parsed &&
+                neverStarted({ turns, costUsd, isError: parsed.is_error === true })
+                  ? "never-started"
+                  : "crash",
               // Whatever went wrong, something says so. A run that ends with no
-              // detail is the failure mode being replaced.
+              // detail is the failure mode being replaced. Kept whole — as whole
+              // as it ever was — because for a run that never started this is
+              // the only evidence there is, and 0031 §4 reads a reset time back
+              // out of it.
               detail:
                 parsed?.result?.slice(0, 500) ??
                 (stderr.trim() || stdout.trim()).slice(0, 500) ??
