@@ -16,7 +16,7 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 42 types
+## event — 43 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -30,7 +30,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
 | repair (2) | `RepairRequested` `RepairDeclined` |
-| control (2) | `ConductorPaused` `ConductorResumed` |
+| control (3) | `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired**, `RETIRED` in the same file |
 | project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |

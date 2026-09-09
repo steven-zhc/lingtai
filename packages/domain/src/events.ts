@@ -536,6 +536,33 @@ export const ConductorPaused = z.object({
 export const ConductorResumed = z.object({ by: z.string() });
 
 /**
+ * Stop, once the pass in flight has finished.
+ *
+ * A command and not a signal, and that is the whole of
+ * [0030](../../../doc/decisions/0030-shutting-down-safely.md): Ctrl+C reaches
+ * the foreground *group*, so the signal that begins the shutdown kills the
+ * agent at the same instant, and `kill <pid>` reaches the daemon alone and
+ * orphans it. Neither can mean *finish what you are holding*. An append can,
+ * and it lands the way a pause does — at the daemon's next opportunity, with no
+ * restart, and waiting in the stream when the daemon is down.
+ *
+ * `timeoutMs` is null by default and that is a decision rather than an
+ * omission (0030 §6): a drain that gives up after some minutes recreates the
+ * orphan it exists to prevent, silently, at the moment it matters most. When
+ * somebody sets one, what it does when it trips is stop taking work, leave the
+ * agent running and exit — deliberately creating the orphan the next
+ * conductor's reconcile kills.
+ *
+ * `ConductorResumed` lifts it, as it lifts a pause: a request nothing can
+ * withdraw would be one that stopped every daemon started after it, for ever.
+ */
+export const ConductorShutdownRequested = z.object({
+  by: z.string(),
+  reason: z.string(),
+  timeoutMs: z.number().int().positive().nullable(),
+});
+
+/**
  * Run this one now, ahead of the queue.
  *
  * The same mechanism rather than a second channel: a person asking for a
@@ -745,6 +772,7 @@ export const EVENTS = {
   RepairDeclined,
   ConductorPaused,
   ConductorResumed,
+  ConductorShutdownRequested,
   OutboxDelivered,
   OutboxFailed,
   IssueUpdated,

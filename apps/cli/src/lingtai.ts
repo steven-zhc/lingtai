@@ -25,15 +25,20 @@ import {
   createStatusTable,
   createNotifier,
   createWorkLoop,
+  describeInFlight,
+  inFlight,
   macNotifier,
   pauseConductor,
   readCodeVersion,
   readControl,
   reconcile,
   requestRun,
+  requestShutdown,
   resumeConductor,
   startDaemon,
+  type ShutdownRequest,
 } from "@lingtai/daemon";
+import { parseDuration } from "@lingtai/recipe";
 import { conductorPass } from "./conduct.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
@@ -75,7 +80,12 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
   lingtai pause <why>               stop taking new work; a run in flight finishes
-  lingtai resume                    take work again
+  lingtai resume                    take work again, and lift a shutdown nobody
+                                acted on
+  lingtai shutdown [why]            finish the pass in flight, then stop
+    --timeout <duration>        give up waiting after this and exit anyway,
+                                leaving the agent running. No default: a drain
+                                that gives up is the orphan this prevents
   lingtai now <project> --issue <n> ask for one ahead of the queue
   lingtai projection lag            how far each projection is behind the log
   lingtai projection rebuild <name> drop the table, reset the checkpoint, replay
@@ -84,6 +94,17 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
 Projections: ${taskViewProjection.name}
 `;
+
+/**
+ * What a drain may cost, said before the waiting starts.
+ *
+ * Not read from a recipe: the drain belongs to the installation and the limit
+ * belongs to whichever project happens to be running — so this names where the
+ * number lives and the schema's default, rather than a number that would be
+ * wrong for every project but one. `2h` is that default; this repository's own
+ * recipe says `1h`.
+ */
+const WALL_LIMIT = "the recipe's runtime.limits.wall (2h by default)";
 
 async function doctor(): Promise<number> {
   // Touching the loaders here rather than reading process.env keeps the one rule
@@ -293,6 +314,90 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // `--no-conduct` is for a daemon you want keeping the board current while
   // you work on something else.
   let loop: ReturnType<typeof createWorkLoop> | null = null;
+
+  // ------------------------------------------------------------ stopping ----
+  //
+  // Two ways in and one behaviour, from
+  // [0030](../../../doc/decisions/0030-shutting-down-safely.md): `lingtai
+  // shutdown` reaches the loop through the log, a signal reaches this handler,
+  // and both drain. **Draining is waiting for the pass**, which spans the
+  // agent, the gates, the merge lane and the `end` point — not for the agent's
+  // exit, which is only the first of those.
+
+  /** The request the loop read, when the log is what began this. */
+  let asked: ShutdownRequest | null = null;
+  let draining = false;
+  let stopping = false;
+
+  /**
+   * Stop now, without waiting.
+   *
+   * The second Ctrl+C and the `--timeout` that trips both come here, and both
+   * knowingly leave the agent running: it is detached, so it survives this
+   * process, and the next conductor's reconcile kills it before releasing its
+   * claim (0030 §5). Ending with `process.exit` because the pass in flight is
+   * holding the event loop open — returning would be a daemon that says it has
+   * stopped and has not.
+   */
+  const stopNow = (why: string): void => {
+    if (stopping) return;
+    stopping = true;
+    console.log(why);
+    clearInterval(heartbeat);
+    void (async () => {
+      await beat("stopping", { code }).catch(() => {});
+      started.daemon.stop();
+      // The projections are stopped and the lock is released by this; what it
+      // does not do, and must not, is wait for the pass.
+      await started.daemon.stopped;
+      process.exit(0);
+    })();
+  };
+
+  /**
+   * Finish the pass in flight, then stop — and say so before waiting.
+   *
+   * The first Ctrl+C prints what is draining and what a second one costs. Both
+   * sentences are honest only because the agent is in its own process group
+   * (§3): before that, the signal that began the shutdown killed the agent in
+   * the same instant, and there was nothing left to finish.
+   */
+  const drain = async (why: string, timeoutMs: number | null): Promise<void> => {
+    if (draining) return;
+    draining = true;
+
+    const held = await inFlight().catch(() => []);
+    console.log(`draining — ${describeInFlight(held)}, then stopping (${why}).`);
+    console.log("press ctrl-c again to stop now, leaving its agent orphaned.");
+    console.log(
+      timeoutMs === null
+        ? `a pass is the agent, the gates and the merge lane, so this can take as long as ${WALL_LIMIT} — it is waiting, not hung.`
+        : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
+    );
+    await beat("draining", { code }).catch(() => {});
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (timeoutMs !== null) {
+      timer = setTimeout(
+        () =>
+          stopNow(
+            `--timeout reached — leaving the agent running. The next conductor kills it and releases the claim (lingtai doctor names it).`,
+          ),
+        timeoutMs,
+      );
+      timer.unref?.();
+    }
+
+    // The drain itself. No timeout around this one on purpose (§6).
+    await loop?.stop();
+    clearTimeout(timer);
+    if (stopping) return;
+    stopping = true;
+    clearInterval(heartbeat);
+    await beat("stopping", { code }).catch(() => {});
+    started.daemon.stop();
+  };
+
   if (!("no-conduct" in flags)) {
     // Tell the operator when the operator is the bottleneck. Fire and forget:
     // a notification retried later, about a decision already made, trains you
@@ -310,6 +415,18 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
       paused: async () => (await readControl()).paused,
+      // And a shutdown in the same breath, from the same fold (0030 §2). The
+      // command appends and returns; this is where it lands.
+      shutdown: async () => {
+        asked = (await readControl()).shutdown;
+        // The remedy in the sentence, because this is also what a daemon
+        // started *after* an unwithdrawn request prints on its way straight
+        // back out — and at that point it is the only thing worth knowing.
+        return asked ? `asked by ${asked.by} — ${asked.reason} (lingtai resume lifts it)` : null;
+      },
+      // The loop has stopped taking work. What it cannot do is exit the
+      // process, so the host does — after the drain `stop()` performs.
+      onShutdown: (why) => void drain(why, asked?.timeoutMs ?? null),
 
       pass: async (reason) => {
         const outcome = await conductorPass({
@@ -331,14 +448,21 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     console.log("projections only — no work will be taken");
   }
 
-  const stop = () => {
-    clearInterval(heartbeat);
-    void beat("stopping", { code }).catch(() => {});
-    void loop?.stop();
-    started.daemon.stop();
+  // The first signal drains and says so; the second stops now. `kill <pid>` is
+  // the same two presses, because it used to be the worse of the two: it
+  // reached the daemon alone, orphaned the agent, and took with it the code
+  // that would have appended the outcome (#87).
+  let signals = 0;
+  const stop = (signal: string) => {
+    signals += 1;
+    if (signals === 1) {
+      void drain(signal === "SIGINT" ? "ctrl-c" : signal, null);
+      return;
+    }
+    stopNow("stopping now — its agent is left running, and the next conductor kills it.");
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
+  process.on("SIGINT", () => stop("SIGINT"));
+  process.on("SIGTERM", () => stop("SIGTERM"));
 
   const reason = await started.daemon.stopped;
   if (reason === "projection-failed") {
@@ -351,18 +475,28 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
 }
 
 /**
- * `lingtai pause` / `lingtai resume` / `lingtai now` — the operator's controls.
+ * `lingtai pause` / `lingtai resume` / `lingtai shutdown` / `lingtai now` — the
+ * operator's controls.
  *
  * They append and return. The daemon is listening, so a pause takes effect at
  * its next opportunity; if it is down, the command is waiting when it comes
  * back rather than being a race somebody has to handle.
+ *
+ * `shutdown` is the same shape for the same reasons, and for one more that is
+ * not an implementation detail: a signal cannot carry it
+ * ([0030](../../../doc/decisions/0030-shutting-down-safely.md)). Ctrl+C goes to
+ * the whole foreground group, so before §3 detached the agent, the signal that
+ * began the shutdown killed the run it claimed to be waiting for.
  *
  * **The one place that does not hold a projector**, and deliberately: a
  * projector catches up to the head before it returns, so a pause issued against
  * a daemon that has been down would replay the backlog before pausing anything.
  * See `withProjector` for the rule and for this exception.
  */
-async function controlCommand(verb: "pause" | "resume" | "now", args: string[]): Promise<number> {
+async function controlCommand(
+  verb: "pause" | "resume" | "shutdown" | "now",
+  args: string[],
+): Promise<number> {
   const { positional, flags } = parseFlags(args);
   const by = `human:${process.env["USER"] ?? "operator"}`;
 
@@ -382,6 +516,42 @@ async function controlCommand(verb: "pause" | "resume" | "now", args: string[]):
   if (verb === "resume") {
     await resumeConductor(by);
     console.log(`resumed by ${by}`);
+    return 0;
+  }
+
+  if (verb === "shutdown") {
+    // A reason is welcome and not required, unlike a pause's: a pause has to be
+    // lifted by somebody who can tell whether the thing it was waiting for has
+    // happened, and a shutdown is over when the process is.
+    const reason = (flags["reason"] ?? positional.join(" ")).trim() || "no reason given";
+
+    let timeoutMs: number | null = null;
+    if ("timeout" in flags) {
+      const text = flags["timeout"] ?? "";
+      try {
+        timeoutMs = parseDuration(text);
+      } catch {
+        console.error(`--timeout takes a duration like 30m or 90s, not "${text}"`);
+        return 2;
+      }
+      if (timeoutMs <= 0) {
+        console.error("--timeout takes a positive duration");
+        return 2;
+      }
+    }
+
+    await requestShutdown(by, reason, timeoutMs);
+    console.log(`shutdown asked by ${by} — ${reason}`);
+
+    // Said up front, because the alternative is a command that has returned
+    // and a daemon that looks hung (0030 §6). What is being waited for is the
+    // *pass* — the agent, then the gates, then the merge lane.
+    const held = await inFlight().catch(() => []);
+    console.log(
+      timeoutMs === null
+        ? `the daemon finishes the pass in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}. lingtai resume lifts it.`
+        : `the daemon finishes the pass in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`,
+    );
     return 0;
   }
 
@@ -483,6 +653,8 @@ async function main(argv: string[]): Promise<number> {
       return controlCommand("pause", rest);
     case "resume":
       return controlCommand("resume", rest);
+    case "shutdown":
+      return controlCommand("shutdown", rest);
     case "now":
       return controlCommand("now", rest);
     case "projection":

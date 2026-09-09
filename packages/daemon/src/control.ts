@@ -26,21 +26,60 @@
  * does, and the next conductor to start releases the claim it left behind
  * (0027). Saying so is better than shipping a Stop button that quietly means
  * Pause.
+ *
+ * ## What "shutdown" means, precisely
+ *
+ * Everything a pause means, and then the process exits
+ * ([0030](../../../doc/decisions/0030-shutting-down-safely.md)). **The boundary
+ * is the pass, not the agent**: the gates, the merge lane and the `end` point
+ * all run after the agent exits and one pass spans all of it, so the drain
+ * waits for the pass and not for the child process.
+ *
+ * It is a command for the reason a pause is, and then one more. Ctrl+C reaches
+ * the whole foreground process group, so before 0030 the signal that began the
+ * shutdown killed the agent in the same instant — nothing could wait for a run
+ * that was already dead. A signal cannot carry this. An append can.
+ *
+ * `ConductorResumed` lifts a shutdown request as it lifts a pause, and it has
+ * to: the request outlives the daemon it was aimed at, so without something to
+ * withdraw it the next daemon to start would read it and stop again.
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { parsePayload } from "@lingtai/domain";
+import { readTasks } from "@lingtai/projector";
 import type { CodeVersion } from "./currency.ts";
 import pg from "pg";
 
 /** One stream for the whole installation. Control is not per-project. */
 export const CONTROL_STREAM = "ctl-conductor";
 
+/** A standing request to drain and exit. Null when nobody has asked. */
+export interface ShutdownRequest {
+  by: string;
+  reason: string;
+  /**
+   * How long the drain may take before the daemon gives up on it, or null.
+   *
+   * Null is the ordinary case and the safe one (0030 §6). A timeout that trips
+   * leaves the agent running on purpose — the orphan `reconcile` now kills.
+   */
+  timeoutMs: number | null;
+}
+
 export interface ControlState {
   paused: boolean;
   /** Who paused it and why, when it is paused. */
   by: string | null;
   reason: string | null;
+  /**
+   * Who asked it to stop and why, when somebody has.
+   *
+   * Separate from `paused` because they are separate facts: a paused conductor
+   * is still there to be resumed, and a draining one is on its way out. The
+   * board keeps them as separate chips for the same reason (#77).
+   */
+  shutdown: ShutdownRequest | null;
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
   requested: { project: string; issue: string; by: string }[];
 }
@@ -48,7 +87,13 @@ export interface ControlState {
 /** Folds the control stream. Cheap: it is a handful of events, not a history. */
 export async function readControl(store: EventStore = eventStore): Promise<ControlState> {
   const events = await store.read(CONTROL_STREAM);
-  const state: ControlState = { paused: false, by: null, reason: null, requested: [] };
+  const state: ControlState = {
+    paused: false,
+    by: null,
+    reason: null,
+    shutdown: null,
+    requested: [],
+  };
 
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, string>;
@@ -58,10 +103,26 @@ export async function readControl(store: EventStore = eventStore): Promise<Contr
         state.by = d["by"] ?? null;
         state.reason = d["reason"] ?? null;
         break;
+      case "ConductorShutdownRequested": {
+        // Read off the payload rather than `d`, which is the string view every
+        // other case wants: the one field here that is not a string is the one
+        // that decides whether the drain is bounded.
+        const timeout = (e.data as { timeoutMs?: number } | null)?.timeoutMs;
+        state.shutdown = {
+          by: d["by"] ?? "",
+          reason: d["reason"] ?? "",
+          timeoutMs: typeof timeout === "number" ? timeout : null,
+        };
+        break;
+      }
       case "ConductorResumed":
         state.paused = false;
         state.by = null;
         state.reason = null;
+        // Resume is the only way to withdraw a shutdown, and it must be one:
+        // the request is in the stream for ever, so a daemon started after it
+        // would find it waiting and stop again, and again.
+        state.shutdown = null;
         break;
       case "RunRequested":
         state.requested.push({
@@ -94,6 +155,50 @@ export async function pauseConductor(
 
 export async function resumeConductor(by: string, store: EventStore = eventStore): Promise<void> {
   await append("ConductorResumed", { by }, store);
+}
+
+/**
+ * Ask the conductor to finish what it is holding and stop.
+ *
+ * Appends and returns, exactly as `pause` does. The daemon reads it where it
+ * already reads `paused` — before every pass — so the request lands without
+ * anybody restarting anything, and a daemon that is down finds it waiting.
+ */
+export async function requestShutdown(
+  by: string,
+  reason: string,
+  timeoutMs: number | null = null,
+  store: EventStore = eventStore,
+): Promise<void> {
+  await append("ConductorShutdownRequested", { by, reason, timeoutMs }, store);
+}
+
+/**
+ * What the conductor is holding right now, as `project#issue`.
+ *
+ * Read from `task_view` rather than tracked in the process, because the
+ * question is asked by three different processes — the draining daemon, the
+ * board's chip and `lingtai doctor` — and only one of them is the daemon. A
+ * claim folds as `running`, so this is the projection's own answer.
+ *
+ * `gates` counts as in flight and that is the boundary 0030 §1 draws: the
+ * agent exiting is not the end of a pass, and an item whose gates are running
+ * is one the drain is still waiting for.
+ *
+ * Empty is an ordinary answer: between passes there is nothing in flight, and
+ * a drain that starts then is over immediately.
+ */
+export async function inFlight(url?: string): Promise<string[]> {
+  const tasks = await readTasks(url === undefined ? {} : { url }).catch(() => []);
+  return tasks
+    .filter((t) => t.state === "running" || t.state === "gates")
+    .map((t) => `${t.project}#${t.issue}`);
+}
+
+/** The sentence a drain leads with, for whoever is doing the draining. */
+export function describeInFlight(items: readonly string[]): string {
+  if (items.length === 0) return "nothing is in flight";
+  return `finishing ${items.join(", ")}`;
 }
 
 export async function requestRun(

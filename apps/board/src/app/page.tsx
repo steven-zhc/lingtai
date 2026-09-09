@@ -22,6 +22,7 @@ import { inWords } from "@lingtai/conductor/queue";
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
 import { readControl } from "@lingtai/daemon/control";
 import { Decide, Requeue } from "./decide.tsx";
+import { Draining } from "./draining.tsx";
 import { Live } from "./live.tsx";
 import { Paused } from "./paused.tsx";
 import { Stale } from "./stale.tsx";
@@ -707,6 +708,10 @@ export default async function Page({
             <Paused by={control.by} reason={control.reason} />
           </>
         ) : null}
+        {/* And whether it is on its way out, which is none of the above: a
+            draining daemon is current, unpaused and finishing the last pass it
+            will run (0030). Draws nothing when it is not. */}
+        <Draining />
         {/* And a third fact, independent of both: whether the process that
             moves things is running the code we merged. A daemon holds its
             modules from the moment it started, so `current` and `not paused`

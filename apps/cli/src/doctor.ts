@@ -38,7 +38,9 @@ import {
   codeCurrency,
   conductorLockHolder,
   describeCurrency,
+  describeInFlight,
   findOrphans,
+  inFlight,
   readControl,
   readStatus,
 } from "@lingtai/daemon";
@@ -580,12 +582,18 @@ async function daemonLiveness(): Promise<CheckResult> {
   // to break.
   const control = await readControl().catch(() => null);
   const paused = control?.paused ? `, paused by ${control.by} (${control.reason})` : "";
+  // A third fact beside those two, and independent of both (0030): being
+  // current, being paused and being on the way out are three answers, and a
+  // daemon that is draining is up, unpaused and going to stop anyway.
+  const asked = control?.shutdown
+    ? `, shutdown asked by ${control.shutdown.by} (${control.shutdown.reason})`
+    : "";
 
   if (!status) {
     return {
       name: "daemon: liveness",
       status: "ok",
-      detail: `no daemon has run — lingtai run works by hand; lingtai daemon takes the queue${paused}`,
+      detail: `no daemon has run — lingtai run works by hand; lingtai daemon takes the queue${paused}${asked}`,
     };
   }
 
@@ -598,13 +606,20 @@ async function daemonLiveness(): Promise<CheckResult> {
       // Reported, not failed: a stopped daemon is a choice as often as a
       // crash, and doctor exiting non-zero on it would make the command
       // useless as a restart gate.
-      detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid}) — not running${paused}`,
+      detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid}) — not running${paused}${asked}`,
     };
   }
+
+  // `draining` says stopping; what it is stopping *for* is the pass, and the
+  // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
+  // was what this said for both, which is the folding #77 argued against.
+  const held = status.state === "draining" ? await inFlight().catch(() => []) : [];
+  const stopping = status.state === "draining" ? ` — ${describeInFlight(held)}` : "";
+
   return {
     name: "daemon: liveness",
     status: "ok",
-    detail: `${status.state}, last beat ${Math.round(age / 1000)}s ago${paused}`,
+    detail: `${status.state}${stopping}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
   };
 }
 

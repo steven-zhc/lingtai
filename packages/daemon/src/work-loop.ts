@@ -38,6 +38,16 @@
  * concurrently would race for the same claim, so an event during a pass sets a
  * flag and the loop goes round again when it finishes — which also collapses a
  * burst of events into one extra pass rather than one each.
+ *
+ * ## Stopping is waiting for that pass
+ *
+ * **The boundary is the pass, not the agent**
+ * ([0030](../../../doc/decisions/0030-shutting-down-safely.md) §1). A ticket is
+ * not finished when its agent exits: the gates run, the merge lane runs, the
+ * `end` point runs, and one pass spans all of it. So `stop()` waits for the
+ * pass, and `pump` retains its promise for it to wait on — which is the only
+ * thing that was missing. `running`, `again` and the `if (stopped) break` were
+ * all already here, so from outside the loop looked as though it drained.
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { subscribe, type Subscription } from "@lingtai/event-store";
@@ -62,6 +72,10 @@ export const COMPLETION_EVENTS = [
   // now rather than at the next completion.
   "ConductorResumed",
   "RunRequested",
+  // And a shutdown, most of all. An idle daemon appends nothing, so without
+  // this a `lingtai shutdown` would sit unread until the next sweep — five
+  // minutes of a command that has already returned looking ignored (0030 §2).
+  "ConductorShutdownRequested",
   // A webhook said GitHub changed. The sweep would find it eventually; this
   // is what makes "eventually" mean seconds when a webhook can reach us.
   "QueueChanged",
@@ -97,6 +111,24 @@ export interface WorkLoopOptions {
    */
   paused?: () => Promise<boolean>;
   /**
+   * Whether somebody has asked the conductor to stop, and why.
+   *
+   * Asked in the same place as `paused` and for the same reason (0030 §2): the
+   * answer lives in the log, so a request made while a run is in flight lands
+   * at the next opportunity without anybody restarting anything.
+   *
+   * A shutdown is a pause that does not end. The loop stops itself when it
+   * reads one — `stopped` is set here rather than waited for from outside, so
+   * the `if (stopped) break` at the top of the loop retires the pending `again`
+   * on its own.
+   */
+  shutdown?: () => Promise<string | null>;
+  /**
+   * Called once, when the loop has read a shutdown request and stopped taking
+   * work. The host is what exits; the loop only stops looping.
+   */
+  onShutdown?: (why: string) => void;
+  /**
    * Told about every appended event, subscribed or not — it decides.
    *
    * On the loop's existing subscription rather than a second one: a notifier
@@ -119,9 +151,19 @@ export interface WorkLoopOptions {
 export interface WorkLoop {
   /** Runs the first pass and then follows the log. */
   start(): Promise<void>;
+  /**
+   * Takes no more work, and waits for the pass in flight.
+   *
+   * **The drain**, and the whole of 0030 §1: a pass spans the agent, the
+   * gates, the merge lane and the `end` point, so waiting for the pass is the
+   * only wait that means "finished". `running` used to be a flag nothing read;
+   * the promise it stands for is retained now, and this is what awaits it.
+   */
   stop(): Promise<void>;
   /** Passes run so far. */
   readonly passes: number;
+  /** True while a pass is running. What a drain is waiting for. */
+  readonly busy: boolean;
 }
 
 export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
@@ -134,15 +176,33 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
   let again = false;
   let stopped = false;
   let passes = 0;
+  /**
+   * The pass in flight, retained.
+   *
+   * This one reference is what makes a drain possible. Everything else was
+   * already here — `running`, `again`, `if (stopped) break` — and from outside
+   * the loop looked as though it drained; nothing held the promise, so nothing
+   * could wait for it (0030).
+   */
+  let inFlight: Promise<void> | null = null;
 
-  async function pump(reason: PassReason): Promise<void> {
+  function pump(reason: PassReason): Promise<void> {
     if (running) {
       // A pass is in flight. Remember to go round again rather than starting a
       // second one into the same queue.
       again = true;
-      return;
+      return inFlight ?? Promise.resolve();
     }
     running = true;
+    const pass = drain(reason).finally(() => {
+      running = false;
+      inFlight = null;
+    });
+    inFlight = pass;
+    return pass;
+  }
+
+  async function drain(reason: PassReason): Promise<void> {
     try {
       do {
         again = false;
@@ -150,6 +210,20 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         // Asked before every pass, not cached: a pause issued mid-run has to
         // take effect at the next opportunity, and the next opportunity is
         // here.
+        //
+        // A shutdown is asked first, because it is the stronger answer: a
+        // conductor that has been told to stop does not need to know whether
+        // it was also paused.
+        const why = await options.shutdown?.();
+        if (why) {
+          // Set here, not by the caller. The pending `again` from events that
+          // arrived during the pass lapses on the `if (stopped) break` above,
+          // which is the whole reason that line was already worth having.
+          stopped = true;
+          log(`shutting down — ${why}`);
+          options.onShutdown?.(why);
+          break;
+        }
         if (await options.paused?.()) {
           // Nothing is left pending by a pause any more: a run tells GitHub
           // as it goes, so a paused conductor has nothing owed (0022). What
@@ -167,14 +241,21 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         }
         reason = "completion";
       } while (again);
-    } finally {
-      running = false;
+    } catch (err) {
+      // Reaching here means the loop's own bookkeeping threw, not the pass —
+      // the pass has its own catch. It must still not escape into a caller
+      // that is only draining.
+      log(`loop failed: ${(err as Error).message}`);
     }
   }
 
   return {
     get passes() {
       return passes;
+    },
+
+    get busy() {
+      return running;
     },
 
     async start() {
@@ -215,6 +296,15 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       clearInterval(sweep);
       await subscription?.close().catch(() => {});
       subscription = null;
+      // And then the drain. The subscription is closed first so nothing new
+      // arrives to set `again` while this waits — though it would lapse on
+      // `if (stopped) break` if it did.
+      //
+      // There is no timeout here on purpose (0030 §6). A pass may take as long
+      // as `runtime.limits.wall`, and a wait that gave up after some minutes
+      // would recreate the orphan this exists to prevent, silently, at the
+      // moment it matters most. Whoever wants to accept that asks for it.
+      await inFlight?.catch(() => {});
     },
   };
 }

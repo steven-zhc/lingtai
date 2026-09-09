@@ -192,6 +192,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // -------------------------------------------------------------- control --
   ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,
   ConductorResumed: (d) => need(d, "by"),
+  // The timeout is on the row because it is the whole difference between a
+  // drain that waits for the pass and one that walks away from it (0030 §6).
+  ConductorShutdownRequested: (d) =>
+    `${need(d, "by")}: ${clip(d["reason"])}` +
+    (typeof d["timeoutMs"] === "number" ? ` (timeout ${Math.round(d["timeoutMs"] / 1000)}s)` : ""),
   // Retired, and still read for ever (0019). A row that renders nothing is
   // exactly as unreadable whether or not anything appends the type again.
   OutboxDelivered: (d) =>

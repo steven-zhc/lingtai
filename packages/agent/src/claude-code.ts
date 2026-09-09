@@ -230,6 +230,20 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           // boundaries (doc/decisions/0007).
           env: request.env,
           stdio: ["ignore", "pipe", "pipe"],
+          // Its own process group
+          // ([0030](../../../doc/decisions/0030-shutting-down-safely.md) §3).
+          //
+          // Ctrl+C is delivered to the whole foreground group, so without this
+          // the signal that begins a shutdown killed the agent in the same
+          // instant — and every message about finishing the current ticket was
+          // a lie the code told. Detaching is what makes the drain true rather
+          // than reassuring.
+          //
+          // Not `unref`ed: this run is exactly what the conductor is waiting
+          // for. What detaching costs is that a conductor which dies anyway
+          // leaves the agent alive, which is why recovery kills the process a
+          // claim names before it releases it (§5, `daemon/reconcile.ts`).
+          detached: true,
         });
 
         let stdout = "";

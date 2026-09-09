@@ -211,10 +211,17 @@ approval stops counting, by arithmetic rather than by anyone remembering.
 ```bash
 pnpm lingtai pause "why"     # take no new work; a run in flight finishes
 pnpm lingtai resume
+pnpm lingtai shutdown "why"  # finish the pass in flight, then stop the daemon
 ```
 
-The reason is required and it is recorded. `pause` stops work being taken; it
-never stops effects that already happened from going out.
+The reason is required for a pause and it is recorded. `pause` stops work being
+taken; it never stops effects that already happened from going out.
+
+`shutdown` is the same append, and then the process ends. What it waits for is
+the **pass** — the agent, then the gates, then the merge lane — so it can take
+as long as the recipe's `runtime.limits.wall`, and it says so before it starts
+waiting. Ctrl+C does the same thing and tells you what a second one would cost.
+`lingtai resume` lifts a shutdown the daemon never got to act on.
 
 ---
 

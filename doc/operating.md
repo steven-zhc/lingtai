@@ -570,6 +570,7 @@ the lock.
 ```bash
 pnpm lingtai pause "the importer is flaky today"   # take nothing new
 pnpm lingtai resume
+pnpm lingtai shutdown "picking up #88"             # finish the pass, then stop
 pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 ```
 
@@ -577,6 +578,30 @@ pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 agent is not implemented — a run you want gone ends when the conductor holding
 it does, and the next one to start releases the claim it left. Said plainly
 because a Stop button that means Pause is worse than no Stop button.
+
+**Shutdown is a pause the process does not come back from**
+([0030](decisions/0030-shutting-down-safely.md)). It appends and returns; the
+daemon reads it before its next pass, finishes the one in flight and exits. The
+boundary is the *pass* and not the agent — the gates, the merge lane and the
+`end` point all run after the agent exits — so a drain can take as long as the
+recipe's `runtime.limits.wall` (`1h` here, `2h` by default). The command says so
+rather than leaving it looking hung. There is no default timeout, deliberately:
+`--timeout 20m` exists for somebody who has decided to accept what it does when
+it trips, which is stop taking work, **leave the agent running** and exit.
+
+`lingtai resume` lifts a shutdown nobody acted on, as it lifts a pause. Without
+that the request would stop every daemon started after it.
+
+Ctrl+C is the same drain and says what it is doing: the first one names what is
+finishing and what a second one costs, and the second stops immediately. Both
+are honest because the agent runs in its own process group — before that, the
+signal that began the shutdown killed the agent in the same instant. `kill
+<pid>` behaves identically.
+
+An agent left behind by a `--timeout` or a second Ctrl+C is not left for ever:
+the next conductor kills the process its claim names before releasing the
+ticket, guarded on the host and on the process's own command line, and reports
+rather than kills anything that fails either guard.
 
 Control goes through the log, so a pause issued while the daemon is down is
 waiting when it comes back.

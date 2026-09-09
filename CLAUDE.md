@@ -75,6 +75,15 @@ now carries the commit the daemon started at; `lingtai doctor`'s
 `daemon: currency` and a chip on the board say how far behind `origin/main` that
 is. Neither restarts it — that is still yours, and whether it should be is open.
 
+**The restart is now safe to perform** (0030). `pnpm lingtai shutdown "why"`
+appends, returns, and the daemon finishes the pass in flight before it exits —
+the pass, not the agent, so the gates and the merge lane run too. That waits as
+long as `runtime.limits.wall`, `1h` here, and the command says so rather than
+looking hung. Ctrl+C does the same and tells you what a second one costs;
+`lingtai resume` lifts a request nothing acted on. An agent left behind by a
+second Ctrl+C or a `--timeout` is killed by the next conductor before it
+releases the claim, guarded on the host and the process's own argv.
+
 The board's Queued column asks GitHub on render; every other column is the
 fold.
 

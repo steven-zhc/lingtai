@@ -62,8 +62,10 @@
  * agent is between tool calls, and deleting a live worktree is a worse outcome
  * than leaving a dead one.
  */
+import { execFile as execFileCb } from "node:child_process";
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 // A subpath, never the barrel — the rule `converge.ts` states and for the same
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
@@ -76,6 +78,8 @@ import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
 import { DAEMON_LOCK_KEY } from "./lock.ts";
 import pg from "pg";
+
+const execFile = promisify(execFileCb);
 
 /**
  * What was done about a divergence.
@@ -291,6 +295,10 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
  * only by a conductor dying, and work resumes only when a conductor starts — so
  * the moment that repairs the orphan and the moment that would have used the
  * repair are the same moment.
+ *
+ * Since 0030 the release is the second half rather than the whole: `reconcile`
+ * kills the process the claim names first, because a detached agent outlives
+ * its conductor. See `killWorker`.
  */
 export async function releaseForeignClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
   const store = options.store ?? eventStore;
@@ -332,6 +340,110 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
     });
   }
   return findings;
+}
+
+/**
+ * Kills the process a dead claim names, or says why it did not.
+ *
+ * The half [0027](../../../doc/decisions/0027-the-lease-is-deleted.md) did not
+ * need. 0027 proved the *claim* dead — this conductor holds the lock, so no
+ * other conductor is alive — and that was enough while every agent died with
+ * the conductor that spawned it. Since 0030 §3 the agent is detached, so it
+ * outlives its conductor, and a claim's worker may name a process that is still
+ * running and still spending. `claim.ts` has recorded host and pid since the
+ * beginning, *"so a stuck lease can be traced to a process"*. Nothing ever
+ * traced it. This does.
+ *
+ * **Two guards, because killing by a recorded pid is how you kill the wrong
+ * thing.** Pids are reused, and a pid from another machine names a local
+ * stranger. So the host must match, and the process must look like the runtime
+ * we started — a node process whose command line names lingtai — rather than
+ * merely occupying the number. Failing either, nothing is killed and the
+ * process is named in the finding: a released claim beside a live stranger is a
+ * mess, and a killed stranger is a different and worse one.
+ *
+ * **SIGKILL and not SIGTERM**, which is the one place 0030 argues against
+ * itself: SIGTERM now *means* drain, and this is precisely the process whose
+ * drain nobody is waiting for — its claim is about to be released, so it must
+ * not still be working on it a second later.
+ *
+ * Returns the sentence, never throws. Reconciliation reports; it does not
+ * refuse to start because a process could not be read.
+ */
+export async function killWorker(worker: string): Promise<string> {
+  const named = parseWorker(worker);
+  if (!named) return `"${worker}" names no process`;
+  if (named.host !== thisHost()) {
+    return `pid ${named.pid} is on ${named.host}, not this machine — reported, not killed`;
+  }
+  // Cannot happen through `reconcile`, which has already established this is
+  // somebody else's claim. Kept because the guard is cheap and the mistake is
+  // not survivable.
+  if (named.pid === process.pid) return `pid ${named.pid} is this process`;
+
+  try {
+    // Signal 0 asks whether it exists without touching it. The ordinary answer
+    // is that it does not: the conductor died, which is why we are here.
+    process.kill(named.pid, 0);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return `pid ${named.pid} is gone`;
+    return `pid ${named.pid} is alive and not ours to signal (${code ?? "unknown"}) — reported, not killed`;
+  }
+
+  const command = await commandOf(named.pid);
+  if (command === null) {
+    return `pid ${named.pid} is alive and its command could not be read — reported, not killed`;
+  }
+  if (!isOurs(command)) {
+    return `pid ${named.pid} is alive and is not ours — "${command}" — reported, not killed`;
+  }
+
+  try {
+    process.kill(named.pid, "SIGKILL");
+    return `killed pid ${named.pid} — "${command}"`;
+  } catch (err) {
+    return `pid ${named.pid} could not be killed: ${(err as Error).message}`;
+  }
+}
+
+/** Host and pid, as `conductorWorker` writes them. Null when it is not that. */
+function parseWorker(worker: string): { host: string; pid: number } | null {
+  const at = worker.lastIndexOf(":");
+  if (at < 1) return null;
+  const pid = Number(worker.slice(at + 1));
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  return { host: worker.slice(0, at), pid };
+}
+
+/** Spelled exactly as `conductorWorker` spells it, or the guard is not one. */
+function thisHost(): string {
+  return process.env["HOSTNAME"] ?? "local";
+}
+
+/** The process's command line, or null when it could not be read. */
+async function commandOf(pid: number): Promise<string | null> {
+  try {
+    const { stdout } = await execFile("ps", ["-o", "command=", "-p", String(pid)]);
+    const line = stdout.trim();
+    return line === "" ? null : line;
+  } catch {
+    // `ps` exits non-zero for a pid that has gone between the check and here.
+    return null;
+  }
+}
+
+/**
+ * Is this the runtime we started?
+ *
+ * Both halves matter. `lingtai` alone would match a shell tailing a log under
+ * `~/.lingtai`; `node` alone would match every other node process on the
+ * machine. Together they are wrong only for a node process that mentions
+ * lingtai and is not one of ours, which is a much smaller set than "whatever
+ * has this pid now".
+ */
+function isOurs(command: string): boolean {
+  return /\bnode\b/.test(command) && /lingtai/i.test(command);
 }
 
 export async function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
@@ -392,6 +504,16 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
           f.actual = `${f.actual} (claimed again before it could be released)`;
           continue;
         }
+        // The process, before the claim (0030 §5). A detached agent outlives
+        // the conductor that started it, so a claim whose worker is still alive
+        // is one with something still spending against it — and releasing the
+        // ticket while that runs is how two agents end up on one branch.
+        //
+        // Whichever way it goes, the claim is released: what changes is whether
+        // the sentence says `killed` or names a process nobody dared touch.
+        const fate = await killWorker(life.worker);
+        f.actual = `${f.actual} — ${fate}`;
+        log(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`);
         await store.append(f.stream, events.length, [
           {
             type: "WorkItemReleased",
