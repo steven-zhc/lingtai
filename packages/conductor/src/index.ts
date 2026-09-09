@@ -25,10 +25,13 @@ export {
 export {
   describeFilter,
   describeFilters,
+  gatePlan,
   githubClientFor,
   projectFilter,
   projectFilters,
   type ClientFor,
+  type GatePlan,
+  type PlannedAction,
   type ProjectFilter,
 } from "./filter.ts";
 export {

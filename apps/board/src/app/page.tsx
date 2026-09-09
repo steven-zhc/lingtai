@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { emptyNote, loadBoard, type BoardCard } from "@/lib/board";
+import { AGENT, elapsed, type RunProgress } from "@/lib/progress";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { inWords } from "@lingtai/conductor/queue";
 // The subpath, not the barrel: the board reads the control stream and hosts
@@ -52,6 +53,78 @@ function accent(card: BoardCard): string {
   return "";
 }
 
+/**
+ * Which pill a point's state wears. The card's existing vocabulary, reused:
+ * a person's word (`waived`) is the held colour and never the green one, the
+ * same distinction the counts below make.
+ */
+const POINT_TONE: Record<string, string> = {
+  passed: "pass",
+  failed: "fail",
+  running: "run",
+  waived: "hold",
+  pending: "",
+  skipped: "skip",
+};
+
+/**
+ * Where the run is *now*, under the counts that say where it has been.
+ *
+ * The phase first — what is executing this second, and how far into whatever
+ * bounds it — then all five points, so a point the recipe configured is visible
+ * before it runs and a point nobody configured reads as `skipped` rather than
+ * as an absence (0016 §4).
+ *
+ * The clock is the server's, read at render. That is exactly as current as
+ * everything else on the page: an append re-renders the route (`live.tsx`), and
+ * a run appends steadily enough that this moves on its own.
+ */
+function Now({ progress }: { progress: RunProgress }) {
+  const now = progress.now;
+  return (
+    <ul className="meta">
+      {now ? (
+        <li
+          className="pill run"
+          title={
+            now.budgetMs === null
+              ? `${now.label} since ${now.since}; nothing puts a clock on it`
+              : `${now.label} since ${now.since}, out of ${inWords(now.budgetMs)}`
+          }
+        >
+          {/* The denominator is what separates *slow* from *about to be
+              killed*, and it is absent rather than invented where nothing
+              bounds the phase — an approval waits on a person, and a person has
+              no timeout. */}
+          {now.label === AGENT ? "agent" : now.label}{" "}
+          {elapsed(Date.now() - Date.parse(now.since))}
+          {now.budgetMs === null ? "" : ` / ${inWords(now.budgetMs)}`}
+        </li>
+      ) : (
+        <li className="pill" title="the agent has finished and no point has started yet">
+          between points
+        </li>
+      )}
+      {/* All five, always. A point that is merely omitted is indistinguishable
+          from one that was configured and silently did not run, and only the
+          second of those is Lingtai's bug (0016 §4). */}
+      {progress.points.map((p) => (
+        <li
+          key={p.point}
+          className={`pill ${POINT_TONE[p.state] ?? ""}`}
+          title={
+            p.planned.length === 0
+              ? `${p.point}: nothing configured, so nothing runs`
+              : `${p.point}: ${p.planned.join(", ")} — ${p.state}`
+          }
+        >
+          {p.point}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) {
   return (
     <article className={`card ${accent(card)}`}>
@@ -71,6 +144,27 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
       </Link>
 
       <ul className="meta">
+        {/* How long it has been where it is, in the lane's own word — because
+            the number means a different thing in each: `waiting 3h` is a
+            question nobody has answered, `landed 2d` is how stale the top of
+            the column is (#79).
+
+            A running card gets its run's elapsed instead, and not `updatedAt`,
+            which for that one card is *the last time anything was appended*.
+            Labelling that `running 12s` would say a run eight minutes in had
+            just started — a plausible number, which is the worst kind.
+
+            Absent on a card GitHub is offering that the log has never touched:
+            there is no time for one, and the render clock is not it. */}
+        {card.progress ? (
+          <li className="pill run" title={`this run's first event was ${card.progress.since}`}>
+            running {elapsed(Date.now() - Date.parse(card.progress.since))}
+          </li>
+        ) : card.updatedAt ? (
+          <li className="pill" title={card.updatedAt}>
+            {card.column} {inWords(Date.now() - Date.parse(card.updatedAt))}
+          </li>
+        ) : null}
         {card.turns !== null ? <li className="pill">{card.turns} turns</li> : null}
         {card.costUsd !== null ? <li className="pill">${card.costUsd.toFixed(2)}</li> : null}
         {/* Green is a gate that ran and went green. A waiver and an approval are
@@ -114,6 +208,11 @@ function Card({ card, showProject }: { card: BoardCard; showProject: boolean }) 
           </li>
         ) : null}
       </ul>
+
+      {/* Only where there is a run in flight to describe. Every other lane is
+          describing something that is over, and the counts above are the whole
+          truth about it — this is the one lane where they are not (#79). */}
+      {card.progress ? <Now progress={card.progress} /> : null}
 
       {card.note ? <p className="question">{card.note}</p> : null}
 

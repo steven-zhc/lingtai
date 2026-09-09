@@ -24,10 +24,12 @@
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
 import { readTasks, type TaskCard, type TaskState } from "@lingtai/projector/task-view";
+import { eventStore } from "@lingtai/event-store";
 import { heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { loadProjects } from "@lingtai/conductor/projects";
-import { projectFilter } from "@lingtai/conductor/filter";
+import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
+import { foldProgress, type RunProgress } from "./progress.ts";
 
 /**
  * Four, not five. `gates` folded into `running` (ADR 0016 §8).
@@ -78,7 +80,18 @@ export interface BoardCard {
   costUsd: number | null;
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
   note: string | null;
-  updatedAt: string;
+  /**
+   * When the log last moved this card, ISO — the one number every lane wants
+   * and none of them showed (#79). Five minutes and three days looked
+   * identical, worst of all on `waiting`, which is "the lane the board exists
+   * for" (0016 §8) and where how long it has waited is the whole question.
+   *
+   * Null for a card GitHub is offering that the log has never touched. There is
+   * no timestamp for one — neither the log nor the issue list supplies it — and
+   * stamping the render clock would put `queued now` on a ticket that has sat
+   * open for a week.
+   */
+  updatedAt: string | null;
   /** Attempts so far, so a card that keeps failing reads as one. */
   attempts: number;
   /**
@@ -103,6 +116,16 @@ export interface BoardCard {
    * `heldUntil`, and the board does not get to have its own version of it.
    */
   runnableAt: string | null;
+  /**
+   * Where the run is *now*: the phase, its elapsed, and all five points.
+   *
+   * Only on a running card, and null everywhere else. A card in any other lane
+   * is describing something that is over, and the accumulated numbers beside it
+   * are the whole truth about it; this is the one lane where they are not
+   * (#79). Folded from the run's own stream rather than held in `task_view` —
+   * see `progress.ts` for why that does not make the list expensive.
+   */
+  progress: RunProgress | null;
 }
 
 /**
@@ -197,11 +220,15 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
 };
 
 /**
- * `runnableAt` is passed in rather than computed: it needs the project's
- * `source.backoff`, which is in the recipe, which is a network call away —
- * and this function is the pure part.
+ * `runnableAt` and `progress` are passed in rather than computed: one needs the
+ * project's `source.backoff` and the other the run's own stream, and both are
+ * a call away — this function is the pure part.
  */
-export function toCard(t: TaskCard, runnableAt: Date | null = null): BoardCard {
+export function toCard(
+  t: TaskCard,
+  runnableAt: Date | null = null,
+  progress: RunProgress | null = null,
+): BoardCard {
   return {
     taskId: t.taskId,
     project: t.project,
@@ -224,6 +251,7 @@ export function toCard(t: TaskCard, runnableAt: Date | null = null): BoardCard {
     blocked: t.blocked,
     repairCostUsd: t.repairCostUsd,
     runnableAt: runnableAt === null ? null : runnableAt.toISOString(),
+    progress,
   };
 }
 
@@ -249,6 +277,12 @@ async function queuedCards(project?: string): Promise<{
   repair: RepairPolicyView[];
   /** `source.backoff` per project, for the held cards `loadBoard` folds from the log. */
   backoffMs: Map<string, number>;
+  /**
+   * The recipe's gates per project, for the running cards `loadBoard` folds.
+   * Gathered here for the reason `backoffMs` is: this loop already resolved
+   * every recipe, and reading one twice is how a render gets expensive.
+   */
+  plans: Map<string, GatePlan>;
 }> {
   const projects = (await loadProjects().catch(() => [])).filter(
     (p) => project === undefined || p.project === project,
@@ -261,6 +295,7 @@ async function queuedCards(project?: string): Promise<{
   // arrived with the first answer is how a render gets expensive.
   const repair: RepairPolicyView[] = [];
   const backoffMs = new Map<string, number>();
+  const plans = new Map<string, GatePlan>();
   for (const p of projects) {
     const filter = await projectFilter(p);
     if (!filter.ok) {
@@ -273,6 +308,7 @@ async function queuedCards(project?: string): Promise<{
       maxAttempts: filter.repair.maxAttempts,
     });
     backoffMs.set(filter.project, filter.backoffMs);
+    plans.set(filter.project, filter.plan);
     try {
       const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
       const runnable = await selectRunnable({
@@ -301,12 +337,16 @@ async function queuedCards(project?: string): Promise<{
           turns: null,
           costUsd: null,
           note: null,
-          updatedAt: new Date().toISOString(),
           attempts: 0,
           blocked: false,
           repairCostUsd: null,
+          // Nothing in the log has touched this one, so there is no time to
+          // show. See the field: the render clock is not an answer.
+          updatedAt: null,
           // These are the ones `selectRunnable` just said *are* runnable.
           runnableAt: null,
+          // Nothing has run, so there is nothing to be part-way through.
+          progress: null,
         });
       }
     } catch (err) {
@@ -315,7 +355,36 @@ async function queuedCards(project?: string): Promise<{
       problems.push({ project: filter.project, reason: (err as Error).message });
     }
   }
-  return { cards, problems, repair, backoffMs };
+  return { cards, problems, repair, backoffMs, plans };
+}
+
+/**
+ * Where each running card's run has got to, keyed by task id.
+ *
+ * Only the Running lane, and only the cards that name a run. Every other lane
+ * is describing something that is over, and the numbers `task_view` already
+ * carries are the whole truth about it — this is the one lane where "what it
+ * accumulated" is not the answer to "what is it doing" (#79).
+ *
+ * A stream that will not read costs that card its detail and nothing else. The
+ * card is still on the board with its counts, which is what it had before.
+ */
+async function runningProgress(
+  tasks: readonly TaskCard[],
+  plans: ReadonlyMap<string, GatePlan>,
+): Promise<Map<string, RunProgress>> {
+  const live = tasks.filter((t) => COLUMN_OF[t.state] === "running" && t.runId !== null);
+  const folded = await Promise.all(
+    live.map(async (t) => {
+      try {
+        const events = await eventStore.read(t.runId as string);
+        return [t.taskId, foldProgress(events, plans.get(t.project))] as const;
+      } catch {
+        return [t.taskId, null] as const;
+      }
+    }),
+  );
+  return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null));
 }
 
 /**
@@ -338,11 +407,16 @@ export async function loadBoard(project?: string): Promise<Board> {
   // is holding is a card the log wrote, and how long it is held for is in the
   // recipe this just read (0028).
   const queued = await queuedCards(project);
+  // After the recipes too, and for the same reason: a gate's timeout is the
+  // denominator a running card measures against, and it is in the recipe this
+  // just read.
+  const progress = await runningProgress(tasks, queued.plans);
   const now = Date.now();
   const fromLog = tasks.map((t) =>
     toCard(
       t,
       t.state === "queued" ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
+      progress.get(t.taskId) ?? null,
     ),
   );
   // A task released back to the queue has a row *and* is offered by GitHub, so

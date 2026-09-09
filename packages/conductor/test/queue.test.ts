@@ -237,6 +237,23 @@ describe("inWords", () => {
     expect(inWords(30_000)).toBe("under a minute");
     expect(inWords(-1)).toBe("now");
   });
+
+  /**
+   * The board asks this about a card's age, where `48h` is correct and
+   * unreadable — "five minutes and three days look identical" was the whole of
+   * #79's first complaint.
+   */
+  it("says days once hours stop being readable", () => {
+    expect(inWords(48 * HOUR)).toBe("2d");
+    expect(inWords(51 * HOUR)).toBe("2d 3h");
+    // The boundary belongs to hours, not to a zero-day.
+    expect(inWords(23 * HOUR)).toBe("23h");
+  });
+
+  /** `Math.round` on the remainder turns 1h 59m 40s into "1h 60m". */
+  it("never carries a remainder past its own unit", () => {
+    expect(inWords(HOUR + 59 * 60_000 + 40_000)).toBe("1h 59m");
+  });
 });
 
 /** The projection's own timestamp, so the test's window is the row's window. */

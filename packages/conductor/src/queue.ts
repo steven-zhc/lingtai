@@ -140,13 +140,24 @@ export function heldUntil(row: BackoffInput, backoffMs: number, now: number = Da
  * `2_700_000` → `45m`. What a person needs from a backoff is *when*, not how
  * many milliseconds — and both the CLI and the board have to say it, so they
  * say it the same way and in the units the recipe writes.
+ *
+ * Days, because the board asks this a second question. Every card carries how
+ * long it has sat (#79), and "five minutes and three days look identical" was
+ * the complaint — which `48h` answers correctly and unreadably. Nothing below a
+ * day changes wording, so a backoff still reads exactly as it did.
  */
 export function inWords(ms: number): string {
   if (ms <= 0) return "now";
   if (ms < 60_000) return "under a minute";
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
-  const hours = Math.floor(ms / 3_600_000);
-  const minutes = Math.round((ms % 3_600_000) / 60_000);
-  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  if (ms < 86_400_000) {
+    const hours = Math.floor(ms / 3_600_000);
+    // Floored, not rounded: `Math.round` turns 1h 59m 40s into "1h 60m".
+    const minutes = Math.floor((ms % 3_600_000) / 60_000);
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  }
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor((ms % 86_400_000) / 3_600_000);
+  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
 }
 

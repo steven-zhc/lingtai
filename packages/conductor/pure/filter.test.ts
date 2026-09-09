@@ -30,6 +30,16 @@ env:
   plantAt: .env.local
 gates:
   admit: []
+  prepared:
+    - name: install
+      run: pnpm install
+      timeout: 10m
+  proposed:
+    - name: build
+      run: pnpm test
+      timeout: 20m
+    - name: review
+      agent: reviewer
 runtime:
   agent: claude-code
 `;
@@ -56,6 +66,32 @@ describe("projectFilter", () => {
     // Parsed here so that no caller reads a duration string, and defaulted by
     // the schema rather than by a constant in the queue (0028).
     expect(filter.backoffMs).toBe(60 * 60_000);
+  });
+
+  /**
+   * The denominator a running card measures a gate against (#79) — parsed here
+   * for the reason `backoffMs` is, so the board never gets its own idea of what
+   * `20m` is.
+   *
+   * All five points, including the ones nothing is configured at: an empty
+   * point is `skipped` and the skip has to be visible, or a point that *was*
+   * configured and silently did not run is indistinguishable from it
+   * (ADR 0016 §4).
+   */
+  it("carries every point's actions with the timeouts already numbers", async () => {
+    const filter = await projectFilter(project, async () => client(RECIPE));
+
+    expect(filter.ok).toBe(true);
+    if (!filter.ok) return;
+    expect([...filter.plan.keys()]).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
+    expect(filter.plan.get("prepared")).toEqual([{ name: "install", budgetMs: 10 * 60_000 }]);
+    // A reviewer has no clock on it, and null is not zero: a card that showed a
+    // budget of 0 would say it was already out of time.
+    expect(filter.plan.get("proposed")).toEqual([
+      { name: "build", budgetMs: 20 * 60_000 },
+      { name: "review", budgetMs: null },
+    ]);
+    expect(filter.plan.get("merge")).toEqual([]);
   });
 
   /** The recipe decides it, so a recipe that says something else is obeyed. */

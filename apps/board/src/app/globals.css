@@ -209,6 +209,11 @@ body {
 /* A verdict about a commit that is no longer the head. Nothing revoked it — a
    force-push simply made it about a different diff. */
 .pill.stale { opacity: 0.45; text-decoration: line-through; }
+/* A point the recipe configured nothing at. Quiet, but present: a point that is
+   merely omitted is indistinguishable from one that was configured and silently
+   did not run, and only the second is Lingtai's bug (0016 §4). Faded and not
+   struck through — nothing was cancelled, there was never anything there. */
+.pill.skip { opacity: 0.4; }
 
 .diff {
   margin: 0;

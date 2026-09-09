@@ -16,11 +16,55 @@
  * board all read this, which is what stops any two of them disagreeing about
  * whether a queue is empty or unreadable.
  */
-import type { ProjectState } from "@lingtai/domain";
+import { GATE_POINTS, type GatePoint, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { parseDuration, type Recipe } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
+
+/**
+ * One thing the recipe configures at a point, and what bounds it.
+ *
+ * `budgetMs` is null where nothing does — a reviewer, a watch, a person. An
+ * absent budget is not an unlimited one; it is a thing with no clock on it, and
+ * a card that showed `0` there would say the opposite.
+ */
+export interface PlannedAction {
+  name: string;
+  budgetMs: number | null;
+}
+
+/**
+ * Every one of the five points, in loop order, with what runs at each.
+ *
+ * All five are present even where nothing is configured, because an empty point
+ * is `skipped` and the skip has to be visible (ADR 0016 §4) — a point that is
+ * merely absent from this map is indistinguishable from one that was
+ * configured and silently did not run.
+ */
+export type GatePlan = ReadonlyMap<GatePoint, readonly PlannedAction[]>;
+
+/**
+ * The recipe's gates, with every duration already a number.
+ *
+ * Lifted out of the recipe for the reason `backoffMs` is: no caller reads a
+ * duration string, so nothing downstream gets its own idea of what `20m` is.
+ * The board needs it to say how far into its timeout a running gate has got,
+ * which is the difference between *slow* and *about to be killed* (#79).
+ */
+export function gatePlan(recipe: Recipe): GatePlan {
+  return new Map(
+    GATE_POINTS.map((point) => [
+      point,
+      recipe.gates[point].map((action) => ({
+        name: action.name,
+        // Only a command has a clock. `parseDuration` throws on nonsense, and a
+        // recipe that resolved has already been through the schema's check.
+        budgetMs: "run" in action ? parseDuration(action.timeout) : null,
+      })),
+    ]),
+  );
+}
 
 /**
  * Resolved or refused, and never a third thing.
@@ -62,6 +106,14 @@ export type ProjectFilter =
        * source. Parsed once here so that no caller reads a duration string.
        */
       backoffMs: number;
+      /**
+       * What runs at each of the five points, with the timeouts as numbers.
+       *
+       * Lifted for the reason `backoffMs` is, and used for the same kind of
+       * thing: a gate's timeout is the denominator a running card measures
+       * against, and the board must not parse `20m` itself (#79).
+       */
+      plan: GatePlan;
       /**
        * The recipe and the client that read it, carried so a caller that wants
        * to go on and ask GitHub what is offered does not fetch either twice.
@@ -115,6 +167,7 @@ export async function projectFilter(
       exclude: resolved.recipe.source.exclude,
       repair: resolved.recipe.repair,
       backoffMs: parseDuration(resolved.recipe.source.backoff),
+      plan: gatePlan(resolved.recipe),
       recipe: resolved.recipe,
       client,
     };
