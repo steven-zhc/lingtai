@@ -91,6 +91,32 @@ column is merged.
 `queued` is the only one not driven by an event — it comes from GitHub, because
 Lingtai never decided which issues exist ([ADR 0012](decisions/0012-one-task-view.md)).
 
+## backoff — a rule, and the first one here
+
+Every other section counts: event types, gate points, doctor checks, tiers. This
+one states a rule, and until [0028](decisions/0028-the-backoff-is-the-recipes.md)
+there was nowhere in this file shaped to hold one — which is how the rule that
+decides when Lingtai spends money again came to live in a constant with no
+decision behind it and no mention here (`#95`).
+
+**How long a failed attempt keeps its own ticket out of the queue.** Source:
+`source.backoff` in the recipe; applied by `selectRunnable` and read forwards by
+`heldUntil`, both in `packages/conductor/src/queue.ts`.
+
+| | |
+|---|---|
+| where it is decided | the recipe, `source.backoff`. There is no constant and no override |
+| default | `1h`, **flat** — the wait does not grow with attempts |
+| measured from | `task_view.last_attempt_at`, written by the claim, so it outlives the release |
+| what jumps it | a pending repair (0025 §3), and `lingtai now` — neither is a *blind* retry, which is the only thing this guards against |
+| what does not jump it | an ordinary release, however the run ended |
+| where a person sees it | `[backing off — runnable in 12m]` in `lingtai status`, a `runnable in 12m` pill on a Queued card, and the `retries` line wherever a project is described |
+
+Zero is not a shorter backoff, so the schema refuses anything that is not a
+positive duration. Nothing bounds the *number* of attempts: that is a ceiling
+rather than a delay, and 0028 leaves it undecided on purpose rather than bending
+this into a curve.
+
 ## tool restriction — none
 
 Lingtai restricts no tool call. There were eight rules; they are gone (ADR
@@ -343,7 +369,7 @@ it is not part of what a run does.
 `core` · `config` · `store` · `github` · `runtime` · `gates` · `conductor` ·
 `daemon` · `hook`, and `apps/cli` · `apps/board`.
 
-## doc — 14 decisions, 6 experiments
+## doc — 28 decisions, 10 experiments
 
 `doc/decisions/` is append-only in spirit: a decision that turns out wrong gets
 a new file that supersedes it, never an edit. `doc/experiments/` holds things
