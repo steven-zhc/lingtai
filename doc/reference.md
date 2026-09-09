@@ -307,7 +307,9 @@ Source: `GatePoint` and `GATE_POINTS` in `packages/domain/src/events.ts`.
 
 `prepared` and `proposed` run the recipe's actions; `merge` holds when a `human`
 action asks or when `--no-merge` does; `end` runs too, its actions being effects
-rather than verdicts, and they go through the outbox so they survive a crash.
+rather than verdicts. The conductor calls GitHub and appends the outcome; what
+did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
+durability is convergence here, not a queue.
 `admit` is declared and empty, which is what an unconfigured point *is* rather
 than a gap.
 
@@ -325,8 +327,8 @@ What runs at a point. Source: `GateAction` and `kindOfAction` in
 | `agent:` | a cold reviewer reading the diff, given this prompt | a reviewer runtime |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail` | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question | nothing |
-| `close:` | — it is an effect, not a verdict. `end` only | the outbox |
-| `labels:` | — same | the outbox |
+| `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
+| `labels:` | — same | a GitHub client |
 
 The last two carry `when:` (`landed` / `blocked` / `failed` / `any`), because
 `end` fires on *every* terminal outcome. "Close it when it lands, label it when
