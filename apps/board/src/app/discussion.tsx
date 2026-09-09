@@ -43,6 +43,50 @@ function meter(costUsd: number | null): string | null {
   return costUsd === null ? null : `$${costUsd.toFixed(2)}`;
 }
 
+/**
+ * The meter, on the box's own rule: `this conversation $0.64 · 3 messages · no limit`.
+ *
+ * **0033 §4 is not implemented without it, it is merely unenforced.** There is
+ * no spend limit on a discussion because the person is the control loop — and a
+ * person can only be the limit if the person can see the number. The heading
+ * carried the boundary (*it cannot run anything*) and no cost at all, so the one
+ * agent on this page with no ceiling was the one with no reading (#111).
+ *
+ * Three facts, in the order a person checks them: what this conversation has
+ * cost, how many exchanges bought it, and that nothing will stop it. `no limit`
+ * is said rather than implied, because an unstated limit reads as a limit
+ * somebody else is keeping.
+ *
+ * `$0.00` is not printed for a conversation that has not reported a figure yet.
+ * A null cost is *nobody said*, not *free* — the same reading `RunFinished`
+ * gets — so a first question in flight says `asked` and waits for the number.
+ */
+function openMeter(open: DiscussionView): string {
+  const messages = open.turns.length;
+  return [
+    `this conversation ${meter(open.costUsd) ?? (open.waiting ? "asked" : "no figure")}`,
+    `${messages} message${messages === 1 ? "" : "s"}`,
+    "no limit",
+  ].join(" · ");
+}
+
+/**
+ * What the box's rule says when nothing is open.
+ *
+ * The boundary before the first question, because what it *cannot* do is the
+ * thing worth knowing before asking; afterwards the ledger's own shape — how
+ * many were held, and what they came to. The total joins the attempts' figures
+ * in `totalsFact`, where it is counted into `$13.04` rather than sitting beside
+ * it (0033 §4, #111).
+ */
+function closedMeter(discussions: readonly DiscussionView[]): string {
+  if (discussions.length === 0) {
+    return "reads the log, the ticket and the code — it cannot run anything";
+  }
+  const spend = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0);
+  return `${discussions.length} held${spend > 0 ? ` · $${spend.toFixed(2)}` : ""} · no limit`;
+}
+
 const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
   prompt: "used for the next run",
   ticket: "added to the ticket",
@@ -68,7 +112,6 @@ export function Discussion({
   // question when there is none open, which is why there is no New button: the
   // box is the New button.
   const open = discussions.find((d) => d.held === null) ?? null;
-  const spend = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0);
 
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
     setBusy(true);
@@ -88,10 +131,10 @@ export function Discussion({
     <div className="chat">
       <p className="chathead">
         <span className="chatname">discussion</span>
+        {/* Live without a poller: every append re-renders the board
+            (`live.tsx`), so the figure on screen is the figure on the log. */}
         <span className="chatfact">
-          {discussions.length === 0
-            ? "reads the log, the ticket and the code — it cannot run anything"
-            : `${discussions.length} held${spend > 0 ? ` · $${spend.toFixed(2)}` : ""}`}
+          {open === null ? closedMeter(discussions) : openMeter(open)}
         </span>
       </p>
 

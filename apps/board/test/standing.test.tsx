@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
 import { foldRun, standingOf, type Claim, type StandingView } from "../src/lib/task.ts";
+import type { OutgoingView } from "../src/lib/prompt.ts";
 import { Standing } from "../src/app/standing.tsx";
 
 let seq = 0n;
@@ -188,6 +189,112 @@ describe("the evidence", () => {
     ]);
     expect(standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 })], [run]).deciding).toBeNull();
   });
+
+  /**
+   * `wi-lingtai-89`, and the reason the block had no pointer at all on
+   * 2026-09-09 (#111). The repair is the named attempt and it ended *well* — exit
+   * 0, no commits, no gate ever reported — so it refused nothing; the failure
+   * everybody is looking at is attempt 1's. A pointer that only ever looked at
+   * the named run found nothing, and the flattened `question` became the only
+   * evidence on screen.
+   *
+   * The design's own example reads exactly this way: *from attempt 2 of 2* at the
+   * top, *in attempt 1 ↓* on the evidence.
+   */
+  it("walks back to the attempt that refused when the named one refused nothing", () => {
+    const first = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
+      e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+    ]);
+    // The repair: it finished, cleanly, and produced nothing.
+    const repair = foldRun(
+      { runId: RUN_2, at: "2026-09-08T06:00:00.000Z", repair: true, released: null },
+      2,
+      [e(RUN_2, "RunStarted", { baseSha: SHA }), e(RUN_2, "RunFinished", { turns: 5, durationMs: 60_000, costUsd: 5.23, exitCode: 0 })],
+    );
+
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
+        e(ITEM, "RepairRequested", { runId: RUN_1, reason: "gate-failed", detail: TAIL, fingerprint: "x", attempt: 1 }),
+        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "repair" }),
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: "the repair could not fix it",
+          needsFrom: "human",
+          runId: RUN_2,
+          needs: "acknowledgement",
+          diagnosis: null,
+        }),
+      ],
+      [first, repair],
+    );
+
+    expect(standing.attempt).toBe(2);
+    expect(standing.deciding?.attempt).toBe(1);
+    expect(standing.deciding?.source).toBe("proposed / build");
+  });
+});
+
+/**
+ * **No log is ever rendered as prose** (#106's rule, #111's instance).
+ *
+ * `WorkItemBlocked.question` is a sentence with a gate's tail appended to it, and
+ * a `<p>` collapses its newlines: the block opened with `pnpm -r typecheck` and
+ * fifteen workspace projects announcing themselves, flattened into one
+ * paragraph. The clip is in the fold rather than in CSS, because a log shortened
+ * by a rule is still a log rendered as prose.
+ */
+describe("the question", () => {
+  const LOG = [
+    "the repair could not fix it — gate-failed: build: pnpm typecheck && pnpm test exited 2",
+    "$ pnpm -r --if-present typecheck",
+    "Scope: 15 of 16 workspace projects",
+    "packages/domain typecheck$ tsc --noEmit",
+    "packages/env typecheck: Done",
+  ].join("\n");
+
+  it("carries its deciding line and leaves the tail where the tail is", () => {
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: LOG,
+          needsFrom: "human",
+          runId: RUN_1,
+          needs: "acknowledgement",
+          diagnosis: null,
+        }),
+      ],
+      [],
+    );
+
+    expect(standing.question).toBe(
+      "the repair could not fix it — gate-failed: build: pnpm typecheck && pnpm test exited 2",
+    );
+    expect(standing.question).not.toContain("Scope: 15 of 16");
+    expect(standing.question).not.toContain("tsc --noEmit");
+  });
+
+  it("clips a single line that is a log all by itself", () => {
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: `x${"y".repeat(400)}`,
+          needsFrom: "human",
+          runId: RUN_1,
+          needs: "acknowledgement",
+          diagnosis: null,
+        }),
+      ],
+      [],
+    );
+
+    expect(standing.question?.length).toBe(140);
+    expect(standing.question?.endsWith("…")).toBe(true);
+  });
 });
 
 describe("the move the block ends in", () => {
@@ -341,5 +448,133 @@ describe("the block, rendered", () => {
     const html = renderToStaticMarkup(<Standing standing={HELD} project={null} issue={null} taskId="wi-lingtai-112" discussions={[]} outgoing={null} />);
     expect(html).toContain("blocked");
     expect(html).not.toContain("Back to the queue");
+  });
+
+  /**
+   * #111 §2: the block opened with an entire build log flattened into a
+   * sentence, because `<p>` collapses newlines and the question was handed over
+   * verbatim. The fold clips it; this is the assertion that the render does not
+   * put it back.
+   */
+  it("never renders a log as prose", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={{ ...HELD, question: "gate-failed: build exited 2\nScope: 15 of 16 workspace projects" }}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+      />,
+    );
+    // The view is what clips; a component that re-expanded it would be the
+    // second copy of one fact design §2 is about.
+    expect(html).toContain("gate-failed: build exited 2");
+  });
+});
+
+// ------------------------------------------------------------------ moves ----
+
+/**
+ * The column ends in something that sends.
+ *
+ * `#104` put the composed prompt on the page and made it editable, and on
+ * 2026-09-09 the whole interactive surface of a blocked task was `Edit`, `Ask`
+ * and `Back to the queue` — a person could compose exactly the right instruction
+ * and had nothing that committed it (#111 §1).
+ */
+const OUTGOING: OutgoingView = {
+  text: "#111 — the ticket\n\nthe body\n",
+  version: "ticket@1924+failure@1c5708ba",
+  basedOn: "ticket@1924+failure@1c5708ba",
+  attempt: 3,
+  edit: null,
+  delta: { added: 0, removed: 0 },
+  problem: null,
+};
+
+/** Just the row of moves: the Ask button inside the discussion is amber too. */
+const moves = (html: string) => html.slice(html.indexOf('class="smoves"'));
+
+const render = (standing: StandingView, outgoing: OutgoingView | null) =>
+  renderToStaticMarkup(
+    <Standing
+      standing={standing}
+      project="lingtai"
+      issue={112}
+      taskId="wi-lingtai-112"
+      discussions={[]}
+      outgoing={outgoing}
+    />,
+  );
+
+describe("the moves the column ends in", () => {
+  it("offers Send, numbered the way the box above it is, and Leave blocked beside it", () => {
+    const html = render(HELD, OUTGOING);
+
+    expect(html).toContain("Send attempt 3");
+    expect(html).toContain("Leave blocked");
+    // The box says `attempt 3 only` and the button says `Send attempt 3`: one
+    // number, said twice, because that is how long the edit lasts (0032 §5).
+    expect(html).toContain("attempt 3 only");
+    // Named for the document it hands over, not for the queue it joins.
+    expect(html).not.toContain("Back to the queue");
+  });
+
+  /**
+   * #84's rule, and the one place this ticket is read against the code rather
+   * than literally: Reject withdraws an approval, so it belongs exactly where
+   * there is one to withdraw. A card must never offer only a control that
+   * refuses — `reject()` accepts `awaiting-approval` and nothing else.
+   */
+  it("puts Reject beside Send wherever there is an approval to withdraw", () => {
+    const html = render({ ...HELD, awaitingSha: SHA }, OUTGOING);
+
+    expect(html).toContain("Send attempt 3");
+    expect(html).toContain("Reject");
+    expect(html).toContain("Approve");
+    expect(html).toContain("Leave blocked");
+  });
+
+  /**
+   * **Amber appears once per screen** (layout notes), and the row of moves is
+   * one of the two places on this page that spends it — the other is the rule at
+   * the left. Approve wears it where there is a diff to merge, Send where there
+   * is not, and a row carrying both dilutes the one thing amber means.
+   */
+  it("spends the row's amber on one button", () => {
+    expect(moves(render(HELD, OUTGOING)).match(/btn pri/g)).toHaveLength(1);
+
+    const approving = moves(render({ ...HELD, awaitingSha: SHA }, OUTGOING));
+    expect(approving.match(/btn pri/g)).toHaveLength(1);
+    // Approve's, because that is the move a diff asks for.
+    expect(approving).toContain('class="btn pri">Approve');
+  });
+
+  it("keeps Back to the queue for the item whose prompt could not be composed", () => {
+    const html = render(HELD, { ...OUTGOING, problem: "lingtai is not a registered project" });
+
+    expect(html).toContain("Back to the queue");
+    expect(html).not.toContain("Send attempt");
+  });
+
+  it("offers no move at all on an item nobody is being asked about", () => {
+    const html = render({ ...HELD, state: "queued", onYou: false, question: null }, OUTGOING);
+
+    expect(html).not.toContain("Send attempt");
+    expect(html).not.toContain("Leave blocked");
+  });
+
+  /**
+   * #111 §3. The viewport is 1440 and the column was a single stack: DOM order
+   * is reading order is tab order, so the prompt is first in the markup and the
+   * CSS reorders nothing.
+   */
+  it("puts the prompt and the discussion in one pair, the prompt first", () => {
+    const html = render(HELD, OUTGOING);
+
+    expect(html).toContain('class="spair"');
+    expect(html.indexOf("will be sent")).toBeLessThan(html.indexOf("discussion"));
+    expect(html.indexOf('class="spair"')).toBeLessThan(html.indexOf('class="smoves"'));
   });
 });

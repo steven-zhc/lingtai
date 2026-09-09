@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { inWords } from "@lingtai/conductor/queue";
-import { loadTask, type RunView, type TicketView, type Totals } from "@/lib/task";
+import { loadTask, totalsFact, type RunView, type TicketView } from "@/lib/task";
 import { elapsed } from "@/lib/progress";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
@@ -73,17 +73,23 @@ function Label({ children, fact }: { children: ReactNode; fact?: string | null }
  * page written by whoever can file an issue on a managed repository, so how it
  * is rendered is a security question and is answered once, in `markdown.tsx`.
  */
-function Ticket({ ticket }: { ticket: TicketView }) {
+export function Ticket({ ticket }: { ticket: TicketView }) {
   return (
     <>
       <p className="tref">
         <span className="mono">#{ticket.ref}</span>
         {ticket.kind ? <span className="pill">{ticket.kind}</span> : null}
-        {ticket.labels.map((l) => (
-          <span key={l} className="pill">
-            {l}
-          </span>
-        ))}
+        {/* The kind *is* one of the labels — that is how `source.kinds` picks it
+            up — so listing every label beside it showed `bug  bug` on every
+            ticket in the repository (#111). The pill first, because it is the
+            one label the conductor acts on; the rest after, once each. */}
+        {ticket.labels
+          .filter((l) => l !== ticket.kind)
+          .map((l) => (
+            <span key={l} className="pill">
+              {l}
+            </span>
+          ))}
         {ticket.url ? (
           <a className="tlink" href={ticket.url} target="_blank" rel="noreferrer">
             on GitHub ↗
@@ -118,36 +124,6 @@ function outcomeClass(state: RunView["outcome"]["state"]): string {
   if (state === "failed") return "fail";
   if (state === "finished") return "pass";
   return "hold";
-}
-
-/**
- * The totals, as the Attempts label's one fact.
- *
- * Money only when there is money: `RunFinished.costUsd` is nullable, so a run
- * whose cost was never reported has not been shown to be free and `$0.00` would
- * say it had. A repair's spend is beside the work's and never inside it, the
- * way the board keeps it (#84).
- *
- * `2 attempts + 3 discussions · …`, as the design's example reads it — and the
- * discussions are counted for the reason 0033's consequences give: they come
- * out of the same budget, so hiding one of the two figures would misstate the
- * other. The clause is dropped when there have been none, because a permanent
- * `0 discussions` is furniture.
- */
-function totalsFact(totals: Totals): string | null {
-  if (totals.attempts === 0 && totals.discussions === 0) return null;
-  const held = totals.discussions;
-  return [
-    `${totals.attempts} attempt${totals.attempts === 1 ? "" : "s"}` +
-      (held > 0 ? ` + ${held} discussion${held === 1 ? "" : "s"}` : ""),
-    totals.turns > 0 ? `${totals.turns} turns` : null,
-    totals.durationMs > 0 ? elapsed(totals.durationMs) : null,
-    totals.costUsd > 0 ? `$${totals.costUsd.toFixed(2)}` : null,
-    totals.repairUsd > 0 ? `$${totals.repairUsd.toFixed(2)} repair` : null,
-    totals.discussionUsd > 0 ? `$${totals.discussionUsd.toFixed(2)} asking` : null,
-  ]
-    .filter((s): s is string => s !== null)
-    .join(" · ");
 }
 
 /**

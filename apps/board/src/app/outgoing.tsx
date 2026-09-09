@@ -38,7 +38,7 @@
  * and says the server's own sentence.
  */
 import { useState, useTransition } from "react";
-import { editPrompt } from "./actions.ts";
+import { editPrompt, sendAttempt } from "./actions.ts";
 import type { OutgoingView } from "@/lib/prompt";
 
 /** `+4 −0 lines`, or nothing at all when the edit changed no lines. */
@@ -48,7 +48,23 @@ function delta(view: OutgoingView): string | null {
   return `+${added} −${removed} lines against what Lingtai composed`;
 }
 
-export function Outgoing({ taskId, outgoing }: { taskId: string; outgoing: OutgoingView }) {
+export function Outgoing({
+  taskId,
+  outgoing,
+  sendable = false,
+}: {
+  taskId: string;
+  outgoing: OutgoingView;
+  /**
+   * Whether the decision row below is offering Send.
+   *
+   * When it is, the editor offers it too — on the same click that stages the
+   * sentence. Staging and sending as two clicks is a sentence typed into a box
+   * and then lost to the button that was meant to send it, which is the dead
+   * end `#111` is about one step further in.
+   */
+  sendable?: boolean;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -67,6 +83,23 @@ export function Outgoing({ taskId, outgoing }: { taskId: string; outgoing: Outgo
         setDraft(null);
         return;
       }
+      setRefusal(result.detail);
+    });
+  };
+
+  /** Stage the sentence and send the attempt, in that order. See `sendAttempt`. */
+  const send = (text: string) => {
+    setBusy(true);
+    setRefusal(null);
+    startTransition(async () => {
+      const result = await sendAttempt({ taskId, text, basedOn: outgoing.basedOn });
+      setBusy(false);
+      if (result.ok) {
+        setDraft(null);
+        return;
+      }
+      // Reverted, and the draft is still here: a refusal that lost what was
+      // typed would make clicking again mean typing again.
       setRefusal(result.detail);
     });
   };
@@ -150,8 +183,21 @@ export function Outgoing({ taskId, outgoing }: { taskId: string; outgoing: Outgo
             the ticket, where every later attempt reads it.
           </p>
           <div className="btnrow">
+            {/* Send is primary when there is something to send: the commonest
+                reason to open this box is that the next attempt needs one more
+                sentence, and staging it for a pass nobody has asked for is the
+                rarer of the two. */}
+            {sendable ? (
+              <button
+                className="btn pri"
+                disabled={busy || draft.trim() === ""}
+                onClick={() => send(draft)}
+              >
+                {busy ? "…" : `Send attempt ${outgoing.attempt}`}
+              </button>
+            ) : null}
             <button
-              className="btn pri"
+              className={sendable ? "btn" : "btn pri"}
               disabled={busy || draft.trim() === ""}
               onClick={() => run(draft)}
             >

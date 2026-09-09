@@ -51,6 +51,7 @@ import {
 import { loadProject } from "@lingtai/conductor/projects";
 import { githubClientFor } from "@lingtai/conductor/filter";
 import { issueUrl } from "./board.ts";
+import { elapsed } from "./progress.ts";
 import { type HistoryLine, toLine } from "./history.ts";
 import { outgoingFor, type OutgoingView } from "./prompt.ts";
 
@@ -243,6 +244,19 @@ export interface Totals {
   discussions: number;
   /** What asking cost. */
   discussionUsd: number;
+  /**
+   * What this ticket has cost, whole: the work, the repairs and the asking.
+   *
+   * **The number a person acts on**, and the one the label led without. Three
+   * figures and no sum left `$13.04` — the figure `#89` is remembered by, and
+   * the one that decides whether a fourth attempt is worth buying — as
+   * arithmetic every reader did in their head (#111).
+   *
+   * Summed here rather than in the label, so the split and the total come off
+   * one fold. A component that added its own would be the second copy of the
+   * arithmetic the layout notes refuse a summary band for.
+   */
+  totalUsd: number;
 }
 
 /**
@@ -302,7 +316,22 @@ export interface StandingView {
   onYou: boolean;
   /** Who is being waited on, in words: `waiting on you`, `an agent is working`, … */
   who: string;
-  /** The question, verbatim. Null when nothing was asked. */
+  /**
+   * The question, as its one deciding line. Null when nothing was asked.
+   *
+   * **Not verbatim, and that is the fix.** `WorkItemBlocked.question` is a
+   * sentence with a gate's tail appended to it — `pnpm typecheck` with fifteen
+   * workspace projects announcing themselves — and a `<p>` collapses its
+   * newlines, so the block opened with an entire build log flattened into prose.
+   * That is what `markdown.ts`'s third rule forbids: *a log rendered as
+   * markdown is not that log*, and rendered as a paragraph it is not either
+   * (#106, #111).
+   *
+   * So the first line that says anything, clipped, and the rest where the rest
+   * already is: inside the attempt `deciding` names, and untouched in the
+   * history row for the event itself. One deciding line plus a pointer is
+   * design §2 applied to the question as well as to the evidence.
+   */
   question: string | null;
   /** `judgement` or `acknowledgement`; null on every block written before #83. */
   needs: "judgement" | "acknowledgement" | null;
@@ -351,7 +380,7 @@ function oneLine(text: string | null): string | null {
 }
 
 /**
- * What refused, on the attempt that produced the state.
+ * What refused, on one attempt, or null if that attempt refused nothing.
  *
  * The last failed verdict rather than the first: a point that failed, was
  * repaired and failed again is one attempt with two refusals, and the one being
@@ -360,9 +389,7 @@ function oneLine(text: string | null): string | null {
  * (`claimed`, `released`, a `RunFailed` with no verdicts) is exactly the one a
  * gate-shaped summary could never name.
  */
-function decidingOf(run: RunView | null): Deciding | null {
-  if (run === null) return null;
-
+function refusalOn(run: RunView): Deciding | null {
   const refused = [...run.gates].reverse().find((g) => g.state === "failed");
   if (refused) {
     return {
@@ -375,6 +402,36 @@ function decidingOf(run: RunView | null): Deciding | null {
   const detail = oneLine(run.outcome.detail);
   if (detail === null) return null;
   return { attempt: run.attempt, source: run.outcome.state, line: detail };
+}
+
+/**
+ * The one deciding line, and the attempt that holds the whole of it.
+ *
+ * **The attempt that decided is not always the attempt that is named.** A
+ * repair is an ordinary run (0025) and it ends like one: `wi-lingtai-89`'s
+ * second attempt finished with exit 0 and no commits, so it has no failed
+ * verdict and no outcome detail, and the failure everybody is looking at —
+ * `proposed / build`, `error TS2741` — is attempt 1's. Pointing only at the
+ * named run left the block with nothing, which is how the whole flattened
+ * `WorkItemBlocked.question` came to be the only evidence on screen (#111).
+ *
+ * So: the named attempt first, then back through the earlier ones. That is the
+ * design's own example read literally — *from attempt 2 of 2* at the top and
+ * *in attempt 1 ↓* on the evidence — and it is still a pointer and never a
+ * copy, because the whole of it stays in the attempt it names (design §2).
+ */
+function decidingOf(runs: readonly RunView[], named: RunView | null): Deciding | null {
+  if (named !== null) {
+    const own = refusalOn(named);
+    if (own !== null) return own;
+  }
+
+  const before = named === null ? runs : runs.slice(0, runs.indexOf(named));
+  for (const run of [...before].reverse()) {
+    const refused = refusalOn(run);
+    if (refused !== null) return refused;
+  }
+  return null;
 }
 
 function whoWaits(life: WorkItemLifecycle): string {
@@ -425,7 +482,8 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     since: since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
-    question: blocked ? life.question : null,
+    // One line, and the same clip the evidence pointer gets. See `question`.
+    question: blocked ? oneLine(life.question) : null,
     needs: blocked ? life.needs : null,
     diagnosis: blocked ? life.diagnosis : null,
     attempt: run?.attempt ?? null,
@@ -436,7 +494,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     awaitingSha: blocked ? (run?.awaitingSha ?? null) : null,
     headSha: run?.headSha ?? null,
     failed: run?.gates.filter((g) => g.state === "failed").map((g) => g.gate) ?? [],
-    deciding: decidingOf(run),
+    deciding: decidingOf(runs, run),
   };
 }
 
@@ -860,15 +918,65 @@ export function totalsOf(
   runs: readonly RunView[],
   discussions: readonly DiscussionView[] = [],
 ): Totals {
+  const costUsd = runs.reduce((n, r) => n + (r.repair ? 0 : (r.costUsd ?? 0)), 0);
+  const repairUsd = runs.reduce((n, r) => n + (r.repair ? (r.costUsd ?? 0) : 0), 0);
+  const discussionUsd = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0);
   return {
     attempts: runs.length,
     turns: runs.reduce((n, r) => n + (r.turns ?? 0), 0),
     durationMs: runs.reduce((n, r) => n + (r.durationMs ?? 0), 0),
-    costUsd: runs.reduce((n, r) => n + (r.repair ? 0 : (r.costUsd ?? 0)), 0),
-    repairUsd: runs.reduce((n, r) => n + (r.repair ? (r.costUsd ?? 0) : 0), 0),
+    costUsd,
+    repairUsd,
     discussions: discussions.length,
-    discussionUsd: discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0),
+    discussionUsd,
+    totalUsd: costUsd + repairUsd + discussionUsd,
   };
+}
+
+/**
+ * The totals, as the Attempts label's one fact.
+ *
+ * **The total leads.** Two costs and no sum is arithmetic done by every reader:
+ * `$13.04` is the number somebody acts on — it is what `#89` is remembered by,
+ * and what decides whether a fourth attempt is worth buying — and the split is
+ * detail (#111). So the sum first, then what bought it, then how it divides.
+ *
+ * It still divides, for the reason the board keeps it divided (#84, 0033 §4): a
+ * repair is default-on and spends an agent without being asked again, and a
+ * discussion has a meter instead of a limit. Those two figures have to be
+ * *stated* and not merely derivable — but they are the detail, not the headline,
+ * and the per-attempt figure stays on each attempt's own row.
+ *
+ * Money only when there is money: `RunFinished.costUsd` is nullable, so a run
+ * whose cost was never reported has not been shown to be free and `$0.00` would
+ * say it had. The split is dropped entirely when there is only one kind of
+ * money, because `$7.81 · $7.81 work` is one fact twice.
+ *
+ * `2 attempts + 3 discussions · …`, as the design's example reads it — and the
+ * discussions are counted for the reason 0033's consequences give: they come
+ * out of the same budget, so hiding one of the two figures would misstate the
+ * other. The clause is dropped when there have been none, because a permanent
+ * `0 discussions` is furniture.
+ */
+export function totalsFact(totals: Totals): string | null {
+  if (totals.attempts === 0 && totals.discussions === 0) return null;
+  const held = totals.discussions;
+  const split = [
+    totals.costUsd > 0 ? `$${totals.costUsd.toFixed(2)} work` : null,
+    totals.repairUsd > 0 ? `$${totals.repairUsd.toFixed(2)} repair` : null,
+    totals.discussionUsd > 0 ? `$${totals.discussionUsd.toFixed(2)} asking` : null,
+  ].filter((s): s is string => s !== null);
+
+  return [
+    totals.totalUsd > 0 ? `$${totals.totalUsd.toFixed(2)}` : null,
+    `${totals.attempts} attempt${totals.attempts === 1 ? "" : "s"}` +
+      (held > 0 ? ` + ${held} discussion${held === 1 ? "" : "s"}` : ""),
+    totals.turns > 0 ? `${totals.turns} turns` : null,
+    totals.durationMs > 0 ? elapsed(totals.durationMs) : null,
+    ...(split.length > 1 ? split : []),
+  ]
+    .filter((s): s is string => s !== null)
+    .join(" · ");
 }
 
 /**

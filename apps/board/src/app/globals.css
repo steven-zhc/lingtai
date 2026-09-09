@@ -412,6 +412,11 @@ body {
 /* Not styled as an error: the work landed, and this says so. */
 .decided { margin: 0; font-size: 11px; color: var(--pass); font-family: var(--mono); }
 
+/* *Leave blocked*, after the click. Deliberately not `.decided`: green there
+   reports an append, and this one wrote nothing — the item is exactly as it
+   was, and the sentence says so. */
+.undecided { margin: 0; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
 /* --- evidence -------------------------------------------------------------
    Collapsed by default. A card three screens tall is its own kind of
    unreadable, and the point is that the answer is *available* here, not that
@@ -483,12 +488,22 @@ details[open] > summary::before { content: "▾"; }
   flex-direction: column;
   gap: 2rem;
   padding: 1.5rem;
-  /* A measure, not the full width. The history is a list of short lines and
-     stretching it across a wide screen makes it unreadable in the one place
-     somebody is reading closely. */
-  max-width: 62rem;
+  /* Wide enough for the decision column's two boxes to sit side by side, and no
+     wider. Everything else keeps the measure below. */
+  max-width: 82rem;
   width: 100%;
 }
+
+/* A measure, not the full width. The history is a list of short lines and
+   stretching it across a wide screen makes it unreadable in the one place
+   somebody is reading closely.
+
+   **The prose measure stays for paragraphs; documents may break it** (layout
+   notes). So it is on the sections that are prose and lists, and the decision
+   column — which is two boxes and a row of buttons, not a paragraph — is the
+   one thing on this page that uses the width it is given (#111). */
+.detail-body > section { max-width: 62rem; width: 100%; }
+.detail-body > section.standing { max-width: none; }
 
 /* The section's one fact sits at the right of the label's own rule, which is
    why there is no separate summary band: a band that totals what is under it
@@ -577,9 +592,14 @@ details[open] > summary::before { content: "▾"; }
   padding-top: 0.6rem;
   border-top: 1px solid var(--rule);
 }
-/* Verbatim, and ink: it is the sentence somebody has to answer. Not amber —
-   the rule at the left is already saying who is being waited on. */
-.squestion { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--ink); }
+/* One line, and ink: it is the sentence somebody has to answer. Not amber — the
+   rule at the left is already saying who is being waited on.
+
+   The measure is here and not on the block, because this is the one paragraph
+   in a column that is otherwise boxes and buttons. The clip that keeps a build
+   log out of it is `standingOf`'s, not this rule's: a log shortened by CSS is
+   still a log rendered as prose. */
+.squestion { margin: 0; max-width: 62rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink); }
 
 /* A pointer, not a copy. The teal is structural — it is the same mark the
    attempt it names carries, and it is deliberately not a verdict colour: this
@@ -602,6 +622,37 @@ details[open] > summary::before { content: "▾"; }
 }
 .sptr { margin-left: auto; font-family: var(--mono); color: var(--accent-ink); text-decoration: none; }
 .sptr:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* --- the two boxes, and the moves under them ------------------------------
+   Side by side above ~64rem, stacked below it. The outgoing prompt is first in
+   the DOM and first on the line, so reading order, use order and tab order are
+   one order — nothing here is reordered by CSS (#111).
+
+   `minmax(0, 1fr)` rather than `1fr`: both boxes hold a `pre` of a composed
+   prompt, and a grid track whose minimum is its content would be as wide as the
+   longest line in it and push the other column off the page. */
+.spair { display: grid; gap: 0.5rem; }
+@media (min-width: 64rem) {
+  .spair {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+  /* A landed item has no outgoing prompt, and the discussion is then the whole
+     of the pair rather than half of it. */
+  .spair > :only-child { grid-column: 1 / -1; }
+}
+
+/* The moves, under both boxes. One row whatever the item has: Approve, Reject
+   and Waive where there is an approval open, Send where there is a prompt to
+   send, and each control brings its own `.decide` — so they read as one row
+   rather than as three stacked decisions. */
+.smoves {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.2rem;
+}
 
 /* --- what will be sent ----------------------------------------------------
    The other of the two objects the decision column allows a frame around, and

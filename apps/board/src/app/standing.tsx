@@ -6,7 +6,7 @@ import { inWords } from "@lingtai/conductor/queue";
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import type { DiscussionView, StandingView } from "@/lib/task";
 import type { OutgoingView } from "@/lib/prompt";
-import { Decide, Requeue } from "./decide.tsx";
+import { Decide, Requeue, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
 
@@ -44,7 +44,8 @@ import { Outgoing } from "./outgoing.tsx";
  * is the system's sentence about what it intends; the prompt is what runs, so
  * it is shown here — before the buttons that send it, and editable. That is
  * what turns approval from *yes / no* into *yes, but*, which is the answer a
- * person usually has and until `#104` could not give.
+ * person usually has and until `#104` could not give — and until `#111` could
+ * not act on, because the box was editable and nothing sent it.
  *
  * **The discussion is inside this block**, and it is the second of the two
  * objects the layout notes allow a frame in it — the outgoing prompt is the
@@ -52,6 +53,11 @@ import { Outgoing } from "./outgoing.tsx";
  * the right place for the reason the block exists: this is where somebody
  * decides, and *"why is this stuck"* is a question asked at the moment of
  * deciding rather than at the bottom of the page (0033).
+ *
+ * **Those two sit side by side above ~64rem**, the prompt first, and the moves
+ * under both. One stack left a third of a 1440 viewport empty and put the
+ * discussion below the fold of the thing it is a conversation about; DOM order
+ * is reading order is tab order, so nothing is reordered by CSS.
  *
  * **No frame.** One rule states the block's extent, and it is amber only when a
  * person is the thing being waited on, because that is the only thing amber
@@ -76,6 +82,11 @@ export function Standing({
 }) {
   const held = describeHold(standing);
   const acting = project !== null && issue !== null;
+  // There is a document to send exactly when there is one to show. `problem` is
+  // the case #76 is about — an unregistered project, a template that is not
+  // there — and a Send on a prompt nobody could compose would send whatever the
+  // conductor composes later, unseen, which is the opposite of this column.
+  const sendable = outgoing !== null && outgoing.problem === null ? outgoing.attempt : null;
 
   return (
     <section className={standing.onYou ? "standing onyou" : "standing"}>
@@ -135,38 +146,84 @@ export function Standing({
         </div>
       ) : null}
 
-      {/* The document that will actually run, above the buttons that send it.
-          Only where there is a next attempt to be handed one — a run in flight
-          has already been given its prompt (`loadTask`). */}
-      {outgoing !== null ? <Outgoing taskId={taskId} outgoing={outgoing} /> : null}
+      {/* Side by side above ~64rem, and stacked below it. The outgoing prompt
+          first in the DOM and first on the line, so reading order, use order
+          and tab order are one order — the column was a single stack wasting a
+          third of a 1440 viewport (#111). The two boxes are the two objects the
+          layout notes allow a frame around, which is why these two are the pair
+          and nothing else joins them. */}
+      <div className="spair">
+        {/* The document that will actually run, above the buttons that send it.
+            Only where there is a next attempt to be handed one — a run in
+            flight has already been given its prompt (`loadTask`). */}
+        {outgoing !== null ? (
+          <Outgoing
+            taskId={taskId}
+            outgoing={outgoing}
+            // The editor offers Send only where the row below it does. A
+            // sentence typed and not staged is otherwise lost to the click that
+            // was meant to send it.
+            sendable={acting && standing.state === "blocked" && sendable !== null}
+          />
+        ) : null}
 
-      {/* Offered whatever the state, deliberately. The commonest question is
-          about something that has stopped, but "what did attempt 1 actually
-          change" is asked of a landed item too, and a box that appeared only on
-          a blocked card would be one more thing to find out about. */}
-      <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} />
+        {/* Offered whatever the state, deliberately. The commonest question is
+            about something that has stopped, but "what did attempt 1 actually
+            change" is asked of a landed item too, and a box that appeared only
+            on a blocked card would be one more thing to find out about. */}
+        <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} />
+      </div>
 
-      {/* The move that will actually run, and only where it can run. The card's
-          own reading (#84, #92): a question is open exactly when there is a sha
-          it is about, and an item whose approved merge hit a conflict has none
-          — Approve would refuse every click, so it gets the move it has. */}
+      {/* The moves, under both boxes rather than inside either: the design's own
+          row, and the end of the one sentence this column is.
+
+          Every move that can work, and no move that cannot. The card's reading
+          (#84, #92): a question is open exactly when there is a sha it is about,
+          so Approve, Reject and Waive are offered there and nowhere — an item
+          whose approved merge hit a conflict has none of them. Send is offered
+          wherever there is a composed prompt to send, which is the case the
+          column exists for and the one that had no button at all (#111). */}
       {acting && standing.state === "blocked" ? (
-        standing.awaitingSha !== null ? (
-          <Decide
-            project={project}
-            issue={issue}
-            onSha={standing.awaitingSha}
-            headSha={standing.headSha ?? ""}
-            gates={standing.failed}
-            recommended={standing.diagnosis?.recommendation?.action ?? null}
-          />
-        ) : (
-          <Requeue
-            project={project}
-            issue={issue}
-            recommended={standing.diagnosis?.recommendation?.action ?? null}
-          />
-        )
+        <div className="smoves">
+          {standing.awaitingSha !== null ? (
+            <Decide
+              project={project}
+              issue={issue}
+              onSha={standing.awaitingSha}
+              headSha={standing.headSha ?? ""}
+              gates={standing.failed}
+              recommended={standing.diagnosis?.recommendation?.action ?? null}
+            />
+          ) : null}
+
+          {sendable !== null ? (
+            <Send
+              taskId={taskId}
+              attempt={sendable}
+              // Amber once per screen. Send carries it where there is no
+              // Approve beside it — sending is then the only move that moves
+              // anything, whatever a diagnosis written before #83 recommends —
+              // and otherwise only when the recommendation points here.
+              primary={
+                standing.awaitingSha === null ||
+                standing.diagnosis?.recommendation?.action === "requeue"
+              }
+            />
+          ) : null}
+
+          {/* The fallback, for the one case that has neither: no approval open
+              and no prompt anybody could compose. Putting it back in the queue
+              is then the only move there is, and it keeps asking why — the
+              reason Send does not is that Send's reason is the document, and
+              this has none. */}
+          {standing.awaitingSha === null && sendable === null ? (
+            <Requeue
+              project={project}
+              issue={issue}
+              recommended={standing.diagnosis?.recommendation?.action ?? null}
+            />
+          ) : null}
+        </div>
       ) : null}
     </section>
   );

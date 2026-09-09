@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import { useState, useTransition } from "react";
-import { approveCard, rejectCard, requeueCard, waiveGate } from "./actions.ts";
+import { approveCard, rejectCard, requeueCard, sendAttempt, waiveGate } from "./actions.ts";
 import type { ActionResult } from "@/lib/diff";
 
 type Pending = "approve" | "reject" | "waive" | null;
@@ -247,6 +247,98 @@ export function Requeue({
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel
+        </button>
+      </div>
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The move the decision column ends in: send the next attempt.
+ *
+ * **The whole of design §5, and it was missing.** `WILL BE SENT` rendered the
+ * composed prompt and offered Edit, and nothing sent it — so a person could
+ * compose exactly the right instruction and then had only *Back to the queue*,
+ * a button named for a queue rather than for the document it hands over. An
+ * editable control with no commit action is a dead end (#111).
+ *
+ * Named for what it sends, and numbered: `Send attempt 3` agrees with the box
+ * above it, which is stamped `attempt 3 only` because that is how long the edit
+ * lasts (0032 §5). The click appends `PromptEdited` — when the editor handed a
+ * sentence with it — and then `WorkItemUnblocked`; `sendAttempt` keeps that
+ * order, and why.
+ *
+ * **Beside it, the two moves that are not sending.** *Reject* is `Decide`'s and
+ * stays there: it withdraws an approval, so it is offered exactly where there
+ * is one to withdraw, which is the rule #84 cost four days to learn — a card
+ * must never offer only a control that refuses. *Leave blocked* is here, and it
+ * appends nothing on purpose: *I read it and I am not acting* is an answer, and
+ * a row of two buttons that does not contain it is a row that makes walking
+ * away the third option.
+ */
+export function Send({
+  taskId,
+  attempt,
+  primary,
+}: {
+  taskId: string;
+  /** 1-based, as the outgoing box numbers it. The button says this number. */
+  attempt: number;
+  /**
+   * Whether this is the amber one.
+   *
+   * Decided by the caller and not by a `Recommended` here, because it takes two
+   * facts and this component has one of them: the recommendation, and whether
+   * `Decide` is on the row beside it with an Approve already wearing the amber.
+   * **Amber appears once per screen** (layout notes), and a row with two primary
+   * buttons dilutes it exactly as a second decorative use would.
+   */
+  primary: boolean;
+}) {
+  const [pending, setPending] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [left, setLeft] = useState(false);
+  const [, startTransition] = useTransition();
+
+  if (done) return <p className="decided">{done}</p>;
+  // Honest about having written nothing. The class is not `decided`, because
+  // green here would claim an append that did not happen.
+  if (left) {
+    return (
+      <p className="undecided">
+        left blocked — nothing was appended, and it is still waiting on you
+      </p>
+    );
+  }
+
+  return (
+    <div className="decide">
+      <div className="btnrow">
+        <button
+          className={primary ? "btn pri" : "btn"}
+          disabled={pending}
+          onClick={() => {
+            setPending(true);
+            setRefusal(null);
+            startTransition(async () => {
+              const result = await sendAttempt({ taskId });
+              setPending(false);
+              if (result.ok) {
+                setDone(result.detail);
+                return;
+              }
+              // Reverted, with the server's own sentence: a result shown that
+              // did not happen is worse than no result (`decide.tsx`'s trap).
+              setRefusal(result.detail);
+            });
+          }}
+        >
+          {pending ? "sending…" : `Send attempt ${attempt}`}
+        </button>
+        <button className="btn" disabled={pending} onClick={() => setLeft(true)}>
+          Leave blocked
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}

@@ -387,6 +387,78 @@ export async function editPrompt(input: {
 }
 
 /**
+ * Send the next attempt: commit the prompt, and let it be claimed.
+ *
+ * **The move `WILL BE SENT` had no button for.** `#104` put the composed prompt
+ * on the page and made it editable, and the only controls beside it decided a
+ * *diff* — so a person could compose exactly the right instruction and then had
+ * `Back to the queue`, which says nothing about the document it sends. An
+ * editable control with no commit action is not half a feature; it is a dead
+ * end (#111), and `0032` §5's whole point is turning approval from *yes / no*
+ * into *yes, but*.
+ *
+ * **Two appends, one click, in that order.** `PromptEdited` first — when a
+ * sentence came with the click — then `WorkItemUnblocked`, which is what makes
+ * the item claimable again. The order is the safe one: an edit committed
+ * against an item that is still blocked is a sentence waiting for a pass that
+ * may never come, and an unblock with the edit lost is the attempt running
+ * without the thing it was sent for. The first failure is recoverable by
+ * clicking again; the second spends an agent.
+ *
+ * No `onSha`. Nothing is being agreed to — the same reading `requeue` makes, one
+ * door along: a stale sha is the *reason* to send another attempt, not a reason
+ * to refuse.
+ */
+export async function sendAttempt(input: {
+  taskId: string;
+  /**
+   * A sentence to commit before sending, or null to send what is standing.
+   *
+   * Null from the decision row, which sends the prompt as the box shows it —
+   * `pendingPrompt` included, if an earlier *Add to attempt N* put one there.
+   * A string from the editor's own Send, so text typed and not staged is not
+   * silently dropped by the click that was meant to send it.
+   */
+  text?: string | null;
+  /** The composed version the box was showing. See `editPrompt`. */
+  basedOn?: string | null;
+}): Promise<ActionResult> {
+  try {
+    const parsed = parseWorkItemStream(input.taskId);
+    if (!parsed) return { ok: false, detail: "this id is not a work item" };
+
+    const by = actor();
+    if (typeof input.text === "string" && input.text.trim() !== "") {
+      const edited = await editPrompt({
+        taskId: input.taskId,
+        text: input.text,
+        basedOn: input.basedOn ?? "",
+      });
+      // Refused: nothing is unblocked, and the sentence is still in the box.
+      if (!edited.ok) return edited;
+    }
+
+    const result = await requeue({
+      project: parsed.project,
+      issue: Number(parsed.issue),
+      by,
+      // The system's own sentence rather than a field to fill in. `requeue`
+      // wants a note because a person overruling a *block* is not anonymous;
+      // here the reason is the document on screen, which is on the log already
+      // — asking again would be asking somebody to restate their prompt in
+      // prose.
+      note: `sent as the next attempt by ${by}`,
+    });
+
+    revalidatePath(`/task/${input.taskId}`);
+    revalidatePath("/");
+    return { ok: result.ok, detail: result.ok ? "sent — the next pass claims it" : result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
  * The diff, read from Lingtai's own mirror.
  *
  * On demand rather than in the projection: a diff can be megabytes, projections
