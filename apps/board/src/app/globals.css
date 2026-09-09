@@ -750,6 +750,44 @@ details[open] > summary::before { content: "▾"; }
 }
 .outnote { margin: 0; font-size: 0.68rem; line-height: 1.5; color: var(--muted); }
 
+/* --- what will happen -----------------------------------------------------
+   The queued item's other box, beside the document that will be sent. Framed
+   like `.outgoing` and neutral like it: the amber on this page is the rule at
+   the left and the one primary button, and a third use would dilute both.
+
+   It is the only box in this column you do not act in, and it is here anyway —
+   the question a queued page has is *what happens if I press the button*, and
+   the answer belongs beside the button rather than in a recipe on GitHub. */
+.plan {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--surface-2);
+  align-content: start;
+}
+.planhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.7rem;
+}
+/* Tighter than an attempt's five, which sit on a wider column: this is half a
+   row and the same five points have to fit beside a prompt. */
+.plan .points { gap: 0.25rem; }
+.plan .point { padding: 0.3rem 0.55rem; grid-template-columns: 5.5rem 1fr; font-size: 0.72rem; }
+.plan > .empty { margin: 0; }
+
+/* What pressing the button costs when something is holding the item. Muted and
+   under the button: what the click does is one fact and what is stopping the
+   item is another, and a label that tried to be both would be a button whose
+   name changes while you read it. */
+.jumps { margin: 0; font-size: 11px; font-family: var(--mono); color: var(--muted); }
+
 /* --- the discussion -------------------------------------------------------
    One of the two objects the decision column allows a frame around — a place
    you do something, rather than a thing you read (layout notes).

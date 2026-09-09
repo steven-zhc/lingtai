@@ -50,10 +50,15 @@ import {
 } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { githubClientFor } from "@lingtai/conductor/filter";
+// For the one distinction a message cannot carry: `status === 404` is GitHub
+// saying the issue is not there, and every other failure is GitHub not saying
+// anything. See `TicketView.found`.
+import { GitHubError } from "@lingtai/github";
 import { issueUrl } from "./board.ts";
 import { elapsed } from "./progress.ts";
 import { type HistoryLine, toLine } from "./history.ts";
 import { outgoingFor, type OutgoingView } from "./prompt.ts";
+import { queuedFor, type QueuedView } from "./queued.ts";
 
 export interface Finding {
   file: string;
@@ -117,6 +122,24 @@ export interface TicketView {
   /** From GitHub, or built from the owner the project stream recorded. */
   url: string | null;
   body: string | null;
+  /**
+   * Whether this issue exists: **true**, **false**, or **null for "I could not
+   * ask"**.
+   *
+   * Three values because two of them were being flattened into one 404 (#113).
+   * A ticket Lingtai has never touched has no stream, so `loadTask` found
+   * nothing and the route called `notFound()` — and *it does not exist* and *I
+   * have not touched it* are different answers, given to every card in the one
+   * column the board leads with.
+   *
+   * `false` is a definite absence: GitHub answered 404, or the project is not
+   * one Lingtai has been told about, in which case it cannot have this work
+   * item. `null` is a rate limit, a revoked installation, an App that cannot
+   * reach the repository — and it must never become a 404, because a page that
+   * says *this does not exist* when it means *I cannot tell* is exactly the
+   * flattening this field exists to end.
+   */
+  found: boolean | null;
   /**
    * Why the body and the labels are not here, when they are not.
    *
@@ -304,8 +327,15 @@ export interface StandingView {
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
    * restart the clock on how long you have been the bottleneck.
+   *
+   * **Null when the log has never touched this item**, which is every ticket
+   * GitHub is offering and nothing has run (#113). There is no timestamp for
+   * one — neither the log nor the issue list supplies it — and this used to
+   * fall back to `new Date()`, which would put *queued now* on a ticket that
+   * has sat open for a week. The card refuses the render clock for exactly
+   * this reason (`BoardCard.updatedAt`) and so does this.
    */
-  since: string;
+  since: string | null;
   /**
    * Whether a person is the thing being waited on.
    *
@@ -460,7 +490,7 @@ function whoWaits(life: WorkItemLifecycle): string {
  */
 export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): StandingView {
   let item = emptyWorkItem;
-  let since = own[0]?.at ?? new Date();
+  let since = own[0]?.at ?? null;
   for (const e of own) {
     item = applyWorkItem(item, e);
     if (LIFECYCLE_MOVES.has(e.type)) since = e.at;
@@ -479,7 +509,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
 
   return {
     state: life.status === "claimed" ? "running" : life.status === "backlog" ? "queued" : life.status,
-    since: since.toISOString(),
+    since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
     // One line, and the same clip the evidence pointer gets. See `question`.
@@ -545,6 +575,15 @@ export interface TaskDetail {
    * and why it is composed by the conductor's own function rather than here.
    */
   outgoing: OutgoingView | null;
+  /**
+   * Where it is in line and what taking it would run — and null in every other
+   * state.
+   *
+   * The one thing on this page that is not a fold, for the reason the board's
+   * Queued column is not one: an issue nobody has run has no stream, so being
+   * queued is a fact about GitHub (0012). See `queued.ts`.
+   */
+  queued: QueuedView | null;
   totals: Totals;
   /**
    * Everything, in order, for the question a summary did not anticipate — and
@@ -1045,7 +1084,17 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   const state = await loadProject(project).catch(() => null);
   const base = { project, ref: issue, title, kind, labels };
   if (!state) {
-    return { ...base, url: null, body: null, problem: `${project} is not a registered project` };
+    // A definite absence rather than an unanswered question. Lingtai's own
+    // register is the authority on which projects it has, so an id naming one
+    // it has never been told about cannot be an issue it has not touched — it
+    // is an id nothing knows about, and the route is right to say so.
+    return {
+      ...base,
+      found: false,
+      url: null,
+      body: null,
+      problem: `${project} is not a registered project`,
+    };
   }
 
   // Buildable without GitHub, and worth building: a link to the issue is the
@@ -1057,6 +1106,7 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     const live = await client.getIssue(Number(issue));
     return {
       ...base,
+      found: true,
       title: live.title,
       // Names only. The colours GitHub sends with them are the board's, for the
       // dot on a card (#85); this page lists every label a ticket carries, and
@@ -1068,13 +1118,62 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
       problem: null,
     };
   } catch (err) {
-    return { ...base, url, body: null, problem: (err as Error).message };
+    // **The one question this catch has to answer twice.** A 404 from GitHub is
+    // an answer — there is no such issue — and everything else is the absence of
+    // one. Collapsing the two is what made `wi-lingtai-99999` and a repository
+    // behind a rate limit render identically, and only the first of them is a
+    // page that should not exist (#113).
+    const missing = err instanceof GitHubError && err.status === 404;
+    return { ...base, found: missing ? false : null, url, body: null, problem: (err as Error).message };
   }
 }
 
+/**
+ * Whether there is a page here at all — **the one thing a 404 may rest on.**
+ *
+ * Its own function because it is the whole of #113's lead requirement and it
+ * used to be `own.length === 0`, which is a claim about the log and was being
+ * read as a claim about the world. Two facts were flattened into one 404:
+ * `wi-lingtai-112`, which GitHub has and Lingtai has not touched, and
+ * `wi-lingtai-99999`, which nothing knows about. Only the second is a page that
+ * should not exist.
+ *
+ * So: an item the log has touched is a page whatever GitHub says today — the
+ * log is the authority on what Lingtai did. An item it has not is a page unless
+ * something *answered* that there is no such issue. `found === null` is not
+ * that answer; it is the absence of one, and it renders a page that says so.
+ */
+export function exists(own: readonly Envelope[], ticket: TicketView | null): boolean {
+  if (own.length > 0) return true;
+  // `null` is an id that is not `wi-<project>-<n>` — there is no issue behind
+  // it to have an opinion about, so nothing could ever have offered it.
+  return ticket !== null && ticket.found !== false;
+}
+
+/**
+ * One task, whole — **or null, which means only that no such ticket exists.**
+ *
+ * That `null` used to mean *the log has nothing on this stream*, and the route
+ * turns it into a 404. Every card in the Queued column is a ticket the log has
+ * nothing on, by definition: `queued` is the one state no event carries (0012),
+ * so a ticket that has never run has no stream and the one column the board
+ * leads with was the one column you could not open (#113).
+ *
+ * So the emptiness of the stream decides nothing on its own, and the question
+ * *does this ticket exist* is put where the Queued column already puts it — to
+ * GitHub, through `loadTicket`. Three answers, and the middle one is the fix:
+ *
+ * | `ticket.found` | means | this returns |
+ * |---|---|---|
+ * | `false` | GitHub has no such issue, or Lingtai has no such project | `null` — a 404, and it is right |
+ * | `true` | GitHub is offering it and nothing has run it | a page saying it has not started |
+ * | `null` | it could not be asked — a rate limit, a revoked App | a page saying **that**, never a 404 |
+ *
+ * A `ticket` of `null` — an id that is not `wi-<project>-<n>` at all — is the
+ * first row: there is no issue behind it to have an opinion about.
+ */
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await eventStore.read(taskId);
-  if (own.length === 0) return null;
 
   // Every claim, and not the last one. A task can be claimed several times —
   // `wi-lingtai-87` three, `wi-lingtai-89` twice — and each claim opens a stream
@@ -1095,22 +1194,36 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
   ]);
 
+  // **The only thing that decides a 404**, and it decides it after GitHub has
+  // been asked rather than before. See `exists`.
+  if (!exists(own, ticket)) return null;
+
   const runs = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []));
   const attempts = new Map(runs.map((r) => [r.runId, r.attempt]));
 
-  const chats = chatIdsFor(reduceControl(control).discussions, own, taskId);
+  const conductor = reduceControl(control);
+  const chats = chatIdsFor(conductor.discussions, own, taskId);
   const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))));
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held));
 
   const standing = standingOf(own, runs);
-  // Only where a next attempt is possible. A run in flight has already been
-  // handed its prompt and a landed item will never be handed another, so the
-  // file read and the recipe fetch are spent on the two states that can still
-  // take one — the person pressing Send, and the loop after a backoff (0032 §5).
-  const outgoing =
+  // Together, because neither is an argument to the other: one is a file read
+  // and a recipe fetch, the other a recipe fetch and a question put to GitHub,
+  // and a page that waited for the sum would pay for both round trips end to
+  // end — #112's complaint, one page along.
+  //
+  // Each is asked only where it says anything. `outgoing` where a next attempt
+  // is possible: a run in flight has been handed its prompt already and a
+  // landed item will never be handed another (0032 §5). `queued` where the item
+  // is queued, which is the one state that is not in the log at all.
+  const [outgoing, queued] = await Promise.all([
     standing.state === "blocked" || standing.state === "queued"
-      ? await outgoingFor({ own, streams, ticket })
-      : null;
+      ? outgoingFor({ own, streams, ticket })
+      : null,
+    standing.state === "queued" && ticket !== null
+      ? queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused })
+      : null,
+  ]);
 
   return {
     taskId,
@@ -1119,6 +1232,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     runs,
     discussions,
     outgoing,
+    queued,
     totals: totalsOf(runs, discussions),
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is

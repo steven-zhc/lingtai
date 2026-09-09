@@ -21,6 +21,7 @@ const TICKET: TicketView = {
   kind: "bug",
   labels: ["bug", "lingtai:waiting"],
   url: "https://github.com/steven-zhc/lingtai/issues/89",
+  found: true,
   body: null,
   problem: null,
 };

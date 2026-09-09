@@ -29,11 +29,11 @@
 import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
 import { editHash } from "@lingtai/conductor/prompt";
-import { CONTROL_STREAM, parsePayload, parseWorkItemStream } from "@lingtai/domain";
+import { CONTROL_STREAM, parsePayload, parseWorkItemStream, workItemStream } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
 import { loadProject } from "@lingtai/conductor/projects";
-import { resumeConductor } from "@lingtai/daemon/control";
+import { requestRun, resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
 import { git } from "@lingtai/repo";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -453,6 +453,39 @@ export async function sendAttempt(input: {
     revalidatePath(`/task/${input.taskId}`);
     revalidatePath("/");
     return { ok: result.ok, detail: result.ok ? "sent — the next pass claims it" : result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * Take this ticket next — what `lingtai now` does, from the page.
+ *
+ * An append to `ctl-conductor` and nothing else, exactly like `pause` and
+ * `ask`: **the UI controls, the daemon holds** (0013). The board does not start
+ * a run, so a click made while the daemon is down is waiting when it comes back
+ * rather than failing here.
+ *
+ * **It jumps the backoff, and that is the whole of the move**
+ * ([0028](../../../../doc/decisions/0028-the-backoff-is-the-recipes.md) §3). The
+ * guard exists to stop *blind* retries — the same ticket at the top of the
+ * queue, failing the same way, at agent prices — and a person naming an issue is
+ * not blind. `conduct.ts` matches a request with `backoffMs: 0` for exactly that
+ * reason; every other subtraction still applies, so a request for something
+ * already claimed or landed matches nothing and quietly expires.
+ *
+ * No `onSha`, and no note. Nothing is being agreed to and nothing is being
+ * overruled: this asks for the item at the front of the queue to be this one.
+ */
+export async function runNow(input: { project: string; issue: string }): Promise<ActionResult> {
+  try {
+    const by = actor();
+    await requestRun(input.project, input.issue, by);
+    // The id said once, by the function that owns its shape — a second copy of
+    // `wi-<project>-<n>` here is a revalidation that quietly stops matching.
+    revalidatePath(`/task/${workItemStream(input.project, input.issue)}`);
+    revalidatePath("/");
+    return { ok: true, detail: `asked for by ${by} — the next pass takes it` };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }

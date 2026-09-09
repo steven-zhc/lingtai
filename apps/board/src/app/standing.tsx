@@ -6,9 +6,11 @@ import { inWords } from "@lingtai/conductor/queue";
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import type { DiscussionView, StandingView } from "@/lib/task";
 import type { OutgoingView } from "@/lib/prompt";
-import { Decide, Requeue, Send } from "./decide.tsx";
+import { holding, place, type QueuedView } from "@/lib/queued";
+import { Decide, Requeue, RunNow, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
+import { Plan } from "./plan.tsx";
 
 /**
  * Why this task is not moving, above everything else.
@@ -62,6 +64,13 @@ import { Outgoing } from "./outgoing.tsx";
  * **No frame.** One rule states the block's extent, and it is amber only when a
  * person is the thing being waited on, because that is the only thing amber
  * means in this palette (layout notes). Every divider inside is neutral.
+ *
+ * **A queued item gets the same block, and only the state differs** (#113).
+ * Where a block has an age this has a place in line; where it has a question
+ * this has what is stopping it; where it ends in Send it ends in Run it now.
+ * The one thing it does not have is a `since` — nothing in the log has ever
+ * moved a ticket that has never run — and it says *never run* instead of
+ * stamping the render clock on a ticket that has sat open for a week.
  */
 export function Standing({
   standing,
@@ -70,6 +79,8 @@ export function Standing({
   taskId,
   discussions,
   outgoing,
+  queued,
+  unknown,
 }: {
   standing: StandingView;
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
@@ -79,9 +90,25 @@ export function Standing({
   discussions: DiscussionView[];
   /** What the next attempt will be handed. Null when there will not be one. */
   outgoing: OutgoingView | null;
+  /** Where it is in line and what taking it runs. Null in every other state. */
+  queued: QueuedView | null;
+  /**
+   * Why Lingtai cannot say whether this ticket exists at all, when it cannot.
+   *
+   * The half of #113 that is not a page: a GitHub that will not answer about an
+   * item the log has never touched is *"I cannot tell"*, and it used to be a
+   * 404 — which says *"it does not exist"*, which is a different sentence and
+   * is not one Lingtai is in a position to say.
+   */
+  unknown?: string | null;
 }) {
   const held = describeHold(standing);
   const acting = project !== null && issue !== null;
+  // What is stopping it and where it is in line — two facts, and the second is
+  // not an annotation on the first. `holding` is null for the item that is
+  // simply next, which is the answer rather than an omission.
+  const stopped = queued === null ? null : holding(queued);
+  const inLine = queued === null ? null : place(queued);
   // There is a document to send exactly when there is one to show. `problem` is
   // the case #76 is about — an unregistered project, a template that is not
   // there — and a Send on a prompt nobody could compose would send whatever the
@@ -95,14 +122,36 @@ export function Standing({
           question, so `4h 12m` means there as it does here. */}
       <p className="sread">
         <span className="sstate">{standing.state}</span>
-        <span className="sage" title={standing.since}>
-          {inWords(Date.now() - Date.parse(standing.since))}
-        </span>
+        {/* The age, where there is one. Null is a ticket nothing in the log has
+            ever moved, and the render clock is not an answer for it — the card
+            refuses the same substitution for the same reason (#113). */}
+        {standing.since !== null ? (
+          <span className="sage" title={standing.since}>
+            {inWords(Date.now() - Date.parse(standing.since))}
+          </span>
+        ) : null}
+        {/* Where it is in line, at the same weight. On a queued item this is
+            the second value the age is everywhere else: *queued* and *queued,
+            fourteenth* are different situations. */}
+        {inLine !== null ? <span className="sage">{inLine}</span> : null}
       </p>
 
       <p className="ssince">
         <span>
-          {standing.who} · since {standing.since.slice(0, 10)} {standing.since.slice(11, 16)} UTC
+          {/* Said in as many words. An item with no attempts is not a stalled
+              one, and the absence of a run is exactly what the page could not
+              show before it could be opened at all. */}
+          {standing.attempts === 0 ? "never run · " : ""}
+          {standing.who}
+          {standing.since !== null
+            ? ` · since ${standing.since.slice(0, 10)} ${standing.since.slice(11, 16)} UTC`
+            : ""}
+          {/* Whose fact this is. `queued` is the one state that is not in the
+              log, so a page that stated it without saying where it came from
+              would be claiming a fold it did not make (0012). */}
+          {queued !== null && queued.problem === null && queued.notOffered === null
+            ? " · offered by GitHub"
+            : ""}
         </span>
         {/* Which attempt produced it. `of N` because the number alone reads as
             the whole story on an item that has had three (#102). */}
@@ -117,8 +166,38 @@ export function Standing({
       {/* The question, the diagnosis and the pointer sit under one neutral
           rule. Nothing below it is amber: the rule at the left already says a
           person is being waited on, and a second amber would dilute it. */}
-      {standing.question !== null || held.length > 0 || standing.deciding !== null ? (
+      {standing.question !== null ||
+      held.length > 0 ||
+      standing.deciding !== null ||
+      stopped !== null ||
+      unknown ||
+      queued?.problem ? (
         <div className="sbody">
+          {/* The sentence a 404 was standing in for. Lingtai has nothing on this
+              stream *and* could not ask GitHub, so what it knows is that it does
+              not know — which is not the same claim as "there is no such
+              ticket", and is the whole of #113's first requirement. */}
+          {unknown ? (
+            <p className="refusal">
+              Lingtai has never touched this ticket and GitHub could not be asked, so whether it
+              exists is not known here: {unknown}
+            </p>
+          ) : null}
+
+          {/* Why it is not moving, in the wording `lingtai status` and the card
+              use for the same hold. Null — and absent — for the item that is
+              simply next, because `runnable now` on every ordinary queued item
+              would bury the two that mean something. */}
+          {stopped !== null ? <p className="squestion">{stopped}</p> : null}
+
+          {/* Never merely absent (#76). A recipe that will not parse and a
+              GitHub behind a rate limit both leave the queue unanswered, and
+              only the reason tells them apart — the same argument the Queued
+              column's own `problems` make. */}
+          {queued?.problem ? (
+            <p className="refusal">Its place in the queue could not be read: {queued.problem}</p>
+          ) : null}
+
           {/* Verbatim. It is what the conductor wrote down, and a page that
               paraphrases it is a second version of the question. */}
           {standing.question !== null ? <p className="squestion">{standing.question}</p> : null}
@@ -166,6 +245,11 @@ export function Standing({
             sendable={acting && standing.state === "blocked" && sendable !== null}
           />
         ) : null}
+
+        {/* What the button does, beside the document it sends. Only on a queued
+            item: every other state is describing a run that has already been
+            given its plan, and its verdicts are in its own attempt. */}
+        {queued !== null ? <Plan plan={queued.plan} /> : null}
 
         {/* Offered whatever the state, deliberately. The commonest question is
             about something that has stopped, but "what did attempt 1 actually
@@ -223,6 +307,17 @@ export function Standing({
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}
+        </div>
+      ) : null}
+
+      {/* The queued item's own row, and it has exactly one move. `lingtai now`
+          was the only control this state ever had and it lived in a terminal;
+          the page that says why the item is not moving is the page the button
+          belongs on. It jumps the backoff, and says so when there is one to
+          jump (0028 §3). */}
+      {acting && standing.state === "queued" && queued !== null ? (
+        <div className="smoves">
+          <RunNow project={project} issue={String(issue)} holding={stopped} />
         </div>
       ) : null}
     </section>

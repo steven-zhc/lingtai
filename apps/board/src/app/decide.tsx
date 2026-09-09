@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import { useState, useTransition } from "react";
-import { approveCard, rejectCard, requeueCard, sendAttempt, waiveGate } from "./actions.ts";
+import { approveCard, rejectCard, requeueCard, runNow, sendAttempt, waiveGate } from "./actions.ts";
 import type { ActionResult } from "@/lib/diff";
 
 type Pending = "approve" | "reject" | "waive" | null;
@@ -341,6 +341,88 @@ export function Send({
           Leave blocked
         </button>
       </div>
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The move a queued item has: take this one next.
+ *
+ * `lingtai now`, from the page — an append to `ctl-conductor` and nothing else
+ * (`runNow`). It is the only control the Queued column ever had, and it had it
+ * only from a terminal: a card there could not be opened at all until `#113`,
+ * so the answer to *why is this not moving* and the button that moves it were
+ * in two different programs.
+ *
+ * **It says what pressing it costs when something is holding the item.** A
+ * backoff is the recipe's guard against blind retries and this jumps it (0028
+ * §3), so the button names that rather than looking like an ordinary Run — the
+ * whole reason `#95` put the time on the card is that a held item and a next
+ * one read identically, and a control that hid the difference again would undo
+ * it. A pause is not jumped by anything: the request lands and waits, and the
+ * button says so instead of promising a start.
+ */
+export function RunNow({
+  project,
+  issue,
+  holding,
+  primary = true,
+}: {
+  project: string;
+  /** The issue number as GitHub numbers it, which is what `RunRequested` carries. */
+  issue: string;
+  /**
+   * What is holding this item, in one phrase, or null when nothing is.
+   *
+   * `queuedStanding`'s own wording, passed down rather than rebuilt here: the
+   * card, `lingtai status` and this button say the same thing about the same
+   * hold, which is the property `#100` cost a ticket to establish.
+   */
+  holding: string | null;
+  /**
+   * Whether this is the amber one. **Amber appears once per screen** (layout
+   * notes), and on a queued page this is the move — there is no Approve beside
+   * it — so it carries it by default.
+   */
+  primary?: boolean;
+}) {
+  const [pending, setPending] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  if (done) return <p className="decided">{done}</p>;
+
+  return (
+    <div className="decide">
+      <div className="btnrow">
+        <button
+          className={primary ? "btn pri" : "btn"}
+          disabled={pending}
+          onClick={() => {
+            setPending(true);
+            setRefusal(null);
+            startTransition(async () => {
+              const result = await runNow({ project, issue });
+              setPending(false);
+              if (result.ok) {
+                setDone(result.detail);
+                return;
+              }
+              // Reverted, with the server's own sentence: a result shown that
+              // did not happen is worse than no result (this file's trap).
+              setRefusal(result.detail);
+            });
+          }}
+        >
+          {pending ? "asking…" : "Run it now"}
+        </button>
+      </div>
+      {/* Under the button rather than on it. What the click does is one fact and
+          what is currently stopping the item is another, and a label that tried
+          to be both would be a button whose name changes while you read it. */}
+      {holding ? <p className="jumps">{holding}</p> : null}
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
   );

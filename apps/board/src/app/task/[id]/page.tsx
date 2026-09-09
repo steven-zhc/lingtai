@@ -328,6 +328,15 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`
           // has none, and the block states the state without offering a move.
           issue={issueNumber}
+          queued={task.queued}
+          // The one thing a 404 used to be standing in for: nothing in the log
+          // and no answer from GitHub is *I cannot tell*, and a page that said
+          // "it does not exist" was making a claim Lingtai is not in a position
+          // to make (#113). Only when the log has nothing at all — an item it
+          // has touched is a page whatever GitHub says today.
+          unknown={
+            task.history.length === 0 && task.ticket?.found === null ? task.ticket.problem : null
+          }
         />
 
         <section>
@@ -359,7 +368,18 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
         </section>
 
         <section>
-          <Label fact={`${events} events · grouped by run`}>History</Label>
+          <Label fact={events === 0 ? null : `${events} events · grouped by run`}>History</Label>
+          {/* Stated, not omitted. ADR 0016 §4's rule reaches here too: a section
+              that renders nothing looks exactly like a section whose events
+              failed to load, and only one of those is our bug. A ticket nothing
+              has run has an empty log *and that is the whole of its story* —
+              which is what this section will fill in (#113). */}
+          {task.history.length === 0 ? (
+            <p className="empty">
+              Nothing yet — this ticket has no events, and this is where the log will record what
+              happens to it.
+            </p>
+          ) : null}
           {task.history.map((group) => (
             <div key={group.streamId} className="hgroup">
               {/* Dropped when there is only one stream to name: an item with
