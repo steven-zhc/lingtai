@@ -19,6 +19,16 @@ export {
   type ProjectionRunnerOptions,
 } from "./projection.ts";
 export {
+  ProjectionShapeError,
+  declaredColumns,
+  declaredShape,
+  describeDrift,
+  describeShape,
+  projectionShape,
+  type ProjectionDrift,
+  type ProjectionShape,
+} from "./shape.ts";
+export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
   readTasks,

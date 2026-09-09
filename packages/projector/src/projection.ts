@@ -21,6 +21,7 @@ import type { Envelope } from "@lingtai/domain";
 import pg from "pg";
 import { databaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore, type Subscription, subscribe } from "@lingtai/event-store";
+import { ProjectionShapeError, type ProjectionShape, shapeIn } from "./shape.ts";
 
 /** SQL access inside the projection's transaction. */
 export interface ProjectionContext {
@@ -37,6 +38,12 @@ export interface Projection {
   /**
    * Idempotent DDL for whatever tables this projection owns. Called before every
    * catch-up, so a fresh database needs no migration step.
+   *
+   * **It must not read its own query results.** `declaredShape` calls this with
+   * a context that records the SQL instead of executing it, which is how the
+   * shape check gets the declared columns without a second list to keep in step
+   * (`shape.ts`). Recording returns no rows, so a `create` that branched on one
+   * would be recorded wrong.
    */
   create(ctx: ProjectionContext): Promise<void>;
 
@@ -103,6 +110,13 @@ export interface ProjectionRunner {
   rebuild(): Promise<void>;
 
   lag(): Promise<ProjectionLag>;
+
+  /**
+   * The columns the DDL declares against the columns the tables have.
+   *
+   * Cheap enough to ask on the way up, which is where `start()` asks it.
+   */
+  shape(): Promise<ProjectionShape>;
 
   /** Releases the pool. `stop()` alone leaves the runner restartable. */
   close(): Promise<void>;
@@ -234,6 +248,16 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
         await projection.create(ctx);
         await ctx.query(REGISTER_CHECKPOINT, [projection.name]);
       });
+
+      // After `create`, so a fresh database has just been given the current
+      // shape and cannot be reported as drifted; before `follow`, because the
+      // alternative is what #90 records — the projection follows happily until
+      // the first event that needs the column that is not there, and then the
+      // handler throws and takes the daemon with it, hours later and with a run
+      // in flight. Refusing here costs the same board and no orphan.
+      const shape = await this.shape();
+      if (shape.drift.length > 0) throw new ProjectionShapeError(projection.name, shape.drift);
+
       await follow();
     },
 
@@ -267,6 +291,15 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     async close() {
       await this.stop();
       await pool.end();
+    },
+
+    async shape() {
+      return shapeIn(projection, {
+        async query(text, values) {
+          const r = await pool.query(text, values ? [...values] : undefined);
+          return r.rows;
+        },
+      });
     },
 
     async lag() {

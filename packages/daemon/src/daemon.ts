@@ -24,9 +24,15 @@
  * stops with it. Serving three-quarters of a board is how you get a board
  * nobody checks — and the incident that motivated all of this was two work
  * items merging for real while their cards sat still, which nothing reported.
+ *
+ * One of those failures is knowable on the way up: a projection whose table no
+ * longer has the columns its DDL declares will throw on the first event that
+ * needs one, and `start()` compares the two before it follows. So a drifted
+ * shape is a daemon that refuses with the remedy in the message, rather than one
+ * that runs until the wrong event arrives (#90).
  */
 import type { Projection, ProjectionRunner } from "@lingtai/projector";
-import { createProjectionRunner } from "@lingtai/projector";
+import { ProjectionShapeError, createProjectionRunner } from "@lingtai/projector";
 import { type DaemonLock, acquireDaemonLock } from "./lock.ts";
 
 export interface DaemonOptions {
@@ -104,7 +110,17 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         },
       });
       runners.push(runner);
-      await runner.start();
+      try {
+        await runner.start();
+      } catch (err) {
+        // Said here, beside the lag, rather than left to the throw on the way
+        // out. A shape that has drifted from its table is the one projection
+        // failure a daemon can see *before* it costs anything: #84's column
+        // landed, the daemon came up green, and it stopped eight events later
+        // with a run in flight and nothing on the board saying why (#90).
+        if (err instanceof ProjectionShapeError) log(`${projection.name}\twill not follow — ${err.message}`);
+        throw err;
+      }
       const lag = await runner.lag();
       log(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`);
     }

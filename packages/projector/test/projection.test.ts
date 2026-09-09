@@ -15,7 +15,10 @@ import { directDatabaseUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import {
   createProjectionRunner,
+  declaredColumns,
+  describeShape,
   projectionLag,
+  projectionShape,
   type Projection,
   type ProjectionRunner,
 } from "../src/index.ts";
@@ -317,6 +320,60 @@ describe("projection runner", () => {
     const lag = await projectionLag();
     expect(lag.find((p) => p.name === "lingtai_test_boom")?.lastSeq).toBe(base);
     expect(written).toHaveLength(2);
+  });
+
+  /**
+   * #84's failure, staged: a column in the DDL that the live table does not
+   * have. The tests could not have caught it, because a test database gets a
+   * *fresh* table — so this one drifts the table on purpose after it is made.
+   */
+  it("catches a table whose shape has drifted from its DDL", async () => {
+    const runner = track(createProjectionRunner({ projection: testProjection, store }));
+    await runner.start();
+    await runner.stop();
+
+    // Exactly what #84 amounted to: `create table if not exists` declares a
+    // column the table was built without.
+    await direct((c) => c.query(`alter table ${TEST_TABLE} drop column path`));
+
+    const drifted = await projectionShape(testProjection, directDatabaseUrl());
+    expect(drifted.drift).toHaveLength(1);
+    expect(drifted.drift[0]!.table).toBe(TEST_TABLE);
+    expect(drifted.drift[0]!.missing).toEqual(["path"]);
+    // The remedy, in the finding. `column x does not exist` sends the reader
+    // looking for a migration that does not exist.
+    expect(describeShape(drifted)).toContain(`lingtai projection rebuild ${TEST_TABLE}`);
+
+    // And the runner refuses to follow rather than running until the first
+    // event that needs the column — which is the whole of #90.
+    await expect(runner.start()).rejects.toThrow(/rebuild/);
+
+    // A rebuild is the fix, and it is checkable without one: after it, the
+    // check is clean.
+    await runner.rebuild();
+    const rebuilt = await projectionShape(testProjection, directDatabaseUrl());
+    expect(rebuilt.drift).toEqual([]);
+    expect(rebuilt.matched).toContain(TEST_TABLE);
+  });
+
+  it("reads the declared columns out of the DDL, past its own prose", () => {
+    // The comment carries a comma, and `task_view` documents half its columns
+    // this way — counted as a definition, it invents a column called `so`.
+    const parsed = declaredColumns(`
+      create table if not exists thing (
+        id      text primary key,
+        -- Null means not known yet, so the reader renders the fallback.
+        title   text,
+        note    numeric(10, 2) not null default 0,
+        gates   jsonb not null default '{}'::jsonb,
+        primary key (id, title)
+      )`);
+
+    expect(parsed?.table).toBe("thing");
+    expect(parsed?.columns).toEqual(["id", "title", "note", "gates"]);
+    // An index is not a table, which is what makes recording the whole of
+    // `create` safe.
+    expect(declaredColumns("create index if not exists thing_idx on thing (id)")).toBeNull();
   });
 
   it("is idempotent when the same events are applied twice", async () => {
