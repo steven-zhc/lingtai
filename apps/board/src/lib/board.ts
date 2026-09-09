@@ -34,8 +34,9 @@ import { eventStore } from "@lingtai/event-store";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { loadProjects } from "@lingtai/conductor/projects";
-import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
+import { projectFilter, type GatePlan, type ProjectFilter } from "@lingtai/conductor/filter";
 import { foldProgress, type RunProgress } from "./progress.ts";
+import { recipeAtHead } from "./recipe.ts";
 
 /**
  * Four, not five. `gates` folded into `running` (ADR 0016 §8).
@@ -353,6 +354,55 @@ export function toCard(
 }
 
 /**
+ * One project's answer about its own queue, or the reason it has none.
+ *
+ * Three outcomes rather than two, because the middle one used to be silent:
+ * `unreadable` is a recipe that would not resolve, `unanswered` is a recipe that
+ * did and a GitHub that would not, and only the second still has a filter to
+ * contribute — its kinds, its backoff, its gates. Losing those on a rate limit
+ * would take the Queued column's ordering and a running card's timeout with it.
+ */
+export type ProjectQueue =
+  | { state: "unreadable"; filter: Extract<ProjectFilter, { ok: false }> }
+  | { state: "unanswered"; filter: Extract<ProjectFilter, { ok: true }>; problem: string }
+  | {
+      state: "listed";
+      filter: Extract<ProjectFilter, { ok: true }>;
+      offered: Awaited<ReturnType<typeof runnableNow>>;
+      runnable: Awaited<ReturnType<typeof selectRunnable>>;
+    };
+
+/**
+ * Everything one project has to be asked, and nothing about any other.
+ *
+ * Its own function so the loop below can be a `Promise.all` rather than a
+ * queue of `await`s. Never throws: a failure is one of the three answers, which
+ * is what lets the caller fan out without a rejection taking the whole board
+ * down with the one project whose token expired.
+ */
+export async function askProject(state: ProjectState): Promise<ProjectQueue> {
+  // `recipeAtHead` rather than the default `currentRecipe`: same file, same
+  // branch, same governance — resolved again only when the branch has moved.
+  // See `recipe.ts` for why that is the board's decision and nobody else's.
+  const filter = await projectFilter(state, undefined, recipeAtHead);
+  if (!filter.ok) return { state: "unreadable", filter };
+  try {
+    const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
+    const runnable = await selectRunnable({
+      project: filter.project,
+      offered: offered.runnable,
+      kinds: filter.kinds,
+      backoffMs: filter.backoffMs,
+    });
+    return { state: "listed", filter, offered, runnable };
+  } catch (err) {
+    // The recipe resolved and GitHub still would not answer — a rate limit, a
+    // revoked installation. Named rather than dropped, for the same reason.
+    return { state: "unanswered", filter, problem: (err as Error).message };
+  }
+}
+
+/**
  * The Queued column: what GitHub is offering that the log has not taken, and
  * what could not be asked.
  *
@@ -372,8 +422,14 @@ export function toCard(
  * the filter itself, which put the only unfiltered list of projects behind the
  * filter — and left the bar naming what it was showing instead of what it could
  * show (#86).
+ *
+ * `ask` is a seam so a test can prove the projects overlap. Nothing else passes
+ * it.
  */
-async function queuedCards(projects: readonly ProjectState[]): Promise<{
+export async function queuedCards(
+  projects: readonly ProjectState[],
+  ask: (state: ProjectState) => Promise<ProjectQueue> = askProject,
+): Promise<{
   cards: BoardCard[];
   problems: QueueProblem[];
   repair: RepairPolicyView[];
@@ -407,12 +463,27 @@ async function queuedCards(projects: readonly ProjectState[]): Promise<{
   // First mention wins, so two projects that order their kinds differently give
   // one column one order rather than an order that changes as rows arrive.
   const kindOrder: string[] = [];
-  for (const p of projects) {
-    const filter = await projectFilter(p);
-    if (!filter.ok) {
-      problems.push({ project: filter.project, reason: filter.problem });
+
+  // **All of them at once.** Nothing one project is asked depends on another's
+  // answer, and in series the board waited for the sum: two projects meant two
+  // GitHub round trips end to end — 597ms + 762ms where 762 would have done —
+  // and a third repository would have added a third (#112). The cost was linear
+  // in the number of repositories, which is the number that grows.
+  //
+  // The fan-out is `runningProgress`'s, two hundred lines down and written by
+  // the same hand: this loop simply did not get it.
+  const asked = await Promise.all(projects.map((p) => ask(p)));
+
+  // The fold stays in project order, and the ordering rules stay exactly what
+  // they were — `kindOrder`'s first mention, the bar's project order, which
+  // problem is listed first. Concurrency is about when the questions are asked,
+  // never about what the answers mean.
+  for (const answer of asked) {
+    if (answer.state === "unreadable") {
+      problems.push({ project: answer.filter.project, reason: answer.filter.problem });
       continue;
     }
+    const filter = answer.filter;
     repair.push({
       project: filter.project,
       on: filter.repair.on,
@@ -421,58 +492,50 @@ async function queuedCards(projects: readonly ProjectState[]): Promise<{
     backoffMs.set(filter.project, filter.backoffMs);
     plans.set(filter.project, filter.plan);
     for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind);
-    try {
-      const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
-      // What the repository says each of its kinds looks like. A project whose
-      // queue could not be listed contributes none, and its cards render the
-      // way every card did before #85 — the failure costs a dot, not a card.
-      kindColors.set(filter.project, offered.kindColors);
-      const runnable = await selectRunnable({
+    if (answer.state === "unanswered") {
+      problems.push({ project: filter.project, reason: answer.problem });
+      continue;
+    }
+    const offered = answer.offered;
+    // What the repository says each of its kinds looks like. A project whose
+    // queue could not be listed contributes none, and its cards render the
+    // way every card did before #85 — the failure costs a dot, not a card.
+    kindColors.set(filter.project, offered.kindColors);
+    for (const r of answer.runnable) {
+      cards.push({
+        taskId: r.taskId,
         project: filter.project,
-        offered: offered.runnable,
-        kinds: filter.kinds,
-        backoffMs: filter.backoffMs,
+        column: "queued",
+        ref: r.issue,
+        kind: r.kind,
+        kindColor: offered.kindColors[r.kind] ?? null,
+        title: r.title,
+        // The column default the deleted cache also relied on. Which tier it
+        // will actually run at is decided when it runs, not now.
+        tier: "guarded",
+        headSha: null,
+        awaitingSha: null,
+        gatesPassed: 0,
+        gatesFailed: 0,
+        gatesWaived: 0,
+        gatesApproved: 0,
+        turns: null,
+        costUsd: null,
+        note: null,
+        attempts: 0,
+        blocked: false,
+        // Nothing has run, so nothing is held and nothing has been diagnosed.
+        needs: null,
+        diagnosis: null,
+        repairCostUsd: null,
+        // Nothing in the log has touched this one, so there is no time to
+        // show. See the field: the render clock is not an answer.
+        updatedAt: null,
+        // These are the ones `selectRunnable` just said *are* runnable.
+        runnableAt: null,
+        // Nothing has run, so there is nothing to be part-way through.
+        progress: null,
       });
-      for (const r of runnable) {
-        cards.push({
-          taskId: r.taskId,
-          project: filter.project,
-          column: "queued",
-          ref: r.issue,
-          kind: r.kind,
-          kindColor: offered.kindColors[r.kind] ?? null,
-          title: r.title,
-          // The column default the deleted cache also relied on. Which tier it
-          // will actually run at is decided when it runs, not now.
-          tier: "guarded",
-          headSha: null,
-          awaitingSha: null,
-          gatesPassed: 0,
-          gatesFailed: 0,
-          gatesWaived: 0,
-          gatesApproved: 0,
-          turns: null,
-          costUsd: null,
-          note: null,
-          attempts: 0,
-          blocked: false,
-          // Nothing has run, so nothing is held and nothing has been diagnosed.
-          needs: null,
-          diagnosis: null,
-          repairCostUsd: null,
-          // Nothing in the log has touched this one, so there is no time to
-          // show. See the field: the render clock is not an answer.
-          updatedAt: null,
-          // These are the ones `selectRunnable` just said *are* runnable.
-          runnableAt: null,
-          // Nothing has run, so there is nothing to be part-way through.
-          progress: null,
-        });
-      }
-    } catch (err) {
-      // The recipe resolved and GitHub still would not answer — a rate limit, a
-      // revoked installation. Named rather than dropped, for the same reason.
-      problems.push({ project: filter.project, reason: (err as Error).message });
     }
   }
   return { cards, problems, repair, backoffMs, plans, kindColors, kindOrder };
@@ -515,18 +578,20 @@ async function runningProgress(
  * run. Showing fictional work would be worse than showing none.
  */
 export async function loadBoard(project?: string): Promise<Board> {
-  let tasks: TaskCard[] = [];
-  try {
-    tasks = await readTasks(project === undefined ? {} : { project });
-  } catch (err) {
-    // `relation "task_view" does not exist` — nothing has run the projection.
-    if (!/does not exist/i.test((err as Error).message)) throw err;
-  }
-
-  // Loaded once, here, and read twice: every registered project names a filter
-  // the bar can offer, and only the ones the filter admits are asked for their
-  // queue.
-  const registered = await loadProjects().catch(() => []);
+  // Three reads, none of which is an argument to another, so they wait
+  // together. In series they were three round trips laid end to end before the
+  // first question had been put to GitHub (#112) — and the last of them,
+  // `onBoardProjects`, used to sit at the very bottom of this function, after
+  // everything, which is the most expensive place a table read can be.
+  //
+  // `registered` is loaded once and read twice: every registered project names
+  // a filter the bar can offer, and only the ones the filter admits are asked
+  // for their queue.
+  const [tasks, registered, onBoard] = await Promise.all([
+    readTasks(project === undefined ? {} : { project }).catch(emptyIfUnbuilt),
+    loadProjects().catch(() => []),
+    onBoardProjects(),
+  ]);
   const names = registered.map((p) => p.project).filter((p): p is string => p !== null);
 
   // Before the fold, because the fold needs what it learned: a card the backoff
@@ -563,8 +628,21 @@ export async function loadBoard(project?: string): Promise<Board> {
     // Unfiltered, deliberately. This is the list the filter is chosen *from*,
     // so narrowing it to the current choice would remove every way back to the
     // rest — including "all".
-    projects: filterOptions(names, await onBoardProjects()),
+    projects: filterOptions(names, onBoard),
   };
+}
+
+/**
+ * An unbuilt projection is an empty board; anything else is a fault.
+ *
+ * `relation "task_view" does not exist` is the state the system is in before
+ * the first run, and showing fictional work would be worse than showing none.
+ * Its own function only so the read can sit inside a `Promise.all` and still
+ * rethrow everything that is not that.
+ */
+function emptyIfUnbuilt(err: unknown): TaskCard[] {
+  if (!/does not exist/i.test((err as Error).message)) throw err;
+  return [];
 }
 
 /**

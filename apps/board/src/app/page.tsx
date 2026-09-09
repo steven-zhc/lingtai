@@ -576,14 +576,19 @@ export default async function Page({
   searchParams: Promise<{ project?: string }>;
 }) {
   const only = (await searchParams).project;
-  const { columns, repair, queueOrder, projects: filters } = await loadBoard(only);
-  // The register, and only for the owners a ticket link is built from. Which
-  // projects the bar can offer is `loadBoard`'s answer and not this one.
-  const registered = await loadProjects().catch(() => []);
-  // Not caught. A control read that fails would render as "nothing is paused",
-  // which is the exact silence #77 is about; and it reads the same database
-  // `loadBoard` just read, so it fails when the board fails and not otherwise.
-  const control = await readControl();
+  // Three reads waiting together rather than in a row. None of them is an
+  // argument to another, and this route is re-rendered on every append to the
+  // log (#112) — so a round trip spent waiting for the one before it is spent
+  // again every time a card moves a column.
+  //
+  // `registered` is the register, and only for the owners a ticket link is
+  // built from: which projects the bar can offer is `loadBoard`'s answer and
+  // not this one. `readControl` is not caught — a control read that failed
+  // would render as "nothing is paused", which is the exact silence #77 is
+  // about; and it reads the same database `loadBoard` reads, so it fails when
+  // the board fails and not otherwise.
+  const [{ columns, repair, queueOrder, projects: filters }, registered, control] =
+    await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()]);
   const total = columns.reduce((n, c) => n + c.cards.length, 0);
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.

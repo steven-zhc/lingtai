@@ -19,7 +19,7 @@
 import { GATE_POINTS, type GatePoint, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { parseDuration, type Recipe } from "@lingtai/recipe";
+import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 
 /**
@@ -127,6 +127,18 @@ export type ProjectFilter =
 export type ClientFor = (state: ProjectState) => Promise<GitHubClient>;
 
 /**
+ * Reads a project's recipe from its base branch.
+ *
+ * `currentRecipe` for everything that conducts, and that is the point of the
+ * seam rather than an aside: a conductor's resolve *is* the governance act
+ * (0005), so it reads the file every time and this default must not become
+ * something else. What a board does is a different question — it re-renders on
+ * every append (#112) and asks the same branch the same thing several times a
+ * second — and the answer to that one lives with the board.
+ */
+export type RecipeFor = (state: ProjectState, client: GitHubClient) => Promise<ResolvedRecipe>;
+
+/**
  * The `ClientFor` everything outside a test uses.
  *
  * Throws with the reason rather than returning null. A project that cannot be
@@ -153,11 +165,12 @@ export async function githubClientFor(state: ProjectState): Promise<GitHubClient
 export async function projectFilter(
   state: ProjectState,
   clientFor: ClientFor = githubClientFor,
+  recipeFor: RecipeFor = currentRecipe,
 ): Promise<ProjectFilter> {
   const project = state.project ?? "(unnamed)";
   try {
     const client = await clientFor(state);
-    const resolved = await currentRecipe(state, client);
+    const resolved = await recipeFor(state, client);
     return {
       project,
       ok: true,
@@ -179,8 +192,9 @@ export async function projectFilter(
 export async function projectFilters(
   projects: readonly ProjectState[],
   clientFor: ClientFor = githubClientFor,
+  recipeFor: RecipeFor = currentRecipe,
 ): Promise<ProjectFilter[]> {
-  return Promise.all(projects.map((p) => projectFilter(p, clientFor)));
+  return Promise.all(projects.map((p) => projectFilter(p, clientFor, recipeFor)));
 }
 
 /**

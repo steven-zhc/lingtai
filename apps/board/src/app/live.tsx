@@ -9,6 +9,15 @@
  * second reducer that can disagree with the first one. Re-reading is cheaper
  * than being subtly wrong.
  *
+ * **What it costs is this file's problem too.** A re-read is a whole server
+ * render, and on a busy log that is one per append per open board — which is
+ * how a 4.7s page became a 4.7s page several times a second (#112). The render
+ * itself got faster elsewhere; what is decided here is *how many*: never two at
+ * once, and none at all for a tab nobody is looking at. Neither drops an
+ * append, because neither judges one — both mark the board stale and re-read
+ * once when they can, which is the difference between coalescing and
+ * discarding.
+ *
  * **The route, and so its filter.** `router.refresh()` re-renders the URL that
  * is showing, so a board narrowed to one project re-reads that same narrowed
  * board and reconciles to the same markup: an append from a project you have
@@ -44,7 +53,7 @@
  * projection.
  */
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 /**
  * How long to coalesce a burst before re-reading.
@@ -53,6 +62,13 @@ import { useEffect, useRef, useState } from "react";
  * one round trip per event would make the board re-render dozens of times a
  * second while saying the same thing. This is not polling: nothing fires unless
  * an event arrived.
+ *
+ * **It bounds the rate and not the cost**, which is the distinction #112 turned
+ * on: a render is a fold of the log plus a question to GitHub per project, and
+ * four of those a second is four of those a second. Two things below bound the
+ * cost instead — a render already in flight is never joined by a second, and a
+ * board nobody is looking at does not render at all — and this window keeps
+ * doing the one job it was always doing.
  */
 const COALESCE_MS = 250;
 
@@ -112,14 +128,65 @@ export function Live() {
   const [health, setHealth] = useState<Health | null>(null);
   const lastSeq = useRef<string>("0");
 
+  // The render, as a transition, so this component can tell whether one is
+  // still running. `router.refresh()` returns nothing and takes as long as the
+  // server component does; without this there is no way to ask, and every
+  // coalescing window fired a fresh one into a queue behind the last (#112).
+  const [rendering, startRender] = useTransition();
+  const inFlight = useRef(false);
+  /** An append has arrived that this board has not re-read yet. */
+  const stale = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const reread = useCallback(() => {
+    stale.current = false;
+    // Set here and not only in the effect below, which does not run until after
+    // paint: a coalescing window that fired in that gap would see `false` and
+    // start a second render into the first one's shadow.
+    inFlight.current = true;
+    startRender(() => router.refresh());
+  }, [router]);
+
+  /**
+   * **Never two at once, and never for a tab nobody is looking at.**
+   *
+   * The flag is the whole mechanism: whatever the reason for not rendering now,
+   * the board is marked stale and re-read once when the reason lifts. So a
+   * burst during a slow render costs one further render rather than one per
+   * event, and a board left open in a background tab costs nothing until it is
+   * looked at — which is where most open boards are, and each of them was
+   * paying the full price for every append.
+   *
+   * It cannot silently stop updating, which is the failure `#64` is about: both
+   * conditions are events this component is told about, and both wake it.
+   */
+  const schedule = useCallback(() => {
+    stale.current = true;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      if (document.hidden || inFlight.current) return;
+      reread();
+    }, COALESCE_MS);
+  }, [reread]);
+
+  // The render that was in flight has landed. Anything that arrived while it
+  // ran is one re-read, now.
+  useEffect(() => {
+    inFlight.current = rendering;
+    if (!rendering && stale.current && !document.hidden) reread();
+  }, [rendering, reread]);
+
+  // Coming back to the tab. The board is as old as the last append it ignored.
+  useEffect(() => {
+    const woken = () => {
+      if (!document.hidden && stale.current && !inFlight.current) reread();
+    };
+    document.addEventListener("visibilitychange", woken);
+    return () => document.removeEventListener("visibilitychange", woken);
+  }, [reread]);
+
   useEffect(() => {
     const source = new EventSource(`/api/stream?from=${lastSeq.current}`);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), COALESCE_MS);
-    };
 
     source.addEventListener("open", () => setSocket("open"));
 
@@ -133,7 +200,7 @@ export function Live() {
       } catch {
         // A frame we cannot read still means something changed.
       }
-      refresh();
+      schedule();
     });
 
     // The server sends this on connect, on its keep-alive tick, and once a
@@ -154,10 +221,10 @@ export function Live() {
     source.addEventListener("error", () => setSocket("trouble"));
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer.current);
       source.close();
     };
-  }, [router]);
+  }, [schedule]);
 
   const { label, tone, title } = read(socket, health);
   return (
