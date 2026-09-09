@@ -35,9 +35,10 @@ import { AgentHostFailed } from "./hook-config.ts";
  * The mode the file is created with, and then asserted.
  *
  * It holds **whatever the agent printed** — values it read from its filtered
- * environment, contents of files it opened, the commands it ran. Today that
- * output is parsed and discarded, so persisting it is a *new* exposure and not
- * a wider view of one that already existed. `agent-env`'s `ENV_FILE_MODE` set
+ * environment, contents of files it opened, the commands it ran. That output
+ * was parsed and discarded until `#109`, so persisting it is a *new* exposure
+ * and not a wider view of one that already existed. `agent-env`'s
+ * `ENV_FILE_MODE` set
  * the standard for a file of Lingtai's that holds somebody's secrets, and this
  * is the same instinct applied to the same class of content.
  *
@@ -55,7 +56,7 @@ export const RUN_LOG_DIR_MODE = 0o700;
  *
  * A trace line is about sixty bytes, so eight megabytes is something like
  * 130,000 tool calls — far past any run that has ever happened. The cap is not
- * for the trace: `#109` puts the agent's own stream in the same file, and a
+ * for the trace: `#109` put the agent's own stream in the same file, and a
  * single run can produce tens of megabytes of that. What the number has to
  * protect is the disk and the person: this is a file somebody opens to find out
  * why a run failed, and past this it stops being one.
@@ -66,6 +67,27 @@ export const RUN_LOG_DIR_MODE = 0o700;
  * unskippable.
  */
 export const RUN_LOG_MAX_BYTES = 8_000_000;
+
+/**
+ * The half of a run log a *writer* gets: a line, and no say in when it ends.
+ *
+ * `RunRequest.log` is this rather than `RunLog` because the two halves belong to
+ * different people. The adapter has the agent's stream and nothing else; the
+ * keep-or-delete is the conductor's, taken where the worktree is removed and
+ * only knowable there (0034 §4). Handing over the narrower type is what makes
+ * that structural rather than a rule somebody remembers.
+ *
+ * **One writer, not two.** 0034 §1 says the conductor names the file and the
+ * adapter is handed it, and `#108` landed that as a path. `#109` hands the
+ * writer instead, for two reasons the path could not give: §7's cap is then one
+ * number about one file rather than one per open handle — and the agent's
+ * stream is what makes the file large, so a second handle would have doubled
+ * exactly the thing the cap is for — and a multi-megabyte line and a trace line
+ * arriving from two descriptors can interleave *within* a line, which is the
+ * one thing `runLogLine` exists to prevent. The seam 0022 drew is unmoved and
+ * is drawn tighter: the adapter now does not learn the path either.
+ */
+export type RunTrace = Pick<RunLog, "note">;
 
 /**
  * What a run's log is, to the conductor holding one.

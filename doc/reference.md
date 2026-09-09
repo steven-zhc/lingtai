@@ -173,11 +173,13 @@ Not the recipe's, and each row says why.
 | `DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts`) | `2` days | how long a landed task stays on the board — **a query, not a rebuild** | one board across every project, so no single recipe is the place to decide it. [0012](decisions/0012-one-task-view.md) settled the concept — *"Retention must not be in the projection, and this is the part that is easy to get wrong"* — and only the number was unrecorded |
 | `BUFFER_BYTES` (`packages/actions/src/command.ts`) | `2000000` bytes | above this, older output is dropped **while the command is still running** | a runaway process can print faster than anything reads it. This bounds memory, not meaning |
 | `RUN_LOG_MAX_BYTES` (`packages/agent/src/run-log.ts`) | `8000000` bytes | where a run's log file stops, saying so in itself on the line it stops at | it bounds a file on the operator's disk, not what a run is told or may spend. A trace line is about sixty bytes, so this is ~130,000 tool calls — the cap is not for the trace but for `#109`'s agent stream, which can be tens of megabytes for one run. Past this it stops being a file somebody opens to find out why a run failed ([0034](decisions/0034-the-run-log.md) §7) |
+| `TRACE_LINE_CHARS` (`packages/agent/src/claude-code.ts`) | `4000` characters | where one line of the agent's own output stops, saying how much more there was | it bounds a line of a file, not what a run is told or may spend. `#109` put the agent's prose in the log and a single message has no bound; this is what keeps one runaway line from spending the whole of `RUN_LOG_MAX_BYTES` at once, and past a long paragraph more of it in the file is not more of it read. Nothing is lost: `sessionIdFor` makes the full transcript computable from a run id forever |
 
-**And this row is why the section exists.** `RUN_LOG_MAX_BYTES` is the first
-constant of this kind added since `#96` was filed, and 0034 §7 wrote the
-requirement into the decision rather than into anybody's intentions: *that
-number goes into `doc/reference.md`'s policy section on the day it is written*.
+**And these two rows are why the section exists.** `RUN_LOG_MAX_BYTES` and
+`TRACE_LINE_CHARS` are the first constants of this kind added since `#96` was
+filed, and 0034 §7 wrote the requirement into the decision rather than into
+anybody's intentions: *that number goes into `doc/reference.md`'s policy section
+on the day it is written*.
 Six of the rows above spent months deciding behaviour with no mention anywhere
 in `doc/`, `README.md` or `CLAUDE.md`; being well commented where it sits is not
 the same as being findable.
@@ -186,8 +188,9 @@ The two files a run leaves outside the repository are `0600` and `0700`
 respectively — `RUN_LOG_MODE` and `RUN_LOG_DIR_MODE`, the standard
 `agent-env`'s `ENV_FILE_MODE` set. The log holds whatever the agent printed,
 which includes values it read from its filtered environment and contents of
-files it opened; that output is parsed and discarded today, so persisting it is
-a **new** exposure rather than a wider view of an existing one.
+files it opened; that output was parsed and discarded until `#109`, so
+persisting it is a **new** exposure rather than a wider view of an existing
+one.
 
 **The bounds are passed in, never defaulted at the point of use.**
 `attemptBrief`, `attemptOutcome` and `buildReviewPrompt` take the number as an

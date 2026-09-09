@@ -7,9 +7,18 @@
  * there at all. Each of those is a script here.
  *
  * The one thing a stand-in cannot check is that `claude` accepts these flags.
- * They were read off `claude --help` on 2026-08-31 — `-p`, `--output-format
- * json`, `--settings`, `--session-id`, `--model` — and the first supervised run
- * is what actually proves them.
+ * They were read off `claude --help` on 2026-09-09 — `-p`, `--output-format
+ * stream-json`, `--verbose`, `--settings`, `--session-id`, `--model` — and the
+ * first supervised run is what actually proves them. The pairing is checked:
+ * 2.1.263 refuses `--print` with `--output-format=stream-json` and no
+ * `--verbose`, and says so on stderr rather than starting.
+ *
+ * **The stream fixtures below are shapes, not inventions.** Every field in
+ * `RECEIPT` and every line in `stream()` was read off a real
+ * `--output-format stream-json --verbose` run on 2026-09-09, with the session
+ * ids and the usage numbers replaced. That matters here more than usual:
+ * `#109`'s whole risk is that the accounting reads a line the real binary does
+ * not print, or fails to read one it does.
  */
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,13 +29,17 @@ import {
   CODEX_CAPABILITIES,
   CodexNotImplementedError,
   PROMPT_ELIDED,
+  TRACE_LINE_CHARS,
   createClaudeCodeRuntime,
   createCodexRuntime,
   meetsTier,
   missingForTier,
   neverStarted,
+  openRunLog,
   parseResult,
   sessionIdFor,
+  traceOf,
+  type RunTrace,
 } from "../src/index.ts";
 
 let root: string;
@@ -37,6 +50,73 @@ async function fakeClaude(body: string): Promise<string> {
   await writeFile(path, `#!/bin/sh\n${body}\n`);
   await chmod(path, 0o755);
   return path;
+}
+
+/**
+ * The last line of a stream: the object that says `type: "result"`.
+ *
+ * The same object `--output-format json` printed on its own, which is what
+ * makes the accounting comparable across the change.
+ */
+const RECEIPT = {
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  duration_ms: 4_210_000,
+  duration_api_ms: 4_101_233,
+  num_turns: 63,
+  result: "the point runs on every outcome, not just an inline merge",
+  session_id: sessionIdFor("run-01JX"),
+  total_cost_usd: 5.42,
+  usage: { input_tokens: 10, output_tokens: 4_212 },
+  permission_denials: [],
+  terminal_reason: "completed",
+  uuid: "f0e4abbc-18b5-4a48-87e7-86a24b4fb6fe",
+};
+
+/** What the agent said, and everything the runtime says around it. */
+const stream = (receipt: Record<string, unknown> | null = RECEIPT) => [
+  { type: "system", subtype: "hook_started", hook_name: "SessionStart:startup", hook_event: "SessionStart" },
+  { type: "system", subtype: "init", cwd: "/tmp", model: "claude-opus-5", tools: ["Read", "Edit", "Bash"] },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "thinking", thinking: "the close handler is what produces the accounting", signature: "Ep8DCrIBCBEY" }],
+    },
+  },
+  { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Reading the adapter first." }] } },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "packages/agent/src/claude-code.ts" } }],
+    },
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "…four hundred lines of the adapter…" }],
+    },
+  },
+  { type: "rate_limit_event", rate_limit_info: { status: "allowed", resetsAt: 1_788_994_800 } },
+  ...(receipt ? [receipt] : []),
+];
+
+/** A `claude` that prints those lines, one per line, and exits. */
+async function fakeStream(lines: readonly unknown[], exit = 0, trailer = ""): Promise<string> {
+  return fakeClaude(
+    ["cat <<'JSON'", ...lines.map((l) => JSON.stringify(l)), "JSON", ...(trailer ? [trailer] : []), `exit ${exit}`].join(
+      "\n",
+    ),
+  );
+}
+
+/** A log that remembers, so a test can read what a run wrote to one. */
+function recordingTrace(): RunTrace & { lines: string[] } {
+  const lines: string[] = [];
+  return { lines, note: (label, detail = "") => void lines.push(`${label}\t${detail}`) };
 }
 
 const request = (over: Partial<Parameters<ReturnType<typeof createClaudeCodeRuntime>["run"]>[0]> = {}) => ({
@@ -104,7 +184,13 @@ describe("sessionIdFor", () => {
 });
 
 describe("run", () => {
-  it("reads the receipt out of --output-format json", async () => {
+  /**
+   * A lone object, which is what `--output-format json` printed before `#109`
+   * and what a stand-in still prints. It has no `type`, and is a receipt on
+   * that account — nothing in a stream is typeless, so accepting one cannot be
+   * what misreads a stream.
+   */
+  it("reads the receipt out of a lone object", async () => {
     const binary = await fakeClaude(
       `echo '{"is_error":false,"num_turns":63,"duration_ms":4210000,"total_cost_usd":5.42}'`,
     );
@@ -130,6 +216,15 @@ describe("run", () => {
     expect(written).toContain("--settings");
     expect(written).toContain(sessionIdFor("run-01JX"));
     expect(written).toContain("claude-opus-5");
+
+    // The pair, together or not at all: 2.1.263 refuses `--print` with
+    // `--output-format=stream-json` and no `--verbose`, so a run that lost the
+    // second flag would not be a quieter stream, it would not start.
+    expect(written).toContain("stream-json");
+    expect(written).toContain("--verbose");
+    // Considered and declined: it says every sentence twice, once in deltas
+    // and once whole, and the run log is what pays for it.
+    expect(written).not.toContain("--include-partial-messages");
   });
 
   /**
@@ -255,6 +350,216 @@ describe("run", () => {
   });
 });
 
+/**
+ * `#109`'s one risk, asserted rather than argued.
+ *
+ * The parse path this changed is the accounting: the close handler is what
+ * produces `RunFinished`'s turns, cost, duration and exit code, and the branch
+ * before `#89` spent $13.04 getting this region wrong. So the test is not that
+ * a stream parses — it is that a stream and the lone object the old format
+ * printed produce **the same outcome, field for field**.
+ */
+describe("the stream, and the accounting that must not move", () => {
+  const accounting = (o: Awaited<ReturnType<ReturnType<typeof createClaudeCodeRuntime>["run"]>>) => ({
+    exitCode: o.exitCode,
+    turns: o.turns,
+    durationMs: o.durationMs,
+    costUsd: o.costUsd,
+    text: o.text,
+    failure: o.failure,
+    sessionId: o.sessionId,
+  });
+
+  it("reads a real stream to the same fields the lone object produced", async () => {
+    const runtime = createClaudeCodeRuntime;
+    const streamed = await runtime({ binary: await fakeStream(stream()) }).run(request());
+    // The same receipt, alone, which is exactly what `--output-format json`
+    // printed and what the parser was written against.
+    const lone = await runtime({ binary: await fakeStream([RECEIPT]) }).run(request());
+
+    expect(accounting(streamed)).toEqual(accounting(lone));
+    // Named as well as compared, so a change to both at once is still caught.
+    expect(accounting(streamed)).toEqual({
+      exitCode: 0,
+      turns: 63,
+      durationMs: 4_210_000,
+      costUsd: 5.42,
+      text: "the point runs on every outcome, not just an inline merge",
+      failure: null,
+      sessionId: sessionIdFor("run-01JX"),
+    });
+  });
+
+  /**
+   * The five `subtype`s of the shipped bundle, 2026-09-08 (0031 §2).
+   *
+   * Nothing branches on `subtype` — the classification is `neverStarted`'s
+   * three checkable facts — so what survives here is that each one still lands
+   * where it did, with its turns and its cost intact. `error_max_turns` is the
+   * one that matters most: a run that used its whole budget is a crash and
+   * emphatically not a run that never started.
+   */
+  const subtypes: readonly [
+    string,
+    { is_error: boolean; num_turns: number; total_cost_usd: number },
+    number,
+    string | null,
+  ][] = [
+    ["success", { is_error: false, num_turns: 63, total_cost_usd: 5.42 }, 0, null],
+    ["error_during_execution", { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, "crash"],
+    ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "crash"],
+    ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "crash"],
+    ["error_max_structured_output_retries", { is_error: true, num_turns: 3, total_cost_usd: 0.08 }, 1, "crash"],
+    // Not a subtype: the shape 0031 measured, which carries no word of its own.
+    ["error_during_execution", { is_error: true, num_turns: 0, total_cost_usd: 0 }, 1, "never-started"],
+  ];
+
+  it.each(subtypes)("carries %s through the stream unchanged", async (subtype, receipt, exit, kind) => {
+    const binary = await fakeStream(stream({ ...RECEIPT, subtype, ...receipt }), exit);
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.failure?.kind ?? null).toBe(kind);
+    expect(outcome.turns).toBe(receipt.num_turns);
+    expect(outcome.costUsd).toBe(receipt.total_cost_usd);
+    expect(outcome.exitCode).toBe(exit);
+  });
+
+  /**
+   * The daemon killed mid-run, which is what `reconcile` does to an agent left
+   * behind (0030 §5) and what a second Ctrl+C does.
+   *
+   * Under a stream every line is an object, so "the last object in the output"
+   * would find an assistant message here — one with no `num_turns` and no
+   * `is_error`, which the close handler would have read as a **clean run of
+   * zero turns**. That is the false success `#109` had to not introduce.
+   */
+  it.each([
+    [137, "killed"],
+    // The dangerous one. A non-zero exit is a failure whatever the parser
+    // says; a *clean* exit with no receipt is the case where reading the last
+    // object would report a successful run of zero turns and nothing spent.
+    [0, "exited cleanly with nothing to show for it"],
+  ])("makes a stream cut off before its receipt a crash (%i, %s)", async (exit) => {
+    const binary = await fakeStream(
+      stream(null),
+      exit,
+      // Half a line, with no newline after it: a pipe closed mid-object.
+      `printf '%s' '{"type":"assistant","message":{"content":[{"type":"tex'`,
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.failure?.kind).toBe("crash");
+    expect(outcome.turns).toBe(0);
+    expect(outcome.costUsd).toBeNull();
+    expect(outcome.text).toBeNull();
+    // Something says so, always. Here it is the end of what was printed.
+    expect(outcome.failure?.detail.length).toBeGreaterThan(0);
+  });
+
+  it("still finds the receipt behind a wrapper's warning", async () => {
+    const binary = await fakeClaude(
+      ["echo 'npm warn Unknown env config'", "cat <<'JSON'", JSON.stringify(RECEIPT), "JSON"].join("\n"),
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+    expect(outcome.turns).toBe(63);
+    expect(outcome.failure).toBeNull();
+  });
+});
+
+/**
+ * What the ticket was filed for: the agent's own output reaching somebody.
+ *
+ * Before this it went into a string, was read for `result`, and was dropped —
+ * so a run that took four minutes could be observed only with `ps`.
+ */
+describe("the agent's output in the run log", () => {
+  it("writes what the agent said and thought, and not what the hook already writes", async () => {
+    const trace = recordingTrace();
+    const binary = await fakeStream(stream());
+    await createClaudeCodeRuntime({ binary }).run(request({ log: trace }));
+
+    expect(trace.lines).toContain("agent\tReading the adapter first.");
+    expect(trace.lines).toContain("think\tthe close handler is what produces the accounting");
+    // The tool call is the hook socket's line, written with the verdict it got
+    // — which is more than the stream knows. Twice would say it happened twice.
+    expect(trace.lines.join("\n")).not.toContain("claude-code.ts");
+    // And a tool *result* is a file that is still on disk. It is the volume in
+    // a stream and the least the agent's own.
+    expect(trace.lines.join("\n")).not.toContain("four hundred lines");
+    // How it ended, in the runtime's own word for it, `subtype` included.
+    expect(trace.lines.at(-1)).toBe("receipt\tsuccess · 63 turns · $5.42 · exit 0");
+  });
+
+  /**
+   * One file, one writer, one order.
+   *
+   * The conductor's hook trace and the agent's prose are the two halves of
+   * 0034 §3, and they are handed the same `RunTrace` rather than the same path
+   * — so this is the file that comes out, read back as a person would.
+   */
+  it("interleaves with the hook trace in one readable file", async () => {
+    const path = join(root, "interleaved.log");
+    const log = await openRunLog({ path });
+    log.note("run", "run-01JX · wi-lingtai-109 · agent/109 → main");
+
+    const binary = await fakeStream(stream());
+    await createClaudeCodeRuntime({ binary }).run(request({ log }));
+
+    log.note("run", "did not land — this file is kept, and is the only account of why");
+    await log.close("keep");
+
+    const written = (await readFile(path, "utf8")).split("\n");
+    expect(written[0]).toContain("lingtai run log · started");
+    const labels = written
+      .filter((l) => /^\d\d:\d\d:\d\d {2}/.test(l))
+      .map((l) => l.slice(10).trimEnd().split(/\s+/)[0]);
+    expect(labels).toEqual(["run", "think", "agent", "receipt", "run"]);
+    // Timestamped, one line each, and readable while it is being written.
+    expect(written[3]).toMatch(/^\d\d:\d\d:\d\d {2}agent {3}Reading the adapter first\.$/);
+  });
+
+  /**
+   * A run with no log — a gate agent, or `discuss` — writes to the one that is
+   * not there. The run is worse observed and is not worse off.
+   */
+  it("runs without a log at all", async () => {
+    const binary = await fakeStream(stream());
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+    expect(outcome.turns).toBe(63);
+  });
+
+  /**
+   * 0034 §7's cap is about the file; this one is about the line. A single
+   * runaway message must not be able to spend the whole file in one go, and a
+   * line nobody can read is not what the file is for — the transcript keeps
+   * all of it, at a session id computable from the run id forever.
+   */
+  it("clips one enormous line, and says it clipped it", () => {
+    const [[label, detail]] = traceOf(
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "x".repeat(9_000) }] } }),
+    ) as [[string, string]];
+
+    expect(label).toBe("agent");
+    expect(detail).toContain(`(${9_000 - TRACE_LINE_CHARS} more characters`);
+    expect(detail.length).toBeLessThan(TRACE_LINE_CHARS + 200);
+  });
+
+  /**
+   * A line that is not a stream event at all — a wrapper's warning, or the
+   * truncated object at the end of a killed run. This file is the only place
+   * it would have survived.
+   */
+  it("keeps a line that is not a stream event, rather than dropping it", () => {
+    expect(traceOf("npm warn Unknown env config")).toEqual([["stdout", "npm warn Unknown env config"]]);
+    expect(traceOf('{"type":"assistant","message":{"conte')).toEqual([
+      ["stdout", '{"type":"assistant","message":{"conte'],
+    ]);
+    // And the ones with nothing to say say nothing.
+    expect(traceOf(JSON.stringify({ type: "system", subtype: "init" }))).toEqual([]);
+    expect(traceOf("")).toEqual([]);
+  });
+});
+
 describe("neverStarted", () => {
   /** Zero turns, zero cost, an error. Three facts, and no words. */
   it("is the three facts and nothing else", () => {
@@ -288,6 +593,19 @@ describe("parseResult", () => {
   it("returns null rather than guessing", () => {
     expect(parseResult("")).toBeNull();
     expect(parseResult("not json at all")).toBeNull();
+  });
+
+  /**
+   * The line that says it is the receipt, and no other. Every line of a stream
+   * is an object, so "the last one" is a different function on a stream than it
+   * was on a lone object — and on a truncated stream it is the wrong one.
+   */
+  it("takes the result line out of a stream and passes over the rest", () => {
+    expect(parseResult(stream().map((l) => JSON.stringify(l)).join("\n"))?.num_turns).toBe(63);
+  });
+
+  it("finds no receipt in a stream that has not reached one", () => {
+    expect(parseResult(stream(null).map((l) => JSON.stringify(l)).join("\n"))).toBeNull();
   });
 });
 

@@ -972,11 +972,14 @@ export function runOnce(
                     // price, arriving at the same place.
                     prompt: renderPrompt(options.prompt, ticket, failure),
                     settingsPath: wiring.settingsPath,
-                    // Chosen here, written to by the hook trace above, and
+                    // Opened here, written to by the hook trace above, and
                     // handed across the seam because `#109` puts the agent's
                     // own stream in the same file and the adapter is the only
-                    // thing that holds it (0034 §1, §3).
-                    logPath: runLog.path,
+                    // thing that holds it (0034 §1, §3). The writer rather than
+                    // the path: one handle, so the cap is one number and the
+                    // two accounts interleave a line at a time rather than
+                    // inside one.
+                    log: runLog,
                     env: agentEnv,
                     limits,
                     signal: abort.signal,

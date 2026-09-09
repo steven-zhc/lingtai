@@ -18,6 +18,7 @@
  * never silently downgrades. See doc/decisions/0007-dual-runtime.md.
  */
 import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
+import type { RunTrace } from "./run-log.ts";
 
 export interface RuntimeCapabilities {
   id: RuntimeId;
@@ -40,30 +41,33 @@ export interface RunRequest {
   /** Rendered by the conductor, outside the worktree. */
   settingsPath: string;
   /**
-   * The run's log file, chosen by the conductor and handed here.
+   * The run's log, opened by the conductor and written to from here.
    *
    * Beside `cwd`, `env` and `settingsPath` because it is the same kind of
-   * thing: a path the conductor decided and the adapter is told
+   * thing: something the conductor decided and the adapter is handed
    * ([0034](../../../doc/decisions/0034-the-run-log.md) §1). `packages/agent`
-   * must not learn where `~/.lingtai` is — a runtime adapter that computed this
-   * would have crossed the seam 0022 drew.
+   * must not learn where `~/.lingtai` is — a runtime adapter that computed the
+   * path would have crossed the seam 0022 drew, and this one is not even told
+   * it.
    *
-   * **Also outside the worktree, and for a reason that is not the same one.**
-   * `settingsPath` is outside it because an agent that can edit its own hook
-   * configuration has no hook configuration. This is outside it because the
-   * worktree is removed *before* the merge, so a log inside one dies before the
-   * run has an outcome — and the log worth reading is always the one from the
-   * run that just failed. The agent also commits from there, and a `git add -A`
-   * would sweep its own log into the diff (0034 §2).
+   * **The file is outside the worktree, for a reason that is not the one
+   * `settingsPath` has.** Settings are outside it because an agent that can
+   * edit its own hook configuration has no hook configuration. The log is
+   * outside it because the worktree is removed *before* the merge, so a log
+   * inside one dies before the run has an outcome — and the log worth reading
+   * is always the one from the run that just failed. The agent also commits
+   * from there, and a `git add -A` would sweep its own log into the diff
+   * (0034 §2).
    *
-   * What writes to it today is the hook socket's trace, from the conductor.
-   * `#109` adds the agent's own output, which is what this field is for and why
-   * the adapter is handed it now: that change rewrites the parse path producing
-   * `RunFinished`, and is its own decision.
+   * Two things write here and one file receives them, in time order: the hook
+   * socket's trace of every tool call, from the conductor, and — since `#109` —
+   * the agent's own prose off `--output-format stream-json`. `RunTrace` rather
+   * than `RunLog` because closing it carries the keep-or-delete decision, which
+   * is the conductor's and is not knowable here.
    *
    * Absent for a run with no log — a review agent at a gate, or `discuss`.
    */
-  logPath?: string;
+  log?: RunTrace;
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
   env: Record<string, string>;
   limits: { turns: number; wallMs: number };

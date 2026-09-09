@@ -26,10 +26,13 @@ export {
 export {
   CLAUDE_CODE_CAPABILITIES,
   PROMPT_ELIDED,
+  RECEIPT_TAIL_CHARS,
+  TRACE_LINE_CHARS,
   createClaudeCodeRuntime,
   newRunId,
   parseResult,
   sessionIdFor,
+  traceOf,
   type ClaudeCodeOptions,
   type PermissionMode,
 } from "./claude-code.ts";
@@ -70,4 +73,5 @@ export {
   runLogLine,
   type OpenRunLogOptions,
   type RunLog,
+  type RunTrace,
 } from "./run-log.ts";

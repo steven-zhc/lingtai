@@ -12,7 +12,7 @@ const started = {
   worktree: "/tmp/wt/117",
   invocation: {
     command: "claude",
-    args: ["-p", "<prompt: recorded as RunPrompted>", "--output-format", "json"],
+    args: ["-p", "<prompt: recorded as RunPrompted>", "--output-format", "stream-json", "--verbose"],
     tier: "guarded" as const,
     limits: { turns: 150, wallMs: 3_600_000 },
   },
