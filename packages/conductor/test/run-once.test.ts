@@ -811,9 +811,22 @@ git add -A && git commit -q -m "fix the race"
 
     // "Waiting on you", not back in the queue where another run could claim it
     // and throw the question away.
-    const item = (await store.read(result.workItemId)).map((e) => e.type);
+    const held = await store.read(result.workItemId);
+    const item = held.map((e) => e.type);
     expect(item).toContain("WorkItemBlocked");
     expect(item).not.toContain("WorkItemReleased");
+
+    // And the block says what kind of hold it is and what to do about it (#83).
+    // This one is the good kind: a decision that is genuinely a person's, on a
+    // green run — so `approve` is recommended, which is what makes it the
+    // board's primary control rather than one option among three.
+    const block = held.find((e) => e.type === "WorkItemBlocked")!.data as {
+      needs: string | null;
+      diagnosis: { what: string; recommendation: { action: string } | null } | null;
+    };
+    expect(block.needs).toBe("judgement");
+    expect(block.diagnosis?.what).toContain("every gate passed");
+    expect(block.diagnosis?.recommendation?.action).toBe("approve");
 
     // ---- and then approving it merges the thing that was looked at ---------
     const approved = await approve({

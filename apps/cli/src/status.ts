@@ -15,13 +15,25 @@ import {
   runnableNow,
   selectRunnable,
 } from "@lingtai/conductor";
-import { readTasks } from "@lingtai/projector";
+import { describeHold, readTasks, type TaskCard } from "@lingtai/projector";
 
 export interface StatusOptions {
   /** Restrict to one project. */
   project?: string;
   /** Show items that have left the queue, and what holds them. */
   all?: boolean;
+}
+
+/**
+ * One line of it, at a width a listing survives.
+ *
+ * A question can be a paragraph and a git message has newlines in it, and this
+ * is a table — the whole value is on the card and in the log, which is where a
+ * reader who needs all of it goes.
+ */
+function oneLine(text: string, n = 140): string {
+  const said = text.replace(/\s+/g, " ").trim();
+  return said.length > n ? `${said.slice(0, n - 1)}…` : said;
 }
 
 export async function status(options: StatusOptions = {}, log = console.log): Promise<number> {
@@ -135,6 +147,13 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       /** Only ever on a row the log wrote; an offer GitHub made carries neither. */
       lastAttemptAt?: Date | null;
       repairPending?: boolean;
+      /** The card's line: what it is waiting on, or why it stopped. */
+      note?: string | null;
+      /** Whether a person is holding a question, as opposed to merely waiting. */
+      blocked?: boolean;
+      /** The hold, as `describeHold` reads it. Absent on a GitHub offer. */
+      needs?: TaskCard["needs"];
+      diagnosis?: TaskCard["diagnosis"];
     }[] = queuedRows;
     if (options.all) {
       const ids = new Set(known.map((t) => t.taskId));
@@ -174,6 +193,30 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
               ? "  [not offered]"
               : "";
       log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`);
+
+      // **The same thing the card says.** This line used to stop at `[waiting]`:
+      // the question was on the board and nowhere else, so the two places an
+      // operator asks *why is this stuck* answered differently — which is the
+      // failure #83 is about. The question first, then whatever was diagnosed
+      // about it, in `describeHold`'s words rather than this file's. A block
+      // that carries only a question prints one line, exactly as its card
+      // shows one.
+      //
+      // Only where a person is actually holding a question — `blocked`, not the
+      // state — for the reason the card's controls use the same test: the
+      // waiting lane also holds a refused dispatch and a run that asked
+      // something mid-flight.
+      if (t.blocked) {
+        if (t.note) log(`             ${oneLine(t.note)}`);
+        for (const line of describeHold({ needs: t.needs ?? null, diagnosis: t.diagnosis ?? null })) {
+          log(`             ${oneLine(line.text)}`);
+        }
+        // The raw failure is not printed and is not lost: a hundred lines of git
+        // output would bury the listing it belongs to. Said rather than silently
+        // dropped, because a summary that hides the output has to admit there is
+        // output — the card puts it one disclosure away.
+        if (t.diagnosis?.raw) log("             (the failure itself is on the log, and on the card)");
+      }
     }
   }
   return 0;

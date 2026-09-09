@@ -31,8 +31,10 @@ export {
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
+  describeHold,
   readTasks,
   taskViewProjection,
+  type HoldLine,
   type ReadTasksOptions,
   type TaskCard,
   type TaskState,

@@ -102,6 +102,23 @@ export const UPCASTERS: UpcastRegistry = {
       return rest;
     },
   },
+  WorkItemBlocked: {
+    /**
+     * 1 → 2: `needs` and `diagnosis` were added, because the whole vocabulary a
+     * block had was a question (#83) — so a `human:` gate asking for a decision
+     * and a conflict nobody had looked at were the same event with a different
+     * string on it.
+     *
+     * Both are null, and the first one is the interesting null. Every block on
+     * the log is *either* a judgement or an acknowledgement, and this upcaster
+     * is handed a payload rather than a stream — it cannot tell which, and the
+     * question's own wording is not evidence: `held at the merge gate: …` and
+     * `conflict: …` are conventions of the three call sites, not a field. Null
+     * says the event did not record it, which is true; a regex over the question
+     * would say something stronger and sometimes wrong.
+     */
+    1: (data) => ({ ...(data as object), needs: null, diagnosis: null }),
+  },
   RunStarted: {
     /**
      * 1 → 2: `invocation` was added because the log said *which* runtime and

@@ -55,7 +55,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { type Runtime, missingForTier } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
-import { decideRepair, repairBrief } from "./repair.ts";
+import { decideRepair, diagnoseRefusal, repairBrief } from "./repair.ts";
 import { attemptBrief, attemptOutcome, priorAttempts, promptVersionFor } from "./attempts.ts";
 import { type ToAppend, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
@@ -482,11 +482,38 @@ export function runOnce(
                 `${repairOf.detail.slice(0, 300)} — this attempt ended: ${reason}`;
               const held = await store.read(workItemId);
               const handed = resolveEndActions(held, recipe.gates.end, "blocked");
+              // A failure needing acknowledgement rather than a decision: the
+              // repair was Lingtai's move and it did not work, so what a person
+              // is being handed is a fact, not a question about a diff.
+              //
+              // The refusal's own reading, with what the repair did put in place
+              // of the decline — and **no recommendation**. There is no diff to
+              // approve (#84), and requeueing is what the code above refuses to
+              // do on its own: the pending repair is spent, so the next
+              // ordinary attempt would know nothing about this failure and walk
+              // back into it. Nothing here can honestly name a move.
+              const diagnosis = {
+                ...diagnoseRefusal({
+                  reason: repairOf.reason,
+                  detail: repairOf.detail,
+                  branch,
+                  base,
+                  why: "one was, and it could not fix it",
+                }),
+                done: `a repair ran as ${runId} and ended: ${reason}`,
+                recommendation: null,
+              };
               await store.append(workItemId, held.length, [
                 {
                   type: "WorkItemBlocked",
                   actor: "conductor",
-                  data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
+                  data: parsePayload("WorkItemBlocked", {
+                    question,
+                    needsFrom: "human",
+                    runId,
+                    needs: "acknowledgement",
+                    diagnosis,
+                  }),
                 },
                 ...handed,
               ]);
@@ -1060,6 +1087,45 @@ export function runOnce(
         const question = repairOf
           ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
           : `held at the ${gate} gate: ${branch} into ${base}`;
+        /**
+         * The hold, as something a person can act on rather than only read.
+         *
+         * This is the block #83 calls the good one: a `human:` gate asking for a
+         * decision that is genuinely a person's, so it `needs: "judgement"`.
+         * What it lacked was the other half — *and here is what I would do.*
+         *
+         * **Approve is recommended exactly when every gate passed.** There is a
+         * commit behind it (`ApprovalRequested.onSha`, requested just above), so
+         * the recommendation is one the existing vocabulary can carry out; a red
+         * run gets no recommendation, because approving over a refusal is the
+         * one judgement nothing but a person should make.
+         */
+        const green = pipeline.ok && atMerge.ok;
+        const failedAt = pipeline.failedAt ?? atMerge.failedAt;
+        const diagnosis = {
+          what:
+            `${branch} is at ${headSha.slice(0, 7)} and ` +
+            (green
+              ? `every gate passed. The ${gate} point holds for ${action}.`
+              : `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`),
+          // What was done about it, when something was: a repair spent an agent
+          // and this diff is what it produced. An ordinary hold had no failure
+          // to do anything about, and says so by saying nothing.
+          done: repairOf
+            ? `a repair for ${repairOf.reason} ran as ${runId} and produced this diff`
+            : null,
+          // No raw output: nothing failed here that a git message describes.
+          // The gate verdicts are on the task's own page with their evidence.
+          raw: null,
+          recommendation: green
+            ? {
+                action: "approve" as const,
+                why: repairOf
+                  ? `every gate passed on what the repair for ${repairOf.reason} produced`
+                  : "every gate passed on this diff; approving merges what this run produced",
+              }
+            : null,
+        };
         const ended = yield* Effect.promise(async () => {
           const blocked = await store.read(workItemId);
           // In the same append as the outcome it is about. A hold is a terminal
@@ -1070,7 +1136,13 @@ export function runOnce(
             {
               type: "WorkItemBlocked",
               actor: "conductor",
-              data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
+              data: parsePayload("WorkItemBlocked", {
+                question,
+                needsFrom: "human",
+                runId,
+                needs: "judgement",
+                diagnosis,
+              }),
             },
             ...resolvedEnd,
           ]);
@@ -1167,6 +1239,18 @@ export function runOnce(
         // bought — an item whose integration failed must never be left with a
         // control that refuses and no sentence explaining it.
         const question = `${merged.reason}: ${merged.detail.slice(0, 400)} — no repair: ${decision.why}`;
+        // The question above is #83's own exhibit — a reason code, 400 characters
+        // of git output and a colon — and it is still appended, because it is
+        // what the log has always said and shortening it would lose the failure.
+        // What is new is beside it: the refusal read as a sentence, what had
+        // already been tried, the output verbatim, and the move it implies.
+        const diagnosis = diagnoseRefusal({
+          reason: merged.reason,
+          detail: merged.detail,
+          branch,
+          base,
+          why: decision.why,
+        });
         const ended = yield* Effect.promise(async () => {
           const blocked = await store.read(workItemId);
           const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
@@ -1185,7 +1269,16 @@ export function runOnce(
             {
               type: "WorkItemBlocked",
               actor: "conductor",
-              data: parsePayload("WorkItemBlocked", { question, needsFrom: "human", runId }),
+              data: parsePayload("WorkItemBlocked", {
+                question,
+                needsFrom: "human",
+                runId,
+                // A failure, not a decision: nothing is being asked of the
+                // operator's judgement — something broke and the log is asking
+                // them to acknowledge it and take the move it recommends.
+                needs: "acknowledgement",
+                diagnosis,
+              }),
             },
             ...resolvedEnd,
           ]);

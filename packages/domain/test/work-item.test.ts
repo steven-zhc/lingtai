@@ -64,6 +64,8 @@ describe("reduceWorkItem", () => {
         question: "Which base branch should this target?",
         needsFrom: "human" as const,
         runId: "run-a",
+        needs: null,
+        diagnosis: null,
       }),
     ];
 
@@ -73,6 +75,11 @@ describe("reduceWorkItem", () => {
       question: "Which base branch should this target?",
       needsFrom: "human",
       runId: "run-a",
+      // A block that carries only a question. Every one on the log at the time
+      // #83 was written is this shape, and the fold says so rather than
+      // inventing a kind for it.
+      needs: null,
+      diagnosis: null,
     });
 
     const unblocked = reduceWorkItem([
@@ -80,6 +87,60 @@ describe("reduceWorkItem", () => {
       e("WorkItemUnblocked", { by: "human:steven", note: "develop" }),
     ]);
     expect(unblocked.lifecycle).toEqual({ status: "backlog" });
+  });
+
+  /**
+   * The two kinds of block, told apart on the log (#83).
+   *
+   * `held at the merge gate` and `conflict: agent/112 does not merge into
+   * develop` were both `WorkItemBlocked` with a string, and they are opposite
+   * kinds of thing: one wants a person's judgement, the other wants a diagnosis
+   * nobody had written. A fold that cannot distinguish them cannot let a card
+   * offer a default action, which is the whole of what the ticket asked for.
+   */
+  it("tells a judgement apart from a failure needing acknowledgement", () => {
+    const e = makeStream("wi-nextloom-ai-admin-112");
+    const judgement = reduceWorkItem([
+      e("WorkItemBlocked", {
+        question: "held at the merge gate: agent/112 into develop",
+        needsFrom: "human" as const,
+        runId: "run-a",
+        needs: "judgement" as const,
+        diagnosis: {
+          what: "agent/112 is at 6bf1c02 and every gate passed.",
+          done: null,
+          raw: null,
+          recommendation: { action: "approve" as const, why: "every gate passed on this diff" },
+        },
+      }),
+    ]);
+    const failure = reduceWorkItem([
+      e("WorkItemBlocked", {
+        question: "conflict: agent/112 does not merge into develop: user-lookup-panel.tsx",
+        needsFrom: "human" as const,
+        runId: "run-b",
+        needs: "acknowledgement" as const,
+        diagnosis: {
+          what: "agent/112 does not merge into develop.",
+          done: "develop was merged in first and it still would not merge.",
+          raw: "CONFLICT (content): Merge conflict in apps/web/src/…",
+          recommendation: { action: "requeue" as const, why: "the next attempt is cut from a base that has moved" },
+        },
+      }),
+    ]);
+
+    expect(judgement.lifecycle).toMatchObject({ status: "blocked", needs: "judgement" });
+    expect(failure.lifecycle).toMatchObject({ status: "blocked", needs: "acknowledgement" });
+    // And the recommendation is a value, not a sentence to parse: `approve` is a
+    // legitimate one, which is what makes the board's default action possible.
+    expect(
+      judgement.lifecycle.status === "blocked" && judgement.lifecycle.diagnosis?.recommendation,
+    ).toEqual({ action: "approve", why: "every gate passed on this diff" });
+    // The raw failure survives the summary. A sentence that hides the git
+    // output would be worse than the git output.
+    expect(failure.lifecycle.status === "blocked" && failure.lifecycle.diagnosis?.raw).toContain(
+      "CONFLICT (content)",
+    );
   });
 
   /**
@@ -92,7 +153,13 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-nextloom-ai-admin-35");
     const s = reduceWorkItem([
       e("WorkItemDiscovered", discovered),
-      e("WorkItemBlocked", { question: "?", needsFrom: "human" as const, runId: null }),
+      e("WorkItemBlocked", {
+        question: "?",
+        needsFrom: "human" as const,
+        runId: null,
+        needs: null,
+        diagnosis: null,
+      }),
       e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
     ]);
 

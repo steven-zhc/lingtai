@@ -311,3 +311,46 @@ describe("the lease, dropped on read", () => {
     expect(up.worker).toBe("local:71410");
   });
 });
+
+/**
+ * The block that carried only a question (#83).
+ *
+ * Every `WorkItemBlocked` on the log at the time the field was added is a v1:
+ * `{ question, needsFrom, runId }`, and the whole claim of the widening is that
+ * those keep parsing. The upcaster is what makes that true, and this is the test
+ * that would fail if `SCHEMA_VER` moved without it — which is the failure mode
+ * the mechanism exists to prevent, since a v1 payload handed to a v2 schema
+ * either fails naming the wrong problem or passes wrongly.
+ */
+describe("a block, widened past the question", () => {
+  const v1 = {
+    question: "conflict: agent/112 does not merge into develop: user-lookup-panel.tsx",
+    needsFrom: "human" as const,
+    runId: "run-1978cb64",
+  };
+
+  it("reads a v1 block, with no kind and no diagnosis", () => {
+    expect(parseStoredPayload("WorkItemBlocked", 1, v1)).toEqual({
+      ...v1,
+      // Null, not a guess. The upcaster is handed a payload rather than a
+      // stream, and the question's wording is a convention of the call sites
+      // and not a field — `held at the …` and `conflict: …` are not evidence.
+      needs: null,
+      diagnosis: null,
+    });
+  });
+
+  it("leaves a v2 block alone, diagnosis and all", () => {
+    const v2 = {
+      ...v1,
+      needs: "acknowledgement" as const,
+      diagnosis: {
+        what: "agent/112 does not merge into develop.",
+        done: "develop was merged in first and it still would not merge. No agent was bought: …",
+        raw: "CONFLICT (content): Merge conflict in apps/web/src/components/users/user-lookup-panel.tsx",
+        recommendation: { action: "requeue" as const, why: "the next attempt is cut from a base that has moved" },
+      },
+    };
+    expect(parseStoredPayload("WorkItemBlocked", 2, v2)).toEqual(v2);
+  });
+});

@@ -81,7 +81,11 @@ describe("the work loop", () => {
       // and waking on those would start a pass while the last one is still
       // mid-agent. This one must be ignored.
       await store.append(id, 0, [
-        { type: "WorkItemBlocked", actor: "conductor", data: { question: "?", needsFrom: "human", runId: null } },
+        {
+          type: "WorkItemBlocked",
+          actor: "conductor",
+          data: { question: "?", needsFrom: "human", runId: null, needs: null, diagnosis: null },
+        },
       ]);
       await until(() => reasons.length >= 2);
       expect(reasons[1]).toBe("completion");

@@ -136,11 +136,74 @@ export const WorkItemClaimed = z.object({
 
 export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string() });
 
+/**
+ * What to do about a block, in the vocabulary of the controls that exist.
+ *
+ * **`approve` is a legitimate value, and most of the time it is the right one**
+ * (#83). The three values are exactly the three moves a card has: `approve` and
+ * `reject` answer an `ApprovalRequested`, and `requeue` is what is left when
+ * there is no diff to answer about. A recommendation the board cannot carry out
+ * would be a sentence rather than a recommendation.
+ */
+export const BlockRecommendation = z.object({
+  action: z.enum(["approve", "reject", "requeue"]),
+  /** Why that is the move. The half that makes it a recommendation and not a guess. */
+  why: z.string(),
+});
+export type BlockRecommendation = z.infer<typeof BlockRecommendation>;
+
+/**
+ * What happened, what was done about it, and what to do now.
+ *
+ * The whole of what a block could say used to be `question`, and #112 is what
+ * that costs: `conflict: agent/112 does not merge into develop: apps/web/…` sat
+ * in *Waiting on you* for four days — a git message with a colon in it, in
+ * front of an operator who was being asked to diagnose it themselves.
+ *
+ * The recommendation lives **inside** the diagnosis rather than beside it,
+ * because nothing can be recommended without saying what happened first. The
+ * other direction is ordinary: a diagnosis with no recommendation is a failure
+ * somebody has explained and not yet decided about.
+ *
+ * `raw` is why this is a widening and not a replacement. A summary that hides
+ * the git output is worse than the git output, so the output stays — beside the
+ * sentence, not instead of it.
+ */
+export const BlockDiagnosis = z.object({
+  /** The failure, stated in a sentence rather than as a git error. */
+  what: z.string(),
+  /** What was already done about it and what that produced. Null when nothing was. */
+  done: z.string().nullable(),
+  /** The failure as it arrived, untouched. Null when there was no raw output. */
+  raw: z.string().nullable(),
+  recommendation: BlockRecommendation.nullable(),
+});
+export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>;
+
 export const WorkItemBlocked = z.object({
   /** The question, not just the fact. The old `agent:blocked` label carried no question. */
   question: z.string(),
+  /** Who has to answer. `needs` says *what* of them. */
   needsFrom: z.enum(["human", "schema", "external"]),
   runId: z.string().nullable(),
+  /**
+   * Which kind of block this is — the distinction #83 found the log could not
+   * make. Both of these were `WorkItemBlocked` with a string, and they are
+   * opposite kinds of thing:
+   *
+   *   `judgement`       a decision that is genuinely a person's, as a `human:`
+   *                     gate asks for. *held at the merge gate: agent/112 into
+   *                     develop.*
+   *   `acknowledgement` something failed and nobody has decided what to do.
+   *                     *conflict: agent/112 does not merge into develop.*
+   *
+   * One wants judgement; the other wants a diagnosis nobody has written yet.
+   * Null on a v1 event, which recorded neither — and guessing which of the two
+   * a historical block was would be worse than saying so.
+   */
+  needs: z.enum(["judgement", "acknowledgement"]).nullable(),
+  /** Null when nobody has diagnosed it, which is every block written before #83. */
+  diagnosis: BlockDiagnosis.nullable(),
 });
 
 export const WorkItemUnblocked = z.object({ by: z.string(), note: z.string() });
@@ -706,6 +769,10 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // `leaseUntilMs` — the lease is deleted (0027). The field is still in every
   // historical row and the upcaster drops it on read; no event is rewritten.
   WorkItemClaimed: 3,
+  // 2: added `needs` and `diagnosis`. A block could say only *what is your
+  // question*, so a conflict and a `human:` gate reached a person as the same
+  // event with a string on it (#83).
+  WorkItemBlocked: 2,
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,

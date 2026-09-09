@@ -15,7 +15,13 @@
  */
 import { describe, expect, it } from "vitest";
 import { type RefusalReason, type WorkItemState, emptyWorkItem } from "@lingtai/domain";
-import { decideRepair, repairBrief, repairFingerprint, whoseFailure } from "../src/repair.ts";
+import {
+  decideRepair,
+  diagnoseRefusal,
+  repairBrief,
+  repairFingerprint,
+  whoseFailure,
+} from "../src/repair.ts";
 
 const conflict = {
   source: "integration" as const,
@@ -280,5 +286,84 @@ describe("what the repair attempt is told", () => {
     expect(brief).toMatch(/commit/i);
     expect(brief).toMatch(/recommendation is not enough/i);
     expect(brief).toContain("attempt 2");
+  });
+});
+
+/**
+ * The sentence a refusal reaches a person as (#83).
+ *
+ * `#112` sat in *Waiting on you* for four days holding
+ * `conflict: agent/112 does not merge into develop: user-lookup-panel.tsx` — a
+ * git message with a colon in it — and no action at all. Everything needed to
+ * say more was already in this file: whose failure each reason is, whether the
+ * mechanical remedy is spent, and whether anything could act on it.
+ *
+ * Pure, and tested here rather than through a run, because it is what the card
+ * and `lingtai status` both end up printing.
+ */
+describe("a refusal, read for a person", () => {
+  const REASONS: RefusalReason[] = [
+    "conflict",
+    "dirty-base",
+    "unpushed-base",
+    "pending-migration",
+    "gate-failed",
+    "no-commits",
+    "lane-busy",
+  ];
+
+  const read = (reason: string) =>
+    diagnoseRefusal({
+      reason,
+      detail: "CONFLICT (content): Merge conflict in apps/web/src/page.tsx",
+      branch: "agent/112",
+      base: "develop",
+      why: "the bound is spent",
+    });
+
+  it("says something in words for every reason, and never drops the output", () => {
+    for (const reason of REASONS) {
+      const d = read(reason);
+      // A sentence, not a reason code — the code is what the card had, and it
+      // is what an operator was left to interpret.
+      expect(d.what, reason).not.toContain(reason);
+      expect(d.what, reason).toMatch(/\.$/);
+      // The raw failure survives every one of them. A summary that hides the
+      // git output is worse than the git output.
+      expect(d.raw, reason).toContain("CONFLICT (content)");
+      // And why no agent was bought, which is what a card could never say.
+      expect(d.done, reason).toContain("the bound is spent");
+    }
+  });
+
+  it("recommends the queue for a conflict, and says the remedy is spent", () => {
+    const d = read("conflict");
+    expect(d.what).toBe("agent/112 does not merge into develop.");
+    expect(d.done).toContain("develop was merged in first");
+    expect(d.recommendation).toEqual({
+      action: "requeue",
+      why:
+        "the mechanical remedy is already spent, so the next attempt is the fix: " +
+        "it is cut from a base that has since moved",
+    });
+  });
+
+  /**
+   * The refusals with no move, and they are not an oversight. A red diff is the
+   * judgement this system exists to ask a person for, and Lingtai's own dirty
+   * checkout is not something requeueing walks past.
+   */
+  it("recommends nothing where nothing can honestly be recommended", () => {
+    for (const reason of ["gate-failed", "pending-migration", "dirty-base", "unpushed-base"]) {
+      expect(read(reason).recommendation, reason).toBeNull();
+    }
+  });
+
+  /** An unknown reason still gets a diagnosis, and gets no move — as `whoseFailure` does. */
+  it("says an unrecognised refusal plainly rather than guessing at it", () => {
+    const d = read("something-a-newer-build-wrote");
+    expect(d.what).toContain("something-a-newer-build-wrote");
+    expect(d.recommendation).toBeNull();
+    expect(d.raw).toContain("CONFLICT (content)");
   });
 });

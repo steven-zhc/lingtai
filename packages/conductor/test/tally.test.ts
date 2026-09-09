@@ -48,7 +48,7 @@ const claimed = (n: number) => ({
 const blocked = (n: number, question: string) => ({
   type: "WorkItemBlocked",
   actor: "conductor",
-  data: { question, needsFrom: "human" as const, runId: runId(n) },
+  data: { question, needsFrom: "human" as const, runId: runId(n), needs: null, diagnosis: null },
 });
 
 const landed = { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "abc1234", base: "develop" } };

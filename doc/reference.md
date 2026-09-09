@@ -58,7 +58,7 @@ are not — one per work item, run, lane and project, forever.
 | `prj-` | project | `prj-nextloom-ai-admin` |
 | `ctl-` | control | `ctl-conductor` (the only one so far) |
 
-## upcaster — 14 chains, 16 steps
+## upcaster — 15 chains, 17 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -70,6 +70,7 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `Reconciled` | 1 → 2 | each finding gained `action` |
 | `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
 | `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions/0027-the-lease-is-deleted.md)). The only step that drops a field rather than adding one, and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
+| `WorkItemBlocked` | 1 → 2 | `needs` and `diagnosis` (`#83`). A block could say only *what is your question*, so a `human:` gate asking for a decision and a conflict nobody had looked at were the same event with a different string on it. Both null on a v1: the upcaster is handed a payload rather than a stream, and the question's wording is a convention of the three call sites and not a field |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `GatePoint`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |

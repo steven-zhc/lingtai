@@ -21,7 +21,7 @@
  * reason: a rule about spending money that lives inside an `if` in a 1,000-line
  * file is a rule nobody can check.
  */
-import type { RefusalReason, WorkItemState } from "@lingtai/domain";
+import type { BlockDiagnosis, BlockRecommendation, RefusalReason, WorkItemState } from "@lingtai/domain";
 import { createHash } from "node:crypto";
 
 /**
@@ -254,4 +254,119 @@ export function repairBrief(record: {
     "final message and do not commit something you have not verified — the item is",
     "handed back with your reason rather than merged.",
   ].join("\n");
+}
+
+// ------------------------------------------------------------- diagnosing ----
+
+/**
+ * A refusal, read as a sentence and as the move it implies.
+ *
+ * The block a refusal produced used to carry `${reason}: ${detail}` and nothing
+ * else — a reason code and a git message, in front of an operator who was being
+ * asked to work out what to do with them (#83). What went missing between the
+ * integrator and that card is not information: this file already knows whose
+ * failure each reason is, whether the mechanical remedy is spent, and whether an
+ * agent could act on it. It simply never said any of it in words.
+ *
+ * A total record over `RefusalReason`, for the reason `INTEGRATION_OWNER` is
+ * one: an eighth reason will not compile until somebody writes the sentence and
+ * decides whether it has a move. A reason with no move is the normal case and
+ * not an oversight — `gate-failed` is a red diff, which is a judgement, and
+ * `dirty-base` is Lingtai's own checkout, which requeueing walks straight back
+ * into.
+ */
+const REFUSAL_READING: Record<
+  RefusalReason,
+  {
+    says: (where: { branch: string; base: string }) => string;
+    /** The move this refusal implies, or null when nobody can name one. */
+    move: BlockRecommendation | null;
+  }
+> = {
+  conflict: {
+    says: ({ branch, base }) => `${branch} does not merge into ${base}.`,
+    move: {
+      action: "requeue",
+      why:
+        "the mechanical remedy is already spent, so the next attempt is the fix: " +
+        "it is cut from a base that has since moved",
+    },
+  },
+  "gate-failed": {
+    says: ({ branch, base }) => `a gate refused ${branch}, so it was not merged into ${base}.`,
+    // Nothing is recommended, deliberately. A red diff is the one case where
+    // the judgement is genuinely a person's — approve it anyway, waive the
+    // gate, or reject it — and a default here would be picking for them.
+    move: null,
+  },
+  "no-commits": {
+    says: ({ branch, base }) => `${branch} holds nothing ${base} does not, so there was nothing to merge.`,
+    move: {
+      action: "requeue",
+      why: "there is no diff to approve; a fresh attempt starts from the current base",
+    },
+  },
+  "pending-migration": {
+    says: ({ branch }) =>
+      `${branch} carries a migration, which a person applies. This is a hold Lingtai means, not a failure.`,
+    // A person reads the migration. An agent sent to "fix" one would delete it
+    // (0025), and requeueing would reach this same hold again.
+    move: null,
+  },
+  "dirty-base": {
+    says: ({ branch, base }) =>
+      `Lingtai's own checkout of ${base} was not clean, so the merge was refused. Nothing is wrong with ${branch}.`,
+    move: null,
+  },
+  "unpushed-base": {
+    says: ({ branch, base }) =>
+      `Lingtai's mirror of ${base} and origin disagree, so the merge was refused. Nothing is wrong with ${branch}.`,
+    move: null,
+  },
+  "lane-busy": {
+    says: ({ branch, base }) =>
+      `another integration held the merge lane, so ${branch} was not merged into ${base}.`,
+    move: {
+      action: "requeue",
+      why: "the lane was busy rather than wrong — the next pass merges it",
+    },
+  },
+};
+
+/**
+ * What a person is told about a refusal that bought no agent.
+ *
+ * `raw` is the refusal verbatim and is never summarised away: the sentence is
+ * this file's reading of the failure, and a reading that hides the output it was
+ * made from is worse than the output (#83).
+ *
+ * A reason this build does not know still gets a diagnosis — the reason itself,
+ * said plainly — and no recommendation. That is the same default `whoseFailure`
+ * takes: an unknown failure is one nothing here can claim to have a move for.
+ */
+export function diagnoseRefusal(input: {
+  /** A `RefusalReason`, or anything an older build wrote. */
+  reason: string;
+  detail: string;
+  branch: string;
+  base: string;
+  /** Why no agent was bought, in `decideRepair`'s own words. */
+  why: string;
+}): BlockDiagnosis {
+  const reading = REFUSAL_READING[input.reason as RefusalReason] ?? null;
+  const where = { branch: input.branch, base: input.base };
+  return {
+    what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,
+    // What was *done* about it, which for a conflict is more than nothing: the
+    // integrator merges the base in before it merges out, so by the time this
+    // is written the mechanical fix has already been tried and exhausted
+    // (0025 §4). The decline belongs here too — a card must be able to say why
+    // no agent was bought, not only that none was.
+    done:
+      (input.reason === "conflict"
+        ? `${input.base} was merged in first and it still would not merge. `
+        : "") + `No agent was bought: ${input.why}`,
+    raw: input.detail,
+    recommendation: reading?.move ?? null,
+  };
 }

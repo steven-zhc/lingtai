@@ -20,7 +20,7 @@
  * function's.
  */
 import type { Envelope } from "./envelope.ts";
-import type { PayloadOf, Tier } from "./events.ts";
+import type { BlockDiagnosis, PayloadOf, Tier } from "./events.ts";
 
 export type WorkItemLifecycle =
   | { status: "backlog" }
@@ -38,6 +38,14 @@ export type WorkItemLifecycle =
       question: string;
       needsFrom: "human" | "schema" | "external";
       runId: string | null;
+      /**
+       * Whether a person's judgement is required, or a failure needs
+       * acknowledging. Two opposite kinds of hold that were one event with a
+       * string on it (#83). Null on a block written before the field existed.
+       */
+      needs: "judgement" | "acknowledgement" | null;
+      /** What happened, what was done, what is recommended. Null when undiagnosed. */
+      diagnosis: BlockDiagnosis | null;
     }
   | { status: "landed"; mergeCommit: string; base: string };
 
@@ -218,6 +226,8 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
           question: d.question,
           needsFrom: d.needsFrom,
           runId: d.runId,
+          needs: d.needs,
+          diagnosis: d.diagnosis,
         },
       };
     }

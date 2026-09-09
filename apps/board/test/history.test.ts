@@ -51,6 +51,38 @@ describe("a line of history", () => {
     expect(describePayload({ prompt: null })).toBe("prompt=null");
   });
 
+  /**
+   * The two kinds of block, told apart on the row (#83). `held at the merge
+   * gate: …` and `conflict: agent/112 does not merge into develop: …` were both
+   * `WorkItemBlocked` with a string, and the history printed the string.
+   */
+  it("says which kind of block it was, and what it recommends", () => {
+    const said = summarise(
+      e("WorkItemBlocked", {
+        question: "conflict: agent/112 does not merge into develop",
+        needsFrom: "human",
+        runId: "run-1",
+        needs: "acknowledgement",
+        diagnosis: {
+          what: "agent/112 does not merge into develop.",
+          done: null,
+          raw: "CONFLICT (content): …",
+          recommendation: { action: "requeue", why: "the base has moved" },
+        },
+      }),
+    );
+    expect(said).toContain("acknowledgement:");
+    expect(said).toContain("conflict: agent/112 does not merge into develop");
+    expect(said).toContain("recommends requeue");
+  });
+
+  it("prints a v1 block as the question alone, which is all it carries", () => {
+    const said = summarise(
+      e("WorkItemBlocked", { question: "held at the merge gate: agent/112 into develop", needsFrom: "human", runId: null }),
+    );
+    expect(said).toBe("held at the merge gate: agent/112 into develop");
+  });
+
   it("names the action on a gate row, not only the point", () => {
     const build = e("GateStarted", { gate: "prepared", action: "build", runId: "run-1", onSha: "abc" });
     const lint = e("GateStarted", { gate: "prepared", action: "lint", runId: "run-1", onSha: "abc" });
