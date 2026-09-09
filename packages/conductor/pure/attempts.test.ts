@@ -60,7 +60,6 @@ function stream(streamId: string) {
 const claim = (runId: string): PayloadOf<"WorkItemClaimed"> => ({
   runId,
   worker: "conductor",
-  leaseUntilMs: 1_800_000,
   title: "A retry is a blind retry",
   kind: "bug",
 });
@@ -112,7 +111,7 @@ describe("priorAttempts", () => {
     ]);
   });
 
-  /** A renewed lease is not a second attempt, any more than it is a second run. */
+  /** A second claim by one run is not a second attempt, any more than a second run. */
   it("counts a re-claim by the same run once", () => {
     const e = stream("wi-lingtai-59");
     expect(

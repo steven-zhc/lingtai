@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./claim": "./src/claim.ts",
     "./projects": "./src/projects.ts",
     "./decide": "./src/approve.ts",
     "./discover": "./src/discover.ts",

@@ -36,10 +36,10 @@ export {
 } from "./control.ts";
 export {
   exists,
-  findExpiredClaims,
   findLaggingProjections,
   findOrphans,
   reconcile,
+  releaseForeignClaims,
   type Action,
   type Finding,
   type ReconcileOptions,

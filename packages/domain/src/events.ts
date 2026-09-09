@@ -108,9 +108,14 @@ export const WorkItemDiscovered = z.object({
 
 export const WorkItemClaimed = z.object({
   runId: z.string(),
+  /**
+   * Host and pid, and the reason this outlived the lease
+   * ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)): recovery
+   * asks *whose* claim this is, not *when* it lapses. A conductor holding
+   * `lingtai:daemon` knows no other conductor exists, so a claim naming any
+   * other worker is a claim nobody is coming back for.
+   */
   worker: z.string(),
-  /** Absence of a heartbeat past this is the expiry. Nothing to clean up. */
-  leaseUntilMs: z.number().int(),
   /**
    * What the task is, recorded at the moment Lingtai takes responsibility
    * for it.
@@ -697,8 +702,10 @@ export type PayloadOf<T extends EventType> = z.infer<(typeof EVENTS)[T]>;
 const BUMPED: Partial<Record<EventType, number>> = {
   // 2: added `owner`. 3: added `base`. See ProjectConfigured above.
   ProjectConfigured: 3,
-  // 2: added `title` and `kind`, because the queue left the log. See above.
-  WorkItemClaimed: 2,
+  // 2: added `title` and `kind`, because the queue left the log. 3: dropped
+  // `leaseUntilMs` — the lease is deleted (0027). The field is still in every
+  // historical row and the upcaster drops it on read; no event is rewritten.
+  WorkItemClaimed: 3,
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,

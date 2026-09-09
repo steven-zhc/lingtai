@@ -65,7 +65,7 @@ const attempt = (n: number, which: string) => {
 const claimedWith = (runId: string) => ({
   type: "WorkItemClaimed",
   actor: "conductor",
-  data: { runId, worker: "w", leaseUntilMs: Date.now() + 60_000, title: null, kind: null },
+  data: { runId, worker: "w", title: null, kind: null },
 });
 
 const claimed = (n: number) => claimedWith(run(n));

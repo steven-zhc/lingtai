@@ -574,9 +574,9 @@ pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 ```
 
 **Pause stops it taking new work; a run in flight finishes.** Killing a running
-agent is not implemented — a run you want gone ends when its lease expires and
-the claim comes back. Said plainly because a Stop button that means Pause is
-worse than no Stop button.
+agent is not implemented — a run you want gone ends when the conductor holding
+it does, and the next one to start releases the claim it left. Said plainly
+because a Stop button that means Pause is worse than no Stop button.
 
 Control goes through the log, so a pause issued while the daemon is down is
 waiting when it comes back.

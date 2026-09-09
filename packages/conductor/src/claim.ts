@@ -9,21 +9,31 @@
  *   - **The claim is an append at an expected version.** `UNIQUE (stream_id,
  *     version)` decides the race. The loser gets a `ConcurrencyError`, re-reads,
  *     and finds the item already held. No lock table, no lock file.
- *   - **The absence of a heartbeat is the expiry.** A lease is a timestamp
- *     inside an event. A process that dies holding one leaves an event that
- *     stops being true, which needs no cleanup because nothing was allocated.
+ *   - **Nothing here expires.** A claim carried a `leaseUntilMs` for a while and
+ *     [0027](../../../doc/decisions/0027-the-lease-is-deleted.md) deleted it: a
+ *     fixed thirty minutes, never renewed, on runs the recipe lets live for one
+ *     to two hours. It excluded nobody — two conductors pass a timestamp check
+ *     together — and past the half hour it did the opposite of its job, handing
+ *     a live run's ticket to the next caller. Held is held.
  *
- * A crash therefore costs a wait, not an intervention.
+ * A crash therefore costs a `WorkItemReleased`, not an intervention: the next
+ * conductor to take `lingtai:daemon` knows it is the only one, so every claim
+ * naming another worker is dead and it appends the release
+ * (`daemon/reconcile.ts`). Liveness is the lock, which the kernel maintains;
+ * exclusion is the constraint. Neither is a number.
  */
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { parsePayload, reduceWorkItem } from "@lingtai/domain";
 
-/** Long enough to outlive a slow gate, short enough that a crash is not an outage. */
-export const DEFAULT_LEASE_MS = 30 * 60_000;
-
 export interface ClaimOptions {
   runId: string;
-  /** Who holds it — host and pid, so a stuck lease can be traced to a process. */
+  /**
+   * Who holds it — host and pid.
+   *
+   * Not decoration. It is what recovery is decided on (0027): a conductor
+   * holding the lock releases every claim recorded by a *different* worker,
+   * because it has proof there is no such conductor left alive.
+   */
   worker?: string;
   /**
    * What the task is, if the caller knows.
@@ -35,23 +45,23 @@ export interface ClaimOptions {
    */
   title?: string | null;
   kind?: string | null;
-  leaseMs?: number;
   store?: EventStore;
-  now?: () => number;
 }
 
 export interface Claim {
   workItemId: string;
   runId: string;
   worker: string;
-  leaseUntilMs: number;
   /** The stream version the claim landed at; the next append expects this. */
   version: number;
 }
 
 export type ClaimRefusal =
-  /** Someone else holds a lease that has not expired. */
-  | { reason: "held"; by: string; runId: string; expiresInMs: number }
+  /**
+   * Someone else holds it. No countdown: there is nothing to count down to,
+   * and a caller that waited for one would wait for ever.
+   */
+  | { reason: "held"; by: string; runId: string }
   /** Another claimant won the append. Re-read and look again. */
   | { reason: "lost-race" }
   /** Not in a state that can be claimed — landed, or blocked on a person. */
@@ -59,7 +69,14 @@ export type ClaimRefusal =
 
 export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: ClaimRefusal };
 
-function defaultWorker(): string {
+/**
+ * What this process calls itself in a claim.
+ *
+ * Exported because recovery compares against it (0027). A restarted conductor
+ * has a new pid, so it does not recognise its predecessor's claims as its own —
+ * which is the point: those are exactly the claims nobody is coming back for.
+ */
+export function conductorWorker(): string {
   return `${process.env["HOSTNAME"] ?? "local"}:${process.pid}`;
 }
 
@@ -75,29 +92,19 @@ export async function claimWorkItem(
   options: ClaimOptions,
 ): Promise<ClaimResult> {
   const store = options.store ?? eventStore;
-  const now = options.now ?? Date.now;
-  const worker = options.worker ?? defaultWorker();
-  const leaseUntilMs = now() + (options.leaseMs ?? DEFAULT_LEASE_MS);
+  const worker = options.worker ?? conductorWorker();
 
   const events = await store.read(workItemId);
   const state = reduceWorkItem(events);
 
   if (state.lifecycle.status === "claimed") {
+    // Held is held. There is no expiry to fall through to, so the only way past
+    // this is an appended release — which is what a conductor that has just
+    // proved itself alone does at startup.
     const held = state.lifecycle;
-    // An expired lease is not held. Nothing had to release it and nothing had to
-    // notice — the timestamp simply stopped being in the future.
-    if (held.leaseUntilMs > now()) {
-      return {
-        ok: false,
-        refusal: {
-          reason: "held",
-          by: held.worker,
-          runId: held.runId,
-          expiresInMs: held.leaseUntilMs - now(),
-        },
-      };
-    }
-  } else if (state.lifecycle.status !== "backlog") {
+    return { ok: false, refusal: { reason: "held", by: held.worker, runId: held.runId } };
+  }
+  if (state.lifecycle.status !== "backlog") {
     return { ok: false, refusal: { reason: "not-claimable", status: state.lifecycle.status } };
   }
 
@@ -109,7 +116,6 @@ export async function claimWorkItem(
         data: parsePayload("WorkItemClaimed", {
           runId: options.runId,
           worker,
-          leaseUntilMs,
           title: options.title ?? null,
           kind: options.kind ?? null,
         }),
@@ -117,7 +123,7 @@ export async function claimWorkItem(
     ]);
     return {
       ok: true,
-      claim: { workItemId, runId: options.runId, worker, leaseUntilMs, version: written!.version },
+      claim: { workItemId, runId: options.runId, worker, version: written!.version },
     };
   } catch (err) {
     // The other claimant appended first. The constraint is the whole of the
@@ -127,7 +133,7 @@ export async function claimWorkItem(
   }
 }
 
-/** Hands the item back. A release is explicit; an expiry is not. */
+/** Hands the item back. The only way back: there is no expiry (0027). */
 export async function releaseWorkItem(
   workItemId: string,
   runId: string,

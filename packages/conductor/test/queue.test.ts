@@ -75,7 +75,7 @@ describe("selectRunnable", () => {
     const claimedId = `wi-${other}-10`;
     created.add(claimedId);
     await store.append(claimedId, 0, [
-      { type: "WorkItemClaimed", actor: "conductor", data: { runId: `run-${other}-10`, worker: "w", leaseUntilMs: Date.now() + 60_000, title: null, kind: null } },
+      { type: "WorkItemClaimed", actor: "conductor", data: { runId: `run-${other}-10`, worker: "w", title: null, kind: null } },
     ]);
     created.add(`run-${other}-10`);
     await build();
@@ -143,7 +143,7 @@ describe("selectRunnable", () => {
       {
         type: "WorkItemClaimed",
         actor: "conductor",
-        data: { runId, worker: "w", leaseUntilMs: Date.now() + 60_000, title: null, kind: null },
+        data: { runId, worker: "w", title: null, kind: null },
       },
       {
         type: "WorkItemReleased",

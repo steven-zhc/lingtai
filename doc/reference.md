@@ -58,17 +58,18 @@ are not — one per work item, run, lane and project, forever.
 | `prj-` | project | `prj-nextloom-ai-admin` |
 | `ctl-` | control | `ctl-conductor` (the only one so far) |
 
-## upcaster — 14 chains, 15 steps
+## upcaster — 14 chains, 16 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 
-| Type | Step | What was added, and why null is honest |
+| Type | Step | What changed, and why the honest reading is the one given |
 |---|---|---|
 | `ProjectConfigured` | 1 → 2 | `owner` — the repo name alone could not reach GitHub again. v1 events get `null`, not a guess. |
 | `ProjectConfigured` | 2 → 3 | `base` — defaulting to the repo's default branch is only right by convention, and admin's default was a feature branch. `null` means "ask GitHub", which is what those runs did. |
 | `Reconciled` | 1 → 2 | each finding gained `action` |
 | `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
+| `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions/0027-the-lease-is-deleted.md)). The only step that drops a field rather than adding one, and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `GatePoint`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
@@ -179,6 +180,35 @@ lost in the first place.
 
 Nothing bounds the *number* of attempts at a work item. That is a ceiling rather
 than a budget, and 0028 leaves it undecided on purpose.
+
+## claim — what holds a ticket, and the two things that are not it
+
+**A `WorkItemClaimed` on `wi-{project}-{n}`.** It says which run took the ticket
+and which `worker` — host and pid — took it for. Source:
+`claimWorkItem` in `packages/conductor/src/claim.ts`; the fold is
+`WorkItemLifecycle` in `packages/domain/src/work-item.ts`.
+
+| | |
+|---|---|
+| what excludes | `UNIQUE (stream_id, version)`. The claim is an append at the version the reader saw; two conductors racing both append at that version and the database rejects one, which comes back as `lost-race` |
+| what expires it | **nothing.** A claim held is a claim held, for as long as the log says so |
+| what returns it | an appended `WorkItemReleased` — the run ending, a gate failing, `lingtai now`, or the recovery below. There is no other way back |
+| what recovers it | a conductor starting. It holds `lingtai:daemon`, and since `#93` every conductor takes that lock, so it knows it is alone: every claim naming another `worker` is dead. `releaseForeignClaims` in `packages/daemon/src/reconcile.ts` appends the release, citing the lock |
+| where a person sees it | a `running` card on the board, and the `WorkItemReleased.reason` naming the lock when one was recovered |
+
+**There was a third thing, and it was none of the above.** `leaseUntilMs` was a
+fixed thirty minutes written into every claim and never renewed, against a
+`runtime.limits.wall` of an hour here and two hours by default — so every run
+past the half hour was alive and holding an expired lease, and the next caller
+could take its ticket. It excluded nobody, because two conductors pass a
+timestamp check together. [0027](decisions/0027-the-lease-is-deleted.md) deleted
+it: exclusion is the constraint, liveness is the lock, and neither is a number.
+
+**Recovery is an append and never a recomputation.** A projection is a fold and
+cannot read a clock; if `running` versus `queued` depended on `now()` the same
+log would produce different tables at different moments, and `lingtai projection
+rebuild task_view` would disagree with the incremental fold. That is what forced
+the lease's expiry to be inert, and it is unchanged.
 
 ## backoff — the first rule that was written down here
 

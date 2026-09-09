@@ -42,7 +42,7 @@ const discovered = (n: number) => ({
 const claimed = (n: number) => ({
   type: "WorkItemClaimed",
   actor: "conductor",
-  data: { runId: runId(n), worker: "w", leaseUntilMs: Date.now() + 60_000, title: null, kind: null },
+  data: { runId: runId(n), worker: "w", title: null, kind: null },
 });
 
 const blocked = (n: number, question: string) => ({

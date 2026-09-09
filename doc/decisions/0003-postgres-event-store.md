@@ -13,7 +13,7 @@ PostgreSQL, for three primitives that replace three fragile pieces of bash.
 
 | Old | Problem | New |
 |---|---|---|
-| `.runtime/loop.lock.d` | leaks after `kill -9`; needs a manual `rm -rf` | `UNIQUE (stream_id, version)` optimistic concurrency plus lease events. A dead process's lease expires on its own — the absence of a heartbeat *is* the expiry, so there is nothing to unwind. |
+| `.runtime/loop.lock.d` | leaks after `kill -9`; needs a manual `rm -rf` | `UNIQUE (stream_id, version)` optimistic concurrency, plus a **session advisory lock** for liveness. Nothing has to be unwound: the constraint decides every race, and the lock is held by the connection, so a killed process releases it when its socket closes. *Revised by [0027](0027-the-lease-is-deleted.md), which keeps this verdict and replaces the mechanism. It said "lease events" and "the absence of a heartbeat is the expiry"; there was no heartbeat, only a fixed thirty minutes, and the lease is deleted.* |
 | merging inside the operator's own checkout | uncommitted work made the merge fail **silently**; the cause of ~$29 of wasted re-runs on #58/#59 | `pg_advisory_lock('merge:' || project || ':' || base)` plus a worktree the integrator owns outright |
 | calling `gh` inline | a failed call vanished, with no record and no retry | an `outbox` table: the event lands first, delivery is a separate retryable concern |
 
