@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadTask, type TicketView } from "@/lib/task";
-import { shortActor } from "@/lib/history";
 import { Evidence } from "../../evidence.tsx";
+import { HistoryRow } from "../../history-row.tsx";
 
 /**
  * One task, in full.
@@ -20,8 +20,9 @@ import { Evidence } from "../../evidence.tsx";
  * The history at the bottom is the point of an event-sourced system being
  * legible. Every summary above it is an interpretation; that list is what
  * actually happened, in order, with who did it — and every row of it opens on
- * the payload as stored, which is the click the docstring used to promise and
- * the page did not have.
+ * the payload, which is the click the docstring used to promise and the page
+ * did not have. A payload that carries a document opens on the document too;
+ * see `history-row.tsx`.
  */
 export const dynamic = "force-dynamic";
 
@@ -160,29 +161,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
             {task.history.map((h) => (
               // Keyed by seq, which the store assigns and nothing reuses.
               <li key={h.seq}>
-                {/* Every row opens, including the ones whose summary already
-                    says everything: a reader should not have to know which
-                    types the formatter has learned in order to know which rows
-                    are worth clicking. */}
-                <details>
-                  <summary>
-                    <span className="when">{h.at.slice(11, 19)}</span>
-                    <span className="what">{h.type}</span>
-                    {/* Short, with the whole of it in the title. A run's actor
-                        is 45 characters and used to run past its own column
-                        into where the detail belongs (#87). */}
-                    <span className="who" title={h.actor}>
-                      {shortActor(h.actor)}
-                    </span>
-                    <span className="sum">{h.summary}</span>
-                  </summary>
-                  {/* seq first: a claim about this system's behaviour is worth
-                      more when it cites one. */}
-                  <p className="hmeta">
-                    seq {h.seq} · {h.streamId} v{h.version} · schema {h.schemaVer}
-                  </p>
-                  <pre className="hraw">{h.raw}</pre>
-                </details>
+                <HistoryRow line={h} />
               </li>
             ))}
           </ol>

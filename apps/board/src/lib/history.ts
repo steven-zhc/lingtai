@@ -41,8 +41,28 @@ export interface HistoryLine {
   streamId: string;
   version: number;
   schemaVer: number;
-  /** The payload as stored, pretty-printed. */
+  /**
+   * The payload's structure, pretty-printed, with every document lifted out of
+   * it and marked where it stood. See `splitPayload`.
+   */
   raw: string;
+  /** The documents that were lifted, in the order the payload holds them. */
+  documents: PayloadDocument[];
+}
+
+/**
+ * A payload field whose value is itself a document.
+ *
+ * `RunPrompted.prompt` is the one that forced this, but it is not the only one
+ * and naming them is not the fix — see `splitPayload`.
+ */
+export interface PayloadDocument {
+  /** Where it sat in the payload: `prompt`, or `diagnosis.raw` for a nested one. */
+  field: string;
+  /** The value itself, with its own newlines. */
+  text: string;
+  /** Its size, in the unit `RunPrompted.bytes` already reports. */
+  bytes: number;
 }
 
 type Payload = Record<string, unknown>;
@@ -292,8 +312,62 @@ export function rawPayload(data: unknown): string {
   }
 }
 
+/** What stands in the JSON where a document was lifted out of it. */
+function mark(bytes: number): string {
+  return `‹document, ${bytes} bytes — below›`;
+}
+
+/**
+ * The payload, split into its structure and the documents inside it.
+ *
+ * Pretty-printing indents the *structure*; it cannot help a value that is
+ * itself a document, because the escaping is what makes the value valid JSON
+ * and is exactly what makes it unreadable. `seq 1800` is 6,268 bytes of
+ * markdown on one line, every newline a literal `\n` — the most valuable event
+ * on the stream rendered as the least readable thing on the page (#101).
+ *
+ * **The rule is a newline in a string, not a list of field names.** A payload
+ * that carries a document is not a property of `RunPrompted`: `RunFailed.detail`
+ * is a gate's stdout, `RepairRequested.detail` is a whole typecheck run, and
+ * `WorkItemBlocked.question` has a build log inside it. An allowlist would fail
+ * the same way for the next type that starts carrying one — which is rule 2 at
+ * the top of this file, one level down.
+ *
+ * Nested and inside arrays too, labelled by path (`diagnosis.raw`), because
+ * whether a document sits at the top of the payload or one key in is an
+ * accident of the schema and not of what it is.
+ *
+ * **Nothing is dropped.** Every key stays, with a mark in place of the value
+ * saying how big it was and that it is below — so the structure is still whole
+ * and the document is still there, byte for byte, in the one form you can copy
+ * into `claude -p`. What is not reproduced is the JSON escaping, which is how
+ * the value travels and not what is stored.
+ */
+export function splitPayload(data: unknown): { raw: string; documents: PayloadDocument[] } {
+  const documents: PayloadDocument[] = [];
+
+  function lift(value: unknown, path: string): unknown {
+    if (typeof value === "string" && value.includes("\n")) {
+      const bytes = new TextEncoder().encode(value).length;
+      // A payload that is itself a document has no key to be named by.
+      documents.push({ field: path || "(the payload)", text: value, bytes });
+      return mark(bytes);
+    }
+    if (Array.isArray(value)) return value.map((v, i) => lift(v, `${path}[${i}]`));
+    if (value !== null && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Payload).map(([k, v]) => [k, lift(v, path ? `${path}.${k}` : k)]),
+      );
+    }
+    return value;
+  }
+
+  return { raw: rawPayload(lift(data ?? null, "")), documents };
+}
+
 /** One event, as a row. */
 export function toLine(event: Envelope): HistoryLine {
+  const { raw, documents } = splitPayload(event.data);
   return {
     at: event.at.toISOString(),
     type: event.type,
@@ -303,6 +377,7 @@ export function toLine(event: Envelope): HistoryLine {
     streamId: event.streamId,
     version: event.version,
     schemaVer: event.schemaVer,
-    raw: rawPayload(event.data),
+    raw,
+    documents,
   };
 }

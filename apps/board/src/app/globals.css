@@ -600,6 +600,38 @@ details[open] > summary::before { content: "▾"; }
   white-space: pre;
 }
 
+/* A document the payload carried, lifted out of the JSON that could only show
+   it escaped (#101). Collapsed and indented like everything else under a row;
+   the same trade the ticket body makes, for the same reason. */
+.history .hdoc { margin: 0 0 0.5rem 1.75rem; }
+.history .hdoc > summary {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.15rem 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.history .hdoc > summary:hover { background: var(--surface); }
+.history .hdocname { color: var(--accent-ink); }
+.history .hdoctext {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-size: 0.7rem;
+  line-height: 1.6;
+  color: var(--ink-2);
+  /* Wrapped, not scrolled sideways — a prompt is prose, unlike a diff — and
+     `pre-wrap` is also what makes a selection copy out as the document rather
+     than as one very long line. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
 @media (max-width: 46rem) {
   /* Stacked, with the marker keeping its own column so the row still reads as
      something that opens. */
