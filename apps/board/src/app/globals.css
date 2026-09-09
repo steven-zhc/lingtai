@@ -490,7 +490,15 @@ details[open] > summary::before { content: "▾"; }
   width: 100%;
 }
 
+/* The section's one fact sits at the right of the label's own rule, which is
+   why there is no separate summary band: a band that totals what is under it
+   is a second copy of the same arithmetic, and the two disagree the first time
+   one of them is changed. */
 .detail-body h2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
   font-size: 0.72rem;
   font-family: var(--mono);
   letter-spacing: 0.12em;
@@ -500,6 +508,14 @@ details[open] > summary::before { content: "▾"; }
   margin: 0 0 0.75rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--rule);
+}
+/* Not upper-cased: `23m25s` and `$14.10` are read as numbers rather than as a
+   heading, and shouting them makes both harder to read. */
+.detail-body h2 .hfact {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  text-align: right;
+  color: var(--ink-2);
 }
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
@@ -530,6 +546,70 @@ details[open] > summary::before { content: "▾"; }
   overflow-y: auto;
 }
 
+/* --- the ledger -----------------------------------------------------------
+   One row per attempt, opening on that attempt's whole arc. The log keeps one
+   stream per run and the page used to flatten it, so three claims read as one
+   list and a gate that runs *per attempt* sat in a page-level section (#102).
+   Everything below this comment is inside an attempt. */
+
+.ledger { display: flex; flex-direction: column; gap: 0.5rem; }
+.attempt {
+  padding: 0.55rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+/* The row itself: what happened, then what it cost, then when. The facts push
+   right so a column of attempts is read down rather than across. */
+.attempt > summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+.attempt > summary:hover { color: var(--ink); }
+.anum { font-family: var(--mono); color: var(--ink); }
+/* The failure's kind, the non-zero exit, the release's reason — a pointer to
+   the row in this attempt's own history that holds the whole of it. */
+.adetail { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.afacts {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.aage {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ameta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.6rem;
+}
+.aprompt, .afiles { margin: 0 0 0.5rem; }
+.aprompt > summary, .afiles > summary { padding: 0.15rem 0; font-size: 0.7rem; }
+.flist {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.flist li { display: flex; gap: 0.5rem; align-items: baseline; }
+.attempt .points { margin-bottom: 0.5rem; }
+/* Inside an attempt the point sits on the card's own surface, so it needs the
+   step down the board's cards get rather than a second border of its own. */
+.attempt .point { background: var(--surface-2); }
+.attempt > .empty { margin: 0; }
+
 /* The five gate points. Every one is listed, including the empty ones — a
    point that is merely omitted looks exactly like one that was configured and
    silently did not run, and only the second is a bug (ADR 0016 §4). */
@@ -551,7 +631,27 @@ details[open] > summary::before { content: "▾"; }
 .point .actions { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 
 /* The history. Every summary above it is an interpretation; this is what
-   happened, in order, with who did it. */
+   happened, in order, with who did it — grouped by the stream it came off,
+   which is a way in and never a filter.
+
+   The group's name and its seq range, on one quiet line. The range is here
+   because a claim about this system is worth more when it cites one, and
+   because two groups' ranges may legitimately overlap: a ticket-level event
+   landing mid-run does not cut that run in two. */
+.hgroup + .hgroup { margin-top: 1rem; }
+.hglabel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin: 0 0 0.2rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.hgname { color: var(--ink-2); }
+.hgseq { margin-left: auto; font-variant-numeric: tabular-nums; }
+
 .history {
   list-style: none;
   margin: 0;
@@ -568,7 +668,10 @@ details[open] > summary::before { content: "▾"; }
    is the click the history's docstring promised and the page did not have. */
 .history summary {
   display: grid;
-  grid-template-columns: 1rem 5rem 13rem 9rem 1fr;
+  /* The `when` column carries a date, a time and an age; the type column gives
+     up the rem it needs. A bare `04:12:15` could not tell three days ago from
+     ten minutes ago, which is the whole complaint (#102). */
+  grid-template-columns: 1rem 9.5rem 12rem 9rem 1fr;
   gap: 0.75rem;
   padding: 0.32rem 0;
   align-items: baseline;
@@ -577,6 +680,9 @@ details[open] > summary::before { content: "▾"; }
 }
 .history summary:hover { background: var(--surface); }
 .history .when { color: var(--muted); font-variant-numeric: tabular-nums; }
+/* The age, beside the stamp rather than instead of it: the stamp is what a
+   finding cites and the age is what a reader actually asks. */
+.history .ago { margin-left: 0.5rem; color: var(--rule-2); }
 .history .what { color: var(--accent-ink); }
 /* The actor, and only the actor. Shortened rather than allowed to run into the
    summary's column, with the whole of it on the row's title (#87). */

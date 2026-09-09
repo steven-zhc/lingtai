@@ -11,6 +11,7 @@
  * because its marks say *below*, and the documents last because they are the
  * tall things.
  */
+import { inWords } from "@lingtai/conductor/queue";
 import { shortActor, type HistoryLine } from "@/lib/history";
 import { DocumentBody } from "./markdown.tsx";
 
@@ -45,7 +46,15 @@ export function HistoryRow({ line }: { line: HistoryLine }) {
     // has learned in order to know which rows are worth clicking.
     <details>
       <summary>
-        <span className="when">{line.at.slice(11, 19)}</span>
+        {/* Dated *and* relative, with the whole timestamp on the title.
+            `at.slice(11, 19)` alone gives a bare `04:12:15`, so an event from
+            three days ago was indistinguishable from one ten minutes old — and
+            a page whose whole subject is which attempt something belongs to
+            cannot leave that to be guessed (#102). */}
+        <span className="when" title={line.at}>
+          {line.at.slice(5, 10)} {line.at.slice(11, 19)}
+          <span className="ago">{inWords(Date.now() - Date.parse(line.at))}</span>
+        </span>
         <span className="what">{line.type}</span>
         {/* Short, with the whole of it in the title. A run's actor is 45
             characters and used to run past its own column into where the
