@@ -31,6 +31,7 @@
  * shape is a daemon that refuses with the remedy in the message, rather than one
  * that runs until the wrong event arrives (#90).
  */
+import { paint } from "@lingtai/env/colour";
 import type { Projection, ProjectionRunner } from "@lingtai/projector";
 import { ProjectionShapeError, createProjectionRunner } from "@lingtai/projector";
 import { type DaemonLock, acquireDaemonLock } from "./lock.ts";
@@ -108,7 +109,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
           // an absent one because nobody distrusts it.
           if (phase !== "handler") return;
           state.failure ??= { projection: projection.name, error };
-          log(`${projection.name} stopped: ${String(error)}`);
+          log(paint.fail(`${projection.name} stopped: ${String(error)}`));
           shutdown("projection-failed");
         },
       });
@@ -121,11 +122,14 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         // failure a daemon can see *before* it costs anything: #84's column
         // landed, the daemon came up green, and it stopped eight events later
         // with a run in flight and nothing on the board saying why (#90).
-        if (err instanceof ProjectionShapeError) log(`${projection.name}\twill not follow — ${err.message}`);
+        if (err instanceof ProjectionShapeError)
+          log(paint.fail(`${projection.name}\twill not follow — ${err.message}`));
         throw err;
       }
       const lag = await runner.lag();
-      log(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`);
+      // Chrome: a name and two sequence numbers. Dim, so that the refusal above
+      // it is what the eye lands on when there is one.
+      log(paint.muted(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`));
     }
   } catch (err) {
     // Started nothing useful. Release rather than sit on the lock and keep the
@@ -135,7 +139,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
     throw err;
   }
 
-  log(`daemon up — ${runners.length} projection(s)`);
+  log(paint.accent(`daemon up — ${runners.length} projection(s)`));
 
   return {
     ok: true,

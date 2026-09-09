@@ -15,6 +15,7 @@ import {
   runnableNow,
   selectRunnable,
 } from "@lingtai/conductor";
+import { paint, stateInk } from "@lingtai/env/colour";
 import { describeHold, readTasks, type TaskCard } from "@lingtai/projector";
 
 export interface StatusOptions {
@@ -186,13 +187,22 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       // every row looks unoffered, and the line above already says so.
       const unoffered =
         t.state === "queued" && asked && !runnable.some((r) => r.taskId === t.taskId);
+      // **The board's lanes, in the terminal's colours** (#107). `stateInk`
+      // holds the assignment so that this file and `globals.css` cannot drift:
+      // landed is the pass colour, running and gates the accent, waiting the
+      // one thing amber is for.
+      //
+      // The two queued suffixes are dim rather than coloured, and deliberately.
+      // `[backing off — runnable in 32m]` is a clock and `[not offered]` is an
+      // absence; neither is a verdict and neither is a person, so giving either
+      // a hue would be spending the vocabulary on decoration.
       const note =
         t.state !== "queued"
-          ? `  [${t.state}]`
+          ? `  ${stateInk(t.state)(`[${t.state}]`)}`
           : held
-            ? `  [${backingOff(held, now)}]`
+            ? `  ${paint.muted(`[${backingOff(held, now)}]`)}`
             : unoffered
-              ? "  [not offered]"
+              ? `  ${paint.muted("[not offered]")}`
               : "";
       log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`);
 

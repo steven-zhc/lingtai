@@ -71,6 +71,7 @@ import { promisify } from "node:util";
 // child-process types, and the board imports this package.
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/domain";
+import { paint } from "@lingtai/env/colour";
 import { databaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { projectionLag } from "@lingtai/projector";
@@ -513,7 +514,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         // the sentence says `killed` or names a process nobody dared touch.
         const fate = await killWorker(life.worker);
         f.actual = `${f.actual} — ${fate}`;
-        log(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`);
+        log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`));
         await store.append(f.stream, events.length, [
           {
             type: "WorkItemReleased",
@@ -527,7 +528,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
             }),
           },
         ]);
-        log(`reconciled: released ${f.stream}`);
+        log(paint.pass(`reconciled: released ${f.stream}`));
       } catch (err) {
         f.action = "reported";
         f.actual = `${f.actual} (could not release: ${(err as Error).message})`;
@@ -537,7 +538,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
     if (f.action !== "removed") continue;
     try {
       await rm(f.path, { recursive: true, force: true });
-      log(`reconciled: removed ${f.path}`);
+      log(paint.pass(`reconciled: removed ${f.path}`));
     } catch (err) {
       // Report the failure rather than the intention. An event saying
       // "removed" about a directory that is still there is worse than no

@@ -39,6 +39,7 @@ import {
   type ShutdownRequest,
 } from "@lingtai/daemon";
 import { parseDuration } from "@lingtai/recipe";
+import { paint } from "@lingtai/env/colour";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
@@ -248,7 +249,12 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   });
 
   if (!started.ok) {
-    console.log(`another daemon holds the lock${started.holder ? ` (${started.holder})` : ""} — nothing to do`);
+    // A refusal, and deliberately the quietest line the daemon has. Nothing is
+    // wrong — red here would be the error that teaches people to ignore errors
+    // — and nothing happened, so dim is the honest weight for it.
+    console.log(
+      paint.muted(`another daemon holds the lock${started.holder ? ` (${started.holder})` : ""} — nothing to do`),
+    );
     return 0;
   }
 
@@ -306,7 +312,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     console.error(`reconcile failed: ${(err as Error).message}`);
     return [];
   });
-  if (found.length > 0) console.log(`reconciled ${found.length} divergence(s)`);
+  if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`));
   const heartbeat = setInterval(() => {
     void beat("up", { code }).catch(() => {});
   }, HEARTBEAT_MS);
@@ -343,7 +349,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   const stopNow = (why: string): void => {
     if (stopping) return;
     stopping = true;
-    console.log(why);
+    console.log(paint.held(why));
     clearInterval(heartbeat);
     void (async () => {
       await beat("stopping", { code }).catch(() => {});
@@ -368,12 +374,18 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     draining = true;
 
     const held = await inFlight().catch(() => []);
-    console.log(`draining — ${describeInFlight(held)}, then stopping (${why}).`);
-    console.log("press ctrl-c again to stop now, leaving its agent orphaned.");
+    // The held colour, which is the board's own answer for this exact fact:
+    // `draining.tsx` wears `chip held` with the comment "Held rather than
+    // warned: nothing is broken, and a red chip would send…". A shutdown is a
+    // person's word, and a person's word is never the green one nor the red.
+    console.log(paint.held(`draining — ${describeInFlight(held)}, then stopping (${why}).`));
+    console.log(paint.muted("press ctrl-c again to stop now, leaving its agent orphaned."));
     console.log(
-      timeoutMs === null
-        ? `a pass is the agent, the gates and the merge lane, so this can take as long as ${WALL_LIMIT} — it is waiting, not hung.`
-        : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
+      paint.muted(
+        timeoutMs === null
+          ? `a pass is the agent, the gates and the merge lane, so this can take as long as ${WALL_LIMIT} — it is waiting, not hung.`
+          : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
+      ),
     );
     await beat("draining", { code }).catch(() => {});
 
@@ -440,14 +452,21 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
         });
         // The run told GitHub as it went (0022), so there is nothing left
         // here to send and nothing to report about sending it.
+        // A routine pass, in the accent — structure, not a verdict. What the
+        // pass *decided* is coloured line by line above this; this one only
+        // says the loop went round.
         console.log(
-          `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
-            (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ""),
+          paint.accent(
+            `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
+              (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ""),
+          ),
         );
       },
     });
     const control = await readControl();
-    if (control.paused) console.log(`paused by ${control.by} — ${control.reason}`);
+    // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
+    // broken and a person stopped it.
+    if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`));
     await loop.start();
     // A question asked while nothing was listening is waiting in the stream,
     // exactly as a pause is (0013). After `start`, so the subscription is
@@ -461,7 +480,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     // Discussions go with the conductor, and that is what this flag says: they
     // spend money and 0033 §3 puts everything that spends money in the process
     // that takes work. A daemon told to take none answers none either.
-    console.log("projections only — no work will be taken and no question answered");
+    console.log(paint.muted("projections only — no work will be taken and no question answered"));
   }
 
   // The first signal drains and says so; the second stops now. `kill <pid>` is
@@ -525,13 +544,13 @@ async function controlCommand(
       return 2;
     }
     await pauseConductor(by, reason);
-    console.log(`paused by ${by} — ${reason}`);
+    console.log(paint.held(`paused by ${by} — ${reason}`));
     return 0;
   }
 
   if (verb === "resume") {
     await resumeConductor(by);
-    console.log(`resumed by ${by}`);
+    console.log(paint.pass(`resumed by ${by}`));
     return 0;
   }
 
@@ -557,7 +576,7 @@ async function controlCommand(
     }
 
     await requestShutdown(by, reason, timeoutMs);
-    console.log(`shutdown asked by ${by} — ${reason}`);
+    console.log(paint.held(`shutdown asked by ${by} — ${reason}`));
 
     // Said up front, because the alternative is a command that has returned
     // and a daemon that looks hung (0030 §6). What is being waited for is the
