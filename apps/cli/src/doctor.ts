@@ -45,6 +45,7 @@ import {
   readStatus,
 } from "@lingtai/daemon";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
 import { describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
@@ -1211,18 +1212,38 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   };
 }
 
+/**
+ * The four markers already carried the semantics; only the rendering was
+ * missing (#107). Two failures in thirty lines and nothing drew the eye to
+ * either, which is the whole of what a colour fixes here.
+ *
+ * The tag is coloured and the name beside it is not: `--fail` on the marker is
+ * what a reader scans down the left edge for, and colouring the sentence too
+ * would spend the same attention twice. A `skip` — not implemented yet — is
+ * dimmed rather than coloured, because it is not a verdict about this system.
+ */
+const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
+  ok: { text: "  ok  ", ink: paint.pass },
+  fail: { text: " FAIL ", ink: paint.fail },
+  // `note` is amber, and it is the one thing amber is for: a check that passed
+  // but wants a person to look at it is a person being waited on.
+  warn: { text: " note ", ink: paint.signal },
+  skip: { text: " skip ", ink: paint.muted },
+};
+
 export function formatReport(report: DoctorReport): string {
   const notes = report.warned > 0 ? `, ${report.warned} to note` : "";
   const lines = report.results.map((r) => {
-    const tag =
-      r.status === "ok" ? "  ok  " : r.status === "fail" ? " FAIL " : r.status === "warn" ? " note " : " skip ";
-    return `${tag} ${r.name}\n         ${r.detail}`;
+    const tag = TAG[r.status];
+    return `${tag.ink(tag.text)} ${r.name}\n         ${r.detail}`;
   });
   lines.push("");
   lines.push(
     report.failed === 0
-      ? `${report.ok} ok${notes}, ${report.skipped} not implemented yet, 0 failed`
-      : `${report.failed} check(s) FAILED — ${report.ok} ok${notes}, ${report.skipped} not implemented yet`,
+      ? `${paint.pass(`${report.ok} ok`)}${notes}, ${report.skipped} not implemented yet, 0 failed`
+      : paint.fail(
+          `${report.failed} check(s) FAILED — ${report.ok} ok${notes}, ${report.skipped} not implemented yet`,
+        ),
   );
   return lines.join("\n");
 }

@@ -33,6 +33,12 @@ const ROOT = resolve(HERE, "../../..");
  * owns, so prefixing it would be wrong rather than tidy.
  */
 const NOT_OURS: Record<string, string> = {
+  // The terminal's three, all read in `colour.ts` and nowhere else (#107). A
+  // `LINGTAI_NO_COLOR` would be a way of not honouring what an operator asked
+  // for: they exported the standard name for the machine, and meant it here.
+  FORCE_COLOR: "the terminal's, read to colour a pipe on purpose",
+  NO_COLOR: "the terminal's, and the standard — an operator who set it meant it",
+  TERM: "the terminal's, read to believe one that says it cannot do colour",
   HOME: "the operating system's, read to find where a home directory is",
   HOSTNAME: "the operating system's, read to say which machine a daemon is on",
   USER: "the operating system's, read to attribute an approval to a person",

@@ -55,6 +55,7 @@ import {
   type WorkItemStatus,
 } from "@lingtai/domain";
 import { databaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
+import { paint } from "@lingtai/env/colour";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import pg from "pg";
@@ -299,7 +300,9 @@ export async function convergeIssues(
         detail: `converged by reconcile: ${d.expected}`,
       });
       converged.push(d);
-      log(`reconciled: ${d.project}#${d.issue} ${d.change} — ${d.expected}`);
+      // A repair that came out right, in the colour a verdict that passed
+      // wears. It is not chrome: something was wrong and now is not.
+      log(paint.pass(`reconciled: ${d.project}#${d.issue} ${d.change} — ${d.expected}`));
     } catch (err) {
       // Recorded, not retried. The next reconcile recomputes the target from
       // the log and tries again on its own; a counter here would be the
@@ -310,7 +313,7 @@ export async function convergeIssues(
         change: d.change,
         error: (err as Error).message,
       });
-      log(`reconcile could not converge ${d.project}#${d.issue} ${d.change}: ${(err as Error).message}`);
+      log(paint.fail(`reconcile could not converge ${d.project}#${d.issue} ${d.change}: ${(err as Error).message}`));
     }
   }
 
