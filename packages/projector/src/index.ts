@@ -32,6 +32,7 @@ export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
   describeHold,
+  readTaskProjects,
   readTasks,
   taskViewProjection,
   type HoldLine,

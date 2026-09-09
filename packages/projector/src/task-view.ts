@@ -917,3 +917,35 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
     await client.end();
   }
 }
+
+/**
+ * Which projects the board holds cards from, whatever it is filtered to.
+ *
+ * Distinct over the same rows `readTasks` returns — the same retention window,
+ * so a project whose last card has aged out loses its name here too rather than
+ * offering a filter that leads to an empty board.
+ *
+ * Its own query rather than a fold over a filtered read, because that is the
+ * one question a filtered read cannot answer: narrowing to one project is what
+ * removes the evidence that the others exist. And not the registered list
+ * either — **a card can outlive its project** (#86), so a repository that has
+ * been unregistered still appears here for as long as its work does.
+ */
+export async function readTaskProjects(
+  options: Pick<ReadTasksOptions, "retentionDays" | "url"> = {},
+): Promise<string[]> {
+  const client = new pg.Client({ connectionString: options.url ?? databaseUrl() });
+  await client.connect();
+  try {
+    const r = await client.query<{ project: string }>(
+      `select distinct project
+       from task_view
+       where (closed_at is null or closed_at > now() - ($1 || ' days')::interval)
+       order by project`,
+      [options.retentionDays ?? DEFAULT_RETENTION_DAYS],
+    );
+    return r.rows.map((row) => row.project);
+  } finally {
+    await client.end();
+  }
+}

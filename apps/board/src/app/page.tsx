@@ -534,6 +534,19 @@ function Queued({
  * names as static text anyway (#81). Two projects is bearable — the cards carry
  * their own project name — and four is not, so the names in the bar are the
  * control that does it.
+ *
+ * **The names are `loadBoard`'s, not the register's.** A card can outlive its
+ * project — which is why `onBoard` below is built from the cards rather than
+ * from `loadProjects` — and a filter offering only currently registered
+ * repositories would be the one control on the page that cannot reach that
+ * card (#86). The list is the same whatever is selected, because the choice is
+ * made from all of them every time.
+ *
+ * **The filter is in the URL, and that is what makes the live stream harmless.**
+ * `live.tsx` asks for a re-render of *this route*, so an append from a project
+ * you have filtered out re-reads the same narrowed board and reconciles to the
+ * same markup. Held in component state it would instead have been thrown away
+ * by the first event from the project you had just stopped looking at.
  */
 export default async function Page({
   searchParams,
@@ -541,8 +554,10 @@ export default async function Page({
   searchParams: Promise<{ project?: string }>;
 }) {
   const only = (await searchParams).project;
-  const { columns, repair, queueOrder } = await loadBoard(only);
-  const projects = await loadProjects().catch(() => []);
+  const { columns, repair, queueOrder, projects: filters } = await loadBoard(only);
+  // The register, and only for the owners a ticket link is built from. Which
+  // projects the bar can offer is `loadBoard`'s answer and not this one.
+  const registered = await loadProjects().catch(() => []);
   // Not caught. A control read that fails would render as "nothing is paused",
   // which is the exact silence #77 is about; and it reads the same database
   // `loadBoard` just read, so it fails when the board fails and not otherwise.
@@ -565,9 +580,8 @@ export default async function Page({
 
   // Where each card's ticket lives, from the owners already loaded — a lookup,
   // not a request per card.
-  const owners = new Map(projects.map((p) => [p.project, p.owner]));
+  const owners = new Map(registered.map((p) => [p.project, p.owner]));
   const ticket = (card: BoardCard) => issueUrl(owners.get(card.project) ?? null, card.project, card.ref);
-  const named = projects.map((p) => p.project).filter((p): p is string => p !== null);
 
   return (
     <main>
@@ -583,16 +597,16 @@ export default async function Page({
         <span className="sep" />
         {/* A filter, not a caption. With one project there is nothing to choose
             between, so it stays the sentence it was. */}
-        {named.length === 0 ? (
+        {filters.length === 0 ? (
           <span>no project configured</span>
-        ) : named.length === 1 ? (
-          <span>{named[0]}</span>
+        ) : filters.length === 1 ? (
+          <span>{filters[0]}</span>
         ) : (
           <span className="filter">
             <Link className={`tab${only === undefined ? " on" : ""}`} href="/">
               all
             </Link>
-            {named.map((p) => (
+            {filters.map((p) => (
               <Link
                 key={p}
                 className={`tab${only === p ? " on" : ""}`}
@@ -640,7 +654,12 @@ export default async function Page({
         {total === 0 ? (
           <>
             <span className="sep" />
-            <span className="chip idle">nothing in the log yet</span>
+            {/* Under a filter, "the log" is not what is empty — it may be full
+                of the project you are not looking at. The board says whose
+                emptiness this is, the way the columns below do (#86). */}
+            <span className="chip idle">
+              {only === undefined ? "nothing in the log yet" : `nothing here for ${only}`}
+            </span>
           </>
         ) : rest === "" ? null : (
           <>
@@ -729,7 +748,7 @@ export default async function Page({
               ))}
               {col.cards.length === 0 && !col.problems?.length ? (
                 <p className={`empty${col.id === "running" && control.paused ? " held" : ""}`}>
-                  {emptyNote(col.id, control.paused)}
+                  {emptyNote(col.id, control.paused, only)}
                 </p>
               ) : col.id === "landed" ? (
                 <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />

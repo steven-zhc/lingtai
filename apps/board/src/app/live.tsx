@@ -9,6 +9,16 @@
  * second reducer that can disagree with the first one. Re-reading is cheaper
  * than being subtly wrong.
  *
+ * **The route, and so its filter.** `router.refresh()` re-renders the URL that
+ * is showing, so a board narrowed to one project re-reads that same narrowed
+ * board and reconciles to the same markup: an append from a project you have
+ * filtered out costs a render and moves nothing on the page (#86). Nothing here
+ * reads the filter, and that is the choice rather than an omission — skipping an
+ * append this component judged irrelevant would trade a re-render nobody can see
+ * for a board that silently stops updating, which is the failure `#64` is about.
+ * A run's events name a run and not a project, so the judgement would be a guess
+ * for most of what arrives during one.
+ *
  * `EventSource` reconnects on its own and sends `Last-Event-ID`, so resume is
  * the browser's job and the server's — not this component's. What it does keep
  * is the last seq, so a tab that has been asleep asks for the right place even

@@ -129,4 +129,26 @@ describe("what an empty column says", () => {
       expect(emptyNote(column.id, true).length, `${column.id} says`).toBeGreaterThan(0);
     }
   });
+
+  /**
+   * Under a filter the lane is bare because of a choice the reader made, and
+   * "Nothing here yet" is a claim about the log — which may be full of the
+   * project they are not looking at (#86). Four cards under a heading reading
+   * `Queued 9` was the same failure in the other direction.
+   */
+  it("says whose emptiness it is when the board is narrowed to one project", () => {
+    expect(emptyNote("landed", false, "esctest")).toBe("Nothing here for esctest.");
+    expect(emptyNote("queued", false, "esctest")).toBe("Nothing here for esctest.");
+    expect(emptyNote("waiting", false, "esctest")).toBe("Nothing in esctest is waiting on you.");
+  });
+
+  it("leaves the pause alone under a filter, because a pause is not per-project", () => {
+    expect(emptyNote("running", true, "esctest")).toBe("Paused — nothing will start.");
+  });
+
+  it("names the project on every column a filter can empty", () => {
+    for (const column of COLUMNS) {
+      expect(emptyNote(column.id, false, "esctest"), `${column.id} says`).toContain("esctest");
+    }
+  });
 });

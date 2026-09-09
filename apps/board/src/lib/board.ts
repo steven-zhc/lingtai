@@ -23,8 +23,13 @@
 // The subpath, not the barrel: importing the barrel pulls in the gate
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
-import { readTasks, type TaskCard, type TaskState } from "@lingtai/projector/task-view";
-import type { BlockDiagnosis } from "@lingtai/domain";
+import {
+  readTaskProjects,
+  readTasks,
+  type TaskCard,
+  type TaskState,
+} from "@lingtai/projector/task-view";
+import type { BlockDiagnosis, ProjectState } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
@@ -198,6 +203,17 @@ export interface Board {
    * first".
    */
   queueOrder: string[];
+  /**
+   * Every project this board can be narrowed to, in the order the bar offers
+   * them.
+   *
+   * Here rather than read in the page, for the reason `queueOrder` is here: it
+   * has to be the same list whatever the board is currently showing, and a page
+   * holding a filtered board has only one project's worth of cards to learn
+   * from. A filter whose options are computed from what it is filtered to can
+   * only ever offer the choice already made.
+   */
+  projects: string[];
 }
 
 /**
@@ -257,11 +273,23 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
  * is running is a decision somebody made and the log remembers. The empty
  * column is where a person looks when a lane is bare, so it is the one place
  * that has to know.
+ *
+ * **Under a filter it says whose emptiness it is.** "Nothing here yet" is a
+ * claim about the log, and with one project selected the log may be full of
+ * another project's work: the lane is bare because of a choice the reader made,
+ * and saying so is the difference between a filter that is working and a board
+ * that has nothing on it (#86). The pause is not narrowed — `ctl-` is one
+ * stream for the whole installation — so that sentence is the filter's to leave
+ * alone.
  */
-export function emptyNote(column: ColumnId, paused: boolean): string {
+export function emptyNote(column: ColumnId, paused: boolean, project?: string): string {
   if (column === "running" && paused) return "Paused — nothing will start.";
-  if (column === "waiting") return "Nothing is waiting on you.";
-  return "Nothing here yet.";
+  if (column === "waiting") {
+    return project === undefined
+      ? "Nothing is waiting on you."
+      : `Nothing in ${project} is waiting on you.`;
+  }
+  return project === undefined ? "Nothing here yet." : `Nothing here for ${project}.`;
 }
 
 /**
@@ -339,8 +367,13 @@ export function toCard(
  *
  * `projectFilter` is the shared answer: resolved, or refused with the reason,
  * in the same wording `lingtai daemon` and `lingtai status` use.
+ *
+ * Takes the projects rather than loading them. It used to load them and apply
+ * the filter itself, which put the only unfiltered list of projects behind the
+ * filter — and left the bar naming what it was showing instead of what it could
+ * show (#86).
  */
-async function queuedCards(project?: string): Promise<{
+async function queuedCards(projects: readonly ProjectState[]): Promise<{
   cards: BoardCard[];
   problems: QueueProblem[];
   repair: RepairPolicyView[];
@@ -362,10 +395,6 @@ async function queuedCards(project?: string): Promise<{
   /** The kinds each project prioritises, in order, for the Queued grouping. */
   kindOrder: string[];
 }> {
-  const projects = (await loadProjects().catch(() => [])).filter(
-    (p) => project === undefined || p.project === project,
-  );
-
   const cards: BoardCard[] = [];
   const problems: QueueProblem[] = [];
   // Gathered here rather than by a second pass over the projects: this loop
@@ -494,10 +523,18 @@ export async function loadBoard(project?: string): Promise<Board> {
     if (!/does not exist/i.test((err as Error).message)) throw err;
   }
 
+  // Loaded once, here, and read twice: every registered project names a filter
+  // the bar can offer, and only the ones the filter admits are asked for their
+  // queue.
+  const registered = await loadProjects().catch(() => []);
+  const names = registered.map((p) => p.project).filter((p): p is string => p !== null);
+
   // Before the fold, because the fold needs what it learned: a card the backoff
   // is holding is a card the log wrote, and how long it is held for is in the
   // recipe this just read (0028).
-  const queued = await queuedCards(project);
+  const queued = await queuedCards(
+    registered.filter((p) => project === undefined || p.project === project),
+  );
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
@@ -523,7 +560,50 @@ export async function loadBoard(project?: string): Promise<Board> {
     columns: toColumns(cards, queued.problems),
     repair: queued.repair,
     queueOrder: queued.kindOrder,
+    // Unfiltered, deliberately. This is the list the filter is chosen *from*,
+    // so narrowing it to the current choice would remove every way back to the
+    // rest — including "all".
+    projects: filterOptions(names, await onBoardProjects()),
   };
+}
+
+/**
+ * Which projects the log has cards from, or none when there is no projection.
+ *
+ * The same `does not exist` `loadBoard` reads as an empty board: before the
+ * first run there is no table, and that is a state rather than a fault.
+ */
+async function onBoardProjects(): Promise<string[]> {
+  try {
+    return await readTaskProjects();
+  } catch (err) {
+    if (!/does not exist/i.test((err as Error).message)) throw err;
+    return [];
+  }
+}
+
+/**
+ * Every project the filter can offer, in the order the bar shows them.
+ *
+ * The union, and neither half on its own. The registered list alone loses a
+ * project that has been unregistered while its work is still on the board —
+ * **a card can outlive its project**, which is the distinction the page already
+ * draws when it decides whether to print a project name on a card, and the
+ * filter must not be the one control that cannot reach it (#86). The board's
+ * own projects alone would lose a registered repository whose queue is all it
+ * has: nothing of a project is in `task_view` until something has run.
+ *
+ * Registered first and in their own order, so the names an operator reads every
+ * day keep their places; an unregistered project falls to the tail, where its
+ * work is being wound down anyway.
+ */
+export function filterOptions(
+  registered: readonly string[],
+  onBoard: readonly string[],
+): string[] {
+  const all = [...registered];
+  for (const project of onBoard) if (!all.includes(project)) all.push(project);
+  return all;
 }
 
 /**
