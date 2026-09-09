@@ -306,6 +306,46 @@ export const Recipe = z.object({
     limits: z
       .object({ turns: z.number().int().positive().default(300), wall: z.string().default("2h") })
       .default({ turns: 300, wall: "2h" }),
+    /**
+     * How much an agent is told, in characters and rows
+     * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
+     *
+     * `limits` bounds what a run may *spend*; this bounds what it is *given*,
+     * and the two are the same kind of decision — which is why they sit
+     * together. Four numbers decided the answer to "what does an agent know
+     * about why the last attempt failed" (`#82`, `#84`) from four constants in
+     * two packages that nobody reviewed together, and prompt content is the
+     * most expensive lever this system has.
+     *
+     * Here rather than compiled in for the reason `backoff` and `repair` are
+     * (0016 §7): how much of a failure is worth quoting depends on what this
+     * repository's failures look like — a build that prints one line and a
+     * suite that prints two hundred do not want the same budget — and that is a
+     * thing the repository knows and the core cannot see.
+     *
+     * The defaults are the constants they replaced, unchanged, so a recipe that
+     * says nothing renders exactly the prompt it rendered before.
+     */
+    budget: z
+      .object({
+        /** Characters of one earlier failure's output quoted verbatim into the next prompt. */
+        evidence: z.number().int().positive().default(2_000),
+        /** Rows the attempt table names before it says "and N earlier". */
+        attempts: z.number().int().positive().default(5),
+        /** Findings of a review gate carried into the next attempt. */
+        findings: z.number().int().positive().default(5),
+        /**
+         * Bytes of the diff a review agent sees before it is truncated.
+         *
+         * [Experiment 001](../../../doc/experiments/001-cold-review-issue-58.md)'s
+         * diff was 1391 lines across 6 files and fitted comfortably. Far past
+         * that is a work item scoped too large, which the compaction counter
+         * already reports; sending a megabyte produces a worse review, not a
+         * better one.
+         */
+        diff: z.number().int().positive().default(400_000),
+      })
+      .default({ evidence: 2_000, attempts: 5, findings: 5, diff: 400_000 }),
   }),
 });
 export type Recipe = z.infer<typeof Recipe>;

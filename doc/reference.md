@@ -7,7 +7,7 @@ document asserting a state of the world the code had moved past.
 Where a list is open-ended (streams, runs, projects) it says so and gives
 examples instead of pretending to be exhaustive.
 
-**Counted 2026-09-02.**
+**Counted 2026-09-08.**
 
 > **This describes the code as it is.** It is updated as each step lands, never ahead of it. A
 > reference that documents intent instead of behaviour is the defect this
@@ -16,10 +16,10 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 38 types
+## event — 42 types
 
 One fact that already happened, past tense. Never edited, never deleted.
-Source: the registry at the bottom of `packages/core/src/events.ts`.
+Source: the registry at the bottom of `packages/domain/src/events.ts`.
 
 | Group | Types |
 |---|---|
@@ -29,18 +29,25 @@ Source: the registry at the bottom of `packages/core/src/events.ts`.
 | gate (7) | `GatesResolved` `EndActionsResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` |
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
+| repair (2) | `RepairRequested` `RepairDeclined` |
 | control (2) | `ConductorPaused` `ConductorResumed` |
-| outbox (2) | `OutboxDelivered` `OutboxFailed` |
+| issue (2) | `IssueUpdated` `IssueUpdateFailed` |
+| outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired**, `RETIRED` in the same file |
 | project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload
 change means bumping that type's version and adding an upcaster in the same
 commit — old events are never rewritten.
 
+A **retired** type is one the log holds and nothing appends again. The refusal is
+on the write side because the read side has no honest way to decline a row:
+retiring is two things, and only the second can be enforced — stop writing them,
+and keep reading them for ever.
+
 ## stream — 5 prefixes, unbounded instances
 
 The events about one thing, in order. The **prefixes** are a closed set,
-validated by regex in `packages/core/src/envelope.ts`. The streams themselves
+validated by regex in `packages/domain/src/envelope.ts`. The streams themselves
 are not — one per work item, run, lane and project, forever.
 
 | Prefix | One per | Example |
@@ -51,32 +58,45 @@ are not — one per work item, run, lane and project, forever.
 | `prj-` | project | `prj-nextloom-ai-admin` |
 | `ctl-` | control | `ctl-conductor` (the only one so far) |
 
-## upcaster — 2 chains
+## upcaster — 14 chains, 15 steps
 
 A function reading an older event shape and returning the current one.
-Source: `UPCASTERS` in `packages/core/src/upcast.ts`.
+Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 
 | Type | Step | What was added, and why null is honest |
 |---|---|---|
 | `ProjectConfigured` | 1 → 2 | `owner` — the repo name alone could not reach GitHub again. v1 events get `null`, not a guess. |
 | `ProjectConfigured` | 2 → 3 | `base` — defaulting to the repo's default branch is only right by convention, and admin's default was a feature branch. `null` means "ask GitHub", which is what those runs did. |
-| `Reconciled` | 1 → 2 | see the registry |
+| `Reconciled` | 1 → 2 | each finding gained `action` |
+| `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
+| `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
+| `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
+| `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `GatePoint`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
 
-Every other type is still at version 1.
+Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
+`packages/domain/src/events.ts`; everything absent from it is 1.
 
-## projection — 2
+## projection — 1
 
 A regular Postgres table built by replaying the log. Holds no truth of its own.
-Source: `PROJECTIONS` in `apps/cli/src/lingtai.ts`.
+Source: `taskViewProjection` in `packages/projector/src/task-view.ts`, wired in
+`apps/cli/src/lingtai.ts`.
 
 | Name | Answers | Owns its table? |
 |---|---|---|
 | `task_view` | what is the current state of every task the board shows | yes — `create`/`reset` build and drop it, along with `task_view_run` |
-| `outbox` | what still has to be said to GitHub | **no** — the contract owns `outbox`, so `create`/`reset` are no-ops. Dropping it would take it out from under `db verify`. |
+
+There were two. The `outbox` projection is gone with the outbox itself
+([0022](decisions/0022-the-seams.md)), dropped by the
+`20260904T2359_drop_outbox` migration; `task_view` is now a fold and nothing
+else, with the queue cache gone the same way. **Nothing writes to it but the
+projection**, and the way to correct it is `lingtai projection rebuild
+task_view` — replay, never a repair by hand.
 
 ## task state — 5, board lane — 4
 
-Source: `TaskState` in `packages/conductor/src/task-view.ts:50`.
+Source: `LABEL_STATES` in `packages/domain/src/streams.ts:61`, re-exported as
+`TaskState` by `packages/projector/src/task-view.ts:65`.
 
 `queued` · `running` · `gates` · `waiting` · `landed`
 
@@ -91,13 +111,82 @@ column is merged.
 `queued` is the only one not driven by an event — it comes from GitHub, because
 Lingtai never decided which issues exist ([ADR 0012](decisions/0012-one-task-view.md)).
 
-## backoff — a rule, and the first one here
+## policy — every number that decides behaviour
 
-Every other section counts: event types, gate points, doctor checks, tiers. This
-one states a rule, and until [0028](decisions/0028-the-backoff-is-the-recipes.md)
-there was nowhere in this file shaped to hold one — which is how the rule that
-decides when Lingtai spends money again came to live in a constant with no
-decision behind it and no mention here (`#95`).
+Every other section counts a **kind**: event types, gate points, doctor checks,
+tiers. This one lists **limits** — the numbers that decide what a run is told,
+what it may spend and how long a card survives. Nothing here names a thing; each
+row is a rule, and until [0029](decisions/0029-the-prompt-budget-is-the-recipes.md)
+this file had no shape that could hold one.
+
+That gap is why six of these lived in three source files with **no mention
+anywhere in `doc/`, `README.md` or `CLAUDE.md`** (`#96`). They were well
+commented where they sat — `agent-gate.ts` cited experiment 001's diff size as
+its evidence — and being well commented is not the same as being findable. It is
+the same structural gap that hid the lease ([0027](decisions/0027-the-lease-is-deleted.md))
+and the backoff ([0028](decisions/0028-the-backoff-is-the-recipes.md)).
+
+**A limit is either the recipe's or Lingtai's, and the column says which.** A
+number a repository should be able to choose belongs in the recipe (0016 §7);
+one that governs the log or the board belongs in code, and then this table is
+where its value is written down.
+
+### what a run is given — `runtime.budget`, the recipe's
+
+Together these are the answer to *what does an agent know about why the last
+attempt failed*, which is the premise of `#82` and of `repair`
+([0025](decisions/0025-a-failure-buys-one-agent.md)). An agent that cannot see
+the failure repeats it, and the ticket buys another agent.
+
+| Key | Default | What it decides | Applied by |
+|---|---|---|---|
+| `runtime.budget.evidence` | `2000` chars | how much of one earlier failure's output the next prompt quotes verbatim | `clamp` in `packages/conductor/src/attempts.ts` |
+| `runtime.budget.attempts` | `5` rows | how many attempts the history table names before "and N earlier" | `attemptBrief`, same file |
+| `runtime.budget.findings` | `5` | how many of a review gate's findings are carried into the next attempt | `attemptOutcome`, same file |
+| `runtime.budget.diff` | `400000` bytes | past this, the diff handed to a **review agent** is truncated | `buildReviewPrompt` in `packages/actions/src/agent-gate.ts` |
+
+The `diff` default is [experiment 001](experiments/001-cold-review-issue-58.md)'s
+reasoning: its diff was 1391 lines across 6 files and fitted comfortably, and far
+past that is a work item scoped too large — which the compaction counter already
+reports. A megabyte produces a worse review, not a better one.
+
+### what a run may spend — `runtime.limits`, the recipe's
+
+| Key | Default | What it decides |
+|---|---|---|
+| `runtime.limits.turns` | `300` | turns before the runtime stops the agent |
+| `runtime.limits.wall` | `2h` | wall clock before the same |
+| `gates.<point>[].timeout` | `15m` | per process action, not per point |
+| `repair.maxAttempts` | `1` | repair agents bought per work item, across every distinct failure (0025 §3) |
+| `repair.on` | `true` | whether a failure of this repository's buys one at all |
+| `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
+
+### what Lingtai decides for itself
+
+Not the recipe's, and each row says why.
+
+| Constant | Value | What it decides | Why it is not a recipe key |
+|---|---|---|---|
+| `EVIDENCE_LINES` / `EVIDENCE_BYTES` (`packages/actions/src/command.ts`) | `60` lines / `8000` bytes | the log tail a failed command keeps as its evidence | it is written into `GateFailed.evidence` — an **event payload**. A recipe may decide what a run is told; it may not decide how much a project writes into a log that is never rewritten. `runtime.budget.evidence` then clips that tail again on the way into a prompt, and that is the bound that is about cost |
+| `DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts`) | `2` days | how long a landed task stays on the board — **a query, not a rebuild** | one board across every project, so no single recipe is the place to decide it. [0012](decisions/0012-one-task-view.md) settled the concept — *"Retention must not be in the projection, and this is the part that is easy to get wrong"* — and only the number was unrecorded |
+| `BUFFER_BYTES` (`packages/actions/src/command.ts`) | `2000000` bytes | above this, older output is dropped **while the command is still running** | a runaway process can print faster than anything reads it. This bounds memory, not meaning |
+
+**The bounds are passed in, never defaulted at the point of use.**
+`attemptBrief`, `attemptOutcome` and `buildReviewPrompt` take the number as an
+argument, so the value has exactly one home — the schema. A second default beside
+the call site would be a second place the answer lives, which is how these got
+lost in the first place.
+
+Nothing bounds the *number* of attempts at a work item. That is a ceiling rather
+than a budget, and 0028 leaves it undecided on purpose.
+
+## backoff — the first rule that was written down here
+
+The rule that decides when Lingtai spends money again lived in a constant with
+no decision behind it and no mention here (`#95`), because there was nowhere in
+this file shaped to hold a rule. [0028](decisions/0028-the-backoff-is-the-recipes.md)
+moved it to the recipe; [0029](decisions/0029-the-prompt-budget-is-the-recipes.md)
+built the section above so the next one has somewhere to land.
 
 **How long a failed attempt keeps its own ticket out of the queue.** Source:
 `source.backoff` in the recipe; applied by `selectRunnable` and read forwards by
@@ -134,7 +223,7 @@ ever the guard's.
 ## hook — 7
 
 What the runtime calls, and the only channel between a run and the log.
-Source: `INTERSECTION_HOOKS` and `CLAUDE_ONLY_HOOKS` in `packages/conductor/src/hook-config.ts`.
+Source: `INTERSECTION_HOOKS` and `CLAUDE_ONLY_HOOKS` in `packages/agent/src/hook-config.ts`.
 
 | Hook | What Lingtai does with it |
 |---|---|
@@ -156,7 +245,7 @@ process startup alone was 17ms.
 ## gate point — 5, closed forever
 
 A gate is a **place in the loop**, not a kind of check. The set may never grow.
-Source: `GatePoint` and `GATE_POINTS` in `packages/core/src/events.ts`.
+Source: `GatePoint` and `GATE_POINTS` in `packages/domain/src/events.ts`.
 
 | Point | When | May refuse? |
 |---|---|---|
@@ -175,9 +264,10 @@ than a gap.
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
 
-## gate action — 4 kinds
+## gate action — 6 keys, of which 4 produce a verdict
 
-What runs at a point. Source: `GateAction` in `packages/config/src/recipe.ts`.
+What runs at a point. Source: `GateAction` and `kindOfAction` in
+`packages/recipe/src/recipe.ts`.
 
 | Key | Verdict comes from | Needs |
 |---|---|---|
@@ -222,7 +312,7 @@ event to the verdicts that follow is how the second becomes detectable.
 
 ## tier — 3
 
-`open` · `guarded` · `sandboxed`. Source: `Tier` in `packages/core/src/events.ts:26`.
+`open` · `guarded` · `sandboxed`. Source: `Tier` in `packages/domain/src/events.ts:42`.
 
 **It is the recipe's** — `runtime.tier`, defaulting to `guarded`. There is no
 comparison to make and no floor underneath: `run-once.ts` refuses to dispatch
@@ -255,35 +345,50 @@ which is why admin #156 sat invisible until it was labelled.
 
 ## runtime — 2
 
-Source: `RuntimeId` in `packages/core/src/events.ts:29`.
+Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 
 `claude-code` · `codex`
 
 ## integration refusal reason — 7
 
-Why a merge did not happen. Source: `RefusalReason` in `packages/core/src/events.ts:37`.
+Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
 `gate-failed` · `no-commits` · `lane-busy`
 
-## run stage — 10
+## run stage — 13
 
 Where a failed run stopped, as `stopped at <stage>`. Source: the `stage:`
-returns in `packages/conductor/src/run-once.ts`.
+returns, the `failing("…")` combinators and the `refusal("…")` calls in
+`packages/conductor/src/run-once.ts`.
 
-`recipe` · `dispatch` · `discover` · `claim` · `hook` · `prepare` · `run` ·
-`diff` · `integrate` · `unexpected`
+`recipe` · `dispatch` · `discover` · `claim` · `env` · `hook` · `worktree` ·
+`prepare` · `run` · `diff` · `push` · `integrate` · `unexpected`
 
 `diff: no commits` is the one worth recognising — the agent finished and wrote
 nothing. This `diff` is a *stage*, not the gate point: the run stopped while
 computing the diff, before anything at `proposed` could be asked about it.
 
-## outbox kind — 3
+## issue change — 3
 
-Everything that leaves this machine and is not git. Source:
-`OutboxKind` in `packages/conductor/src/outbox.ts:74`.
+The three things Lingtai ever says about an issue — everything that leaves this
+machine and is not git. Source: `IssueChange` in
+`packages/conductor/src/tell.ts`.
 
-`issue-comment` · `issue-labels` · `issue-close`
+`comment` · `labels` · `closed`
+
+One field rather than three event types, because with the failures that would
+have been six and all three are handled identically: every attempt appends
+`IssueUpdated` or `IssueUpdateFailed`, and **nothing in `tell.ts` ever throws**.
+A label that did not land must not turn a merge that did into a failed run.
+
+**There is no retry behind this, and that is the point.** The outbox — a table, a
+projection, a worker, a backoff and a dead-letter standing behind three calls —
+is gone ([0022](decisions/0022-the-seams.md)); the failure all of it retried had
+never once been observed. What it bought that was worth keeping is the *record*,
+because the old loop called `gh` inline and a failed call left nothing at all.
+What did not land is converged later by `reconcile`, which compares what the log
+says an issue should look like against what GitHub says it does.
 
 ### where `skipped` is rendered
 
@@ -295,13 +400,13 @@ planned actions than verdicts shows a `pending` count, which is where
 
 `lingtai add` prints the same five at onboarding. Neither surface omits a point.
 
-## outbox, continued
+## the `end` plan, continued
 
-`issue-close` comes from `EndActionsResolved`, which is how a recipe's `end`
-plan reaches a projection. The conductor reads the recipe and writes down what
-it resolved; the projection only folds. **A projection may never read a
-recipe** — that division is why a rebuild produces the same rows years later
-even if the recipe has changed since.
+`closed` comes from `EndActionsResolved`, which is how a recipe's `end` plan
+reaches a projection. The conductor reads the recipe and writes down what it
+resolved; the projection only folds. **A projection may never read a recipe** —
+that division is why a rebuild produces the same rows years later even if the
+recipe has changed since.
 
 `end` fires on **any** terminal outcome — `landed`, `blocked`, `failed` — from
 whichever path reached it: an inline merge, `lingtai approve`, or the board's
@@ -325,51 +430,74 @@ moves until a person acts. Source: `DEFAULT_SUBSCRIPTIONS` in
 
 A landed task is good news that needed nobody, and is deliberately not here.
 
-## lingtai subcommand — 12
+## lingtai subcommand — 13
 
 Source: the switch in `apps/cli/src/lingtai.ts`.
 
-`add` · `run` · `approve` · `status` · `doctor` · `end` · `daemon` · `pause` ·
-`resume` · `now` · `projection` · `version`
+`add` · `run` · `approve` · `status` · `doctor` · `env` · `end` · `daemon` ·
+`pause` · `resume` · `now` · `projection` · `version`
 
-## doctor check — 17 live, 5 deferred
+`help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-Source: `apps/cli/src/doctor.ts`. This list is `pnpm lingtai doctor`'s own output,
-not a reading of the file — grepping the constructors missed six of them.
+## doctor check — 21 fixed, 3 per project, 3 deferred
+
+Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
+**Read off the file, in the order the command prints them**; the previous
+version of this section was transcribed from one run's output and had drifted
+by four checks and two names.
 
 | Group | Checks |
 |---|---|
 | load (1) | `packages load under Node` |
 | environment (1) | `environment` |
 | connections (2) | `postgres: pooled connection` · `postgres: direct connection is session mode` |
-| schema (5) | `schema: tables` · `schema: optimistic concurrency` · `schema: append-only` · `schema: notify trigger` · `schema: payload columns` |
-| running system (5) | `projections: lag` · `daemon: liveness` · `worktrees: reconciliation` · `outbox: depth` · `gates: end ran on what landed` |
+| schema (5) | `schema: tables` · `schema: optimistic concurrency` · `schema: append-only` · `schema: notify trigger` · `schema: payload column` |
+| projections (2) | `projections: lag` · `projections: shape` |
+| running system (4) | `daemon: liveness` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` |
+| the log itself (1) | `log: every type is readable` |
+| gates ran (2) | `gates: end ran on what landed` · `gates: every point that was planned ran` |
 | credentials (2) | `github: app credentials` · `runtime: signed in` |
 | visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
 
-Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
-`fail`, `skip`. `warn` was added with the check above: folding it into `ok`
-hides it in a wall of green, and into `fail` makes doctor red for a file
-everybody has.
+**Three more run once per configured project**, so the total depends on how many
+there are: `recipe: resolves for every project`,
+`env: declared names, and which layer`, and
+`recipe: the rules and the merge target are one branch`. Each reports under the
+project's own name (`recipe: lingtai`, `env: lingtai`, `base: lingtai`) when it
+has something to say about that project in particular.
 
-Deferred checks each name the issue that will implement them, and are reported
-rather than hidden — a check quietly dropped is indistinguishable from one that
-passes.
+Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
+`fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding
+it into `ok` hides it in a wall of green, and into `fail` makes doctor red for a
+file everybody has.
+
+The three deferred are `repository, base branch, submodules`,
+`hook: fail closed` and `github: installation and labels`. A deferred detail says
+**why the check is not a startup check** — of the design, and where the property
+is proved instead — and claims nothing about the state of this machine. It
+carries no issue number, because an issue closes and a reason that stands on its
+own does not need one. They are reported rather than hidden: a check quietly
+dropped is indistinguishable from one that passes.
 
 ## preset — 1
 
-Source: `packages/config/src/presets.ts`.
+Source: `packages/recipe/src/presets.ts`.
 
 `pnpm-workspace` — a `pnpm install --frozen-lockfile` action at `prepared` and a
 `build` action at `proposed`. A preset's *name* is not part of the recipe hash, because
 it is not part of what a run does.
 
-## package — 9, plus 2 apps
+## package — 13, plus 2 apps
 
-`core` · `config` · `store` · `github` · `runtime` · `gates` · `conductor` ·
-`daemon` · `hook`, and `apps/cli` · `apps/board`.
+`domain` · `recipe` · `event-store` · `projector` · `github` · `agent` ·
+`agent-env` · `env` · `actions` · `repo` · `conductor` · `daemon` · `hook`, and
+`apps/cli` · `apps/board`.
 
-## doc — 28 decisions, 10 experiments
+Five were renamed at [0022](decisions/0022-the-seams.md) and this section still
+named the old ones: `core` is `domain`, `config` is `recipe`, `store` is
+`event-store`, `runtime` is `agent`, `gates` is `actions`.
+
+## doc — 29 decisions, 10 experiments
 
 `doc/decisions/` is append-only in spirit: a decision that turns out wrong gets
 a new file that supersedes it, never an edit. `doc/experiments/` holds things

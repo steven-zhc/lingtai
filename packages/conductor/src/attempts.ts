@@ -23,22 +23,38 @@
  * *history*, which every second attempt has whether or not one was bought.
  *
  * **Both bounds are structural**, which is the ticket's last criterion: one
- * earlier run's evidence is quoted and it is truncated (`EVIDENCE_CHARS`), and
+ * earlier run's evidence is quoted and it is truncated (`budget.evidence`), and
  * the rest of the history is one table row each, of which only the last
- * `MAX_ROWS` are printed. A work item on its fifth attempt cannot paste four
- * gate logs into a prompt, because there is no path here that reads four.
+ * `budget.attempts` are printed. A work item on its fifth attempt cannot paste
+ * four gate logs into a prompt, because there is no path here that reads four.
+ *
+ * **The numbers themselves are the recipe's** (`runtime.budget`,
+ * [0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
+ * They were three constants here, and being well commented where they lived was
+ * not the same as being a policy anybody could find: nothing in `doc/` named
+ * them. They are passed in rather than defaulted here so that the value has
+ * exactly one home — the schema — and this file states the shape of the bound
+ * without also deciding it.
  */
 import type { Envelope, PayloadOf } from "@lingtai/domain";
 import { createHash } from "node:crypto";
 
-/** How much of one earlier failure's output is quoted verbatim. */
-export const EVIDENCE_CHARS = 2_000;
-
-/** How many attempts the table names before it says "and N earlier". */
-export const MAX_ROWS = 5;
-
-/** How many of a review gate's findings are listed. */
-export const MAX_FINDINGS = 5;
+/**
+ * How much an attempt is told about the ones before it.
+ *
+ * `Recipe["runtime"]["budget"]` minus `diff`, which belongs to the review agent
+ * and never reaches here. Declared as its own shape rather than imported so
+ * that this module keeps costing nothing but `@lingtai/domain` — the reason it
+ * is a module of pure functions in the first place.
+ */
+export interface PromptBudget {
+  /** Characters of one earlier failure's output quoted verbatim. */
+  evidence: number;
+  /** Rows the table names before it says "and N earlier". */
+  attempts: number;
+  /** Findings of a review gate that are listed. */
+  findings: number;
+}
 
 /**
  * What the previous run's own stream says it did.
@@ -63,7 +79,7 @@ export interface AttemptOutcome {
    *
    * `what` names the gate point and action (`proposed:build`) or the run's own
    * ending (`the run itself (timeout)`); `text` is that output verbatim, up to
-   * `EVIDENCE_CHARS`. Null for a run with no recorded refusal at all.
+   * `budget.evidence`. Null for a run with no recorded refusal at all.
    */
   evidence: { what: string; text: string } | null;
   /** From `RunFinished`. Null for a run that never got that far. */
@@ -166,7 +182,10 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
  * gate that started and never returned a verdict — the run died inside it — has
  * no verdict to keep.
  */
-export function attemptOutcome(runEvents: readonly Envelope[]): AttemptOutcome {
+export function attemptOutcome(
+  runEvents: readonly Envelope[],
+  budget: PromptBudget,
+): AttemptOutcome {
   let produced: AttemptOutcome["produced"] = null;
   let receipt: AttemptOutcome["receipt"] = null;
   let evidence: AttemptOutcome["evidence"] = null;
@@ -212,7 +231,7 @@ export function attemptOutcome(runEvents: readonly Envelope[]): AttemptOutcome {
         unfinished.delete(what);
         // A gate's refusal is the most specific thing on the stream, so the last
         // one wins over anything else recorded here.
-        evidence = { what, text: findingsAppended(d.evidence, d.findings) };
+        evidence = { what, text: findingsAppended(d.evidence, d.findings, budget.findings) };
         break;
       }
 
@@ -234,18 +253,18 @@ export function attemptOutcome(runEvents: readonly Envelope[]): AttemptOutcome {
   return { produced, evidence, receipt };
 }
 
-/** A review gate's findings, under its output. Bounded by `MAX_FINDINGS`. */
+/** A review gate's findings, under its output. Bounded by `budget.findings`. */
 function findingsAppended(
   output: string,
   findings: PayloadOf<"GateFailed">["findings"],
+  max: number,
 ): string {
   if (findings.length === 0) return output;
-  const shown = findings.slice(0, MAX_FINDINGS).map((f) => {
+  const shown = findings.slice(0, max).map((f) => {
     const at = f.line === null ? f.file : `${f.file}:${f.line}`;
     return `- [${f.severity}] ${at} — ${f.claim} (${f.failureScenario})`;
   });
-  const more =
-    findings.length > MAX_FINDINGS ? [`- …and ${findings.length - MAX_FINDINGS} more`] : [];
+  const more = findings.length > max ? [`- …and ${findings.length - max} more`] : [];
   return [output.trimEnd(), "", ...shown, ...more].join("\n");
 }
 
@@ -262,12 +281,12 @@ function findingsAppended(
  * what ended them is the fact that matters, and their output is not worth what
  * it costs.
  */
-export function attemptBrief(attempts: readonly PriorAttempt[]): string {
+export function attemptBrief(attempts: readonly PriorAttempt[], budget: PromptBudget): string {
   if (attempts.length === 0) return "";
 
   const last = attempts[attempts.length - 1]!;
   const n = attempts.length;
-  const shown = attempts.slice(-MAX_ROWS);
+  const shown = attempts.slice(-budget.attempts);
   const hidden = attempts.length - shown.length;
 
   const lines = [
@@ -291,7 +310,7 @@ export function attemptBrief(attempts: readonly PriorAttempt[]): string {
       `The integrator refused attempt ${last.n} with **${last.refusal.reason}**:`,
       "",
       "```",
-      clamp(last.refusal.detail),
+      clamp(last.refusal.detail, budget.evidence),
       "```",
     );
   }
@@ -336,7 +355,7 @@ export function attemptBrief(attempts: readonly PriorAttempt[]): string {
       `\`${evidence.what}\`:`,
       "",
       "```",
-      clamp(evidence.text),
+      clamp(evidence.text, budget.evidence),
       "```",
       "",
       "That output is the thing to answer. If it names what an earlier attempt has",
@@ -349,10 +368,10 @@ export function attemptBrief(attempts: readonly PriorAttempt[]): string {
 }
 
 /** Verbatim, up to the bound. Truncation says so rather than trailing off. */
-function clamp(text: string): string {
+function clamp(text: string, max: number): string {
   const trimmed = text.trim();
-  if (trimmed.length <= EVIDENCE_CHARS) return trimmed;
-  return `${trimmed.slice(0, EVIDENCE_CHARS)}\n…truncated at ${EVIDENCE_CHARS} characters.`;
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max)}\n…truncated at ${max} characters.`;
 }
 
 /** One line, so a reason with a newline in it cannot break the table. */

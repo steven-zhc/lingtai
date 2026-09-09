@@ -19,13 +19,22 @@ import {
   parsePayload,
 } from "@lingtai/domain";
 import {
-  EVIDENCE_CHARS,
-  MAX_ROWS,
   attemptBrief,
   attemptOutcome,
   priorAttempts,
   promptVersionFor,
+  type PromptBudget,
 } from "../src/attempts.ts";
+
+/**
+ * The recipe's defaults (`runtime.budget`, 0029), spelled out here.
+ *
+ * Written rather than imported from `@lingtai/recipe`: these tests are about
+ * the *shape* of the bound — that the brief does not grow with the number of
+ * attempts — and importing the schema's number would make them re-assert the
+ * schema instead. That the defaults are these values is the schema's own test.
+ */
+const BUDGET: PromptBudget = { evidence: 2_000, attempts: 5, findings: 5 };
 
 let seq = 1n;
 
@@ -169,7 +178,7 @@ describe("attemptOutcome", () => {
         findings: [],
       }),
       e("RunFinished", { exitCode: 0, turns: 31, durationMs: 900_000, costUsd: 1.11 }),
-    ]);
+    ], BUDGET);
 
     expect(outcome.produced).toEqual({
       branch: "agent/59",
@@ -200,7 +209,7 @@ describe("attemptOutcome", () => {
           },
         ],
       }),
-    ]);
+    ], BUDGET);
 
     expect(outcome.evidence?.text).toContain("packages/conductor/src/queue.ts:44");
     expect(outcome.evidence?.text).toContain("the backoff is never applied");
@@ -214,7 +223,7 @@ describe("attemptOutcome", () => {
         kind: "timeout",
         detail: "the run was killed by an operator timeout before it produced anything",
       }),
-    ]);
+    ], BUDGET);
 
     expect(outcome.produced).toBeNull();
     expect(outcome.evidence?.what).toBe("the run itself (timeout)");
@@ -229,7 +238,7 @@ describe("attemptOutcome", () => {
    */
   it("names the point a run died inside", () => {
     const e = stream("run-1");
-    const outcome = attemptOutcome([e("GateStarted", gate("install"))]);
+    const outcome = attemptOutcome([e("GateStarted", gate("install"))], BUDGET);
 
     expect(outcome.evidence?.what).toBe("proposed:install");
     expect(outcome.evidence?.text).toContain("never returned a verdict");
@@ -240,7 +249,7 @@ describe("attemptOutcome", () => {
     const outcome = attemptOutcome([
       e("GateStarted", gate("install")),
       e("GatePassed", { ...gate("install"), evidence: "ok" }),
-    ]);
+    ], BUDGET);
 
     expect(outcome.evidence).toBeNull();
   });
@@ -272,7 +281,7 @@ describe("attemptBrief", () => {
         findings: [],
       }),
       run("RunFinished", { exitCode: 0, turns: 31, durationMs: 900_000, costUsd: 1.11 }),
-    ]);
+    ], BUDGET);
     return attempts;
   };
 
@@ -283,13 +292,13 @@ describe("attemptBrief", () => {
    * `promptVersionFor` then leaves the version alone as well.
    */
   it("is empty for a first attempt", () => {
-    expect(attemptBrief([])).toBe("");
+    expect(attemptBrief([], BUDGET)).toBe("");
     expect(promptVersionFor("ticket@1932", "")).toBe("ticket@1932");
   });
 
   /** How many there were, and what ended each. */
   it("states the count and every ending", () => {
-    const brief = attemptBrief(filled());
+    const brief = attemptBrief(filled(), BUDGET);
 
     expect(brief).toContain("attempted 2 times already");
     expect(brief).toContain("This is attempt 3");
@@ -299,14 +308,14 @@ describe("attemptBrief", () => {
 
   /** The failing evidence, not just a category. */
   it("quotes what refused the last attempt", () => {
-    expect(attemptBrief(filled())).toContain(
+    expect(attemptBrief(filled(), BUDGET)).toContain(
       "tsc: apps/board/src/lib/board.ts(12,5): error TS2322",
     );
   });
 
   /** What the previous attempt produced, so building on it is an option. */
   it("says what the last attempt committed and where it is", () => {
-    const brief = attemptBrief(filled());
+    const brief = attemptBrief(filled(), BUDGET);
 
     expect(brief).toContain("4 file(s), +120 −3");
     expect(brief).toContain("git fetch origin agent/59");
@@ -318,9 +327,9 @@ describe("attemptBrief", () => {
     const run = stream("run-2");
     attempts[attempts.length - 1]!.outcome = attemptOutcome([
       run("RunFailed", { kind: "timeout", detail: "killed by an operator timeout" }),
-    ]);
+    ], BUDGET);
 
-    const brief = attemptBrief(attempts);
+    const brief = attemptBrief(attempts, BUDGET);
     expect(brief).toContain("It committed no change");
     expect(brief).not.toContain("git fetch origin");
   });
@@ -331,7 +340,7 @@ describe("attemptBrief", () => {
    * no change" there would be an invention in a prompt.
    */
   it("claims nothing about a run whose stream nobody read", () => {
-    const brief = attemptBrief(priorAttempts(history));
+    const brief = attemptBrief(priorAttempts(history), BUDGET);
 
     expect(brief).toContain("gates refused the diff");
     expect(brief).not.toContain("### What attempt 2 produced");
@@ -340,9 +349,9 @@ describe("attemptBrief", () => {
 
   /**
    * **The context is bounded**, and both bounds are here: a fifth attempt names
-   * at most `MAX_ROWS` earlier ones and quotes exactly one run's output, clamped
-   * to `EVIDENCE_CHARS`. Nothing in the shape of this brief grows with the
-   * number of attempts except one table row.
+   * at most `budget.attempts` earlier ones and quotes exactly one run's output,
+   * clamped to `budget.evidence`. Nothing in the shape of this brief grows with
+   * the number of attempts except one table row.
    */
   it("keeps a long history and a long gate log bounded", () => {
     const many = stream("wi-lingtai-59");
@@ -355,15 +364,15 @@ describe("attemptBrief", () => {
     const run = stream("run-8");
     attempts[attempts.length - 1]!.outcome = attemptOutcome([
       run("GateFailed", { ...gate("build"), evidence: "x".repeat(10_000), findings: [] }),
-    ]);
+    ], BUDGET);
 
-    const brief = attemptBrief(attempts);
+    const brief = attemptBrief(attempts, BUDGET);
     const rows = brief.split("\n").filter((l) => l.startsWith("| ") && l.includes("`run-"));
 
-    expect(rows).toHaveLength(MAX_ROWS);
+    expect(rows).toHaveLength(BUDGET.attempts);
     expect(brief).toContain("3 earlier attempt(s), omitted");
-    expect(brief).toContain(`truncated at ${EVIDENCE_CHARS} characters`);
-    expect(brief.length).toBeLessThan(EVIDENCE_CHARS + 3_000);
+    expect(brief).toContain(`truncated at ${BUDGET.evidence} characters`);
+    expect(brief.length).toBeLessThan(BUDGET.evidence + 3_000);
     // The one that would break the bound: an earlier run's output, pasted too.
     expect(brief).not.toContain("attempt 1 failed");
   });
@@ -376,7 +385,7 @@ describe("attemptBrief", () => {
         e("WorkItemClaimed", claim("run-1")),
         e("WorkItemReleased", { runId: "run-1", reason: "conflict:\napps/page.tsx\napps/x.tsx" }),
       ]),
-    );
+     BUDGET);
 
     expect(brief).toContain("| 1 | `run-1` | conflict: apps/page.tsx apps/x.tsx |");
   });

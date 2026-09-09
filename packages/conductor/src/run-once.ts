@@ -395,7 +395,10 @@ export function runOnce(
     const attempts = priorAttempts(before);
     const previous = attempts[attempts.length - 1];
     if (previous) {
-      previous.outcome = attemptOutcome(yield* Effect.promise(() => store.read(previous.runId)));
+      previous.outcome = attemptOutcome(
+        yield* Effect.promise(() => store.read(previous.runId)),
+        recipe.runtime.budget,
+      );
       log(`attempt ${attempts.length + 1}: ${previous.runId} ended — ${previous.ended ?? "no ending recorded"}`);
     }
 
@@ -413,7 +416,10 @@ export function runOnce(
      * composition is not a bound.
      */
     if (previous && repairOf?.after === previous.runId) previous.refusal = null;
-    const failure = [attemptBrief(attempts), repairOf ? repairBrief(repairOf) : ""]
+    const failure = [
+      attemptBrief(attempts, recipe.runtime.budget),
+      repairOf ? repairBrief(repairOf) : "",
+    ]
       .filter((block) => block !== "")
       .join("\n\n");
     const promptVersion = promptVersionFor(basePromptVersion, failure);
@@ -875,6 +881,7 @@ export function runOnce(
               limits: {
                 turns: recipe.runtime.limits.turns,
                 wallMs: parseDuration(recipe.runtime.limits.wall),
+                diffBytes: recipe.runtime.budget.diff,
               },
             },
             watch: {

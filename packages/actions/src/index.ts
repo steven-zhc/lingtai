@@ -19,7 +19,6 @@ export {
 export {
   buildReviewPrompt,
   createAgentGate,
-  DIFF_LIMIT_BYTES,
   parseFindings,
   verdictFor,
   type AgentGateDeps,

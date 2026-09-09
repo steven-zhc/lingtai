@@ -61,18 +61,23 @@ export interface AgentGateDeps {
   diff: () => Promise<string>;
   /** Rendered outside the worktree, like the implementer's. */
   settingsPath: string;
-  limits: { turns: number; wallMs: number };
+  /**
+   * What the reviewer may spend, and what it is given.
+   *
+   * `diffBytes` is the recipe's `runtime.budget.diff`
+   * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)),
+   * and it was a constant here. Above it the diff is truncated rather than sent
+   * whole: [experiment 001](../../../doc/experiments/001-cold-review-issue-58.md)'s
+   * diff was 1391 lines across 6 files and fitted comfortably, and a diff far
+   * past that is a work item that was scoped too large — which the compaction
+   * counter already reports. Sending a megabyte to a reviewer produces a worse
+   * review, not a better one.
+   *
+   * Required rather than defaulted, so the number has one home. How large a
+   * diff is normal is a fact about a repository, not about reviewing.
+   */
+  limits: { turns: number; wallMs: number; diffBytes: number };
 }
-
-/**
- * Above this the diff is truncated rather than sent whole.
- *
- * 001's diff was 1391 lines across 6 files and fitted comfortably. A diff far
- * past that is a work item that was scoped too large, which the compaction
- * counter already reports; sending a megabyte to a reviewer produces a worse
- * review, not a better one.
- */
-export const DIFF_LIMIT_BYTES = 400_000;
 
 const RUBRIC = `
 Severity is not a judgement call. Use this rubric exactly.
@@ -131,10 +136,15 @@ export interface ReviewIssue {
   body: string;
 }
 
-export function buildReviewPrompt(spec: AgentGateSpec, issue: ReviewIssue, diff: string): string {
+export function buildReviewPrompt(
+  spec: AgentGateSpec,
+  issue: ReviewIssue,
+  diff: string,
+  limitBytes: number,
+): string {
   const clipped =
-    diff.length > DIFF_LIMIT_BYTES
-      ? `${diff.slice(0, DIFF_LIMIT_BYTES)}\n\n[diff truncated at ${DIFF_LIMIT_BYTES} bytes]`
+    diff.length > limitBytes
+      ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]`
       : diff;
 
   return `You are reviewing a change you did not write. You have the ticket and the
@@ -255,7 +265,7 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
         // wearing a cold review's name.
         runId: `${context.runId}:review:${spec.name}`,
         cwd: context.cwd,
-        prompt: buildReviewPrompt(spec, issue, diff),
+        prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes),
         settingsPath: deps.settingsPath,
         env: context.env,
         limits: deps.limits,

@@ -10,12 +10,15 @@ import { describe, expect, it } from "vitest";
 import {
   buildReviewPrompt,
   createAgentGate,
-  DIFF_LIMIT_BYTES,
   parseFindings,
   verdictFor,
 } from "../src/agent-gate.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
+
+/** The recipe's default, written here rather than imported: this file is about
+ *  the gate's behaviour at *a* bound, not about which bound the schema picks. */
+const DIFF_BYTES = 400_000;
 
 const outcome = (over: Partial<RunOutcome> = {}): RunOutcome => ({
   exitCode: 0,
@@ -55,7 +58,7 @@ const gateWith = (reply: RunOutcome, diff = "diff --git a/x b/x\n+1", prompt = "
       issue: async () => ISSUE,
       diff: async () => diff,
       settingsPath: "/tmp/settings.json",
-      limits: { turns: 40, wallMs: 60_000 },
+      limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
     },
   );
 
@@ -72,7 +75,7 @@ const finding = (over: Record<string, unknown> = {}) => ({
 
 describe("the review prompt", () => {
   it("carries the ticket and the diff and nothing from the implementer", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF");
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES);
 
     expect(prompt).toContain("#58 — alias-aware skill merging");
     expect(prompt).toContain("THE-DIFF");
@@ -87,7 +90,7 @@ describe("the review prompt", () => {
   });
 
   it("fixes the severity rubric rather than leaving it to judgement", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d");
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
 
     // 001 rated silent corruption `major`. The rubric exists to stop that, so
     // the words that correct it have to actually be in the prompt.
@@ -97,7 +100,7 @@ describe("the review prompt", () => {
   });
 
   it("names concurrency and check-then-write first", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d");
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
 
     // All four known defects in 001 were this one shape, and the experiment is
     // explicit that naming it is part of what was tested.
@@ -106,7 +109,8 @@ describe("the review prompt", () => {
   });
 
   it("appends a recipe's prompt without letting it replace the brief", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "watch the RLS policies" }, ISSUE, "d");
+    const spec = { name: "review", prompt: "watch the RLS policies" };
+    const prompt = buildReviewPrompt(spec, ISSUE, "d", DIFF_BYTES);
 
     expect(prompt).toContain("watch the RLS policies");
     // A recipe adds strictness and never removes it — the same rule everywhere.
@@ -114,8 +118,8 @@ describe("the review prompt", () => {
   });
 
   it("truncates a diff rather than sending an unbounded one", () => {
-    const huge = "x".repeat(DIFF_LIMIT_BYTES + 5_000);
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, huge);
+    const huge = "x".repeat(DIFF_BYTES + 5_000);
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, huge, DIFF_BYTES);
 
     expect(prompt).toContain("[diff truncated at");
     expect(prompt.length).toBeLessThan(huge.length);
@@ -192,7 +196,7 @@ describe("the gate", () => {
         issue: async () => ISSUE,
         diff: async () => "a diff",
         settingsPath: "/tmp/s.json",
-        limits: { turns: 40, wallMs: 1000 },
+        limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
     );
 
@@ -250,7 +254,7 @@ describe("the gate", () => {
         issue: async () => ISSUE,
         diff: async () => "   \n  ",
         settingsPath: "/tmp/s.json",
-        limits: { turns: 1, wallMs: 1 },
+        limits: { turns: 1, wallMs: 1, diffBytes: DIFF_BYTES },
       },
     );
 
@@ -272,7 +276,7 @@ describe("the gate", () => {
         },
         diff: async () => "",
         settingsPath: "/tmp/s.json",
-        limits: { turns: 1, wallMs: 1 },
+        limits: { turns: 1, wallMs: 1, diffBytes: DIFF_BYTES },
       },
     );
 

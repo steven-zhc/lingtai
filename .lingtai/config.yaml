@@ -136,3 +136,21 @@ runtime:
   limits:
     turns: 150
     wall: 1h
+
+  # How much an agent is told about the attempts before it
+  # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
+  #
+  # `limits` above bounds what a run may spend; this bounds what it is given.
+  # Written out for the same reason `backoff` and `repair` are: these numbers
+  # decided what an agent knew about a failure while living in three source
+  # files nobody read together, and this is the repository that has to be able
+  # to read its own policy without opening its own source.
+  #
+  # Every value is the default. This repository's gate is
+  # `pnpm typecheck && pnpm test`, whose failures are short and specific, so
+  # 2000 characters is a whole failure rather than a fragment of one.
+  budget:
+    evidence: 2000
+    attempts: 5
+    findings: 5
+    diff: 400000
