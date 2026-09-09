@@ -520,6 +520,89 @@ details[open] > summary::before { content: "▾"; }
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 
+/* --- why it is not moving -------------------------------------------------
+   The decision block, above everything else. **No frame**: one rule at the left
+   states its extent, and that rule is amber only when a person is the thing
+   being waited on — the one thing amber means in this palette. A running item
+   gets the same block in neutrals, because "nothing is being asked of you" is
+   an answer somebody came here for too (#94).
+
+   Everything inside is neutral, including the divider. A second amber would
+   dilute the first, which is why the amber on this page is the rule and the
+   primary button — one sentence, ending in the thing that will run. */
+.standing {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.1rem 0 0.2rem 0.9rem;
+  border-left: 2px solid var(--rule-2);
+}
+.standing.onyou { border-left-color: var(--signal); }
+
+/* Two values at one weight. The state, and how long it has held — *blocked* and
+   *blocked for four days* are different facts, and the second is not an
+   annotation on the first. */
+.sread {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.sread .sage { color: var(--ink-2); }
+.sread .sage::before { content: "│ "; color: var(--rule-2); }
+.standing.onyou .sread .sstate { color: var(--signal); }
+
+.ssince {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.ssince .sfrom { font-family: var(--mono); }
+
+/* The one neutral divider the design allows, and the extent of the block's
+   argument: above it the state, below it what is being asked. */
+.sbody {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+/* Verbatim, and ink: it is the sentence somebody has to answer. Not amber —
+   the rule at the left is already saying who is being waited on. */
+.squestion { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--ink); }
+
+/* A pointer, not a copy. The teal is structural — it is the same mark the
+   attempt it names carries, and it is deliberately not a verdict colour: this
+   line is a way in, and the verdict is inside the attempt. */
+.sevidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--accent);
+  font-size: 0.75rem;
+}
+.sgate { font-family: var(--mono); color: var(--ink-2); }
+.sline {
+  font-family: var(--mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.sptr { margin-left: auto; font-family: var(--mono); color: var(--accent-ink); text-decoration: none; }
+.sptr:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 /* The ticket, at the top. What was asked, above what was done — a page you
    decide on has to carry the request and not only the response (#87). */
 .tref { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }
@@ -559,6 +642,13 @@ details[open] > summary::before { content: "▾"; }
   border: 1px solid var(--rule);
   border-radius: 3px;
 }
+/* The attempt the block at the top points at. The same teal mark the pointer
+   carries, so the two read as one thing rather than as two claims about a
+   failure — and it is the reason nothing is printed twice. */
+.attempt.deciding { border-left: 2px solid var(--accent); }
+/* Anchored: the pointer links here, and a browser must not land it under the
+   bar it scrolled past. */
+.attempt { scroll-margin-top: 1rem; }
 /* The row itself: what happened, then what it cost, then when. The facts push
    right so a column of attempts is read down rather than across. */
 .attempt > summary {

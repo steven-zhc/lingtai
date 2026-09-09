@@ -36,7 +36,15 @@
  * `history.ts` makes one level down.
  */
 import { eventStore } from "@lingtai/event-store";
-import { GATE_POINTS, parseWorkItemStream, type Envelope } from "@lingtai/domain";
+import {
+  applyWorkItem,
+  emptyWorkItem,
+  GATE_POINTS,
+  parseWorkItemStream,
+  type BlockDiagnosis,
+  type Envelope,
+  type WorkItemLifecycle,
+} from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { githubClientFor } from "@lingtai/conductor/filter";
 import { issueUrl } from "./board.ts";
@@ -186,6 +194,16 @@ export interface RunView {
   files: TouchedFile[];
   diff: { branch: string; files: number; insertions: number; deletions: number } | null;
   prompt: PromptView | null;
+  /**
+   * The sha an open approval is *asking* about, and null when nothing is asked.
+   *
+   * Not `headSha`, which is what the run *produced*: a branch repaired and
+   * approval re-requested moves this and leaves that where it was, and sending
+   * the wrong one is an Approve that refuses what `lingtai approve` accepts
+   * (#92). The same rule `task_view.awaiting_sha` folds, read off the run's own
+   * stream because that is where the approval events land.
+   */
+  awaitingSha: string | null;
   gates: GateVerdict[];
   /** All five, in loop order, including the ones nothing was configured at. */
   points: PointView[];
@@ -219,6 +237,201 @@ export interface Totals {
 }
 
 /**
+ * The one deciding line, and the attempt that holds the whole of it.
+ *
+ * A **pointer, and never a copy** (design §2). The failing gate's output, its
+ * findings and its diff are inside that attempt, once; printing the whole of it
+ * at the top as well is how two copies of one fact come to disagree — the same
+ * argument `RunOutcome.detail` already makes one section down.
+ */
+export interface Deciding {
+  /** 1-based, and an anchor: the ledger marks this attempt and opens it. */
+  attempt: number;
+  /** `proposed / build`, or the attempt's own outcome when no gate refused. */
+  source: string;
+  /** One line. Clipped, because the whole of it is one click away. */
+  line: string;
+}
+
+/** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
+export type StandingState = "queued" | "running" | "blocked" | "landed";
+
+/**
+ * Why this task is not moving — the answer the page never gave.
+ *
+ * The most frequent reason anybody opens this page is that a card has stopped,
+ * and the state had to be inferred by reading to the bottom of a 30–80 row
+ * history. On 2026-09-08 that produced a wrong reading four times (#80, #87,
+ * #89, #94) — including one where the item was **not** stuck and would have
+ * returned on its own, which is why `queued` and `running` say so here rather
+ * than being an absence of the word `blocked`.
+ *
+ * Two values of equal weight: the state, and **how long it has held**. The
+ * second is not an annotation on the first — *blocked* and *blocked for four
+ * days* are different facts, and only the second is an emergency.
+ *
+ * Folded from the item's own stream through `applyWorkItem`, so the word here
+ * is the aggregate's and not a second opinion about it. What the log cannot
+ * say — the diagnosis, the recommendation — is null until #83 writes one, and
+ * the block renders without it.
+ */
+export interface StandingView {
+  state: StandingState;
+  /**
+   * When the state began, ISO — the event that *moved* the lifecycle, not the
+   * last event on the stream. A gate reporting on a blocked item does not
+   * restart the clock on how long you have been the bottleneck.
+   */
+  since: string;
+  /**
+   * Whether a person is the thing being waited on.
+   *
+   * The one condition under which this block is allowed to be amber. Amber
+   * means *a human is being waited on* and nothing else in the palette does, so
+   * a running item's block is drawn in neutrals (layout notes).
+   */
+  onYou: boolean;
+  /** Who is being waited on, in words: `waiting on you`, `an agent is working`, … */
+  who: string;
+  /** The question, verbatim. Null when nothing was asked. */
+  question: string | null;
+  /** `judgement` or `acknowledgement`; null on every block written before #83. */
+  needs: "judgement" | "acknowledgement" | null;
+  /** What happened, what was done, what is recommended. Null until #83 fills it. */
+  diagnosis: BlockDiagnosis | null;
+  /** Which attempt produced this state, 1-based, and null when none has. */
+  attempt: number | null;
+  /** How many there have been, so `attempt 2 of 2` can be said. */
+  attempts: number;
+  runId: string | null;
+  /**
+   * The sha an open question is about — what Approve must send, and null when
+   * there is nothing Approve could do. `Requeue` is the move that is left, the
+   * same reading the card makes (#84).
+   */
+  awaitingSha: string | null;
+  /** What that attempt produced, for a waiver, which is a verdict about the diff. */
+  headSha: string | null;
+  /** The verdicts that refused, by `point:action` — what a waiver would name. */
+  failed: string[];
+  deciding: Deciding | null;
+}
+
+/**
+ * The five events that replace the lifecycle in `applyWorkItem`.
+ *
+ * Listed rather than inferred, because *when the state began* is the second
+ * half of this block and nothing else on the item's stream may move it: a
+ * `RepairRequested`, a `WorkItemLinked` or a gate reporting late are all
+ * appended while the hold stands, and none of them is the hold starting.
+ */
+const LIFECYCLE_MOVES = new Set([
+  "WorkItemClaimed",
+  "WorkItemReleased",
+  "WorkItemBlocked",
+  "WorkItemUnblocked",
+  "WorkItemLanded",
+]);
+
+/** The first line that says anything, clipped. The rest is in the attempt. */
+function oneLine(text: string | null): string | null {
+  if (text === null) return null;
+  const line = text.split("\n").find((l) => l.trim().length > 0)?.trim();
+  if (!line) return null;
+  return line.length > 140 ? `${line.slice(0, 139)}…` : line;
+}
+
+/**
+ * What refused, on the attempt that produced the state.
+ *
+ * The last failed verdict rather than the first: a point that failed, was
+ * repaired and failed again is one attempt with two refusals, and the one being
+ * decided is the most recent. Falls back to the attempt's own outcome, so a run
+ * that died before any gate reported still points somewhere — that case
+ * (`claimed`, `released`, a `RunFailed` with no verdicts) is exactly the one a
+ * gate-shaped summary could never name.
+ */
+function decidingOf(run: RunView | null): Deciding | null {
+  if (run === null) return null;
+
+  const refused = [...run.gates].reverse().find((g) => g.state === "failed");
+  if (refused) {
+    return {
+      attempt: run.attempt,
+      source: refused.gate.replace(":", " / "),
+      line: oneLine(refused.evidence) ?? run.outcome.detail ?? "refused, and said nothing",
+    };
+  }
+
+  const detail = oneLine(run.outcome.detail);
+  if (detail === null) return null;
+  return { attempt: run.attempt, source: run.outcome.state, line: detail };
+}
+
+function whoWaits(life: WorkItemLifecycle): string {
+  switch (life.status) {
+    case "blocked":
+      if (life.needsFrom === "schema") return "waiting on a schema change";
+      if (life.needsFrom === "external") return "waiting on something outside Lingtai";
+      return "waiting on you";
+    case "claimed":
+      return "an agent is working";
+    case "landed":
+      return `merged into ${life.base}`;
+    default:
+      // Not stuck. The reading #94 got wrong: an item nobody is holding comes
+      // back on its own, and the page has to say so in as many words.
+      return "waiting for a conductor to take it";
+  }
+}
+
+/**
+ * The state, since when, and which attempt produced it. See `StandingView`.
+ *
+ * Pure, and given the runs rather than reading them, for the reason every fold
+ * in this file is: what the page *says* about a stopped item is settled by
+ * envelopes and nothing else.
+ */
+export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): StandingView {
+  let item = emptyWorkItem;
+  let since = own[0]?.at ?? new Date();
+  for (const e of own) {
+    item = applyWorkItem(item, e);
+    if (LIFECYCLE_MOVES.has(e.type)) since = e.at;
+  }
+
+  const life = item.lifecycle;
+  const named =
+    life.status === "blocked" || life.status === "claimed"
+      ? runs.find((r) => r.runId === life.runId)
+      : undefined;
+  // The attempt the state names, or the last one there was. A released item is
+  // queued *because of* what its last attempt did, and a landed one merged what
+  // its last attempt produced; neither event carries a run id.
+  const run = named ?? runs.at(-1) ?? null;
+  const blocked = life.status === "blocked";
+
+  return {
+    state: life.status === "claimed" ? "running" : life.status === "backlog" ? "queued" : life.status,
+    since: since.toISOString(),
+    onYou: blocked,
+    who: whoWaits(life),
+    question: blocked ? life.question : null,
+    needs: blocked ? life.needs : null,
+    diagnosis: blocked ? life.diagnosis : null,
+    attempt: run?.attempt ?? null,
+    attempts: runs.length,
+    runId: run?.runId ?? null,
+    // Only while a person is holding it. A run mid-flight may have an approval
+    // open on its stream and no question anybody has been handed yet.
+    awaitingSha: blocked ? (run?.awaitingSha ?? null) : null,
+    headSha: run?.headSha ?? null,
+    failed: run?.gates.filter((g) => g.state === "failed").map((g) => g.gate) ?? [],
+    deciding: decidingOf(run),
+  };
+}
+
+/**
  * One stream's events, in order, under a name.
  *
  * **Grouped by stream, not cut by seq.** A ticket-level event landing in the
@@ -242,6 +455,14 @@ export interface HistoryGroup {
 
 export interface TaskDetail {
   taskId: string;
+  /**
+   * Why it is not moving, above everything else. See `StandingView`.
+   *
+   * First on the page and first in this shape: the commonest reason anybody
+   * opens it is that a card has stopped, and the answer used to be at the
+   * bottom of an 80-row history or nowhere.
+   */
+  standing: StandingView;
   /** Null only when the id is not `wi-<project>-<n>`. */
   ticket: TicketView | null;
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
@@ -331,6 +552,7 @@ export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[])
   let finished = false;
   let prompt: PromptView | null = null;
   let diff: RunView["diff"] = null;
+  let awaitingSha: string | null = null;
   /** Keyed by path: an agent touches one file many times and the page wants the file. */
   const files = new Map<string, TouchedFile>();
   const gates = new Map<string, GateVerdict>();
@@ -380,6 +602,17 @@ export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[])
         break;
       case "RunFailed":
         failure = String(d["kind"] ?? "") || "failed";
+        break;
+      // The three that decide whether anything is being asked. Requested opens
+      // the question, granted spends it, revoked opens it again on the sha the
+      // withdrawal names — the same three lines `task_view` folds, so the page
+      // and the card cannot come to disagree about whether Approve can work.
+      case "ApprovalRequested":
+      case "ApprovalRevoked":
+        awaitingSha = String(d["onSha"] ?? "") || null;
+        break;
+      case "ApprovalGranted":
+        awaitingSha = null;
         break;
     }
 
@@ -433,6 +666,7 @@ export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[])
     files: [...files.values()],
     diff,
     prompt,
+    awaitingSha,
     gates: all,
     points,
   };
@@ -590,6 +824,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
 
   return {
     taskId,
+    standing: standingOf(own, runs),
     ticket,
     runs,
     totals: totalsOf(runs),

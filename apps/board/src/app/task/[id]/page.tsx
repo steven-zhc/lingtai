@@ -7,6 +7,7 @@ import { elapsed } from "@/lib/progress";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
+import { Standing } from "../../standing.tsx";
 
 /**
  * One task, in full.
@@ -16,10 +17,16 @@ import { DocumentBody } from "../../markdown.tsx";
  * card makes: the list stays cheap and scannable, and the detail is as rich as
  * it needs to be because it costs a read that happens rarely.
  *
- * **It opens with the ticket**, because this is where somebody decides and
- * deciding needs what was asked and not only what was done. The page had no
- * reference to a title or a body at all, so answering "what was this supposed
- * to do" meant going back to the board and then out to GitHub (#87).
+ * **It opens with the state**, because the commonest reason anybody opens it is
+ * that a card has stopped and the page never said so — the state had to be
+ * inferred by reading to the bottom of a 30–80 row history, which on
+ * 2026-09-08 produced a wrong reading four times (#80, #87, #89, #94). That
+ * block is `standing.tsx`, and it ends in the move that will actually run.
+ *
+ * **Then the ticket**, because this is where somebody decides and deciding
+ * needs what was asked and not only what was done. The page had no reference to
+ * a title or a body at all, so answering "what was this supposed to do" meant
+ * going back to the board and then out to GitHub (#87).
  *
  * **Then the attempts, because the attempt is the skeleton** (the settled
  * design, §1). The log keeps one stream per run and this page used to flatten
@@ -145,7 +152,25 @@ function totalsFact(totals: Totals): string | null {
  * a three-attempt one": the single run is open, and it is not numbered, because
  * *attempt 1 of 1* is a distinction nobody on that page is drawing.
  */
-function Attempt({ run, alone, project }: { run: RunView; alone: boolean; project: string }) {
+function Attempt({
+  run,
+  alone,
+  project,
+  deciding,
+}: {
+  run: RunView;
+  alone: boolean;
+  project: string;
+  /**
+   * True when the block at the top points here.
+   *
+   * Marked *and* open: the pointer carries one line and this attempt holds the
+   * whole of it, so following the link has to land on something readable
+   * without a second click — and the link keeps working with no JavaScript
+   * because nothing has to be expanded first.
+   */
+  deciding: boolean;
+}) {
   const facts = [
     run.turns === null ? null : `${run.turns} turns`,
     run.durationMs === null ? null : elapsed(run.durationMs),
@@ -154,7 +179,11 @@ function Attempt({ run, alone, project }: { run: RunView; alone: boolean; projec
   ].filter((s): s is string => s !== null);
 
   return (
-    <details className="attempt" open={alone}>
+    <details
+      className={deciding ? "attempt deciding" : "attempt"}
+      id={`attempt-${run.attempt}`}
+      open={alone || deciding}
+    >
       <summary>
         <span className="anum">{alone ? "the run" : `attempt ${run.attempt}`}</span>
         <span className={`pill ${outcomeClass(run.outcome.state)}`}>{run.outcome.state}</span>
@@ -240,7 +269,12 @@ function Attempt({ run, alone, project }: { run: RunView; alone: boolean; projec
                 {p.planned.length > p.verdicts.length ? (
                   // Planned but no verdict. Either it is still running, or it
                   // did not run — and the second is the one worth seeing.
-                  <span className="pill sig" title="planned, no verdict yet">
+                  //
+                  // Not amber. Amber is "a human is being waited on" and since
+                  // #103 there is one on this page that means it; a second use
+                  // for "worth seeing" is the dilution the layout notes forbid,
+                  // and a gate with no verdict is waiting on nobody.
+                  <span className="pill" title="planned, no verdict yet">
                     {p.planned.length - p.verdicts.length} pending
                   </span>
                 ) : null}
@@ -279,6 +313,10 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   // rather than about all of them.
   const head = task.runs.at(-1)?.headSha ?? null;
   const events = task.history.reduce((n, g) => n + g.lines.length, 0);
+  // The issue the controls would act on. `ref` is GitHub's own number, so
+  // anything that does not parse is an id that was never one.
+  const ref = Number(task.ticket?.ref);
+  const issueNumber = Number.isSafeInteger(ref) && ref > 0 ? ref : null;
 
   return (
     <main className="detail">
@@ -297,8 +335,17 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="detail-body">
-        {/* First, because it is the question every other section is an answer
-            to. */}
+        {/* First, and above the ticket. What was asked is the question every
+            section below answers; whether anything is still moving is what
+            somebody came here to find out (#103). */}
+        <Standing
+          standing={task.standing}
+          project={task.ticket?.project ?? null}
+          // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`
+          // has none, and the block states the state without offering a move.
+          issue={issueNumber}
+        />
+
         <section>
           <Label>Ticket</Label>
           {task.ticket ? (
@@ -320,6 +367,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
                   run={run}
                   alone={task.runs.length === 1}
                   project={task.ticket?.project ?? ""}
+                  deciding={task.standing.deciding?.attempt === run.attempt}
                 />
               ))}
             </div>
