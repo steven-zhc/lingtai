@@ -40,6 +40,7 @@ import {
 } from "@lingtai/daemon";
 import { parseDuration } from "@lingtai/recipe";
 import { conductorPass } from "./conduct.ts";
+import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
 import { formatReport, runDoctor } from "./doctor.ts";
@@ -412,6 +413,10 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     loop = createWorkLoop({
       log: (line) => console.log(line),
       notify: (event) => notifier.consider(event),
+      // The third kind of agent, hosted here because the daemon is where money
+      // is spent (0033 §3). Off the pass path: a question must not queue behind
+      // a run, and it takes no claim and provisions nothing that would need to.
+      discuss: (event) => onDiscussionRequested(event, (line) => console.log(line)),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
       paused: async () => (await readControl()).paused,
@@ -444,8 +449,19 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     const control = await readControl();
     if (control.paused) console.log(`paused by ${control.by} — ${control.reason}`);
     await loop.start();
+    // A question asked while nothing was listening is waiting in the stream,
+    // exactly as a pause is (0013). After `start`, so the subscription is
+    // already up and a question that arrives during this one is not missed.
+    const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
+      console.error(`discussions: ${(err as Error).message}`);
+      return 0;
+    });
+    if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`);
   } else {
-    console.log("projections only — no work will be taken");
+    // Discussions go with the conductor, and that is what this flag says: they
+    // spend money and 0033 §3 puts everything that spends money in the process
+    // that takes work. A daemon told to take none answers none either.
+    console.log("projections only — no work will be taken and no question answered");
   }
 
   // The first signal drains and says so; the second stops now. `kill <pid>` is

@@ -128,18 +128,23 @@ function outcomeClass(state: RunView["outcome"]["state"]): string {
  * say it had. A repair's spend is beside the work's and never inside it, the
  * way the board keeps it (#84).
  *
- * The design's example reads `2 attempts + 3 discussions · …`. There are no
- * discussions to count yet — §5's `DiscussionHeld` is not in the catalogue —
- * and a clause that is always `0 discussions` would be furniture.
+ * `2 attempts + 3 discussions · …`, as the design's example reads it — and the
+ * discussions are counted for the reason 0033's consequences give: they come
+ * out of the same budget, so hiding one of the two figures would misstate the
+ * other. The clause is dropped when there have been none, because a permanent
+ * `0 discussions` is furniture.
  */
 function totalsFact(totals: Totals): string | null {
-  if (totals.attempts === 0) return null;
+  if (totals.attempts === 0 && totals.discussions === 0) return null;
+  const held = totals.discussions;
   return [
-    `${totals.attempts} attempt${totals.attempts === 1 ? "" : "s"}`,
+    `${totals.attempts} attempt${totals.attempts === 1 ? "" : "s"}` +
+      (held > 0 ? ` + ${held} discussion${held === 1 ? "" : "s"}` : ""),
     totals.turns > 0 ? `${totals.turns} turns` : null,
     totals.durationMs > 0 ? elapsed(totals.durationMs) : null,
     totals.costUsd > 0 ? `$${totals.costUsd.toFixed(2)}` : null,
     totals.repairUsd > 0 ? `$${totals.repairUsd.toFixed(2)} repair` : null,
+    totals.discussionUsd > 0 ? `$${totals.discussionUsd.toFixed(2)} asking` : null,
   ]
     .filter((s): s is string => s !== null)
     .join(" · ");
@@ -340,6 +345,8 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
             somebody came here to find out (#103). */}
         <Standing
           standing={task.standing}
+          taskId={task.taskId}
+          discussions={task.discussions}
           project={task.ticket?.project ?? null}
           // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`
           // has none, and the block states the state without offering a move.

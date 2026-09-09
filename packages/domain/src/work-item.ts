@@ -121,6 +121,21 @@ export interface WorkItemState {
   pendingRepair: RepairRecord | null;
 
   /**
+   * A sentence somebody added for the next run, and not yet consumed.
+   *
+   * The whole of how a `PromptEdited` reaches an agent
+   * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
+   * §5). It applies to the **next run only**, whoever starts it — the next
+   * `WorkItemClaimed` clears it, exactly as a claim clears `pendingRepair`.
+   *
+   * One-shot rather than durable, and that removes a failure mode rather than
+   * mitigating one: a lasting override would need the page to guard against a
+   * stale instruction being sent unseen, and something meant to last belongs in
+   * the GitHub ticket where everybody can see it (§6).
+   */
+  pendingPrompt: { text: string; by: string } | null;
+
+  /**
    * The run holding this item, when that run is a repair.
    *
    * Kept past the run's ending on purpose — it is what makes *an analysis that
@@ -148,6 +163,7 @@ export const emptyWorkItem: WorkItemState = {
   runs: [],
   repairs: [],
   pendingRepair: null,
+  pendingPrompt: null,
   repairRun: null,
   version: 0,
   lastSeq: null,
@@ -189,6 +205,10 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
         // there is no second event saying so — which is deliberate: a repair is
         // an ordinary run and 0025 refuses to give it a vocabulary of its own.
         pendingRepair: null,
+        // And whatever sentence a person added for the next run, for the same
+        // reason and by the same rule: `PromptEdited` applies to one run, and
+        // this is the run (0032 §5).
+        pendingPrompt: null,
         repairRun: state.pendingRepair
           ? { runId: d.runId, of: state.pendingRepair }
           : null,
@@ -208,6 +228,15 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // release that follows this puts it back in the queue, and being queued is
       // the state.
       return { ...state, ...at, repairs: [...state.repairs, record], pendingRepair: record };
+    }
+
+    case "PromptEdited": {
+      const d = event.data as PayloadOf<"PromptEdited">;
+      // The lifecycle is untouched. An edit is about *what to do*, not about
+      // which state the item is in — the next claim is what consumes it, and a
+      // second edit before that claim replaces the first rather than stacking:
+      // two sentences nobody re-read is a prompt nobody approved.
+      return { ...state, ...at, pendingPrompt: { text: d.text, by: d.by } };
     }
 
     case "WorkItemReleased":

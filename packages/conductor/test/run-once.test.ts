@@ -185,6 +185,7 @@ function fakeClient(over: Partial<GitHubClient> & { recipe?: string } = {}): Git
     comment: async () => ({ id: 909 }),
     closeIssue: async () => {},
     setLabels: async () => {},
+    updateBody: async () => {},
     getIssue: async () => issue,
     ...rest,
   };

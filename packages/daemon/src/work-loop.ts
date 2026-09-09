@@ -137,6 +137,25 @@ export interface WorkLoopOptions {
    */
   notify?: (event: import("@lingtai/domain").Envelope) => Promise<void>;
   /**
+   * Somebody asked the discussion assistant a question. Answer it.
+   *
+   * **Off the pass path, deliberately.** A pass is minutes long and can be the
+   * whole of an agent, its gates and a merge lane; a discussion is attended,
+   * and queueing one behind a run would make the person who asked watch a
+   * spinner for as long as the run takes. Nothing about it needs the pass's
+   * single-flight either — it takes no claim, provisions nothing and appends
+   * only to its own stream (0033 §1).
+   *
+   * It is on this subscription rather than a second one for the reason `notify`
+   * is: the daemon already reads every append, and a second session-mode
+   * connection for events it is being handed anyway is a connection held open
+   * for nothing.
+   *
+   * Its failures are its own. Anything that escaped here would reach the
+   * subscription's handler and stop the loop over a question.
+   */
+  discuss?: (event: import("@lingtai/domain").Envelope) => Promise<void>;
+  /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
    */
@@ -272,6 +291,11 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // for are mostly *not* the ones that wake the conductor. A task being
           // blocked is both; a run asking a question is only the first.
           void options.notify?.(event);
+          // Before the trigger check too, and never through `pump`. See
+          // `discuss` above: a question must not wait for a run.
+          if (event.type === "DiscussionRequested") {
+            void options.discuss?.(event).catch((err: unknown) => log(`discussion failed: ${String(err)}`));
+          }
           if (!triggers.has(event.type)) return;
           void pump("completion");
         },

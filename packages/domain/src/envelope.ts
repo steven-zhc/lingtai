@@ -14,11 +14,18 @@ export const Actor = z
 export const StreamId = z
   .string()
   .regex(
-    /^(wi|run|int|prj|ctl)-[\w.-]+$/,
+    /^(wi|run|int|prj|ctl|chat)-[\w.-]+$/,
     // `ctl` is the operator's own aggregate: pauses, resumes and hand-picked
     // runs. One stream for the whole installation — control is not per-project,
     // and a pause that only stopped one repository would be a surprise.
-    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project) or ctl-… (control)",
+    //
+    // `chat` is one discussion about one work item
+    // ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §6). Its
+    // own aggregate because a forty-turn exploration on the work item's stream
+    // would drown the history the detail page exists to show — permanently,
+    // the log being append-only. The work item keeps one `DiscussionHeld`
+    // pointing at it.
+    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control) or chat-… (discussion)",
   );
 
 export interface Envelope<T = unknown> {

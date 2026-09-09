@@ -666,10 +666,17 @@ export const OutboxFailed = z.object({
  * The noun is the issue rather than the outbox that used to carry it: a queue
  * is an implementation detail and an event name must not spend the log's
  * vocabulary on one ([0022](../../../doc/decisions/0022-the-seams.md)) — which
- * this pair outlived by two commits, as intended. Three
- * changes are possible and they are the only three — a comment, the label set,
- * and closing — so the kind is a field rather than three event types, which
- * would have been six once the failures are counted.
+ * this pair outlived by two commits, as intended. The kind is a field rather
+ * than an event type each, which would have been eight once the failures are
+ * counted.
+ *
+ * `body` is the fourth, and it is
+ * [0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §6:
+ * an instruction meant to outlive one attempt is edited into the issue body,
+ * where it versions as `ticket@NNNN`, everybody can see it, and every
+ * subsequent attempt reads it. **Additive to the enum**, so no stored event is
+ * rewritten and no version is bumped — the same widening `RUN_FAILURE_KINDS`
+ * made for `never-started`.
  *
  * `conductor` decides *which* labels, from the work item's state; `github`
  * takes the union with whatever labels somebody else put on the issue, because
@@ -682,7 +689,7 @@ export const OutboxFailed = z.object({
 export const IssueUpdated = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(["comment", "labels", "closed"]),
+  change: z.enum(["comment", "labels", "closed", "body"]),
   /** Whatever identifies what happened: a comment id, the labels that were set. */
   detail: z.string(),
 });
@@ -700,7 +707,7 @@ export const IssueUpdated = z.object({
 export const IssueUpdateFailed = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(["comment", "labels", "closed"]),
+  change: z.enum(["comment", "labels", "closed", "body"]),
   error: z.string(),
 });
 
@@ -715,6 +722,145 @@ export const RunRequested = z.object({
   project: z.string(),
   issue: z.string(),
   by: z.string(),
+});
+
+/**
+ * Somebody asked a question about one work item.
+ *
+ * On the control stream, beside `pause` and `now`, because it is the same kind
+ * of thing: the UI controls and the daemon holds
+ * ([0013](../../../doc/decisions/0013-daemon-hosts-the-work.md),
+ * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §3). It spends
+ * money, and everything that spends money in this system starts in one place.
+ *
+ * **No `consumed` event, for the reason `RunRequested` has none.** A request is
+ * satisfied when `chat-<id>` carries an answer for it, so the count of asks
+ * against the count of answers is the whole state machine — and a daemon that
+ * was down when the question was asked finds it waiting rather than losing it.
+ *
+ * `chatId` is supplied by whoever asks, so a follow-up turn is another
+ * `DiscussionRequested` carrying the same one. The conversation is a stream and
+ * not a session; nothing has to still be running between two questions.
+ */
+export const DiscussionRequested = z.object({
+  /** `chat-<uuid>`, which is also the stream the exchange lands on. */
+  chatId: z.string(),
+  workItemId: z.string(),
+  /** The attempt being asked about, 1-based, or null for the item as a whole. */
+  attempt: z.number().int().nullable(),
+  question: z.string(),
+  by: z.string(),
+});
+
+
+// ------------------------------------------------------------ discussion ----
+
+
+/**
+ * A question put to the discussion assistant, and what it was given to answer
+ * with.
+ *
+ * On `chat-<id>`, which holds the whole exchange (0033 §6). Self-contained like
+ * everything else here: `workItemId` is on every ask, so the stream is readable
+ * without joining against the control stream that asked for it.
+ *
+ * **`reading` is Lingtai's sentence, not the assistant's**, and that is the
+ * point of the field. `worktree.ts` resets an attempt's branch with `-B` on
+ * every run, so an attempt that committed nothing never had one — `#89`'s
+ * second attempt is exactly that case, and reading `main` silently instead is
+ * what killed the repair. Recorded before the assistant speaks, so the blind
+ * spot cannot be hidden by an answer that does not mention it.
+ */
+export const DiscussionAsked = z.object({
+  workItemId: z.string(),
+  attempt: z.number().int().nullable(),
+  by: z.string(),
+  question: z.string(),
+  /** What was actually readable, in words — including the branch that was not there. */
+  reading: z.array(z.string()),
+});
+
+/**
+ * What the assistant said, what it read to say it, and what it cost.
+ *
+ * **Every ending appends one**, `failure` included — the rule `RunFailed`
+ * exists for, one agent along. 0033 §4 gives this agent a meter rather than a
+ * limit, and a meter that can miss a spend is not one: a run that cost money
+ * and then failed has to leave the money on the log.
+ *
+ * `proposal` is the artefact the assistant is proposing, and null when it is
+ * only answering. It is *not* the artefact being adopted — a person clicks for
+ * that, and the click is what appends `PromptEdited` or writes the ticket
+ * (0033 §2). The two kinds are the two that already exist; there is no third.
+ *
+ * `cannot` is §5, made a field so it survives skimming: what the assistant
+ * could not establish, in its own words. Reading the shipped bundle reaches
+ * *"`error_max_turns` is among the subtypes"* and no further, and an assistant
+ * that laundered that into *the binary accepts the flag* would repeat exactly
+ * what cost `#89` two attempts.
+ */
+export const DiscussionAnswered = z.object({
+  text: z.string(),
+  /** `main:packages/agent/src/claude-code.ts` — every file served, in order. */
+  read: z.array(z.string()),
+  /** What it said it could not establish without a command it does not have. */
+  cannot: z.array(z.string()),
+  /** What it proposes writing down, and where. Null when it only answered. */
+  proposal: z
+    .object({ kind: z.enum(["prompt", "ticket"]), text: z.string() })
+    .nullable(),
+  turns: z.number().int(),
+  durationMs: z.number().int(),
+  costUsd: z.number().nullable(),
+  /** Set when the assistant did not finish. Null on an ordinary answer. */
+  failure: z.string().nullable(),
+});
+
+/**
+ * One line on the work item for a whole conversation.
+ *
+ * The pointer 0033 §6 decides on. A forty-turn exploration appended to the work
+ * item would drown the history the detail page exists to show, and the log is
+ * append-only, so it would drown it permanently. Discarding the conversation
+ * instead would leave *"why does this prompt say that?"* unanswerable and — the
+ * meter being the only bound — money spent with no record.
+ *
+ * `outcome` names which of the two artefacts it produced, and `none` is an
+ * ordinary answer: a question that was answered and needed nothing written down
+ * is the commonest discussion there is.
+ */
+export const DiscussionHeld = z.object({
+  chatId: z.string(),
+  /** The whole conversation's spend. Null when nothing reported a cost. */
+  costUsd: z.number().nullable(),
+  outcome: z.enum(["prompt", "ticket", "none"]),
+  by: z.string(),
+});
+
+/**
+ * A sentence added to the next run's prompt, and to that one only.
+ *
+ * [0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §5.
+ * On the **work item** stream and not on an approval: `approve()` binds to
+ * `onSha` and a force-push voids it by arithmetic, while an edit is about *what
+ * to do* and not about which diff to merge.
+ *
+ * It applies to the next run only, whoever starts it — `reduceWorkItem` holds
+ * it as `pendingPrompt` and the next `WorkItemClaimed` consumes it. Something
+ * meant to last belongs in the GitHub ticket, where everybody can see it and it
+ * versions as `ticket@NNNN`; a durable override living only inside Lingtai
+ * would be a shadow ticket body (§6).
+ *
+ * `#104` owns the editable prompt box on the board. This is the carrier it and
+ * the discussion assistant share, and it is here because `#105`'s first output
+ * is exactly this event.
+ */
+export const PromptEdited = z.object({
+  /** The text the next run's prompt carries, whole. */
+  text: z.string(),
+  by: z.string(),
+  /** The discussion it came out of, when one did. */
+  chatId: z.string().nullable(),
 });
 
 
@@ -824,6 +970,11 @@ export const EVENTS = {
   IssueUpdateFailed,
   QueueChanged,
   RunRequested,
+  DiscussionRequested,
+  DiscussionAsked,
+  DiscussionAnswered,
+  DiscussionHeld,
+  PromptEdited,
   ProjectConfigured,
   Reconciled,
 } as const;

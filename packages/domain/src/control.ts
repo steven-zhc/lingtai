@@ -59,6 +59,28 @@ export interface ControlState {
   shutdown: ShutdownRequest | null;
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
   requested: { project: string; issue: string; by: string }[];
+  /**
+   * Questions asked of the discussion assistant, oldest first — every one of
+   * them, answered or not.
+   *
+   * Not filtered here, and that is deliberate. A request is satisfied when
+   * `chat-<id>` carries an answer for it, which is a fact on a different stream
+   * than this fold reads; asking the chat stream is the daemon's job, and it is
+   * the same shape as `requested`, which is satisfied by the item ceasing to be
+   * queued. Keeping the decision out of this fold is what stops the control
+   * stream growing a second state machine
+   * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §6).
+   */
+  discussions: DiscussionRequest[];
+}
+
+/** One question, as `DiscussionRequested` recorded it. */
+export interface DiscussionRequest {
+  chatId: string;
+  workItemId: string;
+  attempt: number | null;
+  question: string;
+  by: string;
 }
 
 export const emptyControl: ControlState = {
@@ -68,6 +90,7 @@ export const emptyControl: ControlState = {
   until: null,
   shutdown: null,
   requested: [],
+  discussions: [],
 };
 
 /**
@@ -82,7 +105,7 @@ export const emptyControl: ControlState = {
  * reading it at fold time is a timer somebody has to still be holding.
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
-  const state: ControlState = { ...emptyControl, requested: [] };
+  const state: ControlState = { ...emptyControl, requested: [], discussions: [] };
 
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>;
@@ -126,6 +149,17 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
           by: str("by") ?? "",
         });
         break;
+      case "DiscussionRequested": {
+        const attempt = d["attempt"];
+        state.discussions.push({
+          chatId: str("chatId") ?? "",
+          workItemId: str("workItemId") ?? "",
+          attempt: typeof attempt === "number" ? attempt : null,
+          question: str("question") ?? "",
+          by: str("by") ?? "",
+        });
+        break;
+      }
       default:
         break;
     }

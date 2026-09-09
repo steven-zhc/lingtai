@@ -23,6 +23,13 @@ export {
   type Worktree,
 } from "./worktree.ts";
 export {
+  listAt,
+  mirrorPathFor,
+  readAt,
+  refSha,
+  type MirrorOptions,
+} from "./mirror.ts";
+export {
   integrate,
   integrateEffect,
   type IntegrateOptions,

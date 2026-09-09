@@ -27,6 +27,10 @@
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
 import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
+import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
+import { CONTROL_STREAM, parsePayload, parseWorkItemStream } from "@lingtai/domain";
+import { eventStore } from "@lingtai/event-store";
+import { randomUUID } from "node:crypto";
 import { loadProject } from "@lingtai/conductor/projects";
 import { resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
@@ -206,6 +210,109 @@ export async function resumeWork(): Promise<ActionResult> {
     await resumeConductor(by);
     revalidatePath("/");
     return { ok: true, detail: `resumed by ${by}` };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * Ask the discussion assistant a question about this item.
+ *
+ * An append to `ctl-conductor` and nothing else — the same stream `pause` and
+ * `now` use, and for the reason [0013] gives: **the UI controls, the daemon
+ * holds** ([0033](../../../../doc/decisions/0033-the-third-kind-of-agent.md)
+ * §3). The board does not start an agent. It is arguable the other way, since
+ * two of 0013's three reasons do not apply to something with no worktree and no
+ * claim; what decides it is the third, that this spends money, and everything
+ * that spends money starts where the accounting already is.
+ *
+ * So a question asked while the daemon is down is *waiting* when it comes back
+ * rather than failing here, which is the behaviour a person actually wants.
+ *
+ * `chatId` continues an existing conversation; omitting it opens a new one. No
+ * `onSha`, because nothing is being agreed to: a question is about what
+ * happened, not about which diff to merge.
+ */
+export async function askDiscussion(input: {
+  taskId: string;
+  /** The attempt being asked about, or null for the item as a whole. */
+  attempt: number | null;
+  question: string;
+  chatId?: string;
+}): Promise<ActionResult & { chatId?: string }> {
+  try {
+    if (!input.question.trim()) return { ok: false, detail: "a question needs a question" };
+    const chatId = input.chatId ?? `chat-${randomUUID()}`;
+    const by = actor();
+    const events = await eventStore.read(CONTROL_STREAM);
+    await eventStore.append(CONTROL_STREAM, events.length, [
+      {
+        type: "DiscussionRequested",
+        actor: by,
+        data: parsePayload("DiscussionRequested", {
+          chatId,
+          workItemId: input.taskId,
+          attempt: input.attempt,
+          question: input.question,
+          by,
+        }),
+      },
+    ]);
+
+    revalidatePath(`/task/${input.taskId}`);
+    return { ok: true, detail: "asked — the daemon answers", chatId };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * Close a discussion, with the artefact it produced or with none.
+ *
+ * **Two outputs and only two** (0033 §2). `prompt` appends `PromptEdited`,
+ * which the next claim consumes and discards; `ticket` appends the sentence to
+ * the GitHub issue body, where it versions as `ticket@NNNN` and every later
+ * attempt reads it. `none` is the ordinary ending: a question answered that
+ * needed nothing written down.
+ *
+ * The ticket's body is read here, immediately before it is written, because
+ * GitHub offers a replace and not an append — the same read-modify-write
+ * `setLabels` has to do, and for the same reason.
+ */
+export async function concludeChat(input: {
+  taskId: string;
+  chatId: string;
+  outcome: "prompt" | "ticket" | "none";
+  text: string;
+}): Promise<ActionResult> {
+  try {
+    const parsed = parseWorkItemStream(input.taskId);
+    if (!parsed) return { ok: false, detail: "this id is not a work item" };
+
+    let ticket: { github: IssueChannel; body: string } | undefined;
+    if (input.outcome === "ticket") {
+      const state = await project(parsed.project);
+      const client = await createGitHubClient({
+        auth: githubApp(),
+        owner: state.owner!,
+        repo: parsed.project,
+      });
+      const issue = await client.getIssue(Number(parsed.issue));
+      ticket = { github: client, body: issue.body };
+    }
+
+    const result = await concludeDiscussion({
+      store: eventStore,
+      workItemId: input.taskId,
+      chatId: input.chatId,
+      by: actor(),
+      outcome: input.outcome,
+      text: input.text,
+      ...(ticket === undefined ? {} : { ticket }),
+    });
+
+    revalidatePath(`/task/${input.taskId}`);
+    return result;
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }

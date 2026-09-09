@@ -392,9 +392,39 @@ function cell(text: string): string {
  *
  * A hash and not a length: two different failures can be the same size, and the
  * question this answers is *was this attempt told something different*.
+ *
+ * `human` is the same argument one carrier along
+ * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §5):
+ * a `PromptEdited` changes what an attempt was told, so an attempt that carried
+ * one and an attempt that did not must not read as the same version. Without
+ * it two runs share a `promptVersion` and did not share a prompt, **and the log
+ * is lying about what produced a result.** Empty for every run nobody edited,
+ * which is every run so far.
  */
-export function promptVersionFor(base: string, failure: string): string {
-  if (failure === "") return base;
-  const digest = createHash("sha256").update(failure).digest("hex").slice(0, 12);
-  return `${base}+failure@${digest}`;
+export function promptVersionFor(base: string, failure: string, human = ""): string {
+  const parts = [base];
+  if (failure !== "") parts.push(`failure@${digest(failure)}`);
+  if (human !== "") parts.push(`human@${digest(human)}`);
+  return parts.join("+");
+}
+
+function digest(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 12);
+}
+
+/**
+ * The block a `PromptEdited` puts in front of the next attempt.
+ *
+ * Its own block rather than folded into the failure history, because it is a
+ * different kind of thing: the history is what earlier attempts *did*, and this
+ * is what a person is asking *this one* to do. Naming who asked is what makes
+ * it an instruction rather than a stray paragraph.
+ */
+export function humanBrief(edit: { text: string; by: string } | null): string {
+  if (edit === null || edit.text.trim() === "") return "";
+  return `## Added for this attempt by ${edit.by}
+
+${edit.text.trim()}
+
+It applies to this attempt only. Anything meant to last belongs in the ticket.`;
 }

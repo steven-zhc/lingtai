@@ -33,6 +33,24 @@ export function parseWorkItemStream(id: string): { project: string; issue: strin
   return { project, issue };
 }
 
+export const CHAT_STREAM_PREFIX = "chat-";
+
+/**
+ * `chat-{id}` — one discussion about one work item, whole.
+ *
+ * Its own stream rather than the work item's, because
+ * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §6 says a
+ * forty-turn exploration appended to the work item would drown the history the
+ * detail page exists to show — permanently, the log being append-only. The work
+ * item gets one `DiscussionHeld` pointing here.
+ *
+ * The id is passed in rather than made here: whoever opens the conversation
+ * names it, and a follow-up question is another request carrying the same name.
+ */
+export function chatStream(id: string): string {
+  return id.startsWith(CHAT_STREAM_PREFIX) ? id : `${CHAT_STREAM_PREFIX}${id}`;
+}
+
 export const PROJECT_STREAM_PREFIX = "prj-";
 
 /** `prj-{project}` — everything Lingtai was told about a repository. */

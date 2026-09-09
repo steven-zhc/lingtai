@@ -4,8 +4,9 @@ import { inWords } from "@lingtai/conductor/queue";
 // reads, so this block, the card and `lingtai status` say the same thing about
 // the same hold rather than keeping three copies of the words.
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
-import type { StandingView } from "@/lib/task";
+import type { DiscussionView, StandingView } from "@/lib/task";
 import { Decide, Requeue } from "./decide.tsx";
+import { Discussion } from "./discussion.tsx";
 
 /**
  * Why this task is not moving, above everything else.
@@ -37,6 +38,12 @@ import { Decide, Requeue } from "./decide.tsx";
  * here: printing the failing gate twice, at the top and inside its attempt, is
  * how two copies of one fact come to disagree.
  *
+ * **The discussion is inside this block**, and it is one of the two objects the
+ * layout notes allow a frame in it. That is where the design puts it and it is
+ * the right place for the reason the block exists: this is where somebody
+ * decides, and *"why is this stuck"* is a question asked at the moment of
+ * deciding rather than at the bottom of the page (0033).
+ *
  * **No frame.** One rule states the block's extent, and it is amber only when a
  * person is the thing being waited on, because that is the only thing amber
  * means in this palette (layout notes). Every divider inside is neutral.
@@ -45,11 +52,15 @@ export function Standing({
   standing,
   project,
   issue,
+  taskId,
+  discussions,
 }: {
   standing: StandingView;
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
   project: string | null;
   issue: number | null;
+  taskId: string;
+  discussions: DiscussionView[];
 }) {
   const held = describeHold(standing);
   const acting = project !== null && issue !== null;
@@ -116,6 +127,12 @@ export function Standing({
           own reading (#84, #92): a question is open exactly when there is a sha
           it is about, and an item whose approved merge hit a conflict has none
           — Approve would refuse every click, so it gets the move it has. */}
+      {/* Offered whatever the state, deliberately. The commonest question is
+          about something that has stopped, but "what did attempt 1 actually
+          change" is asked of a landed item too, and a box that appeared only on
+          a blocked card would be one more thing to find out about. */}
+      <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} />
+
       {acting && standing.state === "blocked" ? (
         standing.awaitingSha !== null ? (
           <Decide

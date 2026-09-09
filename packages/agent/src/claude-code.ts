@@ -106,7 +106,12 @@ export const PROMPT_ELIDED = "<prompt: recorded as RunPrompted>";
  * `run` and `invocation` call this with the only thing that differs between
  * them, so what the log says was run and what was run are the same list.
  */
-function argsFor(request: Invocable, prompt: string, extraArgs: readonly string[]): string[] {
+function argsFor(
+  request: Invocable,
+  prompt: string,
+  extraArgs: readonly string[],
+  permissionMode: PermissionMode,
+): string[] {
   return [
     "-p",
     prompt,
@@ -132,7 +137,7 @@ function argsFor(request: Invocable, prompt: string, extraArgs: readonly string[
     // what makes a tool call refusable. Deferring to it is the design, and
     // leaving a second layer in front of it only hides the first.
     "--permission-mode",
-    "bypassPermissions",
+    permissionMode,
     "--session-id",
     sessionIdFor(request.runId),
     ...(request.model ? ["--model", request.model] : []),
@@ -140,15 +145,35 @@ function argsFor(request: Invocable, prompt: string, extraArgs: readonly string[
   ];
 }
 
+/**
+ * Which permission layer the run gets.
+ *
+ * `bypassPermissions` is the default and is the paragraph above: for a run
+ * agent the guard *is* the gate, and a second permission layer in front of the
+ * hook only hides the first.
+ *
+ * `default` is the third kind of agent
+ * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §1), which has
+ * no worktree, no hook and no gates and must therefore have no tools either.
+ * Under `-p` there is nothing to grant a permission with — the paragraph above
+ * measured that: every Write, Edit and most Bash calls come back as *"you
+ * haven't granted it yet"* and there is no prompt to answer. What ruins a run
+ * agent is exactly what contains a reader.
+ */
+export type PermissionMode = "bypassPermissions" | "default";
+
 export interface ClaudeCodeOptions {
   /** The `claude` executable. Overridable so a test can use a stand-in. */
   binary?: string;
   /** Extra arguments, for a project that needs one. Never used to add tools. */
   extraArgs?: readonly string[];
+  /** Defaults to `bypassPermissions`. See `PermissionMode`. */
+  permissionMode?: PermissionMode;
 }
 
 export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtime {
   const binary = options.binary ?? "claude";
+  const permissionMode: PermissionMode = options.permissionMode ?? "bypassPermissions";
 
   return {
     capabilities: CLAUDE_CODE_CAPABILITIES,
@@ -220,14 +245,17 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
 
     /** The same list `run` spawns, with the prompt standing in. */
     invocation(request: Invocable): Spawned {
-      return { command: binary, args: argsFor(request, PROMPT_ELIDED, options.extraArgs ?? []) };
+      return {
+        command: binary,
+        args: argsFor(request, PROMPT_ELIDED, options.extraArgs ?? [], permissionMode),
+      };
     },
 
     async run(request: RunRequest): Promise<RunOutcome> {
       const sessionId = sessionIdFor(request.runId);
       const started = Date.now();
 
-      const args = argsFor(request, request.prompt, options.extraArgs ?? []);
+      const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode);
 
       return new Promise<RunOutcome>((resolve) => {
         const child = spawn(binary, args, {

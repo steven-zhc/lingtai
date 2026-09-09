@@ -40,18 +40,33 @@ export interface IssueChannel {
   comment(issue: number, body: string): Promise<{ id: number }>;
   setLabels(issue: number, labels: readonly string[]): Promise<void>;
   closeIssue(issue: number): Promise<void>;
+  /**
+   * Replaces the whole issue body. Read-modify-write, like `setLabels`, and
+   * for the same reason: GitHub offers a replace and nothing else, so whoever
+   * composes the new body has to have read the old one.
+   */
+  updateBody(issue: number, body: string): Promise<void>;
 }
 
 /**
- * The three things Lingtai ever says about an issue.
+ * The four things Lingtai ever says about an issue.
  *
- * A field rather than three event types, because with the failures that would
- * have been six, and all three are handled identically.
+ * A field rather than an event type each, because with the failures that would
+ * have been eight, and all four are handled identically.
+ *
+ * `body` is the one that changes what a *later run* reads
+ * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §6):
+ * the prompt is filled from the issue body, so an instruction meant to outlive
+ * one attempt goes there and nowhere else. It carries the whole new body,
+ * because that is what GitHub takes — composing it is the caller's job, and
+ * doing it here would put "what the sentence should look like" inside the
+ * function that only knows how to send one.
  */
 export type IssueChange =
   | { kind: "comment"; body: string }
   | { kind: "labels"; labels: readonly string[] }
-  | { kind: "closed" };
+  | { kind: "closed" }
+  | { kind: "body"; body: string };
 
 export interface TellOptions {
   store: EventStore;
@@ -107,6 +122,13 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
       }
       case "closed":
         await github.closeIssue(issue);
+        break;
+      case "body":
+        await github.updateBody(issue, change.body);
+        // The size, not the text. The body is on GitHub and the sentence that
+        // was added is on the log already — `PromptEdited` or the discussion
+        // that proposed it — and a third copy here is one that can disagree.
+        detail = `${change.body.length} bytes`;
         break;
     }
   } catch (err) {

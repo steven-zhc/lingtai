@@ -122,6 +122,23 @@ export interface GitHubClient {
   closeIssue(issue: number): Promise<void>;
 
   /**
+   * Replaces the issue body.
+   *
+   * The second write that changes what a *later run reads*, and the only one:
+   * the prompt is filled from the issue body, so this is where an instruction
+   * meant to outlive one attempt goes
+   * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
+   * §6). A comment would not reach it — nothing renders comments into a prompt
+   * — and a durable override kept inside Lingtai would be a shadow ticket body
+   * nobody outside can see.
+   *
+   * It replaces, as `setLabels` does, because that is what GitHub offers. The
+   * caller is therefore the one that has to have read the current body first;
+   * `tell.ts` takes the whole new body and does not compose it.
+   */
+  updateBody(issue: number, body: string): Promise<void>;
+
+  /**
    * The current installation token, refreshed if it is about to expire.
    *
    * Exposed because git needs it and this client is the only thing that has it.
@@ -191,6 +208,10 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     });
   }
 
+  async function updateBody(issue: number, body: string): Promise<void> {
+    await request<unknown>("PATCH", `/repos/${owner}/${repo}/issues/${issue}`, { body });
+  }
+
   async function setLabels(issue: number, labels: readonly string[]): Promise<void> {
     await request<unknown>("PUT", `/repos/${owner}/${repo}/issues/${issue}/labels`, {
       labels: [...labels],
@@ -246,6 +267,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     comment,
     setLabels,
     closeIssue,
+    updateBody,
 
     async defaultBranch() {
       const raw = await request<{ default_branch: string }>("GET", `/repos/${owner}/${repo}`);

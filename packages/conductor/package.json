@@ -9,6 +9,7 @@
     "./projects": "./src/projects.ts",
     "./decide": "./src/approve.ts",
     "./discover": "./src/discover.ts",
+    "./discuss": "./src/discuss.ts",
     "./filter": "./src/filter.ts",
     "./labels": "./src/labels.ts",
     "./queue": "./src/queue.ts"

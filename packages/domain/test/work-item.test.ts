@@ -266,4 +266,40 @@ describe("reduceWorkItem", () => {
     // Version still advances, so the next append does not use a stale expectation.
     expect(s.version).toBe(2);
   });
+
+  /**
+   * The one-shot edit
+   * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
+   * §5). It applies to the next run and to no other, which is what makes a
+   * stale instruction impossible rather than merely guarded against — the same
+   * shape `pendingRepair` has, and cleared by the same event.
+   */
+  it("holds a prompt edit until the next claim, and no longer", () => {
+    const e = makeStream("wi-p-1");
+    const edited = reduceWorkItem([
+      e("WorkItemDiscovered", discovered),
+      e("PromptEdited", { text: "pass --max-turns", by: "human:steven", chatId: "chat-1" }),
+    ]);
+    expect(edited.pendingPrompt).toEqual({ text: "pass --max-turns", by: "human:steven" });
+
+    const f = makeStream("wi-p-2");
+    const consumed = reduceWorkItem([
+      f("WorkItemDiscovered", discovered),
+      f("PromptEdited", { text: "pass --max-turns", by: "human:steven", chatId: "chat-1" }),
+      f("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+    ]);
+    expect(consumed.pendingPrompt).toBeNull();
+  });
+
+  /** A second edit replaces the first: two sentences nobody re-read is a prompt nobody approved. */
+  it("keeps the last edit rather than stacking them", () => {
+    const e = makeStream("wi-p-3");
+    const state = reduceWorkItem([
+      e("WorkItemDiscovered", discovered),
+      e("PromptEdited", { text: "first", by: "human:steven", chatId: null }),
+      e("PromptEdited", { text: "second", by: "human:steven", chatId: null }),
+    ]);
+    expect(state.pendingPrompt?.text).toBe("second");
+  });
+
 });

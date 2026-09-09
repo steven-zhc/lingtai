@@ -237,6 +237,31 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   QueueChanged: (d) => `${need(d, "project")}: ${need(d, "reason")}`,
   RunRequested: (d) => `${need(d, "project")}#${need(d, "issue")} by ${need(d, "by")}`,
 
+  // ---------------------------------------------------------- discussion --
+  DiscussionRequested: (d) => `${need(d, "by")} asked: ${clip(need(d, "question"))}`,
+  DiscussionAsked: (d) => `${need(d, "by")}: ${clip(need(d, "question"))}`,
+  /**
+   * The money and what could not be established, in that order.
+   *
+   * `cannot` is on the row rather than only in the payload because it is the
+   * one thing a person skimming this must not miss: `#89` cost two attempts
+   * because a guess was read as a finding, and a summary that printed only the
+   * answer would put this assistant one skim away from the same failure.
+   */
+  DiscussionAnswered: (d) => {
+    const cost = typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "";
+    const failure = typeof d["failure"] === "string" ? d["failure"] : null;
+    if (failure !== null) return `did not answer: ${clip(failure)}${cost}`;
+    const cannot = Array.isArray(d["cannot"]) ? d["cannot"].length : 0;
+    const read = Array.isArray(d["read"]) ? d["read"].length : 0;
+    return `${clip(d["text"], 100)} — ${read} file(s)${cannot > 0 ? `, ${cannot} unanswerable` : ""}${cost}`;
+  },
+  DiscussionHeld: (d) => {
+    const cost = typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "";
+    return `${need(d, "chatId")} → ${need(d, "outcome")}${cost}`;
+  },
+  PromptEdited: (d) => `${need(d, "by")} added ${String(d["text"] ?? "").length} bytes for the next run`,
+
   // -------------------------------------------------------------- project --
   ProjectConfigured: (d) =>
     `${need(d, "project")} recipe ${sha(d, "configHash", 12)} from ${d["base"] ?? "(no base recorded)"}`,

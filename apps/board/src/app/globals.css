@@ -603,6 +603,146 @@ details[open] > summary::before { content: "▾"; }
 .sptr { margin-left: auto; font-family: var(--mono); color: var(--accent-ink); text-decoration: none; }
 .sptr:hover { text-decoration: underline; text-underline-offset: 2px; }
 
+/* --- the discussion -------------------------------------------------------
+   One of the two objects the decision column allows a frame around — a place
+   you do something, rather than a thing you read (layout notes).
+
+   Neutral throughout. The amber on this page is the rule at the left and the
+   primary button; a box that also carried it would dilute both, and the only
+   amber in here is the Ask button, which is the thing that will run. */
+.chat {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+/* The label carries the section's one fact at the right of the same rule, as
+   every other label on this page does — and here the fact is the meter. A
+   person can only be the limit if the person can see the number (0033 §4). */
+.chathead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.7rem;
+}
+.chatname {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-2);
+}
+.chatfact { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.chatlog { display: grid; gap: 0.6rem; }
+.chatlog.done { opacity: 0.72; }
+.chatturn { display: grid; gap: 0.3rem; }
+
+.chatq { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--ink); }
+.chatwho {
+  margin-right: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+/* Lingtai's own sentence about what was readable, above the answer. Muted but
+   never hidden: an attempt that left no branch is the fact that killed #89's
+   repair, and a disclosure would be one click between a reader and it. */
+.chatreading {
+  margin: 0;
+  padding-left: 0.85rem;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.6;
+  color: var(--muted);
+  border-left: 2px solid var(--rule-2);
+}
+
+/* Raw, and preserving its own newlines: an answer is a `log` document by
+   `markdown.ts`'s rule, and the default there is never rendered. */
+.chata {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chatwait { margin: 0; font-size: 0.72rem; color: var(--muted); font-style: italic; }
+.chatfail { margin: 0; font-size: 0.72rem; color: var(--fail); font-family: var(--mono); }
+
+/* What it could not establish, at the answer's own weight and not below it.
+   #89 cost two attempts because a guess was read as a finding. */
+.chatcannot {
+  margin: 0;
+  padding-left: 0.85rem;
+  list-style: none;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+  border-left: 2px solid var(--signal);
+}
+.chatcannot li::before { content: "cannot: "; color: var(--muted); font-family: var(--mono); }
+
+.chatmeta {
+  display: flex;
+  gap: 0.7rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The proposal, and the two places it can go. Boxed because it is a thing that
+   will be written down if you click, not a thing that has been. */
+.chatprop {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px dashed var(--rule-2);
+  border-radius: 2px;
+  background: var(--surface);
+}
+.chatpropkind {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.chatproptext {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.chatheld {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--pass);
+}
+
+.chatask { display: grid; gap: 0.35rem; }
+.chatask textarea {
+  font: 0.8rem/1.5 var(--sans);
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+}
+
 /* The ticket, at the top. What was asked, above what was done — a page you
    decide on has to carry the request and not only the response (#87). */
 .tref { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }

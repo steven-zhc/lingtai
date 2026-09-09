@@ -57,6 +57,10 @@ function fakeGitHub(opts: { labels?: string[]; fail?: boolean } = {}) {
       calls.push("closeIssue");
       if (opts.fail) boom();
     },
+    async updateBody(_issue, body) {
+      calls.push(`updateBody:${body.length}`);
+      if (opts.fail) boom();
+    },
   };
   return { channel, calls, get set() { return set; } };
 }

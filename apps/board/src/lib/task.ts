@@ -38,7 +38,10 @@
 import { eventStore } from "@lingtai/event-store";
 import {
   applyWorkItem,
+  chatStream,
   emptyWorkItem,
+  reduceControl,
+  CONTROL_STREAM,
   GATE_POINTS,
   parseWorkItemStream,
   type BlockDiagnosis,
@@ -221,10 +224,11 @@ export interface RunView {
  * (#84): a repair is default-on and spends an agent without being asked again,
  * so folding the two into one figure is exactly the invisible bill.
  *
- * There is no `discussions` here, though the design's example label says
- * `2 attempts + 3 discussions`. §5's `DiscussionHeld` is not in `EVENTS` yet,
- * so nothing appends one and a counter for it would always be zero — a number
- * about a thing that cannot happen. It arrives with the event.
+ * `discussions` and `discussionUsd` arrived with `#105`. They are apart from
+ * the attempts' figures for the reason `repairUsd` is apart from `costUsd`:
+ * they come out of the same budget, and 0033 §4 gives a discussion a meter
+ * rather than a limit — so hiding the number inside another one would make the
+ * person who is supposed to be the limit unable to see what they are limiting.
  */
 export interface Totals {
   attempts: number;
@@ -234,6 +238,10 @@ export interface Totals {
   costUsd: number;
   /** What diagnosing it cost. */
   repairUsd: number;
+  /** How many conversations have been held about this item. */
+  discussions: number;
+  /** What asking cost. */
+  discussionUsd: number;
 }
 
 /**
@@ -467,6 +475,8 @@ export interface TaskDetail {
   ticket: TicketView | null;
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
   runs: RunView[];
+  /** Every conversation held about this item, oldest first. */
+  discussions: DiscussionView[];
   totals: Totals;
   /**
    * Everything, in order, for the question a summary did not anticipate — and
@@ -474,6 +484,143 @@ export interface TaskDetail {
    * nothing may replace it.
    */
   history: HistoryGroup[];
+}
+
+// ----------------------------------------------------------- discussions ----
+
+/** One exchange: what was asked, what was readable, and what came back. */
+export interface DiscussionTurnView {
+  question: string;
+  by: string;
+  /** ISO, from the envelope. */
+  at: string;
+  /**
+   * Lingtai's own sentence about what could be read — including a branch that
+   * was not there.
+   *
+   * Shown whatever the answer says, because it is recorded on the ask and not
+   * on the answer (0033 §5). An assistant that forgot to mention that it was
+   * reading `main` cannot make this page forget it too, which is the whole
+   * reason the field is on the ask.
+   */
+  reading: string[];
+  answer: {
+    text: string;
+    /** `main:packages/…` — every file that was served. */
+    read: string[];
+    /** What it said it could not establish without a command it does not have. */
+    cannot: string[];
+    proposal: { kind: "prompt" | "ticket"; text: string } | null;
+    costUsd: number | null;
+    /** Set when it did not finish. The turn still cost what it cost. */
+    failure: string | null;
+  } | null;
+}
+
+/** One conversation, whole. */
+export interface DiscussionView {
+  chatId: string;
+  /** The attempt it was asked about, or null for the item as a whole. */
+  attempt: number | null;
+  turns: DiscussionTurnView[];
+  /**
+   * The meter (0033 §4). Null when nothing has reported a figure — which is not
+   * the same as free, and is why `RunFinished.costUsd` is nullable too.
+   */
+  costUsd: number | null;
+  /** True while a question has no answer: the daemon has not got to it yet. */
+  waiting: boolean;
+  /** Which artefact it produced, once it was closed. Null while it is open. */
+  held: "prompt" | "ticket" | "none" | null;
+}
+
+/**
+ * One `chat-<id>` stream, folded.
+ *
+ * Pure, like every other fold here, so what the panel *says* about a
+ * conversation is testable without a database.
+ */
+export function foldChat(
+  chatId: string,
+  events: readonly Envelope[],
+  held: DiscussionView["held"],
+): DiscussionView {
+  const turns: DiscussionTurnView[] = [];
+  let attempt: number | null = null;
+  let cost: number | null = null;
+
+  for (const e of events) {
+    const d = (e.data ?? {}) as Record<string, unknown>;
+    if (e.type === "DiscussionAsked") {
+      if (typeof d["attempt"] === "number") attempt = d["attempt"];
+      turns.push({
+        question: String(d["question"] ?? ""),
+        by: String(d["by"] ?? ""),
+        at: e.at.toISOString(),
+        reading: Array.isArray(d["reading"]) ? d["reading"].map(String) : [],
+        answer: null,
+      });
+      continue;
+    }
+    if (e.type !== "DiscussionAnswered") continue;
+    const turn = turns[turns.length - 1];
+    if (!turn || turn.answer !== null) continue;
+    const costUsd = typeof d["costUsd"] === "number" ? d["costUsd"] : null;
+    if (costUsd !== null) cost = (cost ?? 0) + costUsd;
+    const proposal = d["proposal"] as { kind?: unknown; text?: unknown } | null | undefined;
+    turn.answer = {
+      text: String(d["text"] ?? ""),
+      read: Array.isArray(d["read"]) ? d["read"].map(String) : [],
+      cannot: Array.isArray(d["cannot"]) ? d["cannot"].map(String) : [],
+      proposal:
+        proposal && (proposal.kind === "prompt" || proposal.kind === "ticket")
+          ? { kind: proposal.kind, text: String(proposal.text ?? "") }
+          : null,
+      costUsd,
+      failure: typeof d["failure"] === "string" ? d["failure"] : null,
+    };
+  }
+
+  return {
+    chatId,
+    attempt,
+    turns,
+    costUsd: cost,
+    waiting: turns.some((t) => t.answer === null),
+    held,
+  };
+}
+
+/**
+ * Which conversations this item has had, and how each ended.
+ *
+ * The requests are on `ctl-conductor` and the exchanges are on their own
+ * streams, so this is a **join done by a reader at read time** — where 0012
+ * puts every join of this kind. `DiscussionHeld` on the item's own stream is
+ * what says a conversation was closed and what it produced.
+ */
+export function chatIdsFor(
+  control: readonly { chatId: string; workItemId: string }[],
+  own: readonly Envelope[],
+  taskId: string,
+): { chatId: string; held: DiscussionView["held"] }[] {
+  const order: string[] = [];
+  for (const d of control) {
+    if (d.workItemId === taskId && !order.includes(d.chatId)) order.push(d.chatId);
+  }
+  const held = new Map<string, DiscussionView["held"]>();
+  for (const e of own) {
+    if (e.type !== "DiscussionHeld") continue;
+    const d = (e.data ?? {}) as Record<string, unknown>;
+    const chatId = String(d["chatId"] ?? "");
+    const outcome = d["outcome"];
+    if (!order.includes(chatId)) order.push(chatId);
+    held.set(
+      chatId,
+      outcome === "prompt" || outcome === "ticket" || outcome === "none" ? outcome : "none",
+    );
+  }
+  return order.map((chatId) => ({ chatId, held: held.get(chatId) ?? null }));
 }
 
 /** A claim, as the item's own stream recorded it. */
@@ -699,13 +846,18 @@ function outcomeOf(seen: {
 }
 
 /** What the attempts cost, added up. See `Totals`. */
-export function totalsOf(runs: readonly RunView[]): Totals {
+export function totalsOf(
+  runs: readonly RunView[],
+  discussions: readonly DiscussionView[] = [],
+): Totals {
   return {
     attempts: runs.length,
     turns: runs.reduce((n, r) => n + (r.turns ?? 0), 0),
     durationMs: runs.reduce((n, r) => n + (r.durationMs ?? 0), 0),
     costUsd: runs.reduce((n, r) => n + (r.repair ? 0 : (r.costUsd ?? 0)), 0),
     repairUsd: runs.reduce((n, r) => n + (r.repair ? (r.costUsd ?? 0) : 0), 0),
+    discussions: discussions.length,
+    discussionUsd: discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0),
   };
 }
 
@@ -814,20 +966,36 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // Beside the run streams rather than after them: one side is a handful of
   // database reads and the other is two calls to GitHub, and the page waits for
   // the slower of the two instead of for both.
-  const [streams, ticket] = await Promise.all([
+  //
+  // The control stream is read whole, which is cheap for the reason
+  // `readControl` gives: it is a handful of events, not a history. It is here
+  // because a discussion that has not been concluded exists only as a request
+  // on it — the work item learns about the conversation when it ends (0033 §6).
+  const [streams, ticket, control] = await Promise.all([
     Promise.all(claims.map((c) => eventStore.read(c.runId))),
     loadTicket(taskId, own),
+    eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
   ]);
 
   const runs = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []));
   const attempts = new Map(runs.map((r) => [r.runId, r.attempt]));
+
+  const chats = chatIdsFor(reduceControl(control).discussions, own, taskId);
+  const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))));
+  const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held));
 
   return {
     taskId,
     standing: standingOf(own, runs),
     ticket,
     runs,
-    totals: totalsOf(runs),
+    discussions,
+    totals: totalsOf(runs, discussions),
+    // The chat streams are **not** in the history, and that is 0033 §6 read the
+    // other way round: the point of giving a conversation its own stream is
+    // that forty turns of exploration do not drown the thirty-six events this
+    // section exists to show. The work item's own `DiscussionHeld` is here, and
+    // it is the two lines the ticket's history was promised to grow by.
     history: groupHistory([...own, ...streams.flat()], attempts),
   };
 }

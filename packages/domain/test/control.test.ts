@@ -116,3 +116,65 @@ describe("a pause that ends by itself", () => {
     expect(lifted.shutdown?.reason).toBe("deploying");
   });
 });
+
+/**
+ * A question is a control instruction, so it lands where `pause` and `now` do
+ * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §3).
+ */
+describe("the discussions somebody asked for", () => {
+  it("keeps every request, in order, answered or not", () => {
+    const state = reduceControl(
+      log([
+        {
+          type: "DiscussionRequested",
+          data: {
+            chatId: "chat-1",
+            workItemId: "wi-lingtai-89",
+            attempt: 2,
+            question: "why did attempt 2 produce nothing?",
+            by: "human:steven",
+          },
+        },
+        {
+          type: "DiscussionRequested",
+          data: {
+            chatId: "chat-1",
+            workItemId: "wi-lingtai-89",
+            attempt: null,
+            question: "and the first?",
+            by: "human:steven",
+          },
+        },
+      ]),
+      NOW,
+    );
+
+    expect(state.discussions).toHaveLength(2);
+    expect(state.discussions[0]?.attempt).toBe(2);
+    // A follow-up carries the same chat id: a conversation is a stream, not a
+    // session, and nothing has to still be running between two questions.
+    expect(state.discussions[1]?.chatId).toBe("chat-1");
+  });
+
+  /**
+   * Whether a question has been *answered* is a fact on `chat-<id>`, so this
+   * fold deliberately does not know it. Filtering here would put the second
+   * half of a state machine on the control stream, which is the thing
+   * `RunRequested` refuses to do.
+   */
+  it("does not decide whether a request is outstanding", () => {
+    const state = reduceControl(
+      log([
+        {
+          type: "DiscussionRequested",
+          data: { chatId: "chat-1", workItemId: "wi-lingtai-89", attempt: null, question: "?", by: "human:steven" },
+        },
+        { type: "ConductorResumed", data: { by: "human:steven" } },
+      ]),
+      NOW,
+    );
+
+    // A resume lifts a pause and a drain. It does not withdraw a question.
+    expect(state.discussions).toHaveLength(1);
+  });
+});

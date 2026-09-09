@@ -65,7 +65,7 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal, repairBrief } from "./repair.ts";
 import { standDown } from "./never-started.ts";
-import { attemptBrief, attemptOutcome, priorAttempts, promptVersionFor } from "./attempts.ts";
+import { attemptBrief, attemptOutcome, humanBrief, priorAttempts, promptVersionFor } from "./attempts.ts";
 import {
   CONTROL_STREAM,
   type ToAppend,
@@ -403,7 +403,19 @@ export function runOnce(
      * it — `claimWorkItem` appends, and the fold moves it into `repairRun`.
      */
     const before = yield* Effect.promise(() => store.read(workItemId));
-    const repairOf = reduceWorkItem(before).pendingRepair;
+    const item = reduceWorkItem(before);
+    const repairOf = item.pendingRepair;
+    /**
+     * A sentence a person added for this attempt, and only this one.
+     *
+     * Read here and not after the claim for the same reason `repairOf` is: the
+     * claim below is what consumes it (0032 §5), so a read taken afterwards
+     * would find nothing and the edit would silently never reach the agent —
+     * a control the page claims and the code does not have, which is exactly
+     * the shape `renderPrompt` refuses for `{{failure}}`.
+     */
+    const edit = item.pendingPrompt;
+    if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`);
     if (repairOf) {
       log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt})`);
     }
@@ -449,10 +461,14 @@ export function runOnce(
     const failure = [
       attemptBrief(attempts, recipe.runtime.budget),
       repairOf ? repairBrief(repairOf) : "",
+      humanBrief(edit),
     ]
       .filter((block) => block !== "")
       .join("\n\n");
-    const promptVersion = promptVersionFor(basePromptVersion, failure);
+    // `human` is named apart from `failure` even though both are inside the one
+    // block: an attempt told a different sentence is a different attempt, and
+    // the version has to say which of the two kinds moved (0032 §5).
+    const promptVersion = promptVersionFor(basePromptVersion, failure, edit?.text ?? "");
 
     // The claim carries what the task is, because it is now the only place a
     // title enters the log at all.

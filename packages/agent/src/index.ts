@@ -31,6 +31,7 @@ export {
   parseResult,
   sessionIdFor,
   type ClaudeCodeOptions,
+  type PermissionMode,
 } from "./claude-code.ts";
 export { CODEX_CAPABILITIES, CodexNotImplementedError, createCodexRuntime } from "./codex.ts";
 export {
