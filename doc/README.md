@@ -81,6 +81,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0025](decisions/0025-a-failure-buys-one-agent.md) | **A failure buys one agent, and the person approves a diff** | accepted |
 | [0026](decisions/0026-the-conversion-past-the-seam.md) | **The conversion goes past the seam: `runOnce` and the adapters are Effect** | accepted |
 | [0027](decisions/0027-the-lease-is-deleted.md) | **The lease is deleted: the constraint excludes, the lock proves liveness** | accepted; supersedes 0013's claim-recovery paragraph |
+| [0030](decisions/0030-shutting-down-safely.md) | **Shutting down safely: the boundary is the pass, and the trigger is a command** | accepted; extends 0027 §3 |
 | [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
 | [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
 
