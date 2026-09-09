@@ -125,8 +125,10 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
     switch (event.type) {
       case "WorkItemClaimed": {
         const d = event.data as PayloadOf<"WorkItemClaimed">;
-        // A second claim by the same run is a lease being renewed, not a second
-        // attempt — the same reason `WorkItemState.runs` will not list it twice.
+        // A second claim by the same run is the same attempt claiming again,
+        // not a new one — the same reason `WorkItemState.runs` will not list it
+        // twice. Nothing writes one today; the guard is about the fold, not
+        // about a caller.
         if (byRun.has(d.runId)) break;
         const attempt: PriorAttempt = {
           n: attempts.length + 1,

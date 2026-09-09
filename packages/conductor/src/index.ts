@@ -1,6 +1,6 @@
 export {
   claimWorkItem,
-  DEFAULT_LEASE_MS,
+  conductorWorker,
   releaseWorkItem,
   type Claim,
   type ClaimOptions,

@@ -66,7 +66,7 @@ describe("withProjector", () => {
           {
             type: "WorkItemClaimed",
             actor: "conductor",
-            data: { runId, worker: "w", leaseUntilMs: Date.now() + 60_000, title: "held open", kind: "bug" },
+            data: { runId, worker: "w", title: "held open", kind: "bug" },
           },
         ]);
 

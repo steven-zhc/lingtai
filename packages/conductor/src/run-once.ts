@@ -1056,8 +1056,7 @@ export function runOnce(
         }
         // Blocked rather than released, the same as a refusal — a question for
         // a person belongs in "Waiting on you", not back in the queue where
-        // another run could claim it and throw the question away. It also stops
-        // the claim's lease from quietly expiring while someone thinks.
+        // another run could claim it and throw the question away.
         const question = repairOf
           ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
           : `held at the ${gate} gate: ${branch} into ${base}`;

@@ -22,9 +22,10 @@
  * turned out to be the same thing: a pass takes one item, so "finish what you
  * have and take nothing new" and "take nothing new" are one behaviour. The
  * third, killing a running agent, needs a capability the runtime does not
- * expose; until it does, a run you want gone ends when its lease expires and
- * the claim returns. Saying so is better than shipping a Stop button that
- * quietly means Pause.
+ * expose; until it does, a run you want gone ends when the conductor holding it
+ * does, and the next conductor to start releases the claim it left behind
+ * (0027). Saying so is better than shipping a Stop button that quietly means
+ * Pause.
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";

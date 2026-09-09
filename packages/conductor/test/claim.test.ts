@@ -1,9 +1,14 @@
 /**
  * Claiming, against the real store.
  *
- * The claim is the thing that replaces a lock directory, so the two properties
- * worth proving are the ones a lock file could not give: **two claimants racing
- * produce exactly one winner**, and **an expired lease needs no cleanup**.
+ * The claim is the thing that replaces a lock directory, so the property worth
+ * proving is the one a lock file could not give: **two claimants racing produce
+ * exactly one winner**, decided by `UNIQUE (stream_id, version)` rather than by
+ * anything either of them holds.
+ *
+ * The second property this file used to prove — an expired lease needs no
+ * cleanup — is gone with the lease (0027). Held is held, and what returns a
+ * claim is an appended release; `daemon/reconcile.test.ts` proves that.
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
@@ -62,49 +67,44 @@ afterAll(async () => {
 });
 
 describe("claimWorkItem", () => {
-  it("takes an unclaimed item and records the lease", async () => {
+  it("takes an unclaimed item and records who took it", async () => {
     const id = await discovered();
     const result = await claimWorkItem(id, { runId: "run-a", worker: "w1", store });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.claim.runId).toBe("run-a");
-    expect(result.claim.leaseUntilMs).toBeGreaterThan(Date.now());
+    expect(result.claim.worker).toBe("w1");
     expect(result.claim.version).toBe(2);
   });
 
-  it("refuses an item someone else holds, naming who and for how long", async () => {
+  it("refuses an item someone else holds, naming who", async () => {
     const id = await discovered();
     await claimWorkItem(id, { runId: "run-a", worker: "w1", store });
 
     const second = await claimWorkItem(id, { runId: "run-b", worker: "w2", store });
     expect(second.ok).toBe(false);
     if (second.ok) return;
-    expect(second.refusal).toMatchObject({ reason: "held", by: "w1", runId: "run-a" });
+    expect(second.refusal).toEqual({ reason: "held", by: "w1", runId: "run-a" });
   });
 
   /**
-   * The property `.runtime/loop.lock.d` could not have. A process that died
-   * holding this lease left an event that stopped being true; nothing was
-   * allocated, so nothing has to be freed.
+   * The half of 0027 that lives here. The old version of this test took the
+   * item back by advancing a clock — `leaseMs: 1`, then `now: () => later` —
+   * and there is now no clock to advance: `ClaimOptions` has no `now`, so
+   * "wait it out" cannot be written down, let alone happen by accident to a run
+   * the recipe is still paying for.
    */
-  it("an expired lease needs no cleanup — it is simply claimable again", async () => {
+  it("stays held, with no elapsed time that would take it back", async () => {
     const id = await discovered();
-    const held = await claimWorkItem(id, { runId: "run-dead", worker: "killed", leaseMs: 1, store });
+    const held = await claimWorkItem(id, { runId: "run-dead", worker: "killed", store });
     expect(held.ok).toBe(true);
 
-    // No release, no unlock, no rm -rf. Time passes.
-    const later = Date.now() + 60_000;
-    const next = await claimWorkItem(id, {
-      runId: "run-b",
-      worker: "w2",
-      store,
-      now: () => later,
-    });
+    const next = await claimWorkItem(id, { runId: "run-b", worker: "w2", store });
 
-    expect(next.ok).toBe(true);
-    if (!next.ok) return;
-    expect(next.claim.runId).toBe("run-b");
+    expect(next.ok).toBe(false);
+    if (next.ok) return;
+    expect(next.refusal).toEqual({ reason: "held", by: "killed", runId: "run-dead" });
   });
 
   it("a released item is claimable again, and the release is on the record", async () => {

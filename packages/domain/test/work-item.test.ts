@@ -34,7 +34,7 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-nextloom-ai-admin-117");
     const s = reduceWorkItem([
       e("WorkItemDiscovered", discovered),
-      e("WorkItemClaimed", { runId: "run-01JX", worker: "conductor@host", leaseUntilMs: 1_000, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-01JX", worker: "conductor@host", title: null, kind: null }),
       e("WorkItemLanded", { mergeCommit: "abc1234", base: "develop" }),
     ]);
 
@@ -47,7 +47,7 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-p-1");
     const s = reduceWorkItem([
       e("WorkItemDiscovered", discovered),
-      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
       e("WorkItemReleased", { runId: "run-a", reason: "lease expired" }),
     ]);
 
@@ -93,11 +93,11 @@ describe("reduceWorkItem", () => {
     const s = reduceWorkItem([
       e("WorkItemDiscovered", discovered),
       e("WorkItemBlocked", { question: "?", needsFrom: "human" as const, runId: null }),
-      e("WorkItemClaimed", { runId: "run-b", worker: "w", leaseUntilMs: 2, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
     ]);
 
     expect(s.lifecycle.status).toBe("claimed");
-    expect(Object.keys(s.lifecycle).sort()).toEqual(["leaseUntilMs", "runId", "status", "worker"]);
+    expect(Object.keys(s.lifecycle).sort()).toEqual(["runId", "status", "worker"]);
     expect(s.lifecycle).not.toHaveProperty("question");
   });
 
@@ -152,7 +152,7 @@ describe("reduceWorkItem", () => {
     };
 
     const pending = reduceWorkItem([
-      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
       e("RepairRequested", bought),
       e("WorkItemReleased", { runId: "run-a", reason: "repairing conflict (attempt 1)" }),
     ]);
@@ -162,10 +162,10 @@ describe("reduceWorkItem", () => {
     expect(pending.repairs).toHaveLength(1);
 
     const claimed = reduceWorkItem([
-      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
       e("RepairRequested", bought),
       e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
-      e("WorkItemClaimed", { runId: "run-b", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
     ]);
     expect(claimed.pendingRepair).toBeNull();
     // `after` is the run that *failed*; `runId` on the record is the run that
@@ -177,12 +177,12 @@ describe("reduceWorkItem", () => {
     // failure three attempts later would still count as an analysis of the
     // analysis and buy nothing.
     const later = reduceWorkItem([
-      e("WorkItemClaimed", { runId: "run-a", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
       e("RepairRequested", bought),
       e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
-      e("WorkItemClaimed", { runId: "run-b", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
       e("WorkItemReleased", { runId: "run-b", reason: "no commits" }),
-      e("WorkItemClaimed", { runId: "run-c", worker: "w", leaseUntilMs: 1, title: null, kind: null }),
+      e("WorkItemClaimed", { runId: "run-c", worker: "w", title: null, kind: null }),
     ]);
     expect(later.repairRun).toBeNull();
     // The ceiling still counts it: the repair happened, whatever came after.

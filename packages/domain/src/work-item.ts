@@ -24,7 +24,14 @@ import type { PayloadOf, Tier } from "./events.ts";
 
 export type WorkItemLifecycle =
   | { status: "backlog" }
-  | { status: "claimed"; runId: string; worker: string; leaseUntilMs: number }
+  /**
+   * Held. There is no expiry in this shape and that is the whole of 0027: a
+   * fold cannot read a clock, so a lifecycle that lapsed on its own would make
+   * `lingtai projection rebuild task_view` disagree with the incremental fold.
+   * What returns a claim is a `WorkItemReleased`, appended by a conductor that
+   * holds the lock.
+   */
+  | { status: "claimed"; runId: string; worker: string }
   | {
       status: "blocked";
       /** The question, not just the fact. `agent:blocked` carried no question. */
@@ -168,7 +175,6 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
           status: "claimed",
           runId: d.runId,
           worker: d.worker,
-          leaseUntilMs: d.leaseUntilMs,
         },
         runs: state.runs.includes(d.runId) ? state.runs : [...state.runs, d.runId],
         // The claim consumes whatever repair was pending. This run *is* it, and
@@ -197,8 +203,9 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
     }
 
     case "WorkItemReleased":
-      // A lease that expired needs no cleanup — the absence of a heartbeat *is*
-      // the expiry — so a release is just a return to the queue.
+      // The only way back to the queue. A claim does not lapse (0027), so every
+      // return is an append somebody made — including the one a conductor makes
+      // at startup for a claim its predecessor died holding.
       return { ...state, ...at, lifecycle: { status: "backlog" } };
 
     case "WorkItemBlocked": {

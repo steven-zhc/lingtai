@@ -258,3 +258,56 @@ describe("the gate point rename", () => {
     }
   });
 });
+
+/**
+ * The step that removes a field ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)).
+ *
+ * Every other chain adds one and says `null` where history is silent. This one
+ * goes the other way, and the reason it is a step rather than nothing at all is
+ * that the log holds thousands of `leaseUntilMs` timestamps and **no event is
+ * rewritten**. The reader is what stops believing them, and the tests here are
+ * the ones a replay of that history depends on.
+ */
+describe("the lease, dropped on read", () => {
+  const v1 = { runId: "run-1978cb64", worker: "local:71410" };
+
+  it("walks a v1 claim all the way up: title and kind null, no lease", () => {
+    expect(parseStoredPayload("WorkItemClaimed", 1, { ...v1, leaseUntilMs: 1_788_385_279_411 })).toEqual({
+      ...v1,
+      title: null,
+      kind: null,
+    });
+  });
+
+  it("drops the lease from a v2 claim and touches nothing else", () => {
+    const v2 = { ...v1, leaseUntilMs: 1_788_385_279_411, title: "a ticket", kind: "bug" };
+    expect(parseStoredPayload("WorkItemClaimed", 2, v2)).toEqual({
+      ...v1,
+      title: "a ticket",
+      kind: "bug",
+    });
+  });
+
+  it("reads a v2 claim that never had one, because a missing field is not an error", () => {
+    // Nothing wrote such a row. The step is a delete, so it has to be a no-op
+    // on a payload that does not carry the key rather than throwing on one.
+    const v2 = { ...v1, title: null, kind: null };
+    expect(parseStoredPayload("WorkItemClaimed", 2, v2)).toEqual(v2);
+  });
+
+  it("leaves a v3 claim alone", () => {
+    const v3 = { ...v1, title: "a ticket", kind: "bug" };
+    expect(parseStoredPayload("WorkItemClaimed", 3, v3)).toEqual(v3);
+  });
+
+  /** `worker` stays: it is what recovery is decided on now, not decoration. */
+  it("keeps the worker, which is the field the lease's job moved to", () => {
+    const up = parseStoredPayload("WorkItemClaimed", 2, {
+      ...v1,
+      leaseUntilMs: 1,
+      title: null,
+      kind: null,
+    });
+    expect(up.worker).toBe("local:71410");
+  });
+});

@@ -5,7 +5,7 @@
  *
  * 1. the projection is caught up — the checkpoint against the log's head
  * 2. worktrees are cleaned — the original job
- * 3. expired claims are returned — a lease that ran out on a dead process
+ * 3. foreign claims are returned — held by a conductor that no longer exists
  * 4. GitHub says what the log says — see `converge.ts`
  *
  * **Only the daemon runs this**, and that is a decision rather than an
@@ -16,15 +16,17 @@
  * is the process that takes work unattended, so it is the one that owes the
  * repair.
  *
- * A daemon that is killed mid-run leaves two things behind, and the claim's
- * self-repair is thinner than it looks. The **claim** has a lease, so nothing
- * has to release it for another process to take the item (`claim.ts`) — but
- * `task_view` still folds it as `running`, and the queue only offers what the
- * log says is queued, so an expired claim that nobody returns is an item
- * removed from the queue for good. That is the third check. The **worktree**
- * has no equivalent at all: a directory under `~/.lingtai/worktrees/` outlives
- * every process that knew about it, and it is holding a branch checked out,
- * which stops git updating that ref on the next attempt.
+ * A daemon that is killed mid-run leaves two things behind, and neither repairs
+ * itself. The **claim** does not lapse — 0027 deleted the lease that pretended
+ * it did — so `task_view` folds it as `running` for ever, and the queue only
+ * offers what the log says is queued. That is the third check, and what makes
+ * it decidable is the lock rather than a clock: this process holds
+ * `lingtai:daemon`, and #93 made that lock the thing every conductor takes, so
+ * a claim recorded by *another* worker is a claim by a process that is gone.
+ * The **worktree** has no equivalent at all: a directory under
+ * `~/.lingtai/worktrees/` outlives every process that knew about it, and it is
+ * holding a branch checked out, which stops git updating that ref on the next
+ * attempt.
  *
  * ## Recorded, not quietly repaired
  *
@@ -43,7 +45,18 @@
  * A worktree belongs to a run; a run belongs to a task; the task's own stream
  * says whether that run still holds it. So the worktree is orphaned when the
  * task is not claimed at all, or is claimed by a *different* run, or is claimed
- * by this one on a lease that has expired.
+ * by this one for a conductor this pass has already found to be gone.
+ *
+ * That last clause is the one the lease used to cover, and it is `abandoned`:
+ * the claim check runs its *read* first and hands over what it found, because
+ * all four checks read before any of them appends — so the worktree scan cannot
+ * see the release this same pass is about to write, and a worktree left holding
+ * a branch checked out has to go in the pass that frees the ticket, not the one
+ * after it.
+ *
+ * `lingtai doctor` passes nothing, and that is right: it is a different process
+ * from the conductor and holds no lock, so it has no standing to call anyone
+ * else's claim dead. It reports what is unambiguous and leaves the rest.
  *
  * Deliberately not "no process has it open". That would be true of a run whose
  * agent is between tool calls, and deleting a live worktree is a worse outcome
@@ -51,12 +64,17 @@
  */
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+// A subpath, never the barrel — the rule `converge.ts` states and for the same
+// reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
+// child-process types, and the board imports this package.
+import { conductorWorker } from "@lingtai/conductor/claim";
 import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { projectionLag } from "@lingtai/projector";
 import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
+import { DAEMON_LOCK_KEY } from "./lock.ts";
 import pg from "pg";
 
 /**
@@ -87,7 +105,25 @@ export interface ReconcileOptions {
    */
   dryRun?: boolean;
   store?: EventStore;
-  now?: () => number;
+  /**
+   * What this conductor calls itself, as `claim.ts` would write it.
+   *
+   * The premise of the whole claim check (0027): this process holds
+   * `lingtai:daemon`, therefore it is the only conductor, therefore a claim
+   * naming anyone else is dead. Injected so a test can be somebody, and so the
+   * comparison is against a value rather than against a clock.
+   */
+  worker?: string;
+  /**
+   * Work items this pass has already found to be held by a dead conductor.
+   *
+   * `reconcile` fills it from `releaseForeignClaims`, whose release has not
+   * been appended yet when the worktree scan runs. Not a cache and not a second
+   * source of truth — it is one pass telling another what it read a moment ago,
+   * so that freeing a ticket and removing the directory holding its branch
+   * happen together.
+   */
+  abandoned?: ReadonlySet<string>;
   log?: (line: string) => void;
   url?: string;
   /**
@@ -126,7 +162,7 @@ export interface ReconcileOptions {
  */
 export async function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
   const store = options.store ?? eventStore;
-  const now = options.now ?? Date.now;
+  const abandoned = options.abandoned ?? new Set<string>();
   const home = options.home ?? defaultHome();
   const root = join(home, "worktrees");
 
@@ -182,13 +218,16 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
       const task = reduceWorkItem(await store.read(taskId).catch(() => []));
       const life = task.lifecycle;
       const live =
-        life.status === "claimed" && life.runId === runId && life.leaseUntilMs > now();
+        life.status === "claimed" && life.runId === runId && !abandoned.has(taskId);
 
       if (live) continue;
 
       findings.push({
         stream: runId,
-        expected: `no worktree — ${taskId} is ${life.status}`,
+        expected:
+          life.status === "claimed" && abandoned.has(taskId)
+            ? `no worktree — ${taskId} is claimed by ${life.worker}, who is not conducting`
+            : `no worktree — ${taskId} is ${life.status}`,
         actual: `worktree at ${path}`,
         action: options.dryRun ? "reported" : "removed",
         path,
@@ -227,21 +266,35 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
 }
 
 /**
- * Claims whose lease ran out, so the item can be taken again.
+ * Claims held by a conductor that is not this one, so the item can be taken again.
  *
- * The lease already means another process *may* claim it (`claim.ts` treats an
- * expired lease as unheld). What it does not do is put the item back where the
- * queue can see it: `task_view` folds a claim as `running`, and `selectRunnable`
- * offers nothing that is not `queued`. So without this, a daemon killed
- * mid-run takes an item out of circulation permanently — the log says a run
- * holds it, and that run is never coming back.
+ * The reasoning is a proof and not a timer (0027). This process holds
+ * `lingtai:daemon`; since #93 every conductor takes that lock, including
+ * `lingtai run`; therefore no other conductor is alive; therefore a claim
+ * recorded by another worker is one nobody is coming back for. There is nothing
+ * to wait out and nothing that has to have elapsed — the finding is the same on
+ * the first millisecond as on the thousandth.
  *
- * The release is an event, which is what makes the repair visible: the card
- * moves, and `Reconciled` says why it moved.
+ * Without it a killed daemon takes an item out of circulation permanently:
+ * `task_view` folds a claim as `running`, `selectRunnable` offers nothing that
+ * is not `queued`, and a claim does not lapse. #87 is what that looks like — a
+ * ticket held by `local:23673` for a process that had already died with the
+ * conductor that spawned it.
+ *
+ * The release is an **event**. A projection is a fold and cannot read a clock,
+ * so `running` versus `queued` must never depend on `now()`; if it did,
+ * `lingtai projection rebuild task_view` would disagree with the incremental
+ * fold about the same log. Appending is also what makes the repair visible: the
+ * card moves, and `Reconciled` says why it moved.
+ *
+ * **Only at startup, and that is not a limitation.** A claim can be orphaned
+ * only by a conductor dying, and work resumes only when a conductor starts — so
+ * the moment that repairs the orphan and the moment that would have used the
+ * repair are the same moment.
  */
-export async function findExpiredClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
+export async function releaseForeignClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
   const store = options.store ?? eventStore;
-  const now = options.now ?? Date.now;
+  const worker = options.worker ?? conductorWorker();
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
   if (names.length === 0) return [];
 
@@ -269,11 +322,11 @@ export async function findExpiredClaims(options: ReconcileOptions = {}): Promise
     const item = reduceWorkItem(await store.read(workItemId).catch(() => []));
     const life = item.lifecycle;
     if (life.status !== "claimed") continue;
-    if (life.leaseUntilMs > now()) continue;
+    if (life.worker === worker) continue;
     findings.push({
       stream: workItemId,
-      expected: `queued — ${life.runId}'s lease expired at ${new Date(life.leaseUntilMs).toISOString()}`,
-      actual: `still claimed by ${life.worker}`,
+      expected: `queued — ${worker} holds ${DAEMON_LOCK_KEY}, so ${life.worker} is not conducting`,
+      actual: `still claimed by ${life.worker} for ${life.runId}`,
       action: options.dryRun ? "reported" : "released",
       path: "",
     });
@@ -287,10 +340,16 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
 
   // Read all four before acting on any. A pass that repaired as it discovered
   // would report a world that no longer existed by the time it finished.
+  //
+  // The claim check reads first so the worktree scan can be told what it found.
+  // Still read-before-act: nothing has been appended at this point, and the
+  // findings are reported in the old order.
+  const foreign = await releaseForeignClaims(options);
+  const abandoned = new Set(foreign.map((f) => f.stream));
   const findings = [
     ...(await findLaggingProjections(options)),
-    ...(await findOrphans(options)),
-    ...(await findExpiredClaims(options)),
+    ...(await findOrphans({ ...options, abandoned })),
+    ...foreign,
   ];
 
   // 4. GitHub, which repairs as it reads because the read *is* the comparison
@@ -321,13 +380,14 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
   for (const f of findings) {
     if (f.action === "released") {
       try {
-        // Re-read rather than trust the finding. Between the scan and here a
-        // process could have renewed the lease, and releasing a live claim is a
-        // far worse outcome than leaving a dead one — the same rule the
-        // worktree check follows for the same reason.
+        // Re-read rather than trust the finding. Between the scan and here this
+        // conductor could have claimed the item itself, and releasing a live
+        // claim is a far worse outcome than leaving a dead one — the same rule
+        // the worktree check follows for the same reason.
         const events = await store.read(f.stream);
         const life = reduceWorkItem(events).lifecycle;
-        if (life.status !== "claimed" || life.leaseUntilMs > (options.now ?? Date.now)()) {
+        const mine = options.worker ?? conductorWorker();
+        if (life.status !== "claimed" || life.worker === mine) {
           f.action = "reported";
           f.actual = `${f.actual} (claimed again before it could be released)`;
           continue;
@@ -338,7 +398,10 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
             actor: "conductor",
             data: parsePayload("WorkItemReleased", {
               runId: life.runId,
-              reason: "the lease expired and the run never came back",
+              // The lock, not a timestamp. Whoever reads this back should be
+              // able to check the claim: `life.worker` is not `mine`, and there
+              // is only ever one of us.
+              reason: `${mine} holds ${DAEMON_LOCK_KEY}, so ${life.worker} was not coming back`,
             }),
           },
         ]);

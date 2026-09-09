@@ -87,6 +87,20 @@ export const UPCASTERS: UpcastRegistry = {
      * principle. The projection falls back to the issue number.
      */
     1: (data) => ({ ...(data as object), title: null, kind: null }),
+    /**
+     * 2 → 3: `leaseUntilMs` is dropped
+     * ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)). The one
+     * step here that removes a field rather than adding one, and the direction
+     * is why it is an upcaster at all: the log holds thousands of these
+     * timestamps and **no event is rewritten**, so the reader is what has to
+     * stop believing them. There is nothing to recover and nothing to guess —
+     * exclusion is the unique constraint and liveness is the conductor's
+     * advisory lock, and neither was ever read off this number.
+     */
+    2: (data) => {
+      const { leaseUntilMs: _dropped, ...rest } = data as { leaseUntilMs?: unknown };
+      return rest;
+    },
   },
   RunStarted: {
     /**
