@@ -1213,19 +1213,46 @@ details[open] > summary::before { content: "▾"; }
   gap: 0.6rem;
   align-items: baseline;
   margin: 0;
-  padding: 0.34rem 0.7rem;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--rule);
+  padding: 0.45rem 0.7rem;
+  /* Teal, not `--surface-2`. That tint is eight units from the page's own
+     ground, and it is already the raw payload's box *inside* a row — one colour
+     saying two things. A run divider is structure, and teal is what structure
+     is on this board. */
+  background: var(--accent-soft);
+  /* Closed on both sides. A band with a rule under it only is a caption that
+     happens to be tinted. */
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
   font-family: var(--mono);
   font-size: 0.72rem;
-  letter-spacing: 0.06em;
   color: var(--accent-ink);
+  /* **It follows you down the run.** A run here is forty events; a marker you
+     passed once cannot answer *which attempt am I reading* at row thirty, which
+     is the only question this band exists for. The bar at the top of the page
+     is in normal flow, so `0` is the top of the viewport and nothing to offset
+     against. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
-.hgname { font-weight: 500; }
+/* The one word that has to carry: which attempt this is. Given the sub-heading
+   treatment the design uses for a second-rank name — upper case and tracked, a
+   step down from a section title and two steps up from a row. */
+.hgname {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-right: -0.14em;
+}
 /* The stream's own id: present, because a claim is identified by it, and quiet,
    because nobody reads a uuid — they check one. */
-.hglabel .mono { color: var(--muted); letter-spacing: 0; }
-.hgseq { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hglabel .mono { color: var(--accent); }
+.hgseq {
+  margin-left: auto;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
 
 .history {
   list-style: none;
