@@ -84,6 +84,18 @@ failing gate's evidence and the block quotes it, open, at its second rank. What
 is still a pointer, and still never a copy, is everything else the attempt
 holds: its findings, its diff and its other verdicts.
 
+**The coordinate is the pointer**, and there is one of it: *from attempt 2 of 2
+· run-5cb24ac5 ↓* at rank 4 is the way down, rather than a fact there and an *in
+attempt 2 ↓* beside it saying the same number twice. Rank 2 names an attempt
+only when it is a *different* one — which happens on a block with no diagnosis,
+because `decidingOf` searches back through earlier attempts when the named one
+refused nothing, and an earlier attempt's refusal is unreadable without the
+attempt attached to it. **A diagnosis answers rank 2 or nothing does**: `raw` is
+written beside `what` and is about this hold, so null there means nothing
+refused, and the honest rendering of that is no rank — never a line found by
+searching backwards, printed under *every gate passed* as though it were the
+cause.
+
 ### 3. The verdict has two renderings, and degrades
 
 Today: state, age, the question verbatim, the actions. Once `#83` lands, two
@@ -132,7 +144,9 @@ an addition to the ticket. It introduces no third carrier.
   route the ledger's run logs already use — [0034](../decisions/0034-the-run-log.md)'s
   mechanism, unchanged, applied to the one agent that had none. It is a trace
   and never the answer: `DiscussionAnswered` is the record, and when it lands
-  the trace is gone.
+  the trace is deleted, exactly as a landed run's is (0034 §4). **One file, one
+  turn** — a follower reads from byte zero, so a trace that outlived its turn
+  would hand the second question the first one's output and call it live.
 - **No spend limit; a meter instead.** A run is unattended and needs a hard
   bound; a discussion is attended and the person is the loop. But a person can
   only be the limit if the person can see the number, so the running cost is on

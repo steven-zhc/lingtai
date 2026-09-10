@@ -49,7 +49,7 @@
  */
 import { useEffect, useRef, useState, useTransition } from "react";
 import { askDiscussion, concludeChat } from "./actions.ts";
-import { useLogTail } from "./run-log.tsx";
+import { useLogTail, type TailState } from "./run-log.tsx";
 import type { DiscussionView } from "@/lib/task";
 
 /** `$1.20`, or nothing at all when no figure was reported. See `costUsd`. */
@@ -108,6 +108,69 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
 };
 
 /**
+ * What the box shows for a turn nothing has answered yet — the trace, and the
+ * one sentence about it.
+ *
+ * Separated from the follow below it so that **this is a value and not a
+ * connection**: the three things a reader can be handed here are three states of
+ * one file, and each of them is a sentence somebody has to be able to read. A
+ * test can hand it those states; it could not hand `Thinking` an `EventSource`.
+ *
+ * The three, and none of them is about the assistant:
+ *
+ * - **nothing yet** — the question is appended and no trace has been opened, so
+ *   it says it is waiting for the daemon rather than showing an empty frame
+ *   (0016 §4);
+ * - **lines** — those lines, verbatim, and how many, which is the whole of what
+ *   makes the box move;
+ * - **the trace stopped** and no answer landed — said plainly, because
+ *   *answering · 41 lines so far* under a file nobody is writing is the exact
+ *   sentence #132 is about, one layer down: an assistant that has died is
+ *   indistinguishable from one that is thinking, and the reader pays twice.
+ */
+export function Trace({
+  lines,
+  state,
+}: {
+  lines: readonly string[];
+  state: TailState;
+}) {
+  const tail = useRef<HTMLDivElement | null>(null);
+
+  // Pinned to the bottom of its own scroller, which is where the newest line
+  // is. The box's height is `.chat`'s and does not grow with this — a pane that
+  // grew with its content would push the moves under it off the screen.
+  useEffect(() => {
+    tail.current?.scrollTo({ top: tail.current.scrollHeight });
+  }, [lines]);
+
+  // Nothing is being written. `off` is before the first connection and
+  // `waiting` is a file that has not been opened yet and is still being asked
+  // for; everything else is an ending — the trace was deleted when the turn
+  // finished (`answerDiscussion`), or the follow failed, or the asking ran out.
+  // The answer would be on the log by now if there were one, and there is not.
+  const stopped = state !== "reading" && state !== "off" && state !== "waiting";
+
+  return (
+    <>
+      <p className="chatwait">
+        {stopped
+          ? `nothing is writing to this conversation${lines.length > 0 ? " any more" : ""}, and no answer has been recorded — reload, or ask again`
+          : lines.length === 0
+            ? "waiting for the daemon to answer"
+            : `answering · ${lines.length} line${lines.length === 1 ? "" : "s"} so far`}
+      </p>
+      {lines.length > 0 ? (
+        <div className="chattrace" ref={tail}>
+          {/* Never markdown and never a paragraph: it is a log (design §6). */}
+          <pre className="hdoctext">{lines.join("\n")}</pre>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * The answer, while it is being produced.
  *
  * **The defect [0034](../../../../doc/decisions/0034-the-run-log.md) opens with,
@@ -118,7 +181,7 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
  * an assistant thinking for sixty seconds was indistinguishable from one that
  * had died, and the answer was to ask again and pay twice (#132).
  *
- * The mechanism is 0034's and it is unchanged: the daemon writes the chat's
+ * The mechanism is 0034's and it is unchanged: the daemon writes the turn's
  * trace to a file named for the `chatId`, and this follows it over the route the
  * ledger's run logs already use. Nothing new is on the wire and nothing new is
  * in the log.
@@ -130,34 +193,14 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
  *
  * `awaited`, because the file is *coming*: the board appended the question a
  * moment ago and the daemon has not opened the file yet. A 404 here means not
- * yet, where on a landed attempt it means never.
+ * yet, where on a landed attempt it means never — and it means it a bounded
+ * number of times, because a question asked with no daemon running is a 404 that
+ * would otherwise be asked for again every second and a half until the tab is
+ * closed.
  */
 function Thinking({ chatId }: { chatId: string }) {
-  const { lines } = useLogTail(chatId, true, true);
-  const tail = useRef<HTMLDivElement | null>(null);
-
-  // Pinned to the bottom of its own scroller, which is where the newest line
-  // is. The box's height is `.chat`'s and does not grow with this — a pane that
-  // grew with its content would push the moves under it off the screen.
-  useEffect(() => {
-    tail.current?.scrollTo({ top: tail.current.scrollHeight });
-  }, [lines]);
-
-  return (
-    <>
-      <p className="chatwait">
-        {lines.length === 0
-          ? "waiting for the daemon to answer"
-          : `answering · ${lines.length} line${lines.length === 1 ? "" : "s"} so far`}
-      </p>
-      {lines.length > 0 ? (
-        <div className="chattrace" ref={tail}>
-          {/* Never markdown and never a paragraph: it is a log (design §6). */}
-          <pre className="hdoctext">{lines.join("\n")}</pre>
-        </div>
-      ) : null}
-    </>
-  );
+  const { lines, state } = useLogTail(chatId, true, true);
+  return <Trace lines={lines} state={state} />;
 }
 
 export function Discussion({
@@ -181,13 +224,31 @@ export function Discussion({
   // box is the New button.
   const open = discussions.find((d) => d.held === null) ?? null;
 
-  // The reply is at the bottom of its own scroller, and that is where the box
-  // stays: every append re-renders the board (`live.tsx`), so a turn arriving
-  // scrolls to itself rather than waiting to be scrolled to (#132).
-  const turns = discussions.reduce((n, d) => n + d.turns.length, 0);
+  /**
+   * The reply is at the bottom of its own scroller, and that is where the box
+   * stays: every append re-renders the board (`live.tsx`), so a turn arriving
+   * scrolls to itself rather than waiting to be scrolled to (#132).
+   *
+   * **Keyed on what the scroller holds, not on how many turns there are.** The
+   * count does not change when an *answer* lands — the turn was already there,
+   * asked and unanswered — and that is the one moment the content grows, and the
+   * moment the reader is waiting for. So the key is every fact this pane renders
+   * off: which chats, how many turns each, which of them are answered, and
+   * whether a chat has been concluded.
+   *
+   * The live trace inside a turn is not in here and must not be: it has its own
+   * bounded scroller (`.chattrace`) and pins itself, so a line arriving there
+   * scrolls that pane and never this one.
+   */
+  const shown = discussions
+    .map(
+      (d) =>
+        `${d.chatId}:${d.turns.length}:${d.turns.filter((t) => t.answer !== null).length}:${d.held ?? ""}`,
+    )
+    .join("|");
   useEffect(() => {
     conversation.current?.scrollTo({ top: conversation.current.scrollHeight });
-  }, [turns]);
+  }, [shown]);
 
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
     setBusy(true);

@@ -674,6 +674,9 @@ details[open] > summary::before { content: "▾"; }
   font-size: 0.75rem;
   color: var(--muted);
 }
+/* The coordinate, and it is also the way down (#132): one line rather than a
+   fact and an `in attempt N ↓` beside it saying the same number again. `.sptr`
+   supplies the colour and the arrow's affordance; this supplies the type. */
 .ssince .sfrom { font-family: var(--mono); }
 
 /* The one neutral divider the design allows, and the extent of the block's
@@ -737,10 +740,11 @@ details[open] > summary::before { content: "▾"; }
   max-height: 18rem;
 }
 
-/* The one deciding line, for a block whose diagnosis carries no evidence to
-   quote — every block written before #83, and the refusals that are not a
-   gate's. The teal is structural, and it is deliberately not a verdict colour.
-   The pointer that used to end this line is at rank 4 now. */
+/* The one deciding line, for a block that has no diagnosis at all — every block
+   written before #83. The teal is structural, and it is deliberately not a
+   verdict colour. It keeps its `in attempt N ↓`, because `decidingOf` searches
+   back through earlier attempts and a line from one of those is only readable
+   with the attempt attached to it (#132). */
 .sevidence {
   display: flex;
   flex-wrap: wrap;

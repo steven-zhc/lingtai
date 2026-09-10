@@ -268,23 +268,32 @@ export async function answerDiscussion(
    * mechanism is 0034's, unchanged: one file, named by the conductor, followed
    * from byte zero by whoever is watching.
    *
-   * **Named for the chat, not for a round.** `ask` runs the runtime once per
-   * read round and a file per round would be a conversation nobody could
-   * follow; one file per `chatId` is one conversation, and a follow-up appends
-   * to it. That name is also what makes the reaper right about it: the id is
-   * the chat's own stream, `DiscussionAsked` on it carries the work item, and
-   * `findOrphanLogs` removes the file when that item lands — the same rule and
-   * the same code as a run's.
+   * **Named for the chat, and it is one turn long.** The name has to be the
+   * chat's, because that is what makes the reaper right about the file: the id
+   * is the chat's own stream, `DiscussionAsked` on it carries the work item, and
+   * `findOrphanLogs` removes it when that item lands — the same rule and the
+   * same code as a run's. But the *file* is one turn's, and the `finally` below
+   * is why: what a follower asks for is the answer being produced right now, and
+   * `followRunLog` reads from byte zero, so a file that outlived its turn would
+   * show the second question the first question's trace and call it live.
    *
-   * **No `RUN_LOG_END`.** That line means *the writer has let go of a run*, and
-   * a turn ending is not that: the conversation is still open and the next
-   * question appends here. What ends a turn is `DiscussionAnswered` on the
-   * chat's stream, which is the record; this is the trace, and the two are not
-   * the same kind of thing (0034 §8).
+   * **Its ending is its deletion, and there is no `RUN_LOG_END`.** That line's
+   * words are a run's — *the diff is on the branch* — and this is a
+   * conversation. It does not need them: `holdDiscussion` appends
+   * `DiscussionAnswered` on every path it has, including the crash and the
+   * unreadable reply, so a turn that is over is a turn whose record has landed,
+   * and 0034 §4's *landed → delete* is the whole of the rule. A follower sees
+   * the file go and reports `removed`, which is an ending (`RunLogEnding`), so
+   * the tail stops and the connection with it. What outlives a turn is exactly
+   * the log of a daemon that died mid-answer — the one case still owed an
+   * explanation, and the case §5's reaper is for. That residue is also the one
+   * thing that could still be here when this opens, and `openRunLog` appends on
+   * purpose (a run's second attempt adds to the story rather than erasing it) —
+   * so it goes first. This turn's trace is this turn's.
    */
-  const trace = await openRunLog({
-    path: runLogPath(stateDir(), project, request.chatId),
-  }).catch(() => NO_RUN_LOG);
+  const path = runLogPath(stateDir(), project, request.chatId);
+  await rm(path, { force: true }).catch(() => {});
+  const trace = await openRunLog({ path }).catch(() => NO_RUN_LOG);
 
   /** Both places: the daemon's own output, and the file the board follows. */
   const say = (line: string) => {
@@ -337,9 +346,11 @@ export async function answerDiscussion(
         (held.costUsd === null ? "" : ` · $${held.costUsd.toFixed(2)}`),
     );
   } finally {
-    // Kept, always. A discussion has no diff to land, so 0034 §4's other branch
-    // never applies here; §5's does, and it belongs to the reaper.
-    await trace.close("keep");
+    // The turn is over, so the file is: see `trace` above. Its record is on the
+    // chat's stream and this was only ever the trace beside it (0034 §8), and
+    // leaving it would hand the *next* question this one's output as the answer
+    // being written for it.
+    await trace.close("delete");
   }
 }
 

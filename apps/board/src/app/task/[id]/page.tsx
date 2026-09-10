@@ -7,6 +7,7 @@ import { elapsed } from "@/lib/progress";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
+import { Latch } from "../../latch.tsx";
 import { RunLog } from "../../run-log.tsx";
 import { Standing } from "../../standing.tsx";
 
@@ -161,13 +162,20 @@ export function Attempt({
    * and it was two disclosures deep with nothing saying it was there (#132).
    * Its `RunLog` opens with it and follows; every other attempt stays closed
    * and reads nothing.
+   *
+   * **`Latch` and not an `open` attribute**, because this one is derived from
+   * the fold and the board re-renders on every append: written as an attribute
+   * it would open when the run started and then *close under the person reading
+   * it* the moment the run finished, which is the one second they were there
+   * for. Opening is a signal, closing is the reader's — see `latch.tsx`.
    */
   const running = run.outcome.state === "running";
   return (
-    <details
+    <Latch
       className={deciding ? "attempt deciding" : "attempt"}
       id={`attempt-${run.attempt}`}
-      open={alone || deciding || running}
+      initial={alone || deciding || running}
+      openWhen={running}
     >
       <summary>
         {/* The disclosure triangle is `details > summary::before`, drawn once for
@@ -312,7 +320,7 @@ export function Attempt({
       ) : (
         <p className="empty">No gate reported on this attempt.</p>
       )}
-    </details>
+    </Latch>
   );
 }
 

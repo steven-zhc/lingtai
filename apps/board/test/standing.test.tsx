@@ -483,6 +483,47 @@ describe("the block, rendered", () => {
   });
 
   /**
+   * The same block with `deciding` filled, which is the ordinary shape of it.
+   *
+   * `decidingOf` is a *search*: it takes the named attempt's refusal and, where
+   * there is none, walks back through the earlier ones — so a block whose own
+   * gates all passed routinely carries attempt 1's build failure in that field.
+   * Rank 2 is *why this task stopped*, and `proposed / build · error TS2741`
+   * printed there under a sentence that says every gate passed is a cause this
+   * hold does not have — which is the whole of what #132 is about, made worse.
+   *
+   * So a diagnosis answers rank 2 or nothing does. The way to attempt 1 is rank
+   * 4's, and it is a coordinate rather than a reason.
+   */
+  it("does not print an earlier attempt's refusal as this hold's reason", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={{
+          ...HELD,
+          failed: [],
+          // Attempt 1's, while the block is attempt 2's. See `HELD`.
+          deciding: { attempt: 1, source: "proposed / build", line: "error TS2741: …" },
+          diagnosis: {
+            what: "agent/112 is at 293fe3a and every gate passed. The merge point holds for no-merge.",
+            done: null,
+            raw: null,
+            recommendation: { action: "approve", why: "every gate passed on this diff" },
+          },
+        }}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("every gate passed");
+    expect(html).not.toContain("error TS2741");
+    expect(html).not.toContain("proposed / build");
+  });
+
+  /**
    * The block used to print `run-5cb24ac5` twice — once as a coordinate and
    * once inside the sentence about the repair that produced the diff. The
    * conductor's sentence no longer names it and the block names it once.
