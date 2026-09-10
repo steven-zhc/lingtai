@@ -40,6 +40,7 @@ import {
 } from "@lingtai/daemon";
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
+import { attach } from "./attach.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
@@ -67,6 +68,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval
     --reject <why>              withdraw instead: back to the gate, not merged
+  lingtai attach <runId>            follow a run's log — what it is doing, as it
+                                does it, from the beginning however late you
+                                attach. Reads a file and asks nothing of the
+                                daemon or the database, so it answers on a
+                                stopped system and on a run that is long over.
+                                A landed run has no log: 0034 keeps exactly the
+                                ones still owed an explanation
   lingtai status [project]          what is runnable, and what is holding the rest
     --all                       include items that have left the queue
                                 and why. Takes nothing and claims nothing.
@@ -653,6 +661,19 @@ async function main(argv: string[]): Promise<number> {
         note: flags["note"],
         ...("reject" in flags ? { reject: flags["reject"] ?? "no reason given" } : {}),
       });
+    }
+    case "attach": {
+      const runId = parseFlags(rest).positional[0];
+      if (!runId) {
+        console.error("lingtai attach <runId>");
+        return 2;
+      }
+      // Ctrl-C detaches rather than killing the process, so the command gets to
+      // say that the run is still going and where its log is. Nothing is being
+      // stopped: this is a reader, and 0034's file does not know it has one.
+      const detach = new AbortController();
+      process.on("SIGINT", () => detach.abort());
+      return attach({ runId, signal: detach.signal });
     }
     case "status": {
       const { positional, flags } = parseFlags(rest);

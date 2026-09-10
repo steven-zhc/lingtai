@@ -16,7 +16,15 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NO_RUN_LOG, RUN_LOG_MAX_BYTES, openRunLog, runLogLine } from "../src/index.ts";
+import {
+  NO_RUN_LOG,
+  RUN_LOG_END,
+  RUN_LOG_MAX_BYTES,
+  openRunLog,
+  runLogEnd,
+  runLogEnded,
+  runLogLine,
+} from "../src/index.ts";
 
 let home: string;
 
@@ -66,15 +74,23 @@ describe("a run's log file", () => {
     const fat = "x".repeat(90_000);
     for (let i = 0; i < 100; i += 1) log.note("Read", fat);
     log.note("Bash", "this line is past the end and must not be here");
+    log.note(RUN_LOG_END, runLogEnd(false));
     await log.close("keep");
 
     const text = await readFile(path, "utf8");
     expect(text).toContain(`truncated: this log reached RUN_LOG_MAX_BYTES (${RUN_LOG_MAX_BYTES} bytes)`);
     expect(text).not.toContain("this line is past the end");
+    // The one line that is written past the cap anyway. `#110` follows this
+    // file from another process and has nothing else that tells *the writer
+    // has finished* from *the writer is thinking*, so leaving it out would
+    // hang a reader for ever on exactly the runs with the most to read.
+    const lines = text.split("\n").filter(Boolean);
+    expect(runLogEnded(lines.at(-1) ?? "")).toBe("did not land");
     // The notice is deliberately written *past* the cap rather than squeezed
     // under it: a file that stopped silently at a round number is a file whose
-    // last line is a lie by omission. So it overshoots by one line and no more.
-    expect(text.length).toBeLessThan(RUN_LOG_MAX_BYTES + 200);
+    // last line is a lie by omission. So it overshoots by those two lines and
+    // no more — both are bounded and neither carries anything the agent typed.
+    expect(text.length).toBeLessThan(RUN_LOG_MAX_BYTES + 400);
   });
 
   it("deletes the file when the run landed, and keeps it when it did not", async () => {

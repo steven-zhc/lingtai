@@ -13,7 +13,8 @@
     "./filter": "./src/filter.ts",
     "./labels": "./src/labels.ts",
     "./prompt": "./src/prompt.ts",
-    "./queue": "./src/queue.ts"
+    "./queue": "./src/queue.ts",
+    "./run-log": "./src/run-log.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

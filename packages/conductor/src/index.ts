@@ -47,6 +47,15 @@ export {
 export { AgentHost, Repo, type AgentHostPort, type RepoPort, type RunPorts } from "./ports.ts";
 export { AgentHostLive, PortsLive, RepoLive, livePorts } from "./live.ts";
 export { runOnce, type RunOnceOptions, type RunOnceResult } from "./run-once.ts";
+export {
+  findRunLog,
+  followRunLog,
+  listRunLogs,
+  runLogPath,
+  type FoundRunLog,
+  type RunLogEnding,
+  type RunLogFollowed,
+} from "./run-log.ts";
 export { nextPrompt, renderPrompt, type NextPrompt, type PromptEdit } from "./prompt.ts";
 export { parseResetAt, standDown } from "./never-started.ts";
 export {

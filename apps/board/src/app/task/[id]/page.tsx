@@ -7,6 +7,7 @@ import { elapsed } from "@/lib/progress";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
+import { RunLog } from "../../run-log.tsx";
 import { Standing } from "../../standing.tsx";
 
 /**
@@ -214,6 +215,11 @@ function Attempt({
           )}
         </details>
       ) : null}
+
+      {/* What it was doing between being told and being judged (`#110`). Closed,
+          and nothing is read until it is opened: a page with six attempts would
+          otherwise follow six files nobody asked to see. */}
+      <RunLog runId={run.runId} />
 
       {run.files.length > 0 ? (
         <details className="afiles">

@@ -84,6 +84,15 @@ looking hung. Ctrl+C does the same and tells you what a second one costs;
 second Ctrl+C or a `--timeout` is killed by the next conductor before it
 releases the claim, guarded on the host and the process's own argv.
 
+**What a run is doing, while it does it**, is `pnpm lingtai attach <runId>`, or
+the *run log* inside that attempt's row on the task page. Both are a tail of
+`~/.lingtai/runs/<project>/<runId>.log` (0034) and both start at the beginning
+however late you arrive. Neither asks the daemon or the database anything, so
+they answer on a stopped system — and a run that landed has no log, because the
+file is kept only while something is still owed an explanation. It is a trace
+and never a record: what happened is `lingtai status` and the board, off
+`events`.
+
 The board's Queued column asks GitHub on render; every other column is the
 fold.
 

@@ -94,30 +94,7 @@ import type { TokenSource } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
 import { AgentHost, Repo } from "./ports.ts";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-
-/**
- * Where a run's log lives, and it is the worktree's shape on purpose.
- *
- * ```
- * ~/.lingtai/worktrees/<project>/<runId>/     already
- * ~/.lingtai/runs/<project>/<runId>.log       this
- * ```
- *
- * `reconcile` already walks `join(home, "worktrees")` as `<project>/<runId>`
- * ([0034](../../../doc/decisions/0034-the-run-log.md) §1), so reaping the
- * second is the same code in the same pass rather than a second mechanism. It
- * shares `runs/` with `settingsPathFor`'s `runs/<runId>/settings.json`, which
- * is a directory named for a run and never a `.log` — the two do not collide
- * and `findOrphanLogs` is written to see only the second.
- *
- * **The conductor names it, and nothing below the seam does.** `packages/agent`
- * is handed the path as `RunRequest.logPath`; a runtime adapter that knew where
- * `~/.lingtai` is would have crossed 0022's seam.
- */
-export function runLogPath(home: string, project: string, runId: string): string {
-  return join(home, "runs", project, `${runId}.log`);
-}
+import { RUN_LOG_END, runLogEnd, runLogPath } from "./run-log.ts";
 
 export interface RunOnceOptions {
   project: ProjectState;
@@ -708,12 +685,13 @@ export function runOnce(
           ),
         (opened) =>
           Effect.promise(async () => {
-            opened.note(
-              "run",
-              didLand
-                ? "landed — the diff is on the branch and the events are on the log, so this file goes"
-                : "did not land — this file is kept, and is the only account of why",
-            );
+            // The sentence, and the label a reader recognises it by. `#110`
+            // follows this file from another process and has nothing else to
+            // tell *the writer has finished* from *the writer is thinking*;
+            // both look like a file that has stopped growing. The words are
+            // `runLogEnd`'s so that the writing and the reading of this one
+            // line cannot drift apart into a tail that never returns.
+            opened.note(RUN_LOG_END, runLogEnd(didLand));
             await opened.close(didLand ? "delete" : "keep");
           }),
       );
