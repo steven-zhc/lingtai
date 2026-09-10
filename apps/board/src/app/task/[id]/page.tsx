@@ -354,7 +354,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           )}
         </section>
 
-        <section>
+        <section className="wide">
           <Label fact={totalsFact(task.totals)}>Attempts</Label>
           {task.runs.length === 0 ? (
             <p className="empty">No agent has been dispatched for this ticket yet.</p>
@@ -373,7 +373,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           )}
         </section>
 
-        <section>
+        <section className="wide">
           <Label fact={events === 0 ? null : `${events} events · grouped by run`}>History</Label>
           {/* Stated, not omitted. ADR 0016 §4's rule reaches here too: a section
               that renders nothing looks exactly like a section whose events

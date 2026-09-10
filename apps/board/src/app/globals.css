@@ -486,7 +486,9 @@ details[open] > summary::before { content: "▾"; }
 .detail-body {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  /* Was 2rem, when each section carried a rule under its heading. The rule is
+     gone and this is what separates them now. */
+  gap: 3.25rem;
   padding: 1.5rem;
   /* Wide enough for the decision column's two boxes to sit side by side, and no
      wider. Everything else keeps the measure below. */
@@ -494,43 +496,62 @@ details[open] > summary::before { content: "▾"; }
   width: 100%;
 }
 
-/* A measure, not the full width. The history is a list of short lines and
-   stretching it across a wide screen makes it unreadable in the one place
-   somebody is reading closely.
+/* **The measure belongs to prose, and only to prose.** A paragraph read at
+   82rem is a paragraph nobody finishes, so the ticket keeps the 62rem it has
+   always had.
 
-   **The prose measure stays for paragraphs; documents may break it** (layout
-   notes). So it is on the sections that are prose and lists, and the decision
-   column — which is two boxes and a row of buttons, not a paragraph — is the
-   one thing on this page that uses the width it is given (#111). */
+   The previous version of this rule put the measure on "the sections that are
+   prose *and lists*", and that second half was wrong. Attempts is a ledger —
+   run, gates, turns, cost — and History is a column of seq numbers, timestamps
+   and event names. Neither is read as a sentence: they are scanned down a
+   column, and capping them at 62rem left twenty rem of the page empty while
+   the rows they hold wrapped. `standing` was carved out one at a time for
+   exactly this (#111); `wide` is the same fact said once. */
 .detail-body > section { max-width: 62rem; width: 100%; }
-.detail-body > section.standing { max-width: none; }
+.detail-body > section.standing,
+.detail-body > section.wide { max-width: none; }
 
 /* The section's one fact sits at the right of the label's own rule, which is
    why there is no separate summary band: a band that totals what is under it
    is a second copy of the same arithmetic, and the two disagree the first time
    one of them is changed. */
-.detail-body h2 {
+/* **`> section >`, not a descendant.** The ticket body is rendered markdown, so
+   a ticket written with `## Done when` puts an `h2` inside this subtree. Under
+   a descendant selector that heading would take the display size below and
+   claim to be a section of the page. Only the `Label` component's own heading
+   is a direct child of a section. */
+.detail-body > section > h2 {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 1rem;
-  font-size: 0.72rem;
-  font-family: var(--mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-weight: 500;
-  margin: 0 0 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--rule);
+  gap: 1.5rem;
+  /* Large enough to be the thing you land on. The page is a stack of four or
+     five parts and the old 0.72rem eyebrow made finding one of them a matter of
+     reading, which is what a heading exists to save you. */
+  font-size: clamp(1.7rem, 3.4vw, 2.6rem);
+  letter-spacing: -0.022em;
+  line-height: 1.02;
+  color: var(--ink);
+  font-weight: 600;
+  margin: 0 0 1.1rem;
 }
-/* Not upper-cased: `23m25s` and `$14.10` are read as numbers rather than as a
-   heading, and shouting them makes both harder to read. */
-.detail-body h2 .hfact {
-  text-transform: none;
+/* **No rule under it.** At 0.72rem the border was doing the separating; at this
+   size the type does it, and a hairline under a 2.6rem heading reads as a
+   letterhead. The section gap above carries the separation instead. */
+
+/* Small, mono, and not shouted: `23m25s` and `$14.10` are read as numbers
+   rather than as a heading. The contrast with the name beside it is the point —
+   a big word and a small number, not two competing headings. */
+.detail-body > section > h2 .hfact {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 400;
   letter-spacing: 0.02em;
   text-align: right;
   color: var(--ink-2);
+  /* Its own baseline sits far from a 2.6rem cap-height, so it is nudged back
+     onto the heading's optical line rather than left floating at the top. */
+  transform: translateY(-0.15em);
 }
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
