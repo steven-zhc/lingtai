@@ -15,6 +15,7 @@ export {
 } from "./daemon.ts";
 export {
   COMPLETION_EVENTS,
+  SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
   type PassReason,
   type WorkLoop,

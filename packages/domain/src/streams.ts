@@ -58,6 +58,20 @@ export function projectStream(project: string): string {
   return `${PROJECT_STREAM_PREFIX}${project}`;
 }
 
+/**
+ * `ext-subscribers` — every event subscriber that failed, for the installation.
+ *
+ * One stream rather than one per project, for the reason `ctl-conductor` is
+ * one: a subscriber belongs to the daemon and not to a repository, and half of
+ * what it is handed — pauses, shutdowns, questions — names no project at all.
+ *
+ * Not the failing event's own stream, which is the tempting place and the wrong
+ * one. The daemon is following the log while a run appends to that stream, so a
+ * write back to it would race the run and turn a notifier's bad day into a
+ * `ConcurrencyError` in the middle of one.
+ */
+export const SUBSCRIBER_STREAM = "ext-subscribers";
+
 /** `int-{project}-{base}` — one lane per base branch, forever. */
 export function integrationStream(project: string, base: string): string {
   return `int-${project}-${base.replace(/\//g, ".")}`;

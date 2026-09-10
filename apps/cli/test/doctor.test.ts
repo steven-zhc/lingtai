@@ -5,7 +5,9 @@
  * The last one does need it, and it is the one that matters — it is Phase 0's
  * exit criterion written as an assertion.
  */
-import { databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
+import { createDb, createEventStore, databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
+import { SUBSCRIBER_STREAM } from "@lingtai/domain";
+import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { formatReport, runDoctor } from "../src/doctor.ts";
 
@@ -237,5 +239,57 @@ describe("lingtai doctor — against the real database", () => {
     // are listed here so neither can be quietly absorbed into the other.
     expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
     expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  /**
+   * The other half of `#120`: appending `PluginFailed` is only worth doing if
+   * something reads it back. A subscriber failure used to be a console line,
+   * and a console line is gone by morning — so a notifier that had silently
+   * stopped notifying looked exactly like a quiet week.
+   *
+   * Against the real log, with real appends, because the check is a query and a
+   * query is not tested by a fake.
+   */
+  it("names a subscriber that has been failing", async () => {
+    const client = createDb();
+    const store = createEventStore(client);
+    const at = (await store.read(SUBSCRIBER_STREAM)).length;
+    await store.append(SUBSCRIBER_STREAM, at, [
+      {
+        type: "PluginFailed",
+        actor: "conductor",
+        data: {
+          name: "notify",
+          eventType: "WorkItemLanded",
+          project: "esctest-doctor",
+          reason: "terminal-notifier exited 127",
+        },
+      },
+    ]);
+    await client.close();
+
+    try {
+      const report = await runDoctor(
+        env({ LINGTAI_DATABASE_URL: databaseUrl(), LINGTAI_DIRECT_DATABASE_URL: directDatabaseUrl() }),
+      );
+      const check = find(report.results, "subscribers: failures");
+
+      // `warn` and never `fail`: nothing converges a subscriber failure — a
+      // subscriber is never retried — so a red doctor here would be red for
+      // ever, and a check that is always red is a check nobody reads.
+      expect(check.status).toBe("warn");
+      expect(check.detail).toContain("notify");
+      expect(check.detail).toContain("terminal-notifier exited 127");
+    } finally {
+      const c = new pg.Client({ connectionString: directDatabaseUrl() });
+      await c.connect();
+      try {
+        await c.query("alter table events disable rule lingtai_events_no_delete");
+        await c.query("delete from events where stream_id = $1", [SUBSCRIBER_STREAM]);
+      } finally {
+        await c.query("alter table events enable rule lingtai_events_no_delete");
+        await c.end();
+      }
+    }
   }, 60_000);
 });

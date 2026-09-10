@@ -48,9 +48,31 @@
  * pass, and `pump` retains its promise for it to wait on — which is the only
  * thing that was missing. `running`, `again` and the `if (stopped) break` were
  * all already here, so from outside the loop looked as though it drained.
+ *
+ * ## The subscriber boundary
+ *
+ * Every subscriber invocation goes through `deliver`, and that is a boundary
+ * rather than a convenience. `notify` used to be called as a bare `void`, so a
+ * rejected promise from it was an unhandled rejection **in the process that
+ * follows the log** — which is the one process that must survive anything a
+ * subscriber does, because it is also the projection follower and the board's
+ * only source of current. It did not bite: the one notifier there has ever been
+ * catches everything itself. But that is a guarantee held by the callee, and a
+ * guarantee held by the callee is one every future subscriber has to re-honour
+ * ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) puts
+ * third-party code in this path on purpose). `discuss`, two lines below it,
+ * already had the `.catch`.
+ *
+ * So the boundary holds three failures and not one: a throw before the promise
+ * exists, a rejection after it, and a subscriber that never settles at all.
+ * Each of them appends `PluginFailed`, because the other half of the defect was
+ * that a failed subscriber left a console line and nothing else — and a
+ * notifier that has silently stopped notifying is the one failure a notifier
+ * must not have. `lingtai doctor` reads them back.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { subscribe, type Subscription } from "@lingtai/event-store";
+import { type Envelope, SUBSCRIBER_STREAM, parseWorkItemStream, parsePayload } from "@lingtai/domain";
+import { type EventStore, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
 import pg from "pg";
 
 /**
@@ -93,6 +115,17 @@ export type PassReason = "startup" | "completion" | "sweep";
  */
 export const SWEEP_MS = 5 * 60_000;
 
+/**
+ * How long a subscriber may take before the boundary calls it failed.
+ *
+ * Generous on purpose: `discuss` buys an agent, and an agent answering a
+ * question takes minutes. The number is not a deadline anything is held to — a
+ * subscriber is already off the pass path, so nothing is waiting for it. It is
+ * the point at which *never returned* stops being indistinguishable from *still
+ * working*, which is the only thing a hang can otherwise be mistaken for.
+ */
+export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000;
+
 export interface WorkLoopOptions {
   /**
    * One pass: refresh the queue, take what is runnable, run it.
@@ -134,8 +167,11 @@ export interface WorkLoopOptions {
    * On the loop's existing subscription rather than a second one: a notifier
    * with its own connection would be another session-mode connection held open
    * for the life of the daemon, for something that is already being read.
+   *
+   * Its failures are held by `deliver`, not by it. See the note on the
+   * subscriber boundary at the top of this file.
    */
-  notify?: (event: import("@lingtai/domain").Envelope) => Promise<void>;
+  notify?: (event: Envelope) => Promise<void>;
   /**
    * Somebody asked the discussion assistant a question. Answer it.
    *
@@ -151,10 +187,11 @@ export interface WorkLoopOptions {
    * connection for events it is being handed anyway is a connection held open
    * for nothing.
    *
-   * Its failures are its own. Anything that escaped here would reach the
-   * subscription's handler and stop the loop over a question.
+   * Anything that escaped here would reach the subscription's handler and stop
+   * the loop over a question — which is why nothing does: `deliver` holds it,
+   * and holds it identically to `notify`'s.
    */
-  discuss?: (event: import("@lingtai/domain").Envelope) => Promise<void>;
+  discuss?: (event: Envelope) => Promise<void>;
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
@@ -164,6 +201,20 @@ export interface WorkLoopOptions {
   triggers?: readonly string[];
   /** Session-mode connection for the subscription. */
   url?: string;
+  /**
+   * How long a subscriber may take before the boundary calls it failed.
+   *
+   * Defaults to `SUBSCRIBER_TIMEOUT_MS`. A test sets it low; nothing else has a
+   * reason to. It does not cancel anything — see `deliver`.
+   */
+  subscriberTimeoutMs?: number;
+  /**
+   * Where `PluginFailed` is appended. Defaults to the process-wide store.
+   *
+   * An option only so a test can hand in the store it is already cleaning up
+   * after. The daemon uses the default.
+   */
+  store?: EventStore;
   log?: (line: string) => void;
 }
 
@@ -204,6 +255,113 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * could wait for it (0030).
    */
   let inFlight: Promise<void> | null = null;
+
+  // ------------------------------------------------ the subscriber boundary --
+
+  const store = options.store ?? eventStore;
+  const subscriberTimeoutMs = options.subscriberTimeoutMs ?? SUBSCRIBER_TIMEOUT_MS;
+
+  /**
+   * `ext-subscribers`'s version, as this process last left it.
+   *
+   * Held rather than re-read, because the alternative is quadratic exactly when
+   * it hurts: a subscriber that fails on every event appends once per event,
+   * and reading the whole stream to find its length each time would make a
+   * broken notifier progressively more expensive. Null means *ask the log* —
+   * which is what a conflict sets it back to.
+   */
+  let failuresAt: number | null = null;
+
+  /**
+   * Appends serially, whatever order the failures arrive in.
+   *
+   * Two `deliver` calls can fail within the same tick — `notify` and `discuss`
+   * are handed the same event — and both would otherwise read the same version
+   * and race each other for it.
+   */
+  let recording: Promise<void> = Promise.resolve();
+
+  function record(name: string, event: Envelope, reason: string): void {
+    // The loop, closed. A `PluginFailed` is an append like any other, so the
+    // subscription hands it back to the subscribers, and a subscriber that is
+    // failing on everything would fail on this one too — appending another, for
+    // ever. The failure is still logged; what it does not do is write itself
+    // down again.
+    if (event.type === "PluginFailed") return;
+
+    const project = parseWorkItemStream(event.streamId)?.project ?? null;
+    const data = { name, eventType: event.type, project, reason };
+    recording = recording.then(async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          failuresAt ??= (await store.read(SUBSCRIBER_STREAM)).length;
+          await store.append(SUBSCRIBER_STREAM, failuresAt, [
+            { type: "PluginFailed", actor: "conductor", data: parsePayload("PluginFailed", data) },
+          ]);
+          failuresAt += 1;
+          return;
+        } catch (err) {
+          // Somebody else moved the stream, or the log is unreachable. Ask it
+          // again; on the third refusal say so and stop, because a boundary
+          // that could throw is the boundary this file exists to remove.
+          failuresAt = null;
+          if (attempt === 2) log(`could not record ${name}'s failure: ${(err as Error).message}`);
+        }
+      }
+      // Nothing above can reject, and the chain is caught anyway. A rejected
+      // `recording` would poison every failure after it — and an unhandled
+      // rejection in this process is the whole of what #120 is about.
+    }).catch(() => {});
+  }
+
+  /**
+   * Hands one event to one subscriber, and holds everything it does back.
+   *
+   * Three failures, not one. A subscriber that throws before returning a
+   * promise never gets as far as `.catch`, so the call is inside the `try`; one
+   * that rejects afterwards is caught there; and one that never settles is
+   * reported by the timer, because *never returned* and *still working* are
+   * otherwise the same observation.
+   *
+   * **The timeout does not cancel anything**, and cannot: there is no way to
+   * stop a promise. Nothing is waiting for the subscriber either — it is off
+   * the pass path by construction — so what the timer buys is the record.
+   * `settled` is why a subscriber that rejects an hour after timing out does
+   * not append a second `PluginFailed` for the same event.
+   */
+  function deliver(name: string, event: Envelope, run: (e: Envelope) => Promise<void>): void {
+    let settled = false;
+    const failed = (reason: string): void => {
+      if (settled) return;
+      settled = true;
+      log(`${name} failed on ${event.type}: ${reason}`);
+      record(name, event, reason);
+    };
+
+    const timer = setTimeout(
+      () => failed(`did not return within ${Math.round(subscriberTimeoutMs / 1000)}s`),
+      subscriberTimeoutMs,
+    );
+    // Never a reason for the process to stay alive. A daemon whose last
+    // obligation is a timer waiting on a hung notifier cannot exit.
+    timer.unref?.();
+
+    try {
+      void run(event).then(
+        () => {
+          settled = true;
+          clearTimeout(timer);
+        },
+        (err: unknown) => {
+          clearTimeout(timer);
+          failed(String(err instanceof Error ? err.message : err));
+        },
+      );
+    } catch (err) {
+      clearTimeout(timer);
+      failed(String(err instanceof Error ? err.message : err));
+    }
+  }
 
   function pump(reason: PassReason): Promise<void> {
     if (running) {
@@ -290,11 +448,16 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // Before the trigger check: the events worth interrupting somebody
           // for are mostly *not* the ones that wake the conductor. A task being
           // blocked is both; a run asking a question is only the first.
-          void options.notify?.(event);
+          //
+          // Through `deliver`, both of them, and never called directly. That is
+          // the boundary this file's header is about: what a subscriber does
+          // with an event is its own business, and what it does *to the process
+          // following the log* is not its business at all.
+          if (options.notify) deliver("notify", event, options.notify);
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
-          if (event.type === "DiscussionRequested") {
-            void options.discuss?.(event).catch((err: unknown) => log(`discussion failed: ${String(err)}`));
+          if (event.type === "DiscussionRequested" && options.discuss) {
+            deliver("discuss", event, options.discuss);
           }
           if (!triggers.has(event.type)) return;
           void pump("completion");

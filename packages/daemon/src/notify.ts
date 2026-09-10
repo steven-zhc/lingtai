@@ -210,9 +210,15 @@ export function createNotifier(options: NotifyOptions): Notifier {
       try {
         await options.channel.send(describe(event, boardUrl));
       } catch (err) {
-        // Never rethrown. This is called from the daemon's subscription, and a
-        // notifier that could stop the log being followed would be a notifier
-        // that takes the board down.
+        // Caught here so the message can say *notification*, and no longer
+        // because anything depends on it. The daemon's subscription holds every
+        // subscriber at the call site now — `deliver` in `work-loop.ts` — so a
+        // notifier that let this through would be recorded and dropped rather
+        // than taking the log's follower, and the board with it, down.
+        //
+        // That is the difference #120 was about. The guarantee was real and
+        // correctly stated and honoured by this function; nobody had to be
+        // wrong for it to fail, somebody only had to write a second notifier.
         log(`notification failed: ${(err as Error).message}`);
       }
     },

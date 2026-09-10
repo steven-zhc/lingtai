@@ -8,6 +8,7 @@
  */
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { directDatabaseUrl } from "@lingtai/env";
+import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createWorkLoop } from "../src/index.ts";
@@ -250,6 +251,87 @@ describe("the work loop", () => {
    * differently once the reset has gone by. That is the twelve minutes 0031 is
    * replacing: nobody has to type `lingtai resume`.
    */
+  /**
+   * The subscriber boundary, against the real subscription — which is the only
+   * place it can be tested, because the claim is about the process that follows
+   * the log surviving what a subscriber does to it.
+   *
+   * Three failures in one test on purpose: they are three shapes of the same
+   * defect and the boundary has to hold all three. A throw never reaches a
+   * `.catch` at all; a rejection reaches one only if somebody wrote it, and
+   * `notify` had none; and a subscriber that simply never settles produces no
+   * signal whatsoever, which is the failure a notifier must not have.
+   */
+  it("survives a subscriber that throws, rejects or hangs, and records each one", async () => {
+    const tag = crypto.randomUUID().slice(0, 8);
+    // One project per case, so the failures this test appends can be told from
+    // any the log already holds.
+    const stream = (which: string) => `wi-esctest${which}${tag}-1`;
+    const project = (which: string) => `esctest${which}${tag}`;
+    const cases = ["throws", "rejects", "hangs", "after"];
+    for (const which of cases) created.add(stream(which));
+    created.add(SUBSCRIBER_STREAM);
+
+    const seen: string[] = [];
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      store,
+      // Short, because the property is that a hang is *reported*; how long a
+      // real subscriber is given before that is a separate decision.
+      subscriberTimeoutMs: 150,
+      notify: (event) => {
+        seen.push(event.streamId);
+        if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
+        if (event.streamId === stream("rejects")) return Promise.reject(new Error("rejected afterwards"));
+        // Never settles. Nothing cancels it; the boundary times it out.
+        if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
+        return Promise.resolve();
+      },
+      pass: async () => {},
+    });
+
+    await loop.start();
+    try {
+      for (const which of cases) {
+        const id = stream(which);
+        await store.append(id, 0, [landed(id)]);
+      }
+
+      // The whole claim: the follower is still delivering after all three.
+      await until(() => seen.includes(stream("after")));
+
+      // And each failure is on the log, not only in a console line that is gone
+      // by morning.
+      type Failure = { name: string; eventType: string; project: string | null; reason: string };
+      const mine = async (): Promise<Failure[]> =>
+        (await store.read(SUBSCRIBER_STREAM))
+          .filter((r) => r.type === "PluginFailed")
+          .map((r) => r.data as Failure)
+          .filter((d) => d.project !== null && d.project.endsWith(tag));
+
+      let failures = await mine();
+      const deadline = Date.now() + 10_000;
+      while (failures.length < 3) {
+        if (Date.now() > deadline) throw new Error(`timed out with ${failures.length} failure(s) recorded`);
+        await new Promise((r) => setTimeout(r, 50));
+        failures = await mine();
+      }
+
+      expect(new Set(failures.map((f) => f.project))).toEqual(
+        new Set([project("throws"), project("rejects"), project("hangs")]),
+      );
+      expect(new Set(failures.map((f) => f.name))).toEqual(new Set(["notify"]));
+      expect(new Set(failures.map((f) => f.eventType))).toEqual(new Set(["WorkItemLanded"]));
+      const hung = failures.find((f) => f.project === project("hangs"));
+      expect(hung?.reason).toMatch(/did not return within/);
+      // The one that succeeded appended nothing: a boundary that recorded every
+      // delivery would be a second log of the first.
+      expect(failures.some((f) => f.project === project("after"))).toBe(false);
+    } finally {
+      await loop.stop();
+    }
+  });
+
   it("takes nothing while a pause holds, and takes work again when it lifts by itself", async () => {
     let passes = 0;
     // Stands in for `reduceControl` reaching the expiry: the same fold, asked

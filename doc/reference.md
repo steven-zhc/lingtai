@@ -34,6 +34,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired**, `RETIRED` in the same file |
 | project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |
+| extension (1) | `PluginFailed` |
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload
 change means bumping that type's version and adding an upcaster in the same
@@ -44,7 +45,7 @@ on the write side because the read side has no honest way to decline a row:
 retiring is two things, and only the second can be enforced — stop writing them,
 and keep reading them for ever.
 
-## stream — 5 prefixes, unbounded instances
+## stream — 7 prefixes, unbounded instances
 
 The events about one thing, in order. The **prefixes** are a closed set,
 validated by regex in `packages/domain/src/envelope.ts`. The streams themselves
@@ -57,6 +58,8 @@ are not — one per work item, run, lane and project, forever.
 | `int-` | integration lane, per base branch | `int-nextloom-ai-admin-develop` |
 | `prj-` | project | `prj-nextloom-ai-admin` |
 | `ctl-` | control | `ctl-conductor` (the only one so far) |
+| `chat-` | discussion about one work item | `chat-8f21…` |
+| `ext-` | extension | `ext-subscribers` (the only one so far) |
 
 ## upcaster — 15 chains, 17 steps
 
@@ -494,7 +497,7 @@ Source: the switch in `apps/cli/src/lingtai.ts`.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 21 fixed, 3 per project, 3 deferred
+## doctor check — 22 fixed, 3 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
@@ -508,7 +511,7 @@ by four checks and two names.
 | connections (2) | `postgres: pooled connection` · `postgres: direct connection is session mode` |
 | schema (5) | `schema: tables` · `schema: optimistic concurrency` · `schema: append-only` · `schema: notify trigger` · `schema: payload column` |
 | projections (2) | `projections: lag` · `projections: shape` |
-| running system (4) | `daemon: liveness` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` |
+| running system (5) | `daemon: liveness` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` · `subscribers: failures` |
 | the log itself (1) | `log: every type is readable` |
 | gates ran (2) | `gates: end ran on what landed` · `gates: every point that was planned ran` |
 | credentials (2) | `github: app credentials` · `runtime: signed in` |

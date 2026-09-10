@@ -947,6 +947,69 @@ async function unconverged(url: string): Promise<CheckResult> {
 }
 
 /**
+ * Subscribers that were handed an event and did not come back from it.
+ *
+ * The half of `#120` that is not about the `.catch`. A subscriber's failure was
+ * a console line and nothing else, and the console line is gone by morning — so
+ * **a notifier that has silently stopped notifying looked exactly like a quiet
+ * week**, which is the one failure a notifier must not have. The boundary in
+ * `work-loop.ts` appends `PluginFailed` now, and this is what reads it back;
+ * without something that does, the event would be a second thing nobody looks
+ * at rather than a fix.
+ *
+ * **Bounded to a day, and `warn` rather than `fail`.** Nothing converges a
+ * subscriber failure — 0015's other rule is that a subscriber is never retried,
+ * because its effects are worthless late — so an all-time count would be red
+ * for ever over a notifier that broke once in March, and a check that is always
+ * red is a check nobody reads. Older failures are still counted in the detail,
+ * because "and 400 before that" is the sentence that turns one bad night into a
+ * subscriber that has never worked.
+ */
+async function subscribers(url: string): Promise<CheckResult> {
+  const name = "subscribers: failures";
+  const rows = await withClient(url, (c) =>
+    c.query<{ name: string; n: number; recent: number; last: string | null }>(
+      `select data->>'name'                                        as name,
+              count(*)::int                                        as n,
+              count(*) filter (where at > now() - interval '1 day')::int as recent,
+              -- The latest reason, not the largest one: a plain max() over the
+              -- text would sort them alphabetically and print whichever failure
+              -- happened to start with a z.
+              (array_agg(data->>'reason' order by seq desc)
+                 filter (where at > now() - interval '1 day'))[1]   as last
+       from events
+       where type = 'PluginFailed'
+       group by 1
+       order by recent desc, n desc`,
+    ),
+  ).catch(() => null);
+  if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
+
+  const recent = rows.rows.filter((r) => r.recent > 0);
+  const older = rows.rows.reduce((n, r) => n + r.n - r.recent, 0);
+  if (recent.length === 0) {
+    return {
+      name,
+      status: "ok",
+      detail:
+        older === 0
+          ? "every subscriber returned"
+          : `nothing in the last day; ${older} older failure(s) the log still holds`,
+    };
+  }
+  return {
+    name,
+    status: "warn",
+    detail:
+      `${recent.map((r) => `${r.name} ×${r.recent}`).join(", ")} in the last day — ` +
+      `last: ${recent[0]?.last ?? "?"}. ` +
+      "A subscriber is never retried (0015), so nothing converges this: what it was going to " +
+      "do was not done." +
+      (older > 0 ? ` ${older} older failure(s) besides.` : ""),
+  };
+}
+
+/**
  * Per project: does its recipe resolve at all, and what will it therefore take.
  *
  * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
@@ -1185,6 +1248,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     results.push(await readableTypes(direct));
     results.push(await orphans());
     results.push(await unconverged(direct));
+    results.push(await subscribers(direct));
     results.push(await endPointRan(direct));
     results.push(await gatePointsRan(direct));
   } else {

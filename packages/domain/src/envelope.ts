@@ -14,7 +14,7 @@ export const Actor = z
 export const StreamId = z
   .string()
   .regex(
-    /^(wi|run|int|prj|ctl|chat)-[\w.-]+$/,
+    /^(wi|run|int|prj|ctl|chat|ext)-[\w.-]+$/,
     // `ctl` is the operator's own aggregate: pauses, resumes and hand-picked
     // runs. One stream for the whole installation — control is not per-project,
     // and a pause that only stopped one repository would be a surprise.
@@ -25,7 +25,14 @@ export const StreamId = z
     // would drown the history the detail page exists to show — permanently,
     // the log being append-only. The work item keeps one `DiscussionHeld`
     // pointing at it.
-    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control) or chat-… (discussion)",
+    //
+    // `ext` is what an extension did that no work item is answerable for
+    // ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
+    // names the two kinds). A subscriber failure cannot go on the stream of the
+    // event it failed on: the daemon follows the log while a run is appending
+    // to that stream, so writing back to it would turn a notifier's bad day
+    // into a `ConcurrencyError` in the middle of a run.
+    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion) or ext-… (extension)",
   );
 
 export interface Envelope<T = unknown> {

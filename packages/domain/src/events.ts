@@ -957,6 +957,43 @@ export const Reconciled = z.object({
   ),
 });
 
+// ------------------------------------------------------------- extension ----
+
+
+/**
+ * An event subscriber was handed an event and did not come back from it.
+ *
+ * [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) gave a
+ * subscriber's failure one outcome — *logged and dropped* — and dropping is
+ * what makes the one failure a subscriber must not have invisible: a notifier
+ * that has silently stopped notifying looks exactly like a quiet week. This is
+ * the same argument 0016 §4 makes for `GatesResolved`, that a thing you cannot
+ * see is a thing you forget you never had.
+ *
+ * **It is a record and not a retry.** 0015's other rule stands: a subscriber is
+ * for effects that are worthless late, so nothing here is tried again. What the
+ * event buys is that `lingtai doctor` can say a subscriber is failing, which is
+ * the whole of the difference between a broken notifier and a silent one.
+ *
+ * `project` is null for the events that belong to no repository — everything on
+ * the control stream, which is where a pause, a shutdown and a question live.
+ */
+export const PluginFailed = z.object({
+  /** Which subscriber, as the daemon names it: `notify`, `discuss`. */
+  name: z.string(),
+  /** The type it was given. Not the payload: a failure is not a place to copy one. */
+  eventType: z.string(),
+  project: z.string().nullable(),
+  /**
+   * What it did instead of returning — the message, or that it never returned.
+   *
+   * A hang reads as `did not return within …`, because from the boundary's side
+   * a subscriber that never settles and one that rejects are the same failure:
+   * whatever it was going to do, nobody was told.
+   */
+  reason: z.string(),
+});
+
 // -------------------------------------------------------------- registry ----
 
 export const EVENTS = {
@@ -1008,6 +1045,7 @@ export const EVENTS = {
   PromptEdited,
   ProjectConfigured,
   Reconciled,
+  PluginFailed,
 } as const;
 
 export type EventType = keyof typeof EVENTS;
