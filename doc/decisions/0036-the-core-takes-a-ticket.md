@@ -1,4 +1,4 @@
-# 0035 — The core takes a ticket, and where it came from is an adapter's business
+# 0036 — The core takes a ticket, and where it came from is an adapter's business
 
 **Status** accepted · 2026-09-09 · clarifies
 [0016](0016-the-settled-model.md) §1's queue-refresh row; applies
@@ -163,7 +163,7 @@ from the other end.
 
 ### 6. A store is trusted, and is not a plugin
 
-[0036](0036-an-extension-is-a-command.md) makes extensions untrusted processes.
+[0037](0037-an-extension-is-a-command.md) makes extensions untrusted processes.
 **A ticket store is not one of them**, and the reason is not convenience:
 
 > **A store cannot be untrusted, because the core cannot run on data it does not

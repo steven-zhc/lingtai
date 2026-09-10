@@ -1,4 +1,4 @@
-# 0036 — An extension is a command, and the only question is whether the core waits
+# 0037 — An extension is a command, and the only question is whether the core waits
 
 **Status** accepted · 2026-09-09 · supersedes
 [0016](0016-the-settled-model.md) §5's "Plugins are trusted code"; keeps the
@@ -103,7 +103,7 @@ assume otherwise, and it is retired by making the other thing true, not by
 assuming it.
 
 A ticket store is not covered by any of this. See
-[0035](0035-the-core-takes-a-ticket.md) §6.
+[0036](0036-the-core-takes-a-ticket.md) §6.
 
 ### 2. There is no plugin system. An extension is a command
 
@@ -203,7 +203,7 @@ is appended, so `lingtai doctor` and the board can say it, for the same reason
 
 ## Consequences
 
-- **`GateContext` gains the ticket.** `TicketRef` (0035 §3) is *payload*, handed
+- **`GateContext` gains the ticket.** `TicketRef` (0036 §3) is *payload*, handed
   over with the invocation — an extension does not ask for it and does not need
   permission for it. The attempt history is not: it lives in the log, and reading
   the log is a **capability**, which an extension would have to be granted by
