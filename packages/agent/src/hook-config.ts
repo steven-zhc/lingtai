@@ -117,6 +117,46 @@ export function renderSettings(options: RenderOptions): unknown {
   return { hooks };
 }
 
+/**
+ * Settings for an agent that is a *step inside* a run rather than a run.
+ *
+ * **The settings and the environment `writeHookWiring` returns are one thing,
+ * and using half of them fails closed.** The settings say "run the hook on every
+ * prompt"; the environment is where the hook learns which socket to reach and
+ * whose run it belongs to. Hand an agent the first without the second and the
+ * hook refuses its first prompt — correctly, by design — and the agent's entire
+ * output is that refusal.
+ *
+ * That is what happened to the cold reviewer: `run-once.ts` gave the `agent`
+ * gate `wiring.settingsPath` alongside a `GateContext.env` built from
+ * `env.values` alone, so **every review since the gate was configured produced
+ * the hook's refusal instead of findings**, and the gate correctly reported that
+ * it could not read them. Three layers behaved exactly as designed and the thing
+ * measured was never the diff.
+ *
+ * The reviewer gets its own file with no hooks in it, for the reason
+ * `discuss.ts` writes its own: **the hook carries the lifecycle of a run, and a
+ * reviewer is not a run** — it is one gate inside one. Wiring it to the
+ * implementer's socket would put a second agent's tool calls on that run's
+ * stream under the implementer's id; giving it an id of its own would open a
+ * stream nobody reads.
+ *
+ * The object is empty on purpose. It is not a place to restrict tools — the
+ * guard is deleted ([0016](../../../doc/decisions/0016-the-settled-model.md) §6)
+ * and the managed repository's own `.claude/settings.json` is the level that
+ * decides what a run may do. This file exists to say *no hook*, and nothing else.
+ */
+export async function writeUnhookedSettings(
+  runId: string,
+  label: string,
+  home = stateDir(),
+): Promise<string> {
+  const path = join(dirname(settingsPathFor(runId, home)), `${runId}.${label}.settings.json`);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 });
+  return path;
+}
+
 export async function writeHookWiring(options: RenderOptions): Promise<HookWiring> {
   const home = options.home ?? stateDir();
   const settingsPath = settingsPathFor(options.runId, home);
@@ -200,6 +240,17 @@ export class AgentHostFailed extends Data.TaggedError("AgentHostFailed")<{
   readonly operation: string;
   readonly detail: string;
 }> {}
+
+export const writeUnhookedSettingsEffect = (
+  runId: string,
+  label: string,
+  home?: string,
+): Effect.Effect<string, AgentHostFailed> =>
+  Effect.tryPromise({
+    try: () => writeUnhookedSettings(runId, label, home),
+    catch: (err) =>
+      new AgentHostFailed({ operation: "unhooked-settings", detail: (err as Error).message }),
+  });
 
 /** The two above, as `Effect`s. The promise faces stay for callers that are not. */
 export const writeHookWiringEffect = (

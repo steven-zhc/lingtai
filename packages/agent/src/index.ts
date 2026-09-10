@@ -48,6 +48,8 @@ export {
   smokeTestFailClosedEffect,
   socketPathFor,
   writeHookWiring,
+  writeUnhookedSettings,
+  writeUnhookedSettingsEffect,
   writeHookWiringEffect,
   type HookWiring,
   type RenderOptions,

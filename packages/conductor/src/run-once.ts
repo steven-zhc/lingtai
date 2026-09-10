@@ -66,7 +66,7 @@ import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/rec
 import { type Tier, parsePayload } from "@lingtai/domain";
 import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
-import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier } from "@lingtai/agent";
+import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier, writeUnhookedSettingsEffect } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
@@ -744,6 +744,16 @@ export function runOnce(
           const wiring = yield* host
             .wire({ runId, hookBinary: options.hookBinary, home })
             .pipe(failing("hook"));
+          // The cold reviewer's own settings, with no hook in them. `wiring`'s
+          // settings and `wiring.env` are one thing and the `agent` gate had
+          // only the first, so the hook refused the reviewer's opening prompt
+          // and every review returned that refusal instead of findings. See
+          // `writeUnhookedSettings` for why the answer is no hook rather than a
+          // second socket.
+          const reviewSettingsPath = yield* writeUnhookedSettingsEffect(runId, "review", home).pipe(
+            failing("hook"),
+          );
+
           const smoke = yield* host
             .smokeTest(options.hookBinary, runBinary)
             .pipe(failing("hook"));
@@ -1108,7 +1118,11 @@ export function runOnce(
                 body: ticket.body,
               }),
               diff: () => gitForGates(["diff", `${worktree.baseSha}...HEAD`]),
-              settingsPath: wiring.settingsPath,
+              // **Not `wiring.settingsPath`.** That file registers the hook, and
+              // the two variables the hook needs live in `wiring.env`, which a
+              // `GateContext` does not carry — so the reviewer used to be handed
+              // a hook it could not reach and was refused before it read a line.
+              settingsPath: reviewSettingsPath,
               limits: {
                 turns: recipe.runtime.limits.turns,
                 wallMs: parseDuration(recipe.runtime.limits.wall),
