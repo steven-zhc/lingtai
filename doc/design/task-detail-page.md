@@ -155,3 +155,48 @@ renderer is the wrong tool for an untrusted issue body.
 - Section labels are display-scale mono caps with the section's one fact at the
   right of the same rule — which is why there is no separate summary band.
 - The prose measure stays. Documents and logs may break it; paragraphs may not.
+
+## What 2026-09-10 added
+
+Four things, found in one afternoon on this repository's own tickets, each by
+somebody who had to be told where to look. The draft is at
+`claude.ai/code/artifact/4e5641f9-1f6b-49ae-a371-4e33785e357c` — again a
+picture, not the decision. **#132** is the work.
+
+One judgement behind all four:
+
+> **What the page already has must appear at the moment it is needed, rather
+> than waiting to be found.**
+
+**The block ranks: state · reason · move · coordinates.** The reason is new. It
+sits second, and it is **the gate's own evidence, quoted, never paraphrased** —
+the page names who said it and gets out of the way. A summary may sit under the
+quote; it may not stand in for it.
+
+*A gate's name is not a reason.* On `#121` the block said `the review gate
+refused it`, which reads as *a reviewer read this diff and found problems*; the
+reviewer had never started. `the build gate refused it` is worth less than
+`pnpm typecheck && pnpm test exited 1 after 117.0s`, for every gate, every time.
+
+**This is not a stylesheet change.** `run-once.ts`'s `diagnosis` carries
+`raw: null` with a comment saying the verdicts are on the task's own page with
+their evidence — true, three ranks down and behind a disclosure. The block does
+not have the words to quote, so it says the only thing it has.
+
+**A running attempt is a different object from a finished one.** It opens on
+load and its run log opens with it, following. Only the running one: `#110`'s
+reason for closing them — *a page with six attempts would otherwise follow six
+files nobody asked to see* — is right and survives.
+
+**The discussion answers as it writes.** `discussion.tsx` awaits one value
+behind a `busy` flag, so the whole reply appears when the agent exits. That is
+the defect [0034](../decisions/0034-the-run-log.md) opens with, solved for runs
+and not for discussions — and a discussion is where silence costs most, because
+[0033](../decisions/0033-the-third-kind-of-agent.md) §4 makes *the person the
+loop*. A loop with no feedback is one where sixty seconds of thinking is
+indistinguishable from death, and the answer is to ask again and pay twice.
+
+**The pair gets one fixed height and each pane scrolls inside it.** Not
+alignment: the moves sit under both, so a pane that grows with its content
+pushes the button you are deciding with off the screen — a long conversation
+costing you the decision it was meant to inform.
