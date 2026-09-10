@@ -22,6 +22,14 @@ Three kinds of thing live here, and the distinction matters.
 | [`decisions/`](decisions/) | One decision per file, with its context and its consequences. **Append-only in spirit** — a decision that turns out wrong gets a new file that supersedes it, not an edit. |
 | [`experiments/`](experiments/) | Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument. |
 
+**These files have a second reader.** `apps/site` renders them — it reads
+this directory at build time and publishes it, rewriting the links rather
+than the files ([0035](decisions/0035-the-site-is-a-projection.md)). A
+document rewritten to suit the site would be the fork that decision exists to
+refuse; a document that reads badly on the site is a fault in the document.
+What is published is the list in `apps/site/src/lib/docs.ts`, and everything
+here that is not on it is named on the site rather than dropped.
+
 ## The packages were renamed
 
 [0022](decisions/0022-the-seams.md) renamed four packages and split one, on
@@ -88,6 +96,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0034](decisions/0034-the-run-log.md) | **A run leaves a log you can watch, and it is a trace, not a record** | accepted |
 | [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
 | [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
+| [0035](decisions/0035-the-site-is-a-projection.md) | **The site is a projection of this repository, and its hero is the real board** | accepted |
 
 ## Experiments
 
