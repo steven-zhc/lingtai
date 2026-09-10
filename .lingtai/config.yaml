@@ -90,6 +90,67 @@ gates:
       run: pnpm typecheck && pnpm test
       timeout: 20m
 
+    # The cold reviewer, on from 2026-09-09. It is second deliberately: the
+    # first refusal wins and the rest do not run, so a diff that does not
+    # compile is never paid to be reviewed.
+    #
+    # **This closes the gap `merge: []` opened and named.** That comment says
+    # what is now the only thing between an agent and `main` is `proposed` —
+    # "it is not a person reading a diff". It still is not. It is a reviewer
+    # that did not write the change and does not know what anyone concluded,
+    # which [experiment 001](../doc/experiments/001-cold-review-issue-58.md)
+    # measured against four defects that had already survived self-review, CI
+    # and a full human read: it found all four in one finding, plus two nobody
+    # had found.
+    #
+    # The rubric, the checklist and the JSON contract are fixed in
+    # `agent-gate.ts` and cannot be removed from here — this text is appended.
+    # What belongs here is only what *this* repository keeps getting wrong.
+    - name: review
+      agent: |
+        This is an event-sourced scheduler that schedules its own development.
+        Six shapes have produced real defects here. Look for them as well as the
+        checklist above.
+
+        1. **A comment that was true when it was written and is false now.**
+           This repository's signature defect: it appeared six times in a single
+           session. A lease duration that no longer exists; a `reconcile`
+           described as running only at startup; a justification resting on
+           "every merge already waits for a person" written after merges stopped
+           waiting. Ask of every comment, doc line and ADR sentence near a
+           behavioural change: does it still describe what the code now does?
+           A stale claim is a finding, and its failure scenario is the next
+           reader who believes it and acts on it.
+
+        2. **A check that is present, reported, and not looking at the thing you
+           think it is.** `#58`: the `merge` point renders as resolved and
+           executes nothing. `#89`: `runtime.limits.turns` was declared in the
+           recipe, carried through three layers, and handed to no runtime. Ask
+           of any check the diff adds or touches: what exact input does it read,
+           and is that input the thing its name claims? A check that cannot fail
+           is worse than no check, because it is believed.
+
+        3. **A guarantee that holds only because the single implementation is
+           careful.** `work-loop.ts` invokes a subscriber with no `.catch` and
+           depends on that subscriber never rethrowing. Ask whether the
+           invariant would survive a second implementation written by somebody
+           who had not read the first.
+
+        4. **A projection that is not a pure fold.** A reducer may read the
+           event and nothing else — no clock, no network, no environment.
+           Anything time-dependent makes `lingtai projection rebuild` disagree
+           with the live fold, and the two disagreeing silently is the failure.
+
+        5. **A required field added to a shared type, with a hand-written
+           literal missed.** `#89`'s first attempt added a field to
+           `RuntimeCapabilities` and missed a literal in a package the change
+           never opened. For every widened type: where else is this constructed
+           by hand?
+
+        6. **A name Lingtai reads for itself without the `LINGTAI_` prefix**
+           (`#63`) — or a project's own variable wrongly given one. A project's
+           file keeps its own names.
+
   # Nothing holds here any more, and this is the moment the previous version of
   # this comment named: "when being asked every time becomes the annoyance
   # rather than the point". On 2026-09-08 seven changes landed and every one was
@@ -146,9 +207,13 @@ runtime:
   # files nobody read together, and this is the repository that has to be able
   # to read its own policy without opening its own source.
   #
-  # Every value is the default. This repository's gate is
-  # `pnpm typecheck && pnpm test`, whose failures are short and specific, so
-  # 2000 characters is a whole failure rather than a fragment of one.
+  # Every value is the default. `evidence` was sized for a gate that was only
+  # `pnpm typecheck && pnpm test` — failures short and specific, so 2000
+  # characters is a whole one rather than a fragment. **Since the cold reviewer
+  # went on at `proposed` (2026-09-09) two of these bind that did not before:**
+  # `findings` is how many of a review's findings the next attempt is told about
+  # — five, against a reviewer told to report only what it can write a failure
+  # scenario for — and `diff` is what that reviewer is shown before truncation.
   budget:
     evidence: 2000
     attempts: 5
