@@ -227,6 +227,23 @@ export function attemptOutcome(
         break;
       }
 
+      /**
+       * The point was reached, its agent never started, and it is **not**
+       * evidence for the next attempt (#133).
+       *
+       * Cleared from `unfinished` because the gate did end — leaving it there
+       * would tell the next agent that a review *died inside* this diff, which
+       * is a fact about the diff that nobody established. And no `evidence`,
+       * because a quota has nothing to say to an agent about the code: the
+       * attempt is being tried again for the same reason a run that never
+       * started is, and the failure block for it is empty on purpose.
+       */
+      case "GateNeverRan": {
+        const d = event.data as PayloadOf<"GateNeverRan">;
+        unfinished.delete(`${d.gate}:${d.action}`);
+        break;
+      }
+
       case "GateFailed": {
         const d = event.data as PayloadOf<"GateFailed">;
         const what = `${d.gate}:${d.action}`;

@@ -181,6 +181,48 @@ describe("the pipeline", () => {
     expect(events.at(-1)?.type).toBe("GateFailed");
   });
 
+  /**
+   * **A gate that never ran stops the pipeline and refuses nothing** (`#133`).
+   *
+   * Stopping looks like the line above and means something else. The gates
+   * after this one would ask the same account the same question and meet the
+   * same wall, so continuing is pointless — but nothing here judged the diff,
+   * so no verdict may be appended about it. `GateNeverRan` is what is on the
+   * log instead, and `neverRanAt` is how `run-once.ts` tells this ending from a
+   * refusal without reading a sentence.
+   */
+  it("appends no verdict for a gate whose agent never started, and stops", async () => {
+    const { events, emit } = collector();
+    const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)";
+    const result = await runGatePipeline({
+      point: "proposed",
+      gates: [
+        processGate({ name: "build", run: "exit 0" }),
+        {
+          name: "review",
+          kind: "agent" as const,
+          run: async () => ({ verdict: "never-ran" as const, evidence: said, findings: [] }),
+        },
+        processGate({ name: "test", run: "exit 0" }),
+      ],
+      context,
+      emit,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failedAt).toBeNull();
+    expect(result.heldAt).toBeNull();
+    expect(result.neverRanAt).toEqual({ gate: "review", detail: said });
+    expect(result.skipped).toEqual(["test"]);
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("GateNeverRan");
+    expect(types).not.toContain("GateFailed");
+    // And the build's own verdict is untouched: one gate did judge the diff.
+    expect(types.filter((t) => t === "GatePassed")).toHaveLength(1);
+    expect(events.at(-1)?.data).toMatchObject({ gate: "proposed", action: "review", onSha: "sha-a" });
+  });
+
   it("turns a gate that throws into a failure rather than an escaped exception", async () => {
     const { emit } = collector();
     const result = await runGatePipeline({

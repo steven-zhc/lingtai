@@ -132,6 +132,37 @@ describe("reduceRun", () => {
   });
 
   /**
+   * **The verdict that is not one** (`#133`).
+   *
+   * A gate whose agent never started judged nothing, and the fold has to say
+   * that rather than the two things it is not. `failed` puts a refusal of this
+   * diff on the record where none was made — which is what happened — and
+   * leaving it at `running`, which is what no third event at all would mean,
+   * says a review is still going on hours after the run ended.
+   */
+  it("keeps a gate whose agent never started apart from one that refused", () => {
+    const e = makeStream("run-01JX");
+    const s = reduceRun([
+      e("RunStarted", started),
+      e("RunProposedCompletion", { headSha: "sha-a" }),
+      e("GateStarted", { gate: "proposed", action: "review", runId: "run-01JX", onSha: "sha-a" }),
+      e("GateNeverRan", {
+        gate: "proposed",
+        action: "review",
+        runId: "run-01JX",
+        onSha: "sha-a",
+        detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
+      }),
+    ]);
+
+    expect(s.gates["proposed:review"]!.verdict).toBe("never-ran");
+    expect(s.gates["proposed:review"]!.findings).toEqual([]);
+    // The runtime's own words survive as what they are: evidence that the agent
+    // never started, never evidence about the diff.
+    expect(s.gates["proposed:review"]!.evidence).toContain("session limit");
+  });
+
+  /**
    * The reason `onSha` is on every gate event. In the old system approval was a
    * label, and a label survives any amount of rewriting — so a force-push
    * inherited its own approval. Here a new head simply has no verdicts.

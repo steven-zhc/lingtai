@@ -88,6 +88,9 @@ const POINT_TONE: Record<string, string> = {
   failed: "fail",
   running: "run",
   waived: "hold",
+  // The held colour and never the red one: nothing refused this diff, the
+  // agent that would have judged it never started (#133).
+  "never-ran": "hold",
   pending: "",
   skipped: "skip",
 };

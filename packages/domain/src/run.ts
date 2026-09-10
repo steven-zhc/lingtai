@@ -18,7 +18,14 @@
 import type { Envelope } from "./envelope.ts";
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId } from "./events.ts";
 
-export type GateVerdict = "requested" | "running" | "passed" | "failed" | "waived";
+/**
+ * `never-ran` is not a verdict about the diff, and is here because the absence
+ * of one has to be readable ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * §1, one layer up). The gate's agent never started — a quota, a signed-out
+ * runtime — so nothing was judged. Folding it into `failed` is what `#133` is
+ * about; folding it into `passed` would be worse.
+ */
+export type GateVerdict = "requested" | "running" | "passed" | "failed" | "never-ran" | "waived";
 
 export interface GateFinding {
   file: string;
@@ -290,6 +297,26 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           onSha: d.onSha,
           evidence: d.evidence,
           findings: d.findings,
+          by: null,
+          reason: null,
+        }),
+      };
+    }
+
+    case "GateNeverRan": {
+      const d = event.data as PayloadOf<"GateNeverRan">;
+      return {
+        ...state,
+        ...at,
+        gates: withGate(state, {
+          gate: `${d.gate}:${d.action}`,
+          verdict: "never-ran",
+          onSha: d.onSha,
+          // The runtime's own sentence: evidence that the agent never started,
+          // and never evidence about the diff. There are no findings for the
+          // same reason there is no verdict.
+          evidence: d.detail,
+          findings: [],
           by: null,
           reason: null,
         }),

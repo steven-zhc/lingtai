@@ -32,8 +32,20 @@ import type { GatePoint, PayloadOf } from "@lingtai/domain";
  * the same way: nothing is wrong, and nothing may proceed until a person says
  * so. Folding that into `failed` would put "the build is broken" on a card
  * whose build is fine, and folding it into `passed` would merge it.
+ *
+ * **`never-ran` is a fourth outcome, and it is not a verdict at all.**
+ *
+ * An `agent` action whose agent never started — a quota, a signed-out runtime —
+ * has judged nothing ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * §1, one layer up). It cannot pass, because a green gate for a diff nobody
+ * assessed is the thing `agent-gate.ts` already refuses to emit; and it must
+ * not fail, because a failure is a sentence about *this diff* produced by a
+ * condition that has nothing to do with any diff (`#133`).
+ *
+ * What it means for the run is `run-once.ts`'s: the conductor stands down and
+ * the item goes back to the queue, exactly as 0031 §3 decided for a run.
  */
-export type GateVerdict = "passed" | "failed" | "needs-approval";
+export type GateVerdict = "passed" | "failed" | "needs-approval" | "never-ran";
 
 export interface GateFinding {
   file: string;
@@ -89,6 +101,10 @@ export type GateEvent =
   | { type: "GateStarted"; data: PayloadOf<"GateStarted"> }
   | { type: "GatePassed"; data: PayloadOf<"GatePassed"> }
   | { type: "GateFailed"; data: PayloadOf<"GateFailed"> }
+  /** The point was reached and produced no verdict, because its agent never
+   *  started. Appended so that a gate which did not judge is readable as that
+   *  rather than as one still running. */
+  | { type: "GateNeverRan"; data: PayloadOf<"GateNeverRan"> }
   /** The same event `--no-merge` emits. One vocabulary for one idea. */
   | { type: "ApprovalRequested"; data: PayloadOf<"ApprovalRequested"> };
 
@@ -99,6 +115,16 @@ export interface PipelineResult {
   failedAt: string | null;
   /** The gate waiting on a person, when one is. */
   heldAt: string | null;
+  /**
+   * The gate whose agent never started, when one did not — with the runtime's
+   * own words, because they are the only evidence there is and 0031 §4 reads a
+   * reset time back out of them.
+   *
+   * Null on every ordinary pipeline, including a failing one: this is the
+   * ending that is about the account rather than about the diff, and the caller
+   * has to be able to tell them apart without reading a sentence.
+   */
+  neverRanAt: { gate: string; detail: string } | null;
   results: { gate: string; verdict: GateVerdict; evidence: string }[];
   /** Gates never reached because an earlier one failed or is waiting. */
   skipped: string[];
@@ -157,6 +183,24 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
       continue;
     }
 
+    if (result.verdict === "never-ran") {
+      // No verdict event, because there is no verdict: what is appended says
+      // the point was reached and its agent never started. The pipeline stops
+      // for the reason a refusal stops it and one it does not have — the gates
+      // after this one would ask the same account the same question and meet
+      // the same wall, which is 0031 §3 with a queue's worth of items replaced
+      // by a recipe's worth of gates.
+      await emit({ type: "GateNeverRan", data: { ...base, detail: result.evidence } });
+      return {
+        ok: false,
+        failedAt: null,
+        heldAt: null,
+        neverRanAt: { gate: gate.name, detail: result.evidence },
+        results,
+        skipped: gates.slice(index + 1).map((g) => g.name),
+      };
+    }
+
     if (result.verdict === "needs-approval") {
       // Stops for the same reason a failure does — the gates after this one are
       // about a diff that is not going anywhere yet — but it is not a failure,
@@ -169,6 +213,7 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
         ok: false,
         failedAt: null,
         heldAt: gate.name,
+        neverRanAt: null,
         results,
         skipped: gates.slice(index + 1).map((g) => g.name),
       };
@@ -182,10 +227,11 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
       ok: false,
       failedAt: gate.name,
       heldAt: null,
+      neverRanAt: null,
       results,
       skipped: gates.slice(index + 1).map((g) => g.name),
     };
   }
 
-  return { ok: true, failedAt: null, heldAt: null, results, skipped: [] };
+  return { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results, skipped: [] };
 }

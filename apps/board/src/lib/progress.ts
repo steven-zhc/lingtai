@@ -33,7 +33,17 @@ import type { GatePlan } from "@lingtai/conductor/filter";
  * configured and did not run is Lingtai's bug. Only showing all five keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  */
-export type PointState = "skipped" | "pending" | "running" | "passed" | "failed" | "waived";
+export type PointState =
+  | "skipped"
+  | "pending"
+  | "running"
+  | "passed"
+  | "failed"
+  /** The point was reached and its agent never started, so it judged nothing
+   *  (#133). Not `failed` — a refusal is a sentence about the diff — and not
+   *  `running`, which is what a point with no verdict line used to read as. */
+  | "never-ran"
+  | "waived";
 
 export interface PointProgress {
   point: GatePoint;
@@ -111,6 +121,10 @@ function budgetOf(plan: GatePlan, data: Record<string, unknown>): number | null 
 function stateOf(planned: readonly string[], seen: readonly PointState[]): PointState {
   if (planned.length === 0 && seen.length === 0) return "skipped";
   if (seen.includes("failed")) return "failed";
+  // Above `running` for the reason `failed` is: it is the ending, and the point
+  // has no later action to reach — the pipeline stopped. Below `failed` because
+  // a refusal that did happen outranks a verdict that never did.
+  if (seen.includes("never-ran")) return "never-ran";
   if (seen.includes("running")) return "running";
   const settled = seen.filter((s) => s === "passed" || s === "waived");
   // Fewer verdicts than actions means the point is part-way through, which is
@@ -194,6 +208,10 @@ export function foldProgress(
 
       case "GateFailed":
         close(data, "failed");
+        break;
+
+      case "GateNeverRan":
+        close(data, "never-ran");
         break;
 
       case "GateWaived":

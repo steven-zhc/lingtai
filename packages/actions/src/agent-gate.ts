@@ -273,6 +273,37 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
       });
 
       if (outcome.failure) {
+        /**
+         * A reviewer that never started has not reviewed anything, and saying
+         * so is not the same as refusing the diff.
+         *
+         * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1
+         * was written for runs, because when it landed the only agent in a pass
+         * was the implementer — the `agent` gate existed and had never once run
+         * (`d4fbd1a`). The second agent in a pass became reachable and met a
+         * quota wall in its first afternoon, and the gate turned it into a
+         * failed verdict: a sentence about this diff, produced by a condition
+         * that has nothing to do with any diff (`#133`).
+         *
+         * **The classification is the adapter's, not read again here.** `kind`
+         * is `neverStarted`'s three checkable facts — zero turns, zero cost,
+         * `is_error` — and 0031 §1's whole point is that no reading of the
+         * message may decide this. Re-deriving it from `outcome.turns` and
+         * `outcome.costUsd` at this seam would give the classification a second
+         * home, and the second home is where the two would drift: a receipt
+         * that would not parse leaves turns at zero out of ignorance, which is
+         * a crash and must stay one.
+         */
+        if (outcome.failure.kind === "never-started") {
+          return {
+            verdict: "never-ran",
+            // The runtime's own words, whole. `run-once.ts` reads a reset time
+            // out of them (0031 §4) and the board shows them as what they are:
+            // evidence about the account, never about the diff.
+            evidence: outcome.failure.detail,
+            findings: [],
+          };
+        }
         return {
           verdict: "failed",
           evidence: `the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,

@@ -56,6 +56,13 @@
  * and it is deliberate: per-item backoff answering an account-wide condition is
  * what eighty events in ninety-two seconds looked like.
  *
+ * **Two endings, since `#133`: the agent in a gate meets the same wall.** 0031
+ * was written when the only agent in a pass was the implementer, so a quota met
+ * by a reviewer arrived as a failed verdict — a sentence about the diff,
+ * produced by a condition that has nothing to do with any diff. A pipeline that
+ * reports `neverRanAt` stands the conductor down and releases the item exactly
+ * as a run that never started does, and writes no verdict about the diff.
+ *
  * **The refusals come first, deliberately.** Everything up to the claim
  * acquires nothing, so a run that stops at an unreadable recipe or a missing
  * environment value has provisioned no worktree to release — the lesson 0024
@@ -1222,6 +1229,7 @@ export function runOnce(
             ok: true,
             failedAt: null,
             heldAt: null,
+            neverRanAt: null,
             results: [],
             skipped: [],
           };
@@ -1256,6 +1264,43 @@ export function runOnce(
       // And the worktree has done its job: the scope above closed and took it
       // down. Everything below runs without one.
       const { headSha, pipeline, atMerge } = decided;
+
+      /**
+       * The one gate ending that is about the account and not about the diff.
+       *
+       * 0031 §3, one layer up, and `#133`. A gate's agent that never started met
+       * something account-wide — the same quota, the same wall, the same
+       * sentence — so the answer is the one 0031 already decided for a run: the
+       * conductor stands down, and the item is *released* rather than blocked,
+       * keeping its place and coming back on its own when the limit lifts.
+       * Nobody requeues anything. A repair hands over instead of returning,
+       * because `release` is where that rule lives (#84) and a spent repair must
+       * not go back to the queue as an ordinary attempt.
+       *
+       * **Either point, and before the hold below — that is the whole
+       * placement.** `merge` runs an `agent` action as readily as `proposed`
+       * does, and it is the hold that would otherwise write *the review gate
+       * refused it* on the card: a verdict about a diff nothing ever read, which
+       * under `--no-merge` is asked of a person as well. There is no question
+       * for anybody here, because nothing was judged.
+       *
+       * The branch is already pushed, so the work is not thrown away — pushing
+       * is not merging, and the merge lane below is not reached.
+       */
+      const neverRan = pipeline.neverRanAt ?? atMerge.neverRanAt;
+      if (neverRan) {
+        runLog.note("gate", `${neverRan.gate} never ran — ${neverRan.detail}`);
+        yield* standDownConductor(neverRan.detail);
+        return yield* new Stopped({
+          stage: "gate",
+          detail: `the ${neverRan.gate} gate's agent never started: ${neverRan.detail}`,
+          // Not `the ${gate} gate refused it`, and not `nothing was spent`
+          // either — the implementer ran and was paid for it, and the run's own
+          // cost is on `RunFinished`. What this card says is the thing that is
+          // true of the diff: nobody judged it.
+          release: `the ${neverRan.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(neverRan.detail)}`,
+        });
+      }
 
       // ---- 12. hold, if anything asked for a person -------------------------
       // Three things can ask: a gate at `proposed` whose verdict is

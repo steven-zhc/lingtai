@@ -245,6 +245,32 @@ describe("the gate", () => {
     expect(result.evidence).toContain("timeout");
   });
 
+  /**
+   * **A quota is not a verdict**, and this is where the two stopped being told
+   * apart (`#133`).
+   *
+   * The line above asserts the ordinary case: the reviewer ran and did not
+   * finish, so the gate refuses. This is the case that looks identical and is
+   * not — the reviewer never started, so there is nothing it could have refused.
+   * `never-started` is 0031 §1's three checkable facts, decided by the adapter
+   * and taken here rather than re-derived, and `never-ran` is what the pipeline
+   * turns into a conductor standing down instead of a card saying a review gate
+   * refused this diff.
+   */
+  it("says a reviewer that never started judged nothing, rather than refusing", async () => {
+    const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)";
+    const result = await gateWith(
+      outcome({ turns: 0, costUsd: 0, exitCode: 1, failure: { kind: "never-started", detail: said } }),
+    ).run(context);
+
+    expect(result.verdict).toBe("never-ran");
+    // The runtime's own words, whole and unwrapped: `run-once.ts` reads a reset
+    // time out of them, and a prefix like "the reviewer did not finish" would
+    // read as a sentence about the diff.
+    expect(result.evidence).toBe(said);
+    expect(result.findings).toEqual([]);
+  });
+
   it("does not spend an agent call on an empty diff", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
     const gate = createAgentGate(

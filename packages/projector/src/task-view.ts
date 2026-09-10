@@ -414,6 +414,7 @@ export const taskViewProjection: Projection = {
 
         case "GatePassed":
         case "GateFailed":
+        case "GateNeverRan":
         case "GateWaived":
         case "ApprovalRequested":
         case "ApprovalGranted":
@@ -490,7 +491,7 @@ export const taskViewProjection: Projection = {
 /**
  * What a card counts a gate event as.
  *
- * Six events, five verdicts, and the distinctions are the point. `waived` and
+ * Seven events, six verdicts, and the distinctions are the point. `waived` and
  * `approved` used to both be `passed`, which made a person overriding a red
  * build indistinguishable from a green one — the distinction a waiver records
  * who and why for (#78). A machine ran it and it went green, a machine ran it
@@ -499,6 +500,10 @@ export const taskViewProjection: Projection = {
 const VERDICT: Record<string, string> = {
   GatePassed: "passed",
   GateFailed: "failed",
+  // Neither, and that is the point: the gate's agent never started, so nothing
+  // about this diff was judged (#133). Counted as neither passed nor failed, so
+  // a card does not wear the red stripe for a review that never happened.
+  GateNeverRan: "never-ran",
   GateWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "approved",

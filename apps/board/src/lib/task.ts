@@ -745,6 +745,9 @@ const VERDICT: Record<string, string> = {
   GateStarted: "running",
   GatePassed: "passed",
   GateFailed: "failed",
+  /** No verdict, because the agent never started (#133) — not a refusal, and
+   *  not a gate still running, which is what the absence of a line said. */
+  GateNeverRan: "never-ran",
   GateWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "passed",

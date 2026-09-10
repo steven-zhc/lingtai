@@ -458,6 +458,32 @@ export const GateFailed = z.object({
   ),
 });
 
+/**
+ * The gate's agent never started, so the point produced no verdict about the
+ * diff — [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1,
+ * one layer up.
+ *
+ * `RunFailed.kind = "never-started"` says this about a run; this says it about
+ * the agent inside a gate, and the two are the same finding at two depths. A
+ * quota is met by whichever agent asks next, and the second agent in a pass is
+ * a reviewer: the build passed, the reviewer never ran, and what the log said
+ * was that a review gate refused the diff (`#133`).
+ *
+ * **It is not `GateFailed` and must never be folded into one.** A failure is a
+ * sentence about this diff and this is a sentence about the account — the
+ * distinction the whole ticket turns on. Nor is it `GatePassed`: a green gate
+ * for a diff nobody assessed is the other way to be wrong.
+ *
+ * `detail` is the runtime's own words, kept whole for the reason
+ * `RunFailed.detail` is: it is the evidence the classification refused to read,
+ * and 0031 §4 reads a reset time back out of it.
+ *
+ * Version 1, and it stays there. The nine types that carry a `GatePoint` are at
+ * 2 because ADR 0018 renamed `diff` to `proposed`; nothing ever wrote one of
+ * these with the old name, so there is nothing to upcast.
+ */
+export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
+
 /** Humans need an escape hatch. It is recorded, never silent. */
 export const GateWaived = z.object({ ...gateBase, by: z.string(), reason: z.string() });
 
@@ -1020,6 +1046,7 @@ export const EVENTS = {
   GateStarted,
   GatePassed,
   GateFailed,
+  GateNeverRan,
   GateWaived,
   ApprovalRequested,
   ApprovalGranted,
