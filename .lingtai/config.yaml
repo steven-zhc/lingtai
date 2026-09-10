@@ -186,6 +186,53 @@ gates:
       when: landed
       close: true
 
+# Who is told what happened, and never waited for
+# ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §3).
+#
+# **This block is the first thing to cross the extension boundary, and it is
+# deliberately Lingtai's own notification rather than somebody else's.** A
+# first-party extension on a privileged path proves nothing — VS Code shipped
+# its own extensions on a special path early and pulled them back onto the
+# extension host later, because first-party code writes infinite loops too. So
+# `desktop` is started by exactly the code that will start `npx
+# @lingtai/telegram`, gets the same JSON on stdin and has its failures recorded
+# the same way; it needs no credentials, which is what makes it the right first
+# crossing rather than merely the easy one (#123).
+#
+# The four types are the ones `DEFAULT_SUBSCRIPTIONS` used to hold in
+# `packages/daemon/src/notify.ts` for every project ever registered. All four
+# mean the same thing — **nothing moves until a person does something** — and
+# anything the conductor gets to on its own is left out on purpose: a landed
+# task is good news that needed nobody, and a notification you cannot act on is
+# how the ones you can act on stop being read.
+#
+# **`on:` is now the whole of the subscription, and it is this repository's.**
+# A subscriber declared here hears about `lingtai` and no other project, which
+# is what makes a repository with no `subscribers:` genuinely quiet rather than
+# quietly served by somebody else's notifier.
+#
+# `run:` is resolved against the directory the conductor was started in, which
+# for this repository is its own checkout. It is that file and not a `lingtai`
+# subcommand because a subscriber's environment holds no `LINGTAI_*` name, and
+# the CLI's entry point demands `LINGTAI_DATABASE_URL` at import —
+# `event-store`'s `db.ts` builds a pool at module scope — so the subcommand
+# would have died on the boundary this block exists to cross.
+#
+# `env: []` is written out rather than left to the default, for the reason the
+# `proposed` gate's is: a `run:` line's declared names are every credential its
+# process gets (0037 §1), and a notification needs none. Install
+# `terminal-notifier` if you want one to open its card when you click it —
+# `osascript` cannot, and writes the link into the message instead.
+#
+# A daemon started before this line landed is not running it: Node caches a
+# module at import and the subscriber list is read once, at startup, so this
+# reaches a restart and nothing sooner.
+subscribers:
+  - name: desktop
+    on: [ApprovalRequested, IntegrationRefused, RunAwaitingInput, WorkItemBlocked]
+    run: node apps/cli/src/notify.ts
+    env: []
+
 # A failure of this repository's buys one agent to fix it, and Lingtai's own
 # never do ([0025](../doc/decisions/0025-a-failure-buys-one-agent.md)).
 #

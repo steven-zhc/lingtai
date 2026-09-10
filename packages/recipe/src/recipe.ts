@@ -399,13 +399,19 @@ export const Recipe = z.object({
    *
    * Here rather than in the daemon because **which events are worth telling
    * somebody about is a fact about a channel, not about Lingtai.**
-   * `DEFAULT_SUBSCRIPTIONS` in `packages/daemon/src/notify.ts` is four types,
+   * `DEFAULT_SUBSCRIPTIONS` was four types in `packages/daemon/src/notify.ts`,
    * the same for every project, changeable only by editing the daemon — and it
-   * is four *because it is a desktop notification*, which interrupts. A landed
-   * task is not worth interrupting for and is worth a Telegram message, and
-   * only a per-channel list can say both. That is 0016 §7's argument again: the
-   * repository knows which of its outcomes it wants to hear about and the core
-   * cannot see it.
+   * was four *because it was a desktop notification*, which interrupts. A
+   * landed task is not worth interrupting for and is worth a Telegram message,
+   * and only a per-channel list can say both. That is 0016 §7's argument again:
+   * the repository knows which of its outcomes it wants to hear about and the
+   * core cannot see it.
+   *
+   * It is gone since `#123`, and this is the whole of what replaced it: the
+   * desktop notification is `node apps/cli/src/notify.ts` under Lingtai's own
+   * `subscribers:`, started by the code that will start `npx
+   * @lingtai/telegram`. There is no list in the daemon to fall back to, which
+   * is what makes the paragraph below true rather than decorative.
    *
    * Defaulted to empty rather than optional, like `gates`: a project that
    * declares no subscriber has *declared none*, which is a thing that can be

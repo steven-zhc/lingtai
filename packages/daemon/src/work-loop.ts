@@ -52,16 +52,23 @@
  * ## The subscriber boundary
  *
  * Every subscriber invocation goes through `deliver`, and that is a boundary
- * rather than a convenience. `notify` used to be called as a bare `void`, so a
- * rejected promise from it was an unhandled rejection **in the process that
- * follows the log** — which is the one process that must survive anything a
- * subscriber does, because it is also the projection follower and the board's
- * only source of current. It did not bite: the one notifier there has ever been
- * catches everything itself. But that is a guarantee held by the callee, and a
- * guarantee held by the callee is one every future subscriber has to re-honour
+ * rather than a convenience. The one subscriber there was — the notifier the
+ * daemon built by name — used to be called as a bare `void`, so a rejected
+ * promise from it was an unhandled rejection **in the process that follows the
+ * log** — which is the one process that must survive anything a subscriber
+ * does, because it is also the projection follower and the board's only source
+ * of current. It did not bite: that notifier caught everything itself. But that
+ * is a guarantee held by the callee, and a guarantee held by the callee is one
+ * every future subscriber has to re-honour
  * ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) puts
  * third-party code in this path on purpose). `discuss`, two lines below it,
  * already had the `.catch`.
+ *
+ * That future arrived with `#123`: a subscriber is another process now, started
+ * from a `run:` line in somebody's recipe, and the only thing this file knows
+ * about one is its name and whether its promise settled. The `.catch` is no
+ * longer what stands between a bad notifier and the log's follower — the
+ * process boundary is — and this is what holds until it answers.
  *
  * So the boundary holds three failures and not one: a throw before the promise
  * exists, a rejection after it, and a subscriber that never settles at all.
@@ -126,6 +133,21 @@ export const SWEEP_MS = 5 * 60_000;
  */
 export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * One thing that is told what happened and is never waited for.
+ *
+ * Structural rather than nominal on purpose: this package builds none of these
+ * and knows nothing about how one is delivered. `@lingtai/actions` makes them
+ * out of a recipe's `subscribers:` block, the CLI hands them over, and what
+ * arrives here is a name and a promise — which is exactly as much as a boundary
+ * needs in order to hold something it does not trust.
+ */
+export interface EventSubscriber {
+  /** As the recipe named it. It is what `PluginFailed` records. */
+  readonly name: string;
+  deliver(event: Envelope): Promise<void>;
+}
+
 export interface WorkLoopOptions {
   /**
    * One pass: refresh the queue, take what is runnable, run it.
@@ -162,16 +184,28 @@ export interface WorkLoopOptions {
    */
   onShutdown?: (why: string) => void;
   /**
-   * Told about every appended event, subscribed or not — it decides.
+   * Everything declared under `subscribers:` in a project's recipe, already
+   * built. Each is told about every appended event — it decides.
    *
-   * On the loop's existing subscription rather than a second one: a notifier
-   * with its own connection would be another session-mode connection held open
-   * for the life of the daemon, for something that is already being read.
+   * A list rather than the single `notify` callback it replaced, and the plural
+   * is the whole of `#123`: there was one implementation, chosen by name in the
+   * daemon's startup, and no way to declare a second
+   * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3). The
+   * daemon now builds whatever the recipes declared and names none of them.
    *
-   * Its failures are held by `deliver`, not by it. See the note on the
+   * **Each carries its own name**, because `PluginFailed` records it and
+   * `lingtai doctor` reads it back: with one subscriber "notify" was enough to
+   * identify it, and with two a failure that does not say which is a failure
+   * nobody can act on.
+   *
+   * On the loop's existing subscription rather than one each: a subscriber with
+   * its own connection would be another session-mode connection held open for
+   * the life of the daemon, for events it is being handed anyway.
+   *
+   * Their failures are held by `deliver`, not by them. See the note on the
    * subscriber boundary at the top of this file.
    */
-  notify?: (event: Envelope) => Promise<void>;
+  subscribers?: readonly EventSubscriber[];
   /**
    * Somebody asked the discussion assistant a question. Answer it.
    *
@@ -182,14 +216,14 @@ export interface WorkLoopOptions {
    * single-flight either — it takes no claim, provisions nothing and appends
    * only to its own stream (0033 §1).
    *
-   * It is on this subscription rather than a second one for the reason `notify`
-   * is: the daemon already reads every append, and a second session-mode
-   * connection for events it is being handed anyway is a connection held open
-   * for nothing.
+   * It is on this subscription rather than a second one for the reason
+   * `subscribers` are: the daemon already reads every append, and a second
+   * session-mode connection for events it is being handed anyway is a
+   * connection held open for nothing.
    *
    * Anything that escaped here would reach the subscription's handler and stop
    * the loop over a question — which is why nothing does: `deliver` holds it,
-   * and holds it identically to `notify`'s.
+   * and holds it identically to a declared subscriber's.
    */
   discuss?: (event: Envelope) => Promise<void>;
   /**
@@ -259,6 +293,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
   // ------------------------------------------------ the subscriber boundary --
 
   const store = options.store ?? eventStore;
+  const subscribers = options.subscribers ?? [];
   const subscriberTimeoutMs = options.subscriberTimeoutMs ?? SUBSCRIBER_TIMEOUT_MS;
 
   /**
@@ -275,9 +310,9 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
   /**
    * Appends serially, whatever order the failures arrive in.
    *
-   * Two `deliver` calls can fail within the same tick — `notify` and `discuss`
-   * are handed the same event — and both would otherwise read the same version
-   * and race each other for it.
+   * Two `deliver` calls can fail within the same tick — every subscriber and
+   * `discuss` are handed the same event — and each would otherwise read the
+   * same version and race the others for it.
    */
   let recording: Promise<void> = Promise.resolve();
 
@@ -449,11 +484,11 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // for are mostly *not* the ones that wake the conductor. A task being
           // blocked is both; a run asking a question is only the first.
           //
-          // Through `deliver`, both of them, and never called directly. That is
-          // the boundary this file's header is about: what a subscriber does
-          // with an event is its own business, and what it does *to the process
-          // following the log* is not its business at all.
-          if (options.notify) deliver("notify", event, options.notify);
+          // Through `deliver`, every one of them, and never called directly.
+          // That is the boundary this file's header is about: what a subscriber
+          // does with an event is its own business, and what it does *to the
+          // process following the log* is not its business at all.
+          for (const s of subscribers) deliver(s.name, event, (e) => s.deliver(e));
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
           if (event.type === "DiscussionRequested" && options.discuss) {

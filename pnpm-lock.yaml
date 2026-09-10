@@ -78,6 +78,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@lingtai/actions':
+        specifier: workspace:*
+        version: link:../../packages/actions
       '@lingtai/agent':
         specifier: workspace:*
         version: link:../../packages/agent

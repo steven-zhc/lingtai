@@ -34,3 +34,13 @@ export {
   type CommandOutcome,
   type RunCommandOptions,
 } from "./command.ts";
+export {
+  createSubscriber,
+  subjectOf,
+  SUBSCRIBER_COMMAND_TIMEOUT,
+  SUBSCRIBER_COMMAND_TIMEOUT_MS,
+  type EventSubject,
+  type Subscriber,
+  type SubscriberOptions,
+  type SubscriberPayload,
+} from "./subscriber.ts";

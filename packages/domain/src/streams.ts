@@ -93,3 +93,35 @@ export function integrationStream(project: string, base: string): string {
 export const LABEL_STATES = ["queued", "running", "gates", "waiting", "landed"] as const;
 
 export type LabelState = (typeof LABEL_STATES)[number];
+
+/**
+ * The work item an event is about, when the event says so **on its own**.
+ *
+ * Two of the three ways an event names one, and both are in the bytes the
+ * subscription already hands over:
+ *
+ *   `wi-lingtai-123`                       the work item's own stream
+ *   `data.workItemId` = `wi-lingtai-123`   an event on a stream of its own
+ *
+ * The second is what `IntegrationRefused` on `int-lingtai-main` has, and what
+ * `RunStarted` on `run-<uuid>` has. It is read rather than the stream id
+ * because `int-{project}-{base}` cannot be split back: a base branch may hold a
+ * `-` and an issue number may not, so the last-dash rule that makes
+ * `parseWorkItemStream` exact makes an integration stream a guess.
+ *
+ * **Null is not "no project", it is "not from here".** The third way is
+ * `ApprovalRequested` and `RunAwaitingInput`, which carry a `runId` and no work
+ * item at all: the run stream names one, in its own `RunStarted`, and reading
+ * it is a question for the log rather than for this function. `ctl-conductor`,
+ * `chat-…` and `ext-subscribers` are the genuine none — they belong to the
+ * installation and to no repository.
+ */
+export function workItemOf(event: { streamId: string; data?: unknown }): {
+  project: string;
+  issue: string;
+} | null {
+  if (event.streamId.startsWith("wi-")) return parseWorkItemStream(event.streamId);
+  const named = (event.data as { workItemId?: unknown } | null | undefined)?.workItemId;
+  if (typeof named !== "string" || !named.startsWith("wi-")) return null;
+  return parseWorkItemStream(named);
+}

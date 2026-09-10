@@ -395,7 +395,9 @@ runs where the agent worked, and `env.plantAt` put the agent's own file there.
 This is about the process environment — the daemon's credentials, which is what
 0037 §1 took away.
 
-Nothing spawns a subscriber yet, so today this binds `run:` at a gate point.
+Since `#123` this binds a subscriber as well as a `run:` at a gate point: the
+daemon starts what the recipes declared and hands each one exactly the names
+beside it.
 
 ## what the log says was *supposed* to happen
 
@@ -519,39 +521,58 @@ repairs.
 Nothing that changes *code* goes through here — that is git's job, under the
 merge lane's lock.
 
-## notification subscription — 4 by default
+## notification subscription — 0 by default
 
-What is worth interrupting somebody for. All four mean the same thing: nothing
-moves until a person acts. Source: `DEFAULT_SUBSCRIPTIONS` in
-`packages/daemon/src/notify.ts`.
+**There is no default.** `DEFAULT_SUBSCRIPTIONS` — four types, the same for
+every project, changeable only by editing `packages/daemon/src/notify.ts` — is
+gone with `#123`, and so is the file. A project that declares no `subscribers:`
+is told about nothing, and the daemon says so as it starts rather than being
+silent about a silence.
 
-`ApprovalRequested` · `IntegrationRefused` · `RunAwaitingInput` · `WorkItemBlocked`
+Source: `subscribers:` in each project's own recipe
+([0037](decisions/0037-an-extension-is-a-command.md) §3, `Subscriber` in
+`packages/recipe/src/recipe.ts`), built by `buildSubscribers` in
+`apps/cli/src/subscribers.ts`.
 
-A landed task is good news that needed nobody, and is deliberately not in
-**this** channel — a desktop notification interrupts, and nothing that needed
-nobody is worth interrupting for.
-
-**The rule is per-channel, and the recipe is where a channel says its own.**
-`subscribers:` ([0037](decisions/0037-an-extension-is-a-command.md) §3,
-`Subscriber` in `packages/recipe/src/recipe.ts`) carries an `on:` list per
-subscriber, so a Telegram bot — read when you choose rather than when it arrives
-— can name `WorkItemLanded` without that changing what interrupts you:
+This repository declares one, and it is the desktop notification that used to be
+constructed by name inside the daemon:
 
 ```yaml
 subscribers:
-  - name: telegram
-    on: [WorkItemLanded, WorkItemBlocked, RunFailed]
-    run: npx @lingtai/telegram
-    env: [TELEGRAM_BOT_TOKEN]
+  - name: desktop
+    on: [ApprovalRequested, IntegrationRefused, RunAwaitingInput, WorkItemBlocked]
+    run: node apps/cli/src/notify.ts
+    env: []
 ```
 
-The `on:` list is the subscription as well as the declaration, so a name that is
-not in `EVENTS` fails the recipe and names itself. A retired type fails too:
-spelled right, in the catalogue, and appended by nothing, which is the same
-subscription that never fires reached by a different mistake. `env:` is every
-credential that subscriber's process gets — see *extension environment* above,
-which is the half of 0037 §1 that makes "and nothing else" a fact. The four
-above are still the daemon's own defaults and nothing reads `subscribers:` yet.
+Those four mean the same thing: nothing moves until a person acts. A landed task
+is good news that needed nobody, and is deliberately not in **this** channel — a
+desktop notification interrupts. A Telegram bot, read when you choose rather than
+when it arrives, is a second `subscribers:` entry that names `WorkItemLanded`
+without that changing what interrupts you.
+
+Four rules:
+
+- **`on:` is the subscription as well as the declaration**, so a name that is
+  not in `EVENTS` fails the recipe and names itself. A retired type fails too:
+  spelled right, in the catalogue, and appended by nothing, which is the same
+  subscription that never fires reached by a different mistake.
+- **A subscriber hears about the project whose recipe declared it**, which is
+  what makes a repository with no `subscribers:` genuinely quiet rather than
+  quietly served by another repository's notifier. Three of the four types above
+  name no work item in their own bytes — `ApprovalRequested` and
+  `RunAwaitingInput` are on a run stream, `IntegrationRefused` on an integration
+  lane — so `createSubjectResolver` reads the run's own `RunStarted` for the
+  first two and `data.workItemId` for the third. An event that belongs to no
+  repository (`ctl-conductor`, `chat-…`, `ext-subscribers`) reaches nobody.
+- **`env:` is every credential that subscriber's process gets** — see *extension
+  environment* above, which is the half of 0037 §1 that makes "and nothing else"
+  a fact.
+- **Nothing waits for one and nothing retries one.** Its exit code decides
+  nothing; a non-zero one appends `PluginFailed`, which `lingtai doctor`'s
+  `subscribers: failures` reads back. The process is killed after two minutes,
+  which is under the boundary's ten — that one is the backstop for a promise
+  that never settles at all.
 
 ## lingtai subcommand — 13
 

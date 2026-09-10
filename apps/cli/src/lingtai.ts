@@ -23,11 +23,9 @@ import {
   beat,
   clientsForProjects,
   createStatusTable,
-  createNotifier,
   createWorkLoop,
   describeInFlight,
   inFlight,
-  macNotifier,
   pauseConductor,
   readCodeVersion,
   readControl,
@@ -50,6 +48,7 @@ import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
+import { buildSubscribers, createSubjectResolver, describeSubscribers } from "./subscribers.ts";
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
@@ -304,7 +303,8 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // into scrollback. A daemon that cannot read a recipe now says so in the
   // block you are already reading while it starts.
   if (registered.length === 0) console.log("no project registered — run lingtai add <owner>/<repo>");
-  for (const line of describeFilters(await projectFilters(registered))) console.log(line);
+  const filters = await projectFilters(registered);
+  for (const line of describeFilters(filters)) console.log(line);
 
   const found = await reconcile({
     log: (line) => console.log(line),
@@ -420,19 +420,27 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   };
 
   if (!("no-conduct" in flags)) {
-    // Tell the operator when the operator is the bottleneck. Fire and forget:
-    // a notification retried later, about a decision already made, trains you
-    // to ignore the next one.
-    const channel = await macNotifier();
-    const notifier = createNotifier({ channel, log: (line) => console.log(line) });
-    console.log(
-      `notifications via ${channel.name}` +
-        (channel.clickable ? "" : " — install terminal-notifier to make them clickable"),
-    );
+    // Who is told what happened, straight off the recipes and named nowhere
+    // here (`#123`). This block used to construct `macNotifier()` by name,
+    // which is what 0037 §3 exists to remove: Lingtai's own desktop
+    // notification is now a `run:` line in a `subscribers:` block, started by
+    // exactly the code that will start somebody else's.
+    //
+    // Fire and forget, as it always was: a notification retried later, about a
+    // decision already made, trains you to ignore the next one.
+    const declared = await buildSubscribers({
+      filters,
+      subject: createSubjectResolver(),
+      // The daemon's own directory. There is no worktree for an event — it is
+      // not about a diff — and a subscriber that wants one has to make it.
+      cwd: process.cwd(),
+      log: (line) => console.log(line),
+    });
+    for (const line of describeSubscribers(declared)) console.log(line);
 
     loop = createWorkLoop({
       log: (line) => console.log(line),
-      notify: (event) => notifier.consider(event),
+      subscribers: declared.map((d) => d.subscriber),
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.

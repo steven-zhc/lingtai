@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lingtai/actions": "workspace:*",
     "@lingtai/agent": "workspace:*",
     "@lingtai/agent-env": "workspace:*",
     "@lingtai/conductor": "workspace:*",
