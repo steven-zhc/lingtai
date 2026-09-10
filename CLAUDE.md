@@ -47,12 +47,21 @@ Pass `--no-merge`, by hand, every time. The `merge` gate point does not execute
 
 The board follows a bare `lingtai run` live: **every process that appends holds
 a projector while it runs** (0022), so there is nothing to start in a second
-terminal and nothing to wait for at the end. The chip in the bar says whether
-that is actually true — it reports the projection's lag and the daemon's
+terminal and nothing to wait for at the end. The health dot in the bar says
+whether that is actually true — it reports the projection's lag and the daemon's
 beacon, not whether the socket is open, which is the distinction #64 turned on.
-A second chip appears beside it while the conductor is paused, naming who and
-why with a Resume on it: being current and being stopped are independent facts,
-and for four days the board only said the first (#77).
+Green and silent is the whole of the ordinary case; when it is not, the sentence
+beside it carries the fault and the command that fixes it. A chip appears next
+to it while the conductor is paused, naming who and why with a Resume on it:
+being current and being stopped are independent facts, and for four days the
+board only said the first (#77).
+
+The bar answers two questions and no third — *is anything waiting on me?* and
+*is the system doing what the code says?* — and carries four objects to do it
+(#134, [doc/design/the-bar.md](doc/design/the-bar.md)). **A chip is not free,
+and the row is the unit**: it reached eleven objects because six tickets each
+added one true fact and none of them argued about the row. Spend and the repair
+default are on `/spend`, one click from the reading.
 
 A daemon is still what takes work unattended, and it is the *only* other
 conductor: `lingtai run` takes the same advisory lock the daemon does (#93), so
@@ -72,8 +81,10 @@ a merge into `main` reaches the CLI, the gates, the board and the recipe and
 does not reach the process that is conducting. `#88` landed thirty-nine minutes
 after a daemon started and never once ran, costing 52 prompts (#98). The beacon
 now carries the commit the daemon started at; `lingtai doctor`'s
-`daemon: currency` and a chip on the board say how far behind `origin/main` that
-is. Neither restarts it — that is still yours, and whether it should be is open.
+`daemon: currency` and the board's health dot say how far behind `origin/main`
+that is — the same dot #64 put there, because *is this current* and *is it
+running the code we merged* are one question to a reader (#134). Neither
+restarts it — that is still yours, and whether it should be is open.
 
 **The restart is now safe to perform** (0030). `pnpm lingtai shutdown "why"`
 appends, returns, and the daemon finishes the pass in flight before it exits —

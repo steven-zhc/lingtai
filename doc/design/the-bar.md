@@ -1,6 +1,6 @@
 # The board's bar, weighted
 
-**Status** drafted · 2026-09-10 · a picture at
+**Status** built · 2026-09-10 · `#134` · a picture at
 `claude.ai/code/artifact/f57ced9e-f1a4-4405-8d55-01e76ee7c562`
 
 Eleven objects, nine of them boxed, wrapping to a second line at 1440.
@@ -61,3 +61,37 @@ have been.
 **A chip is not free, and the row is the unit.** Anything added here has to be
 argued against the four that are left, not against the empty space beside them —
 which is the argument none of the six tickets above was asked to make.
+
+It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx` — where
+the next chip would be added, and so where the argument has to be made.
+
+## What it looks like now
+
+```
+灵 Lingtai │ [all] lingtai nextloom-ai-admin        10 queued · 1 running · 45 landed  ●  [1 waiting on you]
+```
+
+One line at 1440, and one line with a third project: the filter grows a tab, and
+a tab is not a chip. Nothing waiting and nothing wrong is quieter still — the
+headline loses its box and its colour and stays the same words, the dot is green
+and says nothing, and the row is the reading and the dot.
+
+Where the five that left went:
+
+| | |
+|---|---|
+| `$488.52` · `$81.83 repair` | `/spend`, off the reading. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried |
+| `<project>: repairs ×N` | `/spend`, under the bill it explains. 0025 §2 asks that a repository see whether it repairs without reading Lingtai's source; a page one click from the board is seeing it |
+| `current` + `daemon N behind` | one dot (`health.tsx`, folded by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
+
+`paused` and `draining` are still chips and still amber-free, because both are
+already absent when there is nothing to say — which is the property that makes a
+chip affordable at all.
+
+**The claim is about the bar, and only the bar.** A card still wears the accent
+where a card has earned it — the `waiting` lane's own heading, a repair's
+`pill sig` (`#84`), an open question. Cards are read one at a time and on
+purpose; the bar is glanced at while you are doing something else, and it is
+that difference, not the palette, that makes a second amber cost something here
+and nothing there. `apps/board/test/bar.test.ts` asserts the scoped version:
+exactly one selector paints the bar with `--signal`, and it is the headline's.

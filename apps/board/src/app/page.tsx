@@ -6,7 +6,6 @@ import {
   issueUrl,
   loadBoard,
   queuedStanding,
-  spend,
   type BoardCard,
   LANDED_OPEN,
 } from "@/lib/board";
@@ -24,9 +23,8 @@ import { inWords } from "@lingtai/conductor/queue";
 import { readControl } from "@lingtai/daemon/control";
 import { Decide, Requeue } from "./decide.tsx";
 import { Draining } from "./draining.tsx";
-import { Live } from "./live.tsx";
+import { Health } from "./health.tsx";
 import { Paused } from "./paused.tsx";
-import { Stale } from "./stale.tsx";
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the
@@ -49,9 +47,17 @@ import { Stale } from "./stale.tsx";
  * twelfth of the ink; the bar led with `11 items`, a sum of four columns that
  * mean different things and that nobody acts on (#81). So history is one line
  * per item and folds away past the most recent few, the room that frees goes to
- * the lanes where something is happening, and the bar leads with the two numbers
- * an operator does act on: how many need a person, and what this has cost.
+ * the lanes where something is happening, and the bar ends on the one number an
+ * operator acts on in the next minute: how many need a person.
  * None of that changes what a card *means* — that is #78 and #79.
+ *
+ * **The bar has weight too, and it took eleven chips to notice.** #81 put the
+ * spend there and five later tickets each added one more true fact beside it,
+ * none of them arguing against the row; at 1440 it wrapped, and a bar where
+ * everything is emphasised is a bar where nothing is
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Four objects now — filter,
+ * reading, health, headline — and the rule that keeps it four is stated at the
+ * end of the bar below, where the next chip would be added.
  */
 export const dynamic = "force-dynamic";
 
@@ -587,17 +593,18 @@ export default async function Page({
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, repair, queueOrder, projects: filters }, registered, control] =
+  const [{ columns, queueOrder, projects: filters }, registered, control] =
     await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()]);
   const total = columns.reduce((n, c) => n + c.cards.length, 0);
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)));
 
-  // The two numbers an operator acts on: how many need me, and what has this
-  // cost. Neither was on the page (#81).
+  // The one number an operator acts on *in the next minute*: how many need me.
+  // What it has cost is the other number #81 wanted, and it is a click away on
+  // `/spend` — a running total on a rail glanced at every few seconds is one
+  // you learn to stop seeing (`the-bar.md`).
   const waiting = columns.find((c) => c.id === "waiting")?.cards.length ?? 0;
-  const cost = spend(columns);
   // And the rest, which is what `11 items` was a sum of. Said as its parts,
   // because the parts mean different things and the sum meant nothing.
   const rest = columns
@@ -645,105 +652,99 @@ export default async function Page({
           </span>
         )}
         <span className="sep" />
-        {/* The headline, because it is the only column that is asking for a
-            person. Amber for the same reason the lane is amber: it is reserved
-            for "a human is the thing being waited on". */}
-        <span
-          className={`chip ${waiting > 0 ? "sig" : "idle"}`}
-          title={
-            waiting > 0
-              ? "items that will not move until you decide"
-              : "nothing on this board is blocked on a person"
-          }
-        >
-          {waiting > 0 ? `${waiting} waiting on you` : "nothing waiting on you"}
-        </span>
-        <span className="sep" />
-        {/* And what it has cost. The cards on this board, said plainly, because
-            a total whose window is unstated is a total nobody can use. */}
-        <span
-          className="chip"
-          title={`what the ${cost.cards} card(s) on this board cost — the visible cards, not a window over the log`}
-        >
-          ${cost.work.toFixed(2)}
-        </span>
-        {/* Apart from the work, the way the card keeps it apart: a repair is
-            default-on and spends an agent without being asked again (#84). */}
-        {cost.repair > 0 ? (
-          <span className="chip sig" title="what diagnosing them cost, apart from the work">
-            ${cost.repair.toFixed(2)} repair
-          </span>
-        ) : null}
-        {/* Then the rest, last, and as its parts. `11 items` was the sum of
-            four columns that mean different things, and adding them produced a
-            number nobody could act on (#81). Nothing at all is still worth a
-            word: an empty board and an unbuilt projection look alike. */}
-        {total === 0 ? (
-          <>
-            <span className="sep" />
-            {/* Under a filter, "the log" is not what is empty — it may be full
-                of the project you are not looking at. The board says whose
-                emptiness this is, the way the columns below do (#86). */}
-            <span className="chip idle">
+        {/* Everything from here is the right rail, and it is a rail rather than
+            four more children of `.bar` so that a narrow window breaks between
+            the filters and the reading rather than in the middle of the
+            reading. Its order is the eye's: what the board says, whether the
+            board can be believed, and — last, where the eye lands — the one
+            thing that is asking for a person. */}
+        <span className="rail">
+          {/* The reading. Unboxed, because a box says *this is a thing* and
+              this is a reading: `11 items` was the sum of four columns that
+              mean different things (#81), and the parts are kept for that
+              reason. Nothing at all is still worth a word — an empty board and
+              an unbuilt projection look alike.
+
+              It is also the way to `/spend`, which costs the row nothing: the
+              board's numbers are already here, and what they cost is the one
+              more number about them. */}
+          {total === 0 ? (
+            /* Under a filter, "the log" is not what is empty — it may be full
+               of the project you are not looking at. The board says whose
+               emptiness this is, the way the columns below do (#86). And it is
+               not a link: there is no bill behind a board with nothing on it. */
+            <span className="reading">
               {only === undefined ? "nothing in the log yet" : `nothing here for ${only}`}
             </span>
-          </>
-        ) : rest === "" ? null : (
-          <>
-            <span className="sep" />
-            <span className="chip" title="everything that is not waiting on you">
-              {rest}
-            </span>
-          </>
-        )}
-        {/* Whether a failure of this repository's buys an agent — shown when it
-            is off as well as when it is on, the way an unconfigured gate point
-            is shown as `skipped` rather than omitted (0025 §2). A default that
-            spends money and is invisible until it fires is one nobody can
-            audit. */}
-        {repair.map((r) => (
-          // A fragment, not a wrapper: `.bar` lays its children out directly,
-          // and an element around the pair would be one flex item instead of
-          // two.
-          <Fragment key={r.project}>
-            <span className="sep" />
-            <span
-              className={`chip ${r.on ? "" : "idle"}`}
-              title={
-                r.on
-                  ? `a failure of ${r.project}'s buys an agent to fix it, at most ${r.maxAttempts} time(s) per item`
-                  : `${r.project} does not repair — a failure waits for you`
-              }
+          ) : (
+            <Link
+              className="reading"
+              href={only === undefined ? "/spend" : `/spend?project=${encodeURIComponent(only)}`}
+              title="everything that is not waiting on you — and what it has cost"
             >
-              {repair.length > 1 ? `${r.project}: ` : ""}
-              {r.on ? `repairs ×${r.maxAttempts}` : "no repair"}
-            </span>
-          </Fragment>
-        ))}
-        <span className="sep" />
-        {/* Says whether what you are looking at is current. A board that has
-            silently stopped updating is worse than one that admits it. */}
-        <Live />
-        {/* And, beside it, whether anything is going to move. Two chips because
-            two facts: the projection can be at the head of the log while the
-            conductor has been told to take nothing, which is what the board
-            showed for four days without a word for it (#77). */}
-        {control.paused ? (
-          <>
-            <span className="sep" />
-            <Paused by={control.by} reason={control.reason} />
-          </>
-        ) : null}
-        {/* And whether it is on its way out, which is none of the above: a
-            draining daemon is current, unpaused and finishing the last pass it
-            will run (0030). Draws nothing when it is not. */}
-        <Draining />
-        {/* And a third fact, independent of both: whether the process that
-            moves things is running the code we merged. A daemon holds its
-            modules from the moment it started, so `current` and `not paused`
-            were both true for thirty-nine minutes in which the fix that had
-            landed could not run (#98). Draws nothing when it is level. */}
-        <Stale />
+              {rest === "" ? "what this has cost" : rest}
+            </Link>
+          )}
+          {/* One health, out of two facts that were two chips. `#64` asks
+              whether what you are looking at is current and `#98` asks whether
+              the process that moves it is running the code we merged; both are
+              real, and two boxes for one question is two things to learn to
+              read. Green and silent when both are true, and a sentence with the
+              action in it when either is not. Never amber — that is the
+              headline's, below. */}
+          <Health />
+          {/* And whether anything is going to move, which is neither of those:
+              the projection can be at the head of the log while the conductor
+              has been told to take nothing, which is what the board showed for
+              four days without a word for it (#77). Draws nothing when it is
+              not paused, which is why it costs the quiet row nothing. */}
+          {control.paused ? (
+            <>
+              <span className="sep" />
+              <Paused by={control.by} reason={control.reason} />
+            </>
+          ) : null}
+          {/* And whether it is on its way out, which is none of the above: a
+              draining daemon is current, unpaused and finishing the last pass it
+              will run (0030). Draws nothing when it is not. */}
+          <Draining />
+          {/* **The headline, and the last thing on the row.** It is the only
+              reason to look up: the only column that is asking for a person,
+              and the only amber on the bar. Amber for the same reason the lane
+              is amber — it is reserved for "a human is the thing being waited
+              on" — and it is the *only* one, because a second amber dilutes the
+              first, which is the entire reason the palette carries the rule.
+              Nothing waiting is the same sentence at ordinary weight and no
+              colour at all: a bar where everything is emphasised is a bar where
+              nothing is. */}
+          <span
+            className={`head${waiting > 0 ? " sig" : ""}`}
+            title={
+              waiting > 0
+                ? "items that will not move until you decide"
+                : "nothing on this board is blocked on a person"
+            }
+          >
+            {waiting > 0 ? `${waiting} waiting on you` : "nothing waiting on you"}
+          </span>
+          {/* **A chip is not free, and the row is the unit.**
+              [the-bar.md](../../../../doc/design/the-bar.md)
+
+              Eleven objects stood here, nine of them boxed, wrapping to a second
+              line at 1440. Every one had been argued for on its own — #81 split
+              a sum nobody could act on, #84 separated a repair's spend, #86 said
+              whose emptiness an empty board is, 0025 §2 put a spending default
+              on screen, #64 and #98 each added a health chip — and **none of
+              those arguments was about the row**.
+
+              A bar carries what changes what you do next, and answers two
+              questions and no third: *is anything waiting on me?* and *is the
+              system doing what the code says?* Anything added here has to be
+              argued against the four that are left — filter, reading, health,
+              headline — and not against the empty space beside them. A fact
+              that does not fit that test has a page: spend and the repair
+              policy are on `/spend`. */}
+        </span>
       </div>
 
       <div className="cols">

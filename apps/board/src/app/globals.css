@@ -107,28 +107,93 @@ body {
 }
 .bar .sep { width: 1px; height: 14px; background: var(--rule-2); }
 
+/* One box style, and after #134 exactly one thing wears it: a conductor that
+   has been told to stop, or one on its way out. Both are absent when there is
+   nothing to say, which is what makes a box affordable at all — the bar's
+   ordinary state has none.
+
+   `live`, `idle`, `warn` and `sig` used to be variants of this. They went with
+   the chips that wore them: health is a dot now and the headline is not a chip,
+   and a style with no wearer is a style the next chip is added under. */
 .chip {
   font-family: var(--mono);
   font-size: 10.5px; padding: 2px 7px; border-radius: 2px;
   background: var(--surface-2); border: 1px solid var(--rule); color: var(--muted);
 }
-.chip.live { color: var(--pass); border-color: var(--pass); background: var(--pass-soft); }
-.chip.idle { color: var(--muted); }
-/* Behind with nothing coming for it, or a stream that has stopped. Not an
-   error style: it is a true statement about the board, and it should read as
-   one rather than as a crash. */
-.chip.warn { color: var(--fail); border-color: var(--fail); }
-/* Paused. Held, not failed — nothing is broken, somebody decided. Its own
-   colour because it is its own fact: a green `current` beside a held `paused`
-   is the board saying "up to date, and going nowhere", which is the sentence
-   #77 had no way to write. */
+/* Paused, and draining. Held, not failed — nothing is broken, somebody decided.
+   Its own colour because it is its own fact: a green health dot beside a held
+   `paused` is the board saying "up to date, and going nowhere", which is the
+   sentence #77 had no way to write. Not amber, and not pass/fail: the first is
+   the headline's and the second is the dot's. */
 .chip.held { color: var(--held); border-color: var(--held); background: var(--held-soft); }
-/* A human is the thing being waited on — the bar's version of the lane's own
-   colour, so "1 waiting on you" and the column it counts read as one
-   statement. The headline, because it is the only count anybody acts on (#81). */
-.chip.sig { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
-/* Who paused it and why, in the bar. Truncated rather than wrapped: the bar is
-   one line of context, and the whole sentence is its own title. */
+
+/* --- the right rail -------------------------------------------------------
+
+   Reading, health, and the headline last. A rail rather than four more children
+   of `.bar` so a narrow window breaks between the filters and this group rather
+   than inside it, and so the whole group sits at the far edge, which is where
+   the headline has to be. */
+.bar .rail {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* The board's own numbers, unboxed. A box says *this is a thing*; this is a
+   reading, and its parts are kept apart because the sum of four columns that
+   mean different things is a number nobody acts on (#81). It is a link to
+   `/spend` — the one number about these numbers that the row no longer
+   carries — and it is styled as text, because a control that announces itself
+   here is a fifth object. */
+.bar .reading {
+  font-family: var(--mono); font-size: 10.5px;
+  color: var(--muted); text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Health, as one dot: is this current (#64), and is the conductor running the
+   code we merged (#98). Two chips for two facts was two things to learn to read
+   on a row that is glanced at.
+
+   **Pass/fail, never the accent and never amber.** Both have been separate from
+   the accent since the palette was written, and amber is the headline's alone.
+   `idle` is the third state and it is not a fault: catching up, connecting, or
+   a projection nothing has built yet. */
+.bar .dot {
+  flex: none;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted);
+}
+.bar .dot.pass { background: var(--pass); }
+.bar .dot.warn { background: var(--fail); }
+.bar .dot.idle { background: var(--rule-2); border: 1px solid var(--rule-2); }
+
+/* **The headline, and the bar's only amber.** A human being the thing waited on
+   is the one reason to look up from what you are doing, so it is the last thing
+   on the row, larger than everything else, and in the lane's own colour — so
+   "1 waiting on you" and the column it counts read as one statement.
+
+   A second amber dilutes the first, which is the entire reason the palette
+   carries the rule; the file used to state that rule 23 lines above a `chip sig`
+   holding a dollar figure. There is no second one now.
+
+   **Nothing waiting is the quiet version**: same words, ordinary weight, no
+   colour and no box. A bar where everything is emphasised is a bar where
+   nothing is. */
+.bar .head {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.bar .head.sig {
+  font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--signal);
+  padding: 2px 8px; border-radius: 2px;
+  border: 1px solid var(--signal); background: var(--signal-soft);
+}
+
+/* Who paused it and why, and what the health dot has to say when it is not
+   green. Truncated rather than wrapped: the bar is one line of context, and the
+   whole sentence is its own title. */
 .bar .why {
   color: var(--ink-2);
   max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1503,3 +1568,59 @@ details[open] > summary::before { content: "▾"; }
 a.ti { color: inherit; text-decoration: none; }
 a.ti:hover { text-decoration: underline; text-underline-offset: 2px; }
 a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* ----------------------------------------------------------------- spend --
+
+   What the bar stopped carrying. `$488.52` and `$81.83 repair` were two chips
+   on a rail glanced at every few seconds, and neither changes what you do in
+   the next minute; a running total you cannot act on is a number you learn to
+   stop seeing, and then it is not there when you do want it (#134). Here it is
+   read rather than glanced at, which is what buys the split per repository and
+   the policy underneath it.
+
+   The ledger's own frame, reused: these are rows of one table and the box is
+   drawn once. */
+.ledger.money {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.ledger.money th,
+.ledger.money td {
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: right;
+  /* Tabular, because the whole reason a ledger beats a chip is that `$7.81`
+     sits over `$5.23` and the eye reads the money down. */
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.ledger.money th:first-child,
+.ledger.money td:first-child { text-align: left; }
+.ledger.money thead th {
+  font-weight: 500; font-size: 0.72rem;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+}
+.ledger.money tbody th { font-weight: 400; }
+/* The sum, and the only rule heavy enough to say so. */
+.ledger.money tfoot th,
+.ledger.money tfoot td {
+  border-bottom: 0; border-top: 1px solid var(--rule-2);
+  font-weight: 600;
+}
+
+/* The standing permission behind the repair column above it. 0025 §2 asks that
+   a repository be able to see whether it repairs without reading Lingtai's
+   source; this is where that is answered, beside the bill it explains rather
+   than as a chip per project on the bar. */
+.policy { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+.policy li {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) 1fr;
+  gap: 0.9rem;
+  align-items: baseline;
+  max-width: 82ch;
+}
+.policy .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--ink); }

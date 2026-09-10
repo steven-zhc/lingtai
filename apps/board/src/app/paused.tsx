@@ -3,13 +3,18 @@
 /**
  * What the board says when the conductor has been told to take nothing.
  *
- * The chip next door answers *is what I am looking at current?* and it was
+ * The health dot next door answers *is what I am looking at current?* and it was
  * answering correctly for four days while nothing moved (`#77`): the
  * projection was at the head, the stream was open, and the one fact that
  * decided whether anything would ever happen — a `ConductorPaused` in the
  * control stream — had no word anywhere on the screen. Being current and being
- * stopped are independent facts, so this is a second chip rather than a sixth
- * state of the first one.
+ * stopped are independent facts, so this is its own thing on the row rather
+ * than a further state of the dot.
+ *
+ * **A box, where health is a dot, and absent when there is nothing to say.**
+ * That is what makes it affordable on a row whose unit is the row (#134): the
+ * bar's ordinary state does not draw this at all, and when it does draw it the
+ * pause is the news.
  *
  * It names who and why because a pause nobody can attribute is one nobody can
  * lift confidently — the same reason `lingtai pause` refuses a pause with no

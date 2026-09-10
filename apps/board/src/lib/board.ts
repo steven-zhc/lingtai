@@ -173,10 +173,18 @@ export interface BoardCard {
 /**
  * Whether a project repairs, as the board says so.
  *
- * On the bar rather than on a card, because it is a fact about the repository
- * and not about any one ticket — and shown whether it is on or off, the way an
- * unconfigured gate point is shown as `skipped` rather than omitted (0025 §2).
- * A default that is invisible when it is off is a default nobody can audit.
+ * Not on a card, because it is a fact about the repository and not about any
+ * one ticket — and shown whether it is on or off, the way an unconfigured gate
+ * point is shown as `skipped` rather than omitted (0025 §2). A default that is
+ * invisible when it is off is a default nobody can audit.
+ *
+ * **On `/spend`, and no longer on the bar.** 0025 §2 asks that a repository be
+ * able to see whether it repairs without reading Lingtai's source, and it is
+ * right — but *visible* is not *permanently on screen*. It changed about once a
+ * quarter and cost a chip per project on a rail read at a glance
+ * ([the-bar.md](../../../../doc/design/the-bar.md)), so it sits beside the bill
+ * it explains instead: what a repair spent, and the standing permission that
+ * let it (#84).
  */
 export interface RepairPolicyView {
   project: string;
@@ -896,6 +904,31 @@ export function spend(columns: readonly BoardColumn[]): Spend {
     repair: cards.reduce((n, c) => n + (c.repairCostUsd ?? 0), 0),
     cards: cards.length,
   };
+}
+
+/**
+ * The same sum, per repository, in the order the projects first appear.
+ *
+ * The bar carried the total and could not carry this: a figure per project is a
+ * chip per project, on a rail that has to be read in a glance
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). A page can, and it is the
+ * breakdown the total was standing in for — *whose* money this is being spent
+ * is the first thing anybody asks after *how much*.
+ *
+ * A card's project rather than the register's list, for the reason `onBoard`
+ * is built from the cards: a card can outlive the project that made it, and a
+ * ledger that omits it is a ledger that does not add up.
+ */
+export function spendByProject(columns: readonly BoardColumn[]): (Spend & { project: string })[] {
+  const byProject = new Map<string, Spend & { project: string }>();
+  for (const card of columns.flatMap((c) => c.cards)) {
+    const row = byProject.get(card.project) ?? { project: card.project, work: 0, repair: 0, cards: 0 };
+    row.work += card.costUsd ?? 0;
+    row.repair += card.repairCostUsd ?? 0;
+    row.cards += 1;
+    byProject.set(card.project, row);
+  }
+  return [...byProject.values()];
 }
 
 /**

@@ -668,10 +668,17 @@ pnpm lingtai doctor
          restart the daemon to take them
 ```
 
-The board's bar says the same thing on its own chip, beside the one that says
-whether the projection is current and the one that says whether the conductor
-is paused. Three chips because three independent facts: a board can be perfectly
-current, taking work, and driven by code you replaced an hour ago.
+The board's bar says the same thing on its health dot. That used to be its own
+chip beside a second one for whether the projection is current, and they are one
+indicator now (#134): both answer *is the system doing what the code says?*, and
+two boxes for one question is two things to learn to read on a row that is
+glanced at. Neither fact is folded away — whichever is wrong is the sentence
+beside the dot, and the other is on hover. A board can still be perfectly
+current, taking work, and driven by code you replaced an hour ago; the dot goes
+red and says which.
+
+Whether the conductor is *paused* is a third fact and stays its own chip, absent
+unless there is something to say.
 
 Neither restarts anything. `lingtai doctor` never writes, and whether a daemon
 should restart itself when `main` moves is deliberately still open — 0030 made

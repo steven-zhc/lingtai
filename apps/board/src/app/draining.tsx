@@ -1,13 +1,13 @@
 /**
  * What the board says while the daemon is on its way out.
  *
- * The fourth independent fact in the bar, and independent is the whole reason
- * it is its own chip. `live.tsx` answers *is what I am looking at current?*,
- * `paused.tsx` answers *is anything going to move?*, `stale.tsx` answers *is
- * the thing that moves it the code we merged?* — and a daemon that has been
- * told to stop is current, unpaused and up to date while it finishes the last
- * pass it will ever run. Folding that into `up` is the same mistake #77 made
- * with `paused`: one word cannot carry independent answers.
+ * Its own fact, and independent is the whole reason it is its own chip. The
+ * health dot answers *is what I am looking at current?* and *is the thing that
+ * moves it the code we merged?* (`health.tsx`), `paused.tsx` answers *is
+ * anything going to move?* — and a daemon that has been told to stop is
+ * current, unpaused and up to date while it finishes the last pass it will ever
+ * run. Folding that into `up` is the same mistake #77 made with `paused`: one
+ * word cannot carry independent answers.
  *
  * It names the ticket because *stopping* and *stopping, finishing lingtai#94*
  * are different pieces of news — the first invites a second Ctrl+C, and the
@@ -15,7 +15,8 @@
  * ([0030](../../../../doc/decisions/0030-shutting-down-safely.md) §1: the
  * boundary is the pass, not the agent).
  *
- * **Absent when there is nothing to say**, as `stale.tsx` is. A drain lasts
+ * **Absent when there is nothing to say**, which is what makes a chip
+ * affordable at all on a row whose unit is the row (#134). A drain lasts
  * minutes to hours and then the daemon is gone, at which point `live.tsx` says
  * the board is no longer being advanced.
  *
