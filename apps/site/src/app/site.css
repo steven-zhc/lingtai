@@ -14,12 +14,20 @@
    you, so here the coral is finally spendable — and it gets a rule as strict as
    amber's:
 
-     CORAL MARKS THE WAY IN, AND NOTHING ELSE.
+     CORAL MARKS THE WAY IN, AND THE ONE CLAIM THE PAGE RESTS ON.
 
-   One `.way-in` per page. Not a heading, not a hover, not a rule, not an
-   accent on something that already has the teal. If a second thing on a page
-   is coral, one of them is not the way in and the reader has to decide which —
-   which is the question the board refuses to make anyone answer. */
+   0035 §3 wrote that rule with a single use in it — one `.way-in` per page —
+   and #116 spent the second and last on the front page's "your repository sets
+   the rules" panel. What limited the original rule still limits this one: *if
+   a second thing on a page is coral, one of them is not the way in and the
+   reader has to decide which*, and that is the question the board refuses to
+   make anyone answer. So the second use is `.claim` — a field of prose with a
+   coral edge, which links nowhere and cannot be pressed. There is nothing to
+   choose between.
+
+   Two per page at most, never two that could both be actions, and nothing else:
+   not a heading, not a hover, not a rule, not an accent on something that
+   already has the teal. */
 :root {
   --way-in: #fd5d3f;
   /* Ink *on* coral, not coral as ink: #FD5D3F under 15px text clears no
@@ -90,13 +98,47 @@ h3 { font-size: 16px; font-weight: 600; }
 .lede { font-size: 18px; line-height: 1.55; color: var(--ink-2); max-width: var(--measure); }
 p { max-width: var(--measure); }
 
-/* --- hero ---------------------------------------------------------------- */
-.hero { padding: 72px 0 44px; }
-.hero h1 { max-width: 22ch; }
-.hero .lede { margin: 18px 0 28px; }
+/* --- hero ----------------------------------------------------------------
+   The thesis on the left and the board on the right, because the board *is*
+   the hero image (#116) — the claim and the evidence for it in one screen,
+   rather than a claim followed by a picture the reader has to scroll to.
+
+   It stacks below 1080px. Below that the board would be narrower than its own
+   lanes and the sentence would be the thing squeezed, and of the two the
+   sentence is the one that has to survive a phone. */
+.hero { padding: 64px 0 48px; display: grid; gap: 44px; align-items: start; grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); }
+.hero h1 { font-size: clamp(29px, 3.4vw, 40px); max-width: 20ch; }
+.hero .lede { margin: 18px 0 26px; font-size: 17px; }
 .hero .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .hero .second { color: var(--ink-2); text-decoration: none; font-size: 15px; }
 .hero .second:hover { color: var(--accent-ink); }
+/* Said in the hero because it is the question a landing page usually dodges,
+   and quietly because it is a fact and not a boast. */
+.hero-note { margin: 22px 0 0; font-size: 13px; color: var(--muted); }
+.board-cap { margin: 0 0 12px; font-size: 13px; color: var(--ink-2); max-width: none; }
+
+@media (max-width: 1080px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 34px; padding-top: 48px; }
+  .hero h1, .hero .lede { max-width: var(--measure); }
+}
+
+/* The board at hero width, which is narrower than a console window. Beside the
+   thesis the lanes give up their minimums rather than the frame growing a
+   scrollbar: a lane here is a photograph of a lane and does not have to be
+   workable. */
+@media (min-width: 1081px) {
+  .hero .snap .col { min-width: 0; padding: 10px 8px 14px; }
+  .hero .snap .col.quiet { flex: 0 1 12rem; min-width: 8rem; }
+}
+
+/* Stacked, the lanes keep the product's own widths and the board scrolls
+   inside its frame. The alternative is what a four-lane board does to a phone
+   if you let it: the *page* widens, and the sentence the page is making —
+   which is the part that has to survive a small screen — goes off the edge
+   with it. */
+@media (max-width: 1080px) {
+  .snap { overflow-x: auto; overflow-y: hidden; }
+}
 
 /* --- the board, as a photograph ------------------------------------------
    The lanes are the board's own markup and the board's own CSS. What this adds
@@ -126,18 +168,60 @@ p { max-width: var(--measure); }
 }
 .no-snapshot code { font-family: var(--mono); font-size: 12.5px; }
 
-/* --- the loop ------------------------------------------------------------ */
-.points { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 4px; }
-.points li { background: var(--surface); padding: 12px 14px; display: grid; grid-template-columns: 8.5rem 1fr auto; gap: 14px; align-items: baseline; }
-.points .pt { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); }
-.points .may { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
-.points .no { color: var(--fail); }
-@media (max-width: 640px) { .points li { grid-template-columns: 1fr; } }
-
+/* --- the loop ------------------------------------------------------------
+   Three ideas and no more (#116). The five gate points used to be listed here
+   and are not: naming all five is the mechanism, and a reader who wants it has
+   the reference. */
 .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin-top: 20px; }
 .grid > div { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 16px 18px; }
 .grid h3 { margin-bottom: 6px; }
 .grid p { font-size: 14px; color: var(--ink-2); margin: 0; }
+
+/* --- your repository sets the rules --------------------------------------
+   The recipe, at the size it actually is. The claim is that Lingtai asks a
+   repository for one file, so the file is on the page and a reader can see how
+   long it is rather than take the sentence's word for it. */
+.recipe {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+  padding: 14px 16px; margin: 20px 0 8px; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: var(--ink-2);
+  max-width: min(100%, 56ch);
+}
+.recipe-note { font-size: 12.5px; color: var(--muted); margin: 0; }
+
+/* The second coral thing on the front page, and the last one anywhere on this
+   site. See the rule at the top of this file for why it is a panel and not a
+   button: it is the page's load-bearing claim, not a second way in, so it is
+   marked and not offered. */
+.claim {
+  /* Sized to the sentence, not to the page: a full-width panel around text
+     that stops at the measure reads as a box somebody forgot to fill. */
+  max-width: calc(var(--measure) + 40px);
+  margin: 26px 0 0; padding: 16px 20px;
+  background: var(--surface); border: 1px solid var(--rule);
+  border-left: 3px solid var(--way-in); border-radius: 3px;
+}
+.claim p { margin: 0; color: var(--ink-2); }
+.claim p + p { margin-top: 10px; }
+.claim b { color: var(--ink); }
+
+/* --- when it goes wrong --------------------------------------------------
+   Two tickets side by side, one stopped and one landed, wearing the board's
+   own pills — a figure on this page should look like the figure on a card
+   because it is the same kind of fact. The left edge follows the board's
+   accents: `--held` for an attempt that ended without landing, `--pass` for one
+   that merged. Not `--signal`, which on the board means a person is being
+   waited on *now*; both of these are history. */
+.cases { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); margin: 22px 0 0; }
+.case {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-left: 2px solid var(--rule-2); border-radius: 3px; padding: 15px 18px;
+}
+.case.landed { border-left-color: var(--pass); }
+.case.stuck { border-left-color: var(--held); }
+.case h3 { margin: 8px 0 8px; }
+.case p { font-size: 14px; color: var(--ink-2); margin: 0 0 12px; max-width: none; }
+.case .src { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
 
 /* --- open ----------------------------------------------------------------
    What is not built, on the front page. `lingtai doctor` prints an

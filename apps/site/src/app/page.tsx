@@ -1,20 +1,29 @@
 import Link from "next/link";
-import { readSnapshot, stamp } from "@/lib/snapshot";
+import { FRONT_PAGE_DOCS } from "@/lib/docs";
+import { money, readSnapshot, stamp } from "@/lib/snapshot";
+import { ISSUES, TICKETS, type Ticket } from "@/lib/tickets";
 import { Bar, Foot, REPO } from "./chrome";
 import { NoSnapshot, SnapshotBoard } from "./snapshot-board";
 
 /**
- * The front page.
+ * The front page, and the order it argues in.
  *
- * What Lingtai is, stated once: **the harness you put around a coding agent so
- * you can leave it running.** It takes issues one at a time, gives each a
- * disposable worktree and a filtered environment, holds it at the gates the
- * repository defines, and merges only what passes them.
+ * **The thesis is the outcome, not the mechanism**: point it at a repository
+ * and your backlog starts moving. Lingtai is the harness you put around a
+ * coding agent so you can leave it running — that sentence is the paragraph
+ * under the headline, not the headline, because nobody arrives wanting a
+ * harness.
  *
- * What it is *not* is a record-keeping product. The event log is why the
- * promise is credible, not the promise — so it is under "when it goes wrong",
- * a long way down, and never in the hero. Nobody arrives wanting a record.
- * They arrive wanting the queue to move without them watching it.
+ * Then three ideas and no more (the loop), then the claim this project
+ * under-uses (your repository sets the rules), then what it costs when it goes
+ * wrong, then what is not built, then the docs.
+ *
+ * **The event log appears in "when it goes wrong" and nowhere above it.** It is
+ * why the promise is credible, not the promise — a rule from
+ * `doc/decisions/0035-the-site-is-a-projection.md`, and the reason the sections
+ * are in this order rather than in the order the system was built in. The board
+ * in the hero is a picture of the queue moving; it says where it came from,
+ * which is disclosure, and it makes no argument out of the log's existence.
  */
 export default async function Home() {
   const snapshot = await readSnapshot();
@@ -26,127 +35,144 @@ export default async function Home() {
       <main>
         <div className="wrap">
           <section className="hero">
-            <h1>The harness you put around a coding agent so you can leave it running.</h1>
-            <p className="lede">
-              Lingtai takes issues one at a time, gives each a disposable worktree and a filtered
-              environment, holds it at the gates your repository defines, and merges only what
-              passes them.
-            </p>
-            <div className="row">
-              {/* The one coral thing on this page. Coral marks the way in and
-                  nothing else — see the rule at the top of `site.css`. */}
-              <Link className="way-in" href="/docs/tutorial/">
-                Start with the tutorial
-              </Link>
-              <a className="second" href={REPO}>
-                Read the source →
-              </a>
+            <div>
+              <h1>Point it at a repository, and your backlog starts moving.</h1>
+              <p className="lede">
+                Lingtai is the harness you put around a coding agent so you can leave it running. It
+                takes issues one at a time, gives each a disposable worktree and a filtered
+                environment, holds it at the gates your repository defines, and merges only what
+                passes them.
+              </p>
+              <div className="row">
+                {/* Coral, once. The other one is the claim in "your repository
+                    sets the rules", and there is no third — see the rule at the
+                    top of `site.css`. */}
+                <Link className="way-in" href="/docs/tutorial/">
+                  Start with the tutorial
+                </Link>
+                <a className="second" href={REPO}>
+                  Read the source →
+                </a>
+              </div>
+              <p className="hero-note">
+                It runs on one machine of yours, next to a Postgres database and a clone of each
+                repository it manages. There is no service here to sign up for.
+              </p>
+            </div>
+            <div className="hero-board">
+              {snapshot === null ? (
+                <NoSnapshot />
+              ) : (
+                <>
+                  {/* The lane that makes the other three believable is the third
+                      one, so it is what the caption points at. */}
+                  <p className="board-cap">
+                    Every card is a real work item in a real repository, with what it actually cost
+                    — including the lane holding work the machine took as far as it could and handed
+                    back.
+                  </p>
+                  <SnapshotBoard snapshot={snapshot} />
+                </>
+              )}
             </div>
           </section>
 
           <section>
-            <p className="kicker">Right now</p>
-            <h2>This is the queue it is running, including the part that is stuck.</h2>
-            <p style={{ margin: "0 0 20px", color: "var(--ink-2)" }}>
-              Four lanes, and the third one is the reason the board exists: work the machine has
-              taken as far as it can and handed back. Every card below is a real work item in a
-              real repository, with what it actually cost.
-            </p>
-            {snapshot === null ? <NoSnapshot /> : <SnapshotBoard snapshot={snapshot} />}
-          </section>
-
-          <section>
             <p className="kicker">The loop</p>
-            <h2>Five places it stops, and your repository says what happens at each.</h2>
-            <p>
-              The set is closed — no sixth point will ever be added. What runs <i>at</i> a point is
-              open and comes from one committed file, <code>.lingtai/config.yaml</code>, in the
-              repository being worked. Adding a security scan or a second reviewer is a line in that
-              file, not a change to Lingtai.
-            </p>
-            <ol className="points">
-              <li>
-                <span className="pt">admit</span>
-                <span>the queue offers an item, before it is claimed</span>
-                <span className="may">may refuse — it stays queued</span>
-              </li>
-              <li>
-                <span className="pt">prepared</span>
-                <span>the worktree exists, before the agent starts</span>
-                <span className="may">may refuse — before money is spent</span>
-              </li>
-              <li>
-                <span className="pt">proposed</span>
-                <span>the agent stopped and there are commits</span>
-                <span className="may">may refuse</span>
-              </li>
-              <li>
-                <span className="pt">merge</span>
-                <span>after <code>proposed</code> passes, before the merge lane</span>
-                <span className="may">may refuse</span>
-              </li>
-              <li>
-                <span className="pt">end</span>
-                <span>the item reached any terminal outcome</span>
-                <span className="may no">cannot refuse — its actions are effects</span>
-              </li>
-            </ol>
-          </section>
-
-          <section>
-            <p className="kicker">What the agent gets</p>
-            <h2>A worktree of its own, and nothing it was not given.</h2>
+            <h2>It takes the next issue, gives it somewhere to fail, and lets the gates decide.</h2>
             <div className="grid">
               <div>
-                <h3>A disposable worktree</h3>
+                <h3>It takes the next issue</h3>
                 <p>
-                  One item, one branch, one directory, cut from the base and deleted when the run
-                  ends. Uncommitted work goes with it, which is a property and not an accident: what
-                  survives a run is what the run committed.
+                  The queue is your issue tracker, asked on every pass. The labels you already use
+                  decide what is eligible — your recipe names the kinds that qualify and the ones
+                  that disqualify — and one item is in flight at a time. Nothing is copied out of
+                  GitHub: an issue you close or hold is one the next pass does not offer.
                 </p>
               </div>
               <div>
-                <h3>A filtered environment</h3>
+                <h3>The agent gets a blast radius</h3>
                 <p>
-                  The recipe names the variables a project&rsquo;s agent may see, and it gets those
-                  and no others. A missing value refuses the whole project before an issue is
-                  claimed — no worktree, no agent, no money.
+                  One item, one branch, one worktree cut from the base and deleted when the run
+                  ends. Its environment holds the variables your recipe names and no others, and a
+                  hook refuses tool calls that reach outside the directory. What survives a run is
+                  what the run committed.
                 </p>
               </div>
               <div>
-                <h3>Gates it cannot skip</h3>
+                <h3>Gates decide, not the agent</h3>
                 <p>
-                  A configured check that did not run is a bug, not a preference. An unconfigured
-                  gate is shown as <code>skipped</code>, never omitted, because absent and
-                  silently-not-run have to be distinguishable.
+                  An agent can commit; it cannot merge. Between its last commit and your base
+                  branch are the checks your repository names — a build, a test suite, a reviewer, a
+                  person — and a run that fails one stops there with a typed reason rather than a
+                  guess about what to do next.
                 </p>
               </div>
-              <div>
-                <h3>An ordinary repository</h3>
-                <p>
-                  One committed file. No bot account, no CI job, no label state machine. Delete
-                  Lingtai tomorrow and the repository would not notice.
-                </p>
-              </div>
+            </div>
+          </section>
+
+          <section>
+            <p className="kicker">Your repository sets the rules</p>
+            <h2>One committed file, and nothing else in your repository changes.</h2>
+            <p>
+              <code>.lingtai/config.yaml</code> says what work is eligible, what an agent may see,
+              and what has to pass before anything merges. Lingtai reads it from{" "}
+              <code>origin</code> at claim time, never from the branch the agent is working on — so
+              an agent that edits it changes nothing about the run in flight.
+            </p>
+            <pre className="recipe">
+              <code>{RECIPE}</code>
+            </pre>
+            <p className="recipe-note">
+              Abbreviated from{" "}
+              <a className="link" href={`${REPO}/blob/main/.lingtai/config.yaml`}>
+                this repository&rsquo;s own file
+              </a>
+              , which is how Lingtai works on Lingtai.
+            </p>
+            {/* The second coral thing on this page, and the last. It is not an
+                action and links nowhere: a reader is never made to choose which
+                of two coral things is the way in. */}
+            <div className="claim">
+              <p>
+                <b>No bot account, no label state machine, no CI job.</b> Lingtai authenticates as a
+                GitHub App you install. It reads the labels you already use and writes one back only
+                where your recipe says to, and the state it keeps is on its own machine rather than
+                encoded in your issues.
+              </p>
+              <p>
+                <b>Delete Lingtai tomorrow and the repository would not notice.</b> What is left is
+                a branch, some merge commits, and issues closed the way any contributor closes them.
+              </p>
             </div>
           </section>
 
           <section>
             <p className="kicker">When it goes wrong</p>
-            <h2>Every answer is one query against one log.</h2>
+            <h2>Two tickets, and what they cost.</h2>
+            <p>
+              A harness is judged on the run that did not work. Both of these are issues in this
+              repository, which is one of the repositories Lingtai runs: one stopped, one landed.
+            </p>
+            <div className="cases">
+              {TICKETS.map((ticket) => (
+                <Case key={ticket.ref} ticket={ticket} />
+              ))}
+            </div>
+            <h3 style={{ marginTop: 34 }}>Why either of those is answerable at all</h3>
             <p>
               Three questions decide whether you can leave a coding agent running:{" "}
               <i>what state is this ticket in</i>, <i>why did this not merge</i>, and{" "}
               <i>what is waiting on me</i>. Scatter them — state in labels, history in comments,
-              telemetry nobody parses — and each is answerable only by somebody who already knows
-              where to look.
+              spend in a file nobody parses — and each one is answerable only by somebody who
+              already knows where to look.
             </p>
             <p>
               So every component appends to one append-only table and keeps no state of its own.
               There is a single projection, and it is rebuilt by replaying the log rather than
-              repaired by hand. Nothing decides in private, which is why the board and the
-              command line cannot disagree about why something stopped — and why a claim about
-              this system is settled by citing a sequence number rather than by arguing.
+              repaired by hand. Nothing decides in private, which is why the board and the command
+              line cannot disagree about why something stopped — and why a claim about this system
+              is settled by citing a sequence number rather than by arguing.
             </p>
             <p>
               <Link className="link" href="/docs/reference/">
@@ -171,13 +197,14 @@ export default async function Home() {
             <ul className="open">
               <li>
                 <b>
-                  Two of the five points run nothing yet: <code>admit</code> and <code>merge</code>.
+                  Two of the five gate points run nothing yet: <code>admit</code> and{" "}
+                  <code>merge</code>.
                 </b>{" "}
                 <span>
                   Both are resolved into the run&rsquo;s plan and drawn on the board, and no
                   pipeline executes at either. A recipe that configures one is not refused — it is
                   simply not run, which is the failure this project names as its worst kind.{" "}
-                  <a className="link" href={`${REPO}/issues/58`}>
+                  <a className="link" href={`${ISSUES}58`}>
                     #58
                   </a>
                   .
@@ -210,7 +237,11 @@ export default async function Home() {
                   Node caches a module at import, so a merge into <code>main</code> reaches the next
                   process and not the one conducting. The beacon carries the commit the daemon
                   started at and <code>lingtai doctor</code> says how far behind that is; neither
-                  restarts it, and whether it should is open.
+                  restarts it, and whether it should is open.{" "}
+                  <a className="link" href={`${ISSUES}98`}>
+                    #98
+                  </a>
+                  .
                 </span>
               </li>
               <li>
@@ -230,6 +261,24 @@ export default async function Home() {
               </li>
             </ul>
           </section>
+
+          <section>
+            <p className="kicker">Docs</p>
+            <h2>Six places to start, all of them files in this repository.</h2>
+            <ul className="doc-list">
+              {FRONT_PAGE_DOCS.map((doc) => (
+                <li key={doc.href}>
+                  <a href={doc.href}>
+                    <span className="t">{doc.title}</span>
+                    {/* Which file it is. A page that hides where it came from
+                        is indistinguishable from a copy of it. */}
+                    <span className="s">doc/{doc.source}</span>
+                    <span className="l">{doc.note}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
         </div>
       </main>
 
@@ -237,3 +286,73 @@ export default async function Home() {
     </>
   );
 }
+
+/**
+ * One ticket, with its figures as the board's own pills.
+ *
+ * The amount is rendered by `money()` from a number in `lib/tickets.ts`, which
+ * a test checks against the document in `doc/` that records it. Nothing on this
+ * page prints a figure that this repository does not already write down.
+ */
+function Case({ ticket }: { ticket: Ticket }) {
+  return (
+    <article className={`case ${ticket.landed ? "landed" : "stuck"}`}>
+      <div className="id">
+        <a className="iss" href={`${ISSUES}${ticket.ref}`}>
+          #{ticket.ref}
+        </a>{" "}
+        <span>steven-zhc/lingtai</span> · {ticket.kind}
+      </div>
+      <h3>{ticket.what}</h3>
+      <p>{ticket.story}</p>
+      <ul className="meta">
+        {/* `hold` and not `sig`: amber on the board means a person is being
+            waited on *now*, and these two are history. The board's own colour
+            for an attempt that ended without landing is the honest one. */}
+        <li className={`pill ${ticket.landed ? "pass" : "hold"}`}>
+          {ticket.landed ? "landed" : "did not land"}
+        </li>
+        <li className="pill">{money(ticket.costUsd)}</li>
+        {ticket.attempts !== null && <li className="pill hold">{ticket.attempts} attempts</li>}
+      </ul>
+      <p className="src">
+        Recorded in{" "}
+        <a className="link" href={`${REPO}/blob/main/doc/${ticket.source}`}>
+          doc/{ticket.source}
+        </a>
+      </p>
+    </article>
+  );
+}
+
+/**
+ * The recipe, abbreviated from this repository's own.
+ *
+ * Shortened and never invented: every key here is in the real file, with the
+ * comments and the options this page is not explaining taken out. It is on the
+ * page because "your repository sets the rules" is a claim a reader should be
+ * able to check the size of — the whole of what Lingtai asks a repository for
+ * fits on a screen.
+ */
+const RECIPE = `repo:
+  base: main
+
+source:
+  kinds: [bug, tech-debt, feature]
+  exclude: [agent:hold]
+
+env:
+  required: [LINGTAI_TEST_DATABASE_URL]
+  plantAt: .env.local
+
+gates:
+  prepared:
+    - name: install
+      run: pnpm install --frozen-lockfile
+  proposed:
+    - name: build
+      run: pnpm typecheck && pnpm test
+  end:
+    - name: close the ticket
+      when: landed
+      close: true`;

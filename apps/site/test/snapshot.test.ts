@@ -26,6 +26,11 @@ describe("figures live in the snapshot and nowhere else", () => {
     // A dollar amount in the markup is a figure that no log produced, and it
     // would keep reading as true long after it stopped being. The board's
     // numbers arrive as data or not at all.
+    //
+    // The two tickets under "when it goes wrong" are the one exception and are
+    // not one of these: they are amounts in `lib/tickets.ts`, rendered through
+    // `money()`, and `test/tickets.test.ts` checks each against the document in
+    // `doc/` that records it. History does not go stale; a lane count does.
     const inText = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
     expect(inText).not.toMatch(/\$\d/);
   });

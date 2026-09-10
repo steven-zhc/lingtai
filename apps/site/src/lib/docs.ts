@@ -90,6 +90,55 @@ export const HTML_DOCS = [
   { file: "architecture.zh.html", label: "架构", note: "The architecture page, in Chinese. A change to either belongs in both." },
 ];
 
+/**
+ * The six the front page offers, and no more.
+ *
+ * The index at `/docs` is generated and lists everything in `doc/`; six is a
+ * choice about where a stranger should start, so it is written down rather than
+ * derived. What it must not become is a list that outlives what it points at —
+ * `test/page.test.ts` checks that each `source` is still in `doc/` and that
+ * each `href` is a page this site publishes, which is the same failure the
+ * generated index exists to avoid, one level up.
+ */
+export const FRONT_PAGE_DOCS = [
+  {
+    title: "Tutorial",
+    href: "/docs/tutorial/",
+    source: "tutorial.md",
+    note: "From a clone to a merged ticket, on your own repository.",
+  },
+  {
+    title: "Architecture",
+    href: "/doc/architecture.html",
+    source: "architecture.html",
+    note: "Six diagrams answering which process am I in, who appends to the log, and where each piece of state lives.",
+  },
+  {
+    title: "Reference",
+    href: "/docs/reference/",
+    source: "reference.md",
+    note: "Every term, every event, every recipe key, and what each default is for.",
+  },
+  {
+    title: "Operating",
+    href: "/docs/operating/",
+    source: "operating.md",
+    note: "Running it day to day: pausing, shutting down, watching a run, and what to do when one is stuck.",
+  },
+  {
+    title: "Decisions",
+    href: "/docs/#decisions",
+    source: "decisions",
+    note: "One decision per file, with its context and its consequences. A decision that turns out wrong gets a superseding file, not an edit.",
+  },
+  {
+    title: "Experiments",
+    href: "/docs/#experiments",
+    source: "experiments",
+    note: "Things actually run against real data, with their results — including the ones that did not work.",
+  },
+];
+
 export interface DocPage {
   /** The route under `/docs/`, and the file's path under `doc/` without `.md`. */
   slug: string;
