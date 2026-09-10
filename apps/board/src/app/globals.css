@@ -488,7 +488,7 @@ details[open] > summary::before { content: "▾"; }
   flex-direction: column;
   /* Was 2rem, against a 0.72rem eyebrow. The heading is display-sized now and
      needs room above it, or it reads as a caption on the section before. */
-  gap: 2.75rem;
+  gap: 2.6rem;
   padding: 1.5rem;
   /* Wide enough for the decision column's two boxes to sit side by side, and no
      wider. Everything else keeps the measure below. */
@@ -496,20 +496,19 @@ details[open] > summary::before { content: "▾"; }
   width: 100%;
 }
 
-/* **The measure belongs to prose, and only to prose.** A paragraph read at
-   82rem is a paragraph nobody finishes, so the ticket keeps the 62rem it has
-   always had.
+/* **No section is capped. The measure belongs to the paragraph, not to the
+   section that contains one.**
 
-   The previous version of this rule put the measure on "the sections that are
-   prose *and lists*", and that second half was wrong. Attempts is a ledger —
-   run, gates, turns, cost — and History is a column of seq numbers, timestamps
-   and event names. Neither is read as a sentence: they are scanned down a
-   column, and capping them at 62rem left twenty rem of the page empty while
-   the rows they hold wrapped. `standing` was carved out one at a time for
-   exactly this (#111); `wide` is the same fact said once. */
-.detail-body > section { max-width: 62rem; width: 100%; }
-.detail-body > section.standing,
-.detail-body > section.wide { max-width: none; }
+   This rule used to read `max-width: 62rem`, on the argument that history is
+   "a list of short lines" and stretching it made it unreadable. Half of that
+   was right and it was applied to the wrong object: Attempts is a ledger and
+   History is a column of seq numbers, and both are scanned down, not read
+   across — capping them left twenty rem of the page empty while their rows
+   wrapped. Ticket is the only section holding sentences, and a sentence is
+   measured in characters, so the limit sits on `.md p` where it can be stated
+   in `ch`. `standing` had already been carved out one at a time for exactly
+   this reason (#111); there is now nothing left to carve out of. */
+.detail-body > section { width: 100%; }
 
 /* The section's one fact sits at the right of the label's own rule, which is
    why there is no separate summary band: a band that totals what is under it
@@ -534,7 +533,7 @@ details[open] > summary::before { content: "▾"; }
   flex-wrap: wrap;
   font-family: var(--mono);
   font-weight: 500;
-  margin: 0 0 1rem;
+  margin: 0 0 1.1rem;
   padding-bottom: 0.45rem;
   border-bottom: 1px solid var(--rule-2);
 }
@@ -586,17 +585,41 @@ details[open] > summary::before { content: "▾"; }
 .sread {
   display: flex;
   align-items: baseline;
-  gap: 0.7rem;
+  gap: 1.1rem;
+  flex-wrap: wrap;
   margin: 0;
   font-family: var(--mono);
-  font-size: 1.15rem;
-  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.sread .sage { color: var(--ink-2); }
-.sread .sage::before { content: "│ "; color: var(--rule-2); }
+/* **Bigger than a section name, and that is the point.** This word is the whole
+   page's answer — BLOCKED, RUNNING, LANDED — and a section name is only the
+   name of a section. At 1.15rem it lost that argument to every heading below
+   it, and the commonest reason anybody opens this page is to read exactly this
+   word (#80, #87, #89, #94 were four wrong readings in one day). */
+.sread .sstate {
+  font-size: clamp(1.7rem, 4vw, 2.45rem);
+  line-height: 1;
+  font-weight: 600;
+  /* Tracking this wide is a treatment for capitals; mixed case would fall
+     apart. The negative margin takes back the space after the last letter. */
+  letter-spacing: 0.2em;
+  margin-right: -0.2em;
+}
+/* The second readout: how long you have been the bottleneck. Beside the state
+   rather than under it, because it is a fact of the same rank and not an
+   annotation on the first — and the rule at its left says so without the
+   pseudo-element pipe that used to. */
+.sread .sage {
+  font-size: clamp(1.05rem, 2vw, 1.4rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  padding-left: 1.1rem;
+  padding-block: 0.22em;
+  border-left: 2px solid var(--rule-2);
+}
 .standing.onyou .sread .sstate { color: var(--signal); }
 
 .ssince {
@@ -987,47 +1010,69 @@ details[open] > summary::before { content: "▾"; }
    list and a gate that runs *per attempt* sat in a page-level section (#102).
    Everything below this comment is inside an attempt. */
 
-.ledger { display: flex; flex-direction: column; gap: 0.5rem; }
-.attempt {
-  padding: 0.55rem 0.75rem;
+/* **One frame around the ledger, hairlines inside it.** Every attempt used to
+   be its own bordered, rounded card with a gap under it, which drew N frames to
+   say one thing — these are rows of the same table. The box is drawn once and
+   the rows are separated by a rule, which is what a ledger looks like. */
+.ledger {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 3px;
+  overflow: hidden;
 }
+.attempt { border-bottom: 1px solid var(--rule); }
+.attempt:last-child { border-bottom: 0; }
+/* The disclosed part of an attempt keeps the horizontal padding the summary
+   row has, so the two align down a common left edge. */
+.attempt > *:not(summary) { padding-left: 0.85rem; padding-right: 0.85rem; }
+.attempt[open] > *:last-child { padding-bottom: 0.85rem; }
 /* The attempt the block at the top points at. The same teal mark the pointer
    carries, so the two read as one thing rather than as two claims about a
    failure — and it is the reason nothing is printed twice. */
-.attempt.deciding { border-left: 2px solid var(--accent); }
+/* An inset shadow on the row, not a border on the box. A `border-left` on a row
+   inside a single framed ledger widens that row and steps the frame's own edge
+   in and out down the list; an inset shadow marks the row without taking part in
+   its geometry. */
+.attempt.deciding > summary { box-shadow: inset 2px 0 0 var(--accent); }
 /* Anchored: the pointer links here, and a browser must not land it under the
    bar it scrolled past. */
 .attempt { scroll-margin-top: 1rem; }
 /* The row itself: what happened, then what it cost, then when. The facts push
    right so a column of attempts is read down rather than across. */
+/* A grid, not a flex row. Flex packed the figures wherever the text before them
+   ended, so no two attempts agreed on where a cost was — which is the whole
+   reason a ledger is worth having. Each figure owns a column and is set right,
+   so `$7.81` sits over `$5.23` and the eye reads the money down. */
 .attempt > summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: baseline;
-  font-size: 0.78rem;
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) repeat(4, auto) minmax(9rem, auto);
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
   color: var(--ink);
 }
 .attempt > summary:hover { color: var(--ink); }
-.anum { font-family: var(--mono); color: var(--ink); }
+/* The one cell that is not a figure: what this attempt is and how it ended. */
+.aname { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.45rem; min-width: 0; }
+.anum { color: var(--ink); }
 /* The failure's kind, the non-zero exit, the release's reason — a pointer to
    the row in this attempt's own history that holds the whole of it. */
-.adetail { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
-.afacts {
-  margin-left: auto;
-  font-family: var(--mono);
+.adetail { font-size: 0.72rem; color: var(--muted); }
+.afig {
   font-size: 0.72rem;
   color: var(--ink-2);
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .aage {
-  font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--muted);
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .ameta {
   display: flex;
@@ -1234,6 +1279,13 @@ details[open] > summary::before { content: "▾"; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p, .md ul, .md ol, .md blockquote, .md table, .md pre { margin: 0 0 0.7rem; }
+/* **The measure is here, and it is in `ch`.** The section around this is the
+   full width of the page now, which is what a table, a code block and a heading
+   want. A sentence does not: past roughly 80 characters the eye loses the start
+   of the next line. So the limit is on the things that are read as sentences,
+   stated in the unit that actually governs them, and everything else in the
+   document keeps the width it was given. */
+.md p, .md li, .md blockquote { max-width: 82ch; }
 /* A heading inside a document is a heading *in that document*. It must not
    compete with the section labels the page navigates by, so the whole scale is
    compressed into a half-step above the body and told apart by weight. */

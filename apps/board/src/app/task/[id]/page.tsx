@@ -153,13 +153,6 @@ function Attempt({
    */
   deciding: boolean;
 }) {
-  const facts = [
-    run.turns === null ? null : `${run.turns} turns`,
-    run.durationMs === null ? null : elapsed(run.durationMs),
-    run.costUsd === null ? null : `$${run.costUsd.toFixed(2)}`,
-    run.diff === null ? null : `${run.diff.files} files +${run.diff.insertions} −${run.diff.deletions}`,
-  ].filter((s): s is string => s !== null);
-
   return (
     <details
       className={deciding ? "attempt deciding" : "attempt"}
@@ -167,20 +160,39 @@ function Attempt({
       open={alone || deciding}
     >
       <summary>
-        <span className="anum">{alone ? "the run" : `attempt ${run.attempt}`}</span>
-        <span className={`pill ${outcomeClass(run.outcome.state)}`}>{run.outcome.state}</span>
-        {/* A pointer, not a copy: the whole of a failure is in this attempt's
-            own history, and printing it twice is how two copies of one fact
-            come to disagree (design §2). */}
-        {run.outcome.detail ? <span className="adetail">{run.outcome.detail}</span> : null}
-        {/* Named, because a repair is an ordinary run with no vocabulary of its
-            own (0025) and its spend is counted apart from the work's (#84). */}
-        {run.repair ? (
-          <span className="pill hold" title="this attempt is the one a failure bought">
-            repair
-          </span>
-        ) : null}
-        <span className="afacts">{facts.join(" · ")}</span>
+        <span className="aname">
+          <span className="anum">{alone ? "the run" : `attempt ${run.attempt}`}</span>
+          <span className={`pill ${outcomeClass(run.outcome.state)}`}>{run.outcome.state}</span>
+          {/* Named, because a repair is an ordinary run with no vocabulary of
+              its own (0025) and its spend is counted apart from the work's
+              (#84). */}
+          {run.repair ? (
+            <span className="pill hold" title="this attempt is the one a failure bought">
+              repair
+            </span>
+          ) : null}
+          {/* A pointer, not a copy: the whole of a failure is in this attempt's
+              own history, and printing it twice is how two copies of one fact
+              come to disagree (design §2). */}
+          {run.outcome.detail ? <span className="adetail">{run.outcome.detail}</span> : null}
+        </span>
+        {/* Four figures, each in its own column, **each rendered whether or not
+            it has a value**. Joined into one string they lined up with nothing;
+            the ledger's whole use of the page's width is that these read *down*.
+            A column that vanishes when null is a column that stops aligning, and
+            an em dash is a different fact from a shorter row: this run recorded
+            no cost, rather than this row being narrower. Same rule as 0016 §4,
+            one page along. */}
+        <span className="afig">{run.turns === null ? "—" : `${run.turns} turns`}</span>
+        <span className="afig">
+          {run.durationMs === null ? "—" : elapsed(run.durationMs)}
+        </span>
+        <span className="afig">{run.costUsd === null ? "—" : `$${run.costUsd.toFixed(2)}`}</span>
+        <span className="afig">
+          {run.diff === null
+            ? "—"
+            : `${run.diff.files}f +${run.diff.insertions} −${run.diff.deletions}`}
+        </span>
         {/* Dated *and* relative. `04:12:15` alone cannot tell a run from three
             days ago apart from one ten minutes old (#102). */}
         <span className="aage" title={run.at}>
@@ -354,7 +366,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           )}
         </section>
 
-        <section className="wide">
+        <section>
           <Label fact={totalsFact(task.totals)}>Attempts</Label>
           {task.runs.length === 0 ? (
             <p className="empty">No agent has been dispatched for this ticket yet.</p>
@@ -373,7 +385,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           )}
         </section>
 
-        <section className="wide">
+        <section>
           <Label fact={events === 0 ? null : `${events} events · grouped by run`}>History</Label>
           {/* Stated, not omitted. ADR 0016 §4's rule reaches here too: a section
               that renders nothing looks exactly like a section whose events
