@@ -69,3 +69,21 @@ describe("the attempt in flight", () => {
     expect(html).toContain("not reading");
   });
 });
+
+/**
+ * The first paint, and only the first paint.
+ *
+ * What is *not* asserted here, said rather than left to be discovered: the
+ * transition. `useLatch`'s other half — the signal turning true opens a
+ * disclosure that was already mounted, and the signal turning false leaves it
+ * alone — is an effect, and this suite has no DOM to run one in
+ * (`vitest.config.ts` sets no environment and the app has no jsdom). A test
+ * that reimplemented the rule beside the rule would assert its own copy and
+ * pass with `latch.tsx` reverted, which is worse than the gap it covers.
+ */
+describe("the disclosure the page hands the server", () => {
+  it("is open for a run in flight and shut for one that is over", () => {
+    expect(render(running())).toContain('<details class="attempt" id="attempt-2" open=""');
+    expect(render(finished())).not.toContain("open=\"\"");
+  });
+});

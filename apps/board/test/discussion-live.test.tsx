@@ -13,14 +13,18 @@
  * the loop* (0033 §4). A loop with no feedback is a person asking again and
  * paying twice (#132).
  *
- * Rendered statically, so no effect runs and no `EventSource` is opened: what
- * is asserted here is the shape a reader is handed, which is the half `#101`
- * says a fold test could never have caught.
+ * **`Trace` is the subject of the second half, and it is the subject because it
+ * is testable.** There is no DOM here and no `EventSource`, so a test of
+ * `Thinking` could only ever assert its first frame — which is a static
+ * paragraph, and asserting a static paragraph is how a live box gets replaced
+ * by a dead one without a test noticing. `Trace` takes the tail as a value:
+ * these are the three things a follower can be holding and the three sentences
+ * a reader is handed for them, asserted directly.
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DiscussionView } from "../src/lib/task.ts";
-import { Discussion } from "../src/app/discussion.tsx";
+import { Discussion, Trace } from "../src/app/discussion.tsx";
 
 const waiting: DiscussionView = {
   chatId: "chat-1",
@@ -57,11 +61,56 @@ describe("the box while it is being answered", () => {
     expect(html.indexOf("why did attempt 2 not produce a branch?")).toBeLessThan(ask);
   });
 
-  it("says it is waiting, and has somewhere for the answer to arrive", () => {
+  it("puts an unanswered turn's trace where the answer will be", () => {
     const html = render([waiting]);
-    // Before the first line of the trace arrives there is nothing to show, and
-    // this says so rather than showing an empty frame (0016 §4).
+    // The turn renders the follower and not a sentence about it: this is the
+    // first frame of `Trace`, before a connection has said anything.
     expect(html).toContain("waiting for the daemon to answer");
+    // Nothing to show yet, and it says so rather than showing an empty frame
+    // (0016 §4).
     expect(html).not.toContain('class="chattrace"');
+  });
+});
+
+describe("what a reader is handed for each state of the trace", () => {
+  const show = (lines: string[], state: Parameters<typeof Trace>[0]["state"]) =>
+    renderToStaticMarkup(<Trace lines={lines} state={state} />);
+
+  it("says it is waiting while the file has not been opened yet", () => {
+    // `waiting` is a 404 the follower is still asking about — the board
+    // appended the question a moment ago and the daemon has not opened the
+    // file. *Not yet*, and it must not read as *not coming*.
+    expect(show([], "waiting")).toContain("waiting for the daemon to answer");
+    expect(show([], "waiting")).not.toContain("nothing is writing");
+  });
+
+  it("shows the lines as they arrive, verbatim and counted", () => {
+    const html = show(["12:00:01  Read    doc/architecture.html", "12:00:04  think"], "reading");
+    // The whole of what makes the box move: the count says something is
+    // happening and the lines say what.
+    expect(html).toContain("answering · 2 lines so far");
+    expect(html).toContain('class="chattrace"');
+    expect(html).toContain("doc/architecture.html");
+    // A log, and never markdown or a paragraph (design §6).
+    expect(html).toContain("<pre");
+  });
+
+  it("says nothing is writing once the trace has ended with no answer", () => {
+    // The turn is over — `answerDiscussion` deletes the file when it appends
+    // the answer — so a `Thinking` still on screen is one whose
+    // `DiscussionAnswered` never landed. *answering · 2 lines so far* under a
+    // file nobody is writing is the sentence #132 is about, one layer down.
+    const html = show(["12:00:01  Read    doc/architecture.html", "12:00:04  think"], "removed");
+    expect(html).toContain("nothing is writing to this conversation");
+    expect(html).not.toContain("answering ·");
+    // What it did produce is still on screen: the account of a turn that died
+    // is the only account there is.
+    expect(html).toContain("doc/architecture.html");
+  });
+
+  it("says so too when the asking ran out and no file ever appeared", () => {
+    const html = show([], "gone");
+    expect(html).toContain("nothing is writing to this conversation");
+    expect(html).not.toContain("waiting for the daemon to answer");
   });
 });

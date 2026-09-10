@@ -151,6 +151,10 @@ export function Standing({
    * from, so the name on the quote and the name on the button cannot disagree.
    * A refusal that came from the merge lane rather than from a gate has no
    * verdict to name, and the quote is unattributed rather than mislabelled.
+   *
+   * Both are read off the *named* attempt — `standing.failed` is that run's
+   * failed verdicts and `diagnosis` is the hold written when it stopped — which
+   * is why neither needs to say which attempt it came from and `deciding` does.
    */
   const raw = standing.diagnosis?.raw ?? null;
   const said = standing.failed.at(-1)?.replace(":", " / ") ?? null;
@@ -237,7 +241,13 @@ export function Standing({
               writes one, which is every block written before it. */}
           {what !== null ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
 
-          <Reason raw={raw} said={said} deciding={standing.deciding} />
+          <Reason
+            raw={raw}
+            said={said}
+            diagnosed={standing.diagnosis !== null}
+            deciding={standing.deciding}
+            attempt={standing.attempt}
+          />
 
           {/* ---- rank 3: what to do about it ------------------------------- */}
 
@@ -277,20 +287,25 @@ export function Standing({
             ? " · offered by GitHub"
             : ""}
         </span>
-        {/* Which attempt produced it. `of N` because the number alone reads as
-            the whole story on an item that has had three (#102). */}
+        {/* Which attempt produced it, and the way down to the whole of it —
+            that attempt's gate points, its findings and its diff. `of N`
+            because the number alone reads as the whole story on an item that
+            has had three (#102).
+
+            **The coordinate is the pointer.** This used to be a fact here and a
+            second `in attempt N ↓` beside it, which on the ordinary block was
+            the same attempt number printed twice — the duplication #132 is
+            about. A coordinate you can follow is one line; rank 2 names an
+            attempt only where it is a *different* one, which is the only case
+            where saying so tells a reader anything. */}
         {standing.attempt !== null ? (
-          <span className="sfrom" title={standing.runId ?? undefined}>
+          <a
+            className="sfrom sptr"
+            href={`#attempt-${standing.attempt}`}
+            title={standing.runId ?? undefined}
+          >
             from attempt {standing.attempt} of {standing.attempts}
-            {standing.runId ? ` · ${standing.runId.slice(0, 12)}` : ""}
-          </span>
-        ) : null}
-        {/* The way down to the whole of it — that attempt's gate points, its
-            findings and its diff. A pointer and never a copy: what the gate
-            said is quoted once, above. */}
-        {standing.deciding !== null ? (
-          <a className="sptr" href={`#attempt-${standing.deciding.attempt}`}>
-            in attempt {standing.deciding.attempt} ↓
+            {standing.runId ? ` · ${standing.runId.slice(0, 12)}` : ""} ↓
           </a>
         ) : null}
       </p>
@@ -415,42 +430,66 @@ const HELD_CLASS: Record<HoldLine["part"], string> = {
  * **It opens in place.** The disclosure is open on load and closing it is the
  * reader's own move — the whole judgement behind this ticket is that what the
  * page already has must appear at the moment it is needed rather than waiting
- * to be found. Following the pointer to the attempt is still there, at rank 4,
- * for the findings and the diff that sit beside the verdict.
+ * to be found. Following the coordinate at rank 4 is still how you get to the
+ * findings and the diff that sit beside the verdict.
  *
- * Three states, and the middle one is the one 0016 §4 is about:
+ * **A diagnosis answers this rank, or nothing does.** `raw` is written by the
+ * conductor beside `what` and is about *this* hold: null there means nothing
+ * refused — every gate passed, or a gate asked for a person — and the honest
+ * rendering of that is no rank at all. `deciding` is the older, weaker thing
+ * and it is a *search*: `decidingOf` walks back through earlier attempts, so on
+ * a block whose own gates passed it can hold attempt 1's build failure. Printed
+ * under *every gate passed* with the pointer that used to attribute it moved
+ * away, that reads as this block's reason and is not one. So it appears only
+ * where there is no diagnosis to displace it — every block written before #83 —
+ * and it says which attempt it came from whenever that is not the attempt rank
+ * 4 already names.
+ *
+ * Three states where there is a diagnosis, and the middle one is 0016 §4:
  *
  * - **evidence**, which is quoted;
  * - **a gate that refused and recorded nothing** — an empty string — which is
  *   stated, because a blank rank looks exactly like a rank that failed to
  *   render and only one of those is our bug;
- * - **nothing that refused at all** — every gate passed, or a block written
- *   before there was a `raw` to carry — which renders the deciding line if
- *   there is one and leaves no hole where a quote would be.
+ * - **nothing that refused at all**, which is no rank and no hole.
  */
 function Reason({
   raw,
   said,
+  diagnosed,
   deciding,
+  attempt,
 }: {
   /** `diagnosis.raw`: the failing gate's evidence, verbatim. */
   raw: string | null;
   /** The gate that said it, or null when what refused was not a gate. */
   said: string | null;
+  /** Whether the hold carries a diagnosis at all. See above: it decides the rank. */
+  diagnosed: boolean;
   deciding: StandingView["deciding"];
+  /** The attempt rank 4 names, so this rank names one only when it differs. */
+  attempt: number | null;
 }) {
-  if (raw === null) {
-    // No quote to make. The one deciding line is what the block has always had
-    // here, and it is still better than nothing — its pointer has moved down to
-    // the coordinates, so this is a line and no longer a signpost.
+  if (!diagnosed) {
+    // The block as it was before #83, and the one deciding line is all it has
+    // ever had here. Attributed, because it may be an earlier attempt's.
     if (deciding === null) return null;
     return (
       <p className="sevidence">
         <span className="sgate">{deciding.source}</span>
         <span className="sline">{deciding.line}</span>
+        {deciding.attempt !== attempt ? (
+          <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+            in attempt {deciding.attempt} ↓
+          </a>
+        ) : null}
       </p>
     );
   }
+
+  // Nothing refused: `what` has already said so in a sentence, and a quote of
+  // something else under it would be a cause this hold does not have.
+  if (raw === null) return null;
 
   if (raw.trim() === "") {
     return (

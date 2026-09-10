@@ -35,6 +35,7 @@
  * for the same facts.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLatch } from "./latch.tsx";
 
 /**
  * How much of one log is held in the browser.
@@ -59,10 +60,31 @@ const KEEP_LINES = 2_000;
  */
 const AGAIN_MS = 1_500;
 
+/**
+ * How many times, before *not yet* is answered as *not coming*.
+ *
+ * A bound and not a courtesy. `DiscussionAsked` is appended by the board and
+ * answered by whatever daemon is running, and a question asked with none running
+ * waits in the stream until one starts — which may be tomorrow (`answerOutstanding`).
+ * Unbounded, that is a tab asking for a 404 every second and a half until it is
+ * closed, which is the second half of what #132 found: a box that cannot tell a
+ * daemon thinking from a daemon that is not there. Thirty seconds is far past
+ * the time it takes a running daemon to open the file, so reaching this is the
+ * answer rather than an impatience.
+ */
+const AGAIN_LIMIT = 20;
+
 type Ended = "landed" | "did not land" | "removed";
 
-/** What the follower knows about the file. Never about the run (0034 §8). */
-export type TailState = "off" | "reading" | "gone" | "trouble" | Ended;
+/**
+ * What the follower knows about the file. Never about the run (0034 §8).
+ *
+ * `waiting` is `gone` seen by a caller that was told the file is coming and is
+ * still asking (`awaited`, `AGAIN_LIMIT`). The distinction is the whole of what
+ * a reader needs: *it is not there yet* and *it is not coming* are the two
+ * sentences a box waiting for an answer has to be able to tell apart.
+ */
+export type TailState = "off" | "reading" | "waiting" | "gone" | "trouble" | Ended;
 
 /**
  * Follow one log file over the route's SSE, for as long as `following`.
@@ -141,15 +163,20 @@ export function useLogTail(
     return stop;
   }, [following, again, start, stop]);
 
-  // The file that is coming rather than gone. Asked for again, and only while
-  // somebody is still waiting for it.
+  // The file that is coming rather than gone. Asked for again, while somebody is
+  // still waiting for it and while *not yet* is still the likelier reading —
+  // past `AGAIN_LIMIT` the state stands as `gone`, which is what a caller shows
+  // when nothing is writing.
   useEffect(() => {
-    if (!following || !awaited || state !== "gone") return;
+    if (!following || !awaited || state !== "gone" || again >= AGAIN_LIMIT) return;
     const timer = setTimeout(() => setAgain((n) => n + 1), AGAIN_MS);
     return () => clearTimeout(timer);
-  }, [following, awaited, state]);
+  }, [following, awaited, state, again]);
 
-  return { lines, state };
+  // `gone` is only an answer once the asking has stopped. Derived on the way
+  // out rather than held, so the retry above keeps keying on the one state the
+  // stream actually reported.
+  return { lines, state: state === "gone" && awaited && again < AGAIN_LIMIT ? "waiting" : state };
 }
 
 export function RunLog({
@@ -165,9 +192,12 @@ export function RunLog({
    */
   live?: boolean;
 }) {
-  // Open is state rather than a bare attribute because it is now two things: a
-  // running attempt starts open, and a reader can close it.
-  const [open, setOpen] = useState(live);
+  // Open is latched rather than a bare attribute because it is now two things:
+  // a running attempt starts open, and a reader can close it. `useState(live)`
+  // would read `live` once — so a log mounted before its run started would
+  // never open — and a bare `open={live}` would shut it again when the run
+  // ended. See `latch.tsx`.
+  const [open, setOpen] = useLatch(live, live);
   const { lines, state } = useLogTail(runId, open);
   const tail = useRef<HTMLDivElement | null>(null);
 
@@ -203,6 +233,10 @@ export function RunLog({
 /** What the right of the summary says, and it is about the file, never the run. */
 function say(state: TailState, count: number): string {
   if (state === "off") return "not reading";
+  // A run's log is never `awaited`, so this is the discussion box's state and
+  // not one a ledger row can reach. Said anyway, rather than falling through to
+  // `ends here` on a file that has not started.
+  if (state === "waiting") return "no log yet";
   if (state === "gone") return "no log";
   if (state === "trouble") return "the stream failed";
   if (state === "reading") return `${count} lines · following`;

@@ -276,7 +276,9 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * `answerDiscussion` names the file for the `chatId`, that id *is* the chat's
  * stream, and `DiscussionAsked` on it carries the work item — so the two
  * questions below are asked and answered about a chat exactly as they are about
- * a run, and the file goes when the item it was explaining lands.
+ * a run. A turn deletes its own on the way out, exactly as `run-once.ts` does,
+ * so what this finds is the same residue for the same reason: a daemon killed
+ * mid-answer.
  *
  * Nothing here reads what is *in* a file. 0034 §8 — the log is a trace and not
  * a record, so no behaviour may depend on its contents, and the only question
