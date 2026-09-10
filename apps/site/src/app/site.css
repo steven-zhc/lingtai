@@ -1,0 +1,214 @@
+/* The site's own layer, on top of the product's palette.
+
+   Every colour token here comes from `apps/board/src/app/globals.css`, which
+   the layout imports first — this file adds no hue and redefines none. A site
+   that looks unlike the product is a promise the product breaks, and the
+   cheapest way to keep that promise is to have nowhere else to get a colour
+   from.
+
+   There is exactly one addition, and the product's own stylesheet licenses it.
+   The mark carries a coral #FD5D3F which is deliberately kept out of the
+   board's palette, because "a third strong hue in the palette would make the
+   reader ask what it means, and the honest answer is 'nothing — it is the
+   logo'". A *board* has states to confuse. A page has one thing it wants of
+   you, so here the coral is finally spendable — and it gets a rule as strict as
+   amber's:
+
+     CORAL MARKS THE WAY IN, AND NOTHING ELSE.
+
+   One `.way-in` per page. Not a heading, not a hover, not a rule, not an
+   accent on something that already has the teal. If a second thing on a page
+   is coral, one of them is not the way in and the reader has to decide which —
+   which is the question the board refuses to make anyone answer. */
+:root {
+  --way-in: #fd5d3f;
+  /* Ink *on* coral, not coral as ink: #FD5D3F under 15px text clears no
+     contrast floor on either ground, and the palette above this file does not
+     have a colour that fails. As a field with near-black on it, it clears 8:1
+     and reads as a button rather than as a word that happens to be orange. */
+  --way-in-ink: #2a0c05;
+  /* Long-form measure. Comfort in the docs comes from here and from
+     line-height — never from a serif. A serif would read a little better and it
+     is the one move that would make this look like every other documentation
+     site; the product is IBM Plex Sans and IBM Plex Mono, and so is this. */
+  --measure: 68ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* The same hue, lifted off a dark ground where the original goes muddy. */
+    --way-in: #ff7256;
+  }
+}
+
+body { font-size: 15px; line-height: 1.6; }
+
+.wrap { max-width: 76rem; margin: 0 auto; padding: 0 24px; }
+.narrow { max-width: var(--measure); }
+
+/* --- the bar -------------------------------------------------------------
+   The board's `.bar`, with the site's own links in it. The classes are the
+   board's own, so the two read as one product rather than as a product and a
+   page about it. */
+.bar a { color: var(--ink-2); text-decoration: none; }
+.bar a:hover { color: var(--accent-ink); }
+.bar .spacer { flex: 1 1 auto; }
+
+/* --- the way in ----------------------------------------------------------
+   The one coral thing. */
+.way-in {
+  display: inline-block;
+  background: var(--way-in);
+  color: var(--way-in-ink);
+  font-weight: 600;
+  font-size: 15px;
+  padding: 9px 18px;
+  border-radius: 3px;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+.way-in:hover { filter: brightness(1.06); }
+.way-in:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Everything else that goes somewhere. Teal, which is what structure is. */
+.link { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid var(--rule-2); }
+.link:hover { border-bottom-color: var(--accent); }
+
+/* --- sections ------------------------------------------------------------ */
+section { padding: 56px 0; border-top: 1px solid var(--rule); }
+section:first-of-type { border-top: none; }
+h1, h2, h3 { letter-spacing: -0.02em; line-height: 1.2; margin: 0 0 14px; }
+h1 { font-size: clamp(30px, 4.4vw, 46px); font-weight: 600; }
+h2 { font-size: 24px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+/* Every section is announced by the same small mono line the board uses for a
+   column head, so a reader who has seen the product recognises the page. */
+.kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 10px;
+}
+.lede { font-size: 18px; line-height: 1.55; color: var(--ink-2); max-width: var(--measure); }
+p { max-width: var(--measure); }
+
+/* --- hero ---------------------------------------------------------------- */
+.hero { padding: 72px 0 44px; }
+.hero h1 { max-width: 22ch; }
+.hero .lede { margin: 18px 0 28px; }
+.hero .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.hero .second { color: var(--ink-2); text-decoration: none; font-size: 15px; }
+.hero .second:hover { color: var(--accent-ink); }
+
+/* --- the board, as a photograph ------------------------------------------
+   The lanes are the board's own markup and the board's own CSS. What this adds
+   is the frame around it and the sentence under it: `.cols` is written for a
+   full window and would otherwise take one here. */
+.snap { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--surface); }
+.snap .cols { min-height: 0; border-bottom: none; }
+.snap .col { padding-bottom: 14px; }
+.snap-head {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  padding: 10px 12px; border-bottom: 1px solid var(--rule); background: var(--surface);
+  font-size: 12px; color: var(--muted);
+}
+.snap-head b { color: var(--ink); font-weight: 600; }
+.snap-head .when { font-family: var(--mono); font-size: 11px; }
+/* A card whose repository is not public. Not a gap in the board — a card with
+   its name off, which is a different fact and has to look like one. */
+.snap .withheld { color: var(--muted); font-style: italic; }
+.snap-note { margin-top: 12px; font-size: 13px; color: var(--muted); max-width: var(--measure); }
+
+/* No snapshot. The board's own "could not be filled" style, because that is
+   exactly what this is: not an empty board, a board that was never taken. */
+.no-snapshot {
+  border: 1px solid var(--rule); border-left: 2px solid var(--signal); border-radius: 4px;
+  background: var(--signal-soft); color: var(--signal);
+  padding: 18px 20px; font-size: 14px;
+}
+.no-snapshot code { font-family: var(--mono); font-size: 12.5px; }
+
+/* --- the loop ------------------------------------------------------------ */
+.points { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 4px; }
+.points li { background: var(--surface); padding: 12px 14px; display: grid; grid-template-columns: 8.5rem 1fr auto; gap: 14px; align-items: baseline; }
+.points .pt { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); }
+.points .may { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.points .no { color: var(--fail); }
+@media (max-width: 640px) { .points li { grid-template-columns: 1fr; } }
+
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin-top: 20px; }
+.grid > div { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 16px 18px; }
+.grid h3 { margin-bottom: 6px; }
+.grid p { font-size: 14px; color: var(--ink-2); margin: 0; }
+
+/* --- open ----------------------------------------------------------------
+   What is not built, on the front page. `lingtai doctor` prints an
+   unimplemented check as `skip` rather than omitting it, because a check you
+   cannot see is a check you will forget you never had. A page whose claim is
+   that you can see what happened cannot hide its own gaps and still be making
+   that claim — so this section is styled to be read, not to be survived. */
+.open { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 10px; }
+.open li {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-left: 2px solid var(--held); border-radius: 3px; padding: 13px 16px;
+}
+.open b { color: var(--ink); }
+.open span { color: var(--ink-2); }
+.open code, .prose code, p code, li code, td code {
+  font-family: var(--mono); font-size: 0.88em;
+  background: var(--surface-2); border: 1px solid var(--rule);
+  border-radius: 2px; padding: 0.5px 4px;
+}
+
+/* --- docs ---------------------------------------------------------------- */
+.doc-section { padding: 34px 0; border-top: 1px solid var(--rule); }
+.doc-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 2px; }
+.doc-list a { display: block; padding: 9px 10px; border-radius: 3px; text-decoration: none; color: var(--ink); border: 1px solid transparent; }
+.doc-list a:hover { background: var(--surface); border-color: var(--rule); }
+.doc-list .t { font-weight: 500; }
+.doc-list .s { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 8px; }
+.doc-list .l { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; max-width: 90ch; }
+
+/* The rendered document. Measure and leading are the whole typographic budget:
+   there is no serif coming to make this comfortable. */
+.prose { max-width: var(--measure); font-size: 15.5px; line-height: 1.7; }
+.prose h1 { font-size: 30px; margin: 0 0 18px; }
+.prose h2 { font-size: 21px; margin: 40px 0 12px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.prose h3 { font-size: 16.5px; margin: 28px 0 8px; }
+.prose h4 { font-size: 15px; margin: 22px 0 6px; }
+.prose p, .prose li { max-width: none; }
+.prose ul, .prose ol { padding-left: 22px; }
+.prose li { margin: 4px 0; }
+.prose a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid var(--rule-2); }
+.prose a:hover { border-bottom-color: var(--accent); }
+.prose blockquote {
+  margin: 18px 0; padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--rule-2); color: var(--ink-2);
+}
+.prose pre {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+  padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.55;
+  /* A code block is the one thing on a documentation page that is allowed past
+     the measure: wrapping a command is worse than scrolling it. */
+  max-width: min(100%, 92ch);
+}
+.prose pre code { background: none; border: none; padding: 0; font-size: inherit; }
+.prose table { border-collapse: collapse; margin: 18px 0; font-size: 14px; width: 100%; }
+.prose th, .prose td { border: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
+.prose th { background: var(--surface-2); font-weight: 600; }
+.prose hr { border: none; border-top: 1px solid var(--rule); margin: 28px 0; }
+.prose img { max-width: 100%; }
+
+/* Where this page came from. On every rendered document, because a projection
+   that does not say what it is a projection of is indistinguishable from a
+   copy. */
+.source {
+  margin: 40px 0 0; padding-top: 14px; border-top: 1px solid var(--rule);
+  font-size: 12.5px; color: var(--muted);
+}
+.source a { color: var(--muted); }
+
+footer.foot {
+  border-top: 1px solid var(--rule); background: var(--surface);
+  padding: 28px 0 40px; font-size: 13px; color: var(--muted);
+}
+footer.foot p { max-width: var(--measure); }
+footer.foot a { color: var(--ink-2); }

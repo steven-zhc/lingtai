@@ -5,6 +5,8 @@ dist/
 # Next.js
 .next/
 next-env.d.ts
+# `next build` with `output: "export"` writes the site here.
+out/
 
 # Secrets. The event store URL and the GitHub App key never enter git.
 .env
@@ -26,3 +28,10 @@ logs/
 *.bun-build
 
 .DS_Store
+
+# The site's build products. `public/doc/` is a copy of `doc/architecture.html`
+# that `apps/site` makes before every build, and `snapshot.json` is the board
+# read out of the log at build time — both are generated, and a copy of either
+# in git is a second file to keep in step.
+apps/site/public/doc/
+apps/site/snapshot.json
