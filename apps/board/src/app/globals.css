@@ -557,7 +557,12 @@ details[open] > summary::before { content: "▾"; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.detail-body > section > h2 .hfact b { color: var(--ink-2); font-weight: 600; }
+/* The mockup sets the figures in this line a shade darker than their labels,
+   with `h3.sec > .fact b`. That rule is deliberately **not** copied here: `fact`
+   is a `string`, joined by `totalsFact`, so no `<b>` can exist inside it and the
+   rule would match nothing while reading as though it did. Emphasising the
+   numbers means giving `totalsFact` a return type that can carry elements, and
+   that is a change to what the page computes, not to how it looks. */
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 
@@ -1075,12 +1080,12 @@ details[open] > summary::before { content: "▾"; }
 /* Anchored: the pointer links here, and a browser must not land it under the
    bar it scrolled past. */
 .attempt { scroll-margin-top: 1rem; }
-/* The row itself: what happened, then what it cost, then when. The facts push
-   right so a column of attempts is read down rather than across. */
-/* A grid, not a flex row. Flex packed the figures wherever the text before them
-   ended, so no two attempts agreed on where a cost was — which is the whole
-   reason a ledger is worth having. Each figure owns a column and is set right,
-   so `$7.81` sits over `$5.23` and the eye reads the money down. */
+/* The row itself: what happened, then what it cost, then when.
+
+   **A grid, not a flex row.** Flex packed the figures wherever the text before
+   them ended, so no two attempts agreed on where a cost was — which is the
+   whole reason a ledger is worth having. Each figure owns a column and is set
+   right, so `$7.81` sits over `$5.23` and the eye reads the money down. */
 .attempt > summary {
   display: grid;
   /* **Seven columns for seven cells, and the first one is not in the markup.**
@@ -1088,7 +1093,7 @@ details[open] > summary::before { content: "▾"; }
      `::before` on a grid container is a grid item like any other. Count it, or
      every column slides one place along and the last one wraps to a second
      row — which is exactly what happened when this was six. */
-  grid-template-columns: 1.1rem minmax(11rem, 1fr) repeat(4, auto) minmax(9rem, auto);
+  grid-template-columns: 1.1rem minmax(8rem, 1fr) repeat(4, auto) minmax(7rem, auto);
   gap: 0.7rem;
   align-items: center;
   padding: 0.55rem 0.85rem;
@@ -1219,10 +1224,14 @@ details[open] > summary::before { content: "▾"; }
      saying two things. A run divider is structure, and teal is what structure
      is on this board. */
   background: var(--accent-soft);
-  /* Closed on both sides. A band with a rule under it only is a caption that
-     happens to be tinted. */
-  border-top: 1px solid var(--accent);
-  border-bottom: 1px solid var(--accent);
+  /* Closed on both sides — a band with a rule under it only is a caption that
+     happens to be tinted. **Neutral, because `--accent` inverts between the
+     themes**: in light it is `#0b6a70` on a pale tint, a line you barely see,
+     and in dark it is `#54c6cc` on `#10312f`, two glowing rules bracketing a
+     band that appears three or four times down one page. `--rule-2` is quiet
+     against both grounds, and the tint is what carries the meaning anyway. */
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule-2);
   font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--accent-ink);
@@ -1246,8 +1255,11 @@ details[open] > summary::before { content: "▾"; }
   margin-right: -0.14em;
 }
 /* The stream's own id: present, because a claim is identified by it, and quiet,
-   because nobody reads a uuid — they check one. */
-.hglabel .mono { color: var(--accent); }
+   because nobody reads a uuid — they check one. **`font-size` explicitly**:
+   `.detail .mono` carries `0.8rem` at the same specificity and earlier in the
+   file, so setting only `color` here left the uuid as the largest text in a
+   0.72rem band — the exact opposite of what the sentence above claims. */
+.hglabel .mono { color: var(--accent); font-size: inherit; }
 .hgseq {
   margin-left: auto;
   color: var(--accent);
@@ -1373,6 +1385,16 @@ details[open] > summary::before { content: "▾"; }
    stated in the unit that actually governs them, and everything else in the
    document keeps the width it was given. */
 .md p, .md li, .md blockquote { max-width: 82ch; }
+/* **And the prose that is not markdown.** A gate's findings are sentences and
+   are rendered by `evidence.tsx`, not by the document renderer — a
+   `failureScenario` is required by this system to be *concrete inputs, then the
+   wrong outcome*, which is the longest and most closely-read prose on the page.
+   Uncapping the section without capping these moved the defect the old rule
+   guarded against from History into Attempts. */
+.detail-body .claim,
+.detail-body .scenario,
+.detail-body .empty,
+.detail-body .refusal { max-width: 82ch; }
 /* A heading inside a document is a heading *in that document*. It must not
    compete with the section labels the page navigates by, so the whole scale is
    compressed into a half-step above the body and told apart by weight. */
@@ -1455,6 +1477,25 @@ details[open] > summary::before { content: "▾"; }
   .history summary { grid-template-columns: 1rem 1fr; gap: 0.1rem 0.75rem; padding: 0.5rem 0; }
   .history summary > span { grid-column: 2; }
   .point { grid-template-columns: 1fr; }
+}
+
+/* **The ledger's columns are a wide-screen affordance, and below one it gives
+   them up rather than clipping.** The row's tracks have hard minimums and its
+   figures do not wrap, so under about 52rem the row is wider than the frame —
+   and `.ledger` has `overflow: hidden` to clip its own corners, which would
+   swallow the last cell with no way to scroll to it. Flex here: on a screen
+   this narrow there is no width to align a column in, and a figure you can read
+   beats a figure that would have lined up. Wider than `.history`'s breakpoint
+   because this row carries four figures where that one carries two. */
+@media (max-width: 52rem) {
+  .attempt > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 0.7rem;
+  }
+  .afig, .aage { text-align: left; white-space: normal; }
+  .aage { margin-left: auto; }
 }
 
 /* The card title is the link to all of the above. The whole title, because a
