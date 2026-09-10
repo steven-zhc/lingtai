@@ -10,7 +10,7 @@
 import { directDatabaseUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -376,6 +376,36 @@ describe("hook wiring", () => {
     expect(wiring.settingsPath.startsWith(home)).toBe(true);
     expect(wiring.settingsPath).not.toContain("worktrees");
     expect(wiring.env).toEqual({ LINGTAI_HOOK_SOCKET: wiring.socketPath, LINGTAI_HOOK_RUN_ID: "run-w" });
+  });
+
+  /**
+   * The second file, for an agent that is not this run.
+   *
+   * The hooks and the environment that answers them are one thing: the hook
+   * denies unless `LINGTAI_HOOK_SOCKET` and `LINGTAI_HOOK_RUN_ID` are set —
+   * proved two describes up — so settings that name it are only ever usable by
+   * a process given `wiring.env`. The gate reviewer is not, and was handed them
+   * anyway; its whole answer to `#126` was *"UserPromptSubmit operation blocked
+   * by hook"*, which `proposed:review` recorded as a verdict about the diff.
+   */
+  it("writes settings with no hooks, beside the run's and outside the worktree", async () => {
+    const home = join(root, "home-unhooked");
+    const wiring = await writeHookWiring({ runId: "run-u", hookBinary: binary, home });
+
+    expect(wiring.unhookedSettingsPath).not.toBe(wiring.settingsPath);
+    expect(wiring.unhookedSettingsPath.startsWith(home)).toBe(true);
+    expect(wiring.unhookedSettingsPath).not.toContain("worktrees");
+
+    const unhooked = JSON.parse(await readFile(wiring.unhookedSettingsPath, "utf8")) as {
+      hooks: Record<string, unknown>;
+    };
+    expect(Object.keys(unhooked.hooks)).toEqual([]);
+    // And the run's still names the binary, so this is a second file rather
+    // than the first one quietly emptied.
+    const hooked = JSON.parse(await readFile(wiring.settingsPath, "utf8")) as {
+      hooks: Record<string, unknown>;
+    };
+    expect(Object.keys(hooked.hooks)).toContain("UserPromptSubmit");
   });
 
   it("wires the four shared hooks, and Claude Code's extras only when asked", () => {

@@ -47,6 +47,7 @@ export {
   smokeTestFailClosed,
   smokeTestFailClosedEffect,
   socketPathFor,
+  unhookedSettingsPathFor,
   writeHookWiring,
   writeHookWiringEffect,
   type HookWiring,

@@ -40,6 +40,27 @@ export const CLAUDE_ONLY_HOOKS = ["SessionEnd", "PreCompact", "Notification"] as
 export interface HookWiring {
   /** `--settings` for `claude -p`. Outside the worktree, always. */
   settingsPath: string;
+  /**
+   * `--settings` for an agent that is **not** this run: the gate reviewer.
+   *
+   * The hooks and the environment that answers them are one thing, and handing
+   * over half of it is worse than handing over neither. `settingsPath` names a
+   * `UserPromptSubmit` hook that denies unless `LINGTAI_HOOK_SOCKET` and
+   * `LINGTAI_HOOK_RUN_ID` are set — which is what makes the recorder fail
+   * closed — and the gates are given the recipe's environment, which has no
+   * such names in it. The reviewer therefore never got as far as reading the
+   * diff: its whole answer was *"UserPromptSubmit operation blocked by hook"*,
+   * which is not readable as findings, so `proposed:review` refused every
+   * change it was asked about.
+   *
+   * Wiring it to the run's socket instead would be the wrong repair. The
+   * reviewer runs under `<runId>:review:<gate>` precisely so that it is cold
+   * (`agent-gate.ts`), and pointing its hook at the implementer's run would
+   * file the reviewer's reading of the diff on the implementer's stream, after
+   * that run had already ended. There is nothing to record here: what a gate
+   * agent did is a `GateResolved` with its findings, its turns and its cost.
+   */
+  unhookedSettingsPath: string;
   socketPath: string;
   /** Environment the runtime child needs so the hook can find the conductor. */
   env: Record<string, string>;
@@ -77,6 +98,11 @@ export function socketPathFor(runId: string, home = stateDir()): string {
 
 export function settingsPathFor(runId: string, home = stateDir()): string {
   return join(home, "runs", runId, "settings.json");
+}
+
+/** Beside the run's, and outside the worktree for the same reason. */
+export function unhookedSettingsPathFor(runId: string, home = stateDir()): string {
+  return join(home, "runs", runId, "settings-unhooked.json");
 }
 
 export interface RenderOptions {
@@ -120,15 +146,23 @@ export function renderSettings(options: RenderOptions): unknown {
 export async function writeHookWiring(options: RenderOptions): Promise<HookWiring> {
   const home = options.home ?? stateDir();
   const settingsPath = settingsPathFor(options.runId, home);
+  const unhookedSettingsPath = unhookedSettingsPathFor(options.runId, home);
   const socketPath = socketPathFor(options.runId, home);
 
   await mkdir(dirname(settingsPath), { recursive: true });
   await writeFile(settingsPath, `${JSON.stringify(renderSettings(options), null, 2)}\n`, {
     mode: 0o600,
   });
+  // Written here rather than by whoever wants it, so that the one place that
+  // knows where a run's settings live is still one place. See
+  // `unhookedSettingsPath`: no hooks is the whole of the difference.
+  await writeFile(unhookedSettingsPath, `${JSON.stringify({ hooks: {} }, null, 2)}\n`, {
+    mode: 0o600,
+  });
 
   return {
     settingsPath,
+    unhookedSettingsPath,
     socketPath,
     // `LINGTAI_`-prefixed since `#63`, both ends. These are Lingtai's own names
     // — set here, read by the compiled hook — and the rule that every such name

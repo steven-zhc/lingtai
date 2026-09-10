@@ -1108,7 +1108,14 @@ export function runOnce(
                 body: ticket.body,
               }),
               diff: () => gitForGates(["diff", `${worktree.baseSha}...HEAD`]),
-              settingsPath: wiring.settingsPath,
+              // **Not** the run's, and this is the same distinction the runId
+              // above is: a gate agent is not this run. The run's settings name
+              // a hook that denies unless the socket and the run id are in the
+              // environment, and a gate is given the recipe's environment,
+              // which has neither — so the reviewer's whole answer was
+              // *"UserPromptSubmit operation blocked by hook"* and `review`
+              // refused every change it saw. See `HookWiring`.
+              settingsPath: wiring.unhookedSettingsPath,
               limits: {
                 turns: recipe.runtime.limits.turns,
                 wallMs: parseDuration(recipe.runtime.limits.wall),

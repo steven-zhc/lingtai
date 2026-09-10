@@ -99,6 +99,19 @@ gates: {}
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
+/** The same, with the cold reviewer at `proposed`. */
+const REVIEW_RECIPE = `
+version: 1
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+gates:
+  proposed:
+    - name: review
+      agent: look for races
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
 const issue: Issue = {
   number: 7,
   title: "a race in the importer",
@@ -119,7 +132,7 @@ const project: ProjectState = {
 };
 
 /** GitHub, as a record of what it was told. */
-function fakeGitHub(said: string[]): GitHubClient {
+function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
   return {
     owner: "nobody",
     repo: PROJECT,
@@ -128,7 +141,7 @@ function fakeGitHub(said: string[]): GitHubClient {
     token: async () => "not-a-real-token",
     defaultBranch: async () => "main",
     fileAt: async (path: string, ref: string) =>
-      path === ".lingtai/config.yaml" && ref === "main" ? RECIPE : null,
+      path === ".lingtai/config.yaml" && ref === "main" ? recipe : null,
     refSha: async () => "0".repeat(40),
     listOpenIssues: async () => [issue],
     getIssue: async () => issue,
@@ -215,6 +228,11 @@ function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
           if (args[0] === "rev-parse") return "b".repeat(40);
           if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
           if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
+          // The whole diff, which is what an agent gate is given. Empty is a
+          // real answer to it — `createAgentGate` returns *nothing to review*
+          // without spending a call — so a fake that left it empty could not
+          // see a reviewer run at all.
+          if (args[0] === "diff") return "--- a/src/fix.ts\n+++ b/src/fix.ts\n";
           return "";
         }),
       integrate: () =>
@@ -228,7 +246,12 @@ function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
       wire: () =>
         Effect.sync(() => {
           did.push("wire");
-          return { settingsPath: "/tmp/fake/settings.json", socketPath: "/tmp/fake/sock", env: {} } as never;
+          return {
+            settingsPath: "/tmp/fake/settings.json",
+            unhookedSettingsPath: "/tmp/fake/settings-unhooked.json",
+            socketPath: "/tmp/fake/sock",
+            env: {},
+          } as never;
         }),
       smokeTest: () =>
         Effect.sync(() => {
@@ -563,5 +586,74 @@ describe("runOnce, with no world to run in", () => {
 
     // And the worktree it had already taken went with it.
     expect(did).toContain(`remove ${result.runId}`);
+  });
+
+  /**
+   * The reviewer's settings, and why they are not the run's.
+   *
+   * `#126`'s first attempt was refused by `proposed:review` with the reviewer's
+   * entire answer being *"UserPromptSubmit operation blocked by hook:
+   * lingtai-hook: LINGTAI_HOOK_SOCKET and LINGTAI_HOOK_RUN_ID are not set"* —
+   * the diff was never read. The hooks and the environment that answers them
+   * are one thing, and a gate was handed half of it: the run's settings, which
+   * name a hook that denies unless those two names are set, with the recipe's
+   * environment, which has neither.
+   *
+   * That is `#89`'s shape exactly — a check that is present, reported, and
+   * cannot pass — and it was invisible because both halves were right where
+   * they were written. So the assertion is here, at the seam where the two are
+   * chosen, rather than on either file alone.
+   */
+  it("gives a gate agent settings with no hooks, and the run's to the run", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const settingsFor = new Map<string, string>();
+
+    const recording: Runtime = {
+      ...runtime,
+      run: async (request) => {
+        const cold = request.runId.includes(":review:");
+        settingsFor.set(cold ? "reviewer" : "implementer", request.settingsPath);
+        return {
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1234,
+          costUsd: 0.42,
+          failure: null,
+          text: cold ? '{"findings":[]}' : "done",
+          sessionId: "sess-1",
+        };
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEW_RECIPE),
+        runtime: recording,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+
+    // The reviewer ran at all, which is the half a broken hook hid: a gate that
+    // never reaches the runtime records `failed` and looks like a verdict.
+    expect(settingsFor.get("reviewer")).toBe("/tmp/fake/settings-unhooked.json");
+    expect(settingsFor.get("implementer")).toBe("/tmp/fake/settings.json");
+
+    // And it passed, on an empty findings list it could only have written
+    // having been asked. A reviewer the hook turned away appends `GateFailed`,
+    // which reads on the board exactly like a verdict about the diff.
+    const run = await store.read(result.runId);
+    const passed = run.find((e) => e.type === "GatePassed");
+    const verdict = passed?.data as { gate?: string; action?: string } | undefined;
+    expect([verdict?.gate, verdict?.action]).toEqual(["proposed", "review"]);
   });
 });
