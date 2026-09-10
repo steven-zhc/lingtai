@@ -31,7 +31,7 @@ import {
   projectFilters,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
-import { baseDivergence } from "@lingtai/recipe";
+import { type Recipe, baseDivergence } from "@lingtai/recipe";
 import { isEventType } from "@lingtai/domain";
 import {
   STALE_AFTER_MS,
@@ -1079,6 +1079,86 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
  * about the installation: a red that names the file to write is a red somebody
  * can clear.
  */
+/**
+ * Every extension a recipe declares, and the names it asked for.
+ *
+ * A `run:` action at any of the five points, and every subscriber — which is
+ * the whole of the extension mechanism
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §2: *"there
+ * is no plugin system, an extension is a command"*). Reading the recipe's own
+ * shape rather than a list of points here means a sixth point, if one is ever
+ * added, is covered by arithmetic instead of by remembering.
+ */
+export function declaredExtensions(recipe: Recipe): { name: string; env: readonly string[] }[] {
+  const out: { name: string; env: readonly string[] }[] = [];
+  for (const point of Object.values(recipe.gates)) {
+    for (const action of point) {
+      if ("run" in action) out.push({ name: action.name, env: action.env });
+    }
+  }
+  for (const subscriber of recipe.subscribers) {
+    out.push({ name: subscriber.name, env: subscriber.env });
+  }
+  return out;
+}
+
+/**
+ * Per project: what each extension asked for, and whether this machine holds it.
+ *
+ * The half of [0037](../../../doc/decisions/0037-an-extension-is-a-command.md)
+ * §1 that costs nothing, for the reason `declaredEnvironment` above it exists:
+ * an extension's declaration is the *whole* of what its process gets, so a name
+ * this machine does not hold is a Telegram bot that starts, finds no token and
+ * exits — during a run, where the exit code of a subscriber is discarded and
+ * nobody is told. Asking before a run is the only cheap time to ask.
+ *
+ * **Names only, never values**, exactly as the agent's row is. And a `fail`
+ * rather than a `warn`, because it names the command that clears it.
+ */
+export function extensionRow(
+  project: string,
+  recipe: Recipe,
+  agentEnv: { names: readonly { name: string; layer: string }[]; merged: Record<string, string>; file: string },
+): CheckResult {
+  const name = `env: ${project} extensions`;
+  const extensions = declaredExtensions(recipe);
+  const asking = extensions.filter((e) => e.env.length > 0);
+
+  if (asking.length === 0) {
+    return {
+      name,
+      status: "ok",
+      detail:
+        extensions.length === 0
+          ? "no extension is declared"
+          : `${extensions.length} declared, none asking for a variable — each gets PATH and nothing else`,
+    };
+  }
+
+  const layerOf = new Map(agentEnv.names.map((n) => [n.name, n.layer]));
+  const missing: string[] = [];
+  const detail = asking
+    .map((extension) => {
+      const names = extension.env.map((variable) => {
+        const layer = layerOf.get(variable) ?? "not set";
+        if (!(variable in agentEnv.merged)) missing.push(variable);
+        return `${variable} ← ${layer === "project file" ? basename(agentEnv.file) : layer}`;
+      });
+      return `${extension.name}: ${names.join(", ")}`;
+    })
+    .join(" · ");
+
+  if (missing.length === 0) return { name, status: "ok", detail };
+  return {
+    name,
+    status: "fail",
+    detail:
+      `${detail}\n  ${[...new Set(missing)].join(", ")} declared by an extension and not set in either file. ` +
+      `An extension gets only what it declares (0037 §1), so it would run without them: ` +
+      `lingtai env set ${project} ${missing[0]} — it reads the value from stdin, unechoed.`,
+  };
+}
+
 async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
   const name = "env: declared names, and which layer";
   if (!hasGitHubApp(env)) {
@@ -1127,23 +1207,24 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
           status: "ok",
           detail: `nothing required · ${basename(agentEnv.file)} is where a value would go`,
         });
-        continue;
+      } else {
+        // A name that resolved but does not reach the agent is worth saying: it
+        // is the `deny` half of the recipe doing its job, and it is invisible in
+        // the values.
+        const detail = agentEnv.names
+          .map((n) => {
+            const where = n.layer === "project file" ? basename(agentEnv.file) : n.layer;
+            const held = n.layer !== "not set" && !(n.name in agentEnv.values);
+            return `${n.name} ← ${where}${held ? " (denied)" : ""}`;
+          })
+          .join(" · ");
+        results.push({
+          name: label,
+          status: agentEnv.missing.length > 0 ? "fail" : "ok",
+          detail: agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail,
+        });
       }
-      // A name that resolved but does not reach the agent is worth saying: it
-      // is the `deny` half of the recipe doing its job, and it is invisible in
-      // the values.
-      const detail = agentEnv.names
-        .map((n) => {
-          const where = n.layer === "project file" ? basename(agentEnv.file) : n.layer;
-          const held = n.layer !== "not set" && !(n.name in agentEnv.values);
-          return `${n.name} ← ${where}${held ? " (denied)" : ""}`;
-        })
-        .join(" · ");
-      results.push({
-        name: label,
-        status: agentEnv.missing.length > 0 ? "fail" : "ok",
-        detail: agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail,
-      });
+      results.push(extensionRow(project.project, resolved.recipe, agentEnv));
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.

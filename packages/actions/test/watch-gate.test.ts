@@ -14,6 +14,8 @@ import { createWatchGate } from "../src/watch-gate.ts";
 import { createProcessGate } from "../src/process-gate.ts";
 
 const context = { runId: "run-1", onSha: "b".repeat(40), cwd: process.cwd(), env: {} };
+/** A `run:` action's own environment, since 0037 §1 — never the context's. */
+const shellEnv = { PATH: process.env["PATH"] ?? "" };
 
 const watching = (watch: readonly string[], files: string[], then: "request-approval" | "fail" = "request-approval") =>
   createWatchGate({ name: "tamper", watch, then }, { changedFiles: async () => files });
@@ -95,9 +97,9 @@ describe("the pipeline, when a gate wants a person", () => {
 
   it("stops, and asks in the vocabulary --no-merge already used", async () => {
     const { result, types } = await collect([
-      createProcessGate({ name: "build", run: "true", timeout: "1m" }),
+      createProcessGate({ name: "build", run: "true", timeout: "1m", env: shellEnv }),
       createHumanGate({ name: "approval" }),
-      createProcessGate({ name: "after", run: "true", timeout: "1m" }),
+      createProcessGate({ name: "after", run: "true", timeout: "1m", env: shellEnv }),
     ]);
 
     expect(result.ok).toBe(false);
@@ -115,7 +117,7 @@ describe("the pipeline, when a gate wants a person", () => {
 
   it("keeps failure and hold distinguishable all the way out", async () => {
     const { result, types } = await collect([
-      createProcessGate({ name: "build", run: "exit 1", timeout: "1m" }),
+      createProcessGate({ name: "build", run: "exit 1", timeout: "1m", env: shellEnv }),
       createHumanGate({ name: "approval" }),
     ]);
 

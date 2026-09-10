@@ -146,6 +146,7 @@ describe("resolveRecipe", () => {
   - name: telegram
     on: [WorkItemLanded, WorkItemBlocked, RunFailed]
     run: npx @lingtai/telegram
+    env: [TELEGRAM_BOT_TOKEN]
 `;
 
   it("takes a subscriber, and a recipe without one declares none", async () => {
@@ -158,6 +159,59 @@ describe("resolveRecipe", () => {
     // mentions: "declared none" is a thing that can be rendered.
     const without = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
     expect(without.recipe.subscribers).toEqual([]);
+  });
+
+  /**
+   * 0037 §1, in the schema: an extension's environment is declared beside it,
+   * and the declared set is the whole set.
+   *
+   * The empty default is the load-bearing half. An extension that names nothing
+   * has *named nothing* — the alternative reading, "give it whatever the daemon
+   * has", is the thing 0037 §1 replaced, and a default of `[]` is what makes
+   * that unsayable rather than merely discouraged.
+   */
+  it("takes an environment beside an extension, and defaults it to nothing", async () => {
+    const resolved = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: WITH_SUBSCRIBER }),
+      "develop",
+    );
+
+    expect(resolved.recipe.subscribers[0]!.env).toEqual(["TELEGRAM_BOT_TOKEN"]);
+    // The `run:` gate in VALID declares none, so it gets none.
+    const build = resolved.recipe.gates.proposed[0]!;
+    expect("run" in build && build.env).toEqual([]);
+  });
+
+  /**
+   * `LINGTAI_DATABASE_URL` is this system's own log, and 0037 §1 names it as
+   * the reason an extension's code is not trusted. The message has to name the
+   * variable: a recipe that will not resolve and does not say which line is a
+   * recipe nobody can fix.
+   */
+  it("refuses one of Lingtai's own names for an extension, and names it", async () => {
+    const reaching = WITH_SUBSCRIBER.replace("TELEGRAM_BOT_TOKEN", "LINGTAI_DATABASE_URL");
+    const err = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: reaching }),
+      "develop",
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(RecipeInvalidError);
+    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/LINGTAI_DATABASE_URL/);
+  });
+
+  /** The same rule at the other extension point, because `run:` is the one point. */
+  it("refuses it on a run: action too", async () => {
+    const reaching = VALID.replace(
+      "      run: pnpm verify",
+      "      run: pnpm verify\n      env: [LINGTAI_TEST_DATABASE_URL]",
+    );
+    const err = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: reaching }),
+      "develop",
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(RecipeInvalidError);
+    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/LINGTAI_TEST_DATABASE_URL/);
   });
 
   /**

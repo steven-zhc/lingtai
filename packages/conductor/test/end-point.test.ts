@@ -13,7 +13,7 @@ import { resolveEndActions } from "../src/end-point.ts";
 
 const CLOSE: GateAction = { name: "close the ticket", close: true, when: "landed" };
 const LABEL: GateAction = { name: "label it", labels: ["lingtai:done"], when: "any" };
-const BUILD: GateAction = { name: "build", run: "true", timeout: "2m" };
+const BUILD: GateAction = { name: "build", run: "true", timeout: "2m", env: [] };
 
 /** One event on a work item stream. Only `type` and `data` are read here. */
 const event = (type: string, data: unknown): Envelope => ({

@@ -51,8 +51,22 @@ export const PRESETS: Record<string, Preset> = {
       // handed a checkout where it cannot run this repository's own tests. It
       // is an action at a gate point like anything else now — there is no
       // separate `prepare` section for it to live in.
-      prepared: [{ name: "install", run: "pnpm install --frozen-lockfile", timeout: "10m" }],
-      proposed: [{ name: "build", run: "pnpm typecheck && pnpm lint && pnpm test", timeout: "15m" }],
+      //
+      // `env: []` is the preset saying what it means rather than the schema
+      // defaulting it: an install and a build get `PATH`, `HOME` and the four
+      // beside them, and no credential at all (0037 §1). A repository whose
+      // build needs one declares it here, in its own recipe, beside the action.
+      prepared: [
+        { name: "install", run: "pnpm install --frozen-lockfile", timeout: "10m", env: [] },
+      ],
+      proposed: [
+        {
+          name: "build",
+          run: "pnpm typecheck && pnpm lint && pnpm test",
+          timeout: "15m",
+          env: [],
+        },
+      ],
       merge: [],
       end: [],
     },

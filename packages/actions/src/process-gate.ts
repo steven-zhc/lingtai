@@ -25,6 +25,21 @@ export interface ProcessGateSpec {
   run: string;
   /** `15m` by default, per the recipe schema. */
   timeout?: string;
+  /**
+   * **Everything this command's process gets**, resolved from the names the
+   * recipe declared beside it
+   * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+   *
+   * Not `GateContext.env`, and that is the change: a `run:` action is the
+   * extension point (0037 §2), its code is not trusted, and it used to be
+   * handed the environment the *agent* was given — so a credential put there
+   * for one command reached every command. Required rather than optional so
+   * that a caller cannot forget it and get the old behaviour by accident; the
+   * empty object is the honest answer for an extension that declared nothing,
+   * and it is `runnableEnv`'s job, not this one's, to add the `PATH` a process
+   * needs to be a process.
+   */
+  env: Record<string, string>;
 }
 
 export function createProcessGate(spec: ProcessGateSpec): Gate {
@@ -41,7 +56,9 @@ export function createProcessGate(spec: ProcessGateSpec): Gate {
         timeoutMs,
         timeoutLabel,
         cwd: context.cwd,
-        env: context.env,
+        // `spec.env`, deliberately, and not `context.env`: the context carries
+        // the agent's environment and this is not the agent. See ProcessGateSpec.
+        env: spec.env,
         signal: context.signal,
       });
 

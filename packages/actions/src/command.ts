@@ -72,7 +72,13 @@ export interface RunCommandOptions {
   timeoutLabel?: string;
   /** The worktree. Commands run where the agent worked, never anywhere else. */
   cwd: string;
-  /** Filtered, exactly as the agent's was. */
+  /**
+   * The child's **whole** environment — nothing is inherited from this process.
+   *
+   * For a prepare step or a gate action that means the names the recipe
+   * declared beside it, plus `runnableEnv`'s six (0037 §1). The caller decides;
+   * what this file guarantees is that it does not add to what it was given.
+   */
   env: Record<string, string>;
   signal?: AbortSignal;
   /**

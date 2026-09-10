@@ -84,11 +84,24 @@ gates:
     - name: install
       run: pnpm install --frozen-lockfile
       timeout: 10m
+      env: []
 
   proposed:
+    # `env: []` is written out rather than left to the default, for the reason
+    # `backoff` and `repair` are: this is the repository that has to be able to
+    # read its own policy without opening its own source. A `run:` action is an
+    # extension ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §1),
+    # and what it declares is every credential its process gets.
+    #
+    # **Nothing, and the suite still runs.** It refuses to start without
+    # LINGTAI_TEST_DATABASE_URL, and it reads it from the `.env.local` this run
+    # planted in the worktree (`env.plantAt` above), not from its environment.
+    # That is also why it could not be declared here if it wanted to be: an
+    # extension may not name one of Lingtai's own.
     - name: build
       run: pnpm typecheck && pnpm test
       timeout: 20m
+      env: []
 
     # The cold reviewer, on from 2026-09-09. It is second deliberately: the
     # first refusal wins and the rest do not run, so a diff that does not

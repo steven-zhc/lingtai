@@ -60,7 +60,18 @@ export interface GateContext {
   onSha: string;
   /** The worktree. Gates run where the agent worked, never anywhere else. */
   cwd: string;
-  /** Filtered, exactly as the agent's was. */
+  /**
+   * The **agent's** environment, filtered exactly as the agent's was — and an
+   * `agent` action is now the only kind that reads it.
+   *
+   * A `run:` action does not, since
+   * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1: it is
+   * the extension point, its code is not trusted, and it gets the names the
+   * recipe declared beside it and nothing else. Its environment therefore
+   * belongs to the action rather than to the point, and lives on
+   * `ProcessGateSpec`. This stays here because a cold reviewer is the core's own
+   * agent runtime, not an extension.
+   */
   env: Record<string, string>;
   signal?: AbortSignal;
 }

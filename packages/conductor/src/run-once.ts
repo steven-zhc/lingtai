@@ -88,7 +88,7 @@ import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 
 import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
-import { runnableEnv } from "@lingtai/agent-env";
+import { extensionEnv, runnableEnv } from "@lingtai/agent-env";
 import { stateDir } from "@lingtai/env";
 import type { TokenSource } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
@@ -312,6 +312,23 @@ export function runOnce(
     log(
       `env: ${env.names.length === 0 ? "nothing declared" : env.names.map((n) => `${n.name} from ${n.layer}`).join(", ")}`,
     );
+
+    /**
+     * The environment of one extension — every `run:` action's, and nothing
+     * else's ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+     *
+     * `runnableEnv` over the declared names only. Not `env.values`: that is the
+     * agent's, and handing it to a command is what put one project's credential
+     * in every extension's process. Layer 1's six are added because a command
+     * with no `PATH` cannot find `pnpm`, which is the failure `RUNNABLE` exists
+     * to have answered once.
+     *
+     * Missing names are not refused here. `lingtai doctor` says so before a run
+     * starts, which is where the answer is still cheap; refusing mid-run would
+     * put an operator's typo between an agent's work and its gates.
+     */
+    const envForExtension = (declared: readonly string[]): Record<string, string> =>
+      runnableEnv(extensionEnv(env.merged, declared).values);
 
     // ---- 3. capability matching, before anything is claimed ------------------
     const tier: Tier = resolved.tier;
@@ -778,7 +795,7 @@ export function runOnce(
           const prepared = yield* Effect.promise(() =>
             runGatePipeline({
               point: "prepared",
-              gates: gatesFromRecipe(recipe.gates.prepared),
+              gates: gatesFromRecipe(recipe.gates.prepared, { env: envForExtension }),
               context: {
                 runId,
                 onSha: worktree.baseSha,
@@ -1110,6 +1127,9 @@ export function runOnce(
           // this function is where that is answered.
           const gitForGates = (args: string[]) => Effect.runPromise(Effect.orDie(gitInWorktree(args)));
           const gateDeps = {
+            // Every `run:` action at these points gets what it declared and
+            // nothing else. See `envForExtension`.
+            env: envForExtension,
             agent: {
               runtime: options.runtime,
               issue: async () => ({

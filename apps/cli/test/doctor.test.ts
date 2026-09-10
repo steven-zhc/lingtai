@@ -9,7 +9,8 @@ import { createDb, createEventStore, databaseUrl, directDatabaseUrl } from "@lin
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { formatReport, runDoctor } from "../src/doctor.ts";
+import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
+import { declaredExtensions, extensionRow, formatReport, runDoctor } from "../src/doctor.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
 const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
@@ -133,6 +134,102 @@ describe("lingtai doctor — the declared environment", () => {
     expect(check.detail).toContain("recipe");
     // Not deferred: it runs whenever a project and an App exist.
     expect(check.deferred).toBeUndefined();
+  });
+});
+
+/**
+ * An extension's declared variable, reported **before** a run rather than during
+ * one ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ *
+ * The row is checked directly rather than through `runDoctor`, because reaching
+ * it there needs an App, a registered project and a recipe over the network —
+ * and what is worth pinning is the fold, not the fetch. `declaredExtensions`
+ * runs against a real resolved recipe so that the union in the schema and the
+ * reading of it here cannot drift.
+ */
+describe("lingtai doctor — an extension's declared environment", () => {
+  const RECIPE = `
+version: 1
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  required: []
+  plantAt: .env.local
+gates:
+  prepared:
+    - name: install
+      run: pnpm install
+  proposed:
+    - name: scan
+      run: npx scanner
+      env: [SCANNER_TOKEN]
+runtime:
+  agent: claude-code
+subscribers:
+  - name: telegram
+    on: [WorkItemLanded]
+    run: npx @lingtai/telegram
+    env: [TELEGRAM_BOT_TOKEN]
+`;
+
+  const recipeOf = async () =>
+    (await resolveRecipe(async (path, ref) => (ref === "main" && path === RECIPE_PATH ? RECIPE : null), "main"))
+      .recipe;
+
+  /** A `run:` at any point and every subscriber — the whole extension mechanism. */
+  it("finds every extension, at a gate point or subscribed", async () => {
+    expect(declaredExtensions(await recipeOf())).toEqual([
+      { name: "install", env: [] },
+      { name: "scan", env: ["SCANNER_TOKEN"] },
+      { name: "telegram", env: ["TELEGRAM_BOT_TOKEN"] },
+    ]);
+  });
+
+  const agentEnv = (merged: Record<string, string>) => ({
+    merged,
+    names: Object.keys(merged).map((name) => ({ name, layer: "project file" })),
+    file: "/home/x/.lingtai/env/demo.env",
+  });
+
+  it("is green when this machine holds every declared name", async () => {
+    const row = extensionRow(
+      "demo",
+      await recipeOf(),
+      agentEnv({ SCANNER_TOKEN: "s", TELEGRAM_BOT_TOKEN: "t" }),
+    );
+
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("telegram: TELEGRAM_BOT_TOKEN ← demo.env");
+    // Names only, never values — the whole point of the file it came from.
+    expect(row.detail).not.toContain("token");
+  });
+
+  /**
+   * The failure this exists for. An extension gets *only* what it declares, so a
+   * name this machine does not hold is a bot that starts, finds nothing and
+   * exits — and a subscriber's exit code is discarded, so nobody is told.
+   */
+  it("is red before a run when a declared name is not set, and names it", async () => {
+    const row = extensionRow("demo", await recipeOf(), agentEnv({ SCANNER_TOKEN: "s" }));
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("TELEGRAM_BOT_TOKEN");
+    expect(row.detail).toContain("not set");
+    // A red that names the command that clears it.
+    expect(row.detail).toContain("lingtai env set demo TELEGRAM_BOT_TOKEN");
+  });
+
+  it("says so plainly when no extension asks for anything", async () => {
+    const bare = await resolveRecipe(
+      async () => RECIPE.replace(/\n +env: \[[A-Z_]+\]/g, ""),
+      "main",
+    );
+    const row = extensionRow("demo", bare.recipe, agentEnv({}));
+
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("none asking for a variable");
   });
 });
 

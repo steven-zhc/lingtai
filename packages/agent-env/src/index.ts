@@ -177,6 +177,55 @@ export function filterEnv(
   return out;
 }
 
+/** What an extension asked for, and what this machine could answer with. */
+export interface ExtensionEnv {
+  /** The declared names that had a value. Layer 1 is added by `runnableEnv`. */
+  values: Record<string, string>;
+  /** Declared, and no value in either file. Reported, never guessed at. */
+  missing: string[];
+}
+
+/**
+ * The environment of one **extension** — 0021's layers, read by a second
+ * consumer ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ *
+ * The whole of the difference from `filterEnv` is which way round the question
+ * is asked. An agent gets *everything the two files hold*, minus what the
+ * recipe filtered; an extension gets **only what it declared**, because its
+ * code is not trusted and the daemon's own environment is the thing 0037 §1
+ * took away from it. A name it did not ask for is not in the result, and a
+ * name it asked for and this machine does not hold is in `missing` rather than
+ * silently absent — that is what `lingtai doctor` reports before a run.
+ *
+ * `merged` is the two files, before the recipe's `allow`/`deny`: those decide
+ * what reaches *the agent*, which is a different consumer with a different
+ * declaration, and making one answer for the other is how a `deny` written
+ * about an agent would quietly become a rule about a Telegram bot.
+ *
+ * Pure, and the production tripwire is the only thing it throws — for the
+ * reason `resolveAgentEnv` throws it, unchanged: a value whose host looks like
+ * production is refused rather than handed over, and an extension is no more
+ * trusted with one than an agent is.
+ */
+export function extensionEnv(
+  merged: Record<string, string>,
+  declared: readonly string[],
+  patterns: readonly string[] = DEFAULT_PRODUCTION_PATTERNS,
+): ExtensionEnv {
+  const values: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const name of declared) {
+    const value = merged[name];
+    if (value === undefined || value === "") {
+      missing.push(name);
+      continue;
+    }
+    guardProduction(name, value, patterns);
+    values[name] = value;
+  }
+  return { values, missing };
+}
+
 function guardProduction(name: string, value: string, patterns: readonly string[]): void {
   const host = hostOf(value);
   if (!host) return;
@@ -272,6 +321,21 @@ export interface AgentEnvName {
 export interface AgentEnv {
   /** What reaches the agent, after `allow`/`deny`. Layer 1 is added by `runnableEnv`. */
   values: Record<string, string>;
+  /**
+   * The two files merged, **before** `allow`/`deny` — 0021's data layer, which
+   * `required` is already checked against.
+   *
+   * Here because it now has a second consumer: an extension declares its own
+   * names beside itself and `extensionEnv` selects them from *this*, not from
+   * `values`. The agent's filters are a decision about the agent, and reusing
+   * them for an extension would make a `deny` written about one silently a
+   * rule about the other.
+   *
+   * **Not something to hand to a process.** Nothing spawns with this; the two
+   * things that spawn take `values` (the agent) or `extensionEnv(merged, …)`
+   * (an extension), and both are narrower than it by construction.
+   */
+  merged: Record<string, string>;
   /** Every name either file offered, and which one answered, in name order. */
   names: AgentEnvName[];
   /** `required` names the merged data did not supply. */
@@ -336,6 +400,7 @@ export async function resolveAgentEnv(options: {
 
   return {
     values,
+    merged,
     names,
     missing,
     deferred,

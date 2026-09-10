@@ -329,7 +329,7 @@ What runs at a point. Source: `GateAction` and `kindOfAction` in
 
 | Key | Verdict comes from | Needs |
 |---|---|---|
-| `run:` | a command's exit code | nothing |
+| `run:` | a command's exit code | the names its `env:` declares |
 | `agent:` | a cold reviewer reading the diff, given this prompt | a reviewer runtime |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail` | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question | nothing |
@@ -355,6 +355,47 @@ second silently overwrite the first.
 
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
 it by arithmetic rather than by anybody noticing.
+
+## extension environment — declared, and the declaration is the whole of it
+
+`run:` is the single extension point
+([0037](decisions/0037-an-extension-is-a-command.md) §2), its code is not
+trusted (§1), and `env:` beside it is **every credential its process gets**.
+Source: `ExtensionEnv` in `packages/recipe/src/recipe.ts` and `extensionEnv` in
+`packages/agent-env/src/index.ts`.
+
+```yaml
+subscribers:
+  - name: telegram
+    on: [WorkItemLanded]
+    run: npx @lingtai/telegram
+    env: [TELEGRAM_BOT_TOKEN]
+```
+
+Four rules, and the first is the one that matters:
+
+- **Absent means nothing, not everything.** An extension that declares nothing
+  gets `runnableEnv`'s six — `PATH` · `HOME` · `TMPDIR` · `LANG` · `USER` ·
+  `LOGNAME` — and no credential at all. It used to be handed the environment
+  the *agent* was given, which is how a token put in one place reached every
+  extension at once.
+- **The values are 0021's**, not a second mechanism:
+  `~/.lingtai/env/<project>.env` over the machine's own file, merged before the
+  recipe's `allow`/`deny` — those decide what reaches *the agent*, which is a
+  different consumer.
+- **`LINGTAI_*` cannot be declared**, and the refusal names the variable and the
+  field. A prefix rather than a list, for `#63`'s reason and 0021's: `RESERVED`
+  was deleted because a denylist is a thing to keep up to date. It costs a
+  managed repository nothing, since a project's own file keeps its own names.
+- **A declared name this machine does not hold is red before a run**, in
+  `lingtai doctor`'s `env: <project> extensions`, naming `lingtai env set`.
+
+The **worktree** is not covered by this and is not meant to be: a gate action
+runs where the agent worked, and `env.plantAt` put the agent's own file there.
+This is about the process environment — the daemon's credentials, which is what
+0037 §1 took away.
+
+Nothing spawns a subscriber yet, so today this binds `run:` at a gate point.
 
 ## what the log says was *supposed* to happen
 
@@ -501,13 +542,16 @@ subscribers:
   - name: telegram
     on: [WorkItemLanded, WorkItemBlocked, RunFailed]
     run: npx @lingtai/telegram
+    env: [TELEGRAM_BOT_TOKEN]
 ```
 
 The `on:` list is the subscription as well as the declaration, so a name that is
 not in `EVENTS` fails the recipe and names itself. A retired type fails too:
 spelled right, in the catalogue, and appended by nothing, which is the same
-subscription that never fires reached by a different mistake. The four above are
-still the daemon's own defaults and nothing reads `subscribers:` yet.
+subscription that never fires reached by a different mistake. `env:` is every
+credential that subscriber's process gets — see *extension environment* above,
+which is the half of 0037 §1 that makes "and nothing else" a fact. The four
+above are still the daemon's own defaults and nothing reads `subscribers:` yet.
 
 ## lingtai subcommand — 13
 
@@ -518,7 +562,7 @@ Source: the switch in `apps/cli/src/lingtai.ts`.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 22 fixed, 3 per project, 3 deferred
+## doctor check — 22 fixed, 4 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
@@ -538,12 +582,19 @@ by four checks and two names.
 | credentials (2) | `github: app credentials` · `runtime: signed in` |
 | visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
 
-**Three more run once per configured project**, so the total depends on how many
+**Four more run once per configured project**, so the total depends on how many
 there are: `recipe: resolves for every project`,
-`env: declared names, and which layer`, and
+`env: declared names, and which layer`, `env: <project> extensions` and
 `recipe: the rules and the merge target are one branch`. Each reports under the
-project's own name (`recipe: lingtai`, `env: lingtai`, `base: lingtai`) when it
-has something to say about that project in particular.
+project's own name (`recipe: lingtai`, `env: lingtai`,
+`env: lingtai extensions`, `base: lingtai`) when it has something to say about
+that project in particular.
+
+`env: <project> extensions` is 0037 §1's half: what each `run:` action and each
+subscriber declared, and whether this machine holds it. It is `fail` rather than
+`warn` when one is not set, because an extension gets *only* what it declares,
+so a missing name is a command that starts, finds nothing and exits — and a
+subscriber's exit code is discarded.
 
 Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
 `fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding

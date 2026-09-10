@@ -235,8 +235,24 @@ is appended, so `lingtai doctor` and the board can say it, for the same reason
   an extension is written by somebody else. Events carry `schema_ver` and have
   upcasters; the extension payload has neither yet.
 
-- **Credentials per extension.** §1 says an extension gets its own rather than
-  the daemon's. Where they are declared, and how a Telegram bot token reaches the
-  process without reaching every other one, is not designed. `~/.lingtai/env/`
-  and [0021](0021-the-recipe-decides-the-environment.md)'s layers are where it
-  should start.
+- ~~**Credentials per extension.**~~ **Closed by `#124`**, where it said it
+  should start: [0021](0021-the-recipe-decides-the-environment.md)'s layers,
+  with the extension as their second consumer.
+
+  `env:` beside the `run:` or the subscriber names what that process gets, and
+  the declaration is the whole of it — an extension that declares nothing gets
+  `runnableEnv`'s six and no credential, where it used to get the environment
+  the *agent* was given. The values still come from `~/.lingtai/env/` and the
+  recipe still only holds names, so §1's *"its own credentials"* is now one
+  sentence in two places rather than a mechanism of its own.
+
+  `LINGTAI_*` cannot be declared for one, and the refusal names the variable.
+  That is a prefix and not the denylist 0021 deleted, for `#63`'s reason: every
+  name Lingtai reads for itself begins with it, so there is nothing to keep up
+  to date.
+
+  What it does **not** cover, and deliberately: a gate action runs in the
+  worktree, and `env.plantAt` put the agent's own file there. This is the
+  process environment — the daemon's credentials, which is what §1 is about.
+  A scratch worktree for an extension is the next question, and it is the same
+  one `RUNNABLE`'s note about `HOME` already asks.

@@ -18,6 +18,61 @@
  */
 import { z } from "zod";
 import { Tier, RuntimeId, isEventType, isRetiredEventType } from "@lingtai/domain";
+import { PREFIX } from "@lingtai/env";
+
+/**
+ * The names an **extension** may read, declared beside the extension itself
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ *
+ * `run:` is the single extension point (0037 §2), its code is not trusted, and
+ * this is where it says which of this machine's credentials it needs. The
+ * values are 0021's — `~/.lingtai/env/<project>.env` over the machine's own
+ * file — so this file stays a list of names and stays safe to commit, exactly
+ * as `env.required` does. **This is 0021's second consumer, not a second
+ * mechanism.**
+ *
+ * **Absent means nothing, not everything.** A command used to be handed the
+ * environment the *agent* was given, which is how a Telegram bot token put in
+ * one place would reach every extension at once. The declared set is the whole
+ * set, and an extension that declares nothing gets only what
+ * `runnableEnv` gives any process — `PATH`, `HOME` and the four beside them,
+ * which are how a binary is found rather than credentials.
+ *
+ * **`LINGTAI_*` is refused, and the refusal names the variable.** 0037 §1's
+ * reason for distrusting an extension's code is, in as many words, that it
+ * "can hang, exit, leak, or read `LINGTAI_DATABASE_URL`" — this system's own
+ * log. It is a *prefix* and not a list because `#63` made every name Lingtai
+ * reads for itself begin `LINGTAI_`, which is the same reason `isMachineOwn`
+ * in `@lingtai/agent-env` is one rule: 0021 deleted `RESERVED` because a
+ * denylist is a thing to keep up to date, and a prefix is not.
+ *
+ * Refused *here*, at the recipe, rather than at the point of use: `lingtai
+ * doctor` and `lingtai add` both resolve a recipe without running anything, so
+ * a declaration that cannot be honoured is red before a run rather than during
+ * one.
+ *
+ * It costs Lingtai's own recipe nothing, and that is worth writing down because
+ * it looks like it should: `LINGTAI_TEST_DATABASE_URL` is what this repository's
+ * suite needs, and `pnpm typecheck && pnpm test` reads it from the `.env.local`
+ * this run planted in the worktree (`env.plantAt`), not from its environment.
+ * A project's own file keeps its own names, so no other repository has a
+ * `LINGTAI_` name to declare in the first place.
+ */
+export const ExtensionEnvNames = z
+  .array(z.string())
+  .default([])
+  .superRefine((names, ctx) => {
+    for (const name of names) {
+      if (!name.startsWith(PREFIX)) continue;
+      ctx.addIssue({
+        code: "custom",
+        message:
+          `"${name}" is one of Lingtai's own names and cannot be declared for an extension — ` +
+          `every name Lingtai reads for itself begins "${PREFIX}" (#63), and an extension's code ` +
+          "is not trusted with them (0037 §1). A project's own variable keeps its own name.",
+      });
+    }
+  });
 
 /**
  * One thing that runs at a gate.
@@ -34,11 +89,17 @@ import { Tier, RuntimeId, isEventType, isRetiredEventType } from "@lingtai/domai
  * including the ones where it says nothing.
  */
 export const GateAction = z.union([
-  /** A command. Its exit code is the verdict. */
+  /**
+   * A command. Its exit code is the verdict, and `env` is every credential it
+   * gets — see `ExtensionEnvNames`. This is the extension point (0037 §2),
+   * which is why it is the only kind carrying one: `agent`, `watch` and `human`
+   * are the core's own and run in the core's own process.
+   */
   z.object({
     name: z.string(),
     run: z.string(),
     timeout: z.string().default("15m"),
+    env: ExtensionEnvNames,
   }),
   /** A cold reviewer, given the diff and this prompt. */
   z.object({
@@ -173,7 +234,7 @@ const SubscribedEvent = z.string().superRefine((name, ctx) => {
  * activation events buy, and it is the half of their design worth copying.
  *
  * **Strict, for the reason `GateMap` and `env` are.** A key that is not one of
- * the three is a typo or a name from a draft of 0037 — `events:`, `uses:` — and
+ * the four is a typo or a name from a draft of 0037 — `events:`, `uses:` — and
  * zod's default is to drop it silently, which here would mean a subscriber
  * subscribed to nothing while the recipe reads as though it were configured.
  */
@@ -183,6 +244,17 @@ export const Subscriber = z.strictObject({
   on: z.array(SubscribedEvent).min(1),
   /** The command. Its exit code is discarded — see 0037 §5. */
   run: z.string(),
+  /**
+   * Every credential this subscriber gets, and nothing else reaches it — see
+   * `ExtensionEnvNames`.
+   *
+   * This is the case 0037 §1 is written about in as many words: *"a Telegram
+   * bot token must reach the Telegram extension and nothing else"*. Declaring
+   * it beside the subscriber is what makes "and nothing else" a fact rather
+   * than an intention, because the alternative — the daemon's own environment —
+   * hands it to every extension at once.
+   */
+  env: ExtensionEnvNames,
 });
 export type Subscriber = z.infer<typeof Subscriber>;
 

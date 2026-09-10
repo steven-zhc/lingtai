@@ -18,6 +18,7 @@ import {
   DEFAULT_PRODUCTION_PATTERNS,
   ProductionValueError,
   SecretSourceError,
+  extensionEnv,
   filterEnv,
   hostLooksProduction,
   parseEnvFile,
@@ -75,6 +76,49 @@ describe("filterEnv — 0021's table, a case per row", () => {
    */
   it("passes nothing when `allow` is present and empty", () => {
     expect(filterEnv(data, { allow: [] })).toEqual({});
+  });
+});
+
+/**
+ * The same two files, asked the other way round — 0021's second consumer
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ *
+ * `filterEnv` starts from everything and takes away; this starts from nothing
+ * and adds only what was named. The pair of tests below is that sentence: a
+ * declaration of one name out of three yields one, and a declaration of none
+ * yields none rather than three.
+ */
+describe("extensionEnv — the declared set is the whole set", () => {
+  const merged = { TELEGRAM_TOKEN: "bot", CLERK_SECRET_KEY: "sk", LINGTAI_DATABASE_URL: "postgres://log" };
+
+  it("gives an extension exactly what it declared", () => {
+    expect(extensionEnv(merged, ["TELEGRAM_TOKEN"])).toEqual({
+      values: { TELEGRAM_TOKEN: "bot" },
+      missing: [],
+    });
+  });
+
+  it("gives nothing to an extension that declared nothing", () => {
+    expect(extensionEnv(merged, [])).toEqual({ values: {}, missing: [] });
+  });
+
+  /**
+   * Reported rather than silently absent. This is what `lingtai doctor` says
+   * before a run: an extension started with a name it asked for and did not
+   * get is a bot that exits, and a subscriber's exit code is discarded.
+   */
+  it("names what it could not answer for", () => {
+    expect(extensionEnv(merged, ["TELEGRAM_TOKEN", "SLACK_TOKEN"])).toEqual({
+      values: { TELEGRAM_TOKEN: "bot" },
+      missing: ["SLACK_TOKEN"],
+    });
+  });
+
+  /** The tripwire is over what reaches a process, and an extension is one. */
+  it("refuses a production-looking value, naming the variable", () => {
+    expect(() => extensionEnv({ DB: "postgres://db.prod.example.com/x" }, ["DB"])).toThrow(
+      ProductionValueError,
+    );
   });
 });
 

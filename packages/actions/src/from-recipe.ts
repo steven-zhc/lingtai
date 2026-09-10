@@ -23,6 +23,17 @@ import { createProcessGate } from "./process-gate.ts";
 export interface GateDeps {
   agent?: AgentGateDeps;
   watch?: WatchGateDeps;
+  /**
+   * The declared names of a `run:` action → the whole environment its process
+   * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+   *
+   * A function rather than a map because only the caller can read 0021's
+   * layers, and only it knows to add `runnableEnv`'s `PATH`. It is optional for
+   * the reason the other two are — a caller checking that a recipe *can* be
+   * built has no machine to read — and absent it refuses a `run:` action by
+   * name rather than running one with no environment at all.
+   */
+  env?: (declared: readonly string[]) => Record<string, string>;
 }
 
 export class GateActionUnavailableError extends Error {
@@ -45,7 +56,24 @@ export function gatesFromRecipe(actions: readonly GateAction[], deps: GateDeps =
     const kind = kindOfAction(action);
 
     if ("run" in action) {
-      return createProcessGate({ name: action.name, run: action.run, timeout: action.timeout });
+      if (!deps.env) {
+        // Refused rather than run with `{}`: without a resolver there is no
+        // `PATH` either, so every such gate would fail on "command not found"
+        // and read as a broken build rather than as a gate built wrong.
+        throw new GateActionUnavailableError(
+          action.name,
+          kind,
+          "no environment resolver was supplied to gatesFromRecipe",
+        );
+      }
+      return createProcessGate({
+        name: action.name,
+        run: action.run,
+        timeout: action.timeout,
+        // 0037 §1: the declared set is the whole set. An action that declares
+        // nothing gets only what any process needs, never the daemon's.
+        env: deps.env(action.env),
+      });
     }
 
     if ("agent" in action) {

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   GateActionUnavailableError,
   type GateEvent,
+  type ProcessGateSpec,
   createProcessGate,
   gatesFromRecipe,
   runGatePipeline,
@@ -20,12 +21,22 @@ const context = {
   runId: "run-01JX",
   onSha: "sha-a",
   cwd: process.cwd(),
-  env: { PATH: process.env["PATH"] ?? "" },
+  // The **agent's**, which since 0037 §1 is not what a `run:` action is given.
+  // Every assertion below about a command's environment is about `env` on the
+  // spec, and this being different from it is the point.
+  env: { PATH: process.env["PATH"] ?? "", AGENT_ONLY: "the agent's" },
 };
+
+/** What a process gate needs to find `echo` and `sleep`, and nothing else. */
+const runnable = { PATH: process.env["PATH"] ?? "" };
+
+/** A gate whose declared environment is only what a shell needs. */
+const processGate = (spec: Omit<ProcessGateSpec, "env">) =>
+  createProcessGate({ ...spec, env: runnable });
 
 describe("the process gate", () => {
   it("passes on exit 0 and says what ran", async () => {
-    const gate = createProcessGate({ name: "build", run: "exit 0" });
+    const gate = processGate({ name: "build", run: "exit 0" });
     const result = await gate.run(context);
 
     expect(result.verdict).toBe("passed");
@@ -37,7 +48,7 @@ describe("the process gate", () => {
    * build failed" with no output is a link to somewhere else wearing a disguise.
    */
   it("fails on a non-zero exit and carries the log tail", async () => {
-    const gate = createProcessGate({
+    const gate = processGate({
       name: "build",
       run: "echo 'src/a.ts(12,3): error TS2345'; echo 'Found 1 error.'; exit 2",
     });
@@ -50,7 +61,7 @@ describe("the process gate", () => {
   });
 
   it("captures stderr as well as stdout, because compilers use both", async () => {
-    const gate = createProcessGate({ name: "build", run: "echo boom >&2; exit 1" });
+    const gate = processGate({ name: "build", run: "echo boom >&2; exit 1" });
     expect((await gate.run(context)).evidence).toContain("boom");
   });
 
@@ -60,7 +71,7 @@ describe("the process gate", () => {
    * wall clock and then report nothing at all.
    */
   it("distinguishes a timeout from a refusal", async () => {
-    const gate = createProcessGate({ name: "build", run: "echo starting; sleep 5", timeout: "300ms" });
+    const gate = processGate({ name: "build", run: "echo starting; sleep 5", timeout: "300ms" });
     const result = await gate.run(context);
 
     expect(result.verdict).toBe("failed");
@@ -71,14 +82,14 @@ describe("the process gate", () => {
   });
 
   it("fails rather than throwing when the command cannot run at all", async () => {
-    const gate = createProcessGate({ name: "build", run: "this-command-does-not-exist" });
+    const gate = processGate({ name: "build", run: "this-command-does-not-exist" });
     const result = await gate.run(context);
     expect(result.verdict).toBe("failed");
     expect(result.evidence.length).toBeGreaterThan(0);
   });
 
   it("runs in the worktree it was given", async () => {
-    const gate = createProcessGate({ name: "where", run: "pwd; exit 1" });
+    const gate = processGate({ name: "where", run: "pwd; exit 1" });
     const result = await gate.run({ ...context, cwd: "/tmp" });
     expect(result.evidence).toContain("/tmp");
   });
@@ -86,7 +97,7 @@ describe("the process gate", () => {
   it("refuses a timeout that is not a duration rather than defaulting to zero", () => {
     // A gate that silently got a 0ms timeout would fail every run for a reason
     // nobody could see.
-    expect(() => createProcessGate({ name: "x", run: "true", timeout: "soon" })).toThrow(/duration/);
+    expect(() => processGate({ name: "x", run: "true", timeout: "soon" })).toThrow(/duration/);
   });
 });
 
@@ -113,7 +124,7 @@ describe("the pipeline", () => {
     const { events, emit } = collector();
     await runGatePipeline({
       point: "proposed",
-      gates: [createProcessGate({ name: "build", run: "exit 0" })],
+      gates: [processGate({ name: "build", run: "exit 0" })],
       context,
       emit,
     });
@@ -130,8 +141,8 @@ describe("the pipeline", () => {
     await runGatePipeline({
       point: "proposed",
       gates: [
-        createProcessGate({ name: "build", run: "exit 0" }),
-        createProcessGate({ name: "lint", run: "exit 0" }),
+        processGate({ name: "build", run: "exit 0" }),
+        processGate({ name: "lint", run: "exit 0" }),
       ],
       context,
       emit,
@@ -155,9 +166,9 @@ describe("the pipeline", () => {
     const result = await runGatePipeline({
       point: "proposed",
       gates: [
-        createProcessGate({ name: "build", run: "exit 0" }),
-        createProcessGate({ name: "lint", run: "echo nope; exit 1" }),
-        createProcessGate({ name: "test", run: "exit 0" }),
+        processGate({ name: "build", run: "exit 0" }),
+        processGate({ name: "lint", run: "echo nope; exit 1" }),
+        processGate({ name: "test", run: "exit 0" }),
       ],
       context,
       emit,
@@ -200,10 +211,35 @@ describe("the pipeline", () => {
 
 describe("gatesFromRecipe", () => {
   it("builds the process gates", () => {
-    const gates = gatesFromRecipe([
-      { name: "build", run: "pnpm verify", timeout: "15m" },
-    ]);
+    const gates = gatesFromRecipe(
+      [{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }],
+      { env: () => runnable },
+    );
     expect(gates.map((g) => g.name)).toEqual(["build"]);
+  });
+
+  /**
+   * The declared names reach the resolver, and nothing else does — 0037 §1.
+   *
+   * Asserted on the *call* rather than only on the child, because this is the
+   * half that decides: a factory that passed the point's environment through
+   * would look identical from the outside until somebody read the process list.
+   */
+  it("asks the resolver for exactly what the action declared", () => {
+    const asked: (readonly string[])[] = [];
+    gatesFromRecipe(
+      [
+        { name: "telegram", run: "npx @lingtai/telegram", timeout: "30s", env: ["TELEGRAM_TOKEN"] },
+        { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
+      ],
+      {
+        env: (declared) => {
+          asked.push(declared);
+          return runnable;
+        },
+      },
+    );
+    expect(asked).toEqual([["TELEGRAM_TOKEN"], []]);
   });
 
   /**
@@ -236,5 +272,57 @@ describe("gatesFromRecipe", () => {
     expect(() =>
       gatesFromRecipe([{ name: "tamper", watch: ["**/x"], then: "fail" }]),
     ).toThrow(/no file list was supplied/);
+    // A `run:` action's whole environment is now a dependency like the other
+    // two. Without a resolver it would have no `PATH` either, so the failure
+    // would read as a broken build rather than as a gate built wrong.
+    expect(() =>
+      gatesFromRecipe([{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }]),
+    ).toThrow(/no environment resolver was supplied/);
+  });
+});
+
+/**
+ * The property 0037 §1 is about, asserted against a real process.
+ *
+ * *"A Telegram bot token must reach the Telegram extension and nothing else."*
+ * The two halves are one test on purpose: a command that reads its own declared
+ * variable and cannot read the one beside it is the whole of the guarantee, and
+ * either half alone passes for the wrong reason — an environment that is empty
+ * proves nothing, and one that is full proves nothing either.
+ */
+describe("an extension's process", () => {
+  const printBoth = 'echo "declared=[${TELEGRAM_TOKEN-}] other=[${LINGTAI_DATABASE_URL-}]"; exit 1';
+
+  it("reads what it declared and cannot read what it did not", async () => {
+    const gate = createProcessGate({
+      name: "telegram",
+      run: printBoth,
+      env: { ...runnable, TELEGRAM_TOKEN: "bot-token" },
+    });
+
+    const result = await gate.run({
+      ...context,
+      // The conductor's own environment, in the context, holding the one name
+      // 0037 §1 names. The child must not see it.
+      env: { ...context.env, LINGTAI_DATABASE_URL: "postgres://the-log" },
+    });
+
+    expect(result.evidence).toContain("declared=[bot-token]");
+    expect(result.evidence).toContain("other=[]");
+  });
+
+  /** Nothing declared is nothing given — not the environment of whoever ran it. */
+  it("gets nothing when it declared nothing", async () => {
+    process.env["LINGTAI_EXTENSION_PROBE"] = "the daemon's";
+    try {
+      const gate = createProcessGate({
+        name: "bare",
+        run: 'echo "probe=[${LINGTAI_EXTENSION_PROBE-}]"; exit 1',
+        env: runnable,
+      });
+      expect((await gate.run(context)).evidence).toContain("probe=[]");
+    } finally {
+      delete process.env["LINGTAI_EXTENSION_PROBE"];
+    }
   });
 });

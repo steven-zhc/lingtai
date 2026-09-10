@@ -465,6 +465,9 @@ importers:
       '@lingtai/domain':
         specifier: workspace:*
         version: link:../domain
+      '@lingtai/env':
+        specifier: workspace:*
+        version: link:../env
       picomatch:
         specifier: ^4.0.7
         version: 4.0.7
