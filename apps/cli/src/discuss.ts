@@ -35,7 +35,7 @@
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { createClaudeCodeRuntime, NO_RUN_LOG, openRunLog } from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
 import {
   FILE_BYTES,
@@ -48,6 +48,7 @@ import {
 } from "@lingtai/conductor/discuss";
 import { githubClientFor } from "@lingtai/conductor/filter";
 import { loadProject } from "@lingtai/conductor/projects";
+import { runLogPath } from "@lingtai/conductor/run-log";
 import {
   chatStream,
   parseWorkItemStream,
@@ -256,45 +257,90 @@ export async function answerDiscussion(
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
   const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));
 
-  log(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(" · ")}`);
+  /**
+   * The conversation's trace, as it is produced.
+   *
+   * [0034](../../../doc/decisions/0034-the-run-log.md) opens on *"the agent
+   * produces nothing until it exits"*, and it solved that for runs and not for
+   * discussions — so the box where **the person is the control loop** (0033 §4)
+   * was the one place with no feedback in it, and an assistant thinking for
+   * sixty seconds was indistinguishable from one that had died (#132). The
+   * mechanism is 0034's, unchanged: one file, named by the conductor, followed
+   * from byte zero by whoever is watching.
+   *
+   * **Named for the chat, not for a round.** `ask` runs the runtime once per
+   * read round and a file per round would be a conversation nobody could
+   * follow; one file per `chatId` is one conversation, and a follow-up appends
+   * to it. That name is also what makes the reaper right about it: the id is
+   * the chat's own stream, `DiscussionAsked` on it carries the work item, and
+   * `findOrphanLogs` removes the file when that item lands — the same rule and
+   * the same code as a run's.
+   *
+   * **No `RUN_LOG_END`.** That line means *the writer has let go of a run*, and
+   * a turn ending is not that: the conversation is still open and the next
+   * question appends here. What ends a turn is `DiscussionAnswered` on the
+   * chat's stream, which is the record; this is the trace, and the two are not
+   * the same kind of thing (0034 §8).
+   */
+  const trace = await openRunLog({
+    path: runLogPath(stateDir(), project, request.chatId),
+  }).catch(() => NO_RUN_LOG);
 
-  const held = await holdDiscussion(
-    {
-      store: eventStore,
-      log,
-      serve: async (ref, path) => {
-        const sha = shas.get(ref);
-        if (sha === undefined) return null;
-        return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES });
+  /** Both places: the daemon's own output, and the file the board follows. */
+  const say = (line: string) => {
+    log(line);
+    trace.note("chat", line);
+  };
+
+  try {
+    say(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(" · ")}`);
+
+    const held = await holdDiscussion(
+      {
+        store: eventStore,
+        log: say,
+        serve: async (ref, path) => {
+          const sha = shas.get(ref);
+          if (sha === undefined) return null;
+          return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES });
+        },
+        ask: async (prompt, round) =>
+          runtime.run({
+            // Its own id per round, so nothing resumes a session. `sessionIdFor`
+            // is a function of the run id, and reusing one would make a second
+            // question a continuation of the first one's transcript rather than a
+            // fresh read of the brief this file just built.
+            runId: `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
+            cwd,
+            prompt,
+            settingsPath,
+            // Nothing but what the runtime needs to authenticate. No token, no
+            // project values, no hook wiring — there is no hook.
+            env: runnableEnv({}),
+            limits: LIMITS,
+            // What the assistant says and thinks, as it says it. The adapter
+            // writes its own stream here (`traceOf`), which is the whole of
+            // what makes the box on the board move.
+            log: trace,
+          }),
       },
-      ask: async (prompt, round) =>
-        runtime.run({
-          // Its own id per round, so nothing resumes a session. `sessionIdFor`
-          // is a function of the run id, and reusing one would make a second
-          // question a continuation of the first one's transcript rather than a
-          // fresh read of the brief this file just built.
-          runId: `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
-          cwd,
-          prompt,
-          settingsPath,
-          // Nothing but what the runtime needs to authenticate. No token, no
-          // project values, no hook wiring — there is no hook.
-          env: runnableEnv({}),
-          limits: LIMITS,
-        }),
-    },
-    {
-      chatId: request.chatId,
-      evidence,
-      question: request.question,
-      by: request.by,
-    },
-  );
+      {
+        chatId: request.chatId,
+        evidence,
+        question: request.question,
+        by: request.by,
+      },
+    );
 
-  log(
-    `discussion ${request.chatId}: ${held.answered ? "answered" : "did not answer"}` +
-      (held.costUsd === null ? "" : ` · $${held.costUsd.toFixed(2)}`),
-  );
+    say(
+      `discussion ${request.chatId}: ${held.answered ? "answered" : "did not answer"}` +
+        (held.costUsd === null ? "" : ` · $${held.costUsd.toFixed(2)}`),
+    );
+  } finally {
+    // Kept, always. A discussion has no diff to land, so 0034 §4's other branch
+    // never applies here; §5's does, and it belongs to the reaper.
+    await trace.close("keep");
+  }
 }
 
 /**

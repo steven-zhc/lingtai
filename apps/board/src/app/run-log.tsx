@@ -14,6 +14,13 @@
  * would otherwise hold six file descriptors and six streams for a page nobody
  * scrolled down.
  *
+ * **Except the one that is producing output right now** (`live`, #132). That
+ * reason is about six attempts nobody asked to see, and it made *the run
+ * happening this second* two disclosures deep with nothing on the page saying
+ * it was there — `#110` built the stream and the page hid it. A running attempt
+ * opens itself and its log opens with it; every finished attempt is closed and
+ * reads nothing, which is the reason above, intact.
+ *
  * **From the beginning, however late.** The route re-reads the file from byte
  * zero every time, so expanding a run that has been going for four minutes
  * shows the four minutes — the property 0034 chose a file over a socket for.
@@ -40,29 +47,55 @@ import { useCallback, useEffect, useRef, useState } from "react";
  */
 const KEEP_LINES = 2_000;
 
+/**
+ * How long to wait before asking again for a log that is not there yet.
+ *
+ * Only for a follower that has been told the file is coming — the discussion
+ * box, whose question the board appended a moment ago and whose daemon has not
+ * opened the file yet (#132). A run's log is never waited for like this: a
+ * `<details>` somebody opened on a landed attempt is asking about a file that
+ * has been deleted, and retrying that is a poll for something that will never
+ * arrive.
+ */
+const AGAIN_MS = 1_500;
+
 type Ended = "landed" | "did not land" | "removed";
 
-export function RunLog({ runId }: { runId: string }) {
+/** What the follower knows about the file. Never about the run (0034 §8). */
+export type TailState = "off" | "reading" | "gone" | "trouble" | Ended;
+
+/**
+ * Follow one log file over the route's SSE, for as long as `following`.
+ *
+ * The half of this file that is not chrome, extracted because `#132` gives it a
+ * second reader: the discussion box tails a chat's log exactly as a ledger row
+ * tails a run's, and two copies of an `EventSource` lifecycle is two places for
+ * a connection to be left open.
+ */
+export function useLogTail(
+  id: string,
+  following: boolean,
+  /** Whether a missing file is *not yet* rather than *never*. See `AGAIN_MS`. */
+  awaited = false,
+): { lines: readonly string[]; state: TailState } {
   const [lines, setLines] = useState<readonly string[]>([]);
-  const [state, setState] = useState<"off" | "reading" | "gone" | "trouble" | Ended>("off");
+  const [state, setState] = useState<TailState>("off");
+  // Bumped to ask again for a file that has not been created yet; nothing else
+  // restarts a stream, so a follow is one connection per attempt at one.
+  const [again, setAgain] = useState(0);
   const source = useRef<EventSource | null>(null);
-  const tail = useRef<HTMLDivElement | null>(null);
 
   const stop = useCallback(() => {
     source.current?.close();
     source.current = null;
   }, []);
 
-  // Closing the tab, or navigating away, has to take the connection with it —
-  // the route is following a file for as long as somebody is listening.
-  useEffect(() => stop, [stop]);
-
   const start = useCallback(() => {
     if (source.current) return;
     setLines([]);
     setState("reading");
 
-    const es = new EventSource(`/api/run/${encodeURIComponent(runId)}`);
+    const es = new EventSource(`/api/run/${encodeURIComponent(id)}`);
     source.current = es;
 
     es.addEventListener("line", (event) => {
@@ -94,7 +127,49 @@ export function RunLog({ runId }: { runId: string }) {
       setState((was) => (was === "reading" ? "gone" : was));
       stop();
     };
-  }, [runId, stop]);
+  }, [id, stop]);
+
+  // One connection for as long as it is followed, and none at all while it is
+  // not. The cleanup is also what closing the tab or navigating away runs — the
+  // route is following a file for as long as somebody is listening.
+  useEffect(() => {
+    if (!following) return;
+    // `again` is read for the dependency and for nothing else: changing it is
+    // what re-runs this effect.
+    void again;
+    start();
+    return stop;
+  }, [following, again, start, stop]);
+
+  // The file that is coming rather than gone. Asked for again, and only while
+  // somebody is still waiting for it.
+  useEffect(() => {
+    if (!following || !awaited || state !== "gone") return;
+    const timer = setTimeout(() => setAgain((n) => n + 1), AGAIN_MS);
+    return () => clearTimeout(timer);
+  }, [following, awaited, state]);
+
+  return { lines, state };
+}
+
+export function RunLog({
+  runId,
+  live = false,
+}: {
+  runId: string;
+  /**
+   * Whether this attempt is still going, in which case the log opens with it.
+   *
+   * Decided by the page from the fold — `run.outcome.state` — and not asked of
+   * this component, which knows about a file and never about a run (0034 §8).
+   */
+  live?: boolean;
+}) {
+  // Open is state rather than a bare attribute because it is now two things: a
+  // running attempt starts open, and a reader can close it.
+  const [open, setOpen] = useState(live);
+  const { lines, state } = useLogTail(runId, open);
+  const tail = useRef<HTMLDivElement | null>(null);
 
   // Follow the bottom, which is where a running log is.
   useEffect(() => {
@@ -104,7 +179,8 @@ export function RunLog({ runId }: { runId: string }) {
   return (
     <details
       className="alog"
-      onToggle={(event) => (event.currentTarget.open ? start() : stop())}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
         <span className="hdocname">run log</span>
@@ -125,7 +201,7 @@ export function RunLog({ runId }: { runId: string }) {
 }
 
 /** What the right of the summary says, and it is about the file, never the run. */
-function say(state: "off" | "reading" | "gone" | "trouble" | Ended, count: number): string {
+function say(state: TailState, count: number): string {
   if (state === "off") return "not reading";
   if (state === "gone") return "no log";
   if (state === "trouble") return "the stream failed";

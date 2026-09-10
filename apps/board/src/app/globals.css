@@ -694,9 +694,53 @@ details[open] > summary::before { content: "▾"; }
    still a log rendered as prose. */
 .squestion { margin: 0; max-width: 62rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink); }
 
-/* A pointer, not a copy. The teal is structural — it is the same mark the
-   attempt it names carries, and it is deliberately not a verdict colour: this
-   line is a way in, and the verdict is inside the attempt. */
+/* **The four ranks have four sizes, and they descend** (#132). The block used
+   to run the other way: the further down you read the more specific it got
+   while the type got smaller, so the sentence that mattered least was set
+   largest. `.diag` is the reason and takes the block's prose size; the move is
+   a step down from it; `.ssince` is a step down again, because a run id is a
+   coordinate and not an argument.
+
+   These override the card's own `.diag`/`.needs`/`.did`/`.rec`, which are sized
+   in `px` for a 22rem column. The words are shared (`describeHold`); the sizes
+   are not, and never were. */
+.sbody .diag { max-width: 62rem; font-size: 0.95rem; line-height: 1.55; }
+.sbody .needs { font-size: 0.8rem; }
+.sbody .did,
+.sbody .rec { max-width: 62rem; font-size: 0.8rem; line-height: 1.55; }
+
+/* What refused, in its own words, at the second rank and open on load.
+   A `<details>` so a reader who has read it can put it away — and open,
+   because a person who opened this page to find out why a task stopped should
+   not have to find the answer as well (#132). */
+.sreason {
+  margin: 0.15rem 0 0;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--accent);
+}
+.sreason > summary { font-size: 0.75rem; }
+.ssize { font-family: var(--mono); color: var(--muted); }
+/* Scrolls inside itself, and is bounded: this is a gate's whole output, and a
+   block that grows with it would push the moves under it off the screen —
+   which is the same failure `.spair` is bounded for. */
+.sraw {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  margin: 0.3rem 0 0;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  white-space: pre;
+  overflow: auto;
+  max-height: 18rem;
+}
+
+/* The one deciding line, for a block whose diagnosis carries no evidence to
+   quote — every block written before #83, and the refusals that are not a
+   gate's. The teal is structural, and it is deliberately not a verdict colour.
+   The pointer that used to end this line is at rank 4 now. */
 .sevidence {
   display: flex;
   flex-wrap: wrap;
@@ -707,6 +751,12 @@ details[open] > summary::before { content: "▾"; }
   border-left: 2px solid var(--accent);
   font-size: 0.75rem;
 }
+/* A stated absence, not a blank rank (0016 §4). A gate that refused and printed
+   nothing is a different fact from a gate that never ran, and a rank that
+   rendered empty would look like neither. */
+/* Its own class rather than the page's `.empty`, which is sized and padded for
+   a column that has no cards in it. */
+.sevidence.snone { border-left-color: var(--rule-2); color: var(--muted); font-style: italic; }
 .sgate { font-family: var(--mono); color: var(--ink-2); }
 .sline {
   font-family: var(--mono);
@@ -724,15 +774,39 @@ details[open] > summary::before { content: "▾"; }
    `minmax(0, 1fr)` rather than `1fr`: both boxes hold a `pre` of a composed
    prompt, and a grid track whose minimum is its content would be as wide as the
    longest line in it and push the other column off the page. */
-.spair { display: grid; gap: 0.5rem; }
+/* **One row height, and each pane scrolls inside it** (#132).
+
+   This is not alignment. The moves sit *under* both boxes, so a pane that grew
+   with its content pushed the button you are deciding with off the screen — a
+   long conversation costing you the decision it was meant to inform, which is
+   exactly the conversation you had it to make. So the row is a fixed height
+   neither pane can change: the prompt scrolls in its own `pre`, the discussion
+   scrolls above its own input box, and the row of moves is where it was before
+   you asked anything. */
+.spair {
+  display: grid;
+  gap: 0.5rem;
+  --pair-h: 24rem;
+  grid-auto-rows: var(--pair-h);
+}
 @media (min-width: 64rem) {
   .spair {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
   }
   /* A landed item has no outgoing prompt, and the discussion is then the whole
      of the pair rather than half of it. */
   .spair > :only-child { grid-column: 1 / -1; }
+}
+/* The frames are the grid's cells and never their content's size. `min-height:
+   0` on both is what lets a flex child scroll rather than push: without it a
+   `pre` reports its whole content as its minimum and the box grows anyway. */
+.spair > .outgoing,
+.spair > .chat,
+.spair > .plan {
+  min-height: 0;
+  height: 100%;
+  margin-top: 0;
+  overflow: hidden;
 }
 
 /* The moves, under both boxes. One row whatever the item has: Approve, Reject
@@ -755,14 +829,27 @@ details[open] > summary::before { content: "▾"; }
    Neutral, like the discussion. The amber on this page is the rule at the left
    and the primary button inside the editor; the box itself carrying it would
    dilute both. */
+/* A column rather than a grid, so one child can take the room that is left and
+   scroll in it while the head and the buttons keep theirs (#132). */
 .outgoing {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.3rem;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--rule);
   border-radius: 2px;
   background: var(--surface-2);
+}
+.outgoing > * { flex: 0 0 auto; }
+/* The document takes what is left of the box's height and scrolls in it — so a
+   longer prompt moves nothing under it, and the editor is bounded the same way
+   for the same reason. */
+.outgoing > .outtext,
+.outgoing > .outbox {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 .outhead {
   display: flex;
@@ -888,14 +975,30 @@ details[open] > summary::before { content: "▾"; }
    Neutral throughout. The amber on this page is the rule at the left and the
    primary button; a box that also carried it would dilute both, and the only
    amber in here is the Ask button, which is the thing that will run. */
+/* A column, in three parts that do not move: the meter, the conversation, and
+   the box you type in. The conversation is the only one that grows, and it
+   grows into a scroller rather than into the page — the input box and the
+   moves under it stay where they were when you started typing (#132). */
 .chat {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
   margin-top: 0.3rem;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--rule);
   border-radius: 2px;
   background: var(--surface-2);
+}
+.chat > * { flex: 0 0 auto; }
+/* Pinned to the bottom: `Thinking` and the answer both scroll this to its end,
+   because the newest line is the one being read. */
+.chatscroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
 }
 /* The label carries the section's one fact at the right of the same rule, as
    every other label on this page does — and here the fact is the meter. A
@@ -953,6 +1056,16 @@ details[open] > summary::before { content: "▾"; }
   overflow-wrap: anywhere;
 }
 .chatwait { margin: 0; font-size: 0.72rem; color: var(--muted); font-style: italic; }
+/* What the assistant is doing, while it does it — 0034's mechanism, pointed at
+   a chat (#132). A trace and never the answer, so it is set as a log and
+   bounded: it must not be able to push the answer that replaces it about. */
+.chattrace {
+  max-height: 9rem;
+  overflow: auto;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--rule-2);
+  background: var(--surface);
+}
 .chatfail { margin: 0; font-size: 0.72rem; color: var(--fail); font-family: var(--mono); }
 
 /* What it could not establish, at the answer's own weight and not below it.

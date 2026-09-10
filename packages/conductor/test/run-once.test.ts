@@ -823,11 +823,18 @@ git add -A && git commit -q -m "fix the race"
     // board's primary control rather than one option among three.
     const block = held.find((e) => e.type === "WorkItemBlocked")!.data as {
       needs: string | null;
-      diagnosis: { what: string; recommendation: { action: string } | null } | null;
+      diagnosis: {
+        what: string;
+        raw: string | null;
+        recommendation: { action: string } | null;
+      } | null;
     };
     expect(block.needs).toBe("judgement");
     expect(block.diagnosis?.what).toContain("every gate passed");
     expect(block.diagnosis?.recommendation?.action).toBe("approve");
+    // Nothing refused, so there is nothing to quote — and null rather than an
+    // empty string, so the block leaves no hole where a quote would be (#132).
+    expect(block.diagnosis?.raw).toBeNull();
 
     // ---- and then approving it merges the thing that was looked at ---------
     const approved = await approve({
@@ -845,6 +852,52 @@ git add -A && git commit -q -m "fix the race"
     if (!approved.ok) return;
     expect((await g(["rev-parse", "develop"], originPath)).stdout).not.toBe(before.stdout);
   }, 180_000);
+
+  /**
+   * The hold on a red run, and what it is able to say about it.
+   *
+   * `#121` is the evidence: the block said *the review gate refused it*, which
+   * is every word true, and a reader takes from it that a reviewer read the
+   * diff and found problems. The reviewer never ran — the guard hook refused
+   * its opening prompt — and **the gate's own evidence said so exactly**. The
+   * diagnosis carried `raw: null`, on the argument that the verdicts are on the
+   * task's page with their evidence, so a gate's *name* was the whole of what
+   * the block had to say why a task stopped (#132).
+   */
+  it("carries the failing gate's own words into the block, not just its name", async () => {
+    created.add(workItemStream(PROJECT, 137));
+    const agent = await agentThat(`
+mkdir -p src && echo "export const held = 137;" > src/fix.ts
+git add -A && git commit -q -m "fix the race"
+`);
+
+    const result = await once({
+      ...options(agent),
+      issue: 137,
+      // The flag asks even when a gate refused — "the build is red, merge
+      // anyway" is a decision a person is allowed to make — so this is the
+      // shortest path to a hold whose diagnosis has a refusal in it.
+      merge: false,
+      client: fakeClient({
+        recipe: REFUSING_RECIPE,
+        getIssue: async () => issue2(137),
+        listOpenIssues: async () => [issue2(137)],
+      }),
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
+
+    const held = await store.read(result.workItemId);
+    const block = held.find((e) => e.type === "WorkItemBlocked")!.data as {
+      diagnosis: { what: string; raw: string | null } | null;
+    };
+    // The name is still there, because a reader has to know which gate.
+    expect(block.diagnosis?.what).toContain("gate refused it");
+    // And the reason is there too, verbatim, which it was not.
+    expect(block.diagnosis?.raw).toContain("the build is broken");
+  }, 240_000);
 
   /**
    * #58, as an assertion. The recipe put a person at `merge`, `lingtai add`
@@ -898,9 +951,21 @@ git add -A && git commit -q -m "fix the race"
     });
 
     // "Waiting on you", not back in the queue where another run could claim it.
-    const item = (await store.read(result.workItemId)).map((e) => e.type);
+    const blocked = await store.read(result.workItemId);
+    const item = blocked.map((e) => e.type);
     expect(item).toContain("WorkItemBlocked");
     expect(item).not.toContain("WorkItemReleased");
+
+    // Nothing failed and nothing passed either: a gate asked for a person, and
+    // the sentence says which. It used to fall through to the refusal wording
+    // and print `the null gate refused it` — a cause the block does not have,
+    // which is #132's first point one word further on.
+    const asking = blocked.find((e) => e.type === "WorkItemBlocked")!.data as {
+      diagnosis: { what: string; raw: string | null } | null;
+    };
+    expect(asking.diagnosis?.what).toContain("asked for a person");
+    expect(asking.diagnosis?.what).not.toContain("null");
+    expect(asking.diagnosis?.raw).toBeNull();
 
     // One vocabulary means one way to answer: approving works without knowing
     // which point asked.

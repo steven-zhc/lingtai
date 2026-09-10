@@ -134,7 +134,7 @@ function outcomeClass(state: RunView["outcome"]["state"]): string {
  * a three-attempt one": the single run is open, and it is not numbered, because
  * *attempt 1 of 1* is a distinction nobody on that page is drawing.
  */
-function Attempt({
+export function Attempt({
   run,
   alone,
   project,
@@ -153,11 +153,21 @@ function Attempt({
    */
   deciding: boolean;
 }) {
+  /**
+   * The one attempt that is producing output while you read the page.
+   *
+   * It opens itself, for the reason `deciding` does and one more: a run in
+   * flight is the only thing on this page that will be different in a minute,
+   * and it was two disclosures deep with nothing saying it was there (#132).
+   * Its `RunLog` opens with it and follows; every other attempt stays closed
+   * and reads nothing.
+   */
+  const running = run.outcome.state === "running";
   return (
     <details
       className={deciding ? "attempt deciding" : "attempt"}
       id={`attempt-${run.attempt}`}
-      open={alone || deciding}
+      open={alone || deciding || running}
     >
       <summary>
         {/* The disclosure triangle is `details > summary::before`, drawn once for
@@ -233,8 +243,9 @@ function Attempt({
 
       {/* What it was doing between being told and being judged (`#110`). Closed,
           and nothing is read until it is opened: a page with six attempts would
-          otherwise follow six files nobody asked to see. */}
-      <RunLog runId={run.runId} />
+          otherwise follow six files nobody asked to see — **except the one that
+          is still going**, which opens with its attempt and follows (#132). */}
+      <RunLog runId={run.runId} live={running} />
 
       {run.files.length > 0 ? (
         <details className="afiles">

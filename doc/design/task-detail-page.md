@@ -75,11 +75,29 @@ The verdict carries the one deciding line and names the attempt it came from;
 that attempt holds the whole of it. Printing the failing gate twice is how two
 copies of one fact come to disagree.
 
+**Amended 2026-09-10 (`#132`): the pointer is to the *attempt*, not to the
+words.** Read as *a gate's name is enough*, this produced a block that said
+*the review gate refused it* about a reviewer that never ran — the guard hook
+had refused its opening prompt, and the gate's evidence said so exactly, three
+ranks down behind a disclosure. So `WorkItemBlocked.diagnosis.raw` carries the
+failing gate's evidence and the block quotes it, open, at its second rank. What
+is still a pointer, and still never a copy, is everything else the attempt
+holds: its findings, its diff and its other verdicts.
+
 ### 3. The verdict has two renderings, and degrades
 
 Today: state, age, the question verbatim, the actions. Once `#83` lands, two
 fields fill into the same component. **A block with no diagnosis renders
 exactly as it does today** — `#83`'s own requirement.
+
+**Amended 2026-09-10 (`#132`): four ranks — state · reason · move ·
+coordinates.** `#83` landed and the block became six lines in three sizes and
+three greys, saying overlapping things and getting more specific as the type got
+smaller. The state is the readout; *why it stopped* is second and quoted from
+whatever refused; *what to do* is third; every identifier is fourth and appears
+once. `#83`'s degradation is unmoved and is what decides the second rank on a
+block that has no diagnosis: the question is printed there, exactly as it always
+was, and is dropped only where a diagnosis says the same thing better.
 
 ### 4. The control is the prompt, editable
 
@@ -109,6 +127,12 @@ an addition to the ticket. It introduces no third carrier.
 - **Hosted by the daemon**, requested over `ctl-conductor` like `pause` and
   `now`. [0013](../decisions/0013-daemon-hosts-the-work.md)'s line does not
   move.
+- **The answer arrives as it is produced** (`#132`). The daemon writes the
+  chat's trace to a log named for its `chatId` and the box follows it over the
+  route the ledger's run logs already use — [0034](../decisions/0034-the-run-log.md)'s
+  mechanism, unchanged, applied to the one agent that had none. It is a trace
+  and never the answer: `DiscussionAnswered` is the record, and when it lands
+  the trace is gone.
 - **No spend limit; a meter instead.** A run is unattended and needs a hard
   bound; a discussion is attended and the person is the loop. But a person can
   only be the limit if the person can see the number, so the running cost is on
@@ -155,3 +179,7 @@ renderer is the wrong tool for an untrusted issue body.
 - Section labels are display-scale mono caps with the section's one fact at the
   right of the same rule — which is why there is no separate summary band.
 - The prose measure stays. Documents and logs may break it; paragraphs may not.
+- **The two boxes share one row height and scroll inside it** (`#132`). The
+  moves sit under both, so a pane that grows with its content pushes the button
+  you are deciding with off the screen — a long conversation costing you the
+  decision it was meant to inform.

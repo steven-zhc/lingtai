@@ -383,15 +383,25 @@ describe("the block, rendered", () => {
     expect(html).not.toContain('class="rec"');
   });
 
-  it("fills the diagnosis and the recommendation into the same block, leaving the question where it was", () => {
+  /**
+   * The four ranks (#132), on the block that has all of them.
+   *
+   * Two things this asserts that the block used to get wrong: the refusal is
+   * quoted rather than named — *the review gate refused it* on `#121` was every
+   * word true and said a reviewer had read the diff, when the reviewer had
+   * never run — and the question is not printed beside a diagnosis that says
+   * the same thing better.
+   */
+  it("quotes what refused, and drops the question the diagnosis supersedes", () => {
     const html = renderToStaticMarkup(
       <Standing
         standing={{
           ...HELD,
           needs: "acknowledgement",
+          failed: ["proposed:build"],
           diagnosis: {
             what: "the branch does not merge into develop",
-            done: "a repair for conflict ran as run-2 and produced this diff",
+            done: "a repair for conflict produced this diff",
             raw: "CONFLICT (content): Merge conflict in apps/web/page.tsx",
             recommendation: { action: "requeue", why: "develop has moved; a fresh branch should merge" },
           },
@@ -408,10 +418,100 @@ describe("the block, rendered", () => {
     expect(html).toContain("a failure needs acknowledging");
     expect(html).toContain("the branch does not merge into develop");
     expect(html).toContain("recommends requeue");
-    expect(html).toContain("conflict: agent/112 does not merge into develop");
-    // The raw failure stays where the whole of it is. A copy at the top is the
-    // second version of one fact that design §2 is about.
-    expect(html).not.toContain("CONFLICT (content)");
+    // Rank 2: the refusal in its own words, naming what said it, and open —
+    // the evidence was on this page the whole time, three ranks down behind a
+    // disclosure, and the block whose job is to say why a task stopped had a
+    // gate's name to say it with.
+    expect(html).toContain("CONFLICT (content)");
+    expect(html).toContain('<details class="sreason" open=""');
+    expect(html).toContain("proposed / build");
+    // And the question is gone, because `what`, `did` and `rec` say what it
+    // said: three sentences overlapping was the defect, not a feature.
+    expect(html).not.toContain("conflict: agent/112 does not merge into develop");
+  });
+
+  /**
+   * 0016 §4, one page along: a rank that renders empty looks exactly like a
+   * rank that failed to render, and only one of those is our bug.
+   */
+  it("states an absence where a gate refused and recorded nothing", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={{
+          ...HELD,
+          failed: ["proposed:review"],
+          diagnosis: { what: "the review gate refused it", done: null, raw: "", recommendation: null },
+        }}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("The proposed / review gate recorded no output");
+    expect(html).not.toContain('class="sreason"');
+  });
+
+  /** Nothing refused, so there is nothing to quote — and no hole where one would be. */
+  it("leaves no second rank at all when every gate passed", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={{
+          ...HELD,
+          failed: [],
+          deciding: null,
+          diagnosis: {
+            what: "agent/112 is at 293fe3a and every gate passed. The merge point holds for no-merge.",
+            done: null,
+            raw: null,
+            recommendation: { action: "approve", why: "every gate passed on this diff" },
+          },
+        }}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("every gate passed");
+    expect(html).not.toContain('class="sreason"');
+    expect(html).not.toContain("sevidence");
+  });
+
+  /**
+   * The block used to print `run-5cb24ac5` twice — once as a coordinate and
+   * once inside the sentence about the repair that produced the diff. The
+   * conductor's sentence no longer names it and the block names it once.
+   */
+  it("prints no identifier twice", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={{
+          ...HELD,
+          failed: ["proposed:review"],
+          diagnosis: {
+            what: "agent/112 is at 293fe3a and the review gate refused it.",
+            done: "a repair for gate-failed produced this diff",
+            raw: "the reviewer's answer was not readable as findings",
+            recommendation: null,
+          },
+        }}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    // What a reader sees, with the markup taken out: an id in a `title` is a
+    // tooltip on the one place it is printed, not a second printing of it.
+    const read = html.slice(0, html.indexOf('class="spair"')).replace(/<[^>]*>/g, " ");
+    expect(read.split(RUN_2.slice(0, 12)).length - 1).toBe(1);
   });
 
   it("points at the attempt rather than reprinting it", () => {
