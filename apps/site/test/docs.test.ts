@@ -82,7 +82,12 @@ describe("what a document says it is", () => {
     // A site that showed the two as equals would disagree with the repository
     // about which decisions are in force.
     expect(status.get("decisions/0014-one-loop-one-log")).toMatch(/superseded/);
-    expect(status.get("decisions/0016-the-settled-model")).toBe("accepted");
+    // 0016 is still in force and its status still begins by saying so — but it
+    // now carries what 0036 and 0037 did to two of its sections, and an
+    // equality here asserted that no decision would ever be *partly* revised.
+    // It went red the day 0037 landed, which is a test failing for being right.
+    expect(status.get("decisions/0016-the-settled-model")).toMatch(/^accepted/);
+    expect(status.get("decisions/0016-the-settled-model")).toMatch(/superseded by 0037/);
   });
 
   it("gives every entry a title that is not just its filename", async () => {

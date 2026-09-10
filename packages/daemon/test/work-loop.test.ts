@@ -279,14 +279,21 @@ describe("the work loop", () => {
       // Short, because the property is that a hang is *reported*; how long a
       // real subscriber is given before that is a separate decision.
       subscriberTimeoutMs: 150,
-      notify: (event) => {
-        seen.push(event.streamId);
-        if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
-        if (event.streamId === stream("rejects")) return Promise.reject(new Error("rejected afterwards"));
-        // Never settles. Nothing cancels it; the boundary times it out.
-        if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
-        return Promise.resolve();
-      },
+      // As the dispatcher hands them over: a name from the recipe, and a thunk
+      // that is somebody else's process everywhere but here.
+      subscribers: async (event) => [
+        {
+          name: "notify",
+          deliver: (): Promise<void> => {
+            seen.push(event.streamId);
+            if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
+            if (event.streamId === stream("rejects")) return Promise.reject(new Error("rejected afterwards"));
+            // Never settles. Nothing cancels it; the boundary times it out.
+            if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
+            return Promise.resolve();
+          },
+        },
+      ],
       pass: async () => {},
     });
 
@@ -327,6 +334,37 @@ describe("the work loop", () => {
       // The one that succeeded appended nothing: a boundary that recorded every
       // delivery would be a second log of the first.
       expect(failures.some((f) => f.project === project("after"))).toBe(false);
+    } finally {
+      await loop.stop();
+    }
+  });
+
+  /**
+   * The same failure one layer out. Resolving who wants an event is the core's
+   * own work — it reads a recipe — but it is called from the subscription's
+   * handler, so a version of it that throws before returning a promise would
+   * take the log's follower down exactly as a subscriber used to.
+   */
+  it("survives a dispatcher that throws before returning a promise", async () => {
+    const id = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`;
+    created.add(id);
+    let passes = 0;
+
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      store,
+      subscribers: () => {
+        throw new Error("could not read the recipe");
+      },
+      pass: async () => void (passes += 1),
+    });
+
+    await loop.start();
+    try {
+      await store.append(id, 0, [landed(id)]);
+      // A completion event still woke the loop, which is only possible if the
+      // handler that threw did not take the subscription with it.
+      await until(() => passes > 1);
     } finally {
       await loop.stop();
     }

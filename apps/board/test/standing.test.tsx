@@ -440,7 +440,12 @@ describe("the block, rendered", () => {
         queued={null}
       />,
     );
-    expect(off).toContain('class="standing"');
+    // `standing live`, not bare `standing`: a running item that is on nobody
+    // paints teal since the page was set in the board's own vocabulary. What
+    // this case is about is that it does not paint *amber*, and an equality on
+    // the whole attribute asserted a second thing it never meant to.
+    expect(off).toContain('class="standing live"');
+    expect(off).not.toContain("onyou");
     expect(off).toContain("an agent is working");
     // Nothing is being asked, so nothing offers to answer it.
     expect(off).not.toContain("Back to the queue");

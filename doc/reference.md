@@ -478,15 +478,39 @@ repairs.
 Nothing that changes *code* goes through here — that is git's job, under the
 merge lane's lock.
 
-## notification subscription — 4 by default
+## subscriber — as many as the recipe declares
 
-What is worth interrupting somebody for. All four mean the same thing: nothing
-moves until a person acts. Source: `DEFAULT_SUBSCRIPTIONS` in
-`packages/daemon/src/notify.ts`.
+What is told about an event and never waited for
+([0037](decisions/0037-an-extension-is-a-command.md) §3). Source:
+`subscribers:` in each project's `.lingtai/config.yaml`; there is no default
+and no list in the core.
 
-`ApprovalRequested` · `IntegrationRefused` · `RunAwaitingInput` · `WorkItemBlocked`
+```yaml
+subscribers:
+  - name: telegram
+    on: [WorkItemLanded, WorkItemBlocked, RunFailed]
+    run: npx @lingtai/telegram
+    timeout: 2m                    # default
+    env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
+```
 
-A landed task is good news that needed nobody, and is deliberately not here.
+**`on:` is the subscription** — declaring a type is subscribing to it, and a
+name the log does not have refuses the recipe rather than becoming a subscriber
+that never fires. `env:` is the whole of what the process is given besides
+`PATH`, `HOME` and four others; a `LINGTAI_` name is refused, and a declared
+name neither env file supplies stops the command being started at all.
+
+It gets one JSON object on stdin — the event, its project, its ticket when it
+has one, and the board link — and says one thing back: its exit code. Non-zero
+is `PluginFailed` on the log, which `lingtai doctor` reads under `subscribers:
+failures`. Nothing is retried.
+
+This repository declares one, `notify`, on the four types that mean nothing
+moves until a person acts: `ApprovalRequested` · `IntegrationRefused` ·
+`RunAwaitingInput` · `WorkItemBlocked`. They were `DEFAULT_SUBSCRIPTIONS` in
+`packages/daemon/src/notify.ts` until `#123` — the same four for every project,
+with no way to have a fifth. A landed task is good news that needed nobody, and
+is deliberately not among them.
 
 ## lingtai subcommand — 13
 
@@ -545,18 +569,28 @@ Source: `packages/recipe/src/presets.ts`.
 `build` action at `proposed`. A preset's *name* is not part of the recipe hash, because
 it is not part of what a run does.
 
-## package — 13, plus 2 apps
+## package — 13, plus 3 apps and 2 extensions
 
 `domain` · `recipe` · `event-store` · `projector` · `github` · `agent` ·
 `agent-env` · `env` · `actions` · `repo` · `conductor` · `daemon` · `hook`, and
-`apps/cli` · `apps/board`.
+`apps/cli` · `apps/board` · `apps/site`.
+
+`extensions/notify` · `extensions/telegram` are in the workspace and are **not**
+packages in the same sense: nothing imports them and they import nothing of
+Lingtai's, which is what makes them a proof rather than a plugin
+([0037](decisions/0037-an-extension-is-a-command.md)). The workspace entry buys
+them a `typecheck` and a `test` and nothing else.
 
 Five were renamed at [0022](decisions/0022-the-seams.md) and this section still
 named the old ones: `core` is `domain`, `config` is `recipe`, `store` is
 `event-store`, `runtime` is `agent`, `gates` is `actions`.
 
-## doc — 29 decisions, 10 experiments
+## doc — 38 decisions, 10 experiments
 
 `doc/decisions/` is append-only in spirit: a decision that turns out wrong gets
 a new file that supersedes it, never an edit. `doc/experiments/` holds things
 actually run, each with its limits.
+
+This line said 29 until 0038 was added, and had been wrong since 0030 — a count
+nobody recounts is the same defect this whole document exists to catch, one
+directory further out.

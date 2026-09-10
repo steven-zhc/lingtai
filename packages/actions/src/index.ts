@@ -29,3 +29,9 @@ export { createHumanGate, type HumanGateSpec } from "./human-gate.ts";
 export { createWatchGate, type WatchGateDeps, type WatchGateSpec } from "./watch-gate.ts";
 export { gatesFromRecipe, GateActionUnavailableError, type GateDeps } from "./from-recipe.ts";
 export { runCommand, type CommandOutcome, type RunCommandOptions } from "./command.ts";
+export {
+  runSubscriber,
+  subscriberPayload,
+  type RunSubscriberOptions,
+  type SubscriberPayload,
+} from "./subscriber.ts";

@@ -17,7 +17,7 @@
  * See doc/decisions/0005-config-in-target-repo.md.
  */
 import { z } from "zod";
-import { Tier, RuntimeId } from "@lingtai/domain";
+import { Tier, RuntimeId, isEventType } from "@lingtai/domain";
 
 /**
  * One thing that runs at a gate.
@@ -120,6 +120,72 @@ export function kindOfAction(action: GateAction): ActionKind {
   if ("labels" in action) return "labels";
   return "human";
 }
+
+/**
+ * One command the core starts on an event and does not wait for
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3).
+ *
+ * **The declaration of which events it wants is the subscription.** There is no
+ * register step and nothing to keep in step with this list — `on:` is read by
+ * the thing that dispatches, so a type that is not named here is a process that
+ * is never started. That is VS Code's activation events, copied for the reason
+ * they exist: the alternative is a manifest that says what a plugin *might* want
+ * and a runtime call that says what it actually took.
+ *
+ * It is the same `run:` a gate action has, minus the only thing that made a
+ * gate action a gate action: nothing reads the exit code as a verdict. A
+ * subscriber's failure is logged as `PluginFailed` and the loop carries on,
+ * which is 0015's rule and is now what the process boundary *does* rather than
+ * what its callee promises.
+ */
+export const Subscriber = z.object({
+  name: z.string(),
+  /**
+   * The event types it is handed, by name.
+   *
+   * Checked against the log's own vocabulary, because the alternative is the
+   * defect this repository keeps producing: a subscription that is declared,
+   * rendered, and matches nothing. A misspelled type would otherwise be a
+   * notifier that has never once fired and says so nowhere.
+   */
+  on: z
+    .array(z.string())
+    .min(1)
+    .refine((types) => types.every((t) => isEventType(t)), {
+      message: "names an event type Lingtai does not append",
+    }),
+  run: z.string(),
+  /**
+   * How long it may take. Two minutes rather than a gate's fifteen: nothing is
+   * waiting for this, so the number is only the point at which *hung* stops
+   * being indistinguishable from *working*.
+   */
+  timeout: z
+    .string()
+    .default("2m")
+    .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 30s" }),
+  /**
+   * The variable names this extension is given, and it is given nothing else
+   * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+   *
+   * Not the daemon's environment: an extension's code is not trusted, and the
+   * layers it resolves against are the agent's — the machine's file minus
+   * anything of Lingtai's own, then the project's file over it.
+   *
+   * **A `LINGTAI_` name is refused here** (`#63`), which is the loud half of
+   * that guarantee; the structural half is `extensionEnv`, which never has one
+   * to hand over. Spelled out rather than imported from `@lingtai/env` on
+   * purpose: that module reads the machine's env file when it loads, and a
+   * schema has to stay a function of its input.
+   */
+  env: z
+    .array(z.string())
+    .default([])
+    .refine((names) => names.every((n) => !n.startsWith("LINGTAI_")), {
+      message: "must not name a LINGTAI_ variable — those are the conductor's own (#63)",
+    }),
+});
+export type Subscriber = z.infer<typeof Subscriber>;
 
 export const Recipe = z.object({
   version: z.literal(1),
@@ -256,6 +322,17 @@ export const Recipe = z.object({
   // Spelled out rather than `.default({})`: all five points exist whether or
   // not a recipe mentions them, and writing that here says so once.
   gates: GateMap.default({ admit: [], prepared: [], proposed: [], merge: [], end: [] }),
+
+  /**
+   * What is told about an event, and never waited for.
+   *
+   * The other half of the taxonomy the gates are one half of: **a command, and
+   * whether the core waits for it** (0037 §3). Defaulted to empty for the
+   * reason every gate point is — a project that declares none is a project
+   * nothing is told about, which is a fact the board can render, rather than an
+   * absence somebody has to know the meaning of.
+   */
+  subscribers: z.array(Subscriber).default([]),
 
   /**
    * Whether a failure of **this repository's** buys an agent to fix it, and how

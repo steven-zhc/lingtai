@@ -23,11 +23,9 @@ import {
   beat,
   clientsForProjects,
   createStatusTable,
-  createNotifier,
   createWorkLoop,
   describeInFlight,
   inFlight,
-  macNotifier,
   pauseConductor,
   readCodeVersion,
   readControl,
@@ -42,6 +40,7 @@ import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
 import { conductorPass } from "./conduct.ts";
+import { createSubscriberDispatch } from "./subscribers.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
@@ -420,19 +419,18 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   };
 
   if (!("no-conduct" in flags)) {
-    // Tell the operator when the operator is the bottleneck. Fire and forget:
-    // a notification retried later, about a decision already made, trains you
-    // to ignore the next one.
-    const channel = await macNotifier();
-    const notifier = createNotifier({ channel, log: (line) => console.log(line) });
-    console.log(
-      `notifications via ${channel.name}` +
-        (channel.clickable ? "" : " — install terminal-notifier to make them clickable"),
-    );
+    // Who is told what, and it is not this file's answer any more
+    // ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3).
+    // The macOS notifier used to be constructed here by name, which was the
+    // whole of the reason there could not be a second channel; it is a
+    // subscriber declared in `.lingtai/config.yaml` now, like anything else
+    // somebody writes. Fire and forget either way: a notification retried
+    // later, about a decision already made, trains you to ignore the next one.
+    const subscribers = createSubscriberDispatch({ log: (line) => console.log(line) });
 
     loop = createWorkLoop({
       log: (line) => console.log(line),
-      notify: (event) => notifier.consider(event),
+      subscribers,
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.

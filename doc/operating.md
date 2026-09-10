@@ -606,19 +606,28 @@ rather than kills anything that fails either guard.
 Control goes through the log, so a pause issued while the daemon is down is
 waiting when it comes back.
 
-It also comments on the ticket when something is waiting on you, sets an
-`lingtai:*` label as a task moves, and sends a macOS notification for the
-four things that mean nothing moves until you act. The comments and labels go
-**directly, as the run goes**, and every attempt appends its outcome —
-`IssueUpdated` or `IssueUpdateFailed`. The outbox that used to stand behind
-those three calls, with its retry queue and its dead letter, was deleted
-(`#56`); what did not land is converged at the daemon's next startup by
-comparing what the log says the issue should look like against what GitHub says
-it does. Notifications deliberately get neither: one delivered an hour late
-about a decision you already made is worse than none.
+It also comments on the ticket when something is waiting on you and sets an
+`lingtai:*` label as a task moves. Both go **directly, as the run goes**, and
+every attempt appends its outcome — `IssueUpdated` or `IssueUpdateFailed`. The
+outbox that used to stand behind those calls, with its retry queue and its dead
+letter, was deleted (`#56`); what did not land is converged at the daemon's next
+startup by comparing what the log says the issue should look like against what
+GitHub says it does.
+
+**Telling you is a subscriber, and the daemon names none of them.** The macOS
+notification for the four things that mean nothing moves until you act is
+`subscribers:` in this repository's own `.lingtai/config.yaml`, running
+`extensions/notify` as a command with the event on its stdin
+([0037](decisions/0037-an-extension-is-a-command.md)) — so a second channel is a
+second entry in that list and not a change to the CLI. `extensions/telegram` is
+the other one shipped, off until it has a token. Neither is retried: a
+notification delivered an hour late about a decision you already made is worse
+than none, which is why `PluginFailed` is a log entry you can find later rather
+than a queue.
 
 `terminal-notifier` on your PATH makes a notification clickable, opening that
-task's page. Without it they still arrive, and the daemon says which you got.
+task's page. Without it they still arrive, and are not clickable; `lingtai
+doctor` says under `subscribers: failures` when one has stopped arriving at all.
 
 To keep it running across logout, sleep and crashes:
 

@@ -1,6 +1,10 @@
 packages:
   - packages/*
   - apps/*
+  # The extensions. In the workspace for a typecheck and a test run, and for
+  # nothing else: no package here depends on one, and none of them depends on a
+  # package here (0037 — an extension is a command).
+  - extensions/*
 
 # pnpm blocks postinstall scripts by default. Prisma 8's CLI engine bundles
 # esbuild and workerd, both of which fetch a platform binary in postinstall;

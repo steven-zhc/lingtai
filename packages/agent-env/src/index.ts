@@ -440,6 +440,68 @@ function refusalFor(
   return lines.join("\n");
 }
 
+// ------------------------------------------------------ an extension's own ---
+
+export interface ExtensionEnv {
+  /** What the extension's process is started with, layer 1 included. */
+  values: Record<string, string>;
+  /** Declared names neither file supplied. Non-empty means do not start it. */
+  missing: string[];
+}
+
+/**
+ * The environment one extension is given — **its own, and never the daemon's**
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ *
+ * 0016 §5 used to say the opposite in as many words: *"Plugins are trusted
+ * code. There is no plugin sandbox. They run in the daemon's process with the
+ * daemon's credentials, including the GitHub App key."* That paragraph was
+ * written so nobody would later assume otherwise, and 0037 retires it by making
+ * the other thing true rather than by assuming it.
+ *
+ * Three properties, and the third is the one the epic asks for by name:
+ *
+ * - **Built, not inherited.** The daemon's `process.env` holds
+ *   `LINGTAI_DATABASE_URL`, the App key and whatever is exported in the
+ *   terminal it was started from. None of it is here: what the extension gets is
+ *   `runnableEnv` — `PATH`, `HOME` and the four others a process needs to be a
+ *   process — plus exactly the names it declared.
+ * - **From the same layers as the agent's**, and in the same order: the
+ *   machine's file minus anything of Lingtai's own, then the project's file
+ *   over it. So an extension's Telegram token lives beside the project's other
+ *   values and is set with `lingtai env set`, rather than in a place invented
+ *   for extensions.
+ * - **`LINGTAI_` names cannot reach it.** `isMachineOwn` strips them from the
+ *   machine's file, which is where the conductor's own log lives, so there is
+ *   nothing to hand over even if a recipe asked. The recipe schema refuses the
+ *   ask as well — that one is the loud half, this is the structural half, and
+ *   the reason for both is that only this one survives somebody editing the
+ *   other.
+ *
+ * A declared name with no value is reported rather than dropped, for the reason
+ * `env.required` is a check and not a filter (0021): starting a Telegram
+ * extension with no token produces a process that fails on the API, minutes
+ * later, saying something about HTTP 401.
+ */
+export async function extensionEnv(options: {
+  project: string;
+  /** `subscribers[].env` — names only. The values are none of the recipe's business. */
+  names: readonly string[];
+  machine?: Record<string, string>;
+  home?: string;
+  from?: NodeJS.ProcessEnv;
+}): Promise<ExtensionEnv> {
+  const { merged } = await readEnvLayers(options);
+  const values: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const name of options.names) {
+    const value = merged[name];
+    if (value === undefined || value === "") missing.push(name);
+    else values[name] = value;
+  }
+  return { values: runnableEnv(values, options.from ?? process.env), missing };
+}
+
 // ----------------------------------------------- writing the project's file ---
 
 /**

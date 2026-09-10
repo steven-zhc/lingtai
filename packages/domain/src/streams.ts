@@ -33,6 +33,21 @@ export function parseWorkItemStream(id: string): { project: string; issue: strin
   return { project, issue };
 }
 
+/**
+ * The project a stream belongs to, or null when it belongs to none.
+ *
+ * Strict where `parseWorkItemStream` is lenient, and the difference is the
+ * reason this exists: that one also takes a bare `project-issue` body, so
+ * `ctl-conductor` parses out of it as the project `ctl` — which is a repository
+ * nobody has. Everything on the control stream, and the chat and extension
+ * streams with it, belongs to no repository, and the callers that route by
+ * project need that answered as *none* rather than as a plausible-looking name.
+ */
+export function streamProject(id: string): string | null {
+  if (!id.startsWith("wi-")) return null;
+  return parseWorkItemStream(id)?.project ?? null;
+}
+
 export const CHAT_STREAM_PREFIX = "chat-";
 
 /**

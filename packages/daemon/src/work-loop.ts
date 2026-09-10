@@ -52,12 +52,12 @@
  * ## The subscriber boundary
  *
  * Every subscriber invocation goes through `deliver`, and that is a boundary
- * rather than a convenience. `notify` used to be called as a bare `void`, so a
- * rejected promise from it was an unhandled rejection **in the process that
- * follows the log** — which is the one process that must survive anything a
- * subscriber does, because it is also the projection follower and the board's
- * only source of current. It did not bite: the one notifier there has ever been
- * catches everything itself. But that is a guarantee held by the callee, and a
+ * rather than a convenience. The notifier used to be called as a bare `void`,
+ * so a rejected promise from it was an unhandled rejection **in the process
+ * that follows the log** — which is the one process that must survive anything
+ * a subscriber does, because it is also the projection follower and the board's
+ * only source of current. It did not bite: the one notifier there had ever been
+ * caught everything itself. But that is a guarantee held by the callee, and a
  * guarantee held by the callee is one every future subscriber has to re-honour
  * ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) puts
  * third-party code in this path on purpose). `discuss`, two lines below it,
@@ -69,9 +69,19 @@
  * that a failed subscriber left a console line and nothing else — and a
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
+ *
+ * **The subscribers are now the recipe's**
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3), and
+ * this file does not know one from another: it is handed a name and something
+ * to await, and every one of them is somebody else's process. The `.catch` was
+ * what held until the process boundary existed; it is still what reports, since
+ * a command that could not be started and one that exited 4 both arrive here as
+ * a rejection. `discuss` is the exception and stays a callback, because it is
+ * not an extension — it is the core's own agent (0033 §3), and 0037 keeps
+ * `agent:` built in.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { type Envelope, SUBSCRIBER_STREAM, parseWorkItemStream, parsePayload } from "@lingtai/domain";
+import { type Envelope, SUBSCRIBER_STREAM, streamProject, parsePayload } from "@lingtai/domain";
 import { type EventStore, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
 import pg from "pg";
 
@@ -104,6 +114,19 @@ export const COMPLETION_EVENTS = [
 ] as const;
 
 export type PassReason = "startup" | "completion" | "sweep";
+
+/**
+ * One subscriber, ready to be handed one event.
+ *
+ * Resolved rather than described: the loop is given a thunk, so it never has to
+ * know that behind it are a recipe, a filtered environment and a command. The
+ * `name` is the recipe's, and is what `PluginFailed` records — which is why it
+ * comes from the same place a person reads it, rather than being invented here.
+ */
+export interface SubscriberDelivery {
+  name: string;
+  deliver: () => Promise<void>;
+}
 
 /**
  * How often to look at GitHub without being told to.
@@ -162,16 +185,23 @@ export interface WorkLoopOptions {
    */
   onShutdown?: (why: string) => void;
   /**
-   * Told about every appended event, subscribed or not — it decides.
+   * The subscribers this event is due, already narrowed to the ones that want
+   * it — a name, and something to await.
    *
-   * On the loop's existing subscription rather than a second one: a notifier
+   * A callback for the reason `pass` is one: which subscribers a project has is
+   * `.lingtai/config.yaml`'s answer, read from `origin/<base>` through a GitHub
+   * client, and this package has neither a recipe reader nor a client and
+   * should not grow one. What it owns is the boundary around whatever comes
+   * back.
+   *
+   * On the loop's existing subscription rather than a second one: a dispatcher
    * with its own connection would be another session-mode connection held open
    * for the life of the daemon, for something that is already being read.
    *
-   * Its failures are held by `deliver`, not by it. See the note on the
-   * subscriber boundary at the top of this file.
+   * Every failure it hands back is held by `deliver`, not by it. See the note
+   * on the subscriber boundary at the top of this file.
    */
-  notify?: (event: Envelope) => Promise<void>;
+  subscribers?: (event: Envelope) => Promise<readonly SubscriberDelivery[]>;
   /**
    * Somebody asked the discussion assistant a question. Answer it.
    *
@@ -275,9 +305,9 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
   /**
    * Appends serially, whatever order the failures arrive in.
    *
-   * Two `deliver` calls can fail within the same tick — `notify` and `discuss`
-   * are handed the same event — and both would otherwise read the same version
-   * and race each other for it.
+   * Two `deliver` calls can fail within the same tick — every subscriber a
+   * recipe declares for a type is handed the same event, and `discuss` beside
+   * them — and they would otherwise read the same version and race for it.
    */
   let recording: Promise<void> = Promise.resolve();
 
@@ -289,7 +319,13 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     // down again.
     if (event.type === "PluginFailed") return;
 
-    const project = parseWorkItemStream(event.streamId)?.project ?? null;
+    // `streamProject`, which answers *none* for a stream that belongs to no
+    // repository. `parseWorkItemStream` is lenient — it takes a bare
+    // `project-issue` body too — so `ctl-conductor` came out of it as the
+    // project `ctl`, and every failure on a pause, a shutdown or a question was
+    // filed under a repository nobody has. `PluginFailed`'s own doc says this
+    // field is null for exactly those events.
+    const project = streamProject(event.streamId);
     const data = { name, eventType: event.type, project, reason };
     recording = recording.then(async () => {
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -360,6 +396,37 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     } catch (err) {
       clearTimeout(timer);
       failed(String(err instanceof Error ? err.message : err));
+    }
+  }
+
+  /**
+   * Asks who wants this event, and hands it to each of them through `deliver`.
+   *
+   * **Resolving is the core's work, not an extension's**, so a failure here is
+   * logged and not appended: it means the recipe would not read — GitHub
+   * unreachable, or a `subscribers:` block that does not parse — and `lingtai
+   * doctor`'s per-project recipe check already says so, once, rather than once
+   * per event for as long as the outage lasts. A `PluginFailed` would also name
+   * a subscriber, and at this point there is not one to name.
+   *
+   * Nothing awaits this. The resolution reads a recipe over the network on a
+   * cache miss, and the process that follows the log does not wait on GitHub.
+   *
+   * Held twice for the reason `deliver` is held three times: a callback that
+   * throws before returning a promise never reaches a `.then`, and this one is
+   * called from the subscription's handler. The implementation that exists
+   * cannot — it is `async` — which is exactly the kind of guarantee `#120` was
+   * about, held by the callee.
+   */
+  function dispatch(event: Envelope): void {
+    const failed = (err: unknown): void =>
+      log(`could not resolve subscribers for ${event.type}: ${String(err instanceof Error ? err.message : err)}`);
+    try {
+      void options.subscribers?.(event).then((deliveries) => {
+        for (const d of deliveries) deliver(d.name, event, () => d.deliver());
+      }, failed);
+    } catch (err) {
+      failed(err);
     }
   }
 
@@ -453,7 +520,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // the boundary this file's header is about: what a subscriber does
           // with an event is its own business, and what it does *to the process
           // following the log* is not its business at all.
-          if (options.notify) deliver("notify", event, options.notify);
+          if (options.subscribers) dispatch(event);
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
           if (event.type === "DiscussionRequested" && options.discuss) {

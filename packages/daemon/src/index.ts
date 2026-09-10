@@ -18,6 +18,7 @@ export {
   SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
   type PassReason,
+  type SubscriberDelivery,
   type WorkLoop,
   type WorkLoopOptions,
 } from "./work-loop.ts";
@@ -68,16 +69,3 @@ export {
   type ConvergeOptions,
   type Divergence,
 } from "./converge.ts";
-export {
-  DEFAULT_SUBSCRIPTIONS,
-  createNotifier,
-  describe,
-  macNotifier,
-  recordingChannel,
-  subscribed,
-  type Notification,
-  type Notifier,
-  type NotifyChannel,
-  type NotifyOptions,
-  type Subscription as NotifySubscription,
-} from "./notify.ts";

@@ -58,6 +58,21 @@ export interface RunCommandOptions {
   /** Filtered, exactly as the agent's was. */
   env: Record<string, string>;
   signal?: AbortSignal;
+  /**
+   * Written to the command's stdin, which is then closed.
+   *
+   * How an extension is given its context
+   * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §4), and
+   * not the environment: a real `RunPrompted` in this log carried 4555 bytes,
+   * and an environment is both size-limited and visible in `ps`.
+   *
+   * **A command that does not read it ignores it.** The pipe closing under an
+   * unread write is an `EPIPE` on this side, and it is swallowed rather than
+   * reported — every `run:` in every recipe that works today is such a command,
+   * and none of them should start failing because something now offers them
+   * something. Absent leaves stdin closed, exactly as before.
+   */
+  stdin?: string;
 }
 
 /** The last N lines, capped — a build log can be megabytes. */
@@ -71,12 +86,24 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
 export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> {
   return new Promise<CommandOutcome>((resolve) => {
     const started = Date.now();
-    const child = spawn(options.run, {
-      shell: true,
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // Two calls rather than one with a computed `stdio`, so that each keeps
+    // the overload that says stdout and stderr are streams: a union in the
+    // tuple matches neither, and the evidence collection below would then be
+    // typed against a child that might have no output at all.
+    const spawned = { shell: true as const, cwd: options.cwd, env: options.env };
+    const child =
+      options.stdin === undefined
+        ? spawn(options.run, { ...spawned, stdio: ["ignore", "pipe", "pipe"] })
+        : spawn(options.run, { ...spawned, stdio: ["pipe", "pipe", "pipe"] });
+
+    if (options.stdin !== undefined && child.stdin) {
+      // See `stdin` above: a command that never reads breaks the pipe, and that
+      // is its right. Nothing here waits for the write to land either — the
+      // outcome is decided by the exit code, and a child that exited without
+      // reading has already said what it had to say.
+      child.stdin.on("error", () => {});
+      child.stdin.end(options.stdin);
+    }
 
     let out = "";
     let settled = false;

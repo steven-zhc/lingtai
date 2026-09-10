@@ -979,7 +979,14 @@ export const Reconciled = z.object({
  * the control stream, which is where a pause, a shutdown and a question live.
  */
 export const PluginFailed = z.object({
-  /** Which subscriber, as the daemon names it: `notify`, `discuss`. */
+  /**
+   * Which subscriber, by the name that declared it.
+   *
+   * The recipe's `subscribers[].name` since `#123`, so it is the same word a
+   * person reads in `.lingtai/config.yaml` — `notify`, `telegram`. `discuss` is
+   * the one exception and always will be: it is not an extension but the core's
+   * own agent (0033 §3), and the daemon names that one itself.
+   */
   name: z.string(),
   /** The type it was given. Not the payload: a failure is not a place to copy one. */
   eventType: z.string(),

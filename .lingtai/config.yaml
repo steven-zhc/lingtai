@@ -173,6 +173,47 @@ gates:
       when: landed
       close: true
 
+# Who is told, and never waited for
+# ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §3).
+#
+# **`on:` is the subscription.** Naming an event type here is what starts a
+# process for it; a type nothing names is a process that never runs. The names
+# are checked against the log's own vocabulary when this file is read, so a
+# misspelling refuses the recipe rather than becoming a notifier that has never
+# once fired.
+#
+# These four are the ones that mean **nothing will move until a person does
+# something**, and that is the whole of the rule for what belongs here.
+# Anything the conductor will get to on its own is noise, and noise is how the
+# useful ones stop being read. They were `DEFAULT_SUBSCRIPTIONS` in
+# `packages/daemon/src/notify.ts` until `#123` — a module constant, the same
+# four for every project, with no way to have a fifth or a second channel
+# without editing the CLI.
+#
+# The path is what an unpublished extension looks like. A published one is
+# `run: npx @lingtai/notify`, and nothing else about the declaration changes;
+# `$HOME/workspace/lingtai` is where this file's own header says the conductor
+# runs from, and a subscriber's command is resolved from `~/.lingtai`, which is
+# nobody's checkout.
+subscribers:
+  - name: notify
+    on: [ApprovalRequested, WorkItemBlocked, RunAwaitingInput, IntegrationRefused]
+    run: node "$HOME/workspace/lingtai/extensions/notify/src/notify.ts"
+
+  # Telegram, for when the laptop is not the room you are in. Off until it has
+  # somewhere to send to, because a subscriber declared without its credentials
+  # is refused before it starts — correctly, and on every landed ticket for
+  # ever, which is a `lingtai doctor` warning that means nothing by the second
+  # day. Two commands and the two lines below turn it on:
+  #
+  #   lingtai env set lingtai TELEGRAM_BOT_TOKEN
+  #   lingtai env set lingtai TELEGRAM_CHAT_ID
+  #
+  # - name: telegram
+  #   on: [WorkItemLanded, WorkItemBlocked, RunFailed]
+  #   run: node "$HOME/workspace/lingtai/extensions/telegram/src/telegram.ts"
+  #   env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
+
 # A failure of this repository's buys one agent to fix it, and Lingtai's own
 # never do ([0025](../doc/decisions/0025-a-failure-buys-one-agent.md)).
 #
