@@ -50,10 +50,17 @@ export interface NotifyChannel {
 /**
  * Which events are worth interrupting somebody for.
  *
- * Three, and all three mean the same thing: **nothing will move until a person
+ * Four, and all four mean the same thing: **nothing will move until a person
  * does something.** Anything that the conductor will get to on its own does not
  * belong here — a notification you cannot act on is noise, and noise is how the
  * useful ones stop being read.
+ *
+ * **This is the desktop channel's list, and only its.** A landed task is absent
+ * because a notification interrupts, not because it is uninteresting; a channel
+ * read when you choose wants it. That is the recipe's to say now —
+ * `subscribers:` gives each one its own `on:` list
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3) — and
+ * this constant remains what the daemon's own notifier subscribes to.
  */
 export const DEFAULT_SUBSCRIPTIONS = [
   "ApprovalRequested",

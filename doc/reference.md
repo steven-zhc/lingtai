@@ -486,7 +486,28 @@ moves until a person acts. Source: `DEFAULT_SUBSCRIPTIONS` in
 
 `ApprovalRequested` · `IntegrationRefused` · `RunAwaitingInput` · `WorkItemBlocked`
 
-A landed task is good news that needed nobody, and is deliberately not here.
+A landed task is good news that needed nobody, and is deliberately not in
+**this** channel — a desktop notification interrupts, and nothing that needed
+nobody is worth interrupting for.
+
+**The rule is per-channel, and the recipe is where a channel says its own.**
+`subscribers:` ([0037](decisions/0037-an-extension-is-a-command.md) §3,
+`Subscriber` in `packages/recipe/src/recipe.ts`) carries an `on:` list per
+subscriber, so a Telegram bot — read when you choose rather than when it arrives
+— can name `WorkItemLanded` without that changing what interrupts you:
+
+```yaml
+subscribers:
+  - name: telegram
+    on: [WorkItemLanded, WorkItemBlocked, RunFailed]
+    run: npx @lingtai/telegram
+```
+
+The `on:` list is the subscription as well as the declaration, so a name that is
+not in `EVENTS` fails the recipe and names itself. A retired type fails too:
+spelled right, in the catalogue, and appended by nothing, which is the same
+subscription that never fires reached by a different mistake. The four above are
+still the daemon's own defaults and nothing reads `subscribers:` yet.
 
 ## lingtai subcommand — 13
 

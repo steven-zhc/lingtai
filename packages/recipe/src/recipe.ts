@@ -17,7 +17,7 @@
  * See doc/decisions/0005-config-in-target-repo.md.
  */
 import { z } from "zod";
-import { Tier, RuntimeId } from "@lingtai/domain";
+import { Tier, RuntimeId, isEventType, isRetiredEventType } from "@lingtai/domain";
 
 /**
  * One thing that runs at a gate.
@@ -120,6 +120,71 @@ export function kindOfAction(action: GateAction): ActionKind {
   if ("labels" in action) return "labels";
   return "human";
 }
+
+/**
+ * An event type the log actually has, as a subscription's `on:` entry.
+ *
+ * **The check is the whole point of putting `on:` in the recipe.** A name that
+ * is not in the catalogue is a typo or a name that has moved, and the failure
+ * it produces without this is the worst kind a notifier can have: a
+ * subscription that parses, resolves, renders, and never once fires. Nobody
+ * finds that out — you only ever notice the message you did not get.
+ *
+ * So it names the offending string rather than saying the list is wrong, the
+ * same way `env`'s strictness names the misspelled key. `EVENTS` in
+ * `packages/domain/src/events.ts` is the catalogue, and `isEventType` is the
+ * one reading of it — a second list here would be a list to keep correct.
+ *
+ * A **retired** type is refused for the same reason and said differently: it is
+ * spelled right, it is in the catalogue, and nothing appends it any more
+ * (`RETIRED`), so subscribing to it is the identical silent nothing reached by
+ * a different mistake.
+ */
+const SubscribedEvent = z.string().superRefine((name, ctx) => {
+  if (isRetiredEventType(name)) {
+    ctx.addIssue({
+      code: "custom",
+      message: `"${name}" is a retired event type — nothing appends it any more, so this would never fire`,
+    });
+    return;
+  }
+  if (!isEventType(name)) {
+    ctx.addIssue({
+      code: "custom",
+      message: `"${name}" is not an event type — the catalogue is EVENTS in packages/domain/src/events.ts`,
+    });
+  }
+});
+
+/**
+ * Something told about events, which the loop does not wait for
+ * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3).
+ *
+ * The same `run:` a gate action has, and the whole of the difference is that
+ * nothing reads the exit code: a gate action's verdict is about a commit, and
+ * this one has no verdict. That is 0016 §5's rule — *if the loop must wait for
+ * it, it is a gate action; if it cannot affect the outcome, it is a
+ * subscriber* — with the mechanism filled in and no plugin system underneath
+ * it.
+ *
+ * **One mechanism doing two jobs.** `on:` is both the declaration of what this
+ * subscriber is for and the subscription itself, so the core knows what it
+ * wants before it spends a process finding out. That is what VS Code's
+ * activation events buy, and it is the half of their design worth copying.
+ *
+ * **Strict, for the reason `GateMap` and `env` are.** A key that is not one of
+ * the three is a typo or a name from a draft of 0037 — `events:`, `uses:` — and
+ * zod's default is to drop it silently, which here would mean a subscriber
+ * subscribed to nothing while the recipe reads as though it were configured.
+ */
+export const Subscriber = z.strictObject({
+  name: z.string(),
+  /** The types it wants. Empty is not a subscriber, it is a command nobody runs. */
+  on: z.array(SubscribedEvent).min(1),
+  /** The command. Its exit code is discarded — see 0037 §5. */
+  run: z.string(),
+});
+export type Subscriber = z.infer<typeof Subscriber>;
 
 export const Recipe = z.object({
   version: z.literal(1),
@@ -256,6 +321,25 @@ export const Recipe = z.object({
   // Spelled out rather than `.default({})`: all five points exist whether or
   // not a recipe mentions them, and writing that here says so once.
   gates: GateMap.default({ admit: [], prepared: [], proposed: [], merge: [], end: [] }),
+
+  /**
+   * Who is told what happened, and about which events.
+   *
+   * Here rather than in the daemon because **which events are worth telling
+   * somebody about is a fact about a channel, not about Lingtai.**
+   * `DEFAULT_SUBSCRIPTIONS` in `packages/daemon/src/notify.ts` is four types,
+   * the same for every project, changeable only by editing the daemon — and it
+   * is four *because it is a desktop notification*, which interrupts. A landed
+   * task is not worth interrupting for and is worth a Telegram message, and
+   * only a per-channel list can say both. That is 0016 §7's argument again: the
+   * repository knows which of its outcomes it wants to hear about and the core
+   * cannot see it.
+   *
+   * Defaulted to empty rather than optional, like `gates`: a project that
+   * declares no subscriber has *declared none*, which is a thing that can be
+   * rendered, rather than an absence.
+   */
+  subscribers: z.array(Subscriber).default([]),
 
   /**
    * Whether a failure of **this repository's** buys an agent to fix it, and how

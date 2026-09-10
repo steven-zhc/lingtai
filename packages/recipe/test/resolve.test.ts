@@ -136,6 +136,70 @@ describe("resolveRecipe", () => {
     expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/requried/);
   });
 
+  /**
+   * `subscribers:` — 0037 §3. The declaration and the subscription are one
+   * thing, so everything worth testing here is about `on:`.
+   */
+  const WITH_SUBSCRIBER =
+    VALID +
+    `subscribers:
+  - name: telegram
+    on: [WorkItemLanded, WorkItemBlocked, RunFailed]
+    run: npx @lingtai/telegram
+`;
+
+  it("takes a subscriber, and a recipe without one declares none", async () => {
+    const with_ = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: WITH_SUBSCRIBER }), "develop");
+    expect(with_.recipe.subscribers).toHaveLength(1);
+    expect(with_.recipe.subscribers[0]!.on).toEqual(["WorkItemLanded", "WorkItemBlocked", "RunFailed"]);
+    expect(with_.recipe.subscribers[0]!.run).toBe("npx @lingtai/telegram");
+
+    // Empty rather than absent, like the four gate points a recipe never
+    // mentions: "declared none" is a thing that can be rendered.
+    const without = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
+    expect(without.recipe.subscribers).toEqual([]);
+  });
+
+  /**
+   * The failure this check exists for is not a bad recipe, it is a *good*
+   * one that never fires — a subscription you only notice by the message you
+   * did not get. So the name has to be in the message.
+   */
+  it("refuses an event name that is not in the catalogue, naming it", async () => {
+    const typo = WITH_SUBSCRIBER.replace("WorkItemLanded", "WorkItemLandeed");
+    const err = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: typo }),
+      "develop",
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(RecipeInvalidError);
+    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/WorkItemLandeed/);
+  });
+
+  /** Spelled right, in the catalogue, and nothing appends it: the same nothing. */
+  it("refuses a retired event type, and says that is what it is", async () => {
+    const retired = WITH_SUBSCRIBER.replace("RunFailed", "OutboxDelivered");
+    const err = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: retired }),
+      "develop",
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(RecipeInvalidError);
+    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/OutboxDelivered.*retired/);
+  });
+
+  /** Strict, for the reason `GateMap` and `env` are: `events:` is a draft of 0037. */
+  it("refuses a subscriber key that is not one of the three", async () => {
+    const stale = WITH_SUBSCRIBER.replace("    on: [", "    events: [");
+    const err = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: stale }),
+      "develop",
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(RecipeInvalidError);
+    expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/events/);
+  });
+
   it("rejects YAML that is not a recipe at all", async () => {
     await expect(
       resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: "just: a map" }), "develop"),
