@@ -155,6 +155,8 @@ export interface DocEntry {
   source: string;
   /** The first paragraph, for the index. Empty when the file opens on a heading. */
   lede: string;
+  /** The date the file states, which for a decision is when it was decided. */
+  decided: string | null;
 }
 
 async function markdownIn(dir: string): Promise<string[]> {
@@ -262,7 +264,7 @@ export async function entriesOf(section: Section): Promise<DocEntry[]> {
     files.map(async (file) => {
       const body = await readFile(path.join(docRoot, file), "utf8");
       const slug = slugOf(file);
-      return { slug, title: titleOf(body, slug), source: file, lede: ledeOf(body) };
+      return { slug, title: titleOf(body, slug), source: file, lede: ledeOf(body), decided: decidedOn(body) };
     }),
   );
 }
@@ -317,6 +319,146 @@ export async function statuses(): Promise<Map<string, string>> {
     const [, file, , status] = row;
     if (file === undefined || status === undefined) continue;
     out.set(slugOf(file), flatten(status));
+  }
+  return out;
+}
+
+/**
+ * The anchor a heading gets, in GitHub's dialect and not one of this site's own.
+ *
+ * `doc/operating.md` links to `#onboarding-a-repository` and `doc/design.md` to
+ * `#8-deliberately-not-building`, and those anchors were written against the
+ * files as GitHub renders them. A slug of this site's own devising would mean
+ * either broken links here or an edit to the documents to suit the site, and
+ * the second is the fork the module refuses. So: lower case, punctuation
+ * dropped, spaces to hyphens — which is what GitHub does.
+ *
+ * Each space, not each run of them: `## event — 43 types` loses the em dash and
+ * keeps the two spaces around it, so the anchor is `event--43-types`. It looks
+ * like a typo and it is what a link copied from GitHub says.
+ */
+export function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
+    .replace(/\s/gu, "-");
+}
+
+export interface Heading {
+  depth: number;
+  text: string;
+  id: string;
+  /** 1-based, so the renderer can match a heading to its element by position. */
+  line: number;
+}
+
+/**
+ * A document's own headings, which is the only table of contents there can be.
+ *
+ * `reference.md` is 559 lines and thirty terms; read as one scroll it is a
+ * document you search rather than one you use. The contents that fixes that has
+ * to come out of the file — a list of sections maintained beside it is a second
+ * copy of its structure, and would be wrong the first time a term is added.
+ *
+ * `##` through `####`: `#` is the document's title, which the page shows
+ * anyway. `####` earns its id rather than a line in the contents — `doc/operating.md`
+ * links twice to `#### The layers`, so a projection that only gave `##` and
+ * `###` an anchor would break a link that works in the repository. What the
+ * contents *lists* is a separate question, and `Contents` answers it.
+ * Headings inside a fenced code block are text that happens to start with a
+ * hash, and are skipped.
+ *
+ * The line number is carried because it is what makes the ids here and the ids
+ * in the rendered HTML the same ids. See `Document`.
+ */
+export function headingsOf(body: string): Heading[] {
+  const out: Heading[] = [];
+  const seen = new Map<string, number>();
+  const lines = body.split("\n");
+  let fence: string | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index] ?? "";
+    const marker = /^\s{0,3}(```+|~~~+)/.exec(raw)?.[1];
+    if (marker !== undefined) {
+      if (fence === null) fence = marker;
+      else if (marker.startsWith(fence[0] ?? "")) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+
+    const heading = /^(#{2,4})\s+(.+?)\s*#*\s*$/.exec(raw);
+    const hashes = heading?.[1];
+    const label = heading?.[2];
+    if (hashes === undefined || label === undefined) continue;
+
+    const text = flatten(label);
+    const base = slugify(text);
+    // GitHub's own de-duplication: a second `## Done when` in one file is
+    // `#done-when-1`. Two headings sharing an id would send both contents
+    // entries to the first one.
+    const nth = seen.get(base) ?? 0;
+    seen.set(base, nth + 1);
+    out.push({ depth: hashes.length, text, id: nth === 0 ? base : `${base}-${nth}`, line: index + 1 });
+  }
+
+  return out;
+}
+
+/**
+ * The date a document states, which for an ADR is the date it was decided.
+ *
+ * Taken from the file's own opening — `**2026-09-02. Accepted.**`, or
+ * `**Status** accepted · 2026-09-02 · supersedes …`. Every ADR in this
+ * repository carries one in its first few lines; the date is not stored here,
+ * because a date maintained beside a document is a fact that can disagree with
+ * it. Null when the file states none, and then the page says nothing rather
+ * than guessing.
+ */
+export function decidedOn(body: string): string | null {
+  const head = body.split("\n").slice(0, 12).join("\n");
+  return /\b(20\d{2}-\d{2}-\d{2})\b/.exec(head)?.[1] ?? null;
+}
+
+/**
+ * Every decision by its number — `0016` → `decisions/0016-the-settled-model`.
+ *
+ * Built from the directory, so a decision that names a decision in its status
+ * links to it without either file being edited.
+ */
+export async function decisionsByNumber(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const file of await markdownIn("decisions")) {
+    const number = /(\d{4})-/.exec(path.posix.basename(file))?.[1];
+    if (number !== undefined) out.set(number, slugOf(file));
+  }
+  return out;
+}
+
+export interface StatusPart {
+  text: string;
+  /** Set when this part is a decision number the site has a page for. */
+  href?: string;
+}
+
+/**
+ * `superseded by 0016` with the `0016` made a link, and nothing else changed.
+ *
+ * The status is `doc/README.md`'s sentence, carried word for word. The one
+ * thing added is the link, because a reader told a decision was superseded and
+ * not told where to has been told the least useful half of it — and being able
+ * to follow *what replaced this* is the whole reason the ADRs are append-only.
+ */
+export function statusParts(
+  status: string,
+  hrefOf: (number: string) => string | null,
+): StatusPart[] {
+  const out: StatusPart[] = [];
+  for (const piece of status.split(/(\d{4})/)) {
+    if (piece === "") continue;
+    const href = /^\d{4}$/.test(piece) ? hrefOf(piece) : null;
+    out.push(href === null ? { text: piece } : { text: piece, href });
   }
   return out;
 }

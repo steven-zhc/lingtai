@@ -1,13 +1,21 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  decidedOn,
+  decisionsByNumber,
+  docRoot,
   entriesOf,
   fileOf,
   GITHUB_BLOB,
+  headingsOf,
   ledeOf,
   published,
   resolveHref,
   SECTIONS,
+  slugify,
   statuses,
+  statusParts,
   titleOf,
   unpublished,
 } from "@/lib/docs";
@@ -130,5 +138,101 @@ describe("where a link inside a document goes", () => {
   it("leaves an absolute link and a bare anchor alone", () => {
     expect(resolveHref("tutorial", "https://github.com/x", isPublished)).toBe("https://github.com/x");
     expect(resolveHref("tutorial", "#done-when", isPublished)).toBe("#done-when");
+  });
+});
+
+describe("finding your way around one document", () => {
+  it("gives a heading the anchor GitHub would have given it", () => {
+    expect(slugify("8. Deliberately not building")).toBe("8-deliberately-not-building");
+    expect(slugify("The layers")).toBe("the-layers");
+    expect(slugify("`end` — what it does")).toBe("end--what-it-does");
+  });
+
+  it("takes ## through ####, and never a hash inside a fence", () => {
+    const headings = headingsOf(
+      ["# Title", "## One", "```", "## not a heading", "```", "### Two", "#### Three"].join("\n"),
+    );
+    expect(headings.map((h) => [h.depth, h.id])).toEqual([
+      [2, "one"],
+      [3, "two"],
+      [4, "three"],
+    ]);
+  });
+
+  it("gives a repeated heading its own anchor, as GitHub does", () => {
+    expect(headingsOf("## Done when\n\n## Done when").map((h) => h.id)).toEqual([
+      "done-when",
+      "done-when-1",
+    ]);
+  });
+
+  it("puts every anchor written in doc/ on a heading that exists", async () => {
+    // The one check that matters: these anchors were written against the files
+    // as GitHub renders them, and a projection that invents its own slugs
+    // breaks them silently. `#### The layers` in `operating.md` is why `####`
+    // gets an id at all.
+    const files = await published();
+    const headings = new Map<string, Set<string>>();
+    for (const file of files) {
+      const body = await readFile(path.join(docRoot, file), "utf8");
+      headings.set(file, new Set(headingsOf(body).map((h) => h.id)));
+    }
+
+    const dangling: string[] = [];
+    for (const file of files) {
+      const body = await readFile(path.join(docRoot, file), "utf8");
+      const slug = file.replace(/\.md$/, "");
+      for (const [, href] of body.matchAll(/\]\(([^)\s]*#[^)\s]*)\)/g)) {
+        if (href === undefined) continue;
+        const resolved = resolveHref(slug, href, (f) => files.includes(f));
+        if (!resolved.startsWith("#") && !resolved.startsWith("/docs/")) continue;
+        const [route = "", anchor = ""] = resolved.split("#", 2);
+        const target = route === "" ? file : `${route.slice("/docs/".length).replace(/\/$/, "")}.md`;
+        if (headings.get(target)?.has(anchor) !== true) dangling.push(`${file} → ${href}`);
+      }
+    }
+    expect(dangling, "an anchor in doc/ lands nowhere on the site").toEqual([]);
+  });
+});
+
+describe("what a decision's page says about it", () => {
+  it("takes the date from the file, and every decision states one", async () => {
+    expect(decidedOn("# 0016\n\n**Status** accepted · 2026-09-02 · supersedes")).toBe("2026-09-02");
+    expect(decidedOn("# A guide\n\nno date here")).toBeNull();
+
+    const undated: string[] = [];
+    for (const file of (await published()).filter((f) => f.startsWith("decisions/"))) {
+      if (decidedOn(await readFile(path.join(docRoot, file), "utf8")) === null) undated.push(file);
+    }
+    expect(undated, "a decision that does not say when it was made").toEqual([]);
+  });
+
+  it("makes the decision a status names a link to it", async () => {
+    const numbers = await decisionsByNumber();
+    expect(numbers.get("0016")).toBe("decisions/0016-the-settled-model");
+
+    const parts = statusParts("superseded by 0016", (n) => {
+      const slug = numbers.get(n);
+      return slug === undefined ? null : `/docs/${slug}/`;
+    });
+    expect(parts).toEqual([
+      { text: "superseded by " },
+      { text: "0016", href: "/docs/decisions/0016-the-settled-model/" },
+    ]);
+  });
+
+  it("leaves a number that is not a decision as text", () => {
+    expect(statusParts("accepted 2026", () => null)).toEqual([
+      { text: "accepted " },
+      { text: "2026" },
+    ]);
+  });
+
+  it("carries the repository's sentence and does not restate it", async () => {
+    const status = await statuses();
+    // 0027 is in force and *supersedes* something; 0014 was replaced outright.
+    // The difference is the repository's wording, so it has to survive the trip.
+    expect(status.get("decisions/0027-the-lease-is-deleted")).toMatch(/^accepted/);
+    expect(status.get("decisions/0014-one-loop-one-log")).toBe("superseded by 0016");
   });
 });

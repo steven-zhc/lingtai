@@ -24,7 +24,11 @@ Three kinds of thing live here, and the distinction matters.
 
 **These files have a second reader.** `apps/site` renders them — it reads
 this directory at build time and publishes it, rewriting the links rather
-than the files ([0035](decisions/0035-the-site-is-a-projection.md)). A
+than the files ([0035](decisions/0035-the-site-is-a-projection.md)). Headings
+get the anchor GitHub would give them, so a `#section` link written for this
+directory lands in both places, and a long file gets a contents beside it made
+of its own headings. A decision's page carries what the table below says about
+it, so a superseded one reads as superseded there too. A
 document rewritten to suit the site would be the fork that decision exists to
 refuse; a document that reads badly on the site is a fault in the document.
 What is published is the list in `apps/site/src/lib/docs.ts`, and everything

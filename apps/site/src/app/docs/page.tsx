@@ -83,6 +83,13 @@ export default async function Docs() {
                         {state !== undefined && state !== "accepted" && (
                           <span className="s">{state}</span>
                         )}
+                        {/* When, for the one list whose shape is a sequence:
+                            the decision's own date, not one kept here. A guide
+                            has no such date — the first one in `operating.md` is
+                            the day a section moved — so only decisions show it. */}
+                        {section.id === "decisions" && entry.decided !== null && (
+                          <span className="s">{entry.decided}</span>
+                        )}
                         <span className="s">doc/{entry.source}</span>
                         {entry.lede !== "" && <span className="l">{entry.lede}</span>}
                       </Link>

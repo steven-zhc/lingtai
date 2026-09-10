@@ -281,6 +281,68 @@ p { max-width: var(--measure); }
 .prose hr { border: none; border-top: 1px solid var(--rule); margin: 28px 0; }
 .prose img { max-width: 100%; }
 
+/* A document and its contents. The document keeps the measure; the contents
+   takes the room the measure leaves over, which is why the rail is on the
+   right and not in a column of its own outside `.wrap`.
+
+   It stacks at 1080px, the same breakpoint the hero uses, and there the
+   contents goes *above* the document: on a phone the whole problem is the
+   scroll, so a list of sections after the scroll would be furniture. */
+.doc-layout {
+  display: grid; gap: 40px; align-items: start;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+}
+.doc-layout > article { min-width: 0; }
+
+.contents {
+  position: sticky; top: 20px;
+  max-height: calc(100vh - 40px); overflow-y: auto;
+  border-left: 1px solid var(--rule); padding-left: 14px;
+  font-size: 13px; line-height: 1.45;
+}
+.contents ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.contents li.sub { padding-left: 12px; font-size: 12.5px; }
+.contents a { color: var(--ink-2); text-decoration: none; }
+.contents a:hover { color: var(--accent-ink); }
+
+@media (max-width: 1080px) {
+  .doc-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .contents {
+    order: -1; position: static; max-height: none;
+    border-left: none; border: 1px solid var(--rule); border-radius: 3px;
+    padding: 12px 14px; background: var(--surface);
+  }
+}
+
+/* An anchor on every heading, because a heading you cannot link to is a page
+   you have to describe by scroll position. Visible on hover and on focus, so
+   it is reachable from the keyboard and invisible when nobody is asking. */
+.prose h2, .prose h3, .prose h4 { scroll-margin-top: 16px; }
+.prose h2 .anchor, .prose h3 .anchor, .prose h4 .anchor {
+  margin-left: 8px; border: none; color: var(--rule-2);
+  font-weight: 400; opacity: 0; text-decoration: none;
+}
+.prose h2:hover .anchor, .prose h3:hover .anchor, .prose h4:hover .anchor,
+.prose .anchor:focus-visible { opacity: 1; }
+
+/* What the repository says about a decision, above the decision. `--signal` is
+   the board's own attention colour, and it means here what it means there:
+   this is in some way not the ordinary case. A decision that was replaced
+   outright gets it; one that is in force does not, whatever else its status
+   says. */
+.status {
+  margin: 0 0 22px; font-family: var(--mono); font-size: 11.5px;
+  letter-spacing: 0.02em; color: var(--muted);
+  max-width: var(--measure);
+}
+.status a { color: var(--accent-ink); }
+.status.superseded {
+  color: var(--signal); background: var(--signal-soft);
+  border-left: 2px solid var(--signal);
+  padding: 8px 12px; border-radius: 0 3px 3px 0;
+}
+.status.superseded a { color: var(--signal); text-decoration: underline; }
+
 /* Where this page came from. On every rendered document, because a projection
    that does not say what it is a projection of is indistinguishable from a
    copy. */
