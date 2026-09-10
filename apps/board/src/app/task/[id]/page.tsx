@@ -160,6 +160,13 @@ function Attempt({
       open={alone || deciding}
     >
       <summary>
+        {/* Drawn, not left to the browser. A native `<summary>` marker becomes a
+            grid item of its own, which shifted every column one place along and
+            pushed the last one onto a second row. Its own column, and its own
+            glyph, so the row has exactly the cells the template declares. */}
+        <span className="amark" aria-hidden="true">
+          ▸
+        </span>
         <span className="aname">
           <span className="anum">{alone ? "the run" : `attempt ${run.attempt}`}</span>
           <span className={`pill ${outcomeClass(run.outcome.state)}`}>{run.outcome.state}</span>

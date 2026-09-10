@@ -1083,15 +1083,29 @@ details[open] > summary::before { content: "▾"; }
    so `$7.81` sits over `$5.23` and the eye reads the money down. */
 .attempt > summary {
   display: grid;
-  grid-template-columns: minmax(11rem, 1fr) repeat(4, auto) minmax(9rem, auto);
+  grid-template-columns: 1.1rem minmax(11rem, 1fr) repeat(4, auto) minmax(9rem, auto);
   gap: 0.7rem;
   align-items: center;
   padding: 0.55rem 0.85rem;
   font-family: var(--mono);
   font-size: 0.76rem;
   color: var(--ink);
+  cursor: pointer;
+  /* Both, because they are two different browsers' idea of the same marker, and
+     either one left in becomes an uncounted cell in the grid above. */
+  list-style: none;
 }
+.attempt > summary::-webkit-details-marker { display: none; }
 .attempt > summary:hover { color: var(--ink); }
+.amark {
+  display: inline-block;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.attempt[open] > summary .amark { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .amark { transition: none; }
+}
 /* The one cell that is not a figure: what this attempt is and how it ended. */
 .aname { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.45rem; min-width: 0; }
 .anum { color: var(--ink); }
@@ -1191,19 +1205,36 @@ details[open] > summary::before { content: "▾"; }
    because a claim about this system is worth more when it cites one, and
    because two groups' ranges may legitimately overlap: a ticket-level event
    landing mid-run does not cut that run in two. */
-.hgroup + .hgroup { margin-top: 1rem; }
+/* Was 1rem, when the group's label was a floating caption that needed air above
+   it to be read as one. The label is a tinted band now and separates on its own;
+   a gap as well would break the log into blocks and lose the one thing the
+   bottom of this page is for — that it is a single list, in order. */
+.hgroup + .hgroup { margin-top: 0; }
+/* **A band, not a caption.** It used to be a line of the same weight and the
+   same family as the rows around it, set on the same ground, so a divider
+   between two runs read as one more event — which is the one thing it is not.
+   Tinted and set in the structural ink, it is a rule *of* the log rather than a
+   label above part of it: the same move the design makes, where the run divider
+   is a row of the table it divides. */
 .hglabel {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   align-items: baseline;
-  margin: 0 0 0.2rem;
+  margin: 0;
+  padding: 0.34rem 0.7rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--rule);
   font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-ink);
 }
-.hgname { color: var(--ink-2); }
-.hgseq { margin-left: auto; font-variant-numeric: tabular-nums; }
+.hgname { font-weight: 500; }
+/* The stream's own id: present, because a claim is identified by it, and quiet,
+   because nobody reads a uuid — they check one. */
+.hglabel .mono { color: var(--muted); letter-spacing: 0; }
+.hgseq { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .history {
   list-style: none;
