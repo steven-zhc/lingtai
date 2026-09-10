@@ -30,12 +30,26 @@
  * because an inference was presented as a finding, and this is the page that
  * exists so that does not happen again.
  *
+ * **The answer arrives as it is produced, not when the agent exits.** That is
+ * the defect [0034](../../../../doc/decisions/0034-the-run-log.md) opens with,
+ * and it was solved for runs and not here — where the silence costs most,
+ * because *a discussion is attended and the person is the loop* (0033 §4) and a
+ * loop with no feedback is a person asking again and paying twice. `Thinking`
+ * below follows the chat's own log while the answer is being written; see it
+ * for what that trace is and is not.
+ *
+ * **The box has one height.** The moves sit under it and under the outgoing
+ * prompt beside it, so a conversation that grew with its content pushed the
+ * button you were deciding with off the screen. The conversation scrolls in
+ * `.chatscroll`, the input box is under it, and neither moves (#132).
+ *
  * The optimistic state is `decide.tsx`'s and so is the trap: a result shown
  * that did not happen is worse than no result, so every action reverts on
  * refusal and says the server's own sentence.
  */
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { askDiscussion, concludeChat } from "./actions.ts";
+import { useLogTail } from "./run-log.tsx";
 import type { DiscussionView } from "@/lib/task";
 
 /** `$1.20`, or nothing at all when no figure was reported. See `costUsd`. */
@@ -93,6 +107,59 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
   none: "closed",
 };
 
+/**
+ * The answer, while it is being produced.
+ *
+ * **The defect [0034](../../../../doc/decisions/0034-the-run-log.md) opens with,
+ * solved for runs and not for discussions** — *the agent produces nothing until
+ * it exits* — and a discussion is where the silence costs most: a run is
+ * unattended and needs a hard bound, *a discussion is attended and the person is
+ * the loop* (0033 §4). The person was the loop and the loop had no feedback, so
+ * an assistant thinking for sixty seconds was indistinguishable from one that
+ * had died, and the answer was to ask again and pay twice (#132).
+ *
+ * The mechanism is 0034's and it is unchanged: the daemon writes the chat's
+ * trace to a file named for the `chatId`, and this follows it over the route the
+ * ledger's run logs already use. Nothing new is on the wire and nothing new is
+ * in the log.
+ *
+ * **It is a trace and never the answer** (0034 §8). The answer is
+ * `DiscussionAnswered` — with its cost, its `read` list and its proposal — and
+ * when that lands the board re-renders and this is gone. What is on screen here
+ * settles nothing; it says the thing is alive.
+ *
+ * `awaited`, because the file is *coming*: the board appended the question a
+ * moment ago and the daemon has not opened the file yet. A 404 here means not
+ * yet, where on a landed attempt it means never.
+ */
+function Thinking({ chatId }: { chatId: string }) {
+  const { lines } = useLogTail(chatId, true, true);
+  const tail = useRef<HTMLDivElement | null>(null);
+
+  // Pinned to the bottom of its own scroller, which is where the newest line
+  // is. The box's height is `.chat`'s and does not grow with this — a pane that
+  // grew with its content would push the moves under it off the screen.
+  useEffect(() => {
+    tail.current?.scrollTo({ top: tail.current.scrollHeight });
+  }, [lines]);
+
+  return (
+    <>
+      <p className="chatwait">
+        {lines.length === 0
+          ? "waiting for the daemon to answer"
+          : `answering · ${lines.length} line${lines.length === 1 ? "" : "s"} so far`}
+      </p>
+      {lines.length > 0 ? (
+        <div className="chattrace" ref={tail}>
+          {/* Never markdown and never a paragraph: it is a log (design §6). */}
+          <pre className="hdoctext">{lines.join("\n")}</pre>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function Discussion({
   taskId,
   attempt,
@@ -107,11 +174,20 @@ export function Discussion({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [, startTransition] = useTransition();
+  const conversation = useRef<HTMLDivElement | null>(null);
 
   // The one still going, if any. A second conversation is opened by asking a
   // question when there is none open, which is why there is no New button: the
   // box is the New button.
   const open = discussions.find((d) => d.held === null) ?? null;
+
+  // The reply is at the bottom of its own scroller, and that is where the box
+  // stays: every append re-renders the board (`live.tsx`), so a turn arriving
+  // scrolls to itself rather than waiting to be scrolled to (#132).
+  const turns = discussions.reduce((n, d) => n + d.turns.length, 0);
+  useEffect(() => {
+    conversation.current?.scrollTo({ top: conversation.current.scrollHeight });
+  }, [turns]);
 
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
     setBusy(true);
@@ -138,6 +214,10 @@ export function Discussion({
         </span>
       </p>
 
+      {/* The conversation, in its own scroller. The box has one height and this
+          is the part of it that grows, so a long exchange scrolls here instead
+          of moving the input box under it and the moves under that (#132). */}
+      <div className="chatscroll" ref={conversation}>
       {discussions.map((d) => (
         <div key={d.chatId} className={d.held === null ? "chatlog" : "chatlog done"}>
           {d.turns.map((t) => (
@@ -160,7 +240,7 @@ export function Discussion({
               ) : null}
 
               {t.answer === null ? (
-                <p className="chatwait">waiting for the daemon to answer</p>
+                <Thinking chatId={d.chatId} />
               ) : (
                 <>
                   {t.answer.failure ? (
@@ -247,6 +327,7 @@ export function Discussion({
           {d.held !== null ? <p className="chatheld">{HELD[d.held]}</p> : null}
         </div>
       ))}
+      </div>
 
       <div className="chatask">
         <textarea

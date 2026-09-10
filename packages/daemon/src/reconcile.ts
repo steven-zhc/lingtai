@@ -272,6 +272,12 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * far as saying what it was for is a mystery, and deleting mysteries is how you
  * stop being able to explain them.
  *
+ * **A discussion's log is one of these and needs no case of its own** (#132).
+ * `answerDiscussion` names the file for the `chatId`, that id *is* the chat's
+ * stream, and `DiscussionAsked` on it carries the work item — so the two
+ * questions below are asked and answered about a chat exactly as they are about
+ * a run, and the file goes when the item it was explaining lands.
+ *
  * Nothing here reads what is *in* a file. 0034 §8 — the log is a trace and not
  * a record, so no behaviour may depend on its contents, and the only question
  * asked of one is whether it is still owed an explanation.

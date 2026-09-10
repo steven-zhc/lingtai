@@ -36,11 +36,22 @@ import { Plan } from "./plan.tsx";
  * lines are simply absent. That degradation is #83's own requirement, not a
  * courtesy.
  *
- * **The evidence is a pointer** (design §2). One deciding line, naming the
- * attempt that holds the whole of it — with its gate output, its findings and
- * its diff — and linking to it. `diagnosis.raw` is deliberately not repeated
- * here: printing the failing gate twice, at the top and inside its attempt, is
- * how two copies of one fact come to disagree.
+ * **Four ranks: state · reason · move · coordinates** (#132). The block used to
+ * run the other way — six lines in three sizes and three greys, the further
+ * down you read the more specific it got while the type got smaller, and
+ * `run-5cb24ac5` in two of them. So the state is the readout, *why it stopped*
+ * is second and quoted from whatever refused, *what to do* is third, and every
+ * identifier is fourth and appears once.
+ *
+ * **The reason is the gate's own words, and the pointer is what stayed a
+ * pointer.** Design §2 said the evidence is a pointer and not a copy, and the
+ * block took that to mean a gate's *name* was enough: on `#121` it said *the
+ * review gate refused it* when the reviewer had never run — the guard hook
+ * refused its opening prompt, and the gate's evidence said so exactly, three
+ * ranks down behind a disclosure. `diagnosis.raw` now carries that evidence and
+ * `Reason` quotes it here, open. What is still a pointer is the *attempt*: its
+ * findings, its diff and its other verdicts are down there and are not copied
+ * up.
  *
  * **It ends in the thing that will actually run** (design §4). A recommendation
  * is the system's sentence about what it intends; the prompt is what runs, so
@@ -121,6 +132,43 @@ export function Standing({
   // still your move. `live` only ever paints when nothing is on you.
   const mark = standing.onYou ? " onyou" : standing.state === "running" ? " live" : "";
 
+  // **The four ranks** (#132). `describeHold` decides the words; this decides
+  // which rank each of them is. *What happened* is the reason and reads second;
+  // everything else it returns — what is needed, what was already done, what is
+  // recommended — is about the move and reads third.
+  const what = held.find((line) => line.part === "what") ?? null;
+  const move = held.filter((line) => line.part !== "what");
+
+  /**
+   * The refusal in the words of whatever refused, and who said them.
+   *
+   * `diagnosis.raw` used to be null on every hold a gate produced, on the
+   * argument that the verdicts are on this page already — three ranks down, at
+   * 0.72rem, behind a disclosure. The conductor now records the failing gate's
+   * evidence there and this is where it is read (#132).
+   *
+   * The name comes from `failed`, which is the list Waive already names a gate
+   * from, so the name on the quote and the name on the button cannot disagree.
+   * A refusal that came from the merge lane rather than from a gate has no
+   * verdict to name, and the quote is unattributed rather than mislabelled.
+   */
+  const raw = standing.diagnosis?.raw ?? null;
+  const said = standing.failed.at(-1)?.replace(":", " / ") ?? null;
+
+  /**
+   * The question, only where nothing better was written down.
+   *
+   * `question`, `what` and `done` were three sentences saying overlapping
+   * things, and the question is the weakest of them — it is a gate's name and a
+   * branch, both of which the ranks below say once each. So a diagnosed block
+   * drops it, and a block with no diagnosis renders exactly as it always has,
+   * which is #83's requirement and every block written before it.
+   *
+   * Nothing is lost: `WorkItemBlocked.question` is verbatim in the history row
+   * for the event that carries it.
+   */
+  const question = standing.diagnosis === null ? standing.question : null;
+
   return (
     <section className={`standing${mark}`}>
       {/* The readout. Two values at one weight, and the age is `inWords` — the
@@ -142,6 +190,76 @@ export function Standing({
         {inLine !== null ? <span className="sage">{inLine}</span> : null}
       </p>
 
+      {/* The reason and the move, under one neutral rule. Nothing here is
+          amber: the rule at the left already says a person is being waited on,
+          and a second amber would dilute it. */}
+      {question !== null ||
+      held.length > 0 ||
+      standing.deciding !== null ||
+      stopped !== null ||
+      unknown ||
+      queued?.problem ? (
+        <div className="sbody">
+          {/* ---- rank 2: why it stopped ------------------------------------ */}
+
+          {/* The sentence a 404 was standing in for. Lingtai has nothing on this
+              stream *and* could not ask GitHub, so what it knows is that it does
+              not know — which is not the same claim as "there is no such
+              ticket", and is the whole of #113's first requirement. */}
+          {unknown ? (
+            <p className="refusal">
+              Lingtai has never touched this ticket and GitHub could not be asked, so whether it
+              exists is not known here: {unknown}
+            </p>
+          ) : null}
+
+          {/* Why it is not moving, in the wording `lingtai status` and the card
+              use for the same hold. Null — and absent — for the item that is
+              simply next, because `runnable now` on every ordinary queued item
+              would bury the two that mean something. This is a queued item's
+              whole second rank: it has no gate to quote (#113). */}
+          {stopped !== null ? <p className="squestion">{stopped}</p> : null}
+
+          {/* Never merely absent (#76). A recipe that will not parse and a
+              GitHub behind a rate limit both leave the queue unanswered, and
+              only the reason tells them apart — the same argument the Queued
+              column's own `problems` make. */}
+          {queued?.problem ? (
+            <p className="refusal">Its place in the queue could not be read: {queued.problem}</p>
+          ) : null}
+
+          {/* Verbatim, and only where nothing better was written down — see
+              `question` above. It is what the conductor wrote, and a page that
+              paraphrases it is a second version of the question. */}
+          {question !== null ? <p className="squestion">{question}</p> : null}
+
+          {/* What happened, in the diagnosis' own sentence. Absent until #83
+              writes one, which is every block written before it. */}
+          {what !== null ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
+
+          <Reason raw={raw} said={said} deciding={standing.deciding} />
+
+          {/* ---- rank 3: what to do about it ------------------------------- */}
+
+          {/* What is needed, what was already done, and what is recommended.
+              The weights are the card's: what was already done is muted, and
+              the recommendation carries the signal the primary button is the
+              end of. */}
+          {move.map((line) => (
+            <p key={line.part} className={HELD_CLASS[line.part]}>
+              {line.text}
+            </p>
+          ))}
+
+        </div>
+      ) : null}
+
+      {/* ---- rank 4: where to look ---------------------------------------- */}
+
+      {/* Every identifier the block has, and each of them once. This used to be
+          the second line, in a size that made *waiting on you* and *since 07:46
+          UTC* read as the answer — the answer is above it now, and a run id is
+          a coordinate (#132). */}
       <p className="ssince">
         <span>
           {/* Said in as many words. An item with no attempts is not a stalled
@@ -167,69 +285,15 @@ export function Standing({
             {standing.runId ? ` · ${standing.runId.slice(0, 12)}` : ""}
           </span>
         ) : null}
+        {/* The way down to the whole of it — that attempt's gate points, its
+            findings and its diff. A pointer and never a copy: what the gate
+            said is quoted once, above. */}
+        {standing.deciding !== null ? (
+          <a className="sptr" href={`#attempt-${standing.deciding.attempt}`}>
+            in attempt {standing.deciding.attempt} ↓
+          </a>
+        ) : null}
       </p>
-
-      {/* The question, the diagnosis and the pointer sit under one neutral
-          rule. Nothing below it is amber: the rule at the left already says a
-          person is being waited on, and a second amber would dilute it. */}
-      {standing.question !== null ||
-      held.length > 0 ||
-      standing.deciding !== null ||
-      stopped !== null ||
-      unknown ||
-      queued?.problem ? (
-        <div className="sbody">
-          {/* The sentence a 404 was standing in for. Lingtai has nothing on this
-              stream *and* could not ask GitHub, so what it knows is that it does
-              not know — which is not the same claim as "there is no such
-              ticket", and is the whole of #113's first requirement. */}
-          {unknown ? (
-            <p className="refusal">
-              Lingtai has never touched this ticket and GitHub could not be asked, so whether it
-              exists is not known here: {unknown}
-            </p>
-          ) : null}
-
-          {/* Why it is not moving, in the wording `lingtai status` and the card
-              use for the same hold. Null — and absent — for the item that is
-              simply next, because `runnable now` on every ordinary queued item
-              would bury the two that mean something. */}
-          {stopped !== null ? <p className="squestion">{stopped}</p> : null}
-
-          {/* Never merely absent (#76). A recipe that will not parse and a
-              GitHub behind a rate limit both leave the queue unanswered, and
-              only the reason tells them apart — the same argument the Queued
-              column's own `problems` make. */}
-          {queued?.problem ? (
-            <p className="refusal">Its place in the queue could not be read: {queued.problem}</p>
-          ) : null}
-
-          {/* Verbatim. It is what the conductor wrote down, and a page that
-              paraphrases it is a second version of the question. */}
-          {standing.question !== null ? <p className="squestion">{standing.question}</p> : null}
-
-          {/* Absent until #83 writes one, which is every block on the log
-              today. The weights are the card's: what happened is ink, what was
-              already done is muted, the recommendation carries the signal the
-              primary button is the end of. */}
-          {held.map((line) => (
-            <p key={line.part} className={HELD_CLASS[line.part]}>
-              {line.text}
-            </p>
-          ))}
-
-          {standing.deciding !== null ? (
-            <p className="sevidence">
-              <span className="sgate">{standing.deciding.source}</span>
-              <span className="sline">{standing.deciding.line}</span>
-              {/* The whole of it is down there, marked and open. */}
-              <a className="sptr" href={`#attempt-${standing.deciding.attempt}`}>
-                in attempt {standing.deciding.attempt} ↓
-              </a>
-            </p>
-          ) : null}
-        </div>
-      ) : null}
 
       {/* Side by side above ~64rem, and stacked below it. The outgoing prompt
           first in the DOM and first on the line, so reading order, use order
@@ -337,3 +401,78 @@ const HELD_CLASS: Record<HoldLine["part"], string> = {
   did: "did",
   rec: "rec",
 };
+
+/**
+ * The second rank: what refused, in its own words.
+ *
+ * **A gate's name is not a reason** (#132). *the review gate refused it* is
+ * every word true and a reader takes the wrong thing from it — that a reviewer
+ * read the diff and found problems. On `#121` the reviewer never ran, the guard
+ * hook refused its opening prompt, and the gate's own evidence said so exactly.
+ * That evidence was on this page the whole time: three ranks down, at 0.72rem,
+ * behind a disclosure, inside the right attempt's gate points.
+ *
+ * **It opens in place.** The disclosure is open on load and closing it is the
+ * reader's own move — the whole judgement behind this ticket is that what the
+ * page already has must appear at the moment it is needed rather than waiting
+ * to be found. Following the pointer to the attempt is still there, at rank 4,
+ * for the findings and the diff that sit beside the verdict.
+ *
+ * Three states, and the middle one is the one 0016 §4 is about:
+ *
+ * - **evidence**, which is quoted;
+ * - **a gate that refused and recorded nothing** — an empty string — which is
+ *   stated, because a blank rank looks exactly like a rank that failed to
+ *   render and only one of those is our bug;
+ * - **nothing that refused at all** — every gate passed, or a block written
+ *   before there was a `raw` to carry — which renders the deciding line if
+ *   there is one and leaves no hole where a quote would be.
+ */
+function Reason({
+  raw,
+  said,
+  deciding,
+}: {
+  /** `diagnosis.raw`: the failing gate's evidence, verbatim. */
+  raw: string | null;
+  /** The gate that said it, or null when what refused was not a gate. */
+  said: string | null;
+  deciding: StandingView["deciding"];
+}) {
+  if (raw === null) {
+    // No quote to make. The one deciding line is what the block has always had
+    // here, and it is still better than nothing — its pointer has moved down to
+    // the coordinates, so this is a line and no longer a signpost.
+    if (deciding === null) return null;
+    return (
+      <p className="sevidence">
+        <span className="sgate">{deciding.source}</span>
+        <span className="sline">{deciding.line}</span>
+      </p>
+    );
+  }
+
+  if (raw.trim() === "") {
+    return (
+      <p className="sevidence snone">
+        {said === null ? "The refusal" : `The ${said} gate`} recorded no output, so there is
+        nothing to quote.
+      </p>
+    );
+  }
+
+  const lines = raw.split("\n").length;
+  return (
+    <details className="sreason" open>
+      <summary>
+        <span className="sgate">{said ?? "what refused, verbatim"}</span>
+        <span className="ssize">
+          {lines} line{lines === 1 ? "" : "s"}
+        </span>
+      </summary>
+      {/* Never markdown, and never a paragraph: design §6's third row and
+          #111's, one page along. A log rendered as prose is not that log. */}
+      <pre className="sraw">{raw}</pre>
+    </details>
+  );
+}

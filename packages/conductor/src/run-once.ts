@@ -2237,6 +2237,22 @@ export function runOnce(
         const green = pipeline.ok && atMerge.ok;
         const failedAt = pipeline.failedAt ?? atMerge.failedAt;
         /**
+         * The refusal in the gate's own words.
+         *
+         * **A gate's name is not a reason** (#132). `the review gate refused it`
+         * is every word true and a reader takes the wrong thing from it — that a
+         * reviewer read the diff and found problems. On `#121` the reviewer
+         * never ran: the guard hook refused its opening prompt, and the gate's
+         * own evidence said so exactly. The pipeline that refused is the one
+         * that carries the verdict, since `merge` runs only when `proposed`
+         * passed and only one of the two can have a failure in it.
+         */
+        const refusedIn = pipeline.failedAt !== null ? pipeline : atMerge;
+        const evidence =
+          failedAt === null
+            ? null
+            : (refusedIn.results.find((r) => r.gate === failedAt)?.evidence ?? "");
+        /**
          * **A point that spent its rounds is diagnosed as what it is, and not as
          * a gate refusing.** 0038's consequence, now in two shapes: what reaches
          * a person is no longer the first refusal, it is something that has since
@@ -2272,22 +2288,38 @@ export function runOnce(
           : {
               what:
                 `${branch} is at ${headSha.slice(0, 7)} and ` +
-                (green
-                  ? `every gate passed. The ${gate} point holds for ${action}.`
-                  : `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`),
-              // What was done about it, when something was: a repair bought
-              // before `#143` spent an agent and this diff is what it produced.
-              // An ordinary hold had no failure to do anything about.
-              done: repairOf
-                ? `a repair for ${repairOf.reason} ran as ${runId} and produced this diff`
-                : null,
-              // No raw output: nothing failed here that a git message describes.
-              // The gate verdicts are on the task's own page with their evidence.
-              raw: null,
+                (failedAt !== null
+                  ? `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`
+                  : green
+                    ? `every gate passed. The ${gate} point holds for ${action}.`
+                    : // Neither green nor refused: a gate asked for a person rather
+                      // than judging — a `human:` action, or a `watch` one that saw
+                      // a migration. It used to fall through to the sentence above
+                      // and print `the null gate refused it`, which is the same
+                      // defect one word further on: a cause the block does not have.
+                      `the ${action} gate at ${gate} asked for a person before anything after it ran.`),
+              // What was done about it, when something was: a repair spent an agent
+              // and this diff is what it produced. An ordinary hold had no failure
+              // to do anything about, and says so by saying nothing.
+              //
+              // It does not name the run. The block that renders this already says
+              // which attempt and which run it is about, and an identifier printed
+              // twice in one block is the reader's problem #132 is about.
+              done: repairOf ? `a repair for ${repairOf.reason} produced this diff` : null,
+              // The failing gate's evidence, verbatim, and null when nothing
+              // refused. This was `null` on the argument that the verdicts are on
+              // the task's own page with their evidence — which is true, and is
+              // three ranks down at 0.72rem behind a disclosure, so the one block
+              // whose job is to say why a task stopped had only a gate's name to
+              // say it with (#132). An empty string is a gate that refused and
+              // recorded nothing, which is a different fact from having no gate.
+              raw: evidence,
               recommendation: green
                 ? {
                     action: "approve" as const,
-                    why: "every gate passed on this diff; approving merges what this run produced",
+                    why: repairOf
+                      ? `every gate passed on what the repair for ${repairOf.reason} produced`
+                      : "every gate passed on this diff; approving merges what this run produced",
                   }
                 : null,
             };
