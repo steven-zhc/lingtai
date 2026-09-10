@@ -135,6 +135,13 @@ implements them, and a host wires the two together.
 | | **`env`** the *machine's* credentials, and its state directory |
 | | **`hook`** one Bun binary, inside the agent's sandbox |
 
+`apps/site` is the third reader and the only one that appends nothing: a static
+export of this repository's own `doc/`, wearing the board's palette because it
+imports the board's stylesheet rather than reproducing it. A merge to `main`
+republishes it; `pnpm site:deploy` rebuilds it beside the log, which is the only
+place its hero board can be real
+([0038](doc/decisions/0038-the-site-deploys-to-a-domain-root.md)).
+
 Two hosts assemble them — `apps/cli` and `packages/daemon` — plus `apps/board`,
 which reads the projection and appends decisions. **Every process that appends
 holds a projector while it runs**, so the board follows a run by hand just as it

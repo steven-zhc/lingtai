@@ -27,7 +27,22 @@
 
    Two per page at most, never two that could both be actions, and nothing else:
    not a heading, not a hover, not a rule, not an accent on something that
-   already has the teal. */
+   already has the teal.
+
+   **`test/theme.test.ts` is where that rule actually lives.** This comment is
+   the reason; the test is the enforcement, and #115 asked for the second
+   because the first is what a palette always has while it drifts. Coral on a
+   heading reads well. A `--surface` redefined "just for the docs" is a two-line
+   diff. A serif in `.prose` is the single change that would make the long
+   documents more comfortable and the one 0035 §4 forbids. Each of those is
+   reasonable on its own, which is precisely why none of them is left to
+   whoever is reading this. The test does not carry a list of coral classes
+   either — it reads them out of this file — so a coral rule added below is
+   seen whatever it is named.
+
+   That rule reaches past the stylesheet: it is also why the site is served from
+   a domain root rather than a sub-path, because a sub-path would need a second
+   `--mark` here. See 0038 §1. */
 :root {
   --way-in: #fd5d3f;
   /* Ink *on* coral, not coral as ink: #FD5D3F under 15px text clears no

@@ -35,3 +35,9 @@ logs/
 # in git is a second file to keep in step.
 apps/site/public/doc/
 apps/site/snapshot.json
+
+# `vercel link` and `vercel build` write here. The link is one machine's
+# association with one Vercel project, and `.vercel/output/` is the built site
+# — neither is a fact about this repository. What *is* a fact about it is
+# `vercel.json`, which is committed.
+.vercel/

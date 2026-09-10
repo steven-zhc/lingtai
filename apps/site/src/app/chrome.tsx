@@ -9,6 +9,15 @@ export const REPO = "https://github.com/steven-zhc/lingtai";
  * product's stylesheet. Reusing the classes rather than the look is what makes
  * "the site extends the product's palette" a fact the build enforces instead of
  * an intention somebody has to keep.
+ *
+ * **Three destinations and the mark, and that is the ceiling** (#115): read the
+ * documentation, start the tutorial, or go and look at the source. A site with
+ * more navigation than the product has features is describing an ambition
+ * rather than a product, and the fourth entry is always the one that seems
+ * harmless. `architecture.html` was that fourth — it is one document among the
+ * documents, indexed under Docs and linked from the front page at the point it
+ * is being argued from, and in the bar it advertised a section this site does
+ * not have. `test/theme.test.ts` holds the count.
  */
 export function Bar({ note }: { note?: string }) {
   return (
@@ -20,7 +29,6 @@ export function Bar({ note }: { note?: string }) {
       <span className="sep" />
       <Link href="/docs/">Docs</Link>
       <Link href="/docs/tutorial/">Tutorial</Link>
-      <a href="/doc/architecture.html">Architecture</a>
       <span className="spacer" />
       {note !== undefined && <span className="chip">{note}</span>}
       <a href={REPO}>GitHub</a>
