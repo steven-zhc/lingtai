@@ -486,7 +486,9 @@ details[open] > summary::before { content: "▾"; }
 .detail-body {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  /* Was 2rem, against a 0.72rem eyebrow. The heading is display-sized now and
+     needs room above it, or it reads as a caption on the section before. */
+  gap: 2.6rem;
   padding: 1.5rem;
   /* Wide enough for the decision column's two boxes to sit side by side, and no
      wider. Everything else keeps the measure below. */
@@ -494,44 +496,73 @@ details[open] > summary::before { content: "▾"; }
   width: 100%;
 }
 
-/* A measure, not the full width. The history is a list of short lines and
-   stretching it across a wide screen makes it unreadable in the one place
-   somebody is reading closely.
+/* **No section is capped. The measure belongs to the paragraph, not to the
+   section that contains one.**
 
-   **The prose measure stays for paragraphs; documents may break it** (layout
-   notes). So it is on the sections that are prose and lists, and the decision
-   column — which is two boxes and a row of buttons, not a paragraph — is the
-   one thing on this page that uses the width it is given (#111). */
-.detail-body > section { max-width: 62rem; width: 100%; }
-.detail-body > section.standing { max-width: none; }
+   This rule used to read `max-width: 62rem`, on the argument that history is
+   "a list of short lines" and stretching it made it unreadable. Half of that
+   was right and it was applied to the wrong object: Attempts is a ledger and
+   History is a column of seq numbers, and both are scanned down, not read
+   across — capping them left twenty rem of the page empty while their rows
+   wrapped. Ticket is the only section holding sentences, and a sentence is
+   measured in characters, so the limit sits on `.md p` where it can be stated
+   in `ch`. `standing` had already been carved out one at a time for exactly
+   this reason (#111); there is now nothing left to carve out of. */
+.detail-body > section { width: 100%; }
 
 /* The section's one fact sits at the right of the label's own rule, which is
    why there is no separate summary band: a band that totals what is under it
    is a second copy of the same arithmetic, and the two disagree the first time
    one of them is changed. */
-.detail-body h2 {
+/* **`> section >`, not a descendant.** The ticket body is rendered markdown, so
+   a ticket written with `## Done when` puts an `h2` inside this subtree. Under
+   a descendant selector that heading would take the display size below and
+   claim to be a section of the page. Only the `Label` component's own heading
+   is a direct child of a section. */
+/* **It stays monospace, upper-cased and letter-spaced, and it keeps its rule.**
+   The size is the only thing that changed. A large sans heading with a negative
+   tracking is the default any page reaches for; this page's own vocabulary is
+   already mono — every seq, sha, duration and cost on it is — so the section
+   name is set in it too, at display size. That is the whole difference between
+   a heading that belongs to this board and one that could sit on any page. */
+.detail-body > section > h2 {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: 1rem;
-  font-size: 0.72rem;
+  justify-content: space-between;
+  gap: 0.8rem 1.4rem;
+  flex-wrap: wrap;
   font-family: var(--mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
   font-weight: 500;
-  margin: 0 0 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--rule);
+  margin: 0 0 1.1rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--rule-2);
 }
-/* Not upper-cased: `23m25s` and `$14.10` are read as numbers rather than as a
-   heading, and shouting them makes both harder to read. */
-.detail-body h2 .hfact {
-  text-transform: none;
-  letter-spacing: 0.02em;
+.detail-body > section > h2 .hlab {
+  font-size: clamp(1.45rem, 3.1vw, 2.1rem);
+  line-height: 1.05;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  /* Tracking leaves one space's worth after the last letter. Taken back so the
+     word ends where it looks like it ends. */
+  margin-right: -0.18em;
+}
+/* Small, and not shouted: `23m25s` and `$14.10` are read as numbers rather than
+   as a heading. Tabular figures because these change on every render and a
+   column that shifts under a re-render is one you stop trusting. */
+.detail-body > section > h2 .hfact {
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
   text-align: right;
-  color: var(--ink-2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
+/* The mockup sets the figures in this line a shade darker than their labels,
+   with `h3.sec > .fact b`. That rule is deliberately **not** copied here: `fact`
+   is a `string`, joined by `totalsFact`, so no `<b>` can exist inside it and the
+   rule would match nothing while reading as though it did. Emphasising the
+   numbers means giving `totalsFact` a return type that can carry elements, and
+   that is a change to what the page computes, not to how it looks. */
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 
@@ -553,23 +584,85 @@ details[open] > summary::before { content: "▾"; }
 }
 .standing.onyou { border-left-color: var(--signal); }
 
+/* **Running is teal, and it is teal for a reason the palette already gave.**
+   A third strong hue is refused at the top of this file, so the choice was
+   between the two that exist. Amber is out: it means *you are being waited on*,
+   and while an agent runs nobody is waiting on you — a second amber would
+   dilute the first, which the comment above already says about this very block.
+   That leaves teal, and teal fits rather than merely remaining: it is the
+   structural hue, and **running is the one state that is the machinery itself**
+   rather than a verdict about what the machinery produced. `landed`, `failed`
+   and `blocked` are judgements on a finished thing; `running` is the thing. */
+.standing.live { border-left-color: var(--accent); position: relative; }
+.standing.live .sread .sstate { color: var(--accent); }
+
+/* And the half a colour cannot carry: **this is the only state that will be
+   different in a minute.** Every other word on this page is settled — a static
+   hue says "important", never "still moving". The pulse is on the rule and not
+   on the word, because a heading that breathes is a heading you stop reading;
+   it sits over the border rather than animating it, since a border-colour
+   cannot be faded on its own. */
+.standing.live::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  animation: standing-live 2.4s ease-in-out infinite;
+}
+@keyframes standing-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.28; }
+}
+/* Motion here is an ornament on a fact the colour already carries, so it is the
+   first thing to go when somebody has asked for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  .standing.live::before { animation: none; }
+}
+
 /* Two values at one weight. The state, and how long it has held — *blocked* and
    *blocked for four days* are different facts, and the second is not an
    annotation on the first. */
 .sread {
   display: flex;
   align-items: baseline;
-  gap: 0.7rem;
+  gap: 1.1rem;
+  flex-wrap: wrap;
   margin: 0;
   font-family: var(--mono);
-  font-size: 1.15rem;
-  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.sread .sage { color: var(--ink-2); }
-.sread .sage::before { content: "│ "; color: var(--rule-2); }
+/* **Bigger than a section name, and that is the point.** This word is the whole
+   page's answer — BLOCKED, RUNNING, LANDED — and a section name is only the
+   name of a section. At 1.15rem it lost that argument to every heading below
+   it, and the commonest reason anybody opens this page is to read exactly this
+   word (#80, #87, #89, #94 were four wrong readings in one day). */
+.sread .sstate {
+  font-size: clamp(1.7rem, 4vw, 2.45rem);
+  line-height: 1;
+  font-weight: 600;
+  /* Tracking this wide is a treatment for capitals; mixed case would fall
+     apart. The negative margin takes back the space after the last letter. */
+  letter-spacing: 0.2em;
+  margin-right: -0.2em;
+}
+/* The second readout: how long you have been the bottleneck. Beside the state
+   rather than under it, because it is a fact of the same rank and not an
+   annotation on the first — and the rule at its left says so without the
+   pseudo-element pipe that used to. */
+.sread .sage {
+  font-size: clamp(1.05rem, 2vw, 1.4rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  padding-left: 1.1rem;
+  padding-block: 0.22em;
+  border-left: 2px solid var(--rule-2);
+}
 .standing.onyou .sread .sstate { color: var(--signal); }
 
 .ssince {
@@ -960,47 +1053,74 @@ details[open] > summary::before { content: "▾"; }
    list and a gate that runs *per attempt* sat in a page-level section (#102).
    Everything below this comment is inside an attempt. */
 
-.ledger { display: flex; flex-direction: column; gap: 0.5rem; }
-.attempt {
-  padding: 0.55rem 0.75rem;
+/* **One frame around the ledger, hairlines inside it.** Every attempt used to
+   be its own bordered, rounded card with a gap under it, which drew N frames to
+   say one thing — these are rows of the same table. The box is drawn once and
+   the rows are separated by a rule, which is what a ledger looks like. */
+.ledger {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 3px;
+  overflow: hidden;
 }
+.attempt { border-bottom: 1px solid var(--rule); }
+.attempt:last-child { border-bottom: 0; }
+/* The disclosed part of an attempt keeps the horizontal padding the summary
+   row has, so the two align down a common left edge. */
+.attempt > *:not(summary) { padding-left: 0.85rem; padding-right: 0.85rem; }
+.attempt[open] > *:last-child { padding-bottom: 0.85rem; }
 /* The attempt the block at the top points at. The same teal mark the pointer
    carries, so the two read as one thing rather than as two claims about a
    failure — and it is the reason nothing is printed twice. */
-.attempt.deciding { border-left: 2px solid var(--accent); }
+/* An inset shadow on the row, not a border on the box. A `border-left` on a row
+   inside a single framed ledger widens that row and steps the frame's own edge
+   in and out down the list; an inset shadow marks the row without taking part in
+   its geometry. */
+.attempt.deciding > summary { box-shadow: inset 2px 0 0 var(--accent); }
 /* Anchored: the pointer links here, and a browser must not land it under the
    bar it scrolled past. */
 .attempt { scroll-margin-top: 1rem; }
-/* The row itself: what happened, then what it cost, then when. The facts push
-   right so a column of attempts is read down rather than across. */
+/* The row itself: what happened, then what it cost, then when.
+
+   **A grid, not a flex row.** Flex packed the figures wherever the text before
+   them ended, so no two attempts agreed on where a cost was — which is the
+   whole reason a ledger is worth having. Each figure owns a column and is set
+   right, so `$7.81` sits over `$5.23` and the eye reads the money down. */
 .attempt > summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: baseline;
-  font-size: 0.78rem;
+  display: grid;
+  /* **Seven columns for seven cells, and the first one is not in the markup.**
+     `details > summary::before` draws this board's disclosure triangle, and a
+     `::before` on a grid container is a grid item like any other. Count it, or
+     every column slides one place along and the last one wraps to a second
+     row — which is exactly what happened when this was six. */
+  grid-template-columns: 1.1rem minmax(8rem, 1fr) repeat(4, auto) minmax(7rem, auto);
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
   color: var(--ink);
 }
 .attempt > summary:hover { color: var(--ink); }
-.anum { font-family: var(--mono); color: var(--ink); }
+/* The one cell that is not a figure: what this attempt is and how it ended. */
+.aname { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.45rem; min-width: 0; }
+.anum { color: var(--ink); }
 /* The failure's kind, the non-zero exit, the release's reason — a pointer to
    the row in this attempt's own history that holds the whole of it. */
-.adetail { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
-.afacts {
-  margin-left: auto;
-  font-family: var(--mono);
+.adetail { font-size: 0.72rem; color: var(--muted); }
+.afig {
   font-size: 0.72rem;
   color: var(--ink-2);
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .aage {
-  font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--muted);
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .ameta {
   display: flex;
@@ -1081,19 +1201,70 @@ details[open] > summary::before { content: "▾"; }
    because a claim about this system is worth more when it cites one, and
    because two groups' ranges may legitimately overlap: a ticket-level event
    landing mid-run does not cut that run in two. */
-.hgroup + .hgroup { margin-top: 1rem; }
+/* Was 1rem, when the group's label was a floating caption that needed air above
+   it to be read as one. The label is a tinted band now and separates on its own;
+   a gap as well would break the log into blocks and lose the one thing the
+   bottom of this page is for — that it is a single list, in order. */
+.hgroup + .hgroup { margin-top: 0; }
+/* **A band, not a caption.** It used to be a line of the same weight and the
+   same family as the rows around it, set on the same ground, so a divider
+   between two runs read as one more event — which is the one thing it is not.
+   Tinted and set in the structural ink, it is a rule *of* the log rather than a
+   label above part of it: the same move the design makes, where the run divider
+   is a row of the table it divides. */
 .hglabel {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   align-items: baseline;
-  margin: 0 0 0.2rem;
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  /* Teal, not `--surface-2`. That tint is eight units from the page's own
+     ground, and it is already the raw payload's box *inside* a row — one colour
+     saying two things. A run divider is structure, and teal is what structure
+     is on this board. */
+  background: var(--accent-soft);
+  /* Closed on both sides — a band with a rule under it only is a caption that
+     happens to be tinted. **Neutral, because `--accent` inverts between the
+     themes**: in light it is `#0b6a70` on a pale tint, a line you barely see,
+     and in dark it is `#54c6cc` on `#10312f`, two glowing rules bracketing a
+     band that appears three or four times down one page. `--rule-2` is quiet
+     against both grounds, and the tint is what carries the meaning anyway. */
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule-2);
   font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--muted);
+  font-size: 0.72rem;
+  color: var(--accent-ink);
+  /* **It follows you down the run.** A run here is forty events; a marker you
+     passed once cannot answer *which attempt am I reading* at row thirty, which
+     is the only question this band exists for. The bar at the top of the page
+     is in normal flow, so `0` is the top of the viewport and nothing to offset
+     against. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
-.hgname { color: var(--ink-2); }
-.hgseq { margin-left: auto; font-variant-numeric: tabular-nums; }
+/* The one word that has to carry: which attempt this is. Given the sub-heading
+   treatment the design uses for a second-rank name — upper case and tracked, a
+   step down from a section title and two steps up from a row. */
+.hgname {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-right: -0.14em;
+}
+/* The stream's own id: present, because a claim is identified by it, and quiet,
+   because nobody reads a uuid — they check one. **`font-size` explicitly**:
+   `.detail .mono` carries `0.8rem` at the same specificity and earlier in the
+   file, so setting only `color` here left the uuid as the largest text in a
+   0.72rem band — the exact opposite of what the sentence above claims. */
+.hglabel .mono { color: var(--accent); font-size: inherit; }
+.hgseq {
+  margin-left: auto;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
 
 .history {
   list-style: none;
@@ -1207,6 +1378,23 @@ details[open] > summary::before { content: "▾"; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p, .md ul, .md ol, .md blockquote, .md table, .md pre { margin: 0 0 0.7rem; }
+/* **The measure is here, and it is in `ch`.** The section around this is the
+   full width of the page now, which is what a table, a code block and a heading
+   want. A sentence does not: past roughly 80 characters the eye loses the start
+   of the next line. So the limit is on the things that are read as sentences,
+   stated in the unit that actually governs them, and everything else in the
+   document keeps the width it was given. */
+.md p, .md li, .md blockquote { max-width: 82ch; }
+/* **And the prose that is not markdown.** A gate's findings are sentences and
+   are rendered by `evidence.tsx`, not by the document renderer — a
+   `failureScenario` is required by this system to be *concrete inputs, then the
+   wrong outcome*, which is the longest and most closely-read prose on the page.
+   Uncapping the section without capping these moved the defect the old rule
+   guarded against from History into Attempts. */
+.detail-body .claim,
+.detail-body .scenario,
+.detail-body .empty,
+.detail-body .refusal { max-width: 82ch; }
 /* A heading inside a document is a heading *in that document*. It must not
    compete with the section labels the page navigates by, so the whole scale is
    compressed into a half-step above the body and told apart by weight. */
@@ -1289,6 +1477,25 @@ details[open] > summary::before { content: "▾"; }
   .history summary { grid-template-columns: 1rem 1fr; gap: 0.1rem 0.75rem; padding: 0.5rem 0; }
   .history summary > span { grid-column: 2; }
   .point { grid-template-columns: 1fr; }
+}
+
+/* **The ledger's columns are a wide-screen affordance, and below one it gives
+   them up rather than clipping.** The row's tracks have hard minimums and its
+   figures do not wrap, so under about 52rem the row is wider than the frame —
+   and `.ledger` has `overflow: hidden` to clip its own corners, which would
+   swallow the last cell with no way to scroll to it. Flex here: on a screen
+   this narrow there is no width to align a column in, and a figure you can read
+   beats a figure that would have lined up. Wider than `.history`'s breakpoint
+   because this row carries four figures where that one carries two. */
+@media (max-width: 52rem) {
+  .attempt > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 0.7rem;
+  }
+  .afig, .aage { text-align: left; white-space: normal; }
+  .aage { margin-left: auto; }
 }
 
 /* The card title is the link to all of the above. The whole title, because a
