@@ -79,6 +79,41 @@ export function parseResetAt(detail: string, now: Date = new Date()): Date | nul
 }
 
 /**
+ * Which agent never started — the run's own, or the one inside a gate.
+ *
+ * The pause is the same and the sentence is not, which is the whole reason this
+ * is a parameter rather than a constant
+ * ([0038](../../../doc/decisions/0038-a-gate-that-never-ran.md) §3). A run that
+ * never started took no turns and spent nothing, and 0031's sentence says so. A
+ * *gate's* agent that never started sits inside a run that **did** start, took
+ * turns and was paid for — the implementer produced the diff the reviewer was
+ * being asked about. Telling a person `no turns taken, nothing spent` about that
+ * pass is the same species of false sentence `#133` is against, one screen along
+ * from the card it started on: the board's chip and `lingtai doctor` are exactly
+ * where somebody woken at 2am reads it.
+ */
+export type NeverStarted =
+  | { readonly of: "run" }
+  /** The point's action, as `point:action` — what the card and the chip name. */
+  | { readonly of: "gate"; readonly gate: string };
+
+/** What each opens with, and whose words the quote at the end is. */
+function subject(what: NeverStarted): { opening: string; whose: string } {
+  if (what.of === "run") {
+    return {
+      opening: "a run ended without ever starting — no turns taken, nothing spent",
+      whose: "The run said",
+    };
+  }
+  return {
+    opening:
+      `the ${what.gate} gate's agent never started, so nothing judged the diff — ` +
+      `the run that reached it did start, and was paid for`,
+    whose: `The ${what.gate} gate's agent said`,
+  };
+}
+
+/**
  * When the conductor takes work again, and the sentence saying why.
  *
  * The sentence is what the board's pause chip shows (#77) and what
@@ -87,11 +122,16 @@ export function parseResetAt(detail: string, now: Date = new Date()): Date | nul
  * runtime's own words are quoted rather than summarised — they are the evidence
  * the classification refused to read, and dropping them here would leave the
  * reason for an account-wide stop nowhere at all.
+ *
+ * *What* happened is `what`, and it is required rather than defaulted: the two
+ * callers are the two depths the same wall is met at, and a default would let a
+ * third arrive wearing whichever sentence happened to be first.
  */
 export function standDown(input: {
   detail: string;
   /** `source.backoff` in milliseconds, for when the message named no time. */
   backoffMs: number;
+  what: NeverStarted;
   now?: Date;
 }): { until: Date; reason: string } {
   const now = input.now ?? new Date();
@@ -102,12 +142,13 @@ export function standDown(input: {
     reset === null
       ? "it named no reset time, so this is the recipe's backoff"
       : "read from the message itself";
+  const { opening, whose } = subject(input.what);
   return {
     until,
     reason:
-      `a run ended without ever starting — no turns taken, nothing spent. ` +
+      `${opening}. ` +
       `Every queued item would meet the same thing, so the conductor is taking no work ` +
-      `until ${until.toISOString()} (${from}). The run said: ${said || "nothing at all"}`,
+      `until ${until.toISOString()} (${from}). ${whose}: ${said || "nothing at all"}`,
   };
 }
 

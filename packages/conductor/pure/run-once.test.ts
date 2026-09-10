@@ -22,6 +22,7 @@ import type { EventStore } from "@lingtai/event-store";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import type { Runtime } from "@lingtai/agent";
 import type { ProjectState } from "@lingtai/domain";
+import { applyWorkItem, emptyWorkItem } from "@lingtai/domain";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
@@ -670,6 +671,99 @@ describe("runOnce, with no world to run in", () => {
     expect(pause.by).toBe("lingtai");
     expect(new Date(pause.until).getUTCHours()).toBe(19);
     expect(pause.reason).toContain("You've hit your session limit");
+    // And the chip's sentence is about the gate, not about the run. This pass
+    // took three turns and cost $0.42, so 0031's opening would be false here —
+    // the same wrong sentence as the card's, one screen along (0038 §3).
+    expect(pause.reason).toContain("gate's agent never started");
+    expect(pause.reason).not.toContain("no turns taken, nothing spent");
+  });
+
+  /**
+   * **The same wall, met by a repair, and the handover that must not fire.**
+   *
+   * A repair that runs and cannot fix it blocks with *the repair could not fix
+   * it* (`#84`) — a verdict on the diff the repair produced. A repair whose
+   * reviewer never started reached no such finding: the implementer produced a
+   * diff and nothing read it. Handing over would assert what nobody
+   * established, and — worse — would park the item in Waiting on you behind the
+   * very pause this run just caused, needing a person to unstick it when the
+   * limit lifts. That is the one thing the ticket says must not happen.
+   *
+   * So: released, and the repair the claim consumed is given back, so the next
+   * claim is the same repair rather than an ordinary run walking into the same
+   * conflict. And the ceiling is not charged twice for it.
+   */
+  it("gives a repair back rather than handing it over when its gate never ran", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const item = `wi-${PROJECT}-7`;
+
+    // The item as `#84` leaves it: a conflict bought one repair, and the next
+    // claim is that repair.
+    await store.append(item, 0, [
+      {
+        type: "WorkItemDiscovered",
+        actor: "conductor",
+        data: {
+          project: PROJECT,
+          source: "github-issue",
+          externalRef: "7",
+          title: issue.title,
+          kind: "bug",
+          labels: ["bug"],
+        },
+      },
+      {
+        type: "RepairRequested",
+        actor: "conductor",
+        data: {
+          runId: "run-00000000-0000-0000-0000-000000000000",
+          reason: "conflict",
+          detail: "agent/7 does not merge into main",
+          fingerprint: "abc123def456",
+          attempt: 1,
+        },
+      },
+    ]);
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result.ok).toBe(false);
+
+    const own = await store.read(item);
+    const types = own.map((e) => e.type);
+    // No block, and so no question asserting a verdict about the repair's diff.
+    expect(types).not.toContain("WorkItemBlocked");
+    expect(types).toContain("WorkItemReleased");
+
+    // The repair is owed again — same fingerprint, so the next claim consumes it
+    // as the repair it always was.
+    const requests = own.filter((e) => e.type === "RepairRequested");
+    expect(requests).toHaveLength(2);
+    expect((requests[1]!.data as { fingerprint: string }).fingerprint).toBe("abc123def456");
+    const folded = own.reduce(applyWorkItem, emptyWorkItem);
+    expect(folded.pendingRepair?.fingerprint).toBe("abc123def456");
+    // And 0025 §3's ceiling is counted by fingerprint, so a quota does not eat
+    // a repair attempt the item never got the benefit of.
+    expect(folded.repairs).toHaveLength(1);
+
+    // The conductor still stands down, which is the point of all of it.
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
   });
 
   /**

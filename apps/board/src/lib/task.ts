@@ -429,6 +429,24 @@ function refusalOn(run: RunView): Deciding | null {
     };
   }
 
+  /**
+   * A gate that never ran stopped this attempt without refusing it (#133).
+   *
+   * Named here because otherwise nothing does: the run itself *finished* — exit
+   * 0, turns taken, money spent — so `outcomeOf` calls it `finished` and this
+   * would fall through to an earlier attempt's genuine refusal, putting an old
+   * red line at the top of a page whose actual answer is that the account ran
+   * out. The line says nothing judged the diff, and names no refusal.
+   */
+  const never = [...run.gates].reverse().find((g) => g.state === "never-ran");
+  if (never) {
+    return {
+      attempt: run.attempt,
+      source: never.gate.replace(":", " / "),
+      line: `never ran — nothing judged this diff: ${oneLine(never.evidence) ?? "no detail was recorded"}`,
+    };
+  }
+
   const detail = oneLine(run.outcome.detail);
   if (detail === null) return null;
   return { attempt: run.attempt, source: run.outcome.state, line: detail };
@@ -881,8 +899,13 @@ export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[])
       gates.set(key, {
         gate: key,
         state: verdict,
-        current: true,
-        evidence: (d["evidence"] as string) ?? null,
+        // `GateNeverRan` calls it `detail` and not `evidence`, because it is
+        // evidence about the *account* and never about the diff — the same
+        // distinction `RunFailed.detail` draws (#133). Read here rather than
+        // renamed at the seam, because `Evidence` shows only gates that said
+        // something (`evidence.tsx:114`): reading the wrong key would drop the
+        // one gate that stopped the run off the page ADR 0038 §2 wrote it for.
+        evidence: (d["evidence"] as string) ?? (d["detail"] as string) ?? null,
         findings: (d["findings"] as Finding[]) ?? [],
       });
     }

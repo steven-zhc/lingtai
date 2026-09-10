@@ -169,6 +169,50 @@ describe("the evidence", () => {
   });
 
   /**
+   * The attempt a quota stopped, named as itself (#133).
+   *
+   * The run *finished* — exit 0, turns taken, money spent — so nothing about its
+   * own outcome says why the pass ended, and without this the page reaches back
+   * to attempt 1's genuine refusal and puts an old red line at the top of a page
+   * whose actual answer is that the account ran out. What it says instead names
+   * the gate, says nothing judged the diff, and calls nothing a refusal.
+   */
+  it("names a gate that never ran, rather than an earlier attempt's refusal", () => {
+    const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
+      e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+    ]);
+    const two = foldRun(claim(RUN_2, "2026-09-08T04:00:00.000Z"), 2, [
+      e(RUN_2, "RunProposedCompletion", { headSha: SHA }),
+      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
+      e(RUN_2, "GateNeverRan", {
+        gate: "proposed",
+        action: "review",
+        onSha: SHA,
+        detail: "You've hit your session limit · resets 2pm (America/Chicago)",
+      }),
+      e(RUN_2, "RunFinished", { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
+    ]);
+
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
+        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "the proposed:build gate refused it" }),
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+      ],
+      [one, two],
+    );
+
+    expect(standing.deciding?.attempt).toBe(2);
+    expect(standing.deciding?.source).toBe("proposed / review");
+    expect(standing.deciding?.line).toContain("never ran");
+    expect(standing.deciding?.line).toContain("You've hit your session limit");
+    expect(standing.deciding?.line).not.toContain("refused");
+    expect(standing.deciding?.line).not.toContain("TS2741");
+  });
+
+  /**
    * The case a gate-shaped summary could never name: a run that died before any
    * verdict landed. `#89`'s `error_max_turns` is exactly this.
    */

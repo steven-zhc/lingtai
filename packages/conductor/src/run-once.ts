@@ -77,7 +77,7 @@ import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier, writeUnhookedSet
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
-import { standDown } from "./never-started.ts";
+import { standDown, type NeverStarted } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
@@ -165,6 +165,21 @@ class Stopped extends Data.TaggedError("Stopped")<{
   readonly detail: string;
   /** Why the work item is going back to the queue. Names the run's ending. */
   readonly release: string;
+  /**
+   * Whether this ending says anything about the diff. Defaults to true.
+   *
+   * Every refusal above is one: a build that went red, a push that was refused,
+   * an agent that ran and produced nothing mergeable. The one exception is
+   * 0038's — a gate whose agent never started met an account-wide wall, so this
+   * run established nothing about the code either way.
+   *
+   * The difference is only read by `release`, and only by the branch that
+   * decides whether a repair hands over. `#84`'s handover asserts *the repair
+   * could not fix it*, which is a verdict on the repair's own diff; a repair
+   * whose reviewer was never reached has no standing to assert it, and blocking
+   * would strand the item behind the very pause it caused.
+   */
+  readonly aboutTheDiff?: boolean;
 }> {}
 
 /**
@@ -506,14 +521,44 @@ export function runOnce(
      * Releasing a failed repair would be worse than doing nothing — the pending
      * repair has been consumed, so the next attempt would be an ordinary run
      * that knows nothing about the conflict and walks straight back into it.
+     *
+     * **`aboutTheDiff: false` is neither, and needs both halves.** A repair
+     * whose gate's agent never started (0038) did not find that it could not fix
+     * it — nothing read what it produced — so the handover's question would be a
+     * verdict nobody reached, and its block would strand the item in Waiting on
+     * you behind the pause the same wall just caused. So the item is released,
+     * and the repair the claim consumed is *put back*: `RepairRequested` again,
+     * same fingerprint, which restores `pendingRepair` without buying a second
+     * one (see `applyWorkItem`). The next claim is the same repair, told the
+     * same thing, and no person requeued it.
      */
-    const release = (reason: string): Effect.Effect<void> =>
+    const release = (reason: string, aboutTheDiff = true): Effect.Effect<void> =>
       Effect.suspend(() => {
         if (released) return Effect.void;
         released = true;
         return Effect.tryPromise({
           try: async () => {
-            if (repairOf) {
+            if (repairOf && !aboutTheDiff) {
+              // Before the release, so that between the two the item carries a
+              // pending repair exactly as it did the first time — that ordering
+              // is the whole of how the next run learns it is one.
+              const held = await store.read(workItemId);
+              await store.append(workItemId, held.length, [
+                {
+                  type: "RepairRequested",
+                  actor: "conductor",
+                  data: parsePayload("RepairRequested", {
+                    runId: repairOf.after,
+                    reason: repairOf.reason,
+                    detail: repairOf.detail,
+                    fingerprint: repairOf.fingerprint,
+                    attempt: repairOf.attempt,
+                  }),
+                },
+              ]);
+              log(`the repair for ${repairOf.reason} is owed again — ${reason}`);
+              // And on to the plain release below, which is the rest of it.
+            } else if (repairOf) {
               const question =
                 `the repair could not fix it — ${repairOf.reason}: ` +
                 `${repairOf.detail.slice(0, 300)} — this attempt ended: ${reason}`;
@@ -614,17 +659,27 @@ export function runOnce(
      * keeps this from overwriting a pause a person made. A person's pause has
      * no expiry (0031 §5); replacing it with one that lifts itself would end a
      * hold they meant to keep.
+     *
+     * **The pause is the same at both depths and the sentence is not.** `what`
+     * carries which agent never started, because 0038 §3 reuses this whole
+     * mechanism for the agent inside a gate — where *no turns taken, nothing
+     * spent* would be false about a pass whose implementer ran and was paid.
      */
-    const standDownConductor = (detail: string): Effect.Effect<void> =>
+    const standDownConductor = (
+      what: NeverStarted,
+      detail: string,
+    ): Effect.Effect<void> =>
       Effect.promise(async () => {
+        const it = what.of === "run" ? "a run" : `the ${what.gate} gate's agent`;
         const events = await store.read(CONTROL_STREAM);
         const control = reduceControl(events);
         if (control.paused) {
-          log(`a run never started; the conductor is already paused — ${control.reason ?? "no reason given"}`);
+          log(`${it} never started; the conductor is already paused — ${control.reason ?? "no reason given"}`);
           return;
         }
         const { until, reason } = standDown({
           detail,
+          what,
           backoffMs: parseDuration(recipe.source.backoff),
         });
         await store.append(CONTROL_STREAM, events.length, [
@@ -641,7 +696,7 @@ export function runOnce(
             }),
           },
         ]);
-        log(`a run never started — conductor paused until ${until.toISOString()}`);
+        log(`${it} never started — conductor paused until ${until.toISOString()}`);
       }).pipe(
         // A pause that would not append must not replace the reason the run
         // ended with the reason the pause failed: the run's own `RunFailed` is
@@ -1025,7 +1080,7 @@ export function runOnce(
               ]),
             );
             if (outcome.failure.kind === "never-started") {
-              yield* standDownConductor(outcome.failure.detail);
+              yield* standDownConductor({ of: "run" }, outcome.failure.detail);
             }
             return yield* new Stopped({
               stage: "run",
@@ -1273,9 +1328,16 @@ export function runOnce(
        * sentence — so the answer is the one 0031 already decided for a run: the
        * conductor stands down, and the item is *released* rather than blocked,
        * keeping its place and coming back on its own when the limit lifts.
-       * Nobody requeues anything. A repair hands over instead of returning,
-       * because `release` is where that rule lives (#84) and a spent repair must
-       * not go back to the queue as an ordinary attempt.
+       * Nobody requeues anything.
+       *
+       * **A repair does not hand over here, and that is the one place 0038 §3
+       * had to correct itself.** `release`'s handover is `#84`'s *a repair that
+       * cannot fix it says so* — a sentence about the diff the repair produced,
+       * asserted by a run that never got a verdict about it. It also blocks, so
+       * the item would sit in Waiting on you while the pause it caused lifts
+       * around it, which is the one thing this ticket says must not happen. So
+       * the repair is released like any other item and *given back* whole: see
+       * `release`, where the pending repair is restored.
        *
        * **Either point, and before the hold below — that is the whole
        * placement.** `merge` runs an `agent` action as readily as `proposed`
@@ -1290,7 +1352,7 @@ export function runOnce(
       const neverRan = pipeline.neverRanAt ?? atMerge.neverRanAt;
       if (neverRan) {
         runLog.note("gate", `${neverRan.gate} never ran — ${neverRan.detail}`);
-        yield* standDownConductor(neverRan.detail);
+        yield* standDownConductor({ of: "gate", gate: neverRan.gate }, neverRan.detail);
         return yield* new Stopped({
           stage: "gate",
           detail: `the ${neverRan.gate} gate's agent never started: ${neverRan.detail}`,
@@ -1299,6 +1361,8 @@ export function runOnce(
           // cost is on `RunFinished`. What this card says is the thing that is
           // true of the diff: nobody judged it.
           release: `the ${neverRan.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(neverRan.detail)}`,
+          // The one ending that is about the account. See `release`.
+          aboutTheDiff: false,
         });
       }
 
@@ -1624,7 +1688,9 @@ export function runOnce(
       // carries and reports the stage it names. There is no `release(...)` call
       // beside a `return` anywhere above, which is the point.
       Effect.catchTag("Stopped", (stopped) =>
-        release(stopped.release).pipe(Effect.as(refusal(stopped.stage, stopped.detail))),
+        release(stopped.release, stopped.aboutTheDiff ?? true).pipe(
+          Effect.as(refusal(stopped.stage, stopped.detail)),
+        ),
       ),
       // **The defect channel.** What is left of the catch-all, and only that: a
       // failure the type system can see has already been handled one line up,

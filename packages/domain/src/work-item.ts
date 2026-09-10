@@ -227,7 +227,26 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // The lifecycle is untouched. A repair is not a state an item is in — the
       // release that follows this puts it back in the queue, and being queued is
       // the state.
-      return { ...state, ...at, repairs: [...state.repairs, record], pendingRepair: record };
+      //
+      /**
+       * **The same fingerprint twice is one repair, still owed.**
+       *
+       * `repairs` is not a list of events; it is the bound 0025 §3 counts
+       * against the ceiling, and the identity of a repair is its fingerprint —
+       * that is already the rule `decideRepair` refuses a duplicate by, so no
+       * path that buys one can reach this branch. What does reach it is 0038's:
+       * a repair run whose gate's agent never started is released rather than
+       * handed over, and gives back the `pendingRepair` its own claim consumed.
+       * Appending the record again would let a quota eat a repair attempt the
+       * item never got the benefit of.
+       */
+      const already = state.repairs.some((r) => r.fingerprint === record.fingerprint);
+      return {
+        ...state,
+        ...at,
+        repairs: already ? state.repairs : [...state.repairs, record],
+        pendingRepair: record,
+      };
     }
 
     case "PromptEdited": {

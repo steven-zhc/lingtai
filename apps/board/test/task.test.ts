@@ -108,6 +108,32 @@ describe("one attempt", () => {
     expect(two.gates.map((g) => [g.gate, g.state])).toEqual([["proposed:build", "passed"]]);
   });
 
+  /**
+   * The gate that stopped the run has to appear on the page written for it.
+   *
+   * `GateNeverRan` calls its text `detail` rather than `evidence`, because it is
+   * evidence about the account and never about the diff (#133). This fold read
+   * `evidence` only, so the never-ran gate arrived with `evidence: null` — and
+   * `Evidence` shows only gates that said something, so the one gate a person
+   * opening the page is looking for was the one gate not on it.
+   */
+  it("shows a never-ran gate's words, which it files under a different name", () => {
+    const run = foldRun(CLAIM, 1, [
+      e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
+      e(RUN_1, "GateNeverRan", {
+        gate: "proposed",
+        action: "review",
+        onSha: "b".repeat(40),
+        detail: "You've hit your session limit · resets 2pm (America/Chicago)",
+      }),
+    ]);
+
+    expect(run.gates.map((g) => [g.gate, g.state])).toEqual([["proposed:review", "never-ran"]]);
+    expect(run.gates[0]?.evidence).toContain("You've hit your session limit");
+    // And no findings: there is no verdict, so there is nothing it found.
+    expect(run.gates[0]?.findings).toEqual([]);
+  });
+
   it("says a run was released rather than leaving it reading as still running", () => {
     const run = foldRun({ ...CLAIM, released: "shutdown" }, 1, [
       e(RUN_1, "RunStarted", { baseSha: "a".repeat(40) }),

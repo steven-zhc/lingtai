@@ -90,7 +90,7 @@ describe("standDown", () => {
   const now = new Date("2026-09-09T08:44:14Z");
 
   it("waits for the time the message named", () => {
-    const { until, reason } = standDown({ detail: QUOTA, backoffMs: 3_600_000, now });
+    const { until, reason } = standDown({ detail: QUOTA, backoffMs: 3_600_000, what: { of: "run" }, now });
 
     expect(until.toISOString()).toBe("2026-09-10T04:00:00.000Z");
     // The prose is on the chip, because the classification refused to read it
@@ -107,11 +107,55 @@ describe("standDown", () => {
     const { until, reason } = standDown({
       detail: "You're out of usage credits",
       backoffMs: 3_600_000,
+      what: { of: "run" },
       now,
     });
 
     expect(until.toISOString()).toBe("2026-09-09T09:44:14.000Z");
     expect(reason).toContain("the recipe's backoff");
     expect(reason).toContain("You're out of usage credits");
+  });
+
+  /**
+   * **The pause is the same at both depths and the sentence is not** (0038 §3).
+   *
+   * A gate's agent that never started sits inside a run that *did* — the
+   * implementer took turns and was paid, and produced the very diff the reviewer
+   * was being asked about. 0031's opening is a claim about a run that spent
+   * nothing, and this pause is what the board's chip and `lingtai doctor` show,
+   * so writing it here would put `#133`'s false sentence one screen along from
+   * the card it started on.
+   */
+  it("says which agent never started, and does not say a paid run spent nothing", () => {
+    const { until, reason } = standDown({
+      detail: QUOTA,
+      backoffMs: 3_600_000,
+      what: { of: "gate", gate: "proposed:review" },
+      now,
+    });
+
+    // The time is read the same way whichever depth met the wall.
+    expect(until.toISOString()).toBe("2026-09-10T04:00:00.000Z");
+    expect(reason).toContain("the proposed:review gate's agent never started");
+    expect(reason).toContain("nothing judged the diff");
+    expect(reason).toContain("was paid for");
+    expect(reason).not.toContain("nothing spent");
+    expect(reason).not.toContain("no turns taken");
+    // And still the account-wide half, which is the reason for pausing at all.
+    expect(reason).toContain("Every queued item would meet the same thing");
+    expect(reason).toContain("You've hit your session limit");
+  });
+
+  /** The run's own sentence, unchanged — 0031 §3 is not being restated. */
+  it("keeps 0031's sentence for a run that never started", () => {
+    const { reason } = standDown({
+      detail: QUOTA,
+      backoffMs: 3_600_000,
+      what: { of: "run" },
+      now,
+    });
+
+    expect(reason).toContain("a run ended without ever starting — no turns taken, nothing spent");
+    expect(reason).toContain("The run said:");
   });
 });

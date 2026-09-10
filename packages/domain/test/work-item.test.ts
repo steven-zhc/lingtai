@@ -256,6 +256,53 @@ describe("reduceWorkItem", () => {
     expect(later.repairs).toHaveLength(1);
   });
 
+  /**
+   * The same fingerprint twice is one repair, still owed.
+   *
+   * `repairs` is the bound 0025 §3 counts against the ceiling, and a repair's
+   * identity is its fingerprint — which is already the rule `decideRepair`
+   * refuses a duplicate by, so nothing that *buys* one can append a second.
+   * What can is 0038's: a repair whose gate's agent never started is released
+   * rather than handed over, and gives back the `pendingRepair` its own claim
+   * consumed. Counting that as a second attempt would let a quota eat a repair
+   * the item never got the benefit of.
+   */
+  it("gives a repair back without charging the ceiling for it twice", () => {
+    const e = makeStream("wi-p-1");
+    const bought = {
+      runId: "run-a",
+      reason: "conflict" as const,
+      detail: "agent/1 does not merge into main: page.tsx",
+      fingerprint: "0123456789ab",
+      attempt: 1,
+    };
+
+    const again = reduceWorkItem([
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing conflict (attempt 1)" }),
+      // The repair runs, and its reviewer meets an account-wide wall.
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-b", reason: "the proposed:review gate never ran" }),
+    ]);
+
+    // Owed again, so the next claim is the same repair and no person requeued it.
+    expect(again.pendingRepair?.fingerprint).toBe("0123456789ab");
+    // And charged once.
+    expect(again.repairs).toHaveLength(1);
+
+    // A *different* failure still buys its own, which is what the ceiling counts.
+    const second = reduceWorkItem([
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
+      e("RepairRequested", { ...bought, runId: "run-b", fingerprint: "ffffffffffff", attempt: 2 }),
+    ]);
+    expect(second.repairs).toHaveLength(2);
+  });
+
   it("ignores an event type it has never heard of, but still advances", () => {
     const e = makeStream("wi-p-1");
     const first = e("WorkItemDiscovered", discovered);

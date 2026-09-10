@@ -77,17 +77,51 @@ That is the same species of wrong sentence, one screen along.
 So the point says what happened, in a type that is not a verdict, carrying the
 runtime's own words whole as `detail`.
 
+**`detail` and not `evidence`, and every reader has to be told.** The other gate
+events call their text `evidence`, meaning evidence *about the diff*; this is
+evidence about the account, and the name says so. A fold that reads `evidence`
+alone gets `null` here — and the task page shows only gates that said something,
+so the wrong key hides the one gate that stopped the run from the page this
+section is about.
+
 ### 3. The conductor stands down, and the item comes back on its own
 
-0031 §3 and §5, unchanged and reused: `standDown` reads a reset time out of the
-message where there is one and the recipe's backoff where there is not, the
-first `never-ran` pauses the conductor through `ctl-conductor`, and a pause
-already holding is left exactly as it is.
+0031 §3 and §5's *mechanism*, reused whole: `standDown` reads a reset time out
+of the message where there is one and the recipe's backoff where there is not,
+the first `never-ran` pauses the conductor through `ctl-conductor`, and a pause
+already holding is left exactly as it is. Its *sentence* is not reused; see
+below.
 
 The item is **released**, like any run that did not land — it keeps its place
 and the queue brings it back when the pause lifts. No person requeues anything.
-A repair hands over instead, because that is what `release` already decides
-(`#84`) and a spent repair must not return to the queue as an ordinary attempt.
+
+**And that includes a repair, which is where `release` needed changing rather
+than reusing.** `#84`'s handover blocks with *the repair could not fix it*: a
+verdict on the diff the repair produced, and this run reached none — nothing
+read it. It would also park the item in **Waiting on you** behind the very pause
+this run just caused, so the one thing a person would have to undo by hand is
+the one thing 0031 §5 exists to prevent. What a spent repair must not do is come
+back as an *ordinary* attempt knowing nothing about the conflict, and that is
+answered by giving the repair back rather than by blocking: `RepairRequested`
+again, same fingerprint, so the next claim consumes the same repair.
+
+The fold makes that free. A repair's identity is its fingerprint —
+`decideRepair` already refuses a duplicate by it — so `applyWorkItem` treats a
+second request for one it holds as *the same repair, still owed*: `pendingRepair`
+is restored and `repairs` is unchanged. Nothing that buys a repair can reach that
+branch, and a quota does not eat an attempt off 0025 §3's ceiling.
+
+**The pause names the gate, because *nothing spent* would be false.** This is
+0031's mechanism and not 0031's sentence. That sentence opens *a run ended
+without ever starting — no turns taken, nothing spent*, and it is what the
+board's chip and `lingtai doctor` show. Here the run started, took turns and was
+paid: the implementer produced the diff the reviewer was being asked about.
+Writing the run-level sentence about this pass would put `#133`'s own false
+claim one screen along from the card it started on — a person woken by the chip
+at 2am reads it before anything else.
+
+So `standDown` takes *what* never started, and there are two: the run's own
+agent, and the one inside a named gate.
 
 ### 4. The pipeline stops, and no question is put to a person
 
@@ -124,5 +158,16 @@ moving.
   run-level sentence and would be false: the implementer was paid.
 - `attempts.ts` carries none of it into the next prompt: a quota has nothing to
   say to an agent about the code.
+- `standDown` takes a `NeverStarted` — `run` or a named gate — and 0031's
+  sentence is what `run` produces, unchanged. A third depth would need a third
+  clause, and would not compile without one.
+- `Stopped` gains `aboutTheDiff`, false on exactly one ending. `release` reads it
+  for one decision: whether a repair hands over.
+- `applyWorkItem` folds a repeated `RepairRequested` by fingerprint. Inert for
+  every path that existed, because `decideRepair` cannot produce one.
+- The page's fold reads `GateNeverRan.detail` where the others read `evidence`.
+  The names differ on purpose — one is evidence about the account — and
+  `Evidence` shows only gates that said something, so reading the wrong key hides
+  the one gate that stopped the run.
 - The two paths now share one answer and are still asked in two places — the
   dispatch and the gate. A third agent in a pass would need the third.
