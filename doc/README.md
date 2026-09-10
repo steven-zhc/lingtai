@@ -15,6 +15,7 @@ Three kinds of thing live here, and the distinction matters.
 | | |
 |---|---|
 | [`tutorial.md`](tutorial.md) | The shortest path from nothing to an issue merged unattended. Start here if you have never run it. |
+| [`guide.md`](guide.md) | What a repository that gets good results does differently: writing a ticket an agent can work, sizing an item, what to gate, when to hold, how to read a failure, and what each limit is for. Every claim comes from a run this project paid for. |
 | [`operating.md`](operating.md) | Everything you type, and why: setup, the GitHub App, onboarding, running work, and what every refusal means. Moved out of the root README on 2026-09-08. |
 | [`reference.md`](reference.md) | Every term, and everything currently in it — counted. |
 | [`roadmap.md`](roadmap.md) | Six phases, each with an exit criterion that is a fact. The backlog, with issue numbers. |

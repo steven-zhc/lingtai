@@ -229,6 +229,9 @@ waiting. Ctrl+C does the same thing and tells you what a second one would cost.
 
 - [`README.md`](../README.md) — what this is, the big picture, and the five
   gate points, on one screen
+- [`guide.md`](guide.md) — the week-two question this tutorial does not answer:
+  what a repository that gets good results does differently, from writing a
+  ticket to reading a failure
 - [`operating.md`](operating.md) — the same path as this tutorial, with the
   reasons: every refusal, and what each one means
 - [`doc/reference.md`](reference.md) — every enum, every gate action, every

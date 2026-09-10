@@ -60,7 +60,7 @@ export const SECTIONS: Section[] = [
     id: "guides",
     label: "Guides",
     note: "Written to be read in order. Start at the tutorial.",
-    files: ["tutorial.md", "operating.md", "reference.md", "design.md", "roadmap.md"],
+    files: ["tutorial.md", "guide.md", "operating.md", "reference.md", "design.md", "roadmap.md"],
   },
   {
     id: "decisions",
