@@ -440,7 +440,11 @@ describe("the block, rendered", () => {
         queued={null}
       />,
     );
-    expect(off).toContain('class="standing"');
+    // Not the bare class: a running item paints teal, and the rule the
+    // component states is that `live` paints only when nothing is on you. The
+    // claim here is that the amber is unspent, which is what these two say.
+    expect(off).toContain('class="standing live"');
+    expect(off).not.toContain("onyou");
     expect(off).toContain("an agent is working");
     // Nothing is being asked, so nothing offers to answer it.
     expect(off).not.toContain("Back to the queue");

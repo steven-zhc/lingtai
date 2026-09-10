@@ -81,8 +81,12 @@ describe("what a document says it is", () => {
     // 0014 was superseded by 0016 and the index is the only place that says so.
     // A site that showed the two as equals would disagree with the repository
     // about which decisions are in force.
+    //
+    // 0016's cell is no longer the bare word: 0036 and 0037 each took a section
+    // of it, and the index now names which. What is in force is that it still
+    // *starts* accepted — the shape the 0027 assertion below already uses.
     expect(status.get("decisions/0014-one-loop-one-log")).toMatch(/superseded/);
-    expect(status.get("decisions/0016-the-settled-model")).toBe("accepted");
+    expect(status.get("decisions/0016-the-settled-model")).toMatch(/^accepted/);
   });
 
   it("gives every entry a title that is not just its filename", async () => {
