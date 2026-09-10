@@ -105,6 +105,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0035](decisions/0035-the-site-is-a-projection.md) | **The site is a projection of this repository, and its hero is the real board** | accepted |
 | [0036](decisions/0036-the-core-takes-a-ticket.md) | **The core takes a ticket, and where it came from is an adapter's business** | accepted; clarifies 0016 §1's queue row |
 | [0037](decisions/0037-an-extension-is-a-command.md) | **An extension is a command, and the only question is whether the core waits** | accepted; supersedes 0016 §5's "plugins are trusted code" |
+| [0038](decisions/0038-a-gate-that-never-ran.md) | **A gate that never ran has judged nothing, and the same quota stops the conductor** | accepted; extends 0031 to the agent inside a gate |
 
 ## Experiments
 
