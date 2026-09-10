@@ -82,7 +82,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0013](decisions/0013-daemon-hosts-the-work.md) | The daemon holds the work; the UI controls it | accepted |
 | [0014](decisions/0014-one-loop-one-log.md) | One loop, one log; everything else is a projection or a subscriber | superseded by 0016 |
 | [0015](decisions/0015-five-gates-and-two-extensions.md) | Five gates, and the two ways a plugin may extend the loop | superseded by 0016 |
-| [0016](decisions/0016-the-settled-model.md) | **The settled model: one loop, five gates, no policy** | accepted |
+| [0016](decisions/0016-the-settled-model.md) | **The settled model: one loop, five gates, no policy** | accepted; §1's queue row clarified by 0035, §5's "plugins are trusted" superseded by 0036 |
 | [0017](decisions/0017-the-project-is-called-lingtai.md) | The project is called Lingtai | accepted |
 | [0018](decisions/0018-the-proposed-point.md) | The gate point called `diff` is called `proposed` | accepted |
 | [0019](decisions/0019-a-second-reset.md) | The log is reset a second time, and what makes it the last | accepted |
@@ -101,6 +101,8 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0034](decisions/0034-the-run-log.md) | **A run leaves a log you can watch, and it is a trace, not a record** | accepted |
 | [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
 | [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
+| [0035](decisions/0035-the-core-takes-a-ticket.md) | **The core takes a ticket, and where it came from is an adapter's business** | accepted; clarifies 0016 §1's queue row |
+| [0036](decisions/0036-an-extension-is-a-command.md) | **An extension is a command, and the only question is whether the core waits** | accepted; supersedes 0016 §5's "plugins are trusted code" |
 | [0035](decisions/0035-the-site-is-a-projection.md) | **The site is a projection of this repository, and its hero is the real board** | accepted |
 
 ## Experiments
