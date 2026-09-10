@@ -1083,6 +1083,11 @@ details[open] > summary::before { content: "▾"; }
    so `$7.81` sits over `$5.23` and the eye reads the money down. */
 .attempt > summary {
   display: grid;
+  /* **Seven columns for seven cells, and the first one is not in the markup.**
+     `details > summary::before` draws this board's disclosure triangle, and a
+     `::before` on a grid container is a grid item like any other. Count it, or
+     every column slides one place along and the last one wraps to a second
+     row — which is exactly what happened when this was six. */
   grid-template-columns: 1.1rem minmax(11rem, 1fr) repeat(4, auto) minmax(9rem, auto);
   gap: 0.7rem;
   align-items: center;
@@ -1090,22 +1095,8 @@ details[open] > summary::before { content: "▾"; }
   font-family: var(--mono);
   font-size: 0.76rem;
   color: var(--ink);
-  cursor: pointer;
-  /* Both, because they are two different browsers' idea of the same marker, and
-     either one left in becomes an uncounted cell in the grid above. */
-  list-style: none;
 }
-.attempt > summary::-webkit-details-marker { display: none; }
 .attempt > summary:hover { color: var(--ink); }
-.amark {
-  display: inline-block;
-  color: var(--muted);
-  transition: transform 0.12s ease;
-}
-.attempt[open] > summary .amark { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) {
-  .amark { transition: none; }
-}
 /* The one cell that is not a figure: what this attempt is and how it ended. */
 .aname { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.45rem; min-width: 0; }
 .anum { color: var(--ink); }
