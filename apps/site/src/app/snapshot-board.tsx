@@ -14,7 +14,10 @@ import { elapsed, money, stamp, type Snapshot, type SnapshotCard, type SnapshotL
  * product it is a picture of.
  */
 export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
-  const waiting = snapshot.lanes.find((l) => l.id === "waiting")?.cards.length ?? 0;
+  // The lane's own count and not the cards drawn in it: a lane publishes a
+  // handful, and "3 waiting on people" has to mean three tickets rather than
+  // three pictures of tickets.
+  const waiting = snapshot.lanes.find((l) => l.id === "waiting")?.count ?? 0;
   return (
     <>
       <div className="snap">
@@ -44,12 +47,14 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
         Not live. Read from the event log when this page was built, on{" "}
         {stamp(snapshot.capturedAt)}, and stamped with that date — a page holding a connection to
         the log would be a coupling and, since not every repository on this board is public, an
-        exposure.
+        exposure. Each lane draws a few of its cards and counts all of them: the number beside a
+        lane&rsquo;s name is the whole lane, and the totals above are the whole board.
         {snapshot.withheld > 0 && (
           <>
             {" "}
-            {snapshot.withheld} of these {snapshot.withheld === 1 ? "card is" : "cards are"} from a
-            private repository and {snapshot.withheld === 1 ? "keeps" : "keep"} everything except
+            {snapshot.withheld} of the cards on this board{" "}
+            {snapshot.withheld === 1 ? "is" : "are"} from a private repository and{" "}
+            {snapshot.withheld === 1 ? "keeps" : "keep"} everything except
             what names it: the lane, the age and the money are real, the title is withheld. Nothing
             is dropped, because a board that quietly omits some of its work is the board nobody
             should believe.
@@ -63,27 +68,40 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
 /** How many landed items stay open before the rest are counted rather than listed. */
 const LANDED_OPEN = 3;
 
+/**
+ * One lane: the count is the lane, the cards are a sample of it.
+ *
+ * `lane.count` is what the header prints and `lane.cards` is what the snapshot
+ * published (`LANE_CARDS`), so on a busy board those two disagree — and the
+ * difference is drawn as a line rather than left for a reader to notice that
+ * the header says twelve and there are five cards. A lane that showed
+ * `cards.length` would be reporting the size of its own excerpt, which is the
+ * kind of figure this page exists to not print.
+ */
 function Lane({ lane }: { lane: SnapshotLane }) {
-  const hot = lane.id === "waiting" && lane.cards.length > 0;
+  const hot = lane.id === "waiting" && lane.count > 0;
   const quiet = lane.id === "landed";
   return (
     <div className={`col${hot ? " hot" : ""}${quiet ? " quiet" : ""}`}>
       <div className="col-h">
         <span>{lane.label}</span>
-        <span className="ct">{lane.cards.length}</span>
+        <span className="ct">{lane.count}</span>
       </div>
       {lane.cards.length === 0 ? (
         <p className="empty">
           {lane.id === "waiting" ? "Nothing is waiting on you." : "Nothing here."}
         </p>
       ) : quiet ? (
-        <Landed cards={lane.cards} />
+        <Landed lane={lane} />
       ) : (
-        <div className="cards">
-          {lane.cards.map((card, i) => (
-            <Card key={i} card={card} />
-          ))}
-        </div>
+        <>
+          <div className="cards">
+            {lane.cards.map((card, i) => (
+              <Card key={i} card={card} />
+            ))}
+          </div>
+          <Rest more={lane.count - lane.cards.length} />
+        </>
       )}
     </div>
   );
@@ -93,10 +111,13 @@ function Lane({ lane }: { lane: SnapshotLane }) {
  * The lane that needs the least attention, at the weight it deserves: one line
  * each, and everything past the most recent few counted rather than drawn. The
  * board made the same decision for the same reason (#81).
+ *
+ * It counts against the lane and not against the handful it was given, so a
+ * lane holding forty and publishing five says "and 37 more" rather than "and 2
+ * more" — the same figure it would have said before the snapshot was capped.
  */
-function Landed({ cards }: { cards: SnapshotCard[] }) {
-  const shown = cards.slice(0, LANDED_OPEN);
-  const rest = cards.length - shown.length;
+function Landed({ lane }: { lane: SnapshotLane }) {
+  const shown = lane.cards.slice(0, LANDED_OPEN);
   return (
     <>
       <ul className="landed">
@@ -108,9 +129,15 @@ function Landed({ cards }: { cards: SnapshotCard[] }) {
           </li>
         ))}
       </ul>
-      {rest > 0 && <p className="empty">and {rest} more, all of them in the log.</p>}
+      <Rest more={lane.count - shown.length} />
     </>
   );
+}
+
+/** What is in the lane and not on the page. Says where to find it. */
+function Rest({ more }: { more: number }) {
+  if (more <= 0) return null;
+  return <p className="empty">and {more} more, all of them in the log.</p>;
 }
 
 function Card({ card }: { card: SnapshotCard }) {
