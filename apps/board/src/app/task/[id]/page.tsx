@@ -55,7 +55,7 @@ export const dynamic = "force-dynamic";
 function Label({ children, fact }: { children: ReactNode; fact?: string | null }) {
   return (
     <h2>
-      <span>{children}</span>
+      <span className="hlab">{children}</span>
       {fact ? <span className="hfact">{fact}</span> : null}
     </h2>
   );

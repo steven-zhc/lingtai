@@ -486,9 +486,9 @@ details[open] > summary::before { content: "▾"; }
 .detail-body {
   display: flex;
   flex-direction: column;
-  /* Was 2rem, when each section carried a rule under its heading. The rule is
-     gone and this is what separates them now. */
-  gap: 3.25rem;
+  /* Was 2rem, against a 0.72rem eyebrow. The heading is display-sized now and
+     needs room above it, or it reads as a caption on the section before. */
+  gap: 2.75rem;
   padding: 1.5rem;
   /* Wide enough for the decision column's two boxes to sit side by side, and no
      wider. Everything else keeps the measure below. */
@@ -520,39 +520,45 @@ details[open] > summary::before { content: "▾"; }
    a descendant selector that heading would take the display size below and
    claim to be a section of the page. Only the `Label` component's own heading
    is a direct child of a section. */
+/* **It stays monospace, upper-cased and letter-spaced, and it keeps its rule.**
+   The size is the only thing that changed. A large sans heading with a negative
+   tracking is the default any page reaches for; this page's own vocabulary is
+   already mono — every seq, sha, duration and cost on it is — so the section
+   name is set in it too, at display size. That is the whole difference between
+   a heading that belongs to this board and one that could sit on any page. */
 .detail-body > section > h2 {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: 1.5rem;
-  /* Large enough to be the thing you land on. The page is a stack of four or
-     five parts and the old 0.72rem eyebrow made finding one of them a matter of
-     reading, which is what a heading exists to save you. */
-  font-size: clamp(1.7rem, 3.4vw, 2.6rem);
-  letter-spacing: -0.022em;
-  line-height: 1.02;
-  color: var(--ink);
-  font-weight: 600;
-  margin: 0 0 1.1rem;
-}
-/* **No rule under it.** At 0.72rem the border was doing the separating; at this
-   size the type does it, and a hairline under a 2.6rem heading reads as a
-   letterhead. The section gap above carries the separation instead. */
-
-/* Small, mono, and not shouted: `23m25s` and `$14.10` are read as numbers
-   rather than as a heading. The contrast with the name beside it is the point —
-   a big word and a small number, not two competing headings. */
-.detail-body > section > h2 .hfact {
+  justify-content: space-between;
+  gap: 0.8rem 1.4rem;
+  flex-wrap: wrap;
   font-family: var(--mono);
-  font-size: 0.78rem;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  text-align: right;
-  color: var(--ink-2);
-  /* Its own baseline sits far from a 2.6rem cap-height, so it is nudged back
-     onto the heading's optical line rather than left floating at the top. */
-  transform: translateY(-0.15em);
+  font-weight: 500;
+  margin: 0 0 1rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--rule-2);
 }
+.detail-body > section > h2 .hlab {
+  font-size: clamp(1.45rem, 3.1vw, 2.1rem);
+  line-height: 1.05;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  /* Tracking leaves one space's worth after the last letter. Taken back so the
+     word ends where it looks like it ends. */
+  margin-right: -0.18em;
+}
+/* Small, and not shouted: `23m25s` and `$14.10` are read as numbers rather than
+   as a heading. Tabular figures because these change on every render and a
+   column that shifts under a re-render is one you stop trusting. */
+.detail-body > section > h2 .hfact {
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.detail-body > section > h2 .hfact b { color: var(--ink-2); font-weight: 600; }
 
 .detail .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 
