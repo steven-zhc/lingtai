@@ -115,8 +115,14 @@ export function Standing({
   // conductor composes later, unseen, which is the opposite of this column.
   const sendable = outgoing !== null && outgoing.problem === null ? outgoing.attempt : null;
 
+  // **Amber wins over teal, and that ordering is the whole rule.** If somebody
+  // is being waited on, that is what this page exists to say, whatever else is
+  // also true — a run that is mid-flight while an approval sits unanswered is
+  // still your move. `live` only ever paints when nothing is on you.
+  const mark = standing.onYou ? " onyou" : standing.state === "running" ? " live" : "";
+
   return (
-    <section className={standing.onYou ? "standing onyou" : "standing"}>
+    <section className={`standing${mark}`}>
       {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}

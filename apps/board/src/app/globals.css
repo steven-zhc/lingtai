@@ -579,6 +579,44 @@ details[open] > summary::before { content: "▾"; }
 }
 .standing.onyou { border-left-color: var(--signal); }
 
+/* **Running is teal, and it is teal for a reason the palette already gave.**
+   A third strong hue is refused at the top of this file, so the choice was
+   between the two that exist. Amber is out: it means *you are being waited on*,
+   and while an agent runs nobody is waiting on you — a second amber would
+   dilute the first, which the comment above already says about this very block.
+   That leaves teal, and teal fits rather than merely remaining: it is the
+   structural hue, and **running is the one state that is the machinery itself**
+   rather than a verdict about what the machinery produced. `landed`, `failed`
+   and `blocked` are judgements on a finished thing; `running` is the thing. */
+.standing.live { border-left-color: var(--accent); position: relative; }
+.standing.live .sread .sstate { color: var(--accent); }
+
+/* And the half a colour cannot carry: **this is the only state that will be
+   different in a minute.** Every other word on this page is settled — a static
+   hue says "important", never "still moving". The pulse is on the rule and not
+   on the word, because a heading that breathes is a heading you stop reading;
+   it sits over the border rather than animating it, since a border-colour
+   cannot be faded on its own. */
+.standing.live::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  animation: standing-live 2.4s ease-in-out infinite;
+}
+@keyframes standing-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.28; }
+}
+/* Motion here is an ornament on a fact the colour already carries, so it is the
+   first thing to go when somebody has asked for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  .standing.live::before { animation: none; }
+}
+
 /* Two values at one weight. The state, and how long it has held — *blocked* and
    *blocked for four days* are different facts, and the second is not an
    annotation on the first. */
