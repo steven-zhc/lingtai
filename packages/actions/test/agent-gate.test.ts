@@ -42,6 +42,7 @@ function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
       canBlockToolUse: true,
       canRewriteToolCall: false,
       providesTier: "guarded",
+      enforces: ["turns", "wall"],
     },
     async run(request) {
       seen.push(request);

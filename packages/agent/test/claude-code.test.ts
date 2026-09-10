@@ -29,7 +29,9 @@ import {
   CODEX_CAPABILITIES,
   CodexNotImplementedError,
   PROMPT_ELIDED,
+  RUN_LIMITS,
   TRACE_LINE_CHARS,
+  capabilitiesFor,
   createClaudeCodeRuntime,
   createCodexRuntime,
   meetsTier,
@@ -39,6 +41,7 @@ import {
   parseResult,
   sessionIdFor,
   traceOf,
+  turnCounter,
   type RunTrace,
 } from "../src/index.ts";
 
@@ -162,6 +165,137 @@ describe("capabilities", () => {
     // Named, so DispatchRefused carries a reason rather than a refusal.
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "sandboxed")).toEqual(["filesystem-sandbox"]);
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "guarded")).toEqual([]);
+  });
+
+  /**
+   * `#89`: a limit is only declared where the adapter says it applies it.
+   *
+   * Asserted against `RUN_LIMITS` rather than against a written-out pair, so a
+   * third limit added to the recipe and forgotten here is a red test rather
+   * than a bound nobody notices is missing — which is the bug, one field along.
+   */
+  it("says which declared limits it actually applies", () => {
+    expect([...CLAUDE_CODE_CAPABILITIES.enforces].sort()).toEqual([...RUN_LIMITS].sort());
+    // A stub applies nothing, and claiming otherwise would be the bug written
+    // down deliberately.
+    expect(CODEX_CAPABILITIES.enforces).toEqual([]);
+    expect(capabilitiesFor("claude-code")).toBe(CLAUDE_CODE_CAPABILITIES);
+    expect(capabilitiesFor("codex")).toBe(CODEX_CAPABILITIES);
+  });
+});
+
+/**
+ * `#89` — the bound that was declared, carried and never applied.
+ *
+ * `.lingtai/config.yaml` said `turns: 150`; `#84` ran 172 and cost $26.53, and
+ * nothing refused, warned or noticed. The value reached `RunRequest.limits` and
+ * the adapter read the other field of the same struct three lines away.
+ *
+ * There is no flag to delegate this to: **2.1.267 has no `--max-turns`**
+ * (`claude --help`, 2026-09-10, which offers `--max-budget-usd` and nothing
+ * about turns), so the adapter counts. The counting rule is the thing under
+ * test, because a rule that over-counts kills a healthy run.
+ */
+describe("the turn limit", () => {
+  /** One assistant response, however many stream events it arrives as. */
+  const assistant = (id: string | null, block: Record<string, unknown>, parent: string | null = null) => ({
+    type: "assistant",
+    parent_tool_use_id: parent,
+    message: { role: "assistant", id, content: [block] },
+  });
+
+  /**
+   * The rule, against the shapes a real run prints.
+   *
+   * Measured on 2026-09-10: a run whose stream carried five `assistant` events
+   * under four `message.id`s reported `num_turns: 4`. Counting events would
+   * have said five — and a bound that fires a turn early is a run killed for
+   * nothing.
+   */
+  it("counts an assistant response once, however many events it arrives as", () => {
+    const count = turnCounter();
+    const lines = [
+      { type: "system", subtype: "init" },
+      // One response, two blocks, two events — the pair that makes counting
+      // events wrong.
+      assistant("msg_A", { type: "text", text: "Reading the adapter first." }),
+      assistant("msg_A", { type: "tool_use", id: "toolu_1", name: "Read", input: {} }),
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1" }] } },
+      assistant("msg_B", { type: "tool_use", id: "toolu_2", name: "Bash", input: {} }),
+      // A subagent's traffic rides the same stream and is accounted for
+      // separately in the receipt's `subagent_stats`. Not this loop's turns.
+      assistant("msg_C", { type: "text", text: "from inside a Task" }, "toolu_2"),
+      { type: "rate_limit_event", rate_limit_info: { status: "allowed" } },
+      assistant("msg_D", { type: "text", text: "done" }),
+    ];
+
+    expect(lines.map((l) => count(JSON.stringify(l)))).toEqual([0, 1, 1, 1, 2, 2, 2, 3]);
+  });
+
+  it("is unmoved by a line that is not JSON, or not an event", () => {
+    const count = turnCounter();
+    expect(count("npm warn Unknown env config")).toBe(0);
+    expect(count('{"type":"assistant","message":{"content":[{"type":"tex')).toBe(0);
+    expect(count("")).toBe(0);
+  });
+
+  /**
+   * The stop, the way the wall limit stops one: an outcome the conductor
+   * appends, not a silent truncation. `RunFailed` is what `runOnce` writes from
+   * this, so a bound that produced no failure would be `#84` again.
+   */
+  it("stops a run that reaches the declared turns, and says which bound it was", async () => {
+    const binary = await fakeStream(
+      [
+        { type: "system", subtype: "init" },
+        assistant("msg_1", { type: "text", text: "one" }),
+        assistant("msg_2", { type: "text", text: "two" }),
+        assistant("msg_3", { type: "text", text: "three" }),
+        assistant("msg_4", { type: "text", text: "four" }),
+      ],
+      0,
+      // Still running when the bound is reached, so what ends this run is the
+      // limit and not the process finishing.
+      "sleep 30",
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(
+      request({ limits: { turns: 3, wallMs: 20_000 } }),
+    );
+
+    expect(outcome.failure?.kind).toBe("out-of-turns");
+    // Distinguishable from a wall timeout and from a clean finish, which is
+    // half the ticket: "it ran out of turns" and "it ran out of time" are
+    // different findings about a ticket.
+    expect(outcome.failure?.kind).not.toBe("timeout");
+    // On the bound rather than past it. `#84`'s 172-against-150 is the number
+    // this assertion exists to make impossible.
+    expect(outcome.turns).toBe(3);
+    expect(outcome.failure?.detail).toContain("3 turns");
+    expect(outcome.failure?.detail).toContain("allows 3");
+    expect(outcome.exitCode).toBeNull();
+  });
+
+  /**
+   * The false positive that would cost more than the bug.
+   *
+   * Two events, one `message.id`, one turn — a limit of two must not fire. If
+   * it does, every run in the system is killed on its first tool call.
+   */
+  it("does not stop a run whose events outnumber its turns", async () => {
+    const binary = await fakeStream(
+      [
+        assistant("msg_1", { type: "text", text: "thinking about it" }),
+        assistant("msg_1", { type: "tool_use", id: "toolu_1", name: "Read", input: {} }),
+      ],
+      0,
+      "sleep 30",
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(
+      request({ limits: { turns: 2, wallMs: 500 } }),
+    );
+
+    // The wall, therefore — the run was never over its turn budget.
+    expect(outcome.failure?.kind).toBe("timeout");
   });
 });
 
@@ -393,11 +527,12 @@ describe("the stream, and the accounting that must not move", () => {
   /**
    * The five `subtype`s of the shipped bundle, 2026-09-08 (0031 §2).
    *
-   * Nothing branches on `subtype` — the classification is `neverStarted`'s
-   * three checkable facts — so what survives here is that each one still lands
-   * where it did, with its turns and its cost intact. `error_max_turns` is the
-   * one that matters most: a run that used its whole budget is a crash and
-   * emphatically not a run that never started.
+   * The classification is `neverStarted`'s three checkable facts, and — since
+   * `#89` — one closed-enum `subtype`, so what survives here is that each one
+   * still lands where it did, with its turns and its cost intact.
+   * `error_max_turns` is the one that moved: it was a `crash`, which put a run
+   * that spent its whole declared budget beside a segfault, and it is now
+   * `out-of-turns`. It is still emphatically not a run that never started.
    */
   const subtypes: readonly [
     string,
@@ -407,7 +542,7 @@ describe("the stream, and the accounting that must not move", () => {
   ][] = [
     ["success", { is_error: false, num_turns: 63, total_cost_usd: 5.42 }, 0, null],
     ["error_during_execution", { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, "crash"],
-    ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "crash"],
+    ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "out-of-turns"],
     ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "crash"],
     ["error_max_structured_output_retries", { is_error: true, num_turns: 3, total_cost_usd: 0.08 }, 1, "crash"],
     // Not a subtype: the shape 0031 measured, which carries no word of its own.

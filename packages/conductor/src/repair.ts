@@ -142,6 +142,16 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   crash: "lingtai",
   aborted: "lingtai",
   "no-commits": "lingtai",
+  /**
+   * `out-of-turns` is the one with a real argument on the other side, and it
+   * still loses it. The recipe says a run needing hundreds of turns *"is a
+   * ticket that was scoped wrong"*, which reads as the repository's — and
+   * `repository` is the one owner that buys an agent. Buying one here would
+   * spend a second agent to explain the first one's overspending, at the
+   * moment the system has just said the budget is gone. `#84` cost $26.53
+   * being unbounded; the repair for that must not be another $26.53.
+   */
+  "out-of-turns": "lingtai",
 };
 
 /**

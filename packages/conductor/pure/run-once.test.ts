@@ -152,6 +152,7 @@ const runtime: Runtime = {
     canBlockToolUse: true,
     canRewriteToolCall: false,
     providesTier: "guarded",
+    enforces: ["turns", "wall"],
   },
   run: async () => ({
     exitCode: 0,

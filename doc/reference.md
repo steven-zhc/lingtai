@@ -562,7 +562,7 @@ Source: the switch in `apps/cli/src/lingtai.ts`.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 22 fixed, 4 per project, 3 deferred
+## doctor check — 22 fixed, 5 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
@@ -582,19 +582,28 @@ by four checks and two names.
 | credentials (2) | `github: app credentials` · `runtime: signed in` |
 | visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
 
-**Four more run once per configured project**, so the total depends on how many
+**Five more run once per configured project**, so the total depends on how many
 there are: `recipe: resolves for every project`,
-`env: declared names, and which layer`, `env: <project> extensions` and
+`env: declared names, and which layer`, `env: <project> extensions`,
+`runtime: <project> limits` and
 `recipe: the rules and the merge target are one branch`. Each reports under the
 project's own name (`recipe: lingtai`, `env: lingtai`,
-`env: lingtai extensions`, `base: lingtai`) when it has something to say about
-that project in particular.
+`env: lingtai extensions`, `runtime: lingtai limits`, `base: lingtai`) when it
+has something to say about that project in particular.
 
 `env: <project> extensions` is 0037 §1's half: what each `run:` action and each
 subscriber declared, and whether this machine holds it. It is `fail` rather than
 `warn` when one is not set, because an extension gets *only* what it declares,
 so a missing name is a command that starts, finds nothing and exits — and a
 subscriber's exit code is discarded.
+
+`runtime: <project> limits` is `#89`'s: each of `runtime.limits`, and whether
+the runtime the recipe names actually stops a run at it. It is a `fail` when one
+is merely carried, because that is the state this repository was in for six
+weeks — `turns: 150` declared, threaded to the request, printed in
+`RunStarted`, and read by nothing, while a run went to 172. The schema still
+accepts the number: whether it binds is a fact about the recipe *and* the
+runtime together, which a single field's parse cannot see.
 
 Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
 `fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding

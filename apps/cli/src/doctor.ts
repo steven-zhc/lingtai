@@ -47,7 +47,7 @@ import {
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { RUN_LIMITS, capabilitiesFor, createClaudeCodeRuntime } from "@lingtai/agent";
 import { describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -1080,6 +1080,56 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
  * can clear.
  */
 /**
+ * Per project: every limit its recipe declares, and whether the runtime applies it.
+ *
+ * `#89`, asked before a run instead of discovered after one. `.lingtai/config.yaml`
+ * declared `turns: 150`, `#84` ran 172, and every signal an operator had said
+ * the bound existed: the recipe declares it, `lingtai add` prints the runtime
+ * block, `RunStarted` carries it, and the number comes back on the card. None
+ * of those is evidence that anything *reads* it, and until `enforces` there was
+ * nothing that could be asked.
+ *
+ * **Here rather than in the schema**, which the ticket puts in the same breath.
+ * The schema validates one file; whether a limit binds is a fact about the pair
+ * — this recipe and the runtime it names — and `runtime.agent` is a sibling
+ * field the limit's own parse cannot see. A `superRefine` reaching across for
+ * it would also make the recipe unparseable on a machine whose runtime is
+ * merely a stub, which turns a warning into an outage. So the schema keeps
+ * accepting the number and this stops it being *silent*: a `fail`, naming the
+ * limit and the runtime that ignores it.
+ *
+ * Walks `RUN_LIMITS` rather than a list written out here, so a third limit
+ * added to `runtime.limits` is covered by arithmetic instead of by remembering.
+ */
+export function limitsRow(project: string, recipe: Recipe): CheckResult {
+  const name = `runtime: ${project} limits`;
+  const capabilities = capabilitiesFor(recipe.runtime.agent);
+  const declared: Record<(typeof RUN_LIMITS)[number], string> = {
+    turns: String(recipe.runtime.limits.turns),
+    wall: recipe.runtime.limits.wall,
+  };
+
+  const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
+  const detail = RUN_LIMITS.map(
+    (limit) =>
+      `${limit} ${declared[limit]} ← ${
+        capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : "not applied"
+      }`,
+  ).join(" · ");
+
+  return ignored.length === 0
+    ? { name, status: "ok", detail }
+    : {
+        name,
+        status: "fail",
+        detail:
+          `${detail} — ${capabilities.id} carries ${ignored.join(" and ")} and bounds ` +
+          `nothing with ${ignored.length === 1 ? "it" : "them"}, so the recipe declares a ` +
+          "spend nothing will stop",
+      };
+}
+
+/**
  * Every extension a recipe declares, and the names it asked for.
  *
  * A `run:` action at any of the five points, and every subscriber — which is
@@ -1225,6 +1275,7 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
         });
       }
       results.push(extensionRow(project.project, resolved.recipe, agentEnv));
+      results.push(limitsRow(project.project, resolved.recipe));
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.

@@ -27,11 +27,14 @@
  * completion each map to a kind. The old loop's failures produced no log line,
  * no comment and no label, and that silence is what `RunFailed` exists to end.
  *
- * Five kinds now rather than four: `crash` used to absorb every ending that was
+ * Six kinds now rather than four: `crash` used to absorb every ending that was
  * not a clean result, so a quota, a segfault and a bad flag were one word and
  * six tickets burned in ninety-two seconds looked like six crashes
  * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)). What told
- * them apart was never the message — it is `neverStarted`'s three facts.
+ * them apart was never the message — it is `neverStarted`'s three facts. `#89`
+ * split one more off the same word: a run that spent the whole budget its
+ * recipe declared is `out-of-turns`, which is a fact about the ticket, and
+ * putting it beside a segfault said nothing about either.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -71,6 +74,16 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // filtered environment plus PreToolUse interception add up to, and it is what
   // carried the old loop's 73 runs.
   providesTier: "guarded",
+  /**
+   * Both, and `turns` only since `#89`.
+   *
+   * `wall` is a `setTimeout` in `run` below. `turns` is `turnCounter` reading
+   * the stream, because **2.1.267 has no `--max-turns` flag** — `claude --help`
+   * on 2026-09-10 offers `--max-budget-usd` and nothing about turns, so there
+   * was no argument to pass and the bound had to be applied here or nowhere.
+   * For six weeks it was nowhere.
+   */
+  enforces: ["turns", "wall"],
 };
 
 /**
@@ -98,10 +111,14 @@ export function sessionIdFor(runId: string): string {
  * printed alone. `subtype` is one of `success`, `error_during_execution`,
  * `error_max_turns`, `error_max_budget_usd`,
  * `error_max_structured_output_retries` — read out of the shipped bundle on
- * 2026-09-08 (0031 §2). **Nothing branches on it**, deliberately: the
- * classification is `neverStarted`'s three checkable facts, and the prose is
- * kept whole as evidence. It is carried because a receipt that dropped the
- * runtime's own word for how it ended would be a worse receipt.
+ * 2026-09-08 (0031 §2). **One member of it is branched on**, `error_max_turns`,
+ * and nothing else: everything else is classified by `neverStarted`'s three
+ * checkable facts, and the prose is kept whole as evidence. The distinction is
+ * not the size of the exception, it is what is being read — 0031 refused to
+ * classify on a sentence assembled from a table of prefixes, and this is a
+ * member of a closed set the runtime prints. It is carried in full because a
+ * receipt that dropped the runtime's own word for how it ended would be a worse
+ * receipt.
  */
 interface ClaudeResult {
   /** Absent on the single object `--output-format json` prints; `"result"` in a stream. */
@@ -338,8 +355,25 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         // object traced as prose would be both unreadable and a lie about what
         // the agent said. What is left when the process dies mid-line is
         // dropped: it is the partial-stream case, and a fragment is not a fact.
+        // The turn bound, applied to the same lines the log is written from
+        // (`#89`). There is no flag to pass it to — 2.1.267 has none — so this
+        // is where `runtime.limits.turns` becomes a thing that happens rather
+        // than a number that is reported afterwards.
+        const spent = turnCounter();
         const stream = lineReader((line) => {
           for (const [label, detail] of traceOf(line)) trace.note(label, detail);
+          const turns = spent(line);
+          // `>=` and not `>`: a recipe that says 150 gets at most 150, so the
+          // run is stopped **on** the turn that reaches the bound rather than
+          // on the one after it. `#84`'s receipt read 172 against a declared
+          // 150 and the difference is the point.
+          if (turns >= request.limits.turns) {
+            kill(
+              "out-of-turns",
+              `${turns} turns, and the recipe allows ${request.limits.turns}`,
+              turns,
+            );
+          }
         });
         const errors = lineReader((line) => trace.note("stderr", line));
 
@@ -370,7 +404,22 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           resolve(outcome);
         };
 
-        const kill = (kind: "timeout" | "aborted", detail: string) => {
+        /**
+         * Every ending this process did not choose for itself: the two bounds
+         * and an abort.
+         *
+         * `turns` is passed rather than assumed zero, because for
+         * `out-of-turns` it is the evidence: the wall and an abort genuinely do
+         * not know what the run had spent, and a bound that fires *because* of
+         * a count must not then report the count as nothing.
+         *
+         * Guarded, unlike before. The wall fires once and an abort fires once,
+         * but the turn bound is asked on every line of the stream and every
+         * line after the first over-budget one would send a second SIGTERM at a
+         * process already dying.
+         */
+        const kill = (kind: "timeout" | "aborted" | "out-of-turns", detail: string, turns = 0) => {
+          if (settled) return;
           child.kill("SIGTERM");
           // A SIGTERM the agent ignores must not become a hang. The event is the
           // point; a process that will not die is a detail for the next line.
@@ -378,7 +427,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           hard.unref?.();
           finish({
             exitCode: null,
-            turns: 0,
+            turns,
             durationMs: Date.now() - started,
             costUsd: null,
             text: null,
@@ -415,9 +464,9 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           const costUsd = parsed?.total_cost_usd ?? null;
 
           // The last line of the log is how it ended, in the runtime's own
-          // words — `subtype` included, which nothing branches on. A log kept
-          // because the run did not land opens on what it was for and closes on
-          // this.
+          // words — `subtype` included, which only `error_max_turns` is read
+          // out of (see the classification below). A log kept because the run
+          // did not land opens on what it was for and closes on this.
           trace.note(
             "receipt",
             parsed
@@ -452,11 +501,22 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
               // and only of it: `is_error` is the runtime saying so, and output
               // that would not parse leaves turns at zero for a reason that is
               // ignorance rather than evidence — which is a crash, as it was.
+              //
+              // `error_max_turns` is the one exception to *nothing branches on
+              // `subtype`*, and it is worth naming why it is not the thing 0031
+              // refused. That refusal was about reading English prose — a quota
+              // sentence assembled from a table of prefixes, one re-wording away
+              // from being wrong. This is a member of a closed enum the runtime
+              // prints, and it says the one thing `out-of-turns` means. Read
+              // second, so the money-safe check keeps its precedence: a receipt
+              // with no turns and no cost failed to begin whatever word it used.
               kind:
                 parsed &&
                 neverStarted({ turns, costUsd, isError: parsed.is_error === true })
                   ? "never-started"
-                  : "crash",
+                  : parsed?.subtype === "error_max_turns"
+                    ? "out-of-turns"
+                    : "crash",
               // Whatever went wrong, something says so. A run that ends with no
               // detail is the failure mode being replaced. Kept whole — as whole
               // as it ever was — because for a run that never started this is
@@ -602,6 +662,60 @@ export function traceOf(line: string): readonly (readonly [string, string])[] {
     if (block.type === "thinking" && block.thinking?.trim()) said.push(["think", clip(block.thinking)]);
   }
   return said;
+}
+
+/**
+ * How many turns the stream has spent, line by line (`#89`).
+ *
+ * **A turn is one assistant API response**, and the stream says which one a
+ * message belongs to: every `assistant` event carries `message.id`, and the
+ * several events of one response — a `text` block and then a `tool_use` block —
+ * repeat it. Counting the id changing is therefore counting responses, which is
+ * exactly what the receipt's `num_turns` counts. Measured against 2.1.267 on
+ * 2026-09-10 rather than assumed: a run that emitted five `assistant` events
+ * under four ids reported `num_turns: 4`, and one that emitted a single event
+ * reported `num_turns: 1`.
+ *
+ * Counting the *events* instead would have been the obvious thing and would
+ * have been wrong by exactly that first duplicate — a bound that fires early is
+ * a run killed for no reason, which is worse than the bug being fixed.
+ *
+ * **A subagent's messages are not the main loop's turns.** `Task` puts the
+ * child's traffic on the same stream with `parent_tool_use_id` set, and the
+ * receipt accounts for it separately in `subagent_stats`. Skipped here for the
+ * same reason: the number this compares against a recipe's `turns` has to be
+ * the number the receipt will report, or the log ends up arguing with itself.
+ *
+ * The last id, not a set of them: a response's events are contiguous, so
+ * remembering one string bounds this at one string. A set would grow with the
+ * run, which is the thing `RECEIPT_TAIL_CHARS` exists to avoid one field over.
+ */
+export function turnCounter(): (line: string) => number {
+  let turns = 0;
+  let last: string | null = null;
+
+  return (line: string) => {
+    const t = line.trim();
+    if (!t.startsWith("{")) return turns;
+
+    let event: { type?: string; parent_tool_use_id?: string | null; message?: { id?: string } };
+    try {
+      event = JSON.parse(t) as typeof event;
+    } catch {
+      return turns;
+    }
+
+    if (event.type !== "assistant") return turns;
+    if (event.parent_tool_use_id) return turns;
+
+    // A response with no id at all still counts as one — a stand-in prints
+    // those, and refusing to count what we cannot name would make the bound
+    // silently absent again, which is the whole of `#89`.
+    const id = event.message?.id ?? null;
+    if (id !== null && id === last) return turns;
+    last = id;
+    return ++turns;
+  };
 }
 
 /**

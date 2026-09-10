@@ -357,6 +357,15 @@ export const RunFinished = z.object({
  * in the log, and the first re-worded message would turn the name into a lie.
  * The prose is kept whole in `detail`: evidence, not a verdict.
  *
+ * `out-of-turns` is `#89`, and it is a separate word from `timeout` on purpose.
+ * Both are the adapter killing a process at a declared bound, and *"it ran out
+ * of turns"* and *"it ran out of time"* are different findings about a ticket:
+ * one says the work was long, the other says the agent was going in circles.
+ * A single `timeout` would have made the second unaskable. It is also not
+ * `crash`, which is what `error_max_turns` used to land as — a run that spent
+ * its whole budget did its work and stopped, and calling that a crash puts it
+ * beside a segfault.
+ *
  * Additive to the enum. No stored event is rewritten and no version is bumped —
  * every payload a previous build wrote still parses against this.
  */
@@ -366,6 +375,7 @@ export const RUN_FAILURE_KINDS = [
   "no-commits",
   "aborted",
   "never-started",
+  "out-of-turns",
 ] as const;
 
 export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];

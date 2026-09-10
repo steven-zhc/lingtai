@@ -20,6 +20,18 @@
 import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
 import type { RunTrace } from "./run-log.ts";
 
+/**
+ * The bounds a recipe may put on a run, by name.
+ *
+ * The list is the value for the reason `RUN_FAILURE_KINDS` is: `enforces` below
+ * has to be checked against it, and `lingtai doctor` has to walk it. A third
+ * limit added to `runtime.limits` and not to this list is a limit doctor never
+ * asks about — which is `#89` again, one field along.
+ */
+export const RUN_LIMITS = ["turns", "wall"] as const;
+
+export type RunLimit = (typeof RUN_LIMITS)[number];
+
 export interface RuntimeCapabilities {
   id: RuntimeId;
   /** The lifecycle hooks this runtime actually emits. */
@@ -30,6 +42,22 @@ export interface RuntimeCapabilities {
   canRewriteToolCall: boolean;
   /** The strongest containment this runtime provides on its own. */
   providesTier: Tier;
+  /**
+   * Which of `RUN_LIMITS` this adapter actually stops a run at (`#89`).
+   *
+   * Declared rather than assumed, because for six weeks it was assumed. Both
+   * numbers were in the recipe, both were typed onto `RunRequest`, both were
+   * carried into `RunStarted` — and only `wall` was ever read. `#84` ran 172
+   * turns against a declared 150 and nothing refused, warned or noticed,
+   * because there was nowhere for the adapter to say which half of the struct
+   * it honoured and nowhere for anything to ask.
+   *
+   * This is that place. It is a capability and not a boolean on the request:
+   * whether a bound holds is a fact about the adapter, the same kind of fact as
+   * `providesTier`, and it must be answerable **before** a run rather than
+   * inferred from one that overspent.
+   */
+  enforces: readonly RunLimit[];
 }
 
 export interface RunRequest {

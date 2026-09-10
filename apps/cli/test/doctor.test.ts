@@ -10,7 +10,7 @@ import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
-import { declaredExtensions, extensionRow, formatReport, runDoctor } from "../src/doctor.ts";
+import { declaredExtensions, extensionRow, formatReport, limitsRow, runDoctor } from "../src/doctor.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
 const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
@@ -230,6 +230,48 @@ subscribers:
 
     expect(row.status).toBe("ok");
     expect(row.detail).toContain("none asking for a variable");
+  });
+
+  /**
+   * `#89`'s last checkbox: doctor can say whether a declared limit is one the
+   * runtime actually applies.
+   *
+   * The recipe declared `turns` for six weeks, threaded it to `RunRequest`, put
+   * it in `RunStarted` — and nothing read it. Every one of those was a signal
+   * that said the bound existed. This is the one that asks.
+   *
+   * The row is checked directly rather than through `runDoctor`, for the reason
+   * `extensionRow`'s are: reaching it there needs an App, a project and the
+   * network, and what is worth pinning is the fold.
+   */
+  it("says which declared limits the recipe's runtime applies", async () => {
+    const row = limitsRow("demo", await recipeOf());
+
+    expect(row.status).toBe("ok");
+    // The number, and who applies it — not merely a tick.
+    expect(row.detail).toContain("turns 300");
+    expect(row.detail).toContain("wall 2h");
+    expect(row.detail).toContain("applied by claude-code");
+  });
+
+  /**
+   * A limit the runtime ignores is not silently accepted. The schema still
+   * parses the number — whether it binds is a fact about the *pair*, and
+   * `runtime.agent` is a sibling field the limit's own parse cannot see — so
+   * this is where it stops being silent.
+   */
+  it("is red when the recipe's runtime bounds nothing with a limit it declares", async () => {
+    const onCodex = await resolveRecipe(
+      async () => RECIPE.replace("agent: claude-code", "agent: codex"),
+      "main",
+    );
+    const row = limitsRow("demo", onCodex.recipe);
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("turns");
+    expect(row.detail).toContain("wall");
+    expect(row.detail).toContain("codex");
+    expect(row.detail).toContain("not applied");
   });
 });
 

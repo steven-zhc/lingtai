@@ -12,17 +12,20 @@
  * the worktree, not a library, with this package as the end that talks to it.
  */
 export {
+  RUN_LIMITS,
   meetsTier,
   missingForTier,
   neverStarted,
   type AuthStatus,
   type Invocable,
+  type RunLimit,
   type RunOutcome,
   type RunRequest,
   type Runtime,
   type RuntimeCapabilities,
   type Spawned,
 } from "./runtime.ts";
+export { capabilitiesFor } from "./capabilities.ts";
 export {
   CLAUDE_CODE_CAPABILITIES,
   PROMPT_ELIDED,
@@ -33,6 +36,7 @@ export {
   parseResult,
   sessionIdFor,
   traceOf,
+  turnCounter,
   type ClaudeCodeOptions,
   type PermissionMode,
 } from "./claude-code.ts";
