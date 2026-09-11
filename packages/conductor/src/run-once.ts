@@ -1575,13 +1575,25 @@ export function runOnce(
         // The operator's `--no-merge` is a hold at the `merge` point that names
         // itself as the action, so a card tells it from a configured one; a
         // repair names itself `repair` for the same reason.
-        // A disagreement names the reviewer that refused, at the point it ran:
-        // the thing a person is looking at is that action's findings.
+        // **A disagreement names itself, for exactly the reason the two above
+        // do, and it is worth saying why the obvious alternative destroys the
+        // thing it was trying to point at.**
+        //
+        // Naming it after the reviewer reads well — *the thing a person is
+        // looking at is that action's findings* — and gives this request the
+        // same `${gate}:${action}` key as the `GateFailed` that holds them.
+        // `task-view.ts:427` folds both through one `setGate`, so the request,
+        // which carries no verdict and no findings, overwrites the refusal it
+        // exists to report: verdict, evidence and findings replaced by an empty
+        // `pending` entry, on every projection and every rebuild.
+        //
+        // So the pointer travels in the question, which is what a person reads,
+        // and the key stays the request's own.
         const gate = pipeline.heldAt !== null || disagreement !== null ? "proposed" : "merge";
         const action =
           pipeline.heldAt ??
           atMerge.heldAt ??
-          disagreement?.action ??
+          (disagreement ? "disagreement" : null) ??
           (repairOf ? "repair" : "no-merge");
 
         if (pipeline.heldAt === null && atMerge.heldAt === null) {

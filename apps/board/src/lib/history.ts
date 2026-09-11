@@ -226,9 +226,13 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
     return `round ${need(d, "round")} for ${need(d, "action")} — ${n} finding${n === 1 ? "" : "s"}`;
   },
+  // The cost is on the row because a fix is bought without being asked again,
+  // the same argument `#84` made for a repair's. A default-on agent whose spend
+  // appears nowhere is one nobody can audit, and the payload carries it.
   FixApplied: (d) =>
     `round ${need(d, "round")}: ${d["headSha"] === null ? "committed nothing" : sha(d, "headSha")}` +
     ` · ${need(d, "turns")} turns` +
+    (typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "") +
     (d["failure"] === null ? "" : ` · ${clip(d["failure"])}`),
   FixDeclined: (d) => `${need(d, "action")} — ${clip(d["why"])}`,
 

@@ -58,7 +58,21 @@ export interface FixInput {
   /** What the refused gate said. `findings` is the reviewer's, verbatim. */
   refusal: { action: string; findings: readonly GateFinding[] };
   policy: FixPolicy;
-  /** Rounds already spent on this run. Counted from the log, never remembered. */
+  /**
+   * Rounds already spent on this run.
+   *
+   * **Held by the loop that spends them, not read back from the log**, and that
+   * is sound because the two have the same extent: `repair.fix` is a ceiling
+   * *per run*, a run is one `runOnce`, and one `runOnce` is one process. A
+   * counter cannot outlive what it bounds.
+   *
+   * The property it therefore does not have: it is not recoverable. A conductor
+   * that dies mid-round loses the count — and loses the run with it, because the
+   * item is released and the next claim is a new run with a new id and, by the
+   * same rule, a fresh purse. That is the same shape `repair.maxAttempts` has
+   * per item, and it is only correct while `fix` stays per run. **Make it per
+   * item and this has to come from the log.**
+   */
   roundsSpent: number;
 }
 
