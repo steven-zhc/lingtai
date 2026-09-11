@@ -177,6 +177,40 @@ gates:
            (`#63`) — or a project's own variable wrongly given one. A project's
            file keeps its own names.
 
+    # **Written down and not on.** Drafted 2026-09-10, left commented because
+    # the half it belongs to is not decided yet — see below.
+    #
+    # `watch:` asks a question `review:` does not. Review asks *is this diff
+    # wrong*; this asks *does this diff introduce something a person must see,
+    # whether or not it is wrong*. They are independent and both have to be able
+    # to hold: a change that adds a migration wants a person even when every
+    # gate passes, and a change the reviewer refuses that touches none of this
+    # wants an agent, not a queue of one.
+    #
+    # Today they are one path — a gate refuses, the item blocks, a person
+    # decides — which is why on 2026-09-10 the three items waiting were the
+    # three whose fixes were least in doubt.
+    #
+    # **Why these paths.** "A new concept needs a person" reads as
+    # uncomputable, and in this repository it is not: concepts have addresses.
+    # A type exported from `domain`, a key in the recipe schema, a port on the
+    # conductor — each is a new noun somebody will have to learn. A migration is
+    # the same argument about data, and `integrate.ts` already refuses those
+    # separately, later, with less to say about it.
+    #
+    # **What it does not catch is content.** A new endpoint added to a file that
+    # already exists is a new API and no glob sees it. That needs a condition on
+    # the diff's added lines, which nothing here can express yet.
+    #
+    # - name: a person sees a new noun
+    #   watch:
+    #     - "packages/domain/src/**"
+    #     - "packages/recipe/src/recipe.ts"
+    #     - "packages/conductor/src/ports.ts"
+    #     - "**/migrations/**"
+    #     - "**/schema.prisma"
+    #   then: request-approval
+
   # Nothing holds here any more, and this is the moment the previous version of
   # this comment named: "when being asked every time becomes the annoyance
   # rather than the point". On 2026-09-08 seven changes landed and every one was
