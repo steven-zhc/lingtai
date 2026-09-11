@@ -26,7 +26,7 @@
 // Subpaths, not the barrel. The root export pulls in `run-once`, which pulls
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
-import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
+import { actor, approve, reject, requeue, waive } from "@lingtai/conductor/decide";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
 import { editHash } from "@lingtai/conductor/prompt";
 import { CONTROL_STREAM, parsePayload, parseWorkItemStream, workItemStream } from "@lingtai/domain";
@@ -42,18 +42,10 @@ import { revalidatePath } from "next/cache";
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from "@/lib/diff";
-import { userInfo } from "node:os";
 
-/**
- * Who is acting.
- *
- * The local account, because the board runs on one machine for one person
- * (0007). A weak claim, but a true one, and an approval that recorded nobody
- * would be the silent waiver this system exists to remove.
- */
-function actor(): string {
-  return `human:${userInfo().username}`;
-}
+// `actor()` is imported beside the decisions rather than spelled here, so that
+// "a waiver from the terminal is indistinguishable from one from a card" (#129)
+// is one function and not two files that agree today.
 
 async function project(name: string) {
   const state = await loadProject(name);

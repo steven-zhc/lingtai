@@ -713,12 +713,31 @@ The same three decisions from the terminal, if you prefer:
 ```bash
 pnpm lingtai approve nextloom-ai-admin --issue 120
 pnpm lingtai approve nextloom-ai-admin --issue 120 --reject "wrong approach"
+pnpm lingtai waive nextloom-ai-admin --issue 120 \
+  --gate proposed:build --reason "unrelated flake in the importer suite"
 ```
 
 `approve` merges **what the held run actually produced**, not a fresh attempt.
 If the branch moved since the run asked, it refuses and names both commits —
 you would otherwise be merging something you have not read. A rejection sends
 the item back to the gate, not back to the queue.
+
+`waive` is the escape hatch, and it arrives where you already are: the case it
+exists for — a flaky check, a scan whose service is down, a failure you have
+read and judged unrelated — is one you meet at a prompt, not in a browser
+(`#129`). The gate is named as `point:action`, the key the card shows, and a
+name with no verdict behind it is refused by listing the gates there are.
+`--reason` is required and is never filled in for you: *recorded, never silent*
+is the whole of what makes a waiver acceptable, and a blank one retires it.
+
+**A gate that is still running is refused too**, and this is the refusal worth
+knowing about, because the case it catches looks exactly like the case the
+command is for. A scan whose service is down does not fail — it hangs, showing
+`running`, which is what you are staring at when you reach for the escape hatch.
+The fold keys every gate event under `point:action` and keeps the last, so a
+waiver appended while the gate is still executing is overwritten by that gate's
+own verdict the moment it arrives: the waiver is in the log, and the card says
+`failed`. Wait for the verdict, then waive it.
 
 ### Let it merge
 

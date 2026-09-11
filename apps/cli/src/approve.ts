@@ -6,11 +6,10 @@
  * the flag, which starts a new run with a new worktree and a new diff — so the
  * thing that merges is not the thing anyone looked at.
  */
-import { approve as approveRun, loadProject } from "@lingtai/conductor";
+import { actor, approve as approveRun, loadProject } from "@lingtai/conductor";
 import { withProjector } from "./projector.ts";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
-import { userInfo } from "node:os";
 
 export interface ApproveCommandOptions {
   project: string;
@@ -42,7 +41,7 @@ export async function approveCommand(
     repo: options.project,
   });
 
-  const by = options.by ?? `human:${userInfo().username}`;
+  const by = options.by ?? actor();
 
   // This is the command most likely to be run with the board open, and it moves
   // a card off the lane the board exists for. So it follows the log while it

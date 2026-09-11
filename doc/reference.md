@@ -553,14 +553,22 @@ credential that subscriber's process gets — see *extension environment* above,
 which is the half of 0037 §1 that makes "and nothing else" a fact. The four
 above are still the daemon's own defaults and nothing reads `subscribers:` yet.
 
-## lingtai subcommand — 13
+## lingtai subcommand — 16
 
 Source: the switch in `apps/cli/src/lingtai.ts`.
 
-`add` · `run` · `approve` · `status` · `doctor` · `env` · `end` · `daemon` ·
-`pause` · `resume` · `now` · `projection` · `version`
+`add` · `run` · `approve` · `waive` · `attach` · `status` · `doctor` · `env` ·
+`end` · `daemon` · `pause` · `resume` · `shutdown` · `now` · `projection` ·
+`version`
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
+
+This section exists so a reader can *check* the CLI's vocabulary rather than
+trust it, and it drifted the day after it was written: the count said 13 from
+`8e99d0c` (2026-09-08), and `attach` (`a10b183`) and `shutdown` (`598b119`)
+joined the switch the next day without it moving. #129 — a ticket whose whole
+finding was that the set of decisions was never countable from the CLI side —
+was therefore filed against a list already two short.
 
 ## doctor check — 22 fixed, 4 per project, 3 deferred
 

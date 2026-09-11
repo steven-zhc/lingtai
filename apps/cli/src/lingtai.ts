@@ -50,6 +50,7 @@ import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
+import { waiveCommand } from "./waive.ts";
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
@@ -63,11 +64,20 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
     --once                      the same as --max 1
     --no-merge                  stop after the gates and ask before merging
-    lingtai approve <project> --issue <n>
+
+  the decisions — each the same one the board's card takes, recorded under the
+  same name:
+  lingtai approve <project> --issue <n>
                                 merge what a held run produced, if its head has
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval
     --reject <why>              withdraw instead: back to the gate, not merged
+  lingtai waive <project> --issue <n> --gate <point:action> --reason <why>
+                                merge past a verdict. Recorded, never silent:
+                                --reason is required and is not defaulted, and
+                                a gate without a verdict — misspelt, or still
+                                running — is refused by naming the state there is
+
   lingtai attach <runId>            follow a run's log — what it is doing, as it
                                 does it, from the beginning however late you
                                 attach. Reads a file and asks nothing of the
@@ -661,6 +671,23 @@ async function main(argv: string[]): Promise<number> {
         note: flags["note"],
         ...("reject" in flags ? { reject: flags["reject"] ?? "no reason given" } : {}),
       });
+    }
+    case "waive": {
+      const { positional, flags } = parseFlags(rest);
+      const issue = Number(flags["issue"]);
+      const gate = flags["gate"];
+      // `--reason` is demanded here and defaulted nowhere. `--reject` above
+      // takes "no reason given" when it is handed nothing, and a waiver must
+      // not: *recorded, never silent* is the whole of `GateWaived`'s claim on
+      // existing, and a reason that writes itself is the silent waiver back.
+      const reason = flags["reason"];
+      if (!positional[0] || !Number.isInteger(issue) || !gate || !reason?.trim()) {
+        console.error(
+          "lingtai waive <project> --issue <n> --gate <point:action> --reason <why>",
+        );
+        return 2;
+      }
+      return waiveCommand({ project: positional[0], issue, gate, reason });
     }
     case "attach": {
       const runId = parseFlags(rest).positional[0];

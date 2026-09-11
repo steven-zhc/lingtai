@@ -28,6 +28,25 @@ import { labelsFor } from "./labels.ts";
 import { decideRepair, diagnoseRefusal, type RepairPolicy } from "./repair.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
+import { userInfo } from "node:os";
+
+/**
+ * Who is deciding.
+ *
+ * The local account, because this runs on one machine for one person (0007). A
+ * weak claim, but a true one, and a decision that recorded nobody would be the
+ * silent waiver this system exists to remove.
+ *
+ * **It lives beside the decisions, and there is one of it.** The board had its
+ * own copy and `lingtai approve` had another, both spelling the same
+ * expression; a waiver taken at a prompt being indistinguishable from one taken
+ * on a card (#129) is then a coincidence the files have to keep agreeing on,
+ * rather than a fact. One function makes it structural, and the thing a test
+ * can compare against is the thing the board actually calls.
+ */
+export function actor(): string {
+  return `human:${userInfo().username}`;
+}
 
 /**
  * `proposed:build` → the point and the action.

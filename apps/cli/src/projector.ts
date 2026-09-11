@@ -13,15 +13,16 @@
  * advances inside the same transaction as its writes, so whichever one gets
  * there second finds nothing left to do. No lock, no coordination.
  *
- * **Who holds one, and who does not.** `lingtai run`, `lingtai end replay` and
- * `lingtai approve` do: each does work the board renders, and each is run with
- * the board open. `lingtai pause`, `resume` and `now` do not, and the reason is
- * not latency — `start()` catches up to the head *before* it returns, so a
- * pause issued against a daemon that has been down for an hour would replay the
- * hour before it paused anything. An emergency control must not queue behind a
- * fold. They presuppose a daemon anyway, which advances the checkpoint the
- * moment their event lands. Stated here rather than left to be worked out per
- * command, because "which ones do it" is exactly the question `#64` cost.
+ * **Who holds one, and who does not.** `lingtai run`, `lingtai end replay`,
+ * `lingtai approve` and `lingtai waive` do: each does work the board renders,
+ * and each is run with the board open. `lingtai pause`, `resume` and `now` do
+ * not, and the reason is not latency — `start()` catches up to the head
+ * *before* it returns, so a pause issued against a daemon that has been down
+ * for an hour would replay the hour before it paused anything. An emergency
+ * control must not queue behind a fold. They presuppose a daemon anyway, which
+ * advances the checkpoint the moment their event lands. Stated here rather than
+ * left to be worked out per command, because "which ones do it" is exactly the
+ * question `#64` cost.
  *
  * The hazard is the reason this is a scope and not a start at the top and a
  * close at the bottom. An open projector holds a session-mode Postgres
