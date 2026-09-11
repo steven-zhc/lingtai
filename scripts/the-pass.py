@@ -206,14 +206,18 @@ EN = dict(
           "run</b> — because the worktree was released before the integrator ran.",
     prop2="Which is to say the expensive path was never a decision about failures. "
           "It was an ordering between two scopes, and §1 is the whole of undoing it.",
-    gap_h="The risk lives in an unwritten reason",
+    gap_h="The constraint §1 has to solve",
     gap1="<code>run-once.ts:53</code> says <i>the worktree is gone before the "
-         "integrator runs, because the integrator is outside its scope</i>. "
-         "<b>That <i>because</i> is circular</b> — nothing records why the integrator "
-         "was put outside the scope in the first place.",
-    gap2="So whoever implements §1 has to go looking for what breaks when a worktree "
-         "outlives the lane, rather than reading the silence as evidence that nothing "
-         "does. The rest of 0039 is bookkeeping; this is where it can be wrong.",
+         "integrator runs, because the integrator is outside its scope</i>, which is "
+         "circular. The reason is 690 lines further down, at <code>:736</code>: "
+         "<b>the worktree holds <code>agent/&lt;n&gt;</code> checked out against the "
+         "same mirror, and git refuses to update a ref some worktree has checked "
+         "out.</b> Keeping it alive through the merge is what made the first "
+         "end-to-end run fail.",
+    gap2="So §1 is not a boundary to move — it is that constraint to solve. A detached "
+         "HEAD in the run's worktree, so that no worktree holds the ref the lane must "
+         "update, is the candidate and is not yet a decision. <b>The risk of 0039 "
+         "lives entirely here</b>; the rest is bookkeeping.",
 
     f1_claim="recipe · env · tier · claim",
     f1_admit="nothing configured — renders skipped",
@@ -348,12 +352,15 @@ ZH = dict(
           "run</b> —— 因为工作树在 integrator 跑起来之前就被释放了。",
     prop2="也就是说，那条昂贵的路径从来不是一个关于失败的决定。它是两个作用域之间的一个"
           "次序，而 §1 就是把这个次序整个撤掉。",
-    gap_h="风险全在一个没写下来的理由里",
+    gap_h="§1 必须解决的那个约束",
     gap1="<code>run-once.ts:53</code> 说：<i>工作树在 integrator 跑起来之前就没了，"
-         "因为 integrator 在它的作用域之外</i>。<b>这个「因为」是循环的</b> —— "
-         "没有任何地方记下当初为什么把 integrator 放到作用域之外。",
-    gap2="所以实现 §1 的人必须去找：当工作树活得比合并道更久时，什么会坏掉 —— 而不是"
-         "把这份沉默当成「什么都不会坏」的证据。0039 剩下的部分都是记账；能出错的是这里。",
+         "因为 integrator 在它的作用域之外</i> —— 这是循环的。真正的理由在 690 行"
+         "之后的 <code>:736</code>：<b>这个工作树把 <code>agent/&lt;n&gt;</code> 检出在"
+         "同一个 mirror 上，而 git 拒绝更新任何一个被某个工作树检出的 ref。</b>"
+         "让它活过合并这一步，正是第一次端到端运行失败的原因。",
+    gap2="所以 §1 不是搬一条边界，而是解决那个约束。让 run 的工作树用 detached HEAD、"
+         "从而没有任何工作树占着合并道要更新的那个 ref，是候选方案，还不是决定。"
+         "<b>0039 的风险全在这里</b>；剩下的都是记账。",
 
     f1_claim="recipe · env · tier · claim",
     f1_admit="没有配置动作 —— 渲染成 skipped",

@@ -155,10 +155,29 @@ escape hatch nobody is told about is not one.
 
 ## Open
 
-- **Why the integrator was outside the worktree's scope.** Nothing records it,
-  and §1 overturns it. **The risk of this decision lives entirely in that
-  unwritten reason** — whoever implements §1 has to look for what breaks when a
-  worktree outlives the lane, rather than trusting that silence meant nothing.
+- **Why the integrator was outside the worktree's scope — found, hours after
+  this was written, and it changes what §1 is.** The reason is recorded. It is
+  690 lines below the comment that cites it circularly:
+
+  ```ts
+  // packages/conductor/src/run-once.ts:736
+  // The scope ends where `await ports.repo.remove(...)` used to be called by
+  // hand, and for the reason that call gave: the worktree holds `agent/<n>`
+  // checked out against the same mirror, and git refuses to update a ref
+  // some worktree has checked out. Keeping it alive through the merge is
+  // what made the first end-to-end run fail.
+  ```
+
+  So **§1 is not a boundary to move, it is that constraint to solve** — and the
+  sentence this paragraph replaces, which said nothing recorded the reason, was
+  wrong. It had been looked for at `:53`, where the ordering is restated
+  *without* its reason, and not at `:736`, where the reason is. Which is this
+  project's own recurring finding turned on itself: a claim true where it was
+  written and false where it was read.
+
+  The risk of this decision still lives here, now with a name. A detached HEAD
+  in the run's worktree — so no worktree holds `agent/<n>` and the lane may
+  update it — is the candidate and is not yet a decision.
 - **What bounds re-claiming after a run that ended.** `rounds` bounds a pass; a
   crashed or quota-stopped run ends one, the item is released, and
   `source.backoff` holds it an hour before it is claimed again — for ever. That
