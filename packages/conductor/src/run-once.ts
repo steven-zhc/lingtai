@@ -14,7 +14,9 @@
  *   prove the hook fails closed             before anything is dispatched
  *   RunStarted                              the conductor knows more than the hook
  *   run the agent                           on the socket, restricted by nothing
- *   the diff → `proposed` → `merge`         each refusal typed and recorded
+ *   the diff → `proposed`                   each refusal typed and recorded
+ *   a refused review → a fix → `proposed`   the findings bought an agent (0038)
+ *   → `merge`                               only when `proposed` passed
  *   → integrate                             a point with actions always runs
  *
  * **Every exit appends.** A run that ends leaves either `RunFinished` or
@@ -29,6 +31,16 @@
  * the item is released, and the next claim is the repair, told what went wrong
  * and ending by asking a person to approve the diff it produced. The decision
  * of whether to buy one is `repair.ts`'s; what is here is where it is asked.
+ *
+ * **A refused *review* buys an agent too, and spends it here rather than next
+ * time** ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
+ * Still not a sixth point: `proposed` simply runs again, on the head a fixing
+ * agent committed, with the refused findings' failure scenarios handed to the
+ * fixer verbatim and put back to the reviewer as the question *does that
+ * sequence still produce that outcome*. The worktree is up and the diff is the
+ * thing under discussion, so nothing is released and nothing is re-claimed; when
+ * the rounds are spent and the review still refuses, a person is asked, and what
+ * they are shown says **two agents disagreed**. The decisions are `fix.ts`'s.
  *
  * It used to say so and then keep the promise by hand: two nested `finally`
  * blocks and a `catch (err)` whose own comment admitted what it was. Since
@@ -64,12 +76,18 @@
  */
 import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/recipe";
 import { type Tier, parsePayload } from "@lingtai/domain";
-import { type PipelineResult, gatesFromRecipe, runGatePipeline } from "@lingtai/actions";
+import {
+  type GateFinding,
+  type PipelineResult,
+  gatesFromRecipe,
+  runGatePipeline,
+} from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
 import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier, writeUnhookedSettingsEffect } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
+import { decideFix, diagnoseDisagreement, disagreementQuestion, fixBrief } from "./fix.ts";
 import { standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
@@ -1076,15 +1094,32 @@ export function runOnce(
           );
 
           // ---- 9. the diff the `proposed` gates will be about ----------------
+          /**
+           * What is committed, counted — asked again after a fix.
+           *
+           * A function because the head moves inside this run now: a refused
+           * review buys an agent that commits
+           * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)),
+           * and the `RunProducedDiff` for the head the gates are judging has to
+           * be the head they are judging. Two copies of three `reduce`s would be
+           * two places for the numbers on a card to stop describing the diff.
+           */
+          const numstat = Effect.gen(function* () {
+            const stat = yield* gitInWorktree([
+              "diff",
+              "--numstat",
+              `${worktree.baseSha}..HEAD`,
+            ]).pipe(failing("diff"));
+            const rows = stat.split("\n").filter(Boolean).map((l) => l.split("\t"));
+            return {
+              files: rows.length,
+              insertions: rows.reduce((n, r) => n + (Number(r[0]) || 0), 0),
+              deletions: rows.reduce((n, r) => n + (Number(r[1]) || 0), 0),
+            };
+          });
+
           const headSha = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
-          const stat = yield* gitInWorktree([
-            "diff",
-            "--numstat",
-            `${worktree.baseSha}..HEAD`,
-          ]).pipe(failing("diff"));
-          const rows = stat.split("\n").filter(Boolean).map((l) => l.split("\t"));
-          const insertions = rows.reduce((n, r) => n + (Number(r[0]) || 0), 0);
-          const deletions = rows.reduce((n, r) => n + (Number(r[1]) || 0), 0);
+          const { files, insertions, deletions } = yield* numstat;
 
           if (headSha === worktree.baseSha) {
             return yield* new Stopped({
@@ -1101,7 +1136,7 @@ export function runOnce(
               data: parsePayload("RunProducedDiff", {
                 branch,
                 headSha,
-                files: rows.length,
+                files,
                 insertions,
                 deletions,
               }),
@@ -1163,21 +1198,259 @@ export function runOnce(
 
           // The `proposed` point: the agent stopped and there are commits, so a
           // change has been proposed and the gates are about to judge it.
+          //
+          // A function of the head and the findings, because it runs more than
+          // once: a refused review buys an agent and the point runs again on what
+          // that agent committed (0038 §1). The same actions, in the same order,
+          // with one thing added — the scenarios the last refusal was made of,
+          // which the reviewer is asked about by name (0038 §2).
           const gates = gatesFromRecipe(recipe.gates.proposed, gateDeps);
-          const pipeline = yield* Effect.promise(() =>
-            runGatePipeline({
-              point: "proposed",
-              gates,
-              context: { runId, onSha: headSha, cwd: worktree.path, env: runnableEnv(env.values) },
-              emit: async (event) => {
-                const at = (await store.read(runId)).length;
-                await store.append(runId, at, [
-                  { type: event.type, actor: "conductor", data: event.data },
-                ]);
-              },
-            }),
-          );
+          const judge = (onSha: string, recheck: readonly GateFinding[]) =>
+            Effect.promise(() =>
+              runGatePipeline({
+                point: "proposed",
+                gates,
+                context: {
+                  runId,
+                  onSha,
+                  cwd: worktree.path,
+                  env: runnableEnv(env.values),
+                  recheck,
+                },
+                emit: async (event) => {
+                  const at = (await store.read(runId)).length;
+                  await store.append(runId, at, [
+                    { type: event.type, actor: "conductor", data: event.data },
+                  ]);
+                },
+              }),
+            );
+
+          let head = headSha;
+          let pipeline = yield* judge(head, []);
           log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
+
+          // ---- 10a. a refusal buys an agent, and the review runs again ---------
+          /**
+           * The loop [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+           * §1 draws, and the rule it replaces was one line long: a gate refused,
+           * the item blocked, a person decided. Nothing sat between *refused* and
+           * *your problem*, so on 2026-09-10 the three items waiting on a person
+           * were the three whose fixes were least in doubt.
+           *
+           * **Here and not in the merge lane**, which is the difference between
+           * this and a repair: the worktree is still up, the head is still the
+           * thing under discussion, and the gates can simply run again. Nothing
+           * is released, nothing is claimed, and a fix never becomes a second
+           * attempt at the ticket.
+           *
+           * Whether it happens at all is `decideFix`'s and not this file's, for
+           * `decideRepair`'s reason — a rule about spending money inside an `if`
+           * here is a rule nobody can check. What is here is the order.
+           */
+          let rounds = 0;
+          let disagreement: {
+            action: string;
+            findings: readonly GateFinding[];
+            rounds: number;
+            why: string;
+          } | null = null;
+
+          // One controller for every round: a fixer left running when this scope
+          // closes would hold the worktree the same way an implementer did before
+          // it was released by anything.
+          const fixAbort = yield* Effect.acquireRelease(
+            Effect.sync(() => new AbortController()),
+            (controller) => Effect.sync(() => controller.abort()),
+          );
+
+          while (!pipeline.ok && pipeline.failedAt !== null) {
+            // The refusal, by verdict rather than by position: the pipeline stops
+            // at the first one, so it is also the last result — and asking for
+            // the verdict says what is meant. It carries the findings, which is
+            // why `PipelineResult.results` does.
+            const refused = pipeline.results.filter((r) => r.verdict === "failed").at(-1)!;
+            const decision = decideFix({
+              refusal: { action: refused.gate, findings: refused.findings },
+              policy: recipe.repair,
+              roundsSpent: rounds,
+            });
+
+            if (!decision.fix) {
+              log(`no fix for ${refused.gate}: ${decision.why}`);
+              runLog.note("fix", `none: ${decision.why}`);
+              // **Only a refusal with findings was ever this purse's to spend.**
+              // A red build carries none: it is the merge lane's business and
+              // `repair.maxAttempts`'s, so calling it a disagreement would hand a
+              // person "two agents disagreed" about a typecheck error, and
+              // recording a decline for it would put a certainty on the log once
+              // per broken build.
+              //
+              // A refusal that *did* carry findings gets both, for
+              // `RepairDeclined`'s reason: "nothing happened because nobody asked
+              // for it" and "nothing happened and we do not know why" are the two
+              // things a log exists to keep apart.
+              if (refused.findings.length > 0) {
+                disagreement = {
+                  action: refused.gate,
+                  findings: refused.findings,
+                  rounds,
+                  why: decision.why,
+                };
+                yield* appendAtEnd(runId, [
+                  {
+                    type: "FixDeclined",
+                    actor: "conductor",
+                    data: parsePayload("FixDeclined", {
+                      runId,
+                      round: rounds,
+                      action: refused.gate,
+                      why: decision.why,
+                      findings: refused.findings,
+                    }),
+                  },
+                ]);
+              }
+              break;
+            }
+
+            // Appended **before** the agent runs, as `RepairRequested` is
+            // appended before the release: the scenarios it was handed are the
+            // acceptance contract, and a log that learned them afterwards could
+            // only ever show the ones that survived.
+            yield* appendAtEnd(runId, [
+              {
+                type: "FixRequested",
+                actor: "conductor",
+                data: parsePayload("FixRequested", {
+                  runId,
+                  round: decision.round,
+                  action: refused.gate,
+                  onSha: head,
+                  findings: refused.findings,
+                }),
+              },
+            ]);
+            log(`bought a fix for ${refused.gate} — round ${decision.round}`);
+            runLog.note("fix", `round ${decision.round} for ${refused.gate}`);
+
+            // Its own settings with no hook in them, exactly as the reviewer's:
+            // the hook carries the lifecycle of a *run*, and a fixer is a step
+            // inside one. And its own id — `sessionIdFor` is a function of the
+            // run id, so handing it this run's would resume the implementer's
+            // session and give it back the reasoning 0038 §3 takes away.
+            const fixSettings = yield* writeUnhookedSettingsEffect(
+              runId,
+              `fix-${decision.round}`,
+              home,
+            ).pipe(failing("hook"));
+
+            // The same diff the reviewer was shown, from the same function and
+            // under the same ceiling: two agents arguing about a change have to
+            // be looking at the same change.
+            const underReview = yield* Effect.promise(() => gateDeps.agent.diff());
+
+            const fixed = yield* Effect.promise(() =>
+              options.runtime
+                .run({
+                  runId: `${runId}:fix:${decision.round}`,
+                  cwd: worktree.path,
+                  prompt: fixBrief({
+                    findings: refused.findings,
+                    round: decision.round,
+                    of: recipe.repair.fix,
+                    action: refused.gate,
+                    diff: underReview,
+                    diffBytes: recipe.runtime.budget.diff,
+                  }),
+                  settingsPath: fixSettings,
+                  env: runnableEnv(env.values),
+                  limits: {
+                    turns: recipe.runtime.limits.turns,
+                    wallMs: parseDuration(recipe.runtime.limits.wall),
+                  },
+                  signal: fixAbort.signal,
+                })
+                // A fixer that threw is a fixer that produced nothing, and this
+                // run still has somewhere to go: the refusal stands and a person
+                // is shown it. Failing the whole run here would throw away the
+                // diff, the verdicts and the findings.
+                .catch((err) => ({
+                  exitCode: null,
+                  turns: 0,
+                  durationMs: 0,
+                  costUsd: null,
+                  failure: { kind: "crash" as const, detail: (err as Error).message },
+                  text: null,
+                  sessionId: "",
+                })),
+            );
+
+            const after = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
+            const committed = after !== head;
+            rounds = decision.round;
+
+            yield* appendAtEnd(runId, [
+              {
+                type: "FixApplied",
+                actor: "conductor",
+                data: parsePayload("FixApplied", {
+                  runId,
+                  round: decision.round,
+                  headSha: committed ? after : null,
+                  turns: fixed.turns,
+                  costUsd: fixed.costUsd,
+                  failure: fixed.failure ? `${fixed.failure.kind}: ${fixed.failure.detail}` : null,
+                }),
+              },
+            ]);
+            runLog.note(
+              "fix",
+              `round ${decision.round}: ${committed ? after.slice(0, 7) : "no commit"}` +
+                ` · ${fixed.turns} turns, ${fixed.costUsd ?? "unknown"} usd` +
+                (fixed.failure ? ` · ${fixed.failure.kind}` : ""),
+            );
+
+            if (!committed) {
+              // Nothing to re-review: the reviewer would be asked the same
+              // question about the same commit and would answer it the same way,
+              // and paying for that is the one thing a second opinion must not
+              // be. The findings stand, and they stand as a disagreement.
+              disagreement = {
+                action: refused.gate,
+                findings: refused.findings,
+                rounds,
+                why:
+                  "the fixing agent committed nothing" +
+                  (fixed.failure ? ` (${fixed.failure.kind}: ${fixed.failure.detail})` : "") +
+                  ", so there is nothing new for the review to read",
+              };
+              break;
+            }
+
+            head = after;
+            const moved = yield* numstat;
+            // The card's numbers describe the diff that is now under review, not
+            // the one that was refused two events ago.
+            yield* appendAtEnd(runId, [
+              {
+                type: "RunProducedDiff",
+                actor: "conductor",
+                data: parsePayload("RunProducedDiff", { branch, headSha: head, ...moved }),
+              },
+            ]);
+
+            // And the question asked again, with the scenarios the fixer was
+            // handed. `recheck` is what makes it a re-review rather than a second
+            // review: the reviewer is asked whether those sequences still produce
+            // those outcomes, which is the one question a deleted line cannot
+            // answer for itself.
+            pipeline = yield* judge(head, refused.findings);
+            log(
+              `gates after fix ${rounds}: ` +
+                pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" "),
+            );
+          }
 
           // The agent's branch has to exist on the remote for the integrator to
           // merge it; it works in a worktree, not on origin.
@@ -1232,7 +1505,7 @@ export function runOnce(
                 gates: gatesFromRecipe(recipe.gates.merge, gateDeps),
                 context: {
                   runId,
-                  onSha: headSha,
+                  onSha: head,
                   cwd: worktree.path,
                   env: runnableEnv(env.values),
                 },
@@ -1249,13 +1522,13 @@ export function runOnce(
             }
           }
 
-          return { headSha, pipeline, atMerge };
+          return { headSha: head, pipeline, atMerge, disagreement };
         }),
       );
 
       // And the worktree has done its job: the scope above closed and took it
       // down. Everything below runs without one.
-      const { headSha, pipeline, atMerge } = decided;
+      const { headSha, pipeline, atMerge, disagreement } = decided;
 
       // ---- 12. hold, if anything asked for a person -------------------------
       // Three things can ask: a gate at `proposed` whose verdict is
@@ -1281,18 +1554,35 @@ export function runOnce(
       // whatever the recipe says at `merge` and whatever the flag says. Merging
       // a repair unattended would also be the one thing 0025 refuses: the
       // person is meant to approve the diff the repair produced.
+      //
+      // **And a disagreement asks, rather than going to the merge lane**
+      // ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
+      // A reviewer refused, an agent was bought or declined, and the review
+      // still refuses: that is a judgement about a diff and not a failure of
+      // one. Stopping here rather than below is what keeps the two purses
+      // apart — the merge lane would refuse with `gate-failed` and `decideRepair`
+      // would spend `repair.maxAttempts` on a finding, which is §4's race in the
+      // one direction that costs money. A person can still merge it: the
+      // approval below is requested on this head like any other.
       if (
         pipeline.heldAt !== null ||
         atMerge.heldAt !== null ||
         options.merge === false ||
-        repairOf !== null
+        repairOf !== null ||
+        disagreement !== null
       ) {
         // `heldAt` is an *action* name; the point is the pipeline it came from.
         // The operator's `--no-merge` is a hold at the `merge` point that names
         // itself as the action, so a card tells it from a configured one; a
         // repair names itself `repair` for the same reason.
-        const gate = pipeline.heldAt !== null ? "proposed" : "merge";
-        const action = pipeline.heldAt ?? atMerge.heldAt ?? (repairOf ? "repair" : "no-merge");
+        // A disagreement names the reviewer that refused, at the point it ran:
+        // the thing a person is looking at is that action's findings.
+        const gate = pipeline.heldAt !== null || disagreement !== null ? "proposed" : "merge";
+        const action =
+          pipeline.heldAt ??
+          atMerge.heldAt ??
+          disagreement?.action ??
+          (repairOf ? "repair" : "no-merge");
 
         if (pipeline.heldAt === null && atMerge.heldAt === null) {
           yield* appendAtEnd(runId, [
@@ -1311,9 +1601,13 @@ export function runOnce(
                 // "approve this" without naming it is half a question.
                 question:
                   (repairOf ? `A repair for ${repairOf.reason}. ` : "") +
-                  (pipeline.ok && atMerge.ok
-                    ? `Merge ${branch} into ${base}? Every gate passed.`
-                    : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} gate refused.`),
+                  (disagreement
+                    ? `Merge ${branch} into ${base} anyway? Two agents disagreed: ` +
+                      `the ${disagreement.action} reviewer still refuses it after ` +
+                      `${disagreement.rounds} fix round(s).`
+                    : pipeline.ok && atMerge.ok
+                      ? `Merge ${branch} into ${base}? Every gate passed.`
+                      : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} gate refused.`),
                 artifacts: [`${branch}@${headSha}`],
               }),
             },
@@ -1322,9 +1616,11 @@ export function runOnce(
         // Blocked rather than released, the same as a refusal — a question for
         // a person belongs in "Waiting on you", not back in the queue where
         // another run could claim it and throw the question away.
-        const question = repairOf
-          ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
-          : `held at the ${gate} gate: ${branch} into ${base}`;
+        const question = disagreement
+          ? disagreementQuestion({ ...disagreement, branch, base })
+          : repairOf
+            ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
+            : `held at the ${gate} gate: ${branch} into ${base}`;
         /**
          * The hold, as something a person can act on rather than only read.
          *
@@ -1340,30 +1636,40 @@ export function runOnce(
          */
         const green = pipeline.ok && atMerge.ok;
         const failedAt = pipeline.failedAt ?? atMerge.failedAt;
-        const diagnosis = {
-          what:
-            `${branch} is at ${headSha.slice(0, 7)} and ` +
-            (green
-              ? `every gate passed. The ${gate} point holds for ${action}.`
-              : `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`),
-          // What was done about it, when something was: a repair spent an agent
-          // and this diff is what it produced. An ordinary hold had no failure
-          // to do anything about, and says so by saying nothing.
-          done: repairOf
-            ? `a repair for ${repairOf.reason} ran as ${runId} and produced this diff`
-            : null,
-          // No raw output: nothing failed here that a git message describes.
-          // The gate verdicts are on the task's own page with their evidence.
-          raw: null,
-          recommendation: green
-            ? {
-                action: "approve" as const,
-                why: repairOf
-                  ? `every gate passed on what the repair for ${repairOf.reason} produced`
-                  : "every gate passed on this diff; approving merges what this run produced",
-              }
-            : null,
-        };
+        /**
+         * **A disagreement is diagnosed as one, and not as a gate refusing.**
+         * 0038's consequence: what reaches a person is no longer a finding, it is
+         * *two agents looked at this and did not agree*. The sentence is
+         * `fix.ts`'s, with the findings verbatim under it — a card that said "the
+         * review gate refused" would be describing the first half of something
+         * that has since happened twice.
+         */
+        const diagnosis = disagreement
+          ? diagnoseDisagreement({ ...disagreement, branch, base, headSha })
+          : {
+              what:
+                `${branch} is at ${headSha.slice(0, 7)} and ` +
+                (green
+                  ? `every gate passed. The ${gate} point holds for ${action}.`
+                  : `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`),
+              // What was done about it, when something was: a repair spent an
+              // agent and this diff is what it produced. An ordinary hold had no
+              // failure to do anything about, and says so by saying nothing.
+              done: repairOf
+                ? `a repair for ${repairOf.reason} ran as ${runId} and produced this diff`
+                : null,
+              // No raw output: nothing failed here that a git message describes.
+              // The gate verdicts are on the task's own page with their evidence.
+              raw: null,
+              recommendation: green
+                ? {
+                    action: "approve" as const,
+                    why: repairOf
+                      ? `every gate passed on what the repair for ${repairOf.reason} produced`
+                      : "every gate passed on this diff; approving merges what this run produced",
+                  }
+                : null,
+            };
         const ended = yield* Effect.promise(async () => {
           const blocked = await store.read(workItemId);
           // In the same append as the outcome it is about. A hold is a terminal

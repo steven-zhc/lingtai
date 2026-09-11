@@ -94,7 +94,7 @@ export type ProjectFilter =
        * source (0025 §2), and every place that says what a project will do
        * reads this shape rather than the recipe.
        */
-      repair: { on: boolean; maxAttempts: number };
+      repair: { on: boolean; maxAttempts: number; fix: number };
       /**
        * How long a failed attempt keeps its own ticket out of the queue,
        * `source.backoff` in milliseconds
@@ -239,7 +239,8 @@ export function describeFilter(filter: ProjectFilter): string[] {
     // audit, and this one spends money (0025 §2).
     `  repairs      ${
       filter.repair.on
-        ? `yes — at most ${filter.repair.maxAttempts} agent(s) per item`
+        ? `yes — at most ${filter.repair.maxAttempts} agent(s) per item, ` +
+          `${filter.repair.fix} fix round(s) per review refusal`
         : "no — a failure of this repository's buys nothing"
     }`,
     // In the recipe's own words, for the same reason. The backoff decides when

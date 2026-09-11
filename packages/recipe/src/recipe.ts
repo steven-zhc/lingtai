@@ -431,6 +431,10 @@ export const Recipe = z.object({
    * Only Lingtai's *own* failures are excluded unconditionally, in code
    * (`whoseFailure`), because no recipe can make an agent able to fix a
    * database it cannot reach.
+   *
+   * **Two numbers, because two kinds of failure were spending one purse**
+   * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
+   * `maxAttempts` is what a wall buys; `fix` is what a finding buys.
    */
   repair: z
     .strictObject({
@@ -443,8 +447,29 @@ export const Recipe = z.object({
        * that makes the feature exist, and raising it is the repository's call.
        */
       maxAttempts: z.number().int().positive().default(1),
+      /**
+       * Rounds of fix-and-re-review a **review refusal** buys
+       * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
+       *
+       * Its own number, beside `maxAttempts` rather than inside it, and 0038 §4
+       * is the whole of why: `maxAttempts` is documented as the ceiling *across
+       * every distinct failure*, so a broken build that spent it left a one-line
+       * finding with nothing to buy an agent with. A single ceiling means the
+       * first kind of failure to happen decides whether the second kind gets an
+       * attempt at all — which is not a budget, it is a race. The two failures
+       * also do not resemble each other: a compiler error is nearly
+       * determinate, a failure scenario is determinate *and* a judgement.
+       *
+       * One by default, for 0025 §3's reason unchanged — the smallest number
+       * that makes the feature exist, and raising it is the repository's call.
+       * Zero is legal and means *a refusal goes straight to a person*: a
+       * repository that wants the reviewer's findings read by a human rather
+       * than answered by an agent can say so without turning `repair` off and
+       * losing the merge lane's agent with it.
+       */
+      fix: z.number().int().nonnegative().default(1),
     })
-    .default({ on: true, maxAttempts: 1 }),
+    .default({ on: true, maxAttempts: 1, fix: 1 }),
 
   runtime: z.object({
     agent: RuntimeId.default("claude-code"),

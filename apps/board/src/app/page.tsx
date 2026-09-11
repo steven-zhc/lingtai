@@ -711,12 +711,13 @@ export default async function Page({
               className={`chip ${r.on ? "" : "idle"}`}
               title={
                 r.on
-                  ? `a failure of ${r.project}'s buys an agent to fix it, at most ${r.maxAttempts} time(s) per item`
+                  ? `a failure of ${r.project}'s buys an agent to fix it, at most ${r.maxAttempts} time(s) per item; ` +
+                    `a refused review buys ${r.fix} round(s) of fix-and-re-review`
                   : `${r.project} does not repair — a failure waits for you`
               }
             >
               {repair.length > 1 ? `${r.project}: ` : ""}
-              {r.on ? `repairs ×${r.maxAttempts}` : "no repair"}
+              {r.on ? `repairs ×${r.maxAttempts} · fixes ×${r.fix}` : "no repair"}
             </span>
           </Fragment>
         ))}

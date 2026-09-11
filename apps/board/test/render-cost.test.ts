@@ -71,7 +71,7 @@ function resolvedFilter(name: string, kinds: string[]) {
     ok: true,
     kinds,
     backoffMs: 0,
-    repair: { on: true, maxAttempts: 1 },
+    repair: { on: true, maxAttempts: 1, fix: 1 },
     plan: new Map(),
   } as unknown as Extract<ProjectQueue, { state: "listed" }>["filter"];
 }

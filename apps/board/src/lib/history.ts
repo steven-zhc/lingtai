@@ -218,6 +218,20 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RepairRequested: (d) => `attempt ${need(d, "attempt")} on ${need(d, "reason")}`,
   RepairDeclined: (d) => `${need(d, "reason")} — ${clip(d["why"])}`,
 
+  // ------------------------------------------------------------------ fix --
+  // The other purse (0038 §4). A round says how many findings it was bought for,
+  // because that is the size of what the fixer was asked to do; the scenarios
+  // themselves are in the disclosure, verbatim, where the contract lives.
+  FixRequested: (d) => {
+    const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
+    return `round ${need(d, "round")} for ${need(d, "action")} — ${n} finding${n === 1 ? "" : "s"}`;
+  },
+  FixApplied: (d) =>
+    `round ${need(d, "round")}: ${d["headSha"] === null ? "committed nothing" : sha(d, "headSha")}` +
+    ` · ${need(d, "turns")} turns` +
+    (d["failure"] === null ? "" : ` · ${clip(d["failure"])}`),
+  FixDeclined: (d) => `${need(d, "action")} — ${clip(d["why"])}`,
+
   // -------------------------------------------------------------- control --
   ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,
   ConductorResumed: (d) => need(d, "by"),

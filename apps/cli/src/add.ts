@@ -215,10 +215,19 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // only visible when it fires is one nobody can audit, and this one spends an
   // agent's worth of money on a failure without being asked again
   // ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) §2).
+  //
+  // **Both numbers**, because there are two and they are spent by different
+  // failures ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+  // §4): `maxAttempts` is what a wall buys, `fix` is what a review finding buys.
+  // Printing only the first would make the second exactly as invisible as the
+  // policy this line exists to show.
   const repair = resolved.recipe.repair;
   log(
     `  ${"repair".padEnd(9)} ${
-      repair.on ? `on — at most ${repair.maxAttempts} agent(s) per item` : "(off)"
+      repair.on
+        ? `on — at most ${repair.maxAttempts} agent(s) per item, ` +
+          `${repair.fix} fix round(s) per review refusal`
+        : "(off)"
     }`,
   );
   log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${resolved.recipe.source.kinds.join(" > ")}`);
