@@ -63,9 +63,11 @@ export interface Worktree {
    * was an issue's first, and `#84` makes a second run on the same branch the
    * ordinary case — a repair is exactly that.
    *
-   * Read *before* `worktree add -B`, which moves the mirror's own copy of the
-   * ref, and read from a mirror that has just been fetched, which is what makes
-   * it origin's value rather than a stale local one.
+   * Read from a mirror that has just been fetched, which is what makes it
+   * origin's value rather than a stale local one. It used to have to be read
+   * *before* `worktree add -B`, which moved the mirror's own copy of the ref;
+   * since 0039 §1 the checkout is detached and writes no ref, so the ordering
+   * no longer matters and the value is simply what origin has.
    */
   remoteHead: string | null;
 }
@@ -131,12 +133,38 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
   // From the base branch as the mirror has it, which is `origin/<base>` — never
   // from anything local, and never from the agent's previous branch.
   const baseSha = await git(["rev-parse", options.base], { ...run, cwd: mirror });
-  // Before `-B` moves it. See `Worktree.remoteHead`.
   const remoteHead = await git(["rev-parse", "--verify", `refs/heads/${options.branch}`], {
     ...run,
     cwd: mirror,
   }).catch(() => null);
-  await git(["worktree", "add", "--force", "-B", options.branch, path, baseSha], {
+  /**
+   * **Detached, and that is what lets the worktree outlive the merge lane**
+   * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §1).
+   *
+   * This used to be `-B <branch>`, which checks `agent/<n>` out here — and git
+   * refuses to update a ref that some worktree has checked out, *including when
+   * the update is a no-op*:
+   *
+   *     fatal: refusing to fetch into branch 'refs/heads/agent/7'
+   *            checked out at '.../worktrees/<runId>'
+   *
+   * The merge lane fetches exactly that ref before it merges, so a worktree
+   * alive at that moment broke the first end-to-end run, and the answer for a
+   * year was to release the worktree first. That ordering is what 0039 §1
+   * overturns, so the collision has to go instead of the worktree.
+   *
+   * **Nothing needed the branch to be checked out here.** The push below has
+   * always been `HEAD:refs/heads/<branch>` — the code already treats HEAD as
+   * what is being proposed and the branch as where it goes — and every gate
+   * works on the diff against `baseSha`. What the agent loses is `git status`
+   * naming a branch; what it gains is a worktree that is still there when
+   * something refuses.
+   *
+   * It also stops `-B` from clobbering `refs/heads/<branch>` in the mirror, so
+   * `remoteHead` above is now simply what origin has rather than a value
+   * rescued before a local write.
+   */
+  await git(["worktree", "add", "--force", "--detach", path, baseSha], {
     ...run,
     cwd: mirror,
   });

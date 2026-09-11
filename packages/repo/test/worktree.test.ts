@@ -103,10 +103,87 @@ describe("provisionWorktree", () => {
     // Readable only by the owner: it holds real values.
     expect((await stat(wt.plantedAt)).mode & 0o077).toBe(0);
 
+    // **Detached** (0039 §1). The branch is where the work goes, not what this
+    // worktree holds — see below for the whole of why.
     const branch = await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt.path });
-    expect(branch.stdout.trim()).toBe("agent/1");
+    expect(branch.stdout.trim()).toBe("HEAD");
+    // And at the base, which is the part that did not change.
+    const at = await exec("git", ["rev-parse", "HEAD"], { cwd: wt.path });
+    expect(at.stdout.trim()).toBe(wt.baseSha);
 
     await removeWorktree({ project: base.project, runId: "run-1", home });
+  });
+
+  /**
+   * **The constraint 0039 §1 had to solve, pinned so it cannot come back.**
+   *
+   * The merge lane fetches `+refs/heads/<branch>:refs/heads/<branch>` into the
+   * mirror before it merges. git refuses to update a ref that any worktree of
+   * that mirror has checked out — *including when the update is a no-op*:
+   *
+   *     fatal: refusing to fetch into branch 'refs/heads/agent/1'
+   *            checked out at '.../worktrees/run-2'
+   *
+   * So for as long as `provisionWorktree` used `-B <branch>`, a live worktree
+   * and a merge could not coexist, and the ordering that followed — release the
+   * worktree, *then* integrate — is the one 0039 §1 overturns. The worktree
+   * outliving the lane is the whole decision; this test is the reason it can.
+   *
+   * It asserts the fetch rather than the checkout because the checkout is the
+   * implementation and this is the requirement: whatever provisioning does, the
+   * lane must be able to move that ref while the run is still holding its
+   * worktree.
+   */
+  it("leaves the branch ref free, so the merge lane can move it while the worktree lives", async () => {
+    const wt = await provisionWorktree({
+      ...base,
+      branch: "agent/1",
+      runId: "run-2",
+      submodules: false,
+      remote: originPath,
+      home,
+    });
+
+    // The run's own push, which comes first in a real pass and is what gives
+    // the lane something to fetch. `HEAD:refs/heads/<branch>` is verbatim what
+    // `run-once.ts` does, and it is the reason a detached checkout costs
+    // nothing: the branch has never been what this worktree holds.
+    await exec("git", ["config", "user.email", "a@example.invalid"], { cwd: wt.path });
+    await exec("git", ["config", "user.name", "agent"], { cwd: wt.path });
+    await writeFile(join(wt.path, "CHANGELOG.md"), "a change\n");
+    await exec("git", ["add", "-A"], { cwd: wt.path });
+    await exec("git", ["commit", "-qm", "the agent's change"], { cwd: wt.path });
+    await exec("git", ["push", "-q", originPath, "HEAD:refs/heads/agent/1"], { cwd: wt.path });
+
+    // The lane's fetch, verbatim from `integrate.ts`, into the same mirror the
+    // worktree above was cut from — with that worktree still on disk.
+    const mirror = join(home, "repos", `${base.project}.git`);
+    const fetched = await exec(
+      "git",
+      [
+        "fetch",
+        "--prune",
+        originPath,
+        `+refs/heads/${base.base}:refs/heads/${base.base}`,
+        "+refs/heads/agent/1:refs/heads/agent/1",
+      ],
+      { cwd: mirror },
+    ).catch((err: Error) => err);
+
+    expect(
+      fetched instanceof Error ? fetched.message : "",
+      "the lane cannot fetch past a live worktree",
+    ).not.toContain("refusing to fetch");
+    expect(fetched).not.toBeInstanceOf(Error);
+
+    // And the ref really moved to what the run pushed, which is what the lane
+    // goes on to merge. A fetch that quietly did nothing would pass the
+    // assertion above and merge the base into itself.
+    const head = await exec("git", ["rev-parse", "HEAD"], { cwd: wt.path });
+    const ref = await exec("git", ["rev-parse", "refs/heads/agent/1"], { cwd: mirror });
+    expect(ref.stdout.trim()).toBe(head.stdout.trim());
+
+    await removeWorktree({ project: base.project, runId: "run-2", home });
   });
 
   /**

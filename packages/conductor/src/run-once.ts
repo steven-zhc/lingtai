@@ -50,15 +50,25 @@
  * **Four things a run acquires, and one scope each.** The worktree, the hook
  * socket and the agent process are `Effect.acquireRelease` pairs, so each is
  * released because its scope closed — on the happy path, on a typed refusal, on
- * a defect and on an interruption alike. The scopes also encode an ordering
- * that used to be a comment beside an explicit call: *the worktree is gone
- * before the integrator runs*, because the integrator is outside its scope.
+ * a defect and on an interruption alike.
+ *
+ * **The worktree's scope is the pass**
+ * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §1),
+ * which is a change: it used to close before the integrator, and every
+ * expensive path in this file followed from that. It was not a preference. The
+ * worktree held `agent/<n>` checked out against the mirror the lane fetches
+ * into, and git refuses to update a ref some worktree has checked out — so the
+ * worktree and the merge could not coexist, and *release it first* was the only
+ * available order. `provisionWorktree` cuts a detached checkout now; nothing
+ * holds the branch, and the two can. The hook socket and the agent process keep
+ * their narrow scopes, which is what an agent may not outlive.
  *
  * The fourth is the run's log file
  * ([0034](../../../doc/decisions/0034-the-run-log.md)), and its scope is wider
- * than the other three for the reason the others' are narrow: its release
- * decides **keep or delete**, and that turns on whether the run landed, which
- * is not known until after the worktree is gone.
+ * still, for the reason the narrow ones are narrow: its release decides **keep
+ * or delete**, and that turns on whether the run landed. It is acquired before
+ * the worktree and released after it, which is what one scope and reverse order
+ * of acquisition give without anybody arranging it.
  *
  * **And one ending stops the conductor rather than the item.** A run that never
  * started ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)) met
@@ -675,15 +685,19 @@ export function runOnce(
       );
 
     /**
-     * A fourth scope, outside the other three, and it is the log's.
+     * The outermost scope, and it is the log's.
      *
-     * The worktree, the socket and the agent process each have one already.
-     * This one is wider than all of them because what closes it has to know
-     * something none of them does: **whether the run landed**
-     * ([0034](../../../doc/decisions/0034-the-run-log.md) §4). The worktree's
-     * scope ends before the merge lane — that is what "before the integrator"
-     * means and it cannot be relaxed — so a decision taken there would be taken
-     * while the answer is still unknowable.
+     * It is wider than the socket's and the agent's because what closes it has
+     * to know something neither of them does: **whether the run landed**
+     * ([0034](../../../doc/decisions/0034-the-run-log.md) §4).
+     *
+     * It is wider than the worktree's too, and only just: since
+     * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+     * §1 the worktree is acquired **in this scope**, after the log, so the merge
+     * lane runs with it still up and the two release in order — worktree, then
+     * log — without anybody arranging it. What this paragraph used to say is
+     * that the worktree's scope ends before the merge lane and cannot be
+     * relaxed. It could, and relaxing it is 0039.
      *
      * It still runs on every outcome, which is the property 0034 asked for:
      * landed, held, failed, crashed, interrupted. The `catchTag`,
@@ -742,42 +756,66 @@ export function runOnce(
       runLog.note("run", `${runId} · ${workItemId} · ${branch} → ${base}`);
 
       /**
-       * Everything that needs the worktree, and nothing that does not.
+       * **The worktree, and it lives as long as the pass**
+       * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §1).
        *
-       * The scope ends where `await ports.repo.remove(...)` used to be called by
-       * hand, and for the reason that call gave: the worktree holds `agent/<n>`
-       * checked out against the same mirror, and git refuses to update a ref
-       * some worktree has checked out. Keeping it alive through the merge is
-       * what made the first end-to-end run fail. The integrator is below this
-       * block because that is now what "before the integrator" *means*.
+       * Acquired in the run's own scope rather than in the block below, which is
+       * the whole of §1: the block below closes before the merge lane, and this
+       * does not. Everything a refusal could be answered by — the branch, the
+       * build, the diff — is therefore still on disk when the refusal happens,
+       * and *a new run* stops being the answer to anything except a run that
+       * ended.
+       *
+       * **It could not be here until the checkout stopped holding the branch.**
+       * The ordering this replaces was not a preference: the worktree held
+       * `agent/<n>`, git refuses to update a ref some worktree has checked out,
+       * and the merge lane fetches exactly that ref — so keeping it alive
+       * through the merge is what broke the first end-to-end run. The comment
+       * that recorded this sat 690 lines below the one that cited it, which is
+       * why 0039 was written believing nothing recorded it at all.
+       * `provisionWorktree` cuts a detached checkout now, and
+       * `worktree.test.ts` pins the fetch rather than the checkout.
+       *
+       * Released after the lane, before the run log — one scope, reverse order
+       * of acquisition, and the log's release still decides keep-or-delete from
+       * a `didLand` that is by then known.
+       */
+      const worktree = yield* Effect.acquireRelease(
+        repo
+          .provision({
+            project,
+            owner: options.client.owner,
+            repo: options.client.repo,
+            base,
+            branch,
+            runId,
+            submodules: recipe.repo.submodules,
+            plantAt: recipe.env.plantAt,
+            env: env.values,
+            token: options.token,
+            home,
+            remote: options.remote,
+            gitEnv: options.gitEnv,
+          })
+          .pipe(failing("worktree")),
+        () => repo.remove({ project, runId, home }),
+      );
+      log(`worktree ${worktree.path} at ${worktree.baseSha.slice(0, 7)}`);
+
+      /** A git command in the worktree, which is where all of them run. */
+      const gitInWorktree = (args: string[]) =>
+        repo.git(args, { token: options.token, env: options.gitEnv, cwd: worktree.path });
+
+      /**
+       * Everything that runs while an agent might be, and nothing that does not.
+       *
+       * What this scope still owns is the fix loop's abort controller: a fixer
+       * left running when it closes would hold the worktree the way an
+       * implementer did before anything released it. The worktree itself moved
+       * out — see above.
        */
       const decided = yield* Effect.scoped(
         Effect.gen(function* () {
-          const worktree = yield* Effect.acquireRelease(
-            repo
-              .provision({
-                project,
-                owner: options.client.owner,
-                repo: options.client.repo,
-                base,
-                branch,
-                runId,
-                submodules: recipe.repo.submodules,
-                plantAt: recipe.env.plantAt,
-                env: env.values,
-                token: options.token,
-                home,
-                remote: options.remote,
-                gitEnv: options.gitEnv,
-              })
-              .pipe(failing("worktree")),
-            () => repo.remove({ project, runId, home }),
-          );
-          log(`worktree ${worktree.path} at ${worktree.baseSha.slice(0, 7)}`);
-
-          /** A git command in the worktree, which is where all of them run. */
-          const gitInWorktree = (args: string[]) =>
-            repo.git(args, { token: options.token, env: options.gitEnv, cwd: worktree.path });
 
           // ---- 6. the hook, proven to fail closed before anything is dispatched
           // It refuses nothing (ADR 0016 §6) and carries everything: the prompt, the
@@ -1580,8 +1618,10 @@ export function runOnce(
         }),
       );
 
-      // And the worktree has done its job: the scope above closed and took it
-      // down. Everything below runs without one.
+      // The agent is done and **the worktree is not** (0039 §1). The scope above
+      // took down the fixer's abort controller; everything below — the hold, the
+      // merge lane, the repair decision — runs with the branch, the build and
+      // the diff still on disk.
       const { headSha, pipeline, atMerge, unresolved } = decided;
 
       // ---- 12. hold, if anything asked for a person -------------------------
