@@ -38,6 +38,19 @@ source:
     - agent:needs-schema-approval
     - agent:review
     - agent:wip
+    # An epic is a table of contents, not work. `#126` was claimed on
+    # 2026-09-10, spent a full pass and a repair on a body with no code in it,
+    # and blocked on a test suite it had no way to satisfy.
+    #
+    # **Named rather than hidden.** The first fix was to take its kind label
+    # away, which works — the queue only sees an issue the recipe has a kind
+    # for — and it makes the reason an *absence*: the epic counts under
+    # `no-kind` beside genuine miscategorisations, and it stops rendering as the
+    # kind of work it is. Excluding it by name keeps its `feature`, keeps its
+    # colour, and says why it is passed over. Same argument as 0016 §4, and the
+    # same one `recipe.ts:172` makes about this list being the *only* reason an
+    # issue is passed over for its labels.
+    - epic
 
   # How long a failed attempt keeps its own ticket out of the queue
   # ([0028](../doc/decisions/0028-the-backoff-is-the-recipes.md)).
