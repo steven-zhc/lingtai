@@ -105,7 +105,8 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0035](decisions/0035-the-site-is-a-projection.md) | **The site is a projection of this repository, and its hero is the real board** | accepted |
 | [0036](decisions/0036-the-core-takes-a-ticket.md) | **The core takes a ticket, and where it came from is an adapter's business** | accepted; clarifies 0016 §1's queue row |
 | [0037](decisions/0037-an-extension-is-a-command.md) | **An extension is a command, and the only question is whether the core waits** | accepted; supersedes 0016 §5's "plugins are trusted code" |
-| [0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) | **A finding buys an agent before it buys your attention** | accepted; gives 0025 a second budget it deliberately did not have |
+| [0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) | **A finding buys an agent before it buys your attention** | accepted; §4's two purses superseded by 0039 |
+| [0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) | **The worktree is the whole of a pass, and a refusal never costs it** | accepted; supersedes 0025 §2–§3 and 0038 §4 |
 
 ## Experiments
 
