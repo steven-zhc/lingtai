@@ -88,7 +88,7 @@ env: { required: [ESC_TEST_VALUE], plantAt: .env.local }
 gates:
   proposed:
     - { name: build, run: "test -f src/fix.ts", timeout: 2m }
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m, rounds: 1 } }
 `;
 
 const project: ProjectState = {
@@ -154,17 +154,17 @@ const REFUSING_RECIPE = RECIPE.replace(
 );
 
 /**
- * The same, for a project that has said it does not repair.
+ * The same, for a project that buys no rounds at all.
  *
- * `repair.on` defaults to true
- * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) §2), so this
- * is the recipe that gets the *other* outcome of a failure — a block carrying
- * the reason no agent was bought.
+ * `runtime.limits.rounds` defaults to 2
+ * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3),
+ * so this is the recipe that gets the *other* outcome of a refusal — a block
+ * carrying the reason no agent was bought. `rounds: 0` is the whole of what
+ * `repair.on: false` used to say.
  */
-const NO_REPAIR_RECIPE = REFUSING_RECIPE.replace(
-  "runtime: {",
-  `repair: { on: false }
-runtime: {`,
+const NO_ROUNDS_RECIPE = REFUSING_RECIPE.replace(
+  "rounds: 1",
+  "rounds: 0",
 );
 
 /** GitHub, minus GitHub. Serves the issue and the recipe from the base branch. */
@@ -396,28 +396,46 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'fix the race'
   }, 120_000);
 
   /**
-   * A red gate is the managed repository's failure, so it buys one agent.
+   * **A red gate goes back to the agent in the same worktree**
+   * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2),
+   * and when the rounds are spent a person is asked.
    *
-   * The old assertion here — claim, block, and stop — is what `#84` is about:
-   * an item whose merge lane refused sat in "Waiting on you" with a line of git
-   * output and no move. Since 0025 the failure has an outcome instead: it is
-   * recorded, the item goes back to the queue, and the next claim is the repair
-   * that was bought. Nothing merges either way, which is the part that has not
-   * changed.
+   * This test used to assert the opposite, and the change is the whole of
+   * `#141`. A refusing `run:` action walked on to the merge lane, was refused
+   * there a second time as `gate-failed`, and bought an agent for a **whole new
+   * run** — re-implementing a branch that was sitting on disk with one command
+   * failing on it. The expensive path was never a decision about builds: it was
+   * a consequence of the worktree being released before the integrator ran, so
+   * there was nowhere to send the refusal back to.
+   *
+   * `proposed` is inside the worktree's scope already, so this half needed
+   * nothing from `#140`. What it needed was for `decideFix` to stop reading "no
+   * `findings` field" as "no acceptance criterion": a red build has one, and a
+   * harder one than a finding's — *run it again; green is green*.
+   *
+   * **And the gate here never goes green**, deliberately. The fixer is told
+   * what the command printed, commits, the whole point runs again, it refuses
+   * again, and the round is spent. That is the path that has to end with a
+   * person rather than with another purchase.
    */
-  it("buys one agent when a gate refuses, and still does not merge", async () => {
+  it("sends a red gate back to the agent, and asks a person when the rounds are spent", async () => {
     // A second issue, so the first one's history stays intact.
     const other = { ...issue, number: 118 };
     created.add(workItemStream(PROJECT, 118));
 
-    // A perfectly ordinary change, against a recipe whose gate refuses. The
-    // gate has to be the thing that fails rather than the file state: by now
-    // `develop` contains what the first run merged, so a gate looking for that
-    // file would pass — which is exactly how this test failed the first time.
+    // Every prompt this run hands out, in order, so the test can read what the
+    // fixer was told. Appended rather than written: the implementer and the
+    // fixer are the same fake binary, and the second call is the one under test.
+    const prompts = join(root, "red-gate-prompts.txt");
+    // A commit per call, so a round is a real round: `git commit` on an
+    // unchanged tree fails, and a fixer that commits nothing is a *decline*,
+    // which is a different test.
     const agent = await agentThat(`
-echo 'a change like any other' > CHANGELOG.md
+printf '%s\n=====\n' "$2" >> ${prompts}
+n=$(git rev-list --count HEAD)
+echo "change $n" > CHANGELOG.md
 git add -A
-git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
+git -c user.name=agent -c user.email=a@example.invalid commit -qm "change $n"
 `);
 
     const result = await once({
@@ -430,112 +448,74 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'wrong change'
       }),
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    created.add(result.runId!);
-    expect(result.stage).toBe("integrate");
-    expect(result.detail).toContain("gate-failed");
-    // The evidence travels with the refusal: the board shows why, not that.
-    expect(result.detail).toContain("the build is broken");
-
-    // Recorded, *then* released — and the order is the mechanism, not a
-    // preference: between the two the fold carries a pending repair, and the
-    // next claim is that repair.
-    const events = await store.read(workItemStream(PROJECT, 118));
-    expect(events.map((e) => e.type)).toEqual([
-      "WorkItemClaimed",
-      "IssueUpdated",
-      "RepairRequested",
-      "WorkItemReleased",
-      "IssueUpdated",
-    ]);
-
-    const bought = events.find((e) => e.type === "RepairRequested")!;
-    expect(bought.data).toMatchObject({ reason: "gate-failed", attempt: 1 });
-    // The refusal verbatim, because that is what the next attempt's prompt is
-    // given. A summary that hid the gate's output would make the repair a
-    // re-run with extra steps.
-    expect((bought.data as { detail: string }).detail).toContain("the build is broken");
-
-    // The item is queueable again, and the one thing it must not be is merged.
-    expect(reduceWorkItem(events).lifecycle.status).toBe("backlog");
-    expect(reduceWorkItem(events).pendingRepair?.fingerprint).toHaveLength(12);
-
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("wrong change");
-  }, 240_000);
-
-  /**
-   * The repair itself, and the two things that make it one.
-   *
-   * It runs straight after the test above, on the same work item, because that
-   * is the whole mechanism: the release put `#118` back in the queue carrying a
-   * pending repair, and the next claim *is* it. Nothing nominates it as such.
-   *
-   * **Told what went wrong** — the previous refusal reaches the prompt, which
-   * is the difference between a repair and a re-run at the same price.
-   *
-   * **Ends by asking** — `ApprovalRequested` on the head it produced, from a
-   * recipe that declares nothing at `merge` and without `--no-merge`. This is
-   * the requirement the two stuck items prove was missing: fixing the branch is
-   * not enough, because the run whose approval was consumed is still `gating`
-   * and nothing re-offers the decision.
-   */
-  it("tells the repair what went wrong, and ends it by asking for approval", async () => {
-    const other = { ...issue, number: 118 };
-    // The prompt the agent was handed, written out so the test can read it.
-    // `-p <prompt>` is argv 2; see `claude-code.ts`.
-    const seen = join(root, "repair-prompt.txt");
-    const agent = await agentThat(`
-printf '%s' "$2" > ${seen}
-mkdir -p src
-echo 'export const repaired = 1;' > src/repaired.ts
-git add -A
-git -c user.name=agent -c user.email=a@example.invalid commit -qm 'the repair'
-`);
-
-    const result = await once({
-      ...options(agent),
-      issue: 118,
-      // A recipe whose gate passes now. The failure is behind it; what is under
-      // test is what the repair is told and how it ends.
-      client: fakeClient({ getIssue: async () => other, listOpenIssues: async () => [other] }),
-    });
-
+    // Held, not failed: the point that refused it is where it stopped, and what
+    // a person gets is a question on the head the rounds produced.
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
 
-    // The template here names no `{{failure}}` slot, which is the case that
-    // must not lose it: a repair whose failure never reached the agent is a
-    // re-run at the same price.
-    const prompt = await readFile(seen, "utf8");
-    expect(prompt).toContain("fix the race");
-    expect(prompt).toContain("this one is the repair");
-    expect(prompt).toContain("gate-failed");
-    // Verbatim, not summarised: the raw failure has to stay reachable.
-    expect(prompt).toContain("the build is broken");
-
-    // The approval is bound to the commit the repair produced, so a person is
-    // approving *this* diff and a force-push invalidates it by arithmetic.
     const run = await store.read(result.runId);
-    const asked = run.find((e) => e.type === "ApprovalRequested");
-    expect(asked, "a repair that does not ask has not repaired anything").toBeDefined();
-    expect(asked!.data).toMatchObject({ gate: "merge", action: "repair", onSha: result.headSha });
-    expect((asked!.data as { question: string }).question).toContain("A repair for gate-failed");
+    // One round bought and spent, recorded before the agent ran — the evidence
+    // it was handed is the contract, and a log that learned it afterwards could
+    // only ever show the rounds that survived.
+    const requested = run.filter((e) => e.type === "FixRequested");
+    expect(requested).toHaveLength(1);
+    expect(requested[0]!.data).toMatchObject({ round: 1, action: "build" });
+    expect(run.find((e) => e.type === "FixApplied")!.data).toMatchObject({ round: 1 });
 
-    // And it did not merge itself. The person approves the diff.
+    // **The fixer was told what the command printed, verbatim.** Not a
+    // diagnosis of it: a prompt saying "the build failed because X" would hand
+    // the agent one reading of the evidence instead of the evidence.
+    const handed = (await readFile(prompts, "utf8")).split("\n=====\n");
+    expect(handed.length).toBeGreaterThan(2);
+    const toTheFixer = handed[1]!;
+    expect(toTheFixer).toContain("the build is broken");
+    expect(toTheFixer).toContain("fix round 1 of 1");
+    // And the acceptance test it will be held to, which is the one thing no
+    // prose can loosen.
+    expect(toTheFixer).toContain("has to go green");
+    // Not the reviewer's shape: there are no findings here and the prompt must
+    // not pretend there are.
+    expect(toTheFixer).not.toContain("failure scenario");
+
+    // Then a person, and **no repair**: one ceiling has to mean one
+    // destination, or a build that spent every round would also buy a run.
+    expect(run.some((e) => e.type === "RepairRequested")).toBe(false);
+    const asked = run.find((e) => e.type === "ApprovalRequested");
+    expect(asked!.data).toMatchObject({ gate: "proposed", action: "unfixed" });
+    expect((asked!.data as { question: string }).question).toContain("still red after 1 fix round");
+
+    const events = await store.read(workItemStream(PROJECT, 118));
+    expect(events.map((e) => e.type)).toEqual([
+      "WorkItemClaimed",
+      "IssueUpdated",
+      "WorkItemBlocked",
+      "IssueUpdated",
+      "IssueUpdated",
+    ]);
+    const item = reduceWorkItem(events).lifecycle;
+    expect(item.status).toBe("blocked");
+    // The card says what stayed red and that it stayed red, rather than naming
+    // a stage: this is a check that failed and kept failing, not a judgement.
+    expect(item.status === "blocked" && item.diagnosis?.what).toContain("still refuses");
+    expect(item.status === "blocked" && item.diagnosis?.raw).toContain("the build is broken");
+
+    // The one thing it must not be is merged.
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("the repair");
+    expect(log.stdout).not.toContain("change ");
   }, 240_000);
 
   /**
    * The other outcome, and the one that must never be an absence.
    *
-   * A project that says it does not repair still has to end up somewhere a
-   * person can act. So the block carries the reason no agent was bought —
-   * `#84`'s *"the card says so and offers whatever the remaining move is,
-   * rather than a control that refuses"*.
+   * A project that buys no rounds still has to end up somewhere a person can
+   * act. So the block carries the reason no agent was bought — `#84`'s *"the
+   * card says so and offers whatever the remaining move is, rather than a
+   * control that refuses"*.
+   *
+   * `rounds: 0` is the whole of what `repair.on: false` used to say (0039 §4):
+   * a boolean beside a count whose zero already means the same thing was a
+   * redundant pair, and the count is in the block an operator reads for limits.
    */
   it("blocks with the typed reason, and says why no agent was bought", async () => {
     const other = { ...issue, number: 134 };
@@ -551,16 +531,19 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
       ...options(agent),
       issue: 134,
       client: fakeClient({
-        recipe: NO_REPAIR_RECIPE,
+        recipe: NO_ROUNDS_RECIPE,
         getIssue: async () => other,
         listOpenIssues: async () => [other],
       }),
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    created.add(result.runId!);
-    expect(result.stage).toBe("integrate");
+    // **Held, not failed** (0039 §3). Before 0039 a refusing gate walked on to
+    // the merge lane, was refused a second time as `gate-failed`, and came back
+    // as a typed failure at `integrate`. It stops at the point that refused it
+    // now, and what a person gets is a question rather than a stage name.
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
 
     // Blocked with a question, not silently dropped — the board's "Waiting on
     // you" column is where a refusal goes.
@@ -573,58 +556,40 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
     expect(events.map((e) => e.type)).toEqual([
       "WorkItemClaimed",
       "IssueUpdated",
-      "RepairDeclined",
       "WorkItemBlocked",
       "IssueUpdated",
       "IssueUpdated",
     ]);
 
-    expect(events.find((e) => e.type === "RepairDeclined")!.data).toMatchObject({
-      reason: "gate-failed",
-      why: expect.stringContaining("repair.on: false"),
+    // The decline is recorded on the *run*, where the rounds are spent, and it
+    // says which rule refused: "nothing happened because nobody asked for it"
+    // and "nothing happened and we do not know why" are the two things a log
+    // exists to keep apart.
+    const run = await store.read(result.runId);
+    expect(run.find((e) => e.type === "FixDeclined")!.data).toMatchObject({
+      action: "build",
+      why: expect.stringContaining("runtime.limits.rounds: 0"),
     });
+    // And no agent ran: `rounds: 0` is a refusal to buy, not a round that
+    // failed.
+    expect(run.some((e) => e.type === "FixRequested")).toBe(false);
+
     // And the sentence reaches the card, which is the whole point of recording
     // it: a question with no reason in it is the thing being replaced.
     const item = reduceWorkItem(events).lifecycle;
     expect(item.status).toBe("blocked");
-    expect(item.status === "blocked" && item.question).toContain("no repair:");
+    expect(item.status === "blocked" && item.question).toContain("build");
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
     expect(log.stdout).not.toContain("unrepaired change");
   }, 240_000);
 
-  /**
-   * `nextloom-ai-admin`'s default branch is a feature branch, not `develop`.
-   * Falling back to it would read a run's rules from one branch while merging
-   * into another — the confusion 0005 exists to prevent.
-   */
-  /**
-   * The move that is left, on the item the test above blocked.
-   *
-   * `#84`'s last requirement: an item whose integration failed is never left in
-   * a state with no path forward. The run is `gating` — its approval, if it had
-   * one, is spent — so `approve()` refuses; putting it back in the queue is the
-   * thing that can actually happen, and the next attempt is cut from a base
-   * that has moved since.
-   */
-  it("puts a blocked item a repair could not help back in the queue", async () => {
-    const before = await approve({
-      project: PROJECT,
-      issue: 134,
-      base: "develop",
-      client: fakeClient(),
-      by: "human:test",
-      store,
-    });
-    // The control the board used to offer here, refusing exactly as #84 says.
-    expect(before.ok).toBe(false);
-    expect(before.ok === false && before.reason).toBe("not-awaiting-approval");
-
+  it("lets a person hand a still-red item back to the queue", async () => {
     const back = await requeue({
       project: PROJECT,
       issue: 134,
       by: "human:test",
-      note: "develop has moved; a fresh branch should merge",
+      note: "the build needs a person; a fresh branch should start from it",
       store,
     });
     expect(back.ok).toBe(true);
@@ -645,6 +610,21 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
     expect(again.detail).toContain("backlog");
   }, 60_000);
 
+  /**
+   * The two moves left on it, and `#84`'s requirement that there always be one.
+   *
+   * An item whose gate stayed red is never left in a state with no path
+   * forward. Before 0039 there was exactly one move — hand it back to the queue
+   * — because the run was `gating` and its approval, if it had one, was spent;
+   * `approve()` refused with `not-awaiting-approval` and the board's control
+   * did nothing.
+   *
+   * **There are two now, and the first one is new.** The pass stopped at
+   * `proposed` and asked, so there is a live `ApprovalRequested` bound to the
+   * head the rounds produced — a person who has read the failure can merge it
+   * anyway. That is the same escape a disagreement has had since 0038, reaching
+   * a red build because 0039 stopped treating the two as different flows.
+   */
   /**
    * A refused review buys an agent, the review runs again, and **the cheap way
    * to pass is caught**

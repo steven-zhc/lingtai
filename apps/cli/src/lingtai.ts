@@ -15,7 +15,7 @@ import {
   databaseUrl,
   directDatabaseUrl,
 } from "@lingtai/event-store";
-import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
+import { describeFilters, loadProjects, passCeiling, projectFilters } from "@lingtai/conductor";
 import { taskViewProjection } from "@lingtai/projector";
 import type { Tier } from "@lingtai/domain";
 import {
@@ -38,7 +38,7 @@ import {
   startDaemon,
   type ShutdownRequest,
 } from "@lingtai/daemon";
-import { parseDuration } from "@lingtai/recipe";
+import { LIMIT_DEFAULTS, parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
 import { conductorPass } from "./conduct.ts";
@@ -117,11 +117,20 @@ Projections: ${taskViewProjection.name}
  *
  * Not read from a recipe: the drain belongs to the installation and the limit
  * belongs to whichever project happens to be running — so this names where the
- * number lives and the schema's default, rather than a number that would be
- * wrong for every project but one. `2h` is that default; this repository's own
- * recipe says `1h`.
+ * numbers live and what the schema defaults to, rather than a number that would
+ * be wrong for every project but one.
+ *
+ * **Computed rather than written down** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+ * This sentence used to say `runtime.limits.wall (2h by default)`, which was
+ * true when it was written and false once a pass could buy more than one agent
+ * run — a sentence in `apps/cli` chasing a number in `packages/recipe`, with
+ * nothing between them to notice. It is now made out of `LIMIT_DEFAULTS`, so the
+ * only way to make it wrong is to change the schema and the sentence together.
  */
-const WALL_LIMIT = "the recipe's runtime.limits.wall (2h by default)";
+const WALL_LIMIT = `the recipe's runtime.limits — by default, ${passCeiling({
+  ...LIMIT_DEFAULTS,
+  wallMs: parseDuration(LIMIT_DEFAULTS.wall),
+})}`;
 
 async function doctor(): Promise<number> {
   // Touching the loaders here rather than reading process.env keeps the one rule

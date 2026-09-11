@@ -29,6 +29,7 @@ import {
   RecipeMissingError,
   type ResolvedRecipe,
   baseDivergence,
+  parseDuration,
   resolveRecipe,
 } from "@lingtai/recipe";
 import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/domain";
@@ -41,6 +42,7 @@ import {
 } from "@lingtai/github";
 import { githubApp } from "@lingtai/env";
 import { eventStore } from "@lingtai/event-store";
+import { passCeiling } from "@lingtai/conductor";
 
 export interface AddOptions {
   slug: string;
@@ -216,20 +218,16 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // agent's worth of money on a failure without being asked again
   // ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) §2).
   //
-  // **Both numbers**, because there are two and they are spent by different
-  // failures ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
-  // §4): `maxAttempts` is what a wall buys, `fix` is what a review finding buys.
-  // Printing only the first would make the second exactly as invisible as the
-  // policy this line exists to show.
-  const repair = resolved.recipe.repair;
-  log(
-    `  ${"repair".padEnd(9)} ${
-      repair.on
-        ? `on — at most ${repair.maxAttempts} agent(s) per item, ` +
-          `${repair.fix} fix round(s) per review refusal`
-        : "(off)"
-    }`,
-  );
+  // **The product, not the numbers that make it**
+  // ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+  // There were two ceilings here and they were printed side by side, which told
+  // a reader everything except the thing being decided: what one pass of this
+  // project can cost. One sentence, from `passCeiling`, so this line and the
+  // drain's cannot say different things about the same recipe.
+  log(`  ${"a pass".padEnd(9)} ${passCeiling({
+    ...resolved.recipe.runtime.limits,
+    wallMs: parseDuration(resolved.recipe.runtime.limits.wall),
+  })}`);
   log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${resolved.recipe.source.kinds.join(" > ")}`);
 
   log(`  tier ${resolved.recipe.runtime.tier}`);

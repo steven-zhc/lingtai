@@ -155,6 +155,13 @@ export const taskViewProjection: Projection = {
         repair_run_id  text,
         -- { "run-abc": 1.42 }. A map for the reason the gates column is one:
         -- assignment replays to the same number and += does not.
+        --
+        -- **Wider than its name since 0039 §3.** It began as what a *repair*
+        -- cost — an agent the merge lane bought for the next run — and now holds
+        -- every round a pass buys to answer a refusal, keyed run#fixN for
+        -- those. The name is kept because renaming a column is a rebuild of
+        -- every row to change nothing anybody reads; the board says
+        -- "answering", which is what a person actually sees.
         repair_costs   jsonb not null default '{}'::jsonb,
 
         -- Retention and ordering. From the event's own clock, never now().

@@ -178,10 +178,25 @@ export function repairFingerprint(failure: Failure): string {
     .slice(0, 12);
 }
 
-/** What the recipe says about repairing. See `Recipe.repair`. */
+/**
+ * What the recipe says about repairing. See `Recipe.runtime.limits.rounds`.
+ *
+ * **One number, and it is the pass's** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §4).
+ * `repair.on` and `repair.maxAttempts` are gone; what is left of this decision
+ * reads `rounds` and counts it against the repairs on the item.
+ *
+ * That is a slight abuse and it is deliberate and temporary. `rounds` is
+ * documented as *how many times a pass sends the agent back*, and this counts
+ * how many **new runs** a work item has bought — a different extent, one level
+ * up. It is here because the alternative was keeping a second recipe key alive
+ * for one caller that `#142` deletes: when a conflict is answered in the
+ * worktree like every other refusal, `decideRepair` stops deciding about money
+ * at all and this reading of `rounds` goes with it. Until then the number at
+ * least bounds both, and there is one of it.
+ */
 export interface RepairPolicy {
-  on: boolean;
-  maxAttempts: number;
+  /** `runtime.limits.rounds`. Zero means this repository buys no agent. */
+  rounds: number;
 }
 
 export type RepairDecision =
@@ -233,8 +248,11 @@ export function decideRepair(input: RepairInput): RepairDecision {
     return no("this is a hold somebody meant, not a failure — it is yours to answer");
   }
 
-  if (!policy.on) {
-    return no("this project's recipe says it does not repair (repair.on: false)");
+  if (policy.rounds === 0) {
+    return no(
+      "this project's recipe sends every refusal straight to a person " +
+        "(runtime.limits.rounds: 0)",
+    );
   }
 
   if (item.repairRun?.runId === runId) {
@@ -248,10 +266,8 @@ export function decideRepair(input: RepairInput): RepairDecision {
     return no(`this exact failure has already bought an agent (${fingerprint})`);
   }
 
-  if (item.repairs.length >= policy.maxAttempts) {
-    return no(
-      `the ceiling of ${policy.maxAttempts} repair attempt(s) for this item is spent`,
-    );
+  if (item.repairs.length >= policy.rounds) {
+    return no(`the ceiling of ${policy.rounds} repair attempt(s) for this item is spent`);
   }
 
   return { repair: true, fingerprint, attempt: item.repairs.length + 1 };

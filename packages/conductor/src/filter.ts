@@ -19,7 +19,7 @@
 import { GATE_POINTS, type GatePoint, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
+import { formatDuration, parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 
 /**
@@ -87,20 +87,26 @@ export type ProjectFilter =
       /** The labels that keep an agent off a ticket. */
       exclude: readonly string[];
       /**
-       * Whether a failure of this repository's buys an agent, and how many.
+       * What one pass may spend: `runtime.limits`, as numbers.
        *
        * Lifted out of the recipe for the same reason `kinds` is: this is a
        * thing an operator has to be able to read without opening Lingtai's
        * source (0025 §2), and every place that says what a project will do
        * reads this shape rather than the recipe.
+       *
+       * **All three together, because the interesting number is not any of
+       * them** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+       * What an operator actually needs is `(rounds + 1) × wall`, and this is
+       * where the three numbers that make it live in one place. `wallMs` is
+       * parsed here so no caller reads a duration string.
        */
-      repair: { on: boolean; maxAttempts: number; fix: number };
+      limits: { rounds: number; turns: number; wall: string; wallMs: number };
       /**
        * How long a failed attempt keeps its own ticket out of the queue,
        * `source.backoff` in milliseconds
        * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
        *
-       * Lifted out for the reason `repair` is, and it is the same kind of
+       * Lifted out for the reason `limits` is, and it is the same kind of
        * thing: a default that spends money — or, here, one that decides when
        * money is spent next — has to be readable without opening Lingtai's
        * source. Parsed once here so that no caller reads a duration string.
@@ -178,7 +184,12 @@ export async function projectFilter(
       ref: resolved.ref,
       kinds: resolved.recipe.source.kinds,
       exclude: resolved.recipe.source.exclude,
-      repair: resolved.recipe.repair,
+      limits: {
+        rounds: resolved.recipe.runtime.limits.rounds,
+        turns: resolved.recipe.runtime.limits.turns,
+        wall: resolved.recipe.runtime.limits.wall,
+        wallMs: parseDuration(resolved.recipe.runtime.limits.wall),
+      },
       backoffMs: parseDuration(resolved.recipe.source.backoff),
       plan: gatePlan(resolved.recipe),
       recipe: resolved.recipe,
@@ -201,6 +212,41 @@ export async function projectFilters(
  * `RecipeInvalidError` puts one problem per line, which reads well in a thrown
  * message and badly in a column. Folded to one line here, keeping every problem.
  */
+/**
+ * What one pass may spend, as one sentence, out of the three numbers that decide
+ * it ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+ *
+ * **The product is the fact, and nothing was computing it.** `wall` bounds one
+ * agent run; a pass buys up to `rounds + 1` of them. On 2026-09-10 the drain
+ * told an operator it would wait at most one `wall` — true when that sentence
+ * was written, false by the time the fix loop shipped, and false in a way no
+ * reader could catch, because the sentence was in one file and the number in
+ * another. Everything that says what a pass costs calls this, so there is one
+ * sentence and it is made of the numbers.
+ *
+ * Turns are named too, and not multiplied: they bound a run and do not add up
+ * across runs the way time does.
+ */
+export function passCeiling(limits: {
+  rounds: number;
+  turns: number;
+  wall: string;
+  wallMs: number;
+}): string {
+  if (limits.rounds === 0) {
+    return (
+      `one agent run — ${limits.wall}, ${limits.turns} turns. ` +
+      "Every refusal goes straight to you (runtime.limits.rounds: 0)"
+    );
+  }
+  const runs = limits.rounds + 1;
+  return (
+    `up to ${runs} agent runs — the work, then ${limits.rounds} round(s) back to ` +
+    `the agent carrying what refused it. ${limits.wall} and ${limits.turns} turns ` +
+    `each, so at most ${formatDuration(limits.wallMs * runs)}`
+  );
+}
+
 function oneLine(message: string): string {
   return message.replace(/\s*\n\s*/g, " ").trim();
 }
@@ -234,15 +280,13 @@ export function describeFilter(filter: ProjectFilter): string[] {
     `${name} recipe ${filter.configHash.slice(0, 12)} from ${filter.ref}`,
     `  picks up     ${filter.kinds.join(" > ")}${order}`,
     `  excludes     ${filter.exclude.length > 0 ? filter.exclude.join(", ") : "nothing"}`,
-    // Printed whether it is on or off, like a `skipped` gate point: a default
-    // that only appears when it is doing something is a default nobody can
-    // audit, and this one spends money (0025 §2).
-    `  repairs      ${
-      filter.repair.on
-        ? `yes — at most ${filter.repair.maxAttempts} agent(s) per item, ` +
-          `${filter.repair.fix} fix round(s) per review refusal`
-        : "no — a failure of this repository's buys nothing"
-    }`,
+    // Printed whether it buys anything or not, like a `skipped` gate point: a
+    // default that only appears when it is doing something is a default nobody
+    // can audit, and this one spends money (0025 §2).
+    //
+    // **The product, not the three numbers**, because the product is the thing
+    // an operator is deciding about and the one nobody was computing (0039 §3).
+    `  a pass       ${passCeiling(filter.limits)}`,
     // In the recipe's own words, for the same reason. The backoff decides when
     // this project spends money again and it was in none of the four places
     // that describe a project (#95) — a rule nobody can read is one nobody can

@@ -279,12 +279,22 @@ function Card({
             {card.gatesApproved} approved
           </li>
         ) : null}
-        {/* Apart from the work's cost, deliberately. A repair is default-on and
-            spends an agent without being asked again, so folding it into the
-            number beside it would make it an invisible bill (#84). */}
+        {/* Apart from the work's cost, deliberately. Answering a refusal is
+            default-on and spends an agent without being asked again, so folding
+            it into the number beside it would make it an invisible bill (#84).
+
+            It says *answering* rather than *repair* since 0039 §3: the column
+            holds every round a pass bought — a refused review, a red build, and
+            after `#142` a conflict — and only one of those was ever a repair.
+            The column is still `repair_costs`; renaming it is a projection
+            change and a rebuild, and this is the reading, which is what a person
+            sees. */}
         {card.repairCostUsd !== null ? (
-          <li className="pill sig" title="what diagnosing this has cost, apart from the work">
-            ${card.repairCostUsd.toFixed(2)} repair
+          <li
+            className="pill sig"
+            title="what answering refusals on this has cost, apart from the work"
+          >
+            ${card.repairCostUsd.toFixed(2)} answering
           </li>
         ) : null}
         {/* A card that keeps failing should read as one rather than looking new
@@ -587,7 +597,7 @@ export default async function Page({
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, repair, queueOrder, projects: filters }, registered, control] =
+  const [{ columns, limits, queueOrder, projects: filters }, registered, control] =
     await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()]);
   const total = columns.reduce((n, c) => n + c.cards.length, 0);
   // What the *cards* say, not what is registered: a card can outlive its
@@ -667,11 +677,12 @@ export default async function Page({
         >
           ${cost.work.toFixed(2)}
         </span>
-        {/* Apart from the work, the way the card keeps it apart: a repair is
-            default-on and spends an agent without being asked again (#84). */}
+        {/* Apart from the work, the way the card keeps it apart: answering a
+            refusal is default-on and spends an agent without being asked again
+            (#84). *Answering* and not *repair*, for the card's reason above. */}
         {cost.repair > 0 ? (
-          <span className="chip sig" title="what diagnosing them cost, apart from the work">
-            ${cost.repair.toFixed(2)} repair
+          <span className="chip sig" title="what answering refusals cost, apart from the work">
+            ${cost.repair.toFixed(2)} answering
           </span>
         ) : null}
         {/* Then the rest, last, and as its parts. `11 items` was the sum of
@@ -696,28 +707,24 @@ export default async function Page({
             </span>
           </>
         )}
-        {/* Whether a failure of this repository's buys an agent — shown when it
-            is off as well as when it is on, the way an unconfigured gate point
-            is shown as `skipped` rather than omitted (0025 §2). A default that
-            spends money and is invisible until it fires is one nobody can
-            audit. */}
-        {repair.map((r) => (
+        {/* What one pass of this repository may spend — shown when it buys
+            nothing as well as when it buys something, the way an unconfigured
+            gate point is shown as `skipped` rather than omitted (0025 §2). A
+            default that spends money and is invisible until it fires is one
+            nobody can audit.
+
+            The chip is the short form and the title is `passCeiling`'s
+            sentence, which is the same sentence `lingtai add` prints and the
+            drain says (0039 §3). */}
+        {limits.map((l) => (
           // A fragment, not a wrapper: `.bar` lays its children out directly,
           // and an element around the pair would be one flex item instead of
           // two.
-          <Fragment key={r.project}>
+          <Fragment key={l.project}>
             <span className="sep" />
-            <span
-              className={`chip ${r.on ? "" : "idle"}`}
-              title={
-                r.on
-                  ? `a failure of ${r.project}'s buys an agent to fix it, at most ${r.maxAttempts} time(s) per item; ` +
-                    `a refused review buys ${r.fix} round(s) of fix-and-re-review`
-                  : `${r.project} does not repair — a failure waits for you`
-              }
-            >
-              {repair.length > 1 ? `${r.project}: ` : ""}
-              {r.on ? `repairs ×${r.maxAttempts} · fixes ×${r.fix}` : "no repair"}
+            <span className={`chip ${l.rounds === 0 ? "idle" : ""}`} title={l.summary}>
+              {limits.length > 1 ? `${l.project}: ` : ""}
+              {l.rounds === 0 ? "no rounds" : `rounds ×${l.rounds}`}
             </span>
           </Fragment>
         ))}

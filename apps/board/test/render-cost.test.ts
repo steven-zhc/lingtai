@@ -71,7 +71,7 @@ function resolvedFilter(name: string, kinds: string[]) {
     ok: true,
     kinds,
     backoffMs: 0,
-    repair: { on: true, maxAttempts: 1, fix: 1 },
+    limits: { rounds: 2, turns: 150, wall: "1h", wallMs: 3_600_000 },
     plan: new Map(),
   } as unknown as Extract<ProjectQueue, { state: "listed" }>["filter"];
 }
@@ -115,7 +115,7 @@ describe("the projects on a board", () => {
     // rule the old loop got from being a loop, and the one concurrency is most
     // likely to take away.
     expect(result.kindOrder).toEqual(["bug", "feature"]);
-    expect(result.repair.map((r) => r.project)).toEqual(["lingtai", "nextloom-ai-admin"]);
+    expect(result.limits.map((l) => l.project)).toEqual(["lingtai", "nextloom-ai-admin"]);
   });
 
   it("name a project GitHub would not answer for, and keep its filter", async () => {

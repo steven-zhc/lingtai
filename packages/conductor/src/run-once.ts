@@ -88,11 +88,14 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
 import {
+  type FixOn,
   decideFix,
   declineWhy,
   diagnoseDisagreement,
+  diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
+  unfixedQuestion,
 } from "./fix.ts";
 import { standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
@@ -1255,9 +1258,26 @@ export function runOnce(
            * here is a rule nobody can check. What is here is the order.
            */
           let rounds = 0;
-          let disagreement: {
+          /**
+           * The point still refuses and there are no rounds left to buy.
+           *
+           * **Whatever refused, this is where it stops** (0039 §2, §3): the
+           * approval below reads it and asks a person instead of walking on to
+           * the merge lane. Before 0039 only a findings-shaped refusal could get
+           * here, and a red build walked on to be refused a second time and buy
+           * a whole new run — so a build that spent every round would also spend
+           * a repair. One ceiling means one destination.
+           *
+           * `on` is carried because the two read nothing alike. *Two agents
+           * disagreed* is the right sentence for a judgement and the wrong one
+           * for a typecheck error, which is why 0038 kept a red build out of
+           * this shape rather than describing it badly.
+           */
+          let unresolved: {
             action: string;
+            on: FixOn;
             findings: readonly GateFinding[];
+            evidence: string;
             rounds: number;
             why: string;
           } | null = null;
@@ -1277,29 +1297,36 @@ export function runOnce(
             // why `PipelineResult.results` does.
             const refused = pipeline.results.filter((r) => r.verdict === "failed").at(-1)!;
             const decision = decideFix({
-              refusal: { action: refused.gate, findings: refused.findings },
-              policy: recipe.repair,
+              refusal: {
+                action: refused.gate,
+                findings: refused.findings,
+                evidence: refused.evidence,
+              },
+              rounds: recipe.runtime.limits.rounds,
               roundsSpent: rounds,
             });
 
             if (!decision.fix) {
               log(`no fix for ${refused.gate}: ${decision.why}`);
               runLog.note("fix", `none: ${decision.why}`);
-              // **Only a refusal with findings was ever this purse's to spend.**
-              // A red build carries none: it is the merge lane's business and
-              // `repair.maxAttempts`'s, so calling it a disagreement would hand a
-              // person "two agents disagreed" about a typecheck error, and
-              // recording a decline for it would put a certainty on the log once
-              // per broken build.
+              // **Every refusal this loop could have bought for is recorded
+              // declining it**, which is `RepairDeclined`'s reason: "nothing
+              // happened because nobody asked for it" and "nothing happened and
+              // we do not know why" are the two things a log exists to keep
+              // apart. Until 0039 a red build was neither — it was the merge
+              // lane's business, so it left no `FixDeclined` and no trace here
+              // at all.
               //
-              // A refusal that *did* carry findings gets both, for
-              // `RepairDeclined`'s reason: "nothing happened because nobody asked
-              // for it" and "nothing happened and we do not know why" are the two
-              // things a log exists to keep apart.
-              if (refused.findings.length > 0) {
-                disagreement = {
+              // The one refusal that still records nothing is the one this loop
+              // was never able to act on: `decideFix` refused it for carrying no
+              // criterion, so there was no decision about money to record.
+              const actionable = refused.findings.length > 0 || refused.evidence.trim() !== "";
+              if (actionable) {
+                unresolved = {
                   action: refused.gate,
+                  on: refused.findings.length > 0 ? "findings" : "output",
                   findings: refused.findings,
+                  evidence: refused.evidence,
                   rounds,
                   why: decision.why,
                 };
@@ -1361,10 +1388,17 @@ export function runOnce(
                 .run({
                   runId: `${runId}:fix:${decision.round}`,
                   cwd: worktree.path,
+                  // The one argument that differs between a refused review and
+                  // a red build (0039 §2). `decideFix` already worked out which
+                  // shape the refusal is, and re-deciding it here would be a
+                  // second source of truth for one question.
                   prompt: fixBrief({
-                    findings: refused.findings,
+                    refusal:
+                      decision.on === "findings"
+                        ? { on: "findings", findings: refused.findings }
+                        : { on: "output", output: refused.evidence },
                     round: decision.round,
-                    of: recipe.repair.fix,
+                    of: recipe.runtime.limits.rounds,
                     action: refused.gate,
                     diff: underReview,
                     diffBytes: recipe.runtime.budget.diff,
@@ -1418,10 +1452,10 @@ export function runOnce(
             );
 
             if (!committed) {
-              // Nothing to re-review: the reviewer would be asked the same
+              // Nothing to run again: the point would be asked the same
               // question about the same commit and would answer it the same way,
               // and paying for that is the one thing a second opinion must not
-              // be. The findings stand, and they stand as a disagreement.
+              // be. The refusal stands, and a person is asked.
               //
               // **A decline and a crash arrive here as the same branch and are
               // not the same event** (0039 §5). Committing nothing is the
@@ -1434,9 +1468,11 @@ export function runOnce(
               // the agent's last message travels with it. It is the whole of
               // the objection the prompt promises will reach somebody — clipped
               // here, because this sentence is read on a card.
-              disagreement = {
+              unresolved = {
                 action: refused.gate,
+                on: decision.on,
                 findings: refused.findings,
+                evidence: refused.evidence,
                 rounds,
                 why: fixed.failure
                   ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
@@ -1540,13 +1576,13 @@ export function runOnce(
             }
           }
 
-          return { headSha: head, pipeline, atMerge, disagreement };
+          return { headSha: head, pipeline, atMerge, unresolved };
         }),
       );
 
       // And the worktree has done its job: the scope above closed and took it
       // down. Everything below runs without one.
-      const { headSha, pipeline, atMerge, disagreement } = decided;
+      const { headSha, pipeline, atMerge, unresolved } = decided;
 
       // ---- 12. hold, if anything asked for a person -------------------------
       // Three things can ask: a gate at `proposed` whose verdict is
@@ -1573,45 +1609,52 @@ export function runOnce(
       // a repair unattended would also be the one thing 0025 refuses: the
       // person is meant to approve the diff the repair produced.
       //
-      // **And a disagreement asks, rather than going to the merge lane**
-      // ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
-      // A reviewer refused, an agent was bought or declined, and the review
-      // still refuses: that is a judgement about a diff and not a failure of
-      // one. Stopping here rather than below is what keeps the two purses
-      // apart — the merge lane would refuse with `gate-failed` and `decideRepair`
-      // would spend `repair.maxAttempts` on a finding, which is §4's race in the
-      // one direction that costs money. A person can still merge it: the
-      // approval below is requested on this head like any other.
+      // **And a point that spent its rounds asks, rather than going to the merge
+      // lane** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+      // Something refused, an agent was bought or declined, and it still
+      // refuses. Stopping here rather than below is what makes `rounds` the one
+      // ceiling it claims to be: the merge lane would refuse with `gate-failed`
+      // and `decideRepair` would buy *another* agent for a refusal this pass has
+      // already paid up to `rounds` for. One ceiling has to mean one
+      // destination, or it is not a ceiling.
+      //
+      // 0038 made this argument for a refused review and kept a red build out of
+      // it, because a build was the merge lane's business then. It is not any
+      // more, and the argument never depended on which kind of failure it was.
+      // A person can still merge it: the approval below is requested on this
+      // head like any other.
       if (
         pipeline.heldAt !== null ||
         atMerge.heldAt !== null ||
         options.merge === false ||
         repairOf !== null ||
-        disagreement !== null
+        unresolved !== null
       ) {
         // `heldAt` is an *action* name; the point is the pipeline it came from.
         // The operator's `--no-merge` is a hold at the `merge` point that names
         // itself as the action, so a card tells it from a configured one; a
         // repair names itself `repair` for the same reason.
-        // **A disagreement names itself, for exactly the reason the two above
-        // do, and it is worth saying why the obvious alternative destroys the
-        // thing it was trying to point at.**
+        // **An unresolved point names itself, for exactly the reason the two
+        // above do, and it is worth saying why the obvious alternative destroys
+        // the thing it was trying to point at.**
         //
-        // Naming it after the reviewer reads well — *the thing a person is
-        // looking at is that action's findings* — and gives this request the
-        // same `${gate}:${action}` key as the `GateFailed` that holds them.
+        // Naming it after the action reads well — *the thing a person is looking
+        // at is that action's findings* — and gives this request the same
+        // `${gate}:${action}` key as the `GateFailed` that holds them.
         // `task-view.ts:427` folds both through one `setGate`, so the request,
         // which carries no verdict and no findings, overwrites the refusal it
         // exists to report: verdict, evidence and findings replaced by an empty
         // `pending` entry, on every projection and every rebuild.
         //
         // So the pointer travels in the question, which is what a person reads,
-        // and the key stays the request's own.
-        const gate = pipeline.heldAt !== null || disagreement !== null ? "proposed" : "merge";
+        // and the key stays the request's own. Two names and not one, because
+        // the two are not the same event: `disagreement` is a judgement two
+        // agents could not settle, `unfixed` is a check that stayed red.
+        const gate = pipeline.heldAt !== null || unresolved !== null ? "proposed" : "merge";
         const action =
           pipeline.heldAt ??
           atMerge.heldAt ??
-          (disagreement ? "disagreement" : null) ??
+          (unresolved ? (unresolved.on === "findings" ? "disagreement" : "unfixed") : null) ??
           (repairOf ? "repair" : "no-merge");
 
         if (pipeline.heldAt === null && atMerge.heldAt === null) {
@@ -1631,10 +1674,13 @@ export function runOnce(
                 // "approve this" without naming it is half a question.
                 question:
                   (repairOf ? `A repair for ${repairOf.reason}. ` : "") +
-                  (disagreement
-                    ? `Merge ${branch} into ${base} anyway? Two agents disagreed: ` +
-                      `the ${disagreement.action} reviewer still refuses it after ` +
-                      `${disagreement.rounds} fix round(s).`
+                  (unresolved
+                    ? unresolved.on === "findings"
+                      ? `Merge ${branch} into ${base} anyway? Two agents disagreed: ` +
+                        `the ${unresolved.action} reviewer still refuses it after ` +
+                        `${unresolved.rounds} fix round(s).`
+                      : `Merge ${branch} into ${base} anyway? \`${unresolved.action}\` is ` +
+                        `still red after ${unresolved.rounds} fix round(s).`
                     : pipeline.ok && atMerge.ok
                       ? `Merge ${branch} into ${base}? Every gate passed.`
                       : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} gate refused.`),
@@ -1646,8 +1692,10 @@ export function runOnce(
         // Blocked rather than released, the same as a refusal — a question for
         // a person belongs in "Waiting on you", not back in the queue where
         // another run could claim it and throw the question away.
-        const question = disagreement
-          ? disagreementQuestion({ ...disagreement, branch, base })
+        const question = unresolved
+          ? unresolved.on === "findings"
+            ? disagreementQuestion({ ...unresolved, branch, base })
+            : unfixedQuestion({ ...unresolved, branch, base })
           : repairOf
             ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
             : `held at the ${gate} gate: ${branch} into ${base}`;
@@ -1667,15 +1715,22 @@ export function runOnce(
         const green = pipeline.ok && atMerge.ok;
         const failedAt = pipeline.failedAt ?? atMerge.failedAt;
         /**
-         * **A disagreement is diagnosed as one, and not as a gate refusing.**
-         * 0038's consequence: what reaches a person is no longer a finding, it is
-         * *two agents looked at this and did not agree*. The sentence is
-         * `fix.ts`'s, with the findings verbatim under it — a card that said "the
-         * review gate refused" would be describing the first half of something
-         * that has since happened twice.
+         * **A point that spent its rounds is diagnosed as what it is, and not as
+         * a gate refusing.** 0038's consequence, now in two shapes: what reaches
+         * a person is no longer the first refusal, it is something that has since
+         * happened `rounds + 1` times. A card saying "the review gate refused"
+         * would be describing the first half of that.
+         *
+         * The two shapes stay apart all the way to the card. *Two agents looked
+         * at this and did not agree* is a judgement being handed over; *this
+         * check ran again and is still red* is a fact being reported. Collapsing
+         * them would save a branch and cost the reader the only thing they need
+         * to know first: whether there is anything here to decide.
          */
-        const diagnosis = disagreement
-          ? diagnoseDisagreement({ ...disagreement, branch, base, headSha })
+        const diagnosis = unresolved
+          ? unresolved.on === "findings"
+            ? diagnoseDisagreement({ ...unresolved, branch, base, headSha })
+            : diagnoseUnfixed({ ...unresolved, branch, headSha })
           : {
               what:
                 `${branch} is at ${headSha.slice(0, 7)} and ` +
@@ -1780,7 +1835,7 @@ export function runOnce(
         const failed = yield* Effect.promise(() => store.read(workItemId));
         const decision = decideRepair({
           failure: { source: "integration", reason: merged.reason, detail: merged.detail },
-          policy: recipe.repair,
+          policy: { rounds: recipe.runtime.limits.rounds },
           item: reduceWorkItem(failed),
           runId,
         });

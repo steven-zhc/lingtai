@@ -28,18 +28,19 @@ import type { PlanView } from "@/lib/queued";
  * The bounds, on the box's own footer.
  *
  * `runtime.limits` in the recipe's own words rather than in milliseconds, so
- * the line reads back against the file it came from. The repair is stated
- * whether it is on or off (0025 §2): a default that spends money and only
+ * the line reads back against the file it came from. `rounds` is stated whether
+ * it buys anything or not (0025 §2): a default that spends money and only
  * appears when it is doing something is a default nobody can audit.
+ *
+ * The three that bound a pass sit together here because they do in the recipe
+ * (0039 §3) — what this footer says and what the file says are the same block.
  */
 function limits(plan: PlanView): string {
   return [
     `${plan.turns} turns`,
     plan.wall,
     plan.tier,
-    plan.repair.on
-      ? `${plan.repair.maxAttempts} repair · ${plan.repair.fix} fix`
-      : "no repair",
+    plan.rounds === 0 ? "straight to you" : `${plan.rounds} round(s) back`,
   ].join(" · ");
 }
 

@@ -34,6 +34,7 @@ import { eventStore } from "@lingtai/event-store";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { runnableNow } from "@lingtai/conductor/discover";
 import { loadProjects } from "@lingtai/conductor/projects";
+import { passCeiling } from "@lingtai/conductor/filter";
 import { projectFilter, type GatePlan, type ProjectFilter } from "@lingtai/conductor/filter";
 import { foldProgress, type RunProgress } from "./progress.ts";
 import { recipeAtHead } from "./recipe.ts";
@@ -171,33 +172,32 @@ export interface BoardCard {
 }
 
 /**
- * Whether a project repairs, as the board says so.
+ * What one pass of a project may spend, as the board says so.
  *
  * On the bar rather than on a card, because it is a fact about the repository
- * and not about any one ticket — and shown whether it is on or off, the way an
- * unconfigured gate point is shown as `skipped` rather than omitted (0025 §2).
- * A default that is invisible when it is off is a default nobody can audit.
+ * and not about any one ticket — and shown whether it buys anything or not, the
+ * way an unconfigured gate point is shown as `skipped` rather than omitted
+ * (0025 §2). A default that is invisible when it is off is a default nobody can
+ * audit.
+ *
+ * **`summary` is `passCeiling`'s sentence and not the board's own**
+ * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+ * Three places say what a pass costs — here, `lingtai add` and the drain — and
+ * the last time two of them were written separately one of them was wrong for a
+ * day without anybody being able to see it.
  */
-export interface RepairPolicyView {
+export interface PassLimitsView {
   project: string;
-  on: boolean;
-  maxAttempts: number;
-  /**
-   * Rounds of fix-and-re-review a refused review buys
-   * ([0038](../../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
-   *
-   * Beside `maxAttempts` and not folded into it, because the bar has to be able
-   * to say what a *finding* buys: the two numbers are spent by different
-   * failures, and a bar showing only the first would make the second exactly as
-   * invisible as the policy this view exists to show.
-   */
-  fix: number;
+  /** `runtime.limits.rounds`. Zero means every refusal goes straight to a person. */
+  rounds: number;
+  /** `passCeiling`'s sentence, for the chip's title. */
+  summary: string;
 }
 
 export interface Board {
   columns: BoardColumn[];
   /** One per project whose recipe could be read. */
-  repair: RepairPolicyView[];
+  limits: PassLimitsView[];
   /**
    * The priority order the Queued column groups by — `source.kinds`, earlier
    * first, which is the order `selectRunnable` sorts on.
@@ -442,7 +442,7 @@ export async function queuedCards(
 ): Promise<{
   cards: BoardCard[];
   problems: QueueProblem[];
-  repair: RepairPolicyView[];
+  limits: PassLimitsView[];
   /** `source.backoff` per project, for the held cards `loadBoard` folds from the log. */
   backoffMs: Map<string, number>;
   /**
@@ -466,7 +466,7 @@ export async function queuedCards(
   // Gathered here rather than by a second pass over the projects: this loop
   // already resolves every recipe, and asking GitHub twice for a fact that
   // arrived with the first answer is how a render gets expensive.
-  const repair: RepairPolicyView[] = [];
+  const limits: PassLimitsView[] = [];
   const backoffMs = new Map<string, number>();
   const plans = new Map<string, GatePlan>();
   const kindColors = new Map<string, Record<string, string>>();
@@ -494,11 +494,10 @@ export async function queuedCards(
       continue;
     }
     const filter = answer.filter;
-    repair.push({
+    limits.push({
       project: filter.project,
-      on: filter.repair.on,
-      maxAttempts: filter.repair.maxAttempts,
-      fix: filter.repair.fix,
+      rounds: filter.limits.rounds,
+      summary: passCeiling(filter.limits),
     });
     backoffMs.set(filter.project, filter.backoffMs);
     plans.set(filter.project, filter.plan);
@@ -549,7 +548,7 @@ export async function queuedCards(
       });
     }
   }
-  return { cards, problems, repair, backoffMs, plans, kindColors, kindOrder };
+  return { cards, problems, limits, backoffMs, plans, kindColors, kindOrder };
 }
 
 /**
@@ -634,7 +633,7 @@ export async function loadBoard(project?: string): Promise<Board> {
 
   return {
     columns: toColumns(cards, queued.problems),
-    repair: queued.repair,
+    limits: queued.limits,
     queueOrder: queued.kindOrder,
     // Unfiltered, deliberately. This is the list the filter is chosen *from*,
     // so narrowing it to the current choice would remove every way back to the

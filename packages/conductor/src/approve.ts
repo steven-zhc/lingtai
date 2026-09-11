@@ -149,7 +149,7 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
     // approval is granted, the merge hits a conflict, and the approval has been
     // consumed. Whether that failure buys an agent is the recipe's, and this is
     // where it has to be known.
-    repairPolicy = recipe.recipe.repair;
+    repairPolicy = { rounds: recipe.recipe.runtime.limits.rounds };
   } catch (err) {
     return {
       ok: false,

@@ -114,6 +114,9 @@ export async function resolveRecipe(
     throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`]);
   }
 
+  const retired = retiredKeys(applied.recipe);
+  if (retired.length > 0) throw new RecipeInvalidError(ref, retired);
+
   const parsed = Recipe.safeParse(applied.recipe);
   if (!parsed.success) {
     throw new RecipeInvalidError(
@@ -132,6 +135,40 @@ export async function resolveRecipe(
     tier: parsed.data.runtime.tier,
     preset: applied.preset,
   };
+}
+
+/**
+ * Keys that used to mean something and now mean nothing, refused by name.
+ *
+ * `Recipe` is `z.object` and not `z.strictObject`, so a key it no longer knows
+ * is **silently dropped** — and a repository that wrote `repair.maxAttempts: 3`
+ * would go on running with `rounds`' default while its own file said otherwise.
+ * That is the failure this project keeps finding under another name: a setting
+ * present, believed, and not connected to anything.
+ *
+ * So the refusal is explicit, it names the replacement, and it happens before
+ * validation — a recipe is a thing a person edits, and being told *this moved
+ * to `runtime.limits.rounds`* is the difference between a two-minute fix and an
+ * afternoon. Refusing rather than migrating is deliberate: the two old numbers
+ * do not add up to the new one (0039 §3), so only the repository can say what
+ * it meant.
+ *
+ * Removing an entry from here is safe once no recipe anywhere can still carry
+ * the key; leaving one costs a string comparison per run.
+ */
+function retiredKeys(raw: unknown): string[] {
+  if (typeof raw !== "object" || raw === null) return [];
+  const out: string[] = [];
+  if ("repair" in raw) {
+    out.push(
+      "repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` " +
+        "are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. " +
+        "`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this " +
+        "repository wants a pass to spend; the two old ceilings do not add up to the new one, " +
+        "so Lingtai will not guess",
+    );
+  }
+  return out;
 }
 
 /**

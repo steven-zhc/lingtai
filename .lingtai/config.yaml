@@ -233,40 +233,6 @@ gates:
       when: landed
       close: true
 
-# A failure of this repository's buys one agent to fix it, and Lingtai's own
-# never do ([0025](../doc/decisions/0025-a-failure-buys-one-agent.md)).
-#
-# Written out rather than left to the default, because this is the repository
-# that has to be able to read its own policy without opening its own source —
-# and because one is a deliberate number here.
-#
-# **The reason for the ceiling changed on 2026-09-08.** It used to bound only
-# spend: every merge waited for a person, so a repair produced a diff that was
-# read before it landed. `merge` is empty now, so a repair that passes
-# `proposed` lands unread. One attempt is therefore the whole of the limit on
-# how far an agent may go correcting itself, not just on what that costs.
-repair:
-  on: true
-  maxAttempts: 1
-
-  # What a finding buys, as its own number
-  # ([0038](../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
-  #
-  # `maxAttempts` above is what a wall buys: a broken build, a conflict, a
-  # refusal from the merge lane. This is what a refused *review* buys — rounds of
-  # fix-and-re-review inside the run that was refused, with the reviewer's
-  # failure scenarios handed over verbatim as the acceptance criterion.
-  #
-  # Two numbers because one was being spent by two kinds of failure: a bad build
-  # that used `maxAttempts` used to leave a one-line finding with nothing to buy
-  # an agent with. A shared ceiling is not a budget, it is a race.
-  #
-  # One here, which is the default, and for the same reason the ceiling above is
-  # one: `merge` is empty, so what a fix produces lands unread if the re-review
-  # passes it. One round is the whole of the limit on how far an agent may go
-  # answering a reviewer, not just on what that costs.
-  fix: 1
-
 runtime:
   agent: claude-code
   # Lower than admin's 300. A change here is meant to be small enough to read in
@@ -275,6 +241,26 @@ runtime:
   limits:
     turns: 150
     wall: 1h
+
+    # How many times a pass sends the agent back, carrying what refused it
+    # ([0039](../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+    #
+    # Written out rather than left to the default, because this is the
+    # repository that has to be able to read its own policy without opening its
+    # own source — and because the number is a deliberate one here.
+    #
+    # **Two, and this is what one pass of this repository costs at most:**
+    # 3 × 1h. The three numbers above decide that between them, which is why
+    # they are one block and why `lingtai add`, the board and the drain all say
+    # it from `passCeiling` rather than each writing it out.
+    #
+    # **The reason for a low ceiling changed on 2026-09-08 and still holds.** It
+    # used to bound only spend: every merge waited for a person, so an agent's
+    # correction produced a diff that was read before it landed. `merge` is
+    # empty now, so a round that passes `proposed` lands unread. This is
+    # therefore the whole of the limit on how far an agent may go correcting
+    # itself, not just on what that costs.
+    rounds: 2
 
   # How much an agent is told about the attempts before it
   # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).

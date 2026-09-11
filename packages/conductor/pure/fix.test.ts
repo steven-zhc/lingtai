@@ -40,98 +40,118 @@ const finding = (over: Partial<GateFinding> = {}): GateFinding => ({
   ...over,
 });
 
-const refusal = (findings: GateFinding[] = [finding()]) => ({ action: "review", findings });
+const refusal = (findings: GateFinding[] = [finding()], evidence = "") => ({
+  action: "review",
+  findings,
+  evidence,
+});
 
-const policy = { on: true, fix: 1 };
+/** A command's refusal: no findings, and its output is the whole of what it has. */
+const redBuild = (evidence = "src/a.ts(7,3): error TS2339: Property 'x' does not exist") => ({
+  action: "build",
+  findings: [] as GateFinding[],
+  evidence,
+});
 
 describe("whether a refusal buys an agent", () => {
   it("buys one for a finding with a failure scenario", () => {
-    const decision = decideFix({ refusal: refusal(), policy, roundsSpent: 0 });
+    const decision = decideFix({ refusal: refusal(), rounds: 1, roundsSpent: 0 });
 
-    expect(decision).toEqual({ fix: true, round: 1 });
+    expect(decision).toEqual({ fix: true, round: 1, on: "findings" });
   });
 
   /**
-   * The rule that makes the loop safe to have at all. A finding *with* a
-   * scenario determines its own fix — make that sequence stop producing that
-   * outcome — and a refusal without one is not a judgement an agent can be
-   * asked to answer.
+   * **The rule 0039 §2 rewrote, and the part of it that did not move.**
+   *
+   * 0038 §2 refused a red build outright: no `findings` field, no acceptance
+   * criterion, no fixer. That mistook the field for the criterion. *Run it
+   * again; green is green* is a criterion, and a harder one than a finding's —
+   * machine-checked, and impossible for the code under test to author.
    */
-  it("buys nothing for a refusal with no findings, which is what a red build is", () => {
-    const decision = decideFix({ refusal: { action: "build", findings: [] }, policy, roundsSpent: 0 });
+  it("buys one for a command that refused with output, which is what a red build is", () => {
+    const decision = decideFix({ refusal: redBuild(), rounds: 1, roundsSpent: 0 });
+
+    expect(decision).toEqual({ fix: true, round: 1, on: "output" });
+  });
+
+  it("buys nothing for a command that refused and printed nothing", () => {
+    // The other shape of the same bar: a refusal that carries no criterion
+    // cannot be handed to an agent, whether the missing thing is a scenario or
+    // an output.
+    const decision = decideFix({ refusal: redBuild("   "), rounds: 1, roundsSpent: 0 });
 
     expect(decision.fix).toBe(false);
-    expect(decision.fix === false && decision.why).toMatch(/without findings/);
+    expect(decision.fix === false && decision.why).toMatch(/printed nothing/);
   });
 
   it("buys nothing for an 'observation' with an empty scenario", () => {
     // `parseFindings` drops these, and this is the second place the same rule is
     // enforced rather than assumed — a finding that reached here without one is
     // an opinion, and an agent sent to address an opinion rewrites whatever it
-    // likes.
+    // likes. **A gate that produced findings is held to them**, and cannot fall
+    // through to the output branch because it also printed something.
     const decision = decideFix({
-      refusal: refusal([finding({ failureScenario: "   " })]),
-      policy,
+      refusal: refusal([finding({ failureScenario: "   " })], "the reviewer said a lot"),
+      rounds: 1,
       roundsSpent: 0,
     });
 
     expect(decision.fix).toBe(false);
-  });
-
-  it("respects a recipe that does not repair", () => {
-    const decision = decideFix({ refusal: refusal(), policy: { on: false, fix: 2 }, roundsSpent: 0 });
-
-    expect(decision.fix).toBe(false);
-    expect(decision.fix === false && decision.why).toMatch(/repair\.on: false/);
+    expect(decision.fix === false && decision.why).toMatch(/no failure scenario/);
   });
 
   /**
-   * A repository that wants findings read by a person rather than answered by an
-   * agent can say so **without** turning `repair` off and losing the merge
-   * lane's agent with it. That is the whole point of two keys.
+   * What `repair.on: false` used to say, in the block where the other limits
+   * are. A boolean beside a count whose zero already means the same thing is a
+   * redundant pair (0039 §4).
    */
-  it("buys nothing when the recipe asks for no rounds, with repair still on", () => {
-    const decision = decideFix({ refusal: refusal(), policy: { on: true, fix: 0 }, roundsSpent: 0 });
+  it("buys nothing when the recipe asks for no rounds", () => {
+    for (const r of [refusal(), redBuild()]) {
+      const decision = decideFix({ refusal: r, rounds: 0, roundsSpent: 0 });
 
-    expect(decision.fix).toBe(false);
-    expect(decision.fix === false && decision.why).toMatch(/repair\.fix: 0/);
+      expect(decision.fix).toBe(false);
+      expect(decision.fix === false && decision.why).toMatch(/runtime\.limits\.rounds: 0/);
+    }
   });
 
   it("stops at the ceiling, and says which ceiling", () => {
-    expect(decideFix({ refusal: refusal(), policy, roundsSpent: 1 })).toEqual({
+    expect(decideFix({ refusal: refusal(), rounds: 1, roundsSpent: 1 })).toEqual({
       fix: false,
-      why: expect.stringContaining("ceiling of 1 fix round(s)"),
+      why: expect.stringContaining("ceiling of 1 round(s) for this pass"),
     });
     // And a recipe that raised it gets the rounds it asked for.
-    expect(decideFix({ refusal: refusal(), policy: { on: true, fix: 2 }, roundsSpent: 1 })).toEqual({
+    expect(decideFix({ refusal: refusal(), rounds: 2, roundsSpent: 1 })).toEqual({
       fix: true,
       round: 2,
+      on: "findings",
     });
   });
 
   /**
-   * **The property a shared ceiling could not have** (0038 §4).
+   * **The property two purses had, deliberately given up** (0039 §3).
    *
-   * `decideFix` reads `policy.fix` and the rounds spent on this run;
-   * `decideRepair` reads `policy.maxAttempts` and the repairs on the item.
-   * Neither number appears in the other's rules, so a build that broke and spent
-   * the repair ceiling cannot leave a one-line finding with nothing to buy an
-   * agent with — which is the race that was being called a budget.
+   * 0038 §4 split the ceiling because a shared one is a race: whichever failure
+   * happens first decides whether the other gets an attempt at all. That was
+   * true while the two failures went to different places. They go to the same
+   * place now, so the race is gone and one number is honest — but the number has
+   * to be big enough, which is why the schema's default is two and not one. A
+   * pass that fixes a red build and then meets a finding needs both rounds.
+   *
+   * This is the test that would have failed silently under a default of one: it
+   * pins that the second kind of failure still gets an attempt after the first
+   * has spent a round.
    */
-  it("does not read the repair ceiling, however spent it is", () => {
-    const spent = { on: true, fix: 1, maxAttempts: 1 };
+  it("lets a second kind of failure buy a round after the first spent one", () => {
+    const after = decideFix({ refusal: refusal(), rounds: 2, roundsSpent: 1 });
 
-    expect(decideFix({ refusal: refusal(), policy: spent, roundsSpent: 0 })).toEqual({
-      fix: true,
-      round: 1,
-    });
+    expect(after).toEqual({ fix: true, round: 2, on: "findings" });
   });
 });
 
 describe("what the fixer is told", () => {
   const DIFF = "diff --git a/packages/daemon/src/subscribers.ts b/x\n+  } catch {\n+    return ok;";
   const brief = fixBrief({
-    findings: [finding()],
+    refusal: { on: "findings", findings: [finding()] },
     round: 1,
     of: 2,
     action: "review",
@@ -149,7 +169,7 @@ describe("what the fixer is told", () => {
   });
 
   it("says which round of how many, so the agent knows what is left", () => {
-    expect(brief).toContain("fix round\n1 of 2");
+    expect(brief).toContain("fix round 1 of 2");
   });
 
   /**
@@ -161,8 +181,8 @@ describe("what the fixer is told", () => {
    * rather than these scenarios.
    */
   it("hands over no plan, transcript or session from the implementer", () => {
-    expect(brief).toMatch(/not given that agent's reasoning/i);
-    expect(brief).toMatch(/No plan, no transcript, no session/i);
+    expect(brief).toMatch(/not given that agent's reasoning\s+either/i);
+    expect(brief).toMatch(/No plan, no transcript, no\s+session/i);
     // The task is bounded, and the ticket is not part of it: this agent is not
     // being asked to do the work again, it is being asked to make these
     // sequences stop happening.
@@ -176,7 +196,7 @@ describe("what the fixer is told", () => {
     // says *what you fix* now, because the unqualified "Commit." was read
     // against the decline below — see that test.
     expect(brief).toMatch(/\*\*Commit what you fix\.\*\*/);
-    expect(brief).toMatch(/Never make\s+the code worse to make the finding go away/i);
+    expect(brief).toMatch(/Never make\s+the code worse to make the refusal go away/i);
   });
 
   /**
@@ -201,10 +221,10 @@ describe("what the fixer is told", () => {
     // move *achieves*, or an agent under a "produce something" reading will
     // avoid it exactly when it is most needed.
     expect(brief).toMatch(/how your objection\s+reaches a person/i);
-    expect(brief).toMatch(/stops this loop and puts\s+the findings in front of somebody/i);
+    expect(brief).toMatch(/stops this loop and puts\s+the evidence in front of somebody/i);
     // And when to use it, in the terms the fixer can actually check.
-    expect(brief).toMatch(/the sequence it describes cannot happen/i);
-    expect(brief).toMatch(/the failure was not caused by this diff/i);
+    expect(brief).toMatch(/the sequence a finding\s+describes cannot happen/i);
+    expect(brief).toMatch(/the failure was not\s+caused by this diff/i);
   });
 
   it("carries the diff the reviewer was shown, under the same ceiling", () => {
@@ -213,7 +233,7 @@ describe("what the fixer is told", () => {
     // Clipped rather than unbounded, for 0029's reason: a megabyte handed to an
     // agent produces a worse answer, not a better one.
     const huge = fixBrief({
-      findings: [finding()],
+      refusal: { on: "findings", findings: [finding()] },
       round: 1,
       of: 1,
       action: "review",
@@ -225,7 +245,10 @@ describe("what the fixer is told", () => {
 
   it("names every finding it was given", () => {
     const two = fixBrief({
-      findings: [finding(), finding({ file: "apps/board/src/page.tsx", line: 676, severity: "major" })],
+      refusal: {
+        on: "findings",
+        findings: [finding(), finding({ file: "apps/board/src/page.tsx", line: 676, severity: "major" })],
+      },
       round: 1,
       of: 1,
       action: "review",

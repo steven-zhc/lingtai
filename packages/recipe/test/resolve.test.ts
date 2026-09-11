@@ -3,7 +3,16 @@
  * thing that matters about the real one is that its `ref` is a server-side ref.
  */
 import { describe, expect, it } from "vitest";
-import { RECIPE_PATH, RecipeInvalidError, RecipeMissingError, hashRecipe, resolveRecipe } from "../src/index.ts";
+import {
+  LIMIT_DEFAULTS,
+  RECIPE_PATH,
+  RecipeInvalidError,
+  RecipeMissingError,
+  formatDuration,
+  hashRecipe,
+  parseDuration,
+  resolveRecipe,
+} from "../src/index.ts";
 
 const VALID = `
 version: 1
@@ -303,5 +312,71 @@ env:
 
     expect(b.configHash).not.toBe(a.configHash);
     expect(hashRecipe(a.recipe)).toBe(a.configHash);
+  });
+});
+
+/**
+ * A key that used to mean something has to be refused, not dropped.
+ *
+ * `Recipe` is `z.object` and not `z.strictObject` — a key it does not know is
+ * silently discarded. For `repair`, retired by
+ * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §4,
+ * that would leave a repository running on `rounds`' default while its own
+ * committed file said `maxAttempts: 3`: a setting present, believed, and
+ * connected to nothing. That is this project's most-repeated bug class, and it
+ * is worth a test rather than a comment.
+ */
+describe("a retired key", () => {
+  const withRepair = `${VALID}repair:\n  on: true\n  maxAttempts: 3\n`;
+
+  it("refuses the recipe rather than dropping the key", async () => {
+    await expect(
+      resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: withRepair }), "develop"),
+    ).rejects.toBeInstanceOf(RecipeInvalidError);
+  });
+
+  it("names the key and where it went, because a person has to edit the file", async () => {
+    const err = await resolveRecipe(
+      reader({ [`develop:${RECIPE_PATH}`]: withRepair }),
+      "develop",
+    ).catch((e: unknown) => e as RecipeInvalidError);
+
+    const message = String((err as Error).message);
+    expect(message).toContain("repair:");
+    expect(message).toContain("runtime.limits.rounds");
+    // And says what the off switch became, since that is the one a project is
+    // most likely to have set deliberately.
+    expect(message).toContain("rounds: 0");
+  });
+
+  it("says nothing about a recipe that does not carry it", async () => {
+    const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
+
+    expect(resolved.recipe.runtime.limits.rounds).toBe(LIMIT_DEFAULTS.rounds);
+  });
+});
+
+/**
+ * `formatDuration` exists so a sentence about cost can be computed from the
+ * numbers that decide it. The contract is the round trip: **anything it prints,
+ * `parseDuration` reads back.**
+ */
+describe("durations, both ways", () => {
+  it("round-trips through parseDuration", () => {
+    for (const ms of [1_000, 90_000, 3_600_000, 5_400_000, 10_800_000]) {
+      expect(parseDuration(formatDuration(ms))).toBe(ms);
+    }
+  });
+
+  it("prefers whole units, so a reader never does arithmetic", () => {
+    expect(formatDuration(3_600_000)).toBe("1h");
+    expect(formatDuration(10_800_000)).toBe("3h");
+    // Not `1.5h`: a fraction is where arithmetic starts.
+    expect(formatDuration(5_400_000)).toBe("90m");
+    expect(formatDuration(30_000)).toBe("30s");
+  });
+
+  it("falls back to milliseconds rather than lying", () => {
+    expect(formatDuration(1_500)).toBe("1500ms");
   });
 });

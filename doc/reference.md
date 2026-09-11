@@ -155,17 +155,35 @@ reasoning: its diff was 1391 lines across 6 files and fitted comfortably, and fa
 past that is a work item scoped too large — which the compaction counter already
 reports. A megabyte produces a worse review, not a better one.
 
-### what a run may spend — `runtime.limits`, the recipe's
+### what a pass may spend — `runtime.limits`, the recipe's
+
+Two of these bound **one agent run**; the third bounds **how many of them a pass
+buys**. They sit in one block because the number anybody actually wants is the
+product, `(rounds + 1) × wall`, and it is computed once — `passCeiling` — so
+`lingtai add`, the board's chip and `lingtai shutdown` cannot say different
+things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
 
 | Key | Default | What it decides |
 |---|---|---|
-| `runtime.limits.turns` | `300` | turns before the runtime stops the agent |
-| `runtime.limits.wall` | `2h` | wall clock before the same |
+| `runtime.limits.turns` | `300` | turns before the runtime stops the agent, **per run** |
+| `runtime.limits.wall` | `2h` | wall clock before the same, **per run** |
+| `runtime.limits.rounds` | `2` | how many times a pass sends the agent back, carrying what refused it — findings, a build's output, and after `#142` the conflicting paths. `0` means every refusal goes straight to a person |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
-| `repair.maxAttempts` | `1` | repair agents bought per work item, across every distinct **wall** — an integration, a project or a run failing (0025 §3) |
-| `repair.fix` | `1` | fix-and-re-review rounds bought per run by a **refused review** — its own purse, because one ceiling means whichever failure happens first decides whether the other gets an attempt at all ([0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4) |
-| `repair.on` | `true` | whether a failure of this repository's buys one at all |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
+
+**Why the default is two and not one.** 0025 §3's rule for a spending default is
+the smallest number that makes the feature exist. `rounds` replaces two ceilings
+that were one each, and [0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+§4's reason for having two was real: a build going red and a review refusing are
+different failures, and one round shared between them means whichever happens
+first decides whether the other gets an attempt at all. A pass that fixes a red
+build and then meets a finding needs two rounds to do what two purses of one did.
+
+**`repair.maxAttempts`, `repair.fix` and `repair.on` are gone**, and a recipe
+still carrying a `repair` block is **refused by name** rather than ignored —
+`z.object` would have dropped it silently, leaving a repository running on a
+default while its own file said otherwise. The two old ceilings do not add up to
+the new one, so nothing migrates it for you.
 
 ### what Lingtai decides for itself
 

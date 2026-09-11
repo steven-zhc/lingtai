@@ -28,6 +28,7 @@ export {
   describeFilters,
   gatePlan,
   githubClientFor,
+  passCeiling,
   projectFilter,
   projectFilters,
   type ClientFor,

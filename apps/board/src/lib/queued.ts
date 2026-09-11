@@ -71,12 +71,14 @@ export interface PlanView {
   /** `runtime.tier` — how contained the run must be (0007). */
   tier: string;
   /**
-   * Whether a failure of this repository's buys an agent, and how many
-   * (0025 §2). Rendered whether it is on or off, like a skipped point: a
-   * default that spends money and only appears when it is doing something is a
-   * default nobody can audit.
+   * How many times a pass sends the agent back, `runtime.limits.rounds`
+   * ([0039](../../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+   *
+   * Rendered whether it buys anything or not, like a skipped point: a default
+   * that spends money and only appears when it is doing something is a default
+   * nobody can audit. Zero is the whole of what `repair.on: false` used to say.
    */
-  repair: { on: boolean; maxAttempts: number; fix: number };
+  rounds: number;
 }
 
 /** Why GitHub is not offering this issue to the conductor, in words. */
@@ -138,8 +140,7 @@ export interface QueuedView {
 /** The recipe's plan, as the page states it. Pure, and asserted as such. */
 export function planOf(
   plan: GatePlan,
-  runtime: { limits: { turns: number; wall: string }; tier: string },
-  repair: { on: boolean; maxAttempts: number; fix: number },
+  runtime: { limits: { turns: number; wall: string; rounds: number }; tier: string },
 ): PlanView {
   return {
     points: GATE_POINTS.map((point) => {
@@ -149,7 +150,7 @@ export function planOf(
     turns: runtime.limits.turns,
     wall: runtime.limits.wall,
     tier: runtime.tier,
-    repair,
+    rounds: runtime.limits.rounds,
   };
 }
 
@@ -220,7 +221,7 @@ export async function queuedFor(input: {
   // The plan survives a GitHub that will not answer. Losing *what will happen*
   // to a rate limit would be the same thing #76 removed from the Queued
   // column: one failure costing an answer it had nothing to do with.
-  const plan = planOf(filter.plan, filter.recipe.runtime, filter.repair);
+  const plan = planOf(filter.plan, filter.recipe.runtime);
   const until = backoffOf(input.own, filter.backoffMs);
 
   try {

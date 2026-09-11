@@ -218,11 +218,10 @@ const GATES: GatePlan = new Map([
   ["end", [{ name: "close the ticket", budgetMs: null }]],
 ]);
 
-const PLAN: PlanView = planOf(
-  GATES,
-  { limits: { turns: 150, wall: "1h" }, tier: "guarded" },
-  { on: true, maxAttempts: 1, fix: 1 },
-);
+const PLAN: PlanView = planOf(GATES, {
+  limits: { turns: 150, wall: "1h", rounds: 2 },
+  tier: "guarded",
+});
 
 describe("what will happen", () => {
   /**
@@ -245,9 +244,9 @@ describe("what will happen", () => {
   it("carries the recipe's limits, in the recipe's own words", () => {
     expect(PLAN.turns).toBe(150);
     expect(PLAN.wall).toBe("1h");
-    // Both numbers, because two kinds of failure spend them (0038 §4): what a
-    // wall buys, and what a finding buys.
-    expect(PLAN.repair).toEqual({ on: true, maxAttempts: 1, fix: 1 });
+    // The third number in the same block, because what a pass costs is all
+    // three of them and 0039 §3 put them together for exactly that reason.
+    expect(PLAN.rounds).toBe(2);
   });
 
   it("renders the plan and the bounds together", () => {
@@ -259,7 +258,7 @@ describe("what will happen", () => {
     expect(html).toContain("close the ticket");
     // Twice: `admit` and `merge`, each stated rather than omitted.
     expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(2);
-    expect(html).toContain("150 turns · 1h · guarded · 1 repair · 1 fix");
+    expect(html).toContain("150 turns · 1h · guarded · 2 round(s) back");
   });
 
   /**
@@ -267,13 +266,15 @@ describe("what will happen", () => {
    * is stated when it is off too (0025 §2) — a default that is invisible when
    * it is off is a default nobody can audit.
    */
-  it("says so when the repair is off", () => {
-    const off = planOf(
-      GATES,
-      { limits: { turns: 300, wall: "2h" }, tier: "guarded" },
-      { on: false, maxAttempts: 1, fix: 1 },
-    );
-    expect(renderToStaticMarkup(<Plan plan={off} />)).toContain("no repair");
+  it("says so when a refusal buys nothing", () => {
+    // `rounds: 0` is the whole of what `repair.on: false` used to say (0039
+    // §4), and it has to render as loudly: a project that sends every refusal
+    // to a person is making a choice somebody should be able to see.
+    const none = planOf(GATES, {
+      limits: { turns: 300, wall: "2h", rounds: 0 },
+      tier: "guarded",
+    });
+    expect(renderToStaticMarkup(<Plan plan={none} />)).toContain("straight to you");
   });
 
   /**

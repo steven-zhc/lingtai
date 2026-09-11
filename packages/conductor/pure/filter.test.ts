@@ -14,7 +14,7 @@
 import type { ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { describe, expect, it } from "vitest";
-import { describeFilter, projectFilter } from "../src/filter.ts";
+import { describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
 
 const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
 
@@ -159,7 +159,7 @@ describe("projectFilter", () => {
 });
 
 describe("describeFilter", () => {
-  it("names the recipe, what it picks up and excludes, whether it repairs and when it retries", async () => {
+  it("names the recipe, what it picks up and excludes, what a pass costs and when it retries", async () => {
     const filter = await projectFilter(project, async () => client(RECIPE));
     const lines = describeFilter(filter);
 
@@ -171,7 +171,9 @@ describe("describeFilter", () => {
     // Printed by a recipe that never mentions it, which is the point: a default
     // that spends money has to be readable without opening Lingtai's source
     // (0025 §2), and a line that only appears when it is on is not that.
-    expect(lines[3]).toContain("repairs      yes — at most 1 agent(s) per item");
+    // The product and not the numbers: what an operator is deciding about is
+    // what one pass of this project can cost (0039 §3).
+    expect(lines[3]).toContain("a pass       up to 3 agent runs");
     // And for the same reason again: the backoff decides when this project
     // spends money next, and it was in none of the four places that describe a
     // project (#95).
@@ -191,5 +193,61 @@ describe("describeFilter", () => {
     expect(lines[0]).toContain("lingtai");
     expect(lines[0]).toContain("RECIPE INVALID");
     expect(lines[1]).toContain("nothing will be taken from this project");
+  });
+});
+
+/**
+ * What a pass costs, said once so three places cannot disagree.
+ *
+ * On 2026-09-10 `lingtai shutdown` told an operator it would wait at most one
+ * `wall`. That was true when the sentence was written and false once a refusal
+ * could buy another agent run — a sentence in `apps/cli` chasing a number in
+ * `packages/recipe`, with nothing between them to notice. The fix is not a
+ * better sentence, it is one sentence that is **made of** the numbers, so the
+ * only way to make it wrong is to change the numbers.
+ */
+describe("what a pass may spend", () => {
+  const limits = (rounds: number, wall = "1h", wallMs = 3_600_000) => ({
+    rounds,
+    turns: 150,
+    wall,
+    wallMs,
+  });
+
+  it("multiplies the wall by the runs a pass can buy, not by the rounds", () => {
+    // Two rounds is three runs: the work, then two goes at what refused it.
+    // Off-by-one here is the whole failure being prevented.
+    expect(passCeiling(limits(2))).toContain("up to 3 agent runs");
+    expect(passCeiling(limits(2))).toContain("at most 3h");
+  });
+
+  /** The assertion the ticket asked for: change the number, the sentence moves. */
+  it("changes when rounds changes", () => {
+    const one = passCeiling(limits(1));
+    const four = passCeiling(limits(4));
+
+    expect(one).not.toBe(four);
+    expect(one).toContain("at most 2h");
+    expect(four).toContain("at most 5h");
+  });
+
+  it("reads the wall back in the recipe's own words", () => {
+    // `15m` and not `900000`: this line is read against the file it came from.
+    expect(passCeiling(limits(1, "15m", 900_000))).toContain("15m and 150 turns each");
+    expect(passCeiling(limits(1, "15m", 900_000))).toContain("at most 30m");
+  });
+
+  /**
+   * `rounds: 0` is the whole of what `repair.on: false` used to say (0039 §4),
+   * and it has to read as a choice rather than as an absence — 0025 §2's rule
+   * that a default which spends money is shown when it is off as well as on.
+   */
+  it("says where a refusal goes when nothing is bought", () => {
+    const none = passCeiling(limits(0));
+
+    expect(none).toContain("straight to you");
+    expect(none).toContain("runtime.limits.rounds: 0");
+    // And no product, because there is nothing to multiply.
+    expect(none).not.toContain("agent runs");
   });
 });

@@ -28,6 +28,7 @@ import {
   landedWithoutEndActions,
   landedWithoutGatePoints,
   loadProjects,
+  passCeiling,
   projectFilters,
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
@@ -1050,7 +1051,13 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
           status: "ok" as const,
           detail:
             `${f.configHash.slice(0, 12)} from ${f.ref} · picks up ${f.kinds.join(" > ")} · ` +
-            `excludes ${f.exclude.length > 0 ? f.exclude.join(", ") : "nothing"}`,
+            `excludes ${f.exclude.length > 0 ? f.exclude.join(", ") : "nothing"}\n` +
+            // What a pass of this project may cost, from the same function
+            // `lingtai add` and the board's chip call (0039 §3). Doctor is
+            // where an operator looks before starting something, which makes
+            // it the place this number is most worth knowing — and it is the
+            // one number here that is a product rather than a setting.
+            `         a pass: ${passCeiling(f.limits)}`,
         }
       : {
           name: `recipe: ${f.project}`,

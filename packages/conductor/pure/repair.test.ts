@@ -45,7 +45,7 @@ const repairs = (n: number, fingerprint = "aaaaaaaaaaaa"): WorkItemState["repair
 
 const item = (over: Partial<WorkItemState> = {}): WorkItemState => ({ ...emptyWorkItem, ...over });
 
-const policy = { on: true, maxAttempts: 1 };
+const policy = { rounds: 1 };
 
 describe("whose failure it is", () => {
   /**
@@ -188,7 +188,7 @@ describe("whether a failure buys an agent", () => {
   it("never buys one for Lingtai's own, whatever the recipe says", () => {
     const decision = decideRepair({
       failure: { source: "project", reason: "no GitHub App configured", detail: "" },
-      policy: { on: true, maxAttempts: 99 },
+      policy: { rounds: 99 },
       item: item(),
       runId: "run-1",
     });
@@ -199,7 +199,7 @@ describe("whether a failure buys an agent", () => {
   it("never buys one for a hold a person meant", () => {
     const decision = decideRepair({
       failure: { ...conflict, reason: "pending-migration" },
-      policy: { on: true, maxAttempts: 99 },
+      policy: { rounds: 99 },
       item: item(),
       runId: "run-1",
     });
@@ -210,12 +210,12 @@ describe("whether a failure buys an agent", () => {
   it("does not buy one for a project whose recipe declines", () => {
     const decision = decideRepair({
       failure: conflict,
-      policy: { on: false, maxAttempts: 1 },
+      policy: { rounds: 0 },
       item: item(),
       runId: "run-1",
     });
     expect(decision.repair).toBe(false);
-    expect(decision.repair === false && decision.why).toMatch(/repair\.on: false/);
+    expect(decision.repair === false && decision.why).toMatch(/runtime\.limits\.rounds: 0/);
   });
 
   /**
@@ -226,7 +226,7 @@ describe("whether a failure buys an agent", () => {
     const of = repairs(1)[0]!;
     const decision = decideRepair({
       failure: conflict,
-      policy: { on: true, maxAttempts: 9 },
+      policy: { rounds: 9 },
       item: item({ repairs: [of], repairRun: { runId: "run-2", of } }),
       runId: "run-2",
     });
@@ -242,7 +242,7 @@ describe("whether a failure buys an agent", () => {
   it("does not buy a second agent for a failure that already bought one", () => {
     const decision = decideRepair({
       failure: conflict,
-      policy: { on: true, maxAttempts: 9 },
+      policy: { rounds: 9 },
       item: item({ repairs: repairs(1, repairFingerprint(conflict)) }),
       runId: "run-2",
     });
@@ -255,7 +255,7 @@ describe("whether a failure buys an agent", () => {
 
     const under = decideRepair({
       failure: conflict,
-      policy: { on: true, maxAttempts: 2 },
+      policy: { rounds: 2 },
       item: item({ repairs: spent }),
       runId: "run-2",
     });
@@ -263,7 +263,7 @@ describe("whether a failure buys an agent", () => {
 
     const at = decideRepair({
       failure: conflict,
-      policy: { on: true, maxAttempts: 1 },
+      policy: { rounds: 1 },
       item: item({ repairs: spent }),
       runId: "run-2",
     });
@@ -279,7 +279,7 @@ describe("whether a failure buys an agent", () => {
   it("gives a reason for every refusal, and a fingerprint with it", () => {
     const refusals = [
       decideRepair({ failure: { ...conflict, reason: "lane-busy" }, policy, item: item(), runId: "r" }),
-      decideRepair({ failure: conflict, policy: { on: false, maxAttempts: 1 }, item: item(), runId: "r" }),
+      decideRepair({ failure: conflict, policy: { rounds: 0 }, item: item(), runId: "r" }),
       decideRepair({
         failure: conflict,
         policy,

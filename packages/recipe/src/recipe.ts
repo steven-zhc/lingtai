@@ -413,64 +413,6 @@ export const Recipe = z.object({
    */
   subscribers: z.array(Subscriber).default([]),
 
-  /**
-   * Whether a failure of **this repository's** buys an agent to fix it, and how
-   * many times ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)).
-   *
-   * Here rather than compiled into Lingtai for the reason 0016 §7 deleted the
-   * hardcoded skip: this is a policy about a repository, and a repository knows
-   * things about itself that the core cannot see. Whether a red build is worth
-   * an agent is one of them.
-   *
-   * **Defaulted rather than optional, and rendered either way.** `lingtai add`
-   * prints it and the board shows it, exactly as an empty gate point is printed
-   * and shown as `skipped` — a repository must be able to see whether it
-   * repairs without reading Lingtai's source. A field that is absent from the
-   * output when it is off would be the same invisibility 0016 §4 forbids.
-   *
-   * Only Lingtai's *own* failures are excluded unconditionally, in code
-   * (`whoseFailure`), because no recipe can make an agent able to fix a
-   * database it cannot reach.
-   *
-   * **Two numbers, because two kinds of failure were spending one purse**
-   * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
-   * `maxAttempts` is what a wall buys; `fix` is what a finding buys.
-   */
-  repair: z
-    .strictObject({
-      on: z.boolean().default(true),
-      /**
-       * The ceiling, per work item, across every distinct failure.
-       *
-       * One by default. The failure mode this bounds is unbounded spend rather
-       * than a wrong answer (0025 §3), so the default is the smallest number
-       * that makes the feature exist, and raising it is the repository's call.
-       */
-      maxAttempts: z.number().int().positive().default(1),
-      /**
-       * Rounds of fix-and-re-review a **review refusal** buys
-       * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
-       *
-       * Its own number, beside `maxAttempts` rather than inside it, and 0038 §4
-       * is the whole of why: `maxAttempts` is documented as the ceiling *across
-       * every distinct failure*, so a broken build that spent it left a one-line
-       * finding with nothing to buy an agent with. A single ceiling means the
-       * first kind of failure to happen decides whether the second kind gets an
-       * attempt at all — which is not a budget, it is a race. The two failures
-       * also do not resemble each other: a compiler error is nearly
-       * determinate, a failure scenario is determinate *and* a judgement.
-       *
-       * One by default, for 0025 §3's reason unchanged — the smallest number
-       * that makes the feature exist, and raising it is the repository's call.
-       * Zero is legal and means *a refusal goes straight to a person*: a
-       * repository that wants the reviewer's findings read by a human rather
-       * than answered by an agent can say so without turning `repair` off and
-       * losing the merge lane's agent with it.
-       */
-      fix: z.number().int().nonnegative().default(1),
-    })
-    .default({ on: true, maxAttempts: 1, fix: 1 }),
-
   runtime: z.object({
     agent: RuntimeId.default("claude-code"),
     /**
@@ -484,9 +426,48 @@ export const Recipe = z.object({
      */
     tier: Tier.default("guarded"),
     prompt: z.string().optional(),
+    /**
+     * What one pass may spend, as one block
+     * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+     *
+     * `turns` and `wall` bound **one agent run**; `rounds` bounds **how many of
+     * them a pass may buy**. Keeping the third here rather than in a section of
+     * its own is the decision, not tidiness: what a pass costs is then
+     * `(rounds + 1) × wall`, readable without leaving the block. On 2026-09-10
+     * the drain told an operator it would wait at most one `wall`, which the fix
+     * loop had already made false — a sentence in one file chasing a number kept
+     * in another. Three numbers in one place cannot drift apart like that.
+     */
     limits: z
-      .object({ turns: z.number().int().positive().default(300), wall: z.string().default("2h") })
-      .default({ turns: 300, wall: "2h" }),
+      .object({
+        turns: z.number().int().positive().default(300),
+        wall: z.string().default("2h"),
+        /**
+         * How many times a pass sends the agent back, carrying what refused it.
+         *
+         * **Two by default, and the number has an argument.** 0025 §3's rule for
+         * a spending default is *the smallest number that makes the feature
+         * exist*, which would say one — but this key replaces two ceilings that
+         * were one each, and 0038 §4's reason for splitting them was real: a
+         * build going red and a review refusing are different failures, and a
+         * single round shared between them means whichever happens first decides
+         * whether the other gets an attempt at all. That is the race 0038 called
+         * *not a budget*. A pass that fixes a red build and then meets a finding
+         * needs two rounds to do what two purses of one used to do, so two is
+         * the smallest number that does not quietly take the feature away.
+         *
+         * Zero is legal and means **every refusal goes straight to a person** —
+         * what `repair.on: false` used to say, now said in the block where the
+         * other limits are. A boolean beside a count whose zero already means
+         * the same thing is a redundant pair (0039 §4).
+         *
+         * Only Lingtai's *own* failures are excluded unconditionally, in code
+         * (`whoseFailure`): no recipe can make an agent able to fix a database
+         * it cannot reach.
+         */
+        rounds: z.number().int().nonnegative().default(2),
+      })
+      .default({ turns: 300, wall: "2h", rounds: 2 }),
     /**
      * How much an agent is told, in characters and rows
      * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
@@ -546,6 +527,41 @@ export function parseDuration(text: string): number {
   const unit = m[2] as "ms" | "s" | "m" | "h";
   return n * { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[unit];
 }
+
+/**
+ * Milliseconds → `90s`, `15m`, `6h`, the way `parseDuration` reads them back.
+ *
+ * Beside `parseDuration` because the pair has to agree, and the round trip is
+ * the whole contract: anything this prints, that parses. It exists so a sentence
+ * about what something may cost can be **computed from the numbers that decide
+ * it** rather than written down beside them and left to go stale — which is what
+ * happened to the drain's, and what 0039 §3 put three numbers in one block to
+ * stop happening again.
+ *
+ * Whole units only, largest that divides exactly, so `5400000` is `90m` and not
+ * `1.5h`: a duration a person reads should not need arithmetic, and a fraction
+ * is where arithmetic starts.
+ */
+export function formatDuration(ms: number): string {
+  for (const [unit, size] of [
+    ["h", 3_600_000],
+    ["m", 60_000],
+    ["s", 1_000],
+  ] as const) {
+    if (ms >= size && ms % size === 0) return `${ms / size}${unit}`;
+  }
+  return `${ms}ms`;
+}
+
+/**
+ * What a recipe that says nothing about limits gets.
+ *
+ * Exported so that a sentence about the default can be **generated from the
+ * default** — `apps/cli`'s drain names a number it cannot read from any one
+ * project's recipe, and naming it by hand is how it came to say one `wall` when
+ * the fix loop had already made that false.
+ */
+export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined);
 
 /** `parseDuration`, as a predicate: for a schema, where throwing is the wrong shape. */
 function positiveDuration(text: string): boolean {
