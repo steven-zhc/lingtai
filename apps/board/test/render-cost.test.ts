@@ -80,7 +80,7 @@ function listed(name: string, kinds: string[], refs: string[]): ProjectQueue {
   return {
     state: "listed",
     filter: resolvedFilter(name, kinds),
-    offered: { runnable: [], skipped: [], kindColors: {} },
+    offered: { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null },
     runnable: refs.map((ref) => ({
       taskId: `wi-${name}-${ref}`,
       issue: ref,

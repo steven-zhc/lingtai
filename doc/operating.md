@@ -499,6 +499,33 @@ It takes nothing, claims nothing and appends no event — the whole of what it
 does is make the answer current. The absences are the half worth having: an
 issue nobody is working on has a reason, and that reason is the recipe's.
 
+One of those reasons is the repository's rather than the recipe's.
+`blocked-by 1` is an issue GitHub says is still blocked by an open one, and it
+is counted on the same line:
+
+```
+  from GitHub: 9 eligible, 30 passed over — excluded-label 29, blocked-by 1
+```
+
+The queue orders by kind and then by number and knows nothing about a chain, so
+`#123` — `tech-debt` — was taken ahead of the two `feature` tickets it depended
+on, and an agent was dispatched against groundwork that did not exist (#131).
+Record a chain with GitHub's own **blocked by** on the issue, not as a table in
+a body: prose is for people and the queue cannot read it. Nothing is stored on
+this side — the ticket is offered again the pass after the last blocker closes,
+exactly as removing `agent:hold` works.
+
+A closed blocker does not hold anything, and a repository whose GitHub reports
+no dependencies at all is told so once rather than having every ticket quietly
+treated as clear:
+
+```
+  (GitHub reported no issue dependencies for this repository — nothing is held by a blocker)
+```
+
+That case behaves exactly as it did before dependencies were read, which is why
+it has to be said.
+
 Onboarding is done. How you actually run work is next.
 
 ## Running work
@@ -790,6 +817,7 @@ Every refusal names itself. The common ones:
 | `stopped at env: … declared in env.required and not set in any layer` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. Or declare it in the repository's own `.env.local`. A `LINGTAI_` name never crosses from the machine file at all. |
 | `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
 | `stopped at discover: excluded-label` | That issue carries a label the recipe's `source.exclude` names. Every reason an issue is passed over is the recipe's — there is no built-in list. |
+| `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next pass asks GitHub again (#131). |
 | `stopped at prepare: the install action refused` | An action at the `prepared` point refused — usually dependencies that did not install in a fresh worktree. Nothing expensive ran; that is the point of failing here. |
 | `did not merge (stale): the card showed …` | The branch moved between reading and deciding. Reload and read it again. |
 | `a waiver needs a reason` | A waiver records who and why. Both, always. |

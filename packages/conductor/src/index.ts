@@ -9,6 +9,7 @@ export {
 } from "./claim.ts";
 export {
   considerIssue,
+  DEPENDENCIES_UNREAD,
   kindLabelOf,
   kindOf,
   runnableNow,

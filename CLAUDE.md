@@ -31,6 +31,14 @@ Add **`agent:hold`** unless you mean an agent to take it now. Self-hosting runs
 one unheld ticket at a time, so an unheld ticket is one you are asking the next
 queue pass to claim.
 
+**A chain goes in GitHub's own *blocked by*, never in the body.** The queue
+orders by kind and then by number, so a dependent ticket of a higher-priority
+kind is taken first — `#123` was, ahead of the two `feature` tickets it needed,
+with the chain sitting in `#126`'s body as a table for people to read (#131).
+The queue passes over anything with an open blocker and counts it as
+`blocked-by`; a closed one holds nothing, and the ticket comes back on its own
+the pass after the last blocker closes, with no hold to remove.
+
 The body becomes the agent's prompt, so it is written to be worked from rather
 than filed. House style, as in #52, #55, #58:
 

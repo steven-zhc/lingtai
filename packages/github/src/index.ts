@@ -16,6 +16,7 @@ export {
   createGitHubClient,
   parseSlug,
   type CreateClientOptions,
+  type Dependencies,
   type GitHubClient,
   type Issue,
   type Label,

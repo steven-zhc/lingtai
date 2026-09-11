@@ -85,6 +85,9 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   "no-kind": "it carries no label this recipe takes",
   "excluded-label": "it carries a label this recipe excludes",
   "already-discovered": "the log already has it",
+  // Said as the thing that has to change, not as a state it is in: the ticket
+  // moves the moment the last blocker closes, with nothing to clear here (#131).
+  "blocked-by": "an issue it is blocked by is still open",
 };
 
 /**

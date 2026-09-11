@@ -50,6 +50,33 @@ export interface Label {
   color: string | null;
 }
 
+/**
+ * What GitHub says has to happen before this issue can be worked.
+ *
+ * A dependency is a fact the *repository* holds, natively and in both
+ * directions, and Lingtai does not decide which issues exist
+ * ([0012](../../../doc/decisions/0012-one-task-view.md)) — so it is read here
+ * with the rest of the issue and never mirrored into a field of Lingtai's own.
+ * That is the same argument #76 used to take `WorkKind` out of the core and
+ * [0036](../../../doc/decisions/0036-the-core-takes-a-ticket.md) §4 uses to
+ * keep `agent:hold` a label the store never interprets.
+ *
+ * **Both counts, because they answer different questions.** A chain whose
+ * groundwork has landed is finished with — every blocker closed — and a chain
+ * that has never started looks identical if you only carry one number.
+ */
+export interface Dependencies {
+  /**
+   * How many issues block this one and are **still open**.
+   *
+   * The only one the queue acts on: a closed blocker is groundwork that exists
+   * now, and holding a ticket for it would be holding it forever.
+   */
+  blockedBy: number;
+  /** How many block it at all, open and closed. */
+  totalBlockedBy: number;
+}
+
 export interface Issue {
   number: number;
   title: string;
@@ -57,6 +84,16 @@ export interface Issue {
   labels: Label[];
   state: "open" | "closed";
   url: string;
+  /**
+   * What blocks it, and **null when GitHub said nothing about dependencies** —
+   * a plan that does not expose them, or an API version that predates them.
+   *
+   * Null is not "nothing blocks it". The two have to stay apart or a repository
+   * whose GitHub will not answer would have every ticket silently treated as
+   * clear, which is the failure `#58` is: a check present, reported, and not
+   * looking at the thing you think it is. `runnableNow` says so once instead.
+   */
+  dependencies: Dependencies | null;
 }
 
 export interface GitHubClient {
@@ -233,6 +270,30 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null;
   }
 
+  /**
+   * GitHub's `issue_dependencies_summary`, or null when it did not send one.
+   *
+   * **It arrives with the issue.** The per-issue endpoints
+   * (`/issues/{n}/dependencies/blocked_by`) answer the same question one
+   * request at a time, and a pass considers every open issue — so reading them
+   * would turn one listing into one call per candidate. This field is on the
+   * object `listOpenIssues` and `getIssue` already fetch, which is why asking
+   * costs nothing, exactly as the label colour does.
+   *
+   * Refused rather than repaired when it is not two numbers: a partial summary
+   * would decide which tickets the queue passes over, and `null` is a case the
+   * caller already handles by saying so and carrying on.
+   */
+  function dependenciesOf(raw: {
+    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null;
+  }): Dependencies | null {
+    const summary = raw.issue_dependencies_summary;
+    if (!summary) return null;
+    const { blocked_by: open, total_blocked_by: total } = summary;
+    if (typeof open !== "number" || typeof total !== "number") return null;
+    return { blockedBy: open, totalBlockedBy: total };
+  }
+
   function toIssue(raw: {
     number: number;
     title: string;
@@ -240,8 +301,10 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     labels: ({ name?: string; color?: string | null } | string)[];
     state: string;
     html_url: string;
+    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null;
   }): Issue {
     return {
+      dependencies: dependenciesOf(raw),
       number: raw.number,
       title: raw.title,
       body: raw.body ?? "",

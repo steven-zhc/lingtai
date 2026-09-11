@@ -100,6 +100,11 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
           `  from GitHub: ${found.runnable.length} eligible` +
             (found.skipped.length > 0 ? `, ${found.skipped.length} passed over — ${passed}` : ""),
         );
+        // Once, beside the count it explains. A repository whose plan does not
+        // expose dependencies passes nothing over for one, and a `blocked-by`
+        // that is simply never printed reads as a repository with no chains in
+        // it (#131). The phrase is `discover.ts`'s, not this file's.
+        if (found.dependenciesUnread !== null) log(`  (${found.dependenciesUnread})`);
       } catch (err) {
         log(`  (GitHub unavailable: ${(err as Error).message} — the queue cannot be listed)`);
       }

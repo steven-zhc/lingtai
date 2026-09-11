@@ -113,6 +113,7 @@ const issue: Issue = {
   labels: [{ name: "bug", color: "#d73a4a" }],
   state: "open",
   url: "https://example.invalid/117",
+  dependencies: { blockedBy: 0, totalBlockedBy: 0 },
 };
 
 /** The `end` point, configured: close the issue when the item lands. */
