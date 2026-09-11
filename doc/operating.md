@@ -571,6 +571,7 @@ the lock.
 pnpm lingtai pause "the importer is flaky today"   # take nothing new
 pnpm lingtai resume
 pnpm lingtai shutdown "picking up #88"             # finish the pass, then stop
+pnpm lingtai restart "picking up #88"              # …and start one here again
 pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 ```
 
@@ -591,6 +592,42 @@ it trips, which is stop taking work, **leave the agent running** and exit.
 
 `lingtai resume` lifts a shutdown nobody acted on, as it lifts a pause. Without
 that the request would stop every daemon started after it.
+
+**Starting again is `lingtai restart`**, which is the drain above and then one
+daemon here ([0038](decisions/0038-the-restart-is-a-command.md)):
+
+```bash
+pnpm lingtai restart "picking up #88"
+```
+
+It refuses **before** it stops anything, because a refusal after the drain is a
+system that is down and a person reading about why it may not come back up:
+
+- **a `HEAD` the tracking remote does not have**, by name. A process holds the
+  code it started with for hours, and on 2026-09-09 a daemon started from
+  `582a0f8` — a local commit a `git pull --rebase` rewrote out of existence
+  twenty minutes later, leaving `daemon: currency` reporting a commit that is
+  not reachable from `origin/main` at all. Being *behind* the remote is not a
+  refusal: that code can still be fetched and read.
+- **a dirty worktree**, in the same refusal, for the same reason — code that no
+  commit names.
+- **anything `lingtai doctor` failed on.** The failed checks are printed; the
+  thirty green ones are not.
+- **a shutdown somebody else asked for.** `--anyway` covers the first three,
+  having read them; it deliberately does not cover this one, because it is
+  another person's decision. `lingtai resume` lifts it.
+
+Then it waits, saying what is still finishing and repeating itself so it never
+reads as hung, withdraws the request it made — restoring a pause that withdrawal
+had to lift, and saying so — and starts a daemon in that terminal. **What makes
+it exactly one daemon is the lock, not the order of operations**: if launchd's
+`KeepAlive` copy wins the race while the drain finishes, the restart says so and
+starts nothing. Ctrl+C during the wait leaves the drain standing.
+
+A start is now in the log as well as in the beacon — `ConductorStarted`, with
+who, why and the commit — so *who restarted it at 23:06* is a question the log
+answers. A beacon is one mutable row the next start overwrites, and it never
+could.
 
 Ctrl+C is the same drain and says what it is doing: the first one names what is
 finishing and what a second one costs, and the second stops immediately. Both
@@ -673,13 +710,13 @@ whether the projection is current and the one that says whether the conductor
 is paused. Three chips because three independent facts: a board can be perfectly
 current, taking work, and driven by code you replaced an hour ago.
 
-Neither restarts anything. `lingtai doctor` never writes, and whether a daemon
-should restart itself when `main` moves is deliberately still open — 0030 made
-a shutdown safe, and the restart is a decision that wants an ADR first. Take the
-commits by hand:
+Neither restarts anything: `lingtai doctor` never writes, and a daemon still
+does not restart itself when `main` moves — that remains open, and 0038 decided
+only that the restart is a command somebody types. Take the commits with it:
 
 ```bash
-./scripts/launchd.sh uninstall && ./scripts/launchd.sh install   # or ^C and re-run
+pnpm lingtai restart "taking 3 commits"
+./scripts/launchd.sh uninstall && ./scripts/launchd.sh install   # the launchd copy
 ```
 
 `daemon: currency` is a `note`, not a failure. Being a commit behind is normal

@@ -19,7 +19,7 @@ import type { EventStore } from "@lingtai/event-store";
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { afterEach, describe, expect, it } from "vitest";
 import { killWorker } from "../src/reconcile.ts";
-import { readControl } from "../src/control.ts";
+import { readControl, withdrawShutdown } from "../src/control.ts";
 
 /** Just enough of a store to fold. `readControl` reads one stream and nothing else. */
 function storeOf(events: { type: string; data: unknown }[]): EventStore {
@@ -168,5 +168,105 @@ describe("the process a dead claim names", () => {
 
   it("refuses a worker that names no process at all", async () => {
     expect(await killWorker("nonsense")).toContain("names no process");
+  });
+});
+
+/**
+ * `lingtai restart` has to lift the drain it just asked for — the request
+ * stands in the stream for ever, so the daemon it is about to start would read
+ * it and stop again — and `ConductorResumed` is the only withdrawal there is
+ * (0038).
+ *
+ * The hazard is that a resume lifts a *pause* too, which is somebody else's
+ * decision about this system and nothing to do with the restart. So the pause
+ * goes back, with the words that were on it.
+ */
+describe("withdrawing a drain", () => {
+  /** A store that keeps what it is given, so a fold after an append sees it. */
+  function recording(initial: { type: string; data: unknown }[] = []): {
+    store: EventStore;
+    appended: { type: string; data: unknown }[];
+  } {
+    const held = [...initial];
+    const appended: { type: string; data: unknown }[] = [];
+    const store: EventStore = {
+      read: async () => storeOf(held).read("ctl-conductor"),
+      append: async (_stream, _at, events) => {
+        for (const e of events) {
+          held.push({ type: e.type, data: e.data });
+          appended.push({ type: e.type, data: e.data });
+        }
+        return [];
+      },
+      readAll: async () => [],
+    };
+    return { store, appended };
+  }
+
+  it("resumes, so the daemon it is about to start does not read the request and stop", async () => {
+    const { store, appended } = recording([
+      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
+    ]);
+
+    const lifted = await withdrawShutdown("human:steven", store);
+
+    expect(lifted.withdrew?.reason).toBe("restarting");
+    expect(appended.map((e) => e.type)).toEqual(["ConductorResumed"]);
+    expect((await readControl(store)).shutdown).toBeNull();
+  });
+
+  it("appends nothing when there was nothing to withdraw", async () => {
+    const { store, appended } = recording([]);
+
+    expect((await withdrawShutdown("human:steven", store)).withdrew).toBeNull();
+    expect(appended).toEqual([]);
+  });
+
+  /**
+   * The one that matters. Without this, restarting a paused conductor would
+   * quietly start taking work again — which is a person's decision reversed by
+   * a command that never claimed to be about it.
+   */
+  it("puts back a pause the resume had to lift, with the words that were on it", async () => {
+    const { store, appended } = recording([
+      { type: "ConductorPaused", data: { by: "human:ops", reason: "the importer is flaky today", until: null } },
+      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
+    ]);
+
+    const lifted = await withdrawShutdown("human:steven", store);
+
+    expect(lifted.restored).toEqual({
+      by: "human:ops",
+      reason: "the importer is flaky today",
+      until: null,
+    });
+    expect(appended.map((e) => e.type)).toEqual(["ConductorResumed", "ConductorPaused"]);
+
+    const after = await readControl(store);
+    expect(after.shutdown).toBeNull();
+    // Still paused, still theirs: the restart is recorded as the restarter's and
+    // the pause is not.
+    expect(after.paused).toBe(true);
+    expect(after.by).toBe("human:ops");
+  });
+
+  /**
+   * A pause that carries an expiry the clock has passed is already lifted as far
+   * as the fold is concerned (0031 §5). Re-appending it would revive it.
+   */
+  it("does not revive a pause that had already expired", async () => {
+    const { store, appended } = recording([
+      {
+        type: "ConductorPaused",
+        data: { by: "conductor", reason: "no capacity until 23:00", until: new Date(Date.now() - 60_000).toISOString() },
+      },
+      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
+    ]);
+
+    const lifted = await withdrawShutdown("human:steven", store);
+
+    expect(lifted.restored).toBeNull();
+    expect(appended.map((e) => e.type)).toEqual(["ConductorResumed"]);
+    expect((await readControl(store)).paused).toBe(false);
   });
 });

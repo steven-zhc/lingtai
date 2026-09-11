@@ -11,15 +11,12 @@
  * `process.env` for a connection string directly.
  */
 import { createProjectionRunner, projectionLag } from "@lingtai/projector";
-import {
-  databaseUrl,
-  directDatabaseUrl,
-} from "@lingtai/event-store";
 import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
 import { taskViewProjection } from "@lingtai/projector";
 import type { Tier } from "@lingtai/domain";
 import {
   HEARTBEAT_MS,
+  WALL_LIMIT,
   beat,
   clientsForProjects,
   createStatusTable,
@@ -31,6 +28,7 @@ import {
   pauseConductor,
   readCodeVersion,
   readControl,
+  recordStart,
   reconcile,
   requestRun,
   requestShutdown,
@@ -45,7 +43,8 @@ import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
-import { formatReport, runDoctor } from "./doctor.ts";
+import { doctorReport, formatReport } from "./doctor.ts";
+import { prepareRestart } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { run as runOnceCommand } from "./run.ts";
@@ -96,6 +95,16 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --timeout <duration>        give up waiting after this and exit anyway,
                                 leaving the agent running. No default: a drain
                                 that gives up is the orphan this prevents
+  lingtai restart [why]             drain, wait for the pass, and start one daemon
+                                here. Refuses a commit that is not on the
+                                tracking remote and a dirty worktree — a process
+                                holds its code for hours, and a commit nobody
+                                pushed cannot be reasoned about afterwards — and
+                                refuses what lingtai doctor failed on. Ctrl+C
+                                during the wait leaves the drain standing
+    --anyway                    start in spite of those refusals, having read them
+    --timeout <duration>        as for lingtai shutdown
+    --no-conduct, --no-merge    as for lingtai daemon
   lingtai now <project> --issue <n> ask for one ahead of the queue
   lingtai projection lag            how far each projection is behind the log
   lingtai projection rebuild <name> drop the table, reset the checkpoint, replay
@@ -105,36 +114,12 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 Projections: ${taskViewProjection.name}
 `;
 
-/**
- * What a drain may cost, said before the waiting starts.
- *
- * Not read from a recipe: the drain belongs to the installation and the limit
- * belongs to whichever project happens to be running — so this names where the
- * number lives and the schema's default, rather than a number that would be
- * wrong for every project but one. `2h` is that default; this repository's own
- * recipe says `1h`.
- */
-const WALL_LIMIT = "the recipe's runtime.limits.wall (2h by default)";
-
 async function doctor(): Promise<number> {
-  // Touching the loaders here rather than reading process.env keeps the one rule
-  // about environment loading true even in the command that inspects it.
-  const env = { ...process.env };
-  try {
-    env["DATABASE_URL"] = databaseUrl();
-  } catch {
-    delete env["DATABASE_URL"];
-  }
-  try {
-    env["DIRECT_DATABASE_URL"] = directDatabaseUrl();
-  } catch {
-    delete env["DIRECT_DATABASE_URL"];
-  }
-
-  const report = await runDoctor(env);
+  const report = await doctorReport();
   console.log(formatReport(report));
-  // Non-zero on any failure, so this can gate a restart. A deferred check is not
-  // a failure; a missing one would be.
+  // Non-zero on any failure, so this can gate a restart — which since 0038 it
+  // does: `lingtai restart` runs the same report and refuses on the same number.
+  // A deferred check is not a failure; a missing one would be.
   return report.failed === 0 ? 0 : 1;
 }
 
@@ -248,21 +233,42 @@ async function projectionCommand(args: string[]): Promise<number> {
  *
  * Losing the lock exits 0. Running this while launchd's copy is up is a
  * reasonable thing to do, and answering it with an error would teach people to
- * ignore errors.
+ * ignore errors. `lingtai restart` is the one caller that wanted a daemon and
+ * is entitled to be told it did not get one — it passes `startedBy`, and loses
+ * **quietly and non-zero** rather than loudly, because losing the lock to
+ * launchd's copy is the restart succeeding by another route.
+ *
+ * **The one place a daemon is started**, and that is deliberate: the beacon, the
+ * reconcile, the `ConductorStarted` append and the drain handlers are one
+ * sequence, and a second way in would be a second place for them to drift apart.
  */
-async function daemonCommand(flags: Record<string, string> = {}): Promise<number> {
+async function daemonCommand(
+  flags: Record<string, string> = {},
+  /** Who asked for this start and why, when somebody did. */
+  startedBy: { by: string; reason: string } | null = null,
+): Promise<number> {
   const started = await startDaemon({
     projections: [taskViewProjection],
     log: (line) => console.log(line),
   });
 
   if (!started.ok) {
+    const holder = started.holder ? ` (${started.holder})` : "";
+    if (startedBy) {
+      // The drain finished and something else won the race for the lock —
+      // launchd's `KeepAlive`, most likely, which starts a daemon from this same
+      // checkout. Exactly one is conducting, which is what was asked for; what
+      // did not happen is *this* process becoming it, and the exit code says so
+      // for whoever scripted it.
+      console.log(
+        paint.muted(`a daemon took the lock first${holder} — it is running, and this started nothing`),
+      );
+      return 1;
+    }
     // A refusal, and deliberately the quietest line the daemon has. Nothing is
     // wrong — red here would be the error that teaches people to ignore errors
     // — and nothing happened, so dim is the honest weight for it.
-    console.log(
-      paint.muted(`another daemon holds the lock${started.holder ? ` (${started.holder})` : ""} — nothing to do`),
-    );
+    console.log(paint.muted(`another daemon holds the lock${holder} — nothing to do`));
     return 0;
   }
 
@@ -283,6 +289,20 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     `running ${code.sha ? code.sha.slice(0, 7) : "an unrecorded commit"}` +
       `${code.dirty ? " (worktree dirty)" : ""} — lingtai doctor says how far behind that is`,
   );
+
+  // And in the log, where the beacon cannot help: a beacon is one mutable row
+  // that the next start overwrites, so it says a daemon is up and never said
+  // that one *started*, from what code, or at whose hand. A restart at 23:06 on
+  // 2026-09-09 is unattributable for exactly that reason (0038).
+  //
+  // Reported and not fatal. Refusing to conduct because a control append lost a
+  // version race would be a daemon that will not run for want of a record of
+  // itself — but a start nobody can trace is the defect this closes, so it is
+  // said in the accent that means *look at this*.
+  const by = startedBy?.by ?? `human:${process.env["USER"] ?? "operator"}`;
+  await recordStart(by, startedBy?.reason ?? null, code).catch((err: unknown) => {
+    console.error(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
+  });
 
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
@@ -321,8 +341,23 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     return [];
   });
   if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`));
+  /**
+   * How a daemon that takes no work hears a shutdown. Null while it takes work.
+   *
+   * The loop is what reads the control stream, so a `--no-conduct` daemon was
+   * deaf to `lingtai shutdown` entirely — the request landed, nothing read it,
+   * and the process stayed up. That was invisible while stopping was the whole
+   * of the command; `lingtai restart` waits for the drain it asked for, and a
+   * drain nothing will ever perform is a wait that never ends (0038).
+   *
+   * Set below, and run on the beacon's own timer rather than a second one:
+   * nothing here decides when to take work, only when to stop.
+   */
+  let hearShutdown: (() => Promise<void>) | null = null;
+
   const heartbeat = setInterval(() => {
     void beat("up", { code }).catch(() => {});
+    void hearShutdown?.();
   }, HEARTBEAT_MS);
 
   // Taking work is the default now that there is a way to stop it (#45).
@@ -489,6 +524,18 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     // spend money and 0033 §3 puts everything that spends money in the process
     // that takes work. A daemon told to take none answers none either.
     console.log(paint.muted("projections only — no work will be taken and no question answered"));
+
+    // It still stops when it is told to. Nothing is in flight here — there is
+    // no pass to finish — so this drain is over as soon as it begins, which is
+    // the honest shape of "finish what you are holding" for a daemon holding
+    // nothing.
+    hearShutdown = async () => {
+      const standing = (await readControl().catch(() => null))?.shutdown ?? null;
+      if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs);
+    };
+    // Asked once before waiting for the timer, so a daemon started after an
+    // unwithdrawn request goes straight back out — as a conducting one does.
+    await hearShutdown();
   }
 
   // The first signal drains and says so; the second stops now. `kill <pid>` is
@@ -705,6 +752,15 @@ async function main(argv: string[]): Promise<number> {
     }
     case "daemon":
       return daemonCommand(parseFlags(rest).flags);
+    case "restart": {
+      const { positional, flags } = parseFlags(rest);
+      // Two halves of one command, and the seam is the only place a daemon is
+      // started. `prepareRestart` refuses, drains and waits; everything after
+      // this line is `lingtai daemon` and is the same code it has always been.
+      const prepared = await prepareRestart({ positional, flags });
+      if (!prepared.ok) return prepared.code;
+      return daemonCommand(flags, { by: prepared.by, reason: prepared.reason });
+    }
     case "pause":
       return controlCommand("pause", rest);
     case "resume":

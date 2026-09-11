@@ -347,6 +347,8 @@ is how long a shutdown waits: `pnpm lingtai shutdown "why"` appends, returns,
 and the daemon finishes the pass in flight — the pass, not the agent, so the
 gates and the merge lane run too. That wait is `runtime.limits.wall`, and the
 command says so rather than looking hung ([0030](decisions/0030-shutting-down-safely.md)).
+`pnpm lingtai restart "why"` waits out the same limit and then starts one
+([0038](decisions/0038-the-restart-is-a-command.md)).
 
 **`gates.<point>[].timeout`** — default `15m`, **per process action, not per
 point**. Multiply by attempts, per the arithmetic above.

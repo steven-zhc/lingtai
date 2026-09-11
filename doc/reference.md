@@ -7,7 +7,7 @@ document asserting a state of the world the code had moved past.
 Where a list is open-ended (streams, runs, projects) it says so and gives
 examples instead of pretending to be exhaustive.
 
-**Counted 2026-09-08.**
+**Counted 2026-09-10.**
 
 > **This describes the code as it is.** It is updated as each step lands, never ahead of it. A
 > reference that documents intent instead of behaviour is the defect this
@@ -16,7 +16,7 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 43 types
+## event — 50 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -30,10 +30,12 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
 | repair (2) | `RepairRequested` `RepairDeclined` |
-| control (3) | `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` |
+| control (4) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired**, `RETIRED` in the same file |
 | project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |
+| discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
+| prompt (1) | `PromptEdited` |
 | extension (1) | `PluginFailed` |
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload

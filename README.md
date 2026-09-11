@@ -154,7 +154,7 @@ from the log on demand.
 | [`doc/tutorial.md`](doc/tutorial.md) | The shortest path from nothing to an issue merged unattended. |
 | [`doc/operating.md`](doc/operating.md) | Everything you actually type: setup, the GitHub App, onboarding a repository, running work, and what every refusal means. |
 | [`doc/README.md`](doc/README.md) | The decision log — one file per decision, append-only in spirit — and what is still open. |
-| [`doc/reference.md`](doc/reference.md) | Every term, and everything currently in it: 38 event types, 5 gate points, 4 action kinds. |
+| [`doc/reference.md`](doc/reference.md) | Every term, and everything currently in it: 50 event types, 5 gate points, 4 action kinds. |
 | [`doc/roadmap.md`](doc/roadmap.md) | The phases, each with an exit criterion that is a fact. |
 | [`doc/design.md`](doc/design.md) | How it is meant to work, as a whole. |
 

@@ -60,7 +60,14 @@
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
-import { CONTROL_STREAM, type ControlState, parsePayload, reduceControl } from "@lingtai/domain";
+import {
+  CONTROL_STREAM,
+  type ControlState,
+  type ShutdownRequest,
+  parsePayload,
+  reduceControl,
+} from "@lingtai/domain";
+import { conductorWorker } from "@lingtai/conductor/claim";
 import { readTasks } from "@lingtai/projector";
 import type { CodeVersion } from "./currency.ts";
 import pg from "pg";
@@ -126,6 +133,82 @@ export async function requestShutdown(
 }
 
 /**
+ * A conductor started: who, why, and the commit it froze.
+ *
+ * **Stopping was an event and starting was state** until
+ * [0038](../../../doc/decisions/0038-the-restart-is-a-command.md). The beacon
+ * below is one mutable row, so it says *a daemon is running now* and is
+ * overwritten by the next one — it has never been able to answer "who restarted
+ * it at 23:06", which on 2026-09-09 was the question that mattered.
+ *
+ * Appended by the daemon itself, once, after it has won the lock and read its
+ * commit — so it records a start that actually happened rather than one that was
+ * intended, and so `lingtai daemon` typed by hand is in the log beside
+ * `lingtai restart`. A start that loses the lock appends nothing, because
+ * nothing started.
+ *
+ * It does not withdraw a standing shutdown request, deliberately: a daemon
+ * started while one stands reads it and stops again, and `ConductorResumed`
+ * remains the one withdrawal. See `withdrawShutdown`.
+ */
+export async function recordStart(
+  by: string,
+  reason: string | null,
+  code: CodeVersion,
+  store: EventStore = eventStore,
+): Promise<void> {
+  await append(
+    "ConductorStarted",
+    { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker() },
+    store,
+  );
+}
+
+/** A pause `withdrawShutdown` had to lift and put back. */
+export interface RestoredPause {
+  by: string;
+  reason: string;
+  until: Date | null;
+}
+
+/**
+ * Lift a drain, without lifting a pause somebody else made.
+ *
+ * `lingtai restart` has to withdraw the request it just made: it stands in the
+ * stream for ever, so the daemon this command is about to start would read it
+ * and stop again. The only withdrawal is `ConductorResumed` — and that clears a
+ * *pause* too, which is somebody else's decision and nothing to do with this
+ * restart.
+ *
+ * So the pause is re-appended with the words that were on it. The log then reads
+ * paused · shutdown · resumed · paused, which is noisier than the alternative
+ * and is the alternative to a restart that silently starts taking work again.
+ * `by` on the restored pause stays the original person's: what is being recorded
+ * is that their pause is still in force, not that the restarter made one.
+ *
+ * A pause that has expired is not restored — `reduceControl` already reports it
+ * as lifted, and re-appending it would revive a pause the clock ended (0031 §5).
+ */
+export async function withdrawShutdown(
+  by: string,
+  store: EventStore = eventStore,
+): Promise<{ withdrew: ShutdownRequest | null; restored: RestoredPause | null }> {
+  const before = await readControl(store);
+  if (!before.shutdown) return { withdrew: null, restored: null };
+
+  await resumeConductor(by, store);
+  if (!before.paused) return { withdrew: before.shutdown, restored: null };
+
+  const restored: RestoredPause = {
+    by: before.by ?? by,
+    reason: before.reason ?? "a pause with no reason recorded",
+    until: before.until,
+  };
+  await pauseConductor(restored.by, restored.reason, store, restored.until);
+  return { withdrew: before.shutdown, restored };
+}
+
+/**
  * What the conductor is holding right now, as `project#issue`.
  *
  * Read from `task_view` rather than tracked in the process, because the
@@ -146,6 +229,21 @@ export async function inFlight(url?: string): Promise<string[]> {
     .filter((t) => t.state === "running" || t.state === "gates")
     .map((t) => `${t.project}#${t.issue}`);
 }
+
+/**
+ * What a drain may cost, said before the waiting starts.
+ *
+ * Not read from a recipe: the drain belongs to the installation and the limit
+ * belongs to whichever project happens to be running — so this names where the
+ * number lives and the schema's default, rather than a number that would be
+ * wrong for every project but one. `2h` is that default; this repository's own
+ * recipe says `1h`.
+ *
+ * Here rather than in the CLI because two commands wait on the same drain now —
+ * `lingtai shutdown` says how long it may take, and `lingtai restart` waits it
+ * out — and two sentences about one limit are one sentence too many.
+ */
+export const WALL_LIMIT = "the recipe's runtime.limits.wall (2h by default)";
 
 /** The sentence a drain leads with, for whoever is doing the draining. */
 export function describeInFlight(items: readonly string[]): string {

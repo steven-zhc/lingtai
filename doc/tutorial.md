@@ -212,6 +212,7 @@ approval stops counting, by arithmetic rather than by anyone remembering.
 pnpm lingtai pause "why"     # take no new work; a run in flight finishes
 pnpm lingtai resume
 pnpm lingtai shutdown "why"  # finish the pass in flight, then stop the daemon
+pnpm lingtai restart "why"   # …and start one here again, from a checked commit
 ```
 
 The reason is required for a pause and it is recorded. `pause` stops work being
@@ -222,6 +223,12 @@ the **pass** — the agent, then the gates, then the merge lane — so it can ta
 as long as the recipe's `runtime.limits.wall`, and it says so before it starts
 waiting. Ctrl+C does the same thing and tells you what a second one would cost.
 `lingtai resume` lifts a shutdown the daemon never got to act on.
+
+`restart` is that drain and then one daemon in this terminal. It refuses before
+it stops anything — a commit the tracking remote has not got, a dirty worktree,
+anything `lingtai doctor` failed on — because a refusal after the drain is a
+system that is down. A start it performs is in the log, with who asked, why, and
+the commit ([0038](decisions/0038-the-restart-is-a-command.md)).
 
 ---
 

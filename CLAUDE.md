@@ -73,13 +73,28 @@ does not reach the process that is conducting. `#88` landed thirty-nine minutes
 after a daemon started and never once ran, costing 52 prompts (#98). The beacon
 now carries the commit the daemon started at; `lingtai doctor`'s
 `daemon: currency` and a chip on the board say how far behind `origin/main` that
-is. Neither restarts it — that is still yours, and whether it should be is open.
+is. Neither restarts it, and a daemon still does not restart itself when `main`
+moves — what closed is the gap between noticing and acting:
 
-**The restart is now safe to perform** (0030). `pnpm lingtai shutdown "why"`
-appends, returns, and the daemon finishes the pass in flight before it exits —
-the pass, not the agent, so the gates and the merge lane run too. That waits as
-long as `runtime.limits.wall`, `1h` here, and the command says so rather than
-looking hung. Ctrl+C does the same and tells you what a second one costs;
+    pnpm lingtai restart "picking up #88"
+
+**One command drains, waits and starts** (0038). It refuses first and drains
+second, because a refusal after the drain is a system that is down: a `HEAD` the
+tracking remote does not have is refused by name — a process holds its code for
+hours, and `582a0f8` was rebased out of existence twenty minutes after a daemon
+started from it — a dirty worktree is named in the same refusal, and
+`lingtai doctor` has to pass. `--anyway` starts in spite of all three and still
+prints them. A start now appends `ConductorStarted` carrying who, why and the
+commit, so *who restarted it at 23:06* is a question the log answers. What makes
+it exactly one daemon is the lock, not the ordering: if launchd's copy wins the
+race it says so and starts nothing.
+
+**The drain underneath it is safe on its own** (0030). `pnpm lingtai shutdown
+"why"` appends, returns, and the daemon finishes the pass in flight before it
+exits — the pass, not the agent, so the gates and the merge lane run too. That
+waits as long as `runtime.limits.wall`, `1h` here, and both commands say so
+rather than looking hung. Ctrl+C does the same and tells you what a second one
+costs; during a `restart`'s wait it leaves the drain standing, and
 `lingtai resume` lifts a request nothing acted on. An agent left behind by a
 second Ctrl+C or a `--timeout` is killed by the next conductor before it
 releases the claim, guarded on the host and the process's own argv.

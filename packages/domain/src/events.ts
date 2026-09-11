@@ -608,6 +608,51 @@ export const ConductorShutdownRequested = z.object({
 });
 
 /**
+ * A conductor started, from this commit, at this person's hand.
+ *
+ * **Stopping was an event and starting was state**, and the asymmetry cost an
+ * answer. A daemon was restarted at 23:06 on 2026-09-09 and nobody can say by
+ * whom: a start left a beacon, and a beacon says *a daemon is running now* — not
+ * that one started, from what code, or who asked for it.
+ *
+ * `sha` is the whole reason this is worth remembering later, and it is the field
+ * `daemon_status` could never carry honestly. That evening's daemon started from
+ * `582a0f8`, a commit that had not been pushed; a `git pull --rebase` twenty
+ * minutes later rewrote it to `2926f2d` and `582a0f8` stopped existing anywhere
+ * but in that process's memory. The beacon is one mutable row, so the next start
+ * overwrote what the last one was running; a row in the log cannot be
+ * overwritten, and [0038](../../../doc/decisions/0038-the-restart-is-a-command.md)
+ * is what keeps the commit it names pushed.
+ *
+ * It does **not** withdraw a standing `ConductorShutdownRequested`. Starting and
+ * being told to stop are independent facts — a daemon started while a request
+ * stands reads it and stops again, deliberately — and `ConductorResumed` remains
+ * the one withdrawal.
+ */
+export const ConductorStarted = z.object({
+  by: z.string(),
+  /** Why, when whoever started it said. `lingtai restart` carries its reason. */
+  reason: z.string().nullable().default(null),
+  /**
+   * The commit `HEAD` pointed at, frozen for the life of the process.
+   *
+   * Null only where there was no checkout to read — an installed copy or a
+   * tarball. 0010's *the source runs unbuilt* removes the build and not the
+   * restart, so this is the deployed version of Lingtai, recorded at the one
+   * moment it is decided.
+   */
+  sha: z.string().nullable(),
+  dirty: z.boolean(),
+  /**
+   * `host:pid`, spelled the way `WorkItemClaimed.worker` spells it.
+   *
+   * One string, so a claim and the start of the process that made it join
+   * without anybody translating between two conventions.
+   */
+  worker: z.string(),
+});
+
+/**
  * Run this one now, ahead of the queue.
  *
  * The same mechanism rather than a second channel: a person asking for a
@@ -1032,6 +1077,7 @@ export const EVENTS = {
   ConductorPaused,
   ConductorResumed,
   ConductorShutdownRequested,
+  ConductorStarted,
   OutboxDelivered,
   OutboxFailed,
   IssueUpdated,

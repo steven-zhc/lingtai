@@ -19,10 +19,19 @@
  * the gates and the board — every one of which is a fresh process or hot
  * reloads — while leaving the daemon exactly where it was.
  *
- * This only ever *reports*. Whether a daemon should restart itself when `main`
- * moves is deliberately open: 0030 shut a pass down safely, and a self-restart
- * is a decision with real arguments on both sides that wants an ADR before an
- * implementation.
+ * **Two directions, and only one of them acts.** `codeCurrency` looks backwards
+ * at a process that is already running and only ever *reports* — a warn on
+ * `lingtai doctor`, a chip on the board, and nothing restarted.
+ * `codeIdentity` below looks forward, at the commit a process is *about* to
+ * freeze, and `lingtai restart` refuses on its answer
+ * ([0038](../../../doc/decisions/0038-the-restart-is-a-command.md)). The
+ * asymmetry is deliberate: a commit already loaded cannot be unloaded by a
+ * diagnostic, whereas the moment before a start is the one moment the choice is
+ * still open.
+ *
+ * Whether a daemon should restart *itself* when `main` moves is still open. 0038
+ * made the restart a command somebody types; a reflex is a different decision
+ * with real arguments on both sides, and it wants its own ADR.
  *
  * **It never fetches.** Same rule as `lingtai doctor`: `origin/main` here means
  * the ref as your last fetch left it, and saying so is better than a diagnostic
@@ -165,4 +174,114 @@ export function describeCurrency(c: Currency): string {
     `running ${at}${dirty} — ${c.behind.length} commit(s) behind ${c.base}, ` +
     `which has not taken effect in this process: ${named.join("; ")}${rest}`
   );
+}
+
+// ------------------------------------------------------------- identity ----
+
+/**
+ * Whether the commit a process is about to freeze can be named afterwards.
+ *
+ * The forward-looking half of this module, and the one `lingtai restart` acts
+ * on. `codeCurrency` above asks *is the running code behind*; this asks the
+ * question that has to be answered before a process exists at all: **will
+ * anybody be able to say what it is running, tomorrow?**
+ *
+ * On 2026-09-09 the answer was no. A daemon started from `582a0f8`, a local
+ * commit that had not been pushed; a `git pull --rebase` twenty minutes later
+ * rewrote it to `2926f2d`, and `lingtai doctor` then reported `running 582a0f8
+ * — 5 commit(s) behind origin/main` against a commit that is not reachable from
+ * `origin/main` at all. The process held that code for the rest of its life and
+ * nothing could reconstruct what that code was.
+ *
+ * That is 0010 biting from a direction nobody had written down. *The source
+ * runs unbuilt* is read as "a merge takes effect immediately"; what it also
+ * means is that a process keeps whatever was on disk **at import**, including
+ * code that was never pushed and has since been rewritten out of existence.
+ */
+export interface Identity {
+  /** The commit `HEAD` points at, or null where there is no checkout. */
+  sha: string | null;
+  dirty: boolean;
+  /** The ref it was compared against — the upstream, then `origin/main`. */
+  base: string;
+  /**
+   * `sha` is reachable from `base`. Null when it could not be decided.
+   *
+   * Reachability and not equality: a checkout a few commits *behind* the base
+   * is running code anybody can fetch and read, which is all this asks. Being
+   * behind is `codeCurrency`'s question and is not a reason to refuse a start.
+   */
+  pushed: boolean | null;
+  /** Why it could not be decided, when it could not. */
+  unknown: string | null;
+}
+
+/**
+ * Read from the checkout this module was loaded from, exactly as the beacon is.
+ *
+ * **It never fetches**, for the reason the rest of this file does not: reaching
+ * for the network turns a refusal into something that can hang. `origin/main`
+ * means the ref as your last fetch left it, and a start refused because the
+ * fetch is old is a refusal a `git fetch` answers.
+ */
+export async function codeIdentity(options: CurrencyOptions = {}): Promise<Identity> {
+  const cwd = options.cwd ?? codeRoot();
+  const base = options.base ?? (await baseRef(cwd));
+  const version = await readCodeVersion(cwd);
+  const blank: Identity = { ...version, base, pushed: null, unknown: null };
+  if (!version.sha) return { ...blank, unknown: "there is no checkout here to read a commit from" };
+
+  try {
+    // `base..sha` is what the head has and the base does not, so empty is
+    // "reachable from the base" — the same shape `codeCurrency` uses for the
+    // opposite direction, and one that stays right when the two have diverged.
+    const ahead = await git(["rev-list", "--count", `${base}..${version.sha}`], { cwd });
+    return { ...blank, pushed: ahead.trim() === "0" };
+  } catch (err) {
+    // A base ref that was never fetched, most often. An answer, not a throw —
+    // the caller decides what an unknown is worth, and `lingtai restart` treats
+    // it as a refusal because "we cannot tell" and "it is fine" are not the
+    // same sentence.
+    return { ...blank, unknown: (err as Error).message };
+  }
+}
+
+/**
+ * Why a process started from here could not be accounted for later. Empty is a go.
+ *
+ * A list rather than a first failure, because both facts are worth one reading:
+ * a HEAD that was never pushed and a worktree with uncommitted changes are the
+ * same defect twice, and being told about one of them at a time is how the
+ * second gets discovered by a restart that was supposed to be the last one.
+ *
+ * Shared rather than written at the call site, for the reason
+ * `describeCurrency` is: two reports of one fact that can disagree are worse
+ * than one that is terse.
+ */
+export function identityRefusals(id: Identity): string[] {
+  const at = id.sha ? id.sha.slice(0, 7) : "an unrecorded commit";
+  const out: string[] = [];
+
+  if (id.unknown !== null) {
+    out.push(
+      `the commit a daemon would start from could not be established against ${id.base} — ${id.unknown}. ` +
+        `Nothing fetches on your behalf here, so a stale ref is answered by git fetch`,
+    );
+  } else if (id.pushed === false) {
+    out.push(
+      `${at} is not reachable from ${id.base} — it has not been pushed. A process holds the code it ` +
+        `started with for hours, and a commit that only exists on this disk cannot be reasoned about ` +
+        `afterwards: a rebase rewrites it and there is then nothing anywhere that says what ran. ` +
+        `Push it, or start from ${id.base}`,
+    );
+  }
+
+  if (id.dirty) {
+    out.push(
+      `the worktree has uncommitted changes — a daemon started from it runs code that no commit names, ` +
+        `and the beacon would record ${at} for something that is not ${at}`,
+    );
+  }
+
+  return out;
 }

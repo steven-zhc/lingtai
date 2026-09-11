@@ -44,7 +44,7 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
@@ -1355,6 +1355,32 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     skipped: results.filter((r) => r.status === "skip").length,
     warned: results.filter((r) => r.status === "warn").length,
   };
+}
+
+/**
+ * The report, with the environment built the one legal way.
+ *
+ * Touching the loaders rather than reading `process.env` keeps the one rule
+ * about environment loading true even in the command that inspects it — and
+ * this is a function rather than four lines at a call site because there are two
+ * call sites now: `lingtai doctor`, and the `lingtai restart` it gates
+ * ([0038](../../../doc/decisions/0038-the-restart-is-a-command.md)). A gate that
+ * ran a *slightly* different doctor than the one you type would be the worst of
+ * both.
+ */
+export async function doctorReport(): Promise<DoctorReport> {
+  const env = { ...process.env };
+  try {
+    env["DATABASE_URL"] = databaseUrl();
+  } catch {
+    delete env["DATABASE_URL"];
+  }
+  try {
+    env["DIRECT_DATABASE_URL"] = directDatabaseUrl();
+  } catch {
+    delete env["DIRECT_DATABASE_URL"];
+  }
+  return runDoctor(env);
 }
 
 /**

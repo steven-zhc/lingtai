@@ -333,8 +333,8 @@ export async function statuses(): Promise<Map<string, string>> {
  * the second is the fork the module refuses. So: lower case, punctuation
  * dropped, spaces to hyphens — which is what GitHub does.
  *
- * Each space, not each run of them: `## event — 43 types` loses the em dash and
- * keeps the two spaces around it, so the anchor is `event--43-types`. It looks
+ * Each space, not each run of them: `## event — 50 types` loses the em dash and
+ * keeps the two spaces around it, so the anchor is `event--50-types`. It looks
  * like a typo and it is what a link copied from GitHub says.
  */
 export function slugify(text: string): string {

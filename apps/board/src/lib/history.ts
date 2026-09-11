@@ -219,6 +219,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RepairDeclined: (d) => `${need(d, "reason")} — ${clip(d["why"])}`,
 
   // -------------------------------------------------------------- control --
+  // The commit is the row, not a detail under it. A start is the only moment a
+  // process's code is chosen, and "who restarted it at 23:06" was unanswerable
+  // until this event existed (0038).
+  ConductorStarted: (d) =>
+    `${need(d, "by")} started ${sha(d, "sha")}${d["dirty"] === true ? " (worktree dirty)" : ""}` +
+    (d["reason"] ? `: ${clip(d["reason"])}` : ""),
   ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,
   ConductorResumed: (d) => need(d, "by"),
   // The timeout is on the row because it is the whole difference between a
