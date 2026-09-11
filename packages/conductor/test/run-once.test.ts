@@ -135,6 +135,18 @@ const HUMAN_MERGE_RECIPE = RECIPE.replace(
 runtime: {`,
 );
 
+/**
+ * A recipe with a cold reviewer after the build, as Lingtai's own has.
+ *
+ * The order is the real one and it matters: the first refusal wins, so a diff
+ * that does not compile is never paid to be reviewed.
+ */
+const REVIEWING_RECIPE = RECIPE.replace(
+  '- { name: build, run: "test -f src/fix.ts", timeout: 2m }',
+  `- { name: build, run: "test -f src/deliver.ts", timeout: 2m }
+    - { name: review, agent: "this project cares about swallowed errors" }`,
+);
+
 /** A recipe whose only gate refuses, whatever the agent did. */
 const REFUSING_RECIPE = RECIPE.replace(
   'run: "test -f src/fix.ts"',
@@ -632,6 +644,187 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
     expect(again.ok).toBe(false);
     expect(again.detail).toContain("backlog");
   }, 60_000);
+
+  /**
+   * A refused review buys an agent, the review runs again, and **the cheap way
+   * to pass is caught**
+   * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
+   *
+   * This is the Goodhart test the ticket asks for, attempted exactly: the fixer
+   * is given a `blocker` whose scenario is a swallowed error, and it answers by
+   * **deleting the capability** rather than by fixing it. A re-review asked *do
+   * you still have this complaint* would have nothing to say. A re-review asked
+   * *does that sequence still produce that outcome* — against a scenario written
+   * before anybody knew what the fix would be — reports it again, and the item
+   * reaches a person as two agents disagreeing rather than as a gate refusing.
+   *
+   * Four agent calls in one run, told apart by their prompts, because that is
+   * what the loop actually is: implement, review, fix, review again.
+   */
+  it("buys a fixing agent for a refused review, asks again, and catches a fix that only deletes", async () => {
+    const other = { ...issue, number: 136 };
+    created.add(workItemStream(PROJECT, 136));
+
+    // The failure scenario, written once here and asserted everywhere it has to
+    // survive: the fixer's prompt, the re-review's prompt, and the log.
+    const scenario =
+      "call deliver() with a path whose read fails: readFile throws, the catch returns " +
+      "ok true with an empty body, and the caller records a delivery that never happened";
+    const findings = {
+      findings: [
+        {
+          file: "src/deliver.ts",
+          line: 4,
+          severity: "blocker",
+          claim: "a failed read is swallowed and the delivery resolves as a success",
+          failureScenario: scenario,
+        },
+      ],
+    };
+    const receipt = (over: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        is_error: false,
+        num_turns: 4,
+        duration_ms: 1234,
+        total_cost_usd: 0.11,
+        ...over,
+      });
+
+    const reviewPrompt = join(root, "136-review.txt");
+    const fixPrompt = join(root, "136-fix.txt");
+    const recheckPrompt = join(root, "136-recheck.txt");
+
+    // One script, four roles. The order of the first two cases matters: a
+    // re-review is a review, and it is the more specific pattern.
+    const agent = join(root, "agent-136.sh");
+    await writeFile(
+      agent,
+      `#!/bin/sh
+set -e
+case "$2" in
+  *"Scenarios that must no longer happen"*)
+    printf '%s' "$2" > ${recheckPrompt}
+    printf '%s\\n' '${receipt({ result: JSON.stringify(findings) })}'
+    exit 0
+    ;;
+  *"You are reviewing a change you did not write"*)
+    printf '%s' "$2" > ${reviewPrompt}
+    printf '%s\\n' '${receipt({ result: JSON.stringify(findings) })}'
+    exit 0
+    ;;
+  *"you are the fix"*)
+    printf '%s' "$2" > ${fixPrompt}
+    # The silencing fix, attempted on purpose: the code the finding names is
+    # gone, and with it the capability. Nothing about the scenario is addressed.
+    echo 'export const deliver = null;' > src/deliver.ts
+    git add -A
+    git -c user.name=fixer -c user.email=f@example.invalid commit -qm 'remove the reader'
+    printf '%s\\n' '${receipt()}'
+    exit 0
+    ;;
+esac
+mkdir -p src
+cat > src/deliver.ts <<'TS'
+export async function deliver(path) {
+  try {
+    return { ok: true, body: await readFile(path) };
+  } catch {
+    return { ok: true, body: "" };
+  }
+}
+TS
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm 'deliver the log'
+printf '%s\\n' '${receipt()}'
+`,
+    );
+    await chmod(agent, 0o755);
+
+    const result = await once({
+      ...options(agent),
+      issue: 136,
+      client: fakeClient({
+        recipe: REVIEWING_RECIPE,
+        getIssue: async () => other,
+        listOpenIssues: async () => [other],
+      }),
+    });
+
+    // Held, not merged and not failed: a judgement is waiting on a person.
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
+
+    const run = await store.read(result.runId);
+    const types = run.map((e) => e.type);
+
+    // ---- the loop ran, in this order ----
+    expect(types).toContain("FixRequested");
+    expect(types).toContain("FixApplied");
+    // Two refusals from the same action: the review, and the review again.
+    const refusals = run.filter(
+      (e) => e.type === "GateFailed" && (e.data as { action: string }).action === "review",
+    );
+    expect(refusals).toHaveLength(2);
+
+    // ---- the acceptance contract, on the log and in both prompts ----
+    const bought = run.find((e) => e.type === "FixRequested")!;
+    expect(bought.data).toMatchObject({ round: 1, action: "review" });
+    // Verbatim on the log, because the scenario is the criterion and a summary
+    // of it is a different, looser one.
+    expect((bought.data as { findings: { failureScenario: string }[] }).findings[0]!.failureScenario).toBe(
+      scenario,
+    );
+
+    const handed = await readFile(fixPrompt, "utf8");
+    expect(handed).toContain(scenario);
+    expect(handed).toMatch(/change nothing else/i);
+    // The findings **and the diff** (0038 §3), which is the same diff the
+    // reviewer was shown rather than one the fixer had to guess the base of.
+    expect(handed).toContain("## The change under review");
+    expect(handed).toContain("+++ b/src/deliver.ts");
+    // 0038 §3, asserted rather than intended: the fixer gets the findings and
+    // the diff, and nothing the implementer was told or said. The implementer's
+    // prompt is "fix the race" filled from the ticket; none of it is here.
+    expect(handed).not.toContain("fix the race");
+    expect(handed).not.toContain("a race in the importer");
+
+    const again = await readFile(recheckPrompt, "utf8");
+    expect(again).toContain(scenario);
+    expect(again).toMatch(/does that sequence still produce that outcome/i);
+    // And it is the diff after the fix that was re-read.
+    expect(again).toContain("export const deliver = null");
+
+    // ---- what a person is shown ----
+    const events = await store.read(workItemStream(PROJECT, 136));
+    const item = reduceWorkItem(events);
+    expect(item.lifecycle.status).toBe("blocked");
+    if (item.lifecycle.status !== "blocked") return;
+    expect(item.lifecycle.needs).toBe("judgement");
+    expect(item.lifecycle.question).toContain("two agents disagreed");
+    // The criterion in as many words: not *a gate refused*.
+    expect(item.lifecycle.diagnosis?.what).toContain("Two agents disagreed");
+    expect(item.lifecycle.diagnosis?.what).not.toMatch(/gate refused/i);
+    expect(item.lifecycle.diagnosis?.done).toContain("1 round(s) of fix-and-re-review ran");
+    // The findings verbatim underneath, scenario included.
+    expect(item.lifecycle.diagnosis?.raw).toContain(scenario);
+
+    // ---- and the two purses stayed apart ----
+    // No repair was bought and none was declined, because the merge lane was
+    // never reached: a review refusal is spent out of `repair.fix`, and
+    // `repair.maxAttempts` is untouched and still available to a broken build.
+    expect(types).not.toContain("RepairRequested");
+    expect(events.map((e) => e.type)).not.toContain("RepairRequested");
+    expect(item.repairs).toEqual([]);
+    const lane = await store.read(integrationStream(PROJECT, "develop"));
+    expect(
+      lane.filter((e) => (e.data as { workItemId?: string }).workItemId === workItemStream(PROJECT, 136)),
+    ).toEqual([]);
+
+    // Nothing merged, and the branch is on the remote for a person to read.
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("deliver the log");
+  }, 240_000);
 
   it("reads the recipe from the recorded base, not the default branch", async () => {
     let askedFor: string[] = [];

@@ -412,6 +412,60 @@ export const taskViewProjection: Projection = {
           break;
         }
 
+        /**
+         * A fix is bought, so it is folded.
+         *
+         * These three reached no case at all, which had two costs. **The card
+         * showed no sign a fix was running** — an item sat on `running` with
+         * nothing saying a second agent had been dispatched into it. And **the
+         * spend landed in no column**: `RunFinished` writes the run's own cost,
+         * and a fixer is not a run of its own.
+         *
+         * It goes to `repair_costs` rather than to `cost_usd`, for `#84`'s
+         * argument unchanged: *a repair is default-on and spends an agent
+         * without being asked again*, so its money is kept apart from the
+         * work's. A fix is default-on and spends an agent without being asked
+         * again. Same bucket, keyed by the run it was spent inside.
+         */
+        case "FixRequested": {
+          const d = event.data as PayloadOf<"FixRequested">;
+          await viaRun(ctx, event.streamId, seq, at, {
+            state: "running",
+            note: `fixing round ${d.round}: ${d.findings.length} finding(s) from ${d.action}`,
+          });
+          break;
+        }
+
+        case "FixApplied": {
+          const d = event.data as PayloadOf<"FixApplied">;
+          if (d.costUsd !== null) {
+            await viaRunQuery(
+              ctx,
+              event.streamId,
+              // `$1` is the task id, `$2` the seq, `$3` the timestamp, and the
+              // caller's own start at `$4` — see `viaRunQuery`.
+              `update task_view
+                 set repair_costs = repair_costs || jsonb_build_object($4::text, $5::double precision),
+                     updated_at = $3,
+                     updated_seq = $2::bigint
+               where task_id = $1 and updated_seq <= $2::bigint`,
+              // Keyed by run and round: a second round inside one run is a
+              // second purchase, and keying by run alone would lose the first.
+              [seq, at, `${d.runId}#fix${d.round}`, d.costUsd],
+            );
+          }
+          break;
+        }
+
+        case "FixDeclined": {
+          const d = event.data as PayloadOf<"FixDeclined">;
+          await viaRun(ctx, event.streamId, seq, at, {
+            state: "running",
+            note: `no fix bought after ${d.round} round(s): ${d.why}`,
+          });
+          break;
+        }
+
         case "GatePassed":
         case "GateFailed":
         case "GateWaived":

@@ -41,6 +41,16 @@
  * filter false positives, and the measured false-positive rate is zero: all
  * three findings in 001 were real. A filter with nothing to filter still costs
  * an agent call. Add it when false positives actually appear.
+ *
+ * **And the same gate is what checks a fix**
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
+ * A refusal buys an agent that is handed the findings, and then this runs again
+ * on the head that agent produced — with `GateContext.recheck` carrying the
+ * findings it was given. Not a second kind of gate: the rubric, the checklist
+ * and the contract are the same, and the only addition is the question a fix
+ * makes possible to ask wrongly — *does that sequence still produce that
+ * outcome*, rather than *is that sentence still in my output*. See
+ * `recheckBlock`.
  */
 import type { Runtime } from "@lingtai/agent";
 import type { Gate, GateContext, GateFinding, GateResult } from "./gate.ts";
@@ -136,11 +146,68 @@ export interface ReviewIssue {
   body: string;
 }
 
+/**
+ * The block that makes a re-review a re-review
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+ *
+ * **The reviewer and the fixer are both agents, and a fix that silences a
+ * finding is not a fix.** Deleting the line, renaming the symbol or adding a
+ * suppression all make a finding's text go away with the defect intact —
+ * Goodhart, with a model at each end of the measure. So the question asked here
+ * is deliberately not *is this finding still reported*: it is **does this
+ * sequence still produce this outcome**, against a scenario quoted verbatim and
+ * written before anybody knew what the fix would be.
+ *
+ * That last property is the whole guard, and it is why the scenario is quoted
+ * rather than paraphrased: a criterion the fixer could have authored is not a
+ * criterion. The three clauses about removal are there because removal is the
+ * cheap way to pass — a capability deleted along with its defect is a scenario
+ * that no longer *runs*, not one that no longer produces the outcome.
+ */
+function recheckBlock(findings: readonly GateFinding[]): string {
+  const items = findings.map((f, i) => {
+    const at = f.line === null ? f.file : `${f.file}:${f.line}`;
+    return [
+      `${i + 1}. **${f.severity}** · ${at} — ${f.claim}`,
+      "",
+      "   Failure scenario, verbatim:",
+      "",
+      ...f.failureScenario.split("\n").map((line) => `   > ${line}`),
+    ].join("\n");
+  });
+
+  return `## Scenarios that must no longer happen
+
+An earlier version of this diff was refused for the findings below, and an agent
+has since changed the code with the intention of addressing them. It was given
+these scenarios and nothing else about the review.
+
+${items.join("\n\n")}
+
+For each one, walk the code as it now stands and answer the only question that
+matters: **does that sequence still produce that outcome?**
+
+- A scenario that is still reachable by *any* path is still a finding. Report it
+  again, at the same severity or higher.
+- **Code that was deleted, renamed, moved or suppressed is not, on its own, a
+  fix.** If the behaviour the scenario describes can still be produced — through
+  the new name, the new location, the remaining caller — the finding stands. If
+  the capability was removed along with the defect, so that the sequence can no
+  longer be performed at all, say so in a new finding: the caller has lost
+  something it had.
+- A scenario that genuinely can no longer produce its outcome is simply not
+  reported. Do not say so, and do not argue with the finding that made it.
+
+Then review the diff as it now stands for anything else, exactly as you would
+have without this section. The fix is part of the diff and is not above review.`;
+}
+
 export function buildReviewPrompt(
   spec: AgentGateSpec,
   issue: ReviewIssue,
   diff: string,
   limitBytes: number,
+  recheck: readonly GateFinding[] = [],
 ): string {
   const clipped =
     diff.length > limitBytes
@@ -168,7 +235,7 @@ ${RUBRIC}
 ${CONTRACT}
 
 ${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ""}
-## The diff
+${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ""}## The diff
 
 \`\`\`diff
 ${clipped}
@@ -259,13 +326,22 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
       }
 
       const issue = await deps.issue();
+      const recheck = context.recheck ?? [];
       const outcome = await deps.runtime.run({
         // **Not** `context.runId`. The session id is derived from it, so reusing
         // it would resume the implementer's session and make this a warm review
         // wearing a cold review's name.
-        runId: `${context.runId}:review:${spec.name}`,
+        //
+        // A re-review gets an id of its own for the same reason *again*: a
+        // second review that resumed the first one would be a reviewer asked
+        // whether it still agrees with itself, which is the warm-review failure
+        // experiment 001 measured, one level up (0038 §2).
+        runId:
+          recheck.length === 0
+            ? `${context.runId}:review:${spec.name}`
+            : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}`,
         cwd: context.cwd,
-        prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes),
+        prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck),
         settingsPath: deps.settingsPath,
         env: context.env,
         limits: deps.limits,

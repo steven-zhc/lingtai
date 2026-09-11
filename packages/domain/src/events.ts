@@ -443,19 +443,29 @@ export const EndActionsResolved = z.object({
 export const GateRequested = z.object(gateBase);
 export const GateStarted = z.object(gateBase);
 export const GatePassed = z.object({ ...gateBase, evidence: z.string() });
+/**
+ * One finding, as a reviewer reported it.
+ *
+ * Named and shared because a finding now travels: it is the evidence on a
+ * `GateFailed`, it is what a fixing agent is handed verbatim, and it is what the
+ * re-review is asked to re-check
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+ * Three copies of the shape would be three places for `failureScenario` to be
+ * summarised away, and the whole mechanism is that it is not.
+ */
+const Finding = z.object({
+  file: z.string(),
+  line: z.number().int().nullable(),
+  claim: z.string(),
+  /** No failure scenario, no finding. An observation without one is an opinion. */
+  failureScenario: z.string(),
+  severity: z.enum(["blocker", "major", "minor"]),
+});
+
 export const GateFailed = z.object({
   ...gateBase,
   evidence: z.string(),
-  findings: z.array(
-    z.object({
-      file: z.string(),
-      line: z.number().int().nullable(),
-      claim: z.string(),
-      /** No failure scenario, no finding. An observation without one is an opinion. */
-      failureScenario: z.string(),
-      severity: z.enum(["blocker", "major", "minor"]),
-    }),
-  ),
+  findings: z.array(Finding),
 });
 
 /** Humans need an escape hatch. It is recorded, never silent. */
@@ -539,6 +549,78 @@ export const RepairDeclined = z.object({
   fingerprint: z.string(),
   /** The sentence the card shows. Names the rule that refused, not just "no". */
   why: z.string(),
+});
+
+// ------------------------------------------------------------------ fix ----
+
+/**
+ * A review refusal bought an agent, inside the run that was refused
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §1).
+ *
+ * On the **run's** stream and not the work item's, which is the difference
+ * between this and `RepairRequested`: a repair is the next run, told what went
+ * wrong, and the item goes back to the queue to get it. A fix happens while the
+ * worktree is still there and the diff is still the thing under discussion, so
+ * nothing is released and no second claim is involved — the gates simply run
+ * again on a head that moved.
+ *
+ * **`findings` is the acceptance contract and the reason this event exists.**
+ * It is what the fixer was handed, `failureScenario` verbatim, written before
+ * anybody knew what the fix would be (§2). The re-review is asked whether those
+ * sequences still produce those outcomes, so the log has to hold the question
+ * that was asked rather than a summary of it — a deleted line makes a finding's
+ * *text* go away, and this is what it cannot make go away.
+ */
+export const FixRequested = z.object({
+  /** The run whose review refused. The fixer runs inside it. */
+  runId: z.string(),
+  /** 1-based, against the recipe's `repair.fix`. */
+  round: z.number().int().positive(),
+  /** The action whose refusal bought this — the reviewer's name. */
+  action: z.string(),
+  /** The head the findings were made against. */
+  onSha: z.string(),
+  findings: z.array(Finding),
+});
+
+/**
+ * What the fixing agent produced, and what it cost.
+ *
+ * A spend is a fact the log has to hold whichever way it went, so
+ * `headSha` is nullable rather than absent: a fixer that committed nothing
+ * ran, cost money and moved nothing, and that is a different ending from one
+ * whose commit the re-review then refused.
+ */
+export const FixApplied = z.object({
+  runId: z.string(),
+  round: z.number().int().positive(),
+  /** The head after the fixer committed, or null when it committed nothing. */
+  headSha: z.string().nullable(),
+  turns: z.number().int().nonnegative(),
+  costUsd: z.number().nullable(),
+  /** The runtime's own ending, when it did not finish. Null when it did. */
+  failure: z.string().nullable(),
+});
+
+/**
+ * A review refusal that bought no fixer, and why — including the round that ran
+ * out of budget, which is the ordinary ending.
+ *
+ * `RepairDeclined`'s argument, for the other purse: "nothing happened because
+ * nobody asked for it" and "nothing happened and we do not know why" are the two
+ * things a log exists to keep apart. This is also the event behind the sentence
+ * a person is shown — **two agents disagreed** — so the findings still live are
+ * on it rather than only in prose.
+ */
+export const FixDeclined = z.object({
+  runId: z.string(),
+  /** Rounds already spent when this was decided. Zero when none was bought. */
+  round: z.number().int().nonnegative(),
+  action: z.string(),
+  /** The sentence the card shows. Names the rule that refused, not just "no". */
+  why: z.string(),
+  /** What is still live, as the reviewer last said it. */
+  findings: z.array(Finding),
 });
 
 // --------------------------------------------------------------- control ----
@@ -1029,6 +1111,9 @@ export const EVENTS = {
   IntegrationSucceeded,
   RepairRequested,
   RepairDeclined,
+  FixRequested,
+  FixApplied,
+  FixDeclined,
   ConductorPaused,
   ConductorResumed,
   ConductorShutdownRequested,

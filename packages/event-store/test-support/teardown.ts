@@ -45,8 +45,28 @@
 import "@lingtai/env";
 import pg from "pg";
 
-/** `esctest…` is what every test fixture names its project. */
-const THROWAWAY = "esctest";
+/**
+ * The names the suite invents for itself, as one pattern.
+ *
+ * **Two of them**, because the fixtures come in two shapes: `esctest…` is a
+ * throwaway *project*, and `test-<8 hex>` is `event-store/test/support.ts`'s
+ * throwaway *stream*, which belongs to no project at all and so cannot carry a
+ * project's name.
+ *
+ * The guard below has to know both, and until 2026-09-11 it knew one. That is
+ * not a tidiness point, and what it cost is the reason this comment is long.
+ * An interrupted event-store run left twenty-two `wi-test-<hex>` rows behind at
+ * 22:09 on 2026-09-10; the guard read them as a log with real history in it and
+ * from that moment deleted **nothing**. Six hours of runs added 1,650 events
+ * nobody swept, `task_view`'s rebuild — which costs a round trip per event —
+ * went past the 60s its own test allows, and `pnpm test` began failing on a
+ * change that had not touched the projector.
+ *
+ * **A guard a crashed run can disarm for ever removes cleanup rather than
+ * protecting it.** The protection that is wanted is against a *real* log, and a
+ * stream the suite itself named is not one.
+ */
+const THROWAWAY = String.raw`(esctest|test-[0-9a-f]{8}$)`;
 
 /** Nothing to prepare. The suite builds its own fixtures. */
 export function setup(): void {}
@@ -87,10 +107,23 @@ export async function teardown(): Promise<void> {
 
     try {
       await c.query("alter table events disable rule lingtai_events_no_delete");
-      await c.query(
-        `delete from events where stream_id ~ $1 or stream_id ~ $2`,
-        [`^(wi|run|int|prj)-${THROWAWAY}`, `^ctl-outbox-${THROWAWAY}`],
-      );
+      // The work the suite invented, and the control aggregate beside it.
+      //
+      // **`ctl-` is swept wholesale, and it has to be.** There is one control
+      // stream for the whole system, so a reconcile test cannot give it a
+      // throwaway name the way it gives one to a work item — every run appends
+      // to `ctl-conductor` itself and nothing ever removed any of it. 1,016
+      // `Reconciled` events had collected in it by 2026-09-11, every one of them
+      // naming a temporary worktree that stopped existing when the test that
+      // made it ended, and each costing a replay the same round trip a real
+      // event costs.
+      //
+      // Safe **here and nowhere else**: the guard above has already established
+      // that this log holds no real work item, and a log with no real work has
+      // no real control history either.
+      await c.query(`delete from events where stream_id ~ $1 or stream_id ~ '^ctl-'`, [
+        `^(wi|run|int|prj)-${THROWAWAY}`,
+      ]);
     } finally {
       await c.query("alter table events enable rule lingtai_events_no_delete");
     }

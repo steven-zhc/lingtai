@@ -249,6 +249,24 @@ repair:
   on: true
   maxAttempts: 1
 
+  # What a finding buys, as its own number
+  # ([0038](../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
+  #
+  # `maxAttempts` above is what a wall buys: a broken build, a conflict, a
+  # refusal from the merge lane. This is what a refused *review* buys — rounds of
+  # fix-and-re-review inside the run that was refused, with the reviewer's
+  # failure scenarios handed over verbatim as the acceptance criterion.
+  #
+  # Two numbers because one was being spent by two kinds of failure: a bad build
+  # that used `maxAttempts` used to leave a one-line finding with nothing to buy
+  # an agent with. A shared ceiling is not a budget, it is a race.
+  #
+  # One here, which is the default, and for the same reason the ceiling above is
+  # one: `merge` is empty, so what a fix produces lands unread if the re-review
+  # passes it. One round is the whole of the limit on how far an agent may go
+  # answering a reviewer, not just on what that costs.
+  fix: 1
+
 runtime:
   agent: claude-code
   # Lower than admin's 300. A change here is meant to be small enough to read in

@@ -162,7 +162,8 @@ reports. A megabyte produces a worse review, not a better one.
 | `runtime.limits.turns` | `300` | turns before the runtime stops the agent |
 | `runtime.limits.wall` | `2h` | wall clock before the same |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
-| `repair.maxAttempts` | `1` | repair agents bought per work item, across every distinct failure (0025 §3) |
+| `repair.maxAttempts` | `1` | repair agents bought per work item, across every distinct **wall** — an integration, a project or a run failing (0025 §3) |
+| `repair.fix` | `1` | fix-and-re-review rounds bought per run by a **refused review** — its own purse, because one ceiling means whichever failure happens first decides whether the other gets an attempt at all ([0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4) |
 | `repair.on` | `true` | whether a failure of this repository's buys one at all |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 

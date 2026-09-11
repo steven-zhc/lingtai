@@ -124,6 +124,92 @@ describe("the review prompt", () => {
     expect(prompt).toContain("[diff truncated at");
     expect(prompt.length).toBeLessThan(huge.length);
   });
+
+  it("says nothing about a re-review when there is nothing to re-check", () => {
+    // Every review before a fix is this one, and it has to be the prompt it was
+    // — the block below is an addition and never a rewrite.
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+
+    expect(prompt).not.toContain("must no longer happen");
+  });
+});
+
+/**
+ * The re-review, which is the acceptance contract of the fix loop
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+ *
+ * **The reviewer and the fixer are both agents**, so a fix that makes a
+ * finding's *text* go away — the line deleted, the symbol renamed, a suppression
+ * added — passes a review that is asked whether it still has the same complaint.
+ * The guard is that it is asked something else: whether the sequence still
+ * produces the outcome, against a scenario written before anybody knew what the
+ * fix would be.
+ */
+describe("asking the reviewer again after a fix", () => {
+  const scenario =
+    "call deliver() while the log file is unreadable; readFile throws, the catch\n" +
+    "swallows it, and the promise resolves as a success";
+  const refused = [finding({ failureScenario: scenario })] as never[];
+
+  it("quotes every failure scenario verbatim, because the fixer cannot author it", () => {
+    const prompt = buildReviewPrompt(
+      { name: "review", prompt: "" },
+      ISSUE,
+      "THE-FIXED-DIFF",
+      DIFF_BYTES,
+      refused,
+    );
+
+    // Verbatim, line for line. A paraphrase here is a looser criterion than the
+    // one the fixer was held to, which is worse than having none.
+    for (const line of scenario.split("\n")) expect(prompt).toContain(line.trim());
+    expect(prompt).toContain("src/x.ts:42");
+    expect(prompt).toContain("blocker");
+  });
+
+  it("asks whether the sequence still happens, not whether the finding is still reported", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+
+    expect(prompt).toMatch(/does that sequence still produce that outcome/i);
+    // The Goodhart move, named: deleting the code is the cheap way to make a
+    // finding's text go away, and the prompt has to refuse it in as many words.
+    expect(prompt).toMatch(/deleted, renamed, moved or suppressed is not, on its own, a\s+fix/i);
+    expect(prompt).toMatch(/still reachable by \*any\* path is still a finding/i);
+  });
+
+  it("keeps the rubric, the checklist and the diff exactly as they were", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES, refused);
+
+    // Not a second kind of gate. A re-review that lost the rubric would rate the
+    // fix's own defects the way 001's reviewer rated silent corruption.
+    expect(prompt).toMatch(/silent corruption is a blocker/i);
+    expect(prompt).toMatch(/check-then-write/i);
+    expect(prompt).toContain("THE-DIFF");
+  });
+
+  it("runs under an id of its own, so it is not asked whether it still agrees with itself", async () => {
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+    const gate = createAgentGate(
+      { name: "review", prompt: "" },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => "a diff",
+        settingsPath: "/tmp/s.json",
+        limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+      },
+    );
+
+    await gate.run(context);
+    await gate.run({ ...context, onSha: "b".repeat(40), recheck: refused });
+
+    // The session id is a function of the run id, so a re-review sharing the
+    // first review's id would resume that session — warm, and agreeing with
+    // itself by construction.
+    expect(runtime.seen[1]?.runId).not.toBe(runtime.seen[0]?.runId);
+    expect(runtime.seen[1]?.prompt).toContain("Scenarios that must no longer happen");
+    expect(runtime.seen[0]?.prompt).not.toContain("Scenarios that must no longer happen");
+  });
 });
 
 describe("reading the reviewer's answer", () => {

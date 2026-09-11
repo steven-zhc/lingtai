@@ -221,7 +221,7 @@ const GATES: GatePlan = new Map([
 const PLAN: PlanView = planOf(
   GATES,
   { limits: { turns: 150, wall: "1h" }, tier: "guarded" },
-  { on: true, maxAttempts: 1 },
+  { on: true, maxAttempts: 1, fix: 1 },
 );
 
 describe("what will happen", () => {
@@ -245,7 +245,9 @@ describe("what will happen", () => {
   it("carries the recipe's limits, in the recipe's own words", () => {
     expect(PLAN.turns).toBe(150);
     expect(PLAN.wall).toBe("1h");
-    expect(PLAN.repair).toEqual({ on: true, maxAttempts: 1 });
+    // Both numbers, because two kinds of failure spend them (0038 §4): what a
+    // wall buys, and what a finding buys.
+    expect(PLAN.repair).toEqual({ on: true, maxAttempts: 1, fix: 1 });
   });
 
   it("renders the plan and the bounds together", () => {
@@ -257,7 +259,7 @@ describe("what will happen", () => {
     expect(html).toContain("close the ticket");
     // Twice: `admit` and `merge`, each stated rather than omitted.
     expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(2);
-    expect(html).toContain("150 turns · 1h · guarded · 1 repair");
+    expect(html).toContain("150 turns · 1h · guarded · 1 repair · 1 fix");
   });
 
   /**
@@ -266,7 +268,11 @@ describe("what will happen", () => {
    * it is off is a default nobody can audit.
    */
   it("says so when the repair is off", () => {
-    const off = planOf(GATES, { limits: { turns: 300, wall: "2h" }, tier: "guarded" }, { on: false, maxAttempts: 1 });
+    const off = planOf(
+      GATES,
+      { limits: { turns: 300, wall: "2h" }, tier: "guarded" },
+      { on: false, maxAttempts: 1, fix: 1 },
+    );
     expect(renderToStaticMarkup(<Plan plan={off} />)).toContain("no repair");
   });
 

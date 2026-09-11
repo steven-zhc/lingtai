@@ -182,6 +182,16 @@ export interface RepairPolicyView {
   project: string;
   on: boolean;
   maxAttempts: number;
+  /**
+   * Rounds of fix-and-re-review a refused review buys
+   * ([0038](../../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §4).
+   *
+   * Beside `maxAttempts` and not folded into it, because the bar has to be able
+   * to say what a *finding* buys: the two numbers are spent by different
+   * failures, and a bar showing only the first would make the second exactly as
+   * invisible as the policy this view exists to show.
+   */
+  fix: number;
 }
 
 export interface Board {
@@ -488,6 +498,7 @@ export async function queuedCards(
       project: filter.project,
       on: filter.repair.on,
       maxAttempts: filter.repair.maxAttempts,
+      fix: filter.repair.fix,
     });
     backoffMs.set(filter.project, filter.backoffMs);
     plans.set(filter.project, filter.plan);

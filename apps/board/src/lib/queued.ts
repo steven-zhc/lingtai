@@ -76,7 +76,7 @@ export interface PlanView {
    * default that spends money and only appears when it is doing something is a
    * default nobody can audit.
    */
-  repair: { on: boolean; maxAttempts: number };
+  repair: { on: boolean; maxAttempts: number; fix: number };
 }
 
 /** Why GitHub is not offering this issue to the conductor, in words. */
@@ -139,7 +139,7 @@ export interface QueuedView {
 export function planOf(
   plan: GatePlan,
   runtime: { limits: { turns: number; wall: string }; tier: string },
-  repair: { on: boolean; maxAttempts: number },
+  repair: { on: boolean; maxAttempts: number; fix: number },
 ): PlanView {
   return {
     points: GATE_POINTS.map((point) => {

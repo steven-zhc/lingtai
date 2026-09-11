@@ -73,6 +73,23 @@ export interface GateContext {
    * agent runtime, not an extension.
    */
   env: Record<string, string>;
+  /**
+   * Findings a **previous** version of this diff was refused for, and that an
+   * agent has since been asked to make stop happening
+   * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+   *
+   * On the context rather than on a spec, because it is a fact about *this run
+   * of the pipeline* exactly as `onSha` is: the same recipe, the same actions, a
+   * head that moved and a question that has been asked once already. Absent on
+   * the first pass, which is every pass before a fix.
+   *
+   * Only the `agent` kind reads it, and it is the acceptance contract rather
+   * than context: each finding's `failureScenario` was written before anybody
+   * knew what the fix would be, which is what makes it a criterion the fixer
+   * could not author. A process gate re-runs unchanged — a build does not need
+   * to be told what the reviewer said.
+   */
+  recheck?: readonly GateFinding[];
   signal?: AbortSignal;
 }
 
@@ -99,7 +116,15 @@ export interface PipelineResult {
   failedAt: string | null;
   /** The gate waiting on a person, when one is. */
   heldAt: string | null;
-  results: { gate: string; verdict: GateVerdict; evidence: string }[];
+  /**
+   * Every verdict, with the findings behind it.
+   *
+   * `findings` is carried here rather than left on the `GateFailed` event
+   * because the caller acts on it: a refusal with findings buys a fixing agent
+   * (0038 §1), and reading the log back to discover what the gate it just ran
+   * said would be a second source of truth for the same sentence.
+   */
+  results: { gate: string; verdict: GateVerdict; evidence: string; findings: GateFinding[] }[];
   /** Gates never reached because an earlier one failed or is waiting. */
   skipped: string[];
 }
@@ -150,7 +175,12 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
       };
     }
 
-    results.push({ gate: gate.name, verdict: result.verdict, evidence: result.evidence });
+    results.push({
+      gate: gate.name,
+      verdict: result.verdict,
+      evidence: result.evidence,
+      findings: result.findings,
+    });
 
     if (result.verdict === "passed") {
       await emit({ type: "GatePassed", data: { ...base, evidence: result.evidence } });

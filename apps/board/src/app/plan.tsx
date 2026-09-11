@@ -37,7 +37,9 @@ function limits(plan: PlanView): string {
     `${plan.turns} turns`,
     plan.wall,
     plan.tier,
-    plan.repair.on ? `${plan.repair.maxAttempts} repair` : "no repair",
+    plan.repair.on
+      ? `${plan.repair.maxAttempts} repair · ${plan.repair.fix} fix`
+      : "no repair",
   ].join(" · ");
 }
 

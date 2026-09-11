@@ -398,7 +398,14 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     console.log(
       paint.muted(
         timeoutMs === null
-          ? `a pass is the agent, the gates and the merge lane, so this can take as long as ${WALL_LIMIT} — it is waiting, not hung.`
+          // **A pass is no longer one agent.** It was the agent, the gates and
+          // the merge lane, bounded by one `runtime.limits.wall`. A refused
+          // review now buys up to `repair.fix` more agent runs inside the same
+          // pass, and each is given a fresh wall — so the sentence that told an
+          // operator how long to wait became one that understates it by a
+          // multiple. Said as a multiple rather than a number, because the
+          // recipe that decides it is the project's and this line is not.
+          ? `a pass is the agents, the gates and the merge lane — a refused review can buy more agent runs, each with its own ${WALL_LIMIT}, so this can take several times that. It is waiting, not hung.`
           : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
       ),
     );
