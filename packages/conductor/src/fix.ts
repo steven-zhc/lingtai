@@ -150,6 +150,16 @@ export function decideFix(input: FixInput): FixDecision {
  * sequences still produce those outcomes. Summarising one here would hand the
  * fixer a looser criterion than the one it will be held to, which is worse than
  * handing it none.
+ *
+ * **And it says the fixer may decline**
+ * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+ * §5). The mechanism was always there — `run-once.ts`'s `if (!committed)` ends
+ * the loop and hands a person the findings — and for a day this prompt pointed
+ * the other way: *commit*, *an attempt that ends with advice produces nothing*,
+ * and *if a finding is wrong say so in your final message*, which is not a
+ * verdict anything reads. The one branch that carries an objection into the log
+ * was the branch the prompt discouraged. An escape hatch nobody is told about is
+ * not one, so `fix.test.ts` pins the sentence rather than trusting it to stay.
  */
 export function fixBrief(input: {
   findings: readonly GateFinding[];
@@ -225,12 +235,48 @@ So:
   anybody asked for.
 - Add or tighten a test where a test is what would have caught it.
 
-**Commit.** What the gates judge and what a person may be asked to approve is a
-commit; an attempt that ends with advice produces nothing anyone can act on. If a
-finding is wrong — if the sequence it describes cannot happen — say so plainly in
-your final message and **do not change the code to silence it**. A fixer that
-rewrites working code to make a false finding go away is the failure this whole
-loop is most likely to produce.`;
+**Commit what you fix.** What the gates judge, and what a person may be asked to
+approve, is a commit — an attempt that ends with advice about the code produces
+nothing anyone can act on.
+
+## If this is not yours to fix, change nothing and commit nothing
+
+That is not giving up, and it is not a wasted round. **It is how your objection
+reaches a person.** A round that ends with no new commit stops this loop and puts
+the findings in front of somebody, together with your final message — so say
+plainly there which finding you are declining and why.
+
+Decline when a finding is wrong: the sequence it describes cannot happen, or it
+does not happen here, or the failure was not caused by this diff. **Never make
+the code worse to make the finding go away.** A fixer that rewrites working code
+to silence a false finding is the failure this whole loop is most likely to
+produce, and committing nothing is the move that exists so you never have to.`;
+}
+
+/** How much of a declining fixer's last message a card can carry. */
+const DECLINE_CHARS = 400;
+
+/**
+ * The sentence for a round that ended with no commit and no failure.
+ *
+ * **That is the decline** — the move `fixBrief` tells the fixer it has — and it
+ * arrives at `run-once.ts` through the same `if (!committed)` branch a crashed
+ * fixer does. What separates them there is `failure`; what separates them for a
+ * person is this sentence, which says *declined* and then says what was said.
+ *
+ * The message is the whole objection, so dropping it would leave a person a
+ * decline with no reason in it, which is barely better than the refusal it
+ * replaced. It is clipped because a card is read, not scrolled: the untruncated
+ * message is in the run log and in the agent's own transcript.
+ */
+export function declineWhy(text: string | null): string {
+  const said = (text ?? "").trim();
+  const body =
+    "the fixing agent declined — it committed nothing, which is how it says these " +
+    "findings are not this diff's to answer";
+  if (said === "") return `${body}, and it gave no reason`;
+  const clipped = said.length > DECLINE_CHARS ? `${said.slice(0, DECLINE_CHARS)}…` : said;
+  return `${body}. It said: ${clipped}`;
 }
 
 /**

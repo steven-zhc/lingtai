@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 import type { GateFinding } from "@lingtai/actions";
 import {
   decideFix,
+  declineWhy,
   diagnoseDisagreement,
   disagreementQuestion,
   fixBrief,
@@ -171,11 +172,39 @@ describe("what the fixer is told", () => {
   it("bounds the change and refuses the silencing fix", () => {
     expect(brief).toMatch(/change nothing else/i);
     expect(brief).toMatch(/Deleting the line, renaming the symbol or suppressing the warning is not\s+a\s+fix/i);
-    // And the ending 0025 made a rule: what a person approves is a diff.
-    expect(brief).toMatch(/\*\*Commit\.\*\*/);
-    // The one move the loop leaves it, for a finding it believes is wrong. It is
-    // 0038's own open question, and the prompt is where the answer is today.
-    expect(brief).toMatch(/do not change the code to silence it/i);
+    // And the ending 0025 made a rule: what a person approves is a diff. It
+    // says *what you fix* now, because the unqualified "Commit." was read
+    // against the decline below — see that test.
+    expect(brief).toMatch(/\*\*Commit what you fix\.\*\*/);
+    expect(brief).toMatch(/Never make\s+the code worse to make the finding go away/i);
+  });
+
+  /**
+   * 0039 §5, and the reason it needed deciding at all.
+   *
+   * `run-once.ts`'s `if (!committed)` has always ended the loop and put the
+   * findings in front of a person — 0038's Open §2 said a fixer had no move
+   * except to change the code anyway, and that was wrong. What was missing was
+   * telling the fixer, and what the prompt said instead pointed the other way:
+   * *commit*, *an attempt that ends with advice produces nothing*, and *if a
+   * finding is wrong say so in your final message* — a message nothing reads as
+   * a verdict. The one branch that carries an objection into the log was the
+   * branch the prompt discouraged.
+   *
+   * So this asserts the sentence, not the intention. An escape hatch nobody is
+   * told about is not one, and a later edit that trims this paragraph for length
+   * should fail here rather than quietly close the hatch again.
+   */
+  it("tells the fixer it may decline, and that declining is how a person hears it", () => {
+    expect(brief).toMatch(/change nothing and commit nothing/i);
+    // Not giving up, and not a wasted round: the prompt has to say what the
+    // move *achieves*, or an agent under a "produce something" reading will
+    // avoid it exactly when it is most needed.
+    expect(brief).toMatch(/how your objection\s+reaches a person/i);
+    expect(brief).toMatch(/stops this loop and puts\s+the findings in front of somebody/i);
+    // And when to use it, in the terms the fixer can actually check.
+    expect(brief).toMatch(/the sequence it describes cannot happen/i);
+    expect(brief).toMatch(/the failure was not caused by this diff/i);
   });
 
   it("carries the diff the reviewer was shown, under the same ceiling", () => {
@@ -278,5 +307,41 @@ describe("what a person is shown when the rounds are over", () => {
     expect(question).toContain("two agents disagreed about agent/123 into main");
     expect(question).toContain("2 findings");
     expect(question).toContain("worst: blocker");
+  });
+});
+
+/**
+ * The other half of 0039 §5: the fixer is told it may decline, so a person has
+ * to be able to see that it did.
+ *
+ * Both outcomes reach `run-once.ts`'s `if (!committed)` — a fixer that objected
+ * and a fixer that was killed commit exactly the same nothing. For a day the
+ * sentence for both was *the fixing agent committed nothing*, which describes a
+ * crashed process as a judgement and a judgement as a crash.
+ */
+describe("a decline, told apart from a crash", () => {
+  it("says declined, and carries the objection the prompt promised would travel", () => {
+    const why = declineWhy(
+      "Finding 1 cannot happen: deliver() is only ever called from the subscriber\n" +
+        "loop, which already holds the lock.",
+    );
+
+    expect(why).toContain("declined");
+    expect(why).toContain("It said: Finding 1 cannot happen");
+    // The whole objection, not a gesture at one — a decline a person cannot
+    // read the reason for is barely better than the refusal it replaced.
+    expect(why).toContain("already holds the lock.");
+  });
+
+  it("says so when the agent declined and explained nothing", () => {
+    expect(declineWhy(null)).toContain("gave no reason");
+    expect(declineWhy("   ")).toContain("gave no reason");
+  });
+
+  it("clips a long message, because this sentence is read on a card", () => {
+    const why = declineWhy("z".repeat(5_000));
+
+    expect(why).toContain("…");
+    expect(why.length).toBeLessThan(600);
   });
 });

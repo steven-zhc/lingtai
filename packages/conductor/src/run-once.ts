@@ -87,7 +87,13 @@ import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier, writeUnhookedSet
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
-import { decideFix, diagnoseDisagreement, disagreementQuestion, fixBrief } from "./fix.ts";
+import {
+  decideFix,
+  declineWhy,
+  diagnoseDisagreement,
+  disagreementQuestion,
+  fixBrief,
+} from "./fix.ts";
 import { standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
@@ -1416,14 +1422,26 @@ export function runOnce(
               // question about the same commit and would answer it the same way,
               // and paying for that is the one thing a second opinion must not
               // be. The findings stand, and they stand as a disagreement.
+              //
+              // **A decline and a crash arrive here as the same branch and are
+              // not the same event** (0039 §5). Committing nothing is the
+              // fixer's one way to object, and `fixBrief` now tells it so; a
+              // fixer that threw produced nothing and meant nothing by it. One
+              // sentence for both would tell a person "the fixing agent
+              // committed nothing" about a process that was killed.
+              //
+              // And a decline with no reason attached is barely a decline, so
+              // the agent's last message travels with it. It is the whole of
+              // the objection the prompt promises will reach somebody — clipped
+              // here, because this sentence is read on a card.
               disagreement = {
                 action: refused.gate,
                 findings: refused.findings,
                 rounds,
-                why:
-                  "the fixing agent committed nothing" +
-                  (fixed.failure ? ` (${fixed.failure.kind}: ${fixed.failure.detail})` : "") +
-                  ", so there is nothing new for the review to read",
+                why: fixed.failure
+                  ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
+                    "so there is nothing new for the review to read"
+                  : declineWhy(fixed.text),
               };
               break;
             }

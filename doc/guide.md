@@ -311,6 +311,38 @@ reasoning about the code. A finding that cites a seq number is worth more than
 one that argues."* This is last in the order and first in authority: everything
 above is a view of it.
 
+### A disagreement is not a failure, and a decline is not a crash
+
+Two outcomes in this family read like breakage and are not.
+
+**`disagreement`** is what a card says when a reviewer refused, an agent was
+bought to fix it, and the reviewer still refuses what came back. Nothing is
+broken: two agents looked at one diff and did not agree, and the question in
+front of you is a judgement rather than a repair. The card carries every finding
+verbatim, including each failure scenario, because the sentence above them is a
+reading of evidence and a reading that hides what it was made from is worse than
+the output.
+
+**A fixer that committed nothing** may have declined. That is a move it is told
+it has ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §5): when
+a finding is wrong — the sequence it describes cannot happen, or the failure was
+not this diff's — the fixer is asked to change nothing, commit nothing, and say
+why, because that is what stops the loop and puts the findings in front of you.
+So read which one you have:
+
+```
+the fixing agent declined — it committed nothing, which is how it says these
+findings are not this diff's to answer. It said: …
+
+the fixing agent did not finish (crash: …), so there is nothing new for the
+review to read
+```
+
+The first is an argument you are being asked to settle, and the fixer's own
+words are the most useful thing on the card — it is the only agent in the loop
+that read both the findings and the code. The second is a process that died, and
+the findings are untested against anything.
+
 ### Two inferences that have already cost money
 
 Both are written into the discussion agent's own prompt
