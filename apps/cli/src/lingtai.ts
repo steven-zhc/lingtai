@@ -48,6 +48,7 @@ import { approveCommand } from "./approve.ts";
 import { formatReport, runDoctor } from "./doctor.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
+import { requeueCommand } from "./requeue.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
 
@@ -68,6 +69,12 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval
     --reject <why>              withdraw instead: back to the gate, not merged
+  lingtai requeue <project> --issue <n> --note <why>
+                                the move that is left when there is no diff to
+                                approve: a blocked item goes back to the queue
+                                and the next pass cuts a fresh branch from a
+                                base that has since moved. --note is required —
+                                a person overruling a block is not anonymous
   lingtai attach <runId>            follow a run's log — what it is doing, as it
                                 does it, from the beginning however late you
                                 attach. Reads a file and asks nothing of the
@@ -661,6 +668,18 @@ async function main(argv: string[]): Promise<number> {
         note: flags["note"],
         ...("reject" in flags ? { reject: flags["reject"] ?? "no reason given" } : {}),
       });
+    }
+    case "requeue": {
+      const { positional, flags } = parseFlags(rest);
+      const issue = Number(flags["issue"]);
+      if (!positional[0] || !Number.isInteger(issue)) {
+        console.error("lingtai requeue <project> --issue <n> --note <why>");
+        return 2;
+      }
+      // `--note` with nothing after it parses as the empty string, which is the
+      // same silence as leaving the flag off — so both arrive as "" and the
+      // command refuses them identically. Not defaulted here or there.
+      return requeueCommand({ project: positional[0], issue, note: flags["note"] ?? "" });
     }
     case "attach": {
       const runId = parseFlags(rest).positional[0];

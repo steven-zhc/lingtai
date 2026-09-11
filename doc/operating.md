@@ -708,17 +708,30 @@ the daemon is up.
 
 That is the whole bet: if deciding still means opening GitHub, nothing changed.
 
-The same three decisions from the terminal, if you prefer:
+The same decisions from the terminal, if you prefer:
 
 ```bash
 pnpm lingtai approve nextloom-ai-admin --issue 120
 pnpm lingtai approve nextloom-ai-admin --issue 120 --reject "wrong approach"
+pnpm lingtai requeue nextloom-ai-admin --issue 120 --note "the block was the harness, not the diff"
 ```
 
 `approve` merges **what the held run actually produced**, not a fresh attempt.
 If the branch moved since the run asked, it refuses and names both commits —
 you would otherwise be merging something you have not read. A rejection sends
 the item back to the gate, not back to the queue.
+
+`requeue` is the move that is left when there is **no diff to approve**: an item
+that blocked — an integration that conflicted, a gate that failed for a reason
+that was never about the change — goes back to the queue, and the next pass cuts
+a fresh branch from a base that has since moved. It refuses by naming the state
+the item is actually in, so *`wi-lingtai-122` is claimed, not blocked* is the
+answer rather than "not blocked". `--note` is required and is never defaulted: a
+block overruled anonymously is the silent waiver this whole system exists to
+remove. It appends the same `WorkItemUnblocked` the board's button does and
+makes no GitHub call — `reconcile` converges the label the block left behind.
+
+`waive` is the one decision that is still the board's alone (`#129`).
 
 ### Let it merge
 

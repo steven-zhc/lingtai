@@ -553,12 +553,18 @@ credential that subscriber's process gets — see *extension environment* above,
 which is the half of 0037 §1 that makes "and nothing else" a fact. The four
 above are still the daemon's own defaults and nothing reads `subscribers:` yet.
 
-## lingtai subcommand — 13
+## lingtai subcommand — 16
 
 Source: the switch in `apps/cli/src/lingtai.ts`.
 
-`add` · `run` · `approve` · `status` · `doctor` · `env` · `end` · `daemon` ·
-`pause` · `resume` · `now` · `projection` · `version`
+`add` · `run` · `approve` · `requeue` · `attach` · `status` · `doctor` · `env` ·
+`end` · `daemon` · `pause` · `resume` · `shutdown` · `now` · `projection` ·
+`version`
+
+`approve` and `requeue` are the two decisions a person can take from here.
+`waive` is still the board's alone (`#129`), which is worth knowing from this
+list rather than by trying it — that the set was not countable from the CLI's
+side is how `requeue` went missing for as long as it did (`#130`).
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
