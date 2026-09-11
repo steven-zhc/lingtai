@@ -587,6 +587,15 @@ describe("task_view", () => {
    * with itself — and it is the claim the run-scoped gate keys have to survive,
    * since assignment into a keyed map is the only reason a replay lands on the
    * same numbers.
+   *
+   * **Its own deadline, the same one `beforeAll` gives the same call.** A
+   * rebuild costs a round trip per event in the *log*, not per row in this
+   * table (`projection.ts`), so what it takes is decided by how much history the
+   * shared test database is carrying and not by anything this file seeded. The
+   * file's 60s default was the one number here that assumed otherwise, and on
+   * 2026-09-11 a swept-up test log of 2,688 events walked past it — the same
+   * rebuild two lines above, under 120s, passed. Two limits on one call was the
+   * bug; the log's length is kept in hand by `test-support/teardown.ts`.
    */
   it("rebuilds to exactly what the incremental path produced", async () => {
     const before = await readTasks({ project: PROJECT });
@@ -594,7 +603,7 @@ describe("task_view", () => {
     const after = await readTasks({ project: PROJECT });
 
     expect(JSON.stringify(after)).toBe(JSON.stringify(before));
-  });
+  }, 120_000);
 
   /**
    * Retention filters, it does not delete. If the projection dropped old rows
