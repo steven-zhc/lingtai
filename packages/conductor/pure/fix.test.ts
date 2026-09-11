@@ -169,7 +169,7 @@ describe("what the fixer is told", () => {
   });
 
   it("says which round of how many, so the agent knows what is left", () => {
-    expect(brief).toContain("fix round 1 of 2");
+    expect(brief).toMatch(/fix round\s+1 of 2/);
   });
 
   /**
@@ -342,6 +342,58 @@ describe("what a person is shown when the rounds are over", () => {
  * sentence for both was *the fixing agent committed nothing*, which describes a
  * crashed process as a judgement and a judgement as a crash.
  */
+/**
+ * The third shape, and the only one where the agent does not arrive at a clean
+ * tree (0039 §2).
+ *
+ * A conflict is the refusal that used to cost the most: the lane aborted, the
+ * item went back to the queue, and a whole new run re-implemented a branch that
+ * was finished and green and needed a merge resolved. git had already named the
+ * files. What it needed was somewhere to send it back to, which is what
+ * `#140` built.
+ */
+describe("what a conflict tells the fixer", () => {
+  const brief = fixBrief({
+    refusal: { on: "conflict", base: "main", paths: "src/queue.ts\npackages/domain/src/events.ts" },
+    round: 1,
+    of: 2,
+    action: "merge",
+    diff: "diff --git a/src/queue.ts b/src/queue.ts",
+    diffBytes: 400_000,
+  });
+
+  it("says the agent is mid-merge, because a description is not resolvable", () => {
+    expect(brief).toMatch(/in the middle of that merge right now/i);
+    expect(brief).toMatch(/conflicts are in your working tree, with markers/i);
+    expect(brief).toContain("`main` moved");
+  });
+
+  it("names the files git named", () => {
+    expect(brief).toContain("src/queue.ts");
+    expect(brief).toContain("packages/domain/src/events.ts");
+  });
+
+  /**
+   * The strictest acceptance test of the three, and the only one that is two
+   * things. Taking one side wholesale merges cleanly and is exactly the wrong
+   * answer, so the second half — the point runs again — is what catches it.
+   */
+  it("asks for both the merge and the point, and refuses picking a side", () => {
+    expect(brief).toMatch(/the whole `proposed` point runs\s+again/i);
+    expect(brief).toMatch(/both have to\s+pass/i);
+    expect(brief).toMatch(/--ours` and `--theirs` wholesale are not a resolution/i);
+    expect(brief).toMatch(/Do not\s+`git merge --abort`/i);
+  });
+
+  it("says the base may move again, so a second round reads as ordinary", () => {
+    expect(brief).toMatch(/base can move again while you work/i);
+  });
+
+  it("keeps the decline, which is the same escape the other two have", () => {
+    expect(brief).toMatch(/change nothing and commit nothing/i);
+  });
+});
+
 describe("a decline, told apart from a crash", () => {
   it("says declined, and carries the objection the prompt promised would travel", () => {
     const why = declineWhy(

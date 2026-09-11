@@ -807,6 +807,122 @@ export function runOnce(
         repo.git(args, { token: options.token, env: options.gitEnv, cwd: worktree.path });
 
       /**
+       * **The ticket, fetched once, before anything that reads it.**
+       *
+       * The implementer's prompt and the review gate both want it, and it used
+       * to be fetched inside the agent's own block and handed back out — which
+       * worked while the gates only ran after the agent. They run after the
+       * merge lane too now (`#142`), so it is fetched where everything that
+       * needs it can see it, and a run still costs one call for it.
+       */
+      const ticket = yield* Effect.promise(() => options.client.getIssue(options.issue));
+
+      // The cold reviewer's own settings, with no hook in them. `wiring`'s
+      // settings and `wiring.env` are one thing and the `agent` gate had
+      // only the first, so the hook refused the reviewer's opening prompt
+      // and every review returned that refusal instead of findings. See
+      // `writeUnhookedSettings` for why the answer is no hook rather than a
+      // second socket.
+      const reviewSettingsPath = yield* writeUnhookedSettingsEffect(runId, "review", home).pipe(
+        failing("hook"),
+      );
+
+      const numstat = Effect.gen(function* () {
+        const stat = yield* gitInWorktree([
+          "diff",
+          "--numstat",
+          `${worktree.baseSha}..HEAD`,
+        ]).pipe(failing("diff"));
+        const rows = stat.split("\n").filter(Boolean).map((l) => l.split("\t"));
+        return {
+          files: rows.length,
+          insertions: rows.reduce((n, r) => n + (Number(r[0]) || 0), 0),
+          deletions: rows.reduce((n, r) => n + (Number(r[1]) || 0), 0),
+        };
+      });
+
+      // `actions` a package of plain functions, so the callbacks it is handed
+      // are promises. This is the direction of the call reversing, not the
+      // boundary moving. `orDie` because a git failure inside a gate callback
+      // is the defect channel's business, and the handler at the bottom of
+      // this function is where that is answered.
+      const gitForGates = (args: string[]) => Effect.runPromise(Effect.orDie(gitInWorktree(args)));
+      const gateDeps = {
+        // Every `run:` action at these points gets what it declared and
+        // nothing else. See `envForExtension`.
+        env: envForExtension,
+        agent: {
+          runtime: options.runtime,
+          issue: async () => ({
+            ref: String(ticket.number),
+            title: ticket.title,
+            body: ticket.body,
+          }),
+          diff: () => gitForGates(["diff", `${worktree.baseSha}...HEAD`]),
+          // **Not `wiring.settingsPath`.** That file registers the hook, and
+          // the two variables the hook needs live in `wiring.env`, which a
+          // `GateContext` does not carry — so the reviewer used to be handed
+          // a hook it could not reach and was refused before it read a line.
+          settingsPath: reviewSettingsPath,
+          limits: {
+            turns: recipe.runtime.limits.turns,
+            wallMs: parseDuration(recipe.runtime.limits.wall),
+            diffBytes: recipe.runtime.budget.diff,
+          },
+        },
+        watch: {
+          changedFiles: async () => {
+            const names = await gitForGates([
+              "diff",
+              "--name-only",
+              `${worktree.baseSha}...HEAD`,
+            ]);
+            return names.split("\n").filter(Boolean);
+          },
+        },
+      };
+
+      // The `proposed` point: the agent stopped and there are commits, so a
+      // change has been proposed and the gates are about to judge it.
+      //
+      // A function of the head and the findings, because it runs more than
+      // once: a refused review buys an agent and the point runs again on what
+      // that agent committed (0038 §1). The same actions, in the same order,
+      // with one thing added — the scenarios the last refusal was made of,
+      // which the reviewer is asked about by name (0038 §2).
+      const gates = gatesFromRecipe(recipe.gates.proposed, gateDeps);
+      const judge = (onSha: string, recheck: readonly GateFinding[]) =>
+        Effect.promise(() =>
+          runGatePipeline({
+            point: "proposed",
+            gates,
+            context: {
+              runId,
+              onSha,
+              cwd: worktree.path,
+              env: runnableEnv(env.values),
+              recheck,
+            },
+            emit: async (event) => {
+              const at = (await store.read(runId)).length;
+              await store.append(runId, at, [
+                { type: event.type, actor: "conductor", data: event.data },
+              ]);
+            },
+          }),
+        );
+
+      /**
+       * **Hoisted out of the block below, and `#142` is why** (0039 §2).
+       *
+       * Everything above is a function of the worktree, the recipe and the
+       * ticket — none of it of the agent — and it used to sit after the agent
+       * ran because that was the only place it was called from. A conflict is
+       * answered in the worktree now, and what answers it has to run the point
+       * again on what the agent committed, from outside the block that ends
+       * when the agent does.
+       */
+      /**
        * Everything that runs while an agent might be, and nothing that does not.
        *
        * What this scope still owns is the fix loop's abort controller: a fixer
@@ -826,15 +942,6 @@ export function runOnce(
           const wiring = yield* host
             .wire({ runId, hookBinary: options.hookBinary, home })
             .pipe(failing("hook"));
-          // The cold reviewer's own settings, with no hook in them. `wiring`'s
-          // settings and `wiring.env` are one thing and the `agent` gate had
-          // only the first, so the hook refused the reviewer's opening prompt
-          // and every review returned that refusal instead of findings. See
-          // `writeUnhookedSettings` for why the answer is no hook rather than a
-          // second socket.
-          const reviewSettingsPath = yield* writeUnhookedSettingsEffect(runId, "review", home).pipe(
-            failing("hook"),
-          );
 
           const smoke = yield* host
             .smokeTest(options.hookBinary, runBinary)
@@ -1021,10 +1128,6 @@ export function runOnce(
               // `.lingtai/config.yaml` — the only file in the worktree that looked
               // like an instruction.
               //
-              // Fetched once here and shared with the review gate below, so a run costs
-              // one call for it rather than two.
-              const ticket = yield* Effect.promise(() => options.client.getIssue(options.issue));
-
               const abort = yield* Effect.acquireRelease(
                 Effect.sync(() => new AbortController()),
                 (controller) => Effect.sync(() => controller.abort()),
@@ -1064,11 +1167,11 @@ export function runOnce(
 
               // Flush what the hook counted in memory before anything else reads it.
               yield* Effect.promise(() => server.flush(runId).catch(() => {}));
-              return { outcome, ticket, version: server.get(runId)?.version ?? 1 };
+              return { outcome, version: server.get(runId)?.version ?? 1 };
             }),
           );
 
-          const { outcome, ticket, version } = ran;
+          const { outcome, version } = ran;
 
           if (outcome.failure) {
             runLog.note("run", `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`);
@@ -1151,19 +1254,6 @@ export function runOnce(
            * be the head they are judging. Two copies of three `reduce`s would be
            * two places for the numbers on a card to stop describing the diff.
            */
-          const numstat = Effect.gen(function* () {
-            const stat = yield* gitInWorktree([
-              "diff",
-              "--numstat",
-              `${worktree.baseSha}..HEAD`,
-            ]).pipe(failing("diff"));
-            const rows = stat.split("\n").filter(Boolean).map((l) => l.split("\t"));
-            return {
-              files: rows.length,
-              insertions: rows.reduce((n, r) => n + (Number(r[0]) || 0), 0),
-              deletions: rows.reduce((n, r) => n + (Number(r[1]) || 0), 0),
-            };
-          });
 
           const headSha = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
           const { files, insertions, deletions } = yield* numstat;
@@ -1202,77 +1292,6 @@ export function runOnce(
           // because the gates package does not know about git and should not learn.
           //
           // `runPromise` here and nowhere else below the host: 0023 keeps
-          // `actions` a package of plain functions, so the callbacks it is handed
-          // are promises. This is the direction of the call reversing, not the
-          // boundary moving. `orDie` because a git failure inside a gate callback
-          // is the defect channel's business, and the handler at the bottom of
-          // this function is where that is answered.
-          const gitForGates = (args: string[]) => Effect.runPromise(Effect.orDie(gitInWorktree(args)));
-          const gateDeps = {
-            // Every `run:` action at these points gets what it declared and
-            // nothing else. See `envForExtension`.
-            env: envForExtension,
-            agent: {
-              runtime: options.runtime,
-              issue: async () => ({
-                ref: String(ticket.number),
-                title: ticket.title,
-                body: ticket.body,
-              }),
-              diff: () => gitForGates(["diff", `${worktree.baseSha}...HEAD`]),
-              // **Not `wiring.settingsPath`.** That file registers the hook, and
-              // the two variables the hook needs live in `wiring.env`, which a
-              // `GateContext` does not carry — so the reviewer used to be handed
-              // a hook it could not reach and was refused before it read a line.
-              settingsPath: reviewSettingsPath,
-              limits: {
-                turns: recipe.runtime.limits.turns,
-                wallMs: parseDuration(recipe.runtime.limits.wall),
-                diffBytes: recipe.runtime.budget.diff,
-              },
-            },
-            watch: {
-              changedFiles: async () => {
-                const names = await gitForGates([
-                  "diff",
-                  "--name-only",
-                  `${worktree.baseSha}...HEAD`,
-                ]);
-                return names.split("\n").filter(Boolean);
-              },
-            },
-          };
-
-          // The `proposed` point: the agent stopped and there are commits, so a
-          // change has been proposed and the gates are about to judge it.
-          //
-          // A function of the head and the findings, because it runs more than
-          // once: a refused review buys an agent and the point runs again on what
-          // that agent committed (0038 §1). The same actions, in the same order,
-          // with one thing added — the scenarios the last refusal was made of,
-          // which the reviewer is asked about by name (0038 §2).
-          const gates = gatesFromRecipe(recipe.gates.proposed, gateDeps);
-          const judge = (onSha: string, recheck: readonly GateFinding[]) =>
-            Effect.promise(() =>
-              runGatePipeline({
-                point: "proposed",
-                gates,
-                context: {
-                  runId,
-                  onSha,
-                  cwd: worktree.path,
-                  env: runnableEnv(env.values),
-                  recheck,
-                },
-                emit: async (event) => {
-                  const at = (await store.read(runId)).length;
-                  await store.append(runId, at, [
-                    { type: event.type, actor: "conductor", data: event.data },
-                  ]);
-                },
-              }),
-            );
-
           let head = headSha;
           let pipeline = yield* judge(head, []);
           log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);

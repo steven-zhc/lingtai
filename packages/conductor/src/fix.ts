@@ -56,13 +56,18 @@ import type { BlockDiagnosis } from "@lingtai/domain";
 /**
  * What a refusal handed the fixer, and which of the two shapes it is.
  *
- * **`findings` is a judgement, `output` is a machine's** — and the difference is
- * not the severity, it is who authored the criterion. A finding's acceptance
- * test is a sentence another agent wrote and a third agent will judge; a red
- * build's is *run it again, green is green*, which the thing being checked
- * cannot write for itself.
+ * **`findings` is a judgement, the other two are a machine's** — and the
+ * difference is not the severity, it is who authored the criterion. A finding's
+ * acceptance test is a sentence another agent wrote and a third agent will
+ * judge; a red build's is *run it again, green is green*, and a conflict's is
+ * *the merge succeeds and the build stays green* — neither of which the thing
+ * being checked can write for itself.
+ *
+ * `conflict` is the merge lane's, and it is the one that has to be told rather
+ * than inferred: it arrives looking exactly like a red build — no findings,
+ * some output — and only the caller knows which it is.
  */
-export type FixOn = "findings" | "output";
+export type FixOn = "findings" | "output" | "conflict";
 
 export type FixDecision =
   | { fix: true; round: number; on: FixOn }
@@ -77,7 +82,18 @@ export interface FixInput {
    * printed — clipped by `command.ts` long before it reaches here — and is the
    * whole of what a red build has to offer.
    */
-  refusal: { action: string; findings: readonly GateFinding[]; evidence: string };
+  refusal: {
+    action: string;
+    findings: readonly GateFinding[];
+    evidence: string;
+    /**
+     * The shape, when the caller knows it and the evidence does not say.
+     *
+     * Only the merge lane passes one. Everything else is a gate, and a gate's
+     * shape is readable from what it produced.
+     */
+    on?: FixOn;
+  };
   /** `runtime.limits.rounds`: how many times this pass may send the agent back. */
   rounds: number;
   /**
@@ -138,7 +154,7 @@ export function decideFix(input: FixInput): FixDecision {
   // called, and an `agent:` reviewer that returned nothing is not a reviewer.
   const actionable = refusal.findings.filter((f) => f.failureScenario.trim() !== "");
   const output = refusal.evidence.trim();
-  const on: FixOn = refusal.findings.length > 0 ? "findings" : "output";
+  const on: FixOn = refusal.on ?? (refusal.findings.length > 0 ? "findings" : "output");
 
   if (on === "findings" && actionable.length === 0) {
     return no(
@@ -147,7 +163,7 @@ export function decideFix(input: FixInput): FixDecision {
     );
   }
 
-  if (on === "output" && output === "") {
+  if (on !== "findings" && output === "") {
     return no(
       `the ${refusal.action} action refused and printed nothing, so there is no ` +
         "output to make go green and nothing to hold a fixer to",
@@ -217,7 +233,8 @@ export function fixBrief(input: {
    */
   refusal:
     | { on: "findings"; findings: readonly GateFinding[] }
-    | { on: "output"; output: string };
+    | { on: "output"; output: string }
+    | { on: "conflict"; base: string; paths: string };
   round: number;
   of: number;
   /** The refusing action's name, so the prompt can say who refused. */
@@ -235,12 +252,14 @@ export function fixBrief(input: {
   const { evidence, criterion } =
     input.refusal.on === "findings"
       ? findingsHalf(input.refusal.findings, input.action)
-      : outputHalf(input.refusal.output, input.action);
+      : input.refusal.on === "conflict"
+        ? conflictHalf(input.refusal.base, input.refusal.paths)
+        : outputHalf(input.refusal.output, input.action);
 
   return `# The ${input.action} action refused this change, and you are the fix
 
-You are in the worktree the change was made in, at the commit that was checked.
-This is fix round ${input.round} of ${input.of}.
+You are in the worktree the change was made in. This is fix round
+${input.round} of ${input.of}.
 
 **You are not given the implementer's reasoning.** No plan, no transcript, no
 session. What you have is below, and the code in front of you.
@@ -352,6 +371,56 @@ So:
  * whatever the fixer did to get there — which is what stops *delete the test*
  * from working, without this prompt having to be believed.
  */
+/**
+ * The merge lane's refusal: the base moved, and the merge does not apply.
+ *
+ * **The only one of the three where the agent does not arrive at a clean
+ * tree.** The conductor has already merged the base in and left the conflict
+ * standing, because a description of a conflict is not something anyone can
+ * resolve — the markers are. So this half says where the agent is as much as
+ * what refused, which the other two never have to.
+ *
+ * Its acceptance test is the strictest of the three and the only one that is
+ * two things: the merge has to complete *and* the point has to stay green.
+ * Resolving a conflict by taking one side wholesale passes the first and is
+ * exactly what the second is there to catch.
+ */
+function conflictHalf(base: string, paths: string): { evidence: string; criterion: string } {
+  const files = paths.trim();
+  return {
+    evidence: `\`${base}\` moved while this change was being worked on, and merging it in
+does not apply cleanly. **You are in the middle of that merge right now** — the
+conflicts are in your working tree, with markers, exactly as \`git merge\` left
+them.
+
+## What conflicts
+
+\`\`\`
+${files === "" ? "(git named no files; use `git status` and `git diff --diff-filter=U`)" : files}
+\`\`\``,
+    criterion: `## What counts as done
+
+Resolve the conflict and commit the merge. Then the whole \`proposed\` point runs
+again on what you committed, and the merge is attempted again — **both have to
+pass.** The second is why this is not a matter of picking a side.
+
+So:
+
+- Keep both intentions. The other change landed for a reason and yours was
+  asked for; a resolution that quietly drops either is a wrong answer that
+  merges cleanly.
+- **\`--ours\` and \`--theirs\` wholesale are not a resolution.** Neither is
+  deleting the conflicting hunk. Read what each side was doing.
+- \`git add\` the resolved files and \`git commit\` the merge. Do not
+  \`git merge --abort\`: that throws away the thing you were asked to do.
+- Change nothing the conflict did not force you to. The diff is about to be read
+  again by a reviewer who last saw it without this merge in it.
+
+The base can move again while you work. If it does, this comes back around —
+that is ordinary, and it is bounded by the rounds above.`,
+  };
+}
+
 function outputHalf(output: string, action: string): { evidence: string; criterion: string } {
   return {
     evidence: `## What \`${action}\` printed

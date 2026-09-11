@@ -470,7 +470,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm "change $n"
     expect(handed.length).toBeGreaterThan(2);
     const toTheFixer = handed[1]!;
     expect(toTheFixer).toContain("the build is broken");
-    expect(toTheFixer).toContain("fix round 1 of 1");
+    expect(toTheFixer).toMatch(/fix round\s+1 of 1/);
     // And the acceptance test it will be held to, which is the one thing no
     // prose can loosen.
     expect(toTheFixer).toContain("has to go green");
