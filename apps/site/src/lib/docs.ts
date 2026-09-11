@@ -77,17 +77,24 @@ export const SECTIONS: Section[] = [
 ];
 
 /**
- * `architecture.html` is a document and is not markdown.
+ * Some documents are drawings, and a drawing is not markdown.
  *
- * It is 1,000 lines of hand-written HTML with its own diagrams and its own
- * stylesheet, so rendering it through this pipeline would mean rewriting it —
- * which is the fork this file exists to avoid. The build copies the file to
- * `public/doc/` instead (`scripts/doc-assets.ts`) and the site links to it.
- * Same bytes, different route.
+ * Each is hand-written HTML with its own diagrams and its own stylesheet, so
+ * rendering one through this pipeline would mean rewriting it — which is the
+ * fork this file exists to avoid. The build copies them to `public/doc/`
+ * instead (`scripts/doc-assets.ts`) and the site links to them. Same bytes,
+ * different route.
+ *
+ * **This list is the whole of what makes one reachable.** `doc-assets.ts`
+ * copies what is here, `/docs` indexes what is here, and `resolveHref` sends a
+ * link to the copy because the file is here — so a drawing added to `doc/` and
+ * not to this list is one every link silently sends to GitHub instead.
  */
 export const HTML_DOCS = [
   { file: "architecture.html", label: "Architecture", note: "One page, six diagrams: which process am I in, who appends to the log, who is told when it changes, and where each piece of state lives." },
   { file: "architecture.zh.html", label: "架构", note: "The architecture page, in Chinese. A change to either belongs in both." },
+  { file: "the-pass.html", label: "The Pass", note: "One pass from claim to end, and where a refusal goes. Draws 0039, which is accepted and not yet built — the two places it is ahead of the code are marked on it." },
+  { file: "the-pass.zh.html", label: "一趟 pass", note: "The pass page, in Chinese. Both are generated from one geometry, so a change belongs in both." },
 ];
 
 /**
@@ -280,7 +287,7 @@ export async function entriesOf(section: Section): Promise<DocEntry[]> {
  * - another projected document → its route here
  * - anything else inside the repository → the file on GitHub, which is where
  *   `packages/domain/src/events.ts` actually is
- * - `architecture.html` → the copy the build put in `public/doc/`
+ * - a drawing in `HTML_DOCS` → the copy the build put in `public/doc/`
  * - an absolute URL or a bare `#anchor` → untouched
  */
 export function resolveHref(fromSlug: string, href: string, isPublished: (file: string) => boolean): string {
@@ -296,7 +303,7 @@ export function resolveHref(fromSlug: string, href: string, isPublished: (file: 
 
   if (rel.startsWith("../")) return GITHUB_BLOB + rel.replace(/^(\.\.\/)+/, "") + suffix;
   if (rel.endsWith(".md") && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`;
-  if (rel === "architecture.html" || rel === "architecture.zh.html") return `/doc/${rel}${suffix}`;
+  if (HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`;
   return `${GITHUB_BLOB}doc/${rel}${suffix}`;
 }
 

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  一趟 pass 与工作树 —— 一次拒绝去哪里，代价是什么。
+
+  2026-09-11 依据 doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md 绘制。
+  该决定已接受，尚未实现。与 architecture.html 不同，这张图画的是决定而不是代码：
+  两处与今天不同的地方都标了出来，ADR 没能关掉的那个风险也标了出来。
+
+  由 scripts/the-pass.py 生成，不手工编辑 —— 中英两份共用同一套几何，
+  直接改这个文件会丢掉改动。它仍然是一个自足的文件：不需要构建，没有资源，
+  没有脚本。只取一次字体。
+-->
+<title>一趟 pass 与工作树</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+
+<style>
+  :root {
+    --paper:   #F5F4F0;
+    --raised:  #FBFAF7;
+    --ink:     #1B1F26;
+    --muted:   #676C77;
+    --faint:   #8A8F99;
+    --rule:    #DEDAD1;
+    --brass:   #96701F;
+    --flow:    #2C6B67;
+    --gap:     #9C3A31;
+    --gap-bg:  #F3E4E1;
+    --prop:  #4C5B9A;
+    --prop-bg:  #E7E9F4;
+
+    --f-display: "IBM Plex Serif", Georgia, serif;
+    --f-body:    "IBM Plex Sans", system-ui, sans-serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:  #14171C;
+      --raised: #1B1F26;
+      --ink:    #E7E4DC;
+      --muted:  #979CA8;
+      --faint:  #767B86;
+      --rule:   #2B303A;
+      --brass:  #D8AC55;
+      --flow:   #6BB3AD;
+      --gap:    #DE7167;
+      --gap-bg: #2E1E1C;
+      --prop: #93A0DE;
+      --prop-bg: #1D2233;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:  #14171C;
+    --raised: #1B1F26;
+    --ink:    #E7E4DC;
+    --muted:  #979CA8;
+    --faint:  #767B86;
+    --rule:   #2B303A;
+    --brass:  #D8AC55;
+    --flow:   #6BB3AD;
+    --gap:    #DE7167;
+    --gap-bg: #2E1E1C;
+    --prop: #93A0DE;
+    --prop-bg: #1D2233;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 28px 120px;
+  }
+
+  /* ---------- masthead ---------- */
+  .mast { border-bottom: 2px solid var(--ink); padding-bottom: 20px; }
+  .mast .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(34px, 5.2vw, 52px);
+    line-height: 1.08;
+    letter-spacing: -.015em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .mast .sub {
+    max-width: 62ch;
+    color: var(--muted);
+    margin: 16px 0 0;
+    font-size: 17px;
+  }
+
+  /* ---------- the thesis strip ---------- */
+  .thesis {
+    margin: 34px 0 8px;
+    padding: 22px 26px;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--brass);
+  }
+  .thesis p { margin: 0; max-width: 68ch; }
+  .thesis p + p { margin-top: 12px; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 64px; }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 26px;
+    line-height: 1.2;
+    margin: 0 0 6px;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+  }
+  .lede { color: var(--muted); max-width: 68ch; margin: 0 0 26px; }
+  p { max-width: 68ch; }
+
+  code, .m {
+    font-family: var(--f-mono);
+    font-size: .88em;
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  /* ---------- figures ---------- */
+  figure {
+    margin: 30px 0 0;
+    border: 1px solid var(--rule);
+    background: var(--raised);
+  }
+  .canvas { overflow-x: auto; padding: 24px 20px 8px; }
+  svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption {
+    border-top: 1px solid var(--rule);
+    padding: 13px 20px;
+    font-size: 14px;
+    color: var(--muted);
+    max-width: none;
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- table ---------- */
+  .tablewrap { overflow-x: auto; margin-top: 28px; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+    background: color-mix(in srgb, var(--ink) 4%, transparent);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.k { font-family: var(--f-mono); font-size: 13px; white-space: nowrap; color: var(--ink); }
+  td.who { color: var(--muted); }
+
+  /* ---------- rules list ---------- */
+  .rules { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .rules li { background: var(--raised); padding: 16px 20px; }
+  .rules b { display: block; font-family: var(--f-display); font-size: 17px; margin-bottom: 3px; }
+  .rules span { color: var(--muted); font-size: 15px; }
+
+  .sub-h {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 20px;
+    margin: 44px 0 6px;
+    letter-spacing: -.005em;
+  }
+  .defs li { display: grid; gap: 7px; padding: 18px 20px; }
+  .defs b { font-family: var(--f-mono); font-size: 14px; font-weight: 500; color: var(--brass); margin: 0; }
+  .defs span { max-width: 74ch; }
+  .defs .absent {
+    color: var(--ink);
+    font-size: 14.5px;
+    border-left: 2px solid var(--rule);
+    padding-left: 13px;
+  }
+  .defs .absent code { font-size: .84em; }
+
+  /* ---------- gap callout ---------- */
+  .gap {
+    margin-top: 26px;
+    background: var(--gap-bg);
+    border: 1px solid color-mix(in srgb, var(--gap) 35%, transparent);
+    border-left: 3px solid var(--gap);
+    padding: 18px 22px;
+  }
+  .gap h3 {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--gap);
+    margin: 0 0 8px;
+  }
+  .gap p { margin: 0; max-width: 68ch; }
+  .gap p + p { margin-top: 10px; }
+
+  /* ---------- open-question callout ---------- */
+  /* Sibling of .gap on purpose: red marks a finding from a real run, indigo
+     marks something true today and not yet fixed. A page drawing both has to
+     keep them apart by more than a caption. */
+  .prop {
+    margin-top: 26px;
+    background: var(--prop-bg);
+    border: 1px solid color-mix(in srgb, var(--prop) 35%, transparent);
+    border-left: 3px solid var(--prop);
+    padding: 18px 22px;
+  }
+  .prop h3 {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--prop);
+    margin: 0 0 8px;
+  }
+  .prop p { margin: 0; max-width: 68ch; }
+  .prop p + p { margin-top: 10px; }
+
+  .steps { counter-reset: step; }
+  .steps li { display: grid; gap: 6px; }
+  .steps b::before {
+    counter-increment: step;
+    content: counter(step) " · ";
+    color: var(--prop);
+    font-family: var(--f-mono);
+  }
+  td.mv { color: var(--prop); font-size: 13.5px; }
+
+  footer {
+    margin-top: 80px;
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-size: 14px;
+    color: var(--faint);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a { transition: color .15s ease; }
+  }
+  a { color: var(--brass); }
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+</style>
+
+<style>
+  pre.code {
+    margin: 26px 0 0;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--flow);
+    padding: 16px 20px;
+    overflow-x: auto;
+    font-family: var(--f-mono);
+    font-size: 13.5px;
+    line-height: 1.7;
+  }
+  pre.code .c { color: var(--faint); }
+  pre.code b { color: var(--flow); font-weight: 500; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Lingtai · 灵台 —— 一趟 pass，从头到尾 · <a href="the-pass.html">English</a></p>
+    <h1>一趟 pass 与工作树</h1>
+    <p class="sub">一趟 pass 就是一次 claim 买到的东西：一个分支、一个 agent、五个 gate 点，外加一条合并道。这张图画的是一次拒绝去哪里，以及 <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a> 把它改成了什么。</p>
+  </header>
+
+  <div class="thesis">
+    <p><b>工作树就是一趟 pass 的全部现场。</b>回答一次拒绝所需要的一切 —— 分支、构建产物、那份 diff —— 在这趟 pass 跑着的时候都还在磁盘上。<code>Effect.scoped</code> 外扩到把合并道也包进去，于是这句话到这趟 pass 结束都成立，而<i>开新的一趟 run</i> 不再是任何问题的答案 —— 除了一趟真的结束了的 run。</p>
+    <p><b>任何拒绝都带着自己的证据回到 agent。</b>findings、build 的输出、冲突的路径：三个 prompt 只差一个参数，不是三条流程。只有 <code>runtime.limits.rounds</code> 用尽，才去问人。</p>
+  </div>
+
+  <section>
+    <h2>一趟 pass，以及一次拒绝去哪里</h2>
+    <p class="lede">节点名取自 <code>run-once.ts</code> 的分节注释；gate 点和动作名取自 <code>.lingtai/config.yaml</code>，都是原样。</p>
+    <figure>
+      <div class="canvas"><svg viewBox="0 0 980 700" role="img" aria-label="一趟 pass，从 claim 到 end。主干上五个 gate 点：admit 和 merge 声明了但是空的，prepared、proposed 和 end 会执行动作。一个虚线矩形标出工作树的作用域，把从工作树一直到合并道的全部包了进去。proposed 点和合并道都汇入同一条返回通道，回到那个仍在同一个工作树里的 agent。等你和已落地两种结局都走到 end 点。"><defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs><rect x="280" y="26" width="360" height="38" fill="none" stroke="currentColor" stroke-width="1"/><text x="460" y="49.5" text-anchor="middle" font-size="13" fill="currentColor">recipe · env · tier · claim</text><line x1="460" y1="64" x2="460" y2="82" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="280" y="84" width="360" height="46" fill="none" stroke="currentColor" style="stroke:var(--faint)" stroke-width="1.5" stroke-dasharray="5 4" opacity=".85"/><text x="296" y="104" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--faint)" letter-spacing="1.2">1/5</text><text x="460" y="104" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor">admit</text><text x="460" y="121" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">没有配置动作 —— 渲染成 skipped</text><line x1="460" y1="130" x2="460" y2="184" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="40" y="150" width="890" height="440" fill="none" stroke="currentColor" style="stroke:var(--prop)" stroke-width="2" stroke-dasharray="7 5"/><text x="56" y="172" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--prop)" letter-spacing="1.3">工作树的作用域 · 0039 §1 把下边缘移到合并道之后</text><rect x="280" y="186" width="360" height="40" fill="none" stroke="currentColor" stroke-width="1"/><text x="460" y="210.5" text-anchor="middle" font-size="13" fill="currentColor">worktree · 证明过会 fail closed 的 hook</text><line x1="460" y1="226" x2="460" y2="244" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="280" y="246" width="360" height="46" fill="none" stroke="currentColor" style="stroke:var(--flow)" stroke-width="2"/><text x="296" y="266" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--flow)" letter-spacing="1.2">2/5</text><text x="460" y="266" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor">prepared</text><text x="460" y="283" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">install</text><line x1="460" y1="292" x2="460" y2="312" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="280" y="314" width="360" height="54" fill="none" stroke="currentColor" stroke-width="2.5"/><text x="460" y="338" text-anchor="middle" font-size="14" font-family="IBM Plex Mono, monospace" fill="currentColor">the agent · Runtime.run</text><text x="460" y="356" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">一个工作树，每一轮都是它</text><line x1="460" y1="368" x2="460" y2="390" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="280" y="392" width="360" height="46" fill="none" stroke="currentColor" style="stroke:var(--flow)" stroke-width="2"/><text x="296" y="412" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--flow)" letter-spacing="1.2">3/5</text><text x="460" y="412" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor">proposed</text><text x="460" y="429" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">先 build，再 review</text><line x1="460" y1="438" x2="460" y2="460" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="472" y="453" text-anchor="start" font-size="11" fill="currentColor" opacity=".6">通过</text><rect x="280" y="462" width="360" height="46" fill="none" stroke="currentColor" style="stroke:var(--faint)" stroke-width="1.5" stroke-dasharray="5 4" opacity=".85"/><text x="296" y="482" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--faint)" letter-spacing="1.2">4/5</text><text x="460" y="482" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor">merge</text><text x="460" y="499" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">没有配置动作 —— 渲染成 skipped</text><line x1="460" y1="508" x2="460" y2="526" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="472" y="521" text-anchor="start" font-size="11" fill="currentColor" opacity=".6">没有要问人的</text><rect x="280" y="528" width="360" height="46" fill="none" stroke="currentColor" stroke-width="1"/><text x="460" y="549" text-anchor="middle" font-size="13" fill="currentColor">合并道 · 先把 base 合进来</text><text x="460" y="566" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">advisory lock 和它自己的工作树是同一个作用域</text><line x1="280" y1="415" x2="170" y2="415" stroke="currentColor" style="stroke:var(--prop)" stroke-width="1" opacity=".75"/><line x1="280" y1="551" x2="170" y2="551" stroke="currentColor" style="stroke:var(--prop)" stroke-width="1" opacity=".75"/><line x1="170" y1="551" x2="170" y2="341" stroke="currentColor" style="stroke:var(--prop)" stroke-width="1" opacity=".75"/><line x1="170" y1="341" x2="278" y2="341" stroke="currentColor" style="stroke:var(--prop)" stroke-width="1" opacity=".75" marker-end="url(#ar)"/><text x="158" y="455" text-anchor="middle" font-size="11.5" fill="currentColor" style="fill:var(--prop)" transform="rotate(-90 158 455)">一次拒绝回到这里</text><text x="141" y="455" text-anchor="middle" font-size="10.5" fill="currentColor" style="fill:var(--prop)" opacity=".8" transform="rotate(-90 141 455)">findings · build 输出 · 冲突的路径</text><rect x="690" y="392" width="220" height="46" fill="none" stroke="currentColor" style="stroke:var(--brass)" stroke-width="2"/><text x="800.0" y="412" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--brass)">等你</text><text x="800.0" y="429" text-anchor="middle" font-size="11" fill="currentColor" opacity=".62">两个 agent 有分歧，或 human: 动作</text><line x1="640" y1="415" x2="688" y2="415" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="800.0" y="384" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".62">rounds 用尽</text><polyline points="640,485 676,485 676,440" fill="none" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="682" y="470" text-anchor="start" font-size="10.5" fill="currentColor" opacity=".62">被拦下</text><rect x="690" y="528" width="220" height="46" fill="none" stroke="currentColor" style="stroke:var(--flow)" stroke-width="2"/><text x="800.0" y="548" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--flow)">已落地</text><text x="800.0" y="565" text-anchor="middle" font-size="11" fill="currentColor" opacity=".62">并进了 base</text><line x1="640" y1="551" x2="688" y2="551" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="652" y="543" text-anchor="start" font-size="10.5" fill="currentColor" opacity=".62">合上了</text><line x1="910" y1="415" x2="940" y2="415" stroke="currentColor" stroke-width="1" opacity=".55"/><line x1="910" y1="551" x2="940" y2="551" stroke="currentColor" stroke-width="1" opacity=".55"/><line x1="940" y1="415" x2="940" y2="639" stroke="currentColor" stroke-width="1" opacity=".55"/><line x1="940" y1="639" x2="644" y2="639" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="280" y="616" width="360" height="46" fill="none" stroke="currentColor" style="stroke:var(--flow)" stroke-width="2"/><text x="296" y="636" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--flow)" letter-spacing="1.2">5/5</text><text x="460" y="636" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, monospace" fill="currentColor">end</text><text x="460" y="653" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".62">关掉 ticket · 打标签 · 每种结局都会跑</text></svg></div>
+      <figcaption><b>五个 gate 点，这里执行的是三个。</b><code>admit</code> 和 <code>merge</code> 声明了但没有动作，而 <a href="decisions/0016-the-settled-model.md">0016</a> §4 正是它们仍然被画出来的原因：一个没有配置的点渲染成 <i>skipped</i>，绝不省略。虚线框是工作树的作用域 —— 0039 §1 把它的下边缘移到合并道之后，整个改动就是这一步。黄铜色在这一页和看板上都只表示一件事：正在等人。</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>三种拒绝，各自能证明什么</h2>
+    <p class="lede">0038 给被拒的 review 单独一个钱包，理由是共用上限是一场赛跑。这个论证是对的，但没走到头：它把线划在<i>失败的种类</i>之间，而真正要紧的线是谁写下了那份证据。</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>什么拒绝的</th><th>证据是谁写的</th><th>判据</th><th>修的 agent 能伪造吗</th></tr></thead>
+      <tbody><tr><td class="k">finding</td><td>一个 agent，用散文写的</td><td>另一个 agent 判断那个场景是否还会发生</td><td class="who">能 —— 删掉那行、把符号改个名</td></tr><tr><td class="k">build 红了</td><td>编译器、测试</td><td><b>再跑一遍；绿就是绿</b></td><td class="who">只能靠删掉测试</td></tr><tr><td class="k">冲突</td><td>git，并点名了文件</td><td>合并成功，并且 build 仍然是绿的</td><td class="who">不能</td></tr></tbody>
+    </table></div>
+    <figure>
+      <div class="canvas"><svg viewBox="0 0 940 230" role="img" aria-label="今天，被拒的 review 回到同一个工作树，而红的 build 和冲突各自要花掉整整一趟新的 run。0039 之后三者都回到同一个工作树，由 limits.rounds 封顶。"><defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs><text x="20" y="20" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--faint)" letter-spacing="1.3">今天</text><text x="20" y="69" text-anchor="start" font-size="12.5" fill="currentColor">review 拒绝，带着 findings</text><line x1="210" y1="64" x2="248" y2="64" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="20" y="129" text-anchor="start" font-size="12.5" fill="currentColor">build 变红</text><line x1="210" y1="124" x2="248" y2="124" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><text x="20" y="189" text-anchor="start" font-size="12.5" fill="currentColor">合并道撞上冲突</text><line x1="210" y1="184" x2="248" y2="184" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="250" y="44" width="190" height="40" fill="none" stroke="currentColor" style="stroke:var(--flow)" stroke-width="2"/><text x="345" y="69" text-anchor="middle" font-size="12" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--flow)">同一个工作树</text><rect x="250" y="104" width="190" height="40" fill="none" stroke="currentColor" style="stroke:var(--gap)" stroke-width="2"/><text x="345" y="129" text-anchor="middle" font-size="12" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--gap)">整整一趟新的 run</text><rect x="250" y="164" width="190" height="40" fill="none" stroke="currentColor" style="stroke:var(--gap)" stroke-width="2"/><text x="345" y="189" text-anchor="middle" font-size="12" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--gap)">整整一趟新的 run</text><line x1="470" y1="10" x2="470" y2="220" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="4 4"/><text x="510" y="20" text-anchor="start" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor" style="fill:var(--prop)" letter-spacing="1.3">0039 · 已接受，尚未实现</text><text x="510" y="69" text-anchor="start" font-size="12.5" fill="currentColor">review 拒绝，带着 findings</text><text x="510" y="129" text-anchor="start" font-size="12.5" fill="currentColor">build 变红</text><text x="510" y="189" text-anchor="start" font-size="12.5" fill="currentColor">合并道撞上冲突</text><polyline points="700,64 722,64 722,124 738,124" fill="none" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><line x1="700" y1="124" x2="738" y2="124" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><polyline points="700,184 722,184 722,124 738,124" fill="none" stroke="currentColor" stroke-width="1" opacity=".55" marker-end="url(#ar)"/><rect x="740" y="94" width="190" height="60" fill="none" stroke="currentColor" stroke-width="2.5"/><text x="835" y="118" text-anchor="middle" font-size="12.5" font-family="IBM Plex Mono, monospace" fill="currentColor">同一个工作树</text><text x="835" y="136" text-anchor="middle" font-size="11" fill="currentColor" opacity=".62">由 limits.rounds 封顶</text></svg></div>
+      <figcaption><b><i>让它重新变绿</i>不要钱、由机器检查，而且无法由被检查的那一方写出来</b> —— 这正是 0038 §2 那道防线想要的东西：它拒绝为一个不带 <code>findings</code> 的拒绝买 fixer。它把<i>没有 findings 字段</i>错当成了<i>没有验收标准</i>。一个红的 build 有验收标准，而且更硬。</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>一趟 pass 最多花多少</h2>
+    <p class="lede">三个数放在同一个块里，因为其中两个本来就得和另一个放在别处的数保持一致。</p>
+<pre class="code">runtime:
+  limits:
+    turns: 150   <span class="c"># 一次 agent run 之内</span>
+    wall:  1h    <span class="c"># 一次 agent run 之内</span>
+    <b>rounds: 2</b>    <span class="c"># 一趟 pass 把 agent 打回去几次</span>
+</pre>
+    <p><code>round</code> 是代码里已经在说的词 —— <code>FixRequested.round</code>、<code>roundsSpent</code>、<i>round 1 of 2</i>。不是 <code>attempts</code>，那个词已经有两个别的意思了：<code>budget.attempts</code> 是一个 prompt 带多少历史，看板上的一次 <i>attempt</i> 是一次 claim。把它摆在 <code>turns</code> 和 <code>wall</code> 旁边是目的本身，不是为了整齐：一趟 pass 最多花多少，从此就是一个块，<code>(rounds + 1) × wall</code>。2026-09-10 那天，排空提示告诉操作者最多等一个 <code>wall</code> —— 而修复循环早就让这句话不成立了，一句话在追一个存在别处的数。三个数在同一处，就没法这样各自漂移。<code>repair.maxAttempts</code> 和 <code>repair.fix</code> 就是 <code>rounds</code> 现在数的东西，<code>repair.on</code> 就是 <code>rounds: 0</code>。</p>
+  </section>
+
+  <section>
+    <h2>这一页比代码超前在哪，风险又在哪</h2>
+    <div class="prop">
+      <h3>尚未实现</h3>
+      <p>今天只有被拒的 <code>review</code> 会回到 agent。红的 <code>build</code> 会带着 <code>gate-failed</code> 的裁决继续走到合并道；冲突则让合并道 abort。两者随后都走到 <code>decideRepair</code>，由它买一个 agent 开<b>新的一趟 run</b> —— 因为工作树在 integrator 跑起来之前就被释放了。</p>
+      <p>也就是说，那条昂贵的路径从来不是一个关于失败的决定。它是两个作用域之间的一个次序，而 §1 就是把这个次序整个撤掉。</p>
+    </div>
+    <div class="gap">
+      <h3>风险全在一个没写下来的理由里</h3>
+      <p><code>run-once.ts:53</code> 说：<i>工作树在 integrator 跑起来之前就没了，因为 integrator 在它的作用域之外</i>。<b>这个「因为」是循环的</b> —— 没有任何地方记下当初为什么把 integrator 放到作用域之外。</p>
+      <p>所以实现 §1 的人必须去找：当工作树活得比合并道更久时，什么会坏掉 —— 而不是把这份沉默当成「什么都不会坏」的证据。0039 剩下的部分都是记账；能出错的是这里。</p>
+    </div>
+  </section>
+
+  <footer>2026-09-11 在 <code>cb66466</code> 绘制，依据的是 ADR 而不是代码。想知道这些各自跑在哪个进程里，看 <a href="architecture.zh.html">循环与日志</a>；想看论证，看 <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a>。</footer>
+
+</div>
+</body>
+</html>
