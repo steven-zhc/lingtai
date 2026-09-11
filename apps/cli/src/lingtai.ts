@@ -50,6 +50,7 @@ import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
+import { resolveSubscribers } from "./subscribers.ts";
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
@@ -304,7 +305,11 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // into scrollback. A daemon that cannot read a recipe now says so in the
   // block you are already reading while it starts.
   if (registered.length === 0) console.log("no project registered — run lingtai add <owner>/<repo>");
-  for (const line of describeFilters(await projectFilters(registered))) console.log(line);
+  // Held rather than recomputed: the same recipes answer what this daemon will
+  // take and what it will tell anybody about (`subscribers:`, 0037 §3), and
+  // fetching them twice would let the two disagree about the same startup.
+  const filters = await projectFilters(registered);
+  for (const line of describeFilters(filters)) console.log(line);
 
   const found = await reconcile({
     log: (line) => console.log(line),
@@ -430,9 +435,19 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
         (channel.clickable ? "" : " — install terminal-notifier to make them clickable"),
     );
 
+    // And the recipes' own channels beside it. A subscriber is a command in
+    // its own process with only the credentials it declared (0037 §1, §3), so
+    // the desktop notifier above is no longer the only thing that can be told
+    // — and the two answer differently about the same event, which is the
+    // change of policy `#125` is: a landing interrupts nobody and is still
+    // worth a message somewhere you read when you choose.
+    const declared = await resolveSubscribers(filters);
+    for (const line of declared.lines) console.log(`subscriber ${line}`);
+
     loop = createWorkLoop({
       log: (line) => console.log(line),
       notify: (event) => notifier.consider(event),
+      subscribers: declared.subscribers,
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.

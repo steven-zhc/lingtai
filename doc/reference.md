@@ -395,7 +395,9 @@ runs where the agent worked, and `env.plantAt` put the agent's own file there.
 This is about the process environment — the daemon's credentials, which is what
 0037 §1 took away.
 
-Nothing spawns a subscriber yet, so today this binds `run:` at a gate point.
+It binds both extensions there are: a `run:` action at a gate point, and a
+subscriber the daemon spawns (`#125`). A subscriber has no worktree — it judges
+no diff — so it runs in `tmpdir()`, and `env:` is the whole of what it holds.
 
 ## what the log says was *supposed* to happen
 
@@ -540,9 +542,9 @@ subscriber, so a Telegram bot — read when you choose rather than when it arriv
 ```yaml
 subscribers:
   - name: telegram
-    on: [WorkItemLanded, WorkItemBlocked, RunFailed]
+    on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
     run: npx @lingtai/telegram
-    env: [TELEGRAM_BOT_TOKEN]
+    env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_BOARD_URL]
 ```
 
 The `on:` list is the subscription as well as the declaration, so a name that is
@@ -551,7 +553,37 @@ spelled right, in the catalogue, and appended by nothing, which is the same
 subscription that never fires reached by a different mistake. `env:` is every
 credential that subscriber's process gets — see *extension environment* above,
 which is the half of 0037 §1 that makes "and nothing else" a fact. The four
-above are still the daemon's own defaults and nothing reads `subscribers:` yet.
+above remain the daemon's own desktop defaults, which is a different list from
+any of these.
+
+**A subscriber runs, since `#125`.** `lingtai daemon` reads each project's
+recipe at startup, resolves each subscriber's declared names, and hands the
+loop a name, an `on:` list and a command — `resolveSubscribers` in
+`apps/cli/src/subscribers.ts`, `subscribersFromRecipe` in
+`packages/actions/src/subscriber.ts`. What happens then:
+
+- **One process per event it declared**, with the event as JSON on stdin
+  (0037 §4). `seq` and `causation` travel as decimal strings and `at` as ISO
+  text, because `JSON.stringify` throws on a `bigint`.
+- **Its exit code is discarded** and its failure is an event: a non-zero exit,
+  a command that does not exist, or one minute without exiting is a
+  `PluginFailed` on `ext-subscribers`, which `lingtai doctor`'s
+  `subscribers: failures` reads back. Nothing is retried and nothing waits —
+  the conductor's pass is not on this path at all.
+- **A project's subscriber gets that project's events**, matched on the work
+  item's stream. An event that names no project — a pause, a shutdown — goes to
+  every subscriber that asked for the type, because it belongs to the
+  installation rather than to a repository.
+- **The recipe is read at startup and held**, like everything else a running
+  daemon holds: adding a subscriber takes effect on restart.
+
+`@lingtai/telegram` (`packages/telegram`) is the first one, and it is an
+extension rather than a feature: no privileged path, one Lingtai import —
+`describeEvent` from `@lingtai/domain`, which is also what the desktop channel
+formats with — and nothing of the daemon's. Its `env:` names are
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and the optional `TELEGRAM_BOARD_URL`
+(`http://localhost:3200` by default), set with
+`lingtai env set <project> TELEGRAM_BOT_TOKEN`.
 
 ## lingtai subcommand — 13
 

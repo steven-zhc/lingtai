@@ -136,7 +136,9 @@ implements them, and a host wires the two together.
 | | **`hook`** one Bun binary, inside the agent's sandbox |
 
 Two hosts assemble them — `apps/cli` and `packages/daemon` — plus `apps/board`,
-which reads the projection and appends decisions. **Every process that appends
+which reads the projection and appends decisions. `packages/telegram` is in
+neither column and is not part of the assembly: it is an extension, spawned as
+a command with the credentials its recipe declared, and nothing imports it. **Every process that appends
 holds a projector while it runs**, so the board follows a run by hand just as it
 follows the daemon. The daemon adds what only a long-lived process can owe: an
 advisory lock, a heartbeat, a repair at startup, and a loop that keeps taking

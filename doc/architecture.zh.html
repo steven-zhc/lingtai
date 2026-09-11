@@ -417,7 +417,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 350" role="img" aria-label="lingtai daemon 进程持有一趟 conductor、一个 projector、一次心跳、启动时的一次修复、一把咨询锁和一个通知器。lingtai run 进程只持有一趟 conductor 和一个 projector。两者调用同一份 conductor 库。">
+        <svg viewBox="0 0 780 350" role="img" aria-label="lingtai daemon 进程持有一趟 conductor、一个 projector、一次心跳、启动时的一次修复、一把咨询锁，以及自己的通知器和 recipe 声明的每一个订阅者。lingtai run 进程只持有一趟 conductor 和一个 projector。两者调用同一份 conductor 库。">
           <defs>
             <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -443,7 +443,7 @@
           <rect x="200" y="160" width="156" height="32" fill="none" stroke="currentColor" opacity=".75"/>
           <text x="278" y="180" text-anchor="middle" font-size="12.5" fill="currentColor">那把锁</text>
 
-          <text x="34" y="216" font-size="11.5" fill="currentColor" opacity=".6">外加一个通知器，用于「瓶颈是你」的时候</text>
+          <text x="34" y="216" font-size="11.5" fill="currentColor" opacity=".6">外加两类通知器：自己的，和 recipe 声明的订阅者</text>
 
           <rect x="410" y="20" width="350" height="220" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
           <text x="424" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai run</text>

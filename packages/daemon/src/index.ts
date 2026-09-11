@@ -17,6 +17,7 @@ export {
   COMPLETION_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
+  type DeclaredSubscriber,
   type PassReason,
   type WorkLoop,
   type WorkLoopOptions,
@@ -71,7 +72,6 @@ export {
 export {
   DEFAULT_SUBSCRIPTIONS,
   createNotifier,
-  describe,
   macNotifier,
   recordingChannel,
   subscribed,

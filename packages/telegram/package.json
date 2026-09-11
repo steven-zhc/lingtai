@@ -1,0 +1,24 @@
+{
+  "name": "@lingtai/telegram",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "lingtai-telegram": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lingtai/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

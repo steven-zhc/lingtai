@@ -34,3 +34,10 @@ export {
   type CommandOutcome,
   type RunCommandOptions,
 } from "./command.ts";
+export {
+  SUBSCRIBER_COMMAND_TIMEOUT_MS,
+  subscribersFromRecipe,
+  wireEvent,
+  type EventSubscriber,
+  type SubscriberDeps,
+} from "./subscriber.ts";

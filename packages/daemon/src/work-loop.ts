@@ -69,6 +69,15 @@
  * that a failed subscriber left a console line and nothing else — and a
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
+ *
+ * **The third-party code 0015 put in this path is here now** (`#125`): a
+ * `subscribers:` entry in the recipe is a command in its own process, handed to
+ * the same `deliver` as the two in-process ones. Nothing about this file knows
+ * that — a subscriber is a name and a promise either way, which is the point of
+ * the boundary being where it is. What a command adds is that it cannot take
+ * the follower down by construction as well as by contract: killing it
+ * mid-event is a non-zero exit, which is a `PluginFailed`, which is a row in
+ * `ext-subscribers` and nothing else.
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { type Envelope, SUBSCRIBER_STREAM, parseWorkItemStream, parsePayload } from "@lingtai/domain";
@@ -126,6 +135,22 @@ export const SWEEP_MS = 5 * 60_000;
  */
 export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * What the loop needs of a subscriber, and the whole of it.
+ *
+ * Three members, none of which says where the work happens. `@lingtai/actions`
+ * supplies the implementation that is a command in its own process; a test
+ * supplies a function. Written here rather than imported so that the daemon
+ * does not depend on the extension mechanism to hold it at arm's length.
+ */
+export interface DeclaredSubscriber {
+  readonly name: string;
+  /** Asked before anything is spent. False is the common answer. */
+  wants(event: Envelope): boolean;
+  /** Held by `deliver`, never awaited. */
+  consider(event: Envelope): Promise<void>;
+}
+
 export interface WorkLoopOptions {
   /**
    * One pass: refresh the queue, take what is runnable, run it.
@@ -172,6 +197,18 @@ export interface WorkLoopOptions {
    * subscriber boundary at the top of this file.
    */
   notify?: (event: Envelope) => Promise<void>;
+  /**
+   * The recipes' `subscribers:`, already resolved — a name, what it wants, and
+   * how to run it ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3).
+   *
+   * Structural on purpose: this file must not know whether a subscriber is a
+   * command, a channel or a function, because the boundary below it is the
+   * same either way. The caller builds them — only it can read a recipe and
+   * resolve an extension's environment — and `wants` is asked before anything
+   * is spent, so declaring three event types does not start a process on every
+   * append.
+   */
+  subscribers?: readonly DeclaredSubscriber[];
   /**
    * Somebody asked the discussion assistant a question. Answer it.
    *
@@ -454,6 +491,20 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // with an event is its own business, and what it does *to the process
           // following the log* is not its business at all.
           if (options.notify) deliver("notify", event, options.notify);
+          // The recipes' own, through the same boundary and named by the
+          // recipe rather than by this file — `PluginFailed` says `telegram`,
+          // which is the name in the YAML somebody would go and fix.
+          //
+          // `wants` is asked *inside* `deliver` rather than in front of it, so
+          // that a subscriber which throws while deciding is held by the same
+          // three-failure boundary as one that throws while working. It stays
+          // the cheap question it was: an event nobody declared costs a
+          // resolved promise, not a process.
+          for (const subscriber of options.subscribers ?? []) {
+            deliver(subscriber.name, event, async (e) => {
+              if (subscriber.wants(e)) await subscriber.consider(e);
+            });
+          }
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
           if (event.type === "DiscussionRequested" && options.discuss) {

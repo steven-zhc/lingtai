@@ -186,6 +186,33 @@ gates:
       when: landed
       close: true
 
+# The channels this installation's recipe declares, and it declares none
+# ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §3, `#125`).
+#
+# **Written out, commented, because the reason it is off is the interesting
+# part.** A subscriber is spawned for every event in its `on:` list, and one
+# that starts without its token exits — which is a `PluginFailed` per landing,
+# for ever, from a notifier that has never worked. So it is switched on by the
+# operator, in one step and after the other:
+#
+#     lingtai env set lingtai TELEGRAM_BOT_TOKEN     # reads stdin, unechoed
+#     lingtai env set lingtai TELEGRAM_CHAT_ID
+#     lingtai doctor                                 # env: lingtai extensions
+#
+# then uncomment this and restart the daemon — a recipe is read when it starts
+# and held, like the code it started with.
+#
+# `WorkItemLanded` is deliberately in the list, and is deliberately *not* in
+# the desktop channel's: a notification interrupts you and a landing needed
+# nobody, while a message is read when you choose. Same event, two channels,
+# two answers — which is only sayable because the subscription is here.
+#
+# subscribers:
+#   - name: telegram
+#     on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+#     run: node packages/telegram/src/cli.ts
+#     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_BOARD_URL]
+
 # A failure of this repository's buys one agent to fix it, and Lingtai's own
 # never do ([0025](../doc/decisions/0025-a-failure-buys-one-agent.md)).
 #

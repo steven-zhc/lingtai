@@ -1,17 +1,16 @@
 /**
- * What gets through, and what it says.
+ * What gets through this channel.
  *
- * Pure — no database, no `osascript`. The two things worth asserting are that
- * the filter is right (a notification you cannot act on is noise, and noise is
- * how the useful ones stop being read) and that the message carries the
- * question rather than the fact.
+ * Pure — no database, no `osascript`. What is worth asserting here is that the
+ * filter is right: a notification you cannot act on is noise, and noise is how
+ * the useful ones stop being read. What a notification *says* is
+ * `describeEvent`'s, and moved with it (#125).
  */
 import type { Envelope } from "@lingtai/domain";
 import { describe as describeTest, expect, it } from "vitest";
 import {
   DEFAULT_SUBSCRIPTIONS,
   createNotifier,
-  describe as render,
   recordingChannel,
   subscribed,
 } from "../src/index.ts";
@@ -52,23 +51,10 @@ describeTest("what is worth interrupting somebody for", () => {
   });
 });
 
-describeTest("what the notification says", () => {
-  it("carries the question, not just the fact", () => {
-    const n = render(
-      event("WorkItemBlocked", { question: "rerun the flaky importer test, or fix it?" }),
-      "http://localhost:3200",
-    );
-    // `agent:blocked` carried no question, which is the whole reason the old
-    // review queue could not be worked without opening the issue.
-    expect(n.body).toContain("rerun the flaky importer test");
-    expect(n.title).toContain("#155");
-  });
-
-  it("links to the task's own page, so a click lands somewhere useful", () => {
-    const n = render(event("ApprovalRequested", { question: "Merge?" }), "http://localhost:3200");
-    expect(n.url).toBe("http://localhost:3200/task/wi-admin-155");
-  });
-});
+// What a notification *says* is asserted in `packages/domain/test/describe.test.ts`,
+// with the function: `describeEvent` moved there when a second channel started
+// using it (#125), and a copy of its tests left behind here would be the half
+// that stopped being run against the code that changed.
 
 describeTest("the notifier", () => {
   it("sends only what is subscribed", async () => {

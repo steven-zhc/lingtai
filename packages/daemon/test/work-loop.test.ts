@@ -332,6 +332,82 @@ describe("the work loop", () => {
     }
   });
 
+  /**
+   * A subscriber the recipe declared, through the same boundary (`#125`).
+   *
+   * The composition is what is new here: `subscribersFromRecipe` is tested
+   * against real processes in `@lingtai/actions`, and the boundary is tested
+   * above. What nothing else asserts is that a declared subscriber which
+   * refuses — Telegram unreachable, which is the ticket's own case — is
+   * recorded under **the name in the YAML**, and that the conductor finishes
+   * the pass regardless. A subscriber here is a name, a `wants` and a promise;
+   * that it is a command in the daemon is the caller's business.
+   */
+  it("records a declared subscriber's refusal under its own name, and still passes", async () => {
+    const tag = crypto.randomUUID().slice(0, 8);
+    const id = `wi-esctest${tag}-1`;
+    created.add(id);
+    created.add(SUBSCRIBER_STREAM);
+
+    const offered: string[] = [];
+    let passes = 0;
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      store,
+      subscribers: [
+        {
+          name: "telegram",
+          wants: (event) => event.type === "WorkItemLanded",
+          consider: async (event) => {
+            offered.push(event.type);
+            throw new Error("telegram unreachable: getaddrinfo ENOTFOUND api.telegram.org");
+          },
+        },
+        {
+          // Declared for something else entirely. It must not be started, and
+          // must not appear in `ext-subscribers` for an event it never wanted.
+          name: "pager",
+          wants: (event) => event.type === "RunFailed",
+          consider: async () => {
+            throw new Error("should never run");
+          },
+        },
+      ],
+      pass: async () => void (passes += 1),
+    });
+
+    await loop.start();
+    try {
+      await store.append(id, 0, [landed(id)]);
+
+      type Failure = { name: string; eventType: string; project: string | null; reason: string };
+      const mine = async (): Promise<Failure[]> =>
+        (await store.read(SUBSCRIBER_STREAM))
+          .filter((r) => r.type === "PluginFailed")
+          .map((r) => r.data as Failure)
+          .filter((d) => d.project === `esctest${tag}`);
+
+      // Polled rather than `until`, which asks a synchronous question: this
+      // one is a read of the log.
+      let failures = await mine();
+      const deadline = Date.now() + 10_000;
+      while (failures.length === 0) {
+        if (Date.now() > deadline) throw new Error("timed out with nothing recorded");
+        await new Promise((r) => setTimeout(r, 50));
+        failures = await mine();
+      }
+      expect(failures.map((f) => f.name)).toEqual(["telegram"]);
+      expect(failures[0]?.reason).toMatch(/unreachable/);
+      expect(offered).toEqual(["WorkItemLanded"]);
+
+      // A landing is a completion event, so the conductor was going round
+      // anyway — the point is that a refusing subscriber did not stop it.
+      await until(() => passes > 1);
+    } finally {
+      await loop.stop();
+    }
+  });
+
   it("takes nothing while a pause holds, and takes work again when it lifts by itself", async () => {
     let passes = 0;
     // Stands in for `reduceControl` reaching the expiry: the same fold, asked

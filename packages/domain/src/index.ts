@@ -7,3 +7,4 @@ export * from "./integration.ts";
 export * from "./project.ts";
 export * from "./streams.ts";
 export * from "./control.ts";
+export * from "./describe.ts";

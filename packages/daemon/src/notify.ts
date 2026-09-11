@@ -30,15 +30,15 @@
  * clickable would be a small lie repeated every time.
  */
 import { spawn } from "node:child_process";
-import type { Envelope } from "@lingtai/domain";
+import { type Envelope, type Notification, describeEvent } from "@lingtai/domain";
 
-/** What the operator is being told, and where to go about it. */
-export interface Notification {
-  title: string;
-  body: string;
-  /** The board page for the task this is about. */
-  url: string | null;
-}
+// `Notification` and the wording that fills it are `@lingtai/domain`'s now
+// (#125). They were this file's while the desktop was the only channel; a
+// second one that formats the same events the same way makes them the event's
+// and not the channel's. Re-exported because the type is in this module's
+// surface — `NotifyChannel.send` takes one — and moving a file should not move
+// somebody's import.
+export type { Notification } from "@lingtai/domain";
 
 export interface NotifyChannel {
   readonly name: string;
@@ -102,37 +102,6 @@ export function subscribed(
       s.types.includes(event.type) &&
       (s.project === "*" || (project !== null && s.project === project)),
   );
-}
-
-/**
- * Turns an event into something worth reading on a lock screen.
- *
- * The question, never just the fact. `agent:blocked` carried no question, which
- * is the whole reason the old review queue was unworkable from outside the
- * repository — you had to open the issue to find out what was being asked.
- */
-export function describe(event: Envelope, boardUrl: string): Notification {
-  const d = (event.data ?? {}) as Record<string, unknown>;
-  const task = event.streamId.startsWith("wi-") ? event.streamId : null;
-  const url = task ? `${boardUrl}/task/${encodeURIComponent(task)}` : null;
-  const ref = task ? `#${task.slice(task.lastIndexOf("-") + 1)}` : "";
-
-  switch (event.type) {
-    case "ApprovalRequested":
-      return { title: `${ref} is waiting on you`, body: String(d["question"] ?? "Approve the merge?"), url };
-    case "WorkItemBlocked":
-      return { title: `${ref} is blocked`, body: String(d["question"] ?? ""), url };
-    case "RunAwaitingInput":
-      return { title: `${ref} is asking`, body: String(d["prompt"] ?? ""), url };
-    case "IntegrationRefused":
-      return {
-        title: `${ref} did not merge`,
-        body: `${String(d["reason"] ?? "")}: ${String(d["detail"] ?? "")}`,
-        url,
-      };
-    default:
-      return { title: ref || event.type, body: event.type, url };
-  }
 }
 
 function run(bin: string, args: string[]): Promise<number | null> {
@@ -215,7 +184,7 @@ export function createNotifier(options: NotifyOptions): Notifier {
     async consider(event) {
       if (!subscribed(event, subscriptions)) return;
       try {
-        await options.channel.send(describe(event, boardUrl));
+        await options.channel.send(describeEvent(event, boardUrl));
       } catch (err) {
         // Caught here so the message can say *notification*, and no longer
         // because anything depends on it. The daemon's subscription holds every
