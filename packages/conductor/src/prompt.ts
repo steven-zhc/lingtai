@@ -25,6 +25,7 @@
 import { reduceWorkItem, retiredRepairPending, type Envelope } from "@lingtai/domain";
 import {
   attemptBrief,
+  answersBrief,
   attemptOutcome,
   humanBrief,
   priorAttempts,
@@ -118,7 +119,16 @@ export function nextPrompt(input: {
   // appear twice.
   const repair = retiredRepairPending(input.item);
   if (previous && repair?.after === previous.runId) previous.refusal = null;
-  const history = join([attemptBrief(attempts, input.budget), repair ? repairBrief(repair) : ""]);
+  //
+  // **And the decisions, first** (#147): what a person answered before any run
+  // is about the ticket rather than about an attempt, so it leads, and it is
+  // Lingtai's own composition — read off the log like the history — rather than
+  // the page's edit, which is why it sits inside `composed`.
+  const history = join([
+    answersBrief(state.answers),
+    attemptBrief(attempts, input.budget),
+    repair ? repairBrief(repair) : "",
+  ]);
   const failure = join([history, humanBrief(edit)]);
 
   return {

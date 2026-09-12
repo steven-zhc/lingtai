@@ -194,8 +194,25 @@ export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>;
 export const WorkItemBlocked = z.object({
   /** The question, not just the fact. The old `agent:blocked` label carried no question. */
   question: z.string(),
-  /** Who has to answer. `needs` says *what* of them. */
-  needsFrom: z.enum(["human", "schema", "external"]),
+  /**
+   * Who has to answer. `needs` says *what* of them.
+   *
+   * **`schema` was deleted (#147)**, having never been written. It was the
+   * model's half of `agent:needs-schema-approval`, a label that appeared once in
+   * the repository — in an excludes list — and that nothing applied or removed.
+   * A schema approval is not a third audience: it is a person's judgement,
+   * asked before a run (`lingtai ask`) or held at the merge lane for a
+   * migration, and both of those are `human`. An enum value with no writer is
+   * a legal state nobody can reach, which is how the need went unmet for as
+   * long as it did.
+   */
+  needsFrom: z.enum(["human", "external"]),
+  /**
+   * The run that asked, or null for a question asked **before any run** — by
+   * `lingtai ask`, which is the one appender that has no run to name (#147).
+   * Null is what a queue pass and the prompt both read as *this was asked of a
+   * person about the ticket, not about an attempt at it*.
+   */
   runId: z.string().nullable(),
   /**
    * Which kind of block this is — the distinction #83 found the log could not
@@ -217,6 +234,11 @@ export const WorkItemBlocked = z.object({
   diagnosis: BlockDiagnosis.nullable(),
 });
 
+/**
+ * A person answered the block. `note` **is** the answer — `lingtai answer`'s
+ * choice, or `lingtai requeue`'s why — and the fold keeps it (#147): a record
+ * that can say what was asked and never what was decided is not a record.
+ */
 export const WorkItemUnblocked = z.object({ by: z.string(), note: z.string() });
 
 /**

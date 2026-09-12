@@ -8,6 +8,7 @@
     "./claim": "./src/claim.ts",
     "./projects": "./src/projects.ts",
     "./decide": "./src/approve.ts",
+    "./ask": "./src/ask.ts",
     "./discover": "./src/discover.ts",
     "./discuss": "./src/discuss.ts",
     "./filter": "./src/filter.ts",

@@ -335,6 +335,18 @@ function Card({
             is what makes the other two worth reading. The sentences are
             `queuedStanding`'s and the backoff's is `lingtai status`'s own, so
             the two places this is asked cannot drift apart again. */}
+        {/* **Which wait**, where one brass chip used to stand for both (#147).
+            A question asked before any run wants an answer and has no diff; a
+            run holding a sha wants a review of the diff it has. The words are
+            `describeWait`'s, so `lingtai status` says the same. */}
+        {card.wait ? (
+          <li
+            className={card.asked ? "pill sig" : "pill hold"}
+            title={card.asked ? "asked before any run — nothing has been spent" : "a run is holding a diff for you"}
+          >
+            {card.wait}
+          </li>
+        ) : null}
         {standing ? (
           <li className="pill hold" title={standing.title}>
             {standing.text}
@@ -392,6 +404,7 @@ function Card({
           <Requeue
             project={card.project}
             issue={Number(card.ref)}
+            asked={card.asked}
             recommended={card.diagnosis?.recommendation?.action ?? null}
           />
         </div>

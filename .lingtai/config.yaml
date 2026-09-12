@@ -35,7 +35,11 @@ source:
     - in-progress
     - agent:hold
     - agent:blocked
-    - agent:needs-schema-approval
+    # `agent:needs-schema-approval` was here, and was the only place in the
+    # repository it appeared: nothing applied it, nothing removed it, no event
+    # recorded it. A decision a ticket needs before a run is now asked on the
+    # log — `lingtai ask`, a WorkItemBlocked with no run — and the queue passes
+    # it over because the fold says blocked, with no label involved (#147).
     - agent:review
     - agent:wip
     # An epic is a table of contents, not work. `#126` was claimed on

@@ -12,7 +12,7 @@ import { createProjectionRunner } from "@lingtai/projector";
 import { taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { heldUntil, inWords, selectRunnable } from "../src/index.ts";
+import { answer, ask, heldUntil, inWords, selectRunnable } from "../src/index.ts";
 
 /**
  * An hour, as `source.backoff` resolves to for a recipe that does not mention
@@ -90,6 +90,33 @@ describe("selectRunnable", () => {
     // invalidated, because nothing was stored: it is simply not in the offer.
     const narrowed = await selectRunnable({ project: other, offered: [offered[0]!], kinds, backoffMs: HOUR });
     expect(narrowed).toEqual([]);
+  });
+
+  /**
+   * A question asked before any run is passed over with no label involved
+   * (#147). Nothing in this file changed for it: the block is a row whose state
+   * is not `queued`, and that is the whole of the exclusion. The answer is what
+   * hands it back.
+   */
+  it("passes over an item asked a question before any run, until it is answered", async () => {
+    const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
+    const offered = [{ ref: "51", title: "the tripwire", kind: "bug" }];
+    const kinds = ["bug"];
+    created.add(`wi-${project}-51`);
+
+    const asked = await ask({ project, issue: 51, question: "which of the three designs?", by: "human:steven", store });
+    expect(asked.ok).toBe(true);
+    await build();
+    expect(await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).toEqual([]);
+
+    // A second question is refused rather than replacing the first unanswered.
+    expect((await ask({ project, issue: 51, question: "and another?", by: "human:steven", store })).ok).toBe(false);
+
+    const answered = await answer({ project, issue: 51, answer: "the second", by: "human:steven", store });
+    expect(answered.ok).toBe(true);
+    await build();
+    // Never attempted, so the backoff holds nothing: runnable at once.
+    expect((await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).map((r) => r.issue)).toEqual(["51"]);
   });
 
   /** Priority is the recipe's `kinds` order, and ties break numerically. */

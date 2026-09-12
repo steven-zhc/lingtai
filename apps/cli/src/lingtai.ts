@@ -42,6 +42,7 @@ import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
+import { answerCommand, askCommand } from "./ask.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
 import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
@@ -108,6 +109,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 already accepted — safe to repeat, never a second
   lingtai backlog decline <project> <key> --reason <why>
                                 recorded, so the next attempt does not ask again
+  lingtai ask <project> --issue <n> "<question>"
+                                hold a ticket on a decision before any run
+                                claims it: nothing is spent, the queue passes
+                                over it, and lingtai status prints the question
+  lingtai answer <project> --issue <n> "<choice>"
+                                answer it on the record: back in the queue, and
+                                every attempt at the ticket is told the answer
+                                — no editing the issue body
   lingtai attach <runId>            follow a run's log — what it is doing, as it
                                 does it, from the beginning however late you
                                 attach. Reads a file and asks nothing of the
@@ -891,6 +900,24 @@ async function main(argv: string[]): Promise<number> {
       // silent* is the whole of `GateWaived`'s claim on existing. A missing and
       // an empty `--reason` both arrive as "" and are refused by the command.
       return waiveCommand({ project: positional[0], issue, gate, reason: flags["reason"] ?? "" });
+    }
+    case "ask":
+    case "answer": {
+      const { positional, flags } = parseFlags(rest);
+      const issue = Number(flags["issue"]);
+      const usage =
+        command === "ask"
+          ? `lingtai ask <project> --issue <n> "<question>"`
+          : `lingtai answer <project> --issue <n> "<choice>"`;
+      if (!positional[0] || !Number.isInteger(issue)) {
+        console.error(usage);
+        return 2;
+      }
+      // Everything after the project is the sentence, so an unquoted one still
+      // arrives whole. Blank is refused by the command, not defaulted here.
+      const text = positional.slice(1).join(" ");
+      const options = { project: positional[0], issue, text };
+      return command === "ask" ? askCommand(options) : answerCommand(options);
     }
     case "attach": {
       const runId = parseFlags(rest).positional[0];

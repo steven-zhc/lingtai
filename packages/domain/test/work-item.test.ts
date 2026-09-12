@@ -87,6 +87,64 @@ describe("reduceWorkItem", () => {
       e("WorkItemUnblocked", { by: "human:steven", note: "develop" }),
     ]);
     expect(unblocked.lifecycle).toEqual({ status: "backlog" });
+    // The answer is not dropped with the question (#147).
+    expect(unblocked.answers).toEqual([
+      {
+        question: "Which base branch should this target?",
+        runId: "run-a",
+        answer: "develop",
+        by: "human:steven",
+      },
+    ]);
+  });
+
+  /**
+   * A question asked before anything is spent (#147).
+   *
+   * `runId: null` was written into the type and never into the log: all three
+   * appenders ran inside a pass. `lingtai ask` is the first that does not, so
+   * the fold has to accept a block that belongs to no run — with no claim before
+   * it and nothing in `runs` — and a replay of the answer has to be able to say
+   * what the answer was.
+   */
+  it("accepts a block that belongs to no run, and keeps the answer that ends it", () => {
+    const e = makeStream("wi-lingtai-51");
+    const asked = [
+      e("WorkItemBlocked", {
+        question: "Which of the three designs for the production-credential tripwire?",
+        needsFrom: "human" as const,
+        runId: null,
+        needs: "judgement" as const,
+        diagnosis: null,
+      }),
+    ];
+
+    const waiting = reduceWorkItem(asked);
+    expect(waiting.lifecycle).toEqual({
+      status: "blocked",
+      question: "Which of the three designs for the production-credential tripwire?",
+      needsFrom: "human",
+      runId: null,
+      needs: "judgement",
+      diagnosis: null,
+    });
+    expect(waiting.runs).toEqual([]);
+
+    const answered = reduceWorkItem([
+      ...asked,
+      e("WorkItemUnblocked", { by: "human:steven", note: "the second: refuse at the hook" }),
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+    ]);
+    expect(answered.lifecycle.status).toBe("claimed");
+    // Durable: a claim consumes a prompt edit and does not consume a decision.
+    expect(answered.answers).toEqual([
+      {
+        question: "Which of the three designs for the production-credential tripwire?",
+        runId: null,
+        answer: "the second: refuse at the hook",
+        by: "human:steven",
+      },
+    ]);
   });
 
   /**

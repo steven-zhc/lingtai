@@ -43,6 +43,8 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     blocked: false,
     needs: null,
     diagnosis: null,
+    asked: false,
+    answer: null,
     repairPending: false,
     repairCostUsd: null,
     ...over,

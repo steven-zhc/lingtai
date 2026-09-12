@@ -35,7 +35,7 @@
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { Envelope, PayloadOf } from "@lingtai/domain";
+import type { AnswerRecord, Envelope, PayloadOf } from "@lingtai/domain";
 import { createHash } from "node:crypto";
 
 /**
@@ -459,4 +459,39 @@ export function humanBrief(edit: { text: string; by: string } | null): string {
 ${edit.text.trim()}
 
 It applies to this attempt only. Anything meant to last belongs in the ticket.`;
+}
+
+/**
+ * The decisions a person made about this ticket before any run, as a block
+ * every attempt carries (#147).
+ *
+ * The answer to a `lingtai ask` question used to have one channel to an agent:
+ * somebody editing the GitHub issue body, because the body is the prompt. That
+ * put the decision outside `events`, where a replay could not say it. This is
+ * the splice `attemptBrief` already makes for an earlier attempt's evidence
+ * (0040 §3), one block over — log content into the prompt, with nothing edited
+ * anywhere else.
+ *
+ * **Only answers to questions asked before a run**, which is `runId === null`.
+ * A requeue's note answers a block one attempt ended on, and it is already in
+ * the history table as how that attempt ended; carrying it here as well would
+ * turn *the base had moved* into a standing instruction.
+ *
+ * **Durable, unlike `humanBrief`.** An edit is for one attempt; a decision about
+ * the ticket is owed to every attempt at it, so no claim consumes these.
+ */
+export function answersBrief(answers: readonly AnswerRecord[]): string {
+  const asked = answers.filter((a) => a.runId === null && a.question !== null);
+  if (asked.length === 0) return "";
+  const lines = [
+    `## Decided before any run`,
+    "",
+    "A person was asked, before this ticket was worked, and answered on the record.",
+    "These are decisions, not suggestions: build what was chosen. If the code makes a",
+    "choice impossible, say so plainly in your final message rather than choosing again.",
+  ];
+  for (const a of asked) {
+    lines.push("", `**Asked:** ${a.question!.trim()}`, "", `**Answered by ${a.by}:** ${a.answer.trim()}`);
+  }
+  return lines.join("\n");
 }

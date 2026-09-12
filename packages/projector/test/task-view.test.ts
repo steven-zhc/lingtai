@@ -23,6 +23,7 @@ import {
   createProjectionRunner,
   describeArm,
   describeHold,
+  describeWait,
   readTasks,
   taskViewProjection,
 } from "../src/index.ts";
@@ -439,6 +440,41 @@ async function seed(): Promise<void> {
     },
     released(run(14), "the review reviewer still refused after 3 round(s) — restart 1 of 2"),
   ]);
+
+  // 17 — a question asked before any run (#147), with nothing before it on the
+  //      stream: no discovery, no claim. The block is the task's first event,
+  //      so the row has to be made by it or the queue would not see the hold.
+  await store.append(wi(17), 0, [
+    {
+      type: "WorkItemBlocked",
+      actor: "human:steven",
+      data: {
+        question: "Which of the three designs should the tripwire use?",
+        needsFrom: "human",
+        runId: null,
+        needs: "judgement",
+        diagnosis: null,
+      },
+    },
+  ]);
+
+  // 18 — the same question, answered. The answer is what a rebuild has to be
+  //      able to say, and it outlives the claim that follows it.
+  await store.append(wi(18), 0, [
+    {
+      type: "WorkItemBlocked",
+      actor: "human:steven",
+      data: {
+        question: "Refuse at the hook, or at the claim?",
+        needsFrom: "human",
+        runId: null,
+        needs: "judgement",
+        diagnosis: null,
+      },
+    },
+    { type: "WorkItemUnblocked", actor: "human:steven", data: { by: "human:steven", note: "at the hook" } },
+    claimed(18),
+  ]);
 }
 
 /** Appended after the rebuild, so `fold` is what folds it. */
@@ -732,6 +768,38 @@ describe("task_view", () => {
     expect(twelve.blocked).toBe(false);
     expect(twelve.needs).toBeNull();
     expect(twelve.diagnosis).toBeNull();
+  });
+
+  /**
+   * A question asked before any run, and its answer (#147).
+   *
+   * The block is 17's first event, so it has to *make* the row: `selectRunnable`
+   * passes over an issue only when the log has a row saying so, and with no
+   * row the item would be offered and claimed straight past the question.
+   */
+  it("holds a question asked before any run, and keeps the answer through a rebuild", async () => {
+    const tasks = await readTasks({ project: PROJECT });
+
+    const seventeen = card(tasks, 17)!;
+    expect(seventeen.state).toBe("waiting");
+    expect(seventeen.blocked).toBe(true);
+    expect(seventeen.asked).toBe(true);
+    expect(seventeen.note).toBe("Which of the three designs should the tripwire use?");
+    expect(describeWait(seventeen)).toBe("waiting for your answer");
+
+    const eighteen = card(tasks, 18)!;
+    expect(eighteen.state).toBe("running");
+    expect(eighteen.asked).toBe(false);
+    expect(eighteen.answer).toEqual({
+      question: "Refuse at the hook, or at the claim?",
+      answer: "at the hook",
+      by: "human:steven",
+    });
+
+    // And a review is not an answer: 10 is a run holding a sha.
+    expect(describeWait(card(tasks, 10)!)).toBe("waiting for your review");
+    // A failure needing acknowledgement is neither, and stays `describeHold`'s.
+    expect(describeWait(card(tasks, 11)!)).toBeNull();
   });
 
   /**

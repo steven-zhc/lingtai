@@ -541,8 +541,11 @@ function decidingOf(runs: readonly RunView[], named: RunView | null): Deciding |
 function whoWaits(life: WorkItemLifecycle): string {
   switch (life.status) {
     case "blocked":
-      if (life.needsFrom === "schema") return "waiting on a schema change";
       if (life.needsFrom === "external") return "waiting on something outside Lingtai";
+      // The two a person can tell apart at a glance (#147): nothing has run, or
+      // a run is holding something. `describeWait` words the card's chip the
+      // same way; this page has the fold rather than the row, so it asks it.
+      if (life.runId === null) return "waiting for your answer";
       return "waiting on you";
     case "claimed":
       return "an agent is working";

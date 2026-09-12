@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import { useState, useTransition } from "react";
-import { approveCard, requeueCard, runNow, sendAttempt } from "./actions.ts";
+import { answerCard, approveCard, requeueCard, runNow, sendAttempt } from "./actions.ts";
 import type { ActionResult } from "@/lib/diff";
 
 /**
@@ -179,9 +179,17 @@ export function Requeue({
   project,
   issue,
   recommended,
+  asked = false,
 }: {
   project: string;
   issue: number;
+  /**
+   * Whether the block is a question asked before any run (#147). Then the move
+   * is an *answer* — the same event, through `answer()`, which refuses anything
+   * else — and the words say so: *Back to the queue* and *Why?* are about an
+   * attempt that failed, and there has been no attempt.
+   */
+  asked?: boolean;
   /**
    * A recommendation to run it again — `requeue`, or a `reject` from before
    * #150 — promotes the button to primary (`primaryMove`). Without one the
@@ -204,10 +212,10 @@ export function Requeue({
       <div className="decide">
         <div className="btnrow">
           <button
-            className={primaryMove(recommended) === "requeue" ? "btn pri" : "btn"}
+            className={asked || primaryMove(recommended) === "requeue" ? "btn pri" : "btn"}
             onClick={() => setAsking(true)}
           >
-            Back to the queue
+            {asked ? "Answer" : "Back to the queue"}
           </button>
         </div>
         {refusal ? <p className="refusal">{refusal}</p> : null}
@@ -218,12 +226,12 @@ export function Requeue({
   return (
     <div className="decide">
       <label className="reason">
-        <span>Why?</span>
+        <span>{asked ? "Your answer" : "Why?"}</span>
         <input
           autoFocus
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="main has moved; a fresh branch should merge"
+          placeholder={asked ? "every attempt at this ticket is told this" : "main has moved; a fresh branch should merge"}
         />
       </label>
       <div className="btnrow">
@@ -234,7 +242,9 @@ export function Requeue({
             setPending(true);
             setRefusal(null);
             startTransition(async () => {
-              const result = await requeueCard({ project, issue, note });
+              const result = asked
+                ? await answerCard({ project, issue, answer: note })
+                : await requeueCard({ project, issue, note });
               setPending(false);
               if (result.ok) {
                 setDone(result.detail);
@@ -246,7 +256,7 @@ export function Requeue({
             });
           }}
         >
-          {pending ? "…" : "Requeue"}
+          {pending ? "…" : asked ? "Answer" : "Requeue"}
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel

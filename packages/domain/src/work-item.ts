@@ -36,7 +36,13 @@ export type WorkItemLifecycle =
       status: "blocked";
       /** The question, not just the fact. `agent:blocked` carried no question. */
       question: string;
-      needsFrom: "human" | "schema" | "external";
+      /** `schema` was here and never written; see `WorkItemBlocked.needsFrom`. */
+      needsFrom: "human" | "external";
+      /**
+       * The run that asked, or null for a question asked before any run
+       * (`lingtai ask`, #147) — which spends no claim and no worktree, and is
+       * passed over by the queue because this state is not `backlog`.
+       */
       runId: string | null;
       /**
        * Whether a person's judgement is required, or a failure needs
@@ -70,6 +76,23 @@ export interface RestartRecord {
   branch: string;
   headSha: string;
   findings: PayloadOf<"PassRestarted">["findings"];
+}
+
+/**
+ * A block a person answered, and what they answered it with.
+ *
+ * `WorkItemUnblocked.note` reached no state before #147: a replay could say what
+ * was asked and never what was decided. `question` and `runId` are the block's,
+ * copied at the moment it was answered, because the lifecycle that held them is
+ * replaced by the answer — and null only for an unblock the log holds without a
+ * block before it, which no appender writes.
+ */
+export interface AnswerRecord {
+  question: string | null;
+  /** Null when the question was asked before any run — `lingtai ask`. */
+  runId: string | null;
+  answer: string;
+  by: string;
 }
 
 /** How this item is connected to another — a filed bug to the merge that caused it. */
@@ -136,6 +159,17 @@ export interface WorkItemState {
    */
   pendingPrompt: { text: string; by: string } | null;
 
+  /**
+   * Every block a person answered, oldest first (#147).
+   *
+   * **Durable, unlike `pendingPrompt`**, and that is the difference between an
+   * edit and a decision. An edit is a sentence for one attempt; an answer to a
+   * question asked before any run is a decision about the ticket, and every
+   * attempt at it is owed it — `nextPrompt` carries those, so the answer
+   * reaches the agent without anybody editing the GitHub issue body.
+   */
+  answers: readonly AnswerRecord[];
+
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number;
   /** Global position of the last event applied. */
@@ -155,6 +189,7 @@ export const emptyWorkItem: WorkItemState = {
   runs: [],
   restarts: [],
   pendingPrompt: null,
+  answers: [],
   version: 0,
   lastSeq: null,
 };
@@ -268,8 +303,27 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       };
     }
 
-    case "WorkItemUnblocked":
-      return { ...state, ...at, lifecycle: { status: "backlog" } };
+    case "WorkItemUnblocked": {
+      const d = event.data as PayloadOf<"WorkItemUnblocked">;
+      // The answer is kept, and that is the whole of #147's fold change: this
+      // case used to return to the backlog and drop `note` on the floor, so the
+      // log held the decision and no state, projection or prompt could say it.
+      const block = state.lifecycle.status === "blocked" ? state.lifecycle : null;
+      return {
+        ...state,
+        ...at,
+        lifecycle: { status: "backlog" },
+        answers: [
+          ...state.answers,
+          {
+            question: block?.question ?? null,
+            runId: block?.runId ?? null,
+            answer: d.note,
+            by: d.by,
+          },
+        ],
+      };
+    }
 
     case "WorkItemLinked": {
       const d = event.data as PayloadOf<"WorkItemLinked">;

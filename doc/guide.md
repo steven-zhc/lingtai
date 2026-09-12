@@ -244,12 +244,19 @@ and why the first runs against a repository should be
 `lingtai run <project> --issue <n> --no-merge`: discovery, claim, worktree,
 agent, gates, and then it stops and asks.
 
-Six more labels do the same job with different meanings, and the recipe names
+Five more labels do the same job with different meanings, and the recipe names
 every one of them rather than Lingtai keeping a built-in list: `blocked`,
-`in-progress`, `agent:blocked`, `agent:needs-schema-approval`, `agent:review`,
-`agent:wip`. *"Every reason an issue is passed over is the recipe's — there is
+`in-progress`, `agent:blocked`, `agent:review`, `agent:wip`. *"Every reason an issue is passed over is the recipe's — there is
 no built-in list."* Which means the corollary holds too: a label you have not
 put in `source.exclude` excludes nothing, however much it looks like it should.
+
+**When a ticket needs your decision first, ask it on the log.**
+`lingtai ask <project> --issue <n> "<question>"` holds the ticket before anything
+is claimed — the queue passes over it because the log says it is blocked, not
+because of a label — and `lingtai answer <project> --issue <n> "<choice>"` hands
+it back with the answer on the record, where every attempt's prompt is told it.
+This replaced `agent:needs-schema-approval`, which nothing ever applied, and
+editing the issue body to carry a decision to the agent (`#147`).
 
 **When you want one thing now, say so.** `lingtai now <project> --issue <n>`
 passes `backoffMs: 0` and jumps the backoff, because *"the person who types it

@@ -32,6 +32,7 @@
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
 import { approve, requeue } from "@lingtai/conductor/decide";
+import { answer } from "@lingtai/conductor/ask";
 import { acceptFinding, declineFinding } from "@lingtai/conductor/backlog";
 import { githubTicketStore } from "@lingtai/conductor/ticket-store";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
@@ -95,6 +96,34 @@ export async function approveCard(input: {
     return result.ok
       ? { ok: true, detail: `landed ${result.mergeCommit.slice(0, 7)}` }
       : { ok: false, detail: `${result.reason}: ${result.detail}` };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * An answer to a question asked before any run (#147) — `lingtai answer`, from
+ * the card.
+ *
+ * Not `requeueCard` with a different label, though it appends the same event.
+ * `answer()` refuses a block a run is holding, so a sentence typed into this
+ * box can only ever be a decision about the ticket — which is what every later
+ * attempt's prompt is going to be told it is.
+ */
+export async function answerCard(input: {
+  project: string;
+  issue: number;
+  answer: string;
+}): Promise<ActionResult> {
+  try {
+    const result = await answer({
+      project: input.project,
+      issue: input.issue,
+      by: actor(),
+      answer: input.answer,
+    });
+    revalidatePath("/");
+    return { ok: result.ok, detail: result.detail };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }

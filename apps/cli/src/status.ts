@@ -17,7 +17,7 @@ import {
   selectRunnable,
 } from "@lingtai/conductor";
 import { paint, stateInk } from "@lingtai/env/colour";
-import { describeArm, describeHold, readTasks, type TaskCard } from "@lingtai/projector";
+import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from "@lingtai/projector";
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -142,14 +142,30 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       landed: "landed",
     };
     const elsewhere = new Map<string, number>();
+    // **A question asked before any run is printed, not counted** (#147). It is
+    // the one hold whose whole content is a sentence a person has to read, and
+    // `1 waiting on you` would say there is a question without saying which.
+    const askedBefore = known.filter((t) => t.blocked && t.asked);
     for (const t of known) {
       if (t.state === "queued") continue;
+      if (t.blocked && t.asked) continue;
       const label = NAMES[t.state] ?? t.state;
       elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1);
     }
     const elsewhereSays = [...elsewhere].map(([label, n]) => `${n} ${label}`).join(", ");
 
     log(`  queue: ${runnable.length} runnable` + (elsewhereSays ? ` — ${elsewhereSays}` : ""));
+
+    // Under the number, and always rather than behind `--all`: the queue is
+    // passing these over, and the reason is a question only a person can
+    // answer. With `--all` they are rows below and say it there instead.
+    if (askedBefore.length > 0 && !options.all) {
+      log(`  asked, before any run — lingtai answer ${name} --issue <n> "<choice>":`);
+      for (const t of askedBefore) {
+        log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}  ${stateInk(t.state)(`[${describeWait(t)}]`)}`);
+        if (t.note) log(`             ${oneLine(t.note)}`);
+      }
+    }
 
     // `--all` widens the listing to everything the project has a row for,
     // which is how you see what is running, held or landed rather than only
@@ -167,6 +183,9 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       note?: string | null;
       /** Whether a person is holding a question, as opposed to merely waiting. */
       blocked?: boolean;
+      /** Asked before any run, and the sha a review is about. Absent on a GitHub offer. */
+      asked?: boolean;
+      awaitingSha?: string | null;
       /** Approaches abandoned, and the ceiling. Absent on a GitHub offer. */
       restarts?: number;
       restartsOf?: number;
@@ -214,9 +233,16 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       // `[backing off — runnable in 32m]` is a clock and `[not offered]` is an
       // absence; neither is a verdict and neither is a person, so giving either
       // a hue would be spending the vocabulary on decoration.
+      // Which wait, where it is one of the two a person can tell apart at a
+      // glance — the board's chip, in the same words (#147).
+      const wait = describeWait({
+        blocked: t.blocked === true,
+        asked: t.asked === true,
+        awaitingSha: t.awaitingSha ?? null,
+      });
       const note =
         t.state !== "queued"
-          ? `  ${stateInk(t.state)(`[${t.state}]`)}`
+          ? `  ${stateInk(t.state)(`[${wait ?? t.state}]`)}`
           : held
             ? `  ${paint.muted(`[${backingOff(held, now)}]`)}`
             : unoffered

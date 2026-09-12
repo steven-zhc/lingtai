@@ -25,6 +25,7 @@
 // business compiling.
 import {
   describeArm,
+  describeWait,
   readTaskProjects,
   readTasks,
   type TaskCard,
@@ -142,6 +143,17 @@ export interface BoardCard {
    * is an item anybody can hand back.
    */
   blocked: boolean;
+  /**
+   * Whether that question was asked before any run (`lingtai ask`, #147) — so
+   * the move is an answer, not a review and not a requeue.
+   */
+  asked: boolean;
+  /**
+   * *waiting for your answer* or *waiting for your review*, or null. One brass
+   * chip carried both before #147; the sentence is `describeWait`'s, which
+   * `lingtai status` prints too.
+   */
+  wait: string | null;
   /**
    * Which kind of hold this is — `judgement` when the decision is a person's,
    * `acknowledgement` when something failed and nobody has decided what to do.
@@ -404,6 +416,8 @@ export function toCard(
     attempts: t.attempts,
     arm: describeArm(t),
     blocked: t.blocked,
+    asked: t.asked,
+    wait: describeWait(t),
     needs: t.needs,
     diagnosis: t.diagnosis,
     repairCostUsd: t.repairCostUsd,
@@ -596,6 +610,8 @@ export async function queuedCards(
         // Nothing has run, so no approach has been abandoned.
         arm: null,
         blocked: false,
+        asked: false,
+        wait: null,
         // Nothing has run, so nothing is held and nothing has been diagnosed.
         needs: null,
         diagnosis: null,

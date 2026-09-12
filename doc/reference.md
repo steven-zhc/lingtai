@@ -667,13 +667,13 @@ Four rules:
   which is under the boundary's ten — that one is the backstop for a promise
   that never settles at all.
 
-## lingtai subcommand — 19
+## lingtai subcommand — 22
 
 Source: the switch in `apps/cli/src/lingtai.ts`.
 
-`add` · `run` · `approve` · `requeue` · `waive` · `attach` · `status` · `doctor`
-· `env` · `end` · `daemon` · `service` · `restart` · `pause` · `resume` ·
-`shutdown` · `now` · `projection` · `version`
+`add` · `run` · `approve` · `backlog` · `requeue` · `waive` · `ask` · `answer` ·
+`attach` · `status` · `doctor` · `env` · `end` · `daemon` · `service` · `restart` · `pause`
+· `resume` · `shutdown` · `now` · `projection` · `version`
 
 `approve`, `requeue` and `waive` are the decisions a person can take from
 here. The board's are the first two — `apps/board/src/app/actions.ts` imports
@@ -682,6 +682,11 @@ board is the one `approve` appends for a gate still refusing (`#150`). That the 
 countable from the CLI's side is how `requeue` (`#130`) and `waive` (`#129`)
 went missing — and the count here was two short again, `service` and `restart`
 having joined the switch without it moving.
+
+`ask` and `answer` are the one decision taken before any attempt (`#147`) — a
+`WorkItemBlocked` with `runId: null`, and a `WorkItemUnblocked` whose `note` the
+fold keeps and every later prompt carries. The board answers too; only the CLI
+asks.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 

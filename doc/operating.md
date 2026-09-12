@@ -970,6 +970,22 @@ block overruled anonymously is the silent waiver this whole system exists to
 remove. It appends the same `WorkItemUnblocked` the board's button does and
 makes no GitHub call — `reconcile` converges the label the block left behind.
 
+`ask` and `answer` are the pair for a decision **before** any run (`#147`):
+
+```bash
+pnpm lingtai ask lingtai --issue 51 "which of the three designs for the tripwire?"
+pnpm lingtai answer lingtai --issue 51 "the second — refuse at the hook"
+```
+
+`ask` appends `WorkItemBlocked` with `runId: null` and refuses an item a run
+holds or one already asking; nothing is claimed and no worktree is cut, and the
+queue passes over it because the fold says blocked. `lingtai status` prints the
+question rather than counting it. `answer` refuses a block a run is holding —
+that is `approve` or `requeue` — and its choice is kept by the fold and carried
+into every later attempt's prompt, so nobody edits the issue body to reach the
+agent.
+
+
 `waive` is the escape hatch, and it arrives where you already are: the case it
 exists for — a flaky check, a scan whose service is down, a failure you have
 read and judged unrelated — is one you meet at a prompt, not in a browser

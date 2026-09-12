@@ -99,6 +99,72 @@ describe("the next attempt's prompt", () => {
    * reach the run would be a control the page claims and the code does not
    * have — `#58`'s shape.
    */
+  it("carries an answer given before any run into every attempt, without the issue body", () => {
+    const e = stream("wi-lingtai-51");
+    const asked = e("WorkItemBlocked", {
+      question: "Which of the three designs for the production-credential tripwire?",
+      needsFrom: "human",
+      runId: null,
+      needs: "judgement",
+      diagnosis: null,
+    });
+    const answered = e("WorkItemUnblocked", { by: "human:steven", note: "the second: refuse at the hook" });
+
+    const first = nextPrompt({
+      base: "ticket@1924",
+      budget: BUDGET,
+      item: [e("WorkItemDiscovered", discovered), asked, answered],
+      lastRun: null,
+    });
+    const text = renderPrompt(TEMPLATE, TICKET, first.failure);
+    expect(text).toContain("## Decided before any run");
+    expect(text).toContain("**Asked:** Which of the three designs for the production-credential tripwire?");
+    expect(text).toContain("**Answered by human:steven:** the second: refuse at the hook");
+    // The ticket's body is untouched: the answer came off the log.
+    expect(text).toContain("the body");
+    // Lingtai composed it, so it is not an edit and is inside `composed`.
+    expect(first.edit).toBeNull();
+    expect(first.composed.failure).toBe(first.failure);
+    expect(first.version).not.toBe("ticket@1924");
+
+    // A claim consumes an edit and not a decision: the second attempt is told too.
+    const second = nextPrompt({
+      base: "ticket@1924",
+      budget: BUDGET,
+      item: [
+        e("WorkItemDiscovered", discovered),
+        asked,
+        answered,
+        e("WorkItemClaimed", claim("run-a")),
+        e("WorkItemReleased", { runId: "run-a", reason: "killed" }),
+      ],
+      lastRun: null,
+    });
+    expect(second.failure).toContain("the second: refuse at the hook");
+  });
+
+  it("does not carry a requeue's note, which answered an attempt and not the ticket", () => {
+    const e = stream("wi-lingtai-51b");
+    const next = nextPrompt({
+      base: "ticket@1924",
+      budget: BUDGET,
+      item: [
+        e("WorkItemDiscovered", discovered),
+        e("WorkItemClaimed", claim("run-a")),
+        e("WorkItemBlocked", {
+          question: "conflict: agent/51 does not merge into main",
+          needsFrom: "human",
+          runId: "run-a",
+          needs: "acknowledgement",
+          diagnosis: null,
+        }),
+        e("WorkItemUnblocked", { by: "human:steven", note: "the base has moved" }),
+      ],
+      lastRun: null,
+    });
+    expect(next.failure).not.toContain("Decided before any run");
+  });
+
   it("carries a person's sentence into the document, naming them and its bound", () => {
     const e = stream("wi-lingtai-104b");
     const next = nextPrompt({

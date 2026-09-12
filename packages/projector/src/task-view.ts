@@ -146,6 +146,21 @@ export const taskViewProjection: Projection = {
         -- reintroduce.
         blocked      boolean not null default false,
 
+        -- Whether that question was asked **before any run** — a
+        -- WorkItemBlocked with runId null, which only lingtai ask writes
+        -- (#147). It is what tells waiting-for-an-answer apart from
+        -- waiting-for-a-review: nothing has been produced, so there is nothing
+        -- to approve and the only move is to answer.
+        asked        boolean not null default false,
+
+        -- { question, answer, by } — the last block a person answered, and
+        -- what with. WorkItemUnblocked.note, which no column held before #147:
+        -- a rebuild could say what was asked and never what was decided.
+        -- Assignment, not a list, so a replay lands on the same value; the
+        -- whole history is the fold's (WorkItemState.answers). Kept across a
+        -- claim and a landing, because a decision outlives the attempt at it.
+        answer       jsonb,
+
         -- A repair bought and not yet claimed, and which run was one. Written
         -- only by the retired RepairRequested (#143), so nothing sets either on
         -- a new ticket — and both stay, because a log that holds the event is
@@ -281,6 +296,7 @@ export const taskViewProjection: Projection = {
             run_id: null,
             note: d.reason,
             blocked: false,
+            asked: false,
             needs: null,
             diagnosis: null,
           });
@@ -289,6 +305,19 @@ export const taskViewProjection: Projection = {
 
         case "WorkItemBlocked": {
           const d = event.data as PayloadOf<"WorkItemBlocked">;
+          // An upsert, because since #147 this can be a task's first event:
+          // `lingtai ask` blocks an item before anything has claimed it, and an
+          // UPDATE would leave the question on no row — the board would not
+          // show it and the queue, which reads this table, would not pass the
+          // item over. The same reason `DispatchRefused` upserts.
+          const { project: p, issue: i } = splitTaskId(event.streamId);
+          await upsert(ctx, event.streamId, seq, at, {
+            project: p,
+            issue: i,
+            title: null,
+            kind: null,
+            state: "waiting",
+          });
           // The question is still the card's line, unchanged. What the block
           // now *may* carry beside it is which kind of hold it is and a
           // diagnosis; both are null on every block written before #83, and a
@@ -297,25 +326,41 @@ export const taskViewProjection: Projection = {
             state: "waiting",
             note: d.question,
             blocked: true,
+            asked: d.runId === null,
             needs: d.needs,
             diagnosis: d.diagnosis === null ? null : JSON.stringify(d.diagnosis),
           });
           break;
         }
 
-        case "WorkItemUnblocked":
-          await set(ctx, event.streamId, seq, at, {
-            state: "queued",
-            note: null,
-            awaiting_sha: null,
-            blocked: false,
-            // The hold is answered, so the diagnosis of it goes with the
-            // question. Leaving it would put last week's failure on a card
-            // nobody is being asked about.
-            needs: null,
-            diagnosis: null,
-          });
+        case "WorkItemUnblocked": {
+          const d = event.data as PayloadOf<"WorkItemUnblocked">;
+          // The answer, beside the question it answered — which is the row's
+          // `note` right up until this statement clears it, so both are written
+          // in one statement over the row rather than read back first.
+          await ctx.query(
+            `update task_view
+             set answer = jsonb_build_object(
+                   'question', case when blocked then note end,
+                   'answer', $4::text,
+                   'by', $5::text),
+                 state = 'queued',
+                 note = null,
+                 awaiting_sha = null,
+                 blocked = false,
+                 asked = false,
+                 -- The hold is answered, so the diagnosis of it goes with the
+                 -- question. Leaving it would put last week's failure on a card
+                 -- nobody is being asked about.
+                 needs = null,
+                 diagnosis = null,
+                 updated_at = $3,
+                 updated_seq = $2::bigint
+             where task_id = $1 and updated_seq <= $2::bigint`,
+            [event.streamId, seq, at, d.note, d.by],
+          );
           break;
+        }
 
         /**
          * A failure bought an agent — **retired** (`#143`), and still folded.
@@ -357,6 +402,7 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             blocked: false,
+            asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
             needs: null,
@@ -588,6 +634,7 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             blocked: false,
+            asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
             needs: null,
@@ -692,6 +739,7 @@ async function upsert(
            -- A fresh attempt is nobody's question yet.
            awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
            blocked = case when $10::int > 0 then false else task_view.blocked end,
+           asked = case when $10::int > 0 then false else task_view.asked end,
            -- And nobody's failure yet either. The diagnosis belongs to the block
            -- it explained; carrying it into the next attempt would put the last
            -- run's conflict on a card that is running.
@@ -880,6 +928,18 @@ export interface TaskCard {
    */
   diagnosis: BlockDiagnosis | null;
   /**
+   * Whether the question was asked before any run (`lingtai ask`, #147). Read
+   * through `describeWait`, which is what keeps the board and `lingtai status`
+   * calling it the same thing.
+   */
+  asked: boolean;
+  /**
+   * The last block a person answered, and what they answered it with — null on
+   * a task nobody has answered. `question` is null only for an answer the log
+   * holds without a block before it.
+   */
+  answer: { question: string | null; answer: string; by: string } | null;
+  /**
    * The sha the open question is about, and null when there is none.
    *
    * This is what a control has to send, not `headSha`: `approve()` binds its
@@ -960,6 +1020,28 @@ export function describeHold(card: Pick<TaskCard, "needs" | "diagnosis">): HoldL
     });
   }
   return lines;
+}
+
+/**
+ * What a person is being waited on *for*, or null when nobody is.
+ *
+ * Two holds rendered as one chip until #147, and they want opposite things of
+ * the person. **An answer** is a question asked before any run: nothing has
+ * been produced, there is no diff and no branch, and the move is to decide.
+ * **A review** is a run holding a diff at a sha: the move is to approve or
+ * reject what is there. A failure that needs acknowledging is neither, and
+ * stays what `describeHold` says it is.
+ *
+ * Beside `describeHold` for its reason (#83, #100): the card and `lingtai
+ * status` both say it, and must say it in the same words.
+ */
+export function describeWait(
+  card: Pick<TaskCard, "blocked" | "asked" | "awaitingSha">,
+): "waiting for your answer" | "waiting for your review" | null {
+  if (!card.blocked) return null;
+  if (card.asked) return "waiting for your answer";
+  if (card.awaitingSha !== null) return "waiting for your review";
+  return null;
 }
 
 /**
@@ -1081,6 +1163,8 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         // Written from a parsed payload and read back as it was written, so the
         // shape is the event's rather than this reader's guess about it.
         diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
+        asked: row.asked === true,
+        answer: (row.answer as TaskCard["answer"]) ?? null,
         awaitingSha: row.awaiting_sha,
         awaitingApproval: row.awaiting_sha !== null,
         repairPending: row.repair_pending === true,

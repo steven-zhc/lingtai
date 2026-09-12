@@ -41,6 +41,7 @@ export {
   TASK_VIEW_TABLE,
   describeArm,
   describeHold,
+  describeWait,
   readTaskProjects,
   readTasks,
   taskViewProjection,

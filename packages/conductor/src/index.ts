@@ -71,6 +71,7 @@ export {
   type StoppedBecause,
 } from "./schedule.ts";
 export { approve, refusingOn, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
+export { answer, ask, type AskOutcome } from "./ask.ts";
 export {
   diagnoseRefusal,
   whoseFailure,
@@ -78,6 +79,7 @@ export {
   type FailureOwner,
 } from "./attribution.ts";
 export {
+  answersBrief,
   attemptBrief,
   attemptOutcome,
   editHash,
