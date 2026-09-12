@@ -29,12 +29,12 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | gate (7) | `GatesResolved` `EndActionsResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` |
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
-| repair (2) | `RepairRequested` `RepairDeclined` |
+| repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
 | fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
 | restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 | control (3) | `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
-| outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired**, `RETIRED` in the same file |
+| outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions/0022-the-seams.md)), `RETIRED` in the same file |
 | discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
 | prompt (1) | `PromptEdited` |
 | project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |
@@ -143,9 +143,11 @@ where its value is written down.
 ### what a run is given — `runtime.budget`, the recipe's
 
 Together these are the answer to *what does an agent know about why the last
-attempt failed*, which is the premise of `#82` and of `repair`
-([0025](decisions/0025-a-failure-buys-one-agent.md)). An agent that cannot see
-the failure repeats it, and the ticket buys another agent.
+attempt failed*, which is the premise of `#82`. It was also `repair`'s
+([0025](decisions/0025-a-failure-buys-one-agent.md)), and a refusal buys no run
+to be told anything since `#143` — so what carries a failure forward is the
+attempt history in `{{failure}}`, and the round inside the pass, which is handed
+the refusal verbatim. An agent that cannot see the failure repeats it.
 
 | Key | Default | What it decides | Applied by |
 |---|---|---|---|
@@ -290,8 +292,8 @@ built the section above so the next one has somewhere to land.
 | where it is decided | the recipe, `source.backoff`. There is no constant and no override |
 | default | `1h`, **flat** — the wait does not grow with attempts |
 | measured from | `task_view.last_attempt_at`, written by the claim, so it outlives the release |
-| what jumps it | a pending repair (0025 §3), and `lingtai now` — neither is a *blind* retry, which is the only thing this guards against |
-| what does not jump it | an ordinary release, however the run ended |
+| what jumps it | `lingtai now`, which is not a *blind* retry — the only thing this guards against. A pending repair used to (0025 §3); nothing buys one since `#143`, so `BackoffInput` has one field |
+| what does not jump it | an ordinary release, however the run ended — and a log that still carries a retired `RepairRequested` |
 | where a person sees it | `[backing off — runnable in 12m]` in `lingtai status`, a `runnable in 12m` pill on a Queued card, and the `retries` line wherever a project is described |
 
 Zero is not a shorter backoff, so the schema refuses anything that is not a
@@ -551,7 +553,7 @@ checked. A recipe that declares `end` actions gets the event even when none of
 them match the outcome, so that *configured and resolved to nothing* and
 *configured and never ran* are two different things in the log — which is what
 `gates: end ran on what landed` compares, and what `lingtai end replay`
-repairs.
+puts right.
 
 Nothing that changes *code* goes through here — that is git's job, under the
 merge lane's lock.

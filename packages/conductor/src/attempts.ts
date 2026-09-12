@@ -13,14 +13,13 @@
  *
  * **No new events.** Everything read here is already on the work item's stream
  * and the previous run's, which is why this is a module of pure functions
- * beside `repair.ts` rather than more code inside `run-once.ts`: it is a
+ * beside `attribution.ts` rather than more code inside `run-once.ts`: it is a
  * decision about what an attempt is told, and a decision about that belongs
  * somewhere it can be tested without a database.
  *
- * It is the same seam `repairBrief` sits on and deliberately not the same
- * block. A repair is one specific ending — the integrator refused a diff that
- * exists — and it carries an instruction about what to produce. This is the
- * *history*, which every second attempt has whether or not one was bought.
+ * It used to share the `{{failure}}` slot with `repairBrief`, which printed the
+ * one ending that had bought the next run. Nothing buys one since `#143`, so
+ * this is the whole of what an attempt is told about the ones before it.
  *
  * **Both bounds are structural**, which is the ticket's last criterion: one
  * earlier run's evidence is quoted and it is truncated (`budget.evidence`), and
@@ -114,8 +113,7 @@ export interface PriorAttempt {
  *
  * A claim is an attempt: `WorkItemClaimed` ×N is what "attempts: N" on a card
  * counts, so it is what this counts. Called **before** the claim this run is
- * about to make, exactly as `pendingRepair` is, so the run asking does not
- * appear in its own history.
+ * about to make, so the run asking does not appear in its own history.
  */
 export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
   const attempts: PriorAttempt[] = [];
@@ -158,11 +156,16 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         break;
       }
 
+      // **Retired, and still read for ever** (0019, `#143`). Nothing appends
+      // either of these since a lane refusal stopped buying a run, and a log
+      // that holds them still has the integrator's own words on them — which
+      // the release reason only summarises. Dropping the case would make an old
+      // ticket's later attempt read as though nothing had refused the one
+      // before it.
       case "RepairRequested":
       case "RepairDeclined": {
         const d = event.data as PayloadOf<"RepairRequested">;
         const attempt = byRun.get(d.runId);
-        // The integrator's own words, which the release reason only summarises.
         if (attempt) attempt.refusal = { reason: d.reason, detail: d.detail };
         break;
       }

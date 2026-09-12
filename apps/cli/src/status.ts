@@ -161,7 +161,6 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       state: string;
       /** Only ever on a row the log wrote; an offer GitHub made carries neither. */
       lastAttemptAt?: Date | null;
-      repairPending?: boolean;
       /** The card's line: what it is waiting on, or why it stopped. */
       note?: string | null;
       /** Whether a person is holding a question, as opposed to merely waiting. */
@@ -191,11 +190,7 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       // that shows the same row shows it in the same words (#100).
       const held =
         t.state === "queued"
-          ? heldUntil(
-              { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
-              backoffMs,
-              now,
-            )
+          ? heldUntil({ lastAttemptAt: t.lastAttemptAt ?? null }, backoffMs, now)
           : null;
       // A queued row that is not runnable and not held is one GitHub is not
       // offering — closed by hand, relabelled, excluded. That is not the clock

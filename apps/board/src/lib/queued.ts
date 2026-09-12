@@ -29,7 +29,7 @@
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { GATE_POINTS, reduceWorkItem, type Envelope } from "@lingtai/domain";
+import { GATE_POINTS, type Envelope } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
@@ -76,7 +76,8 @@ export interface PlanView {
    *
    * Rendered whether it buys anything or not, like a skipped point: a default
    * that spends money and only appears when it is doing something is a default
-   * nobody can audit. Zero is the whole of what `repair.on: false` used to say.
+   * nobody can audit. Zero is the whole of what `repair.on: false` used to say,
+   * and since `#143` the whole of what this repository buys for a refusal.
    */
   rounds: number;
   /**
@@ -175,10 +176,11 @@ export function planOf(
 /**
  * When the backoff stops holding this item, from its own stream.
  *
- * The two inputs `heldUntil` reads, folded here rather than read back off
+ * The one input `heldUntil` reads, folded here rather than read back off
  * `task_view`: the projection writes `last_attempt_at` from the claim's own
- * timestamp and clears `repair_pending` on the same event, so this fold and
- * that row cannot disagree. The *rule* is still imported — this supplies its
+ * timestamp, so this fold and that row cannot disagree. It used to be two —
+ * a pending repair jumped the backoff, and `#143` removed both the exemption
+ * and the thing that set it. The *rule* is still imported: this supplies its
  * arguments and nothing else, which is the split every fold in `task.ts` makes.
  */
 export function backoffOf(
@@ -188,11 +190,7 @@ export function backoffOf(
 ): Date | null {
   let lastAttemptAt: Date | null = null;
   for (const e of own) if (e.type === "WorkItemClaimed") lastAttemptAt = e.at;
-  return heldUntil(
-    { lastAttemptAt, repairPending: reduceWorkItem(own).pendingRepair !== null },
-    backoffMs,
-    now,
-  );
+  return heldUntil({ lastAttemptAt }, backoffMs, now);
 }
 
 function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {

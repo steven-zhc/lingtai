@@ -199,16 +199,26 @@ describe("reduceWorkItem", () => {
   });
 
   /**
-   * How a run learns it is a repair, and it is only this.
+   * A log that still holds `RepairRequested` folds, and the event decides
+   * nothing (`#143`).
    *
-   * `RepairRequested` is appended just before the release, so between the two
-   * the item carries a pending repair; the next claim consumes it. There is no
-   * flag on `RunStarted` and no second event, because
-   * [0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) keeps a
-   * repair an ordinary run — the only thing that differs is what its prompt was
-   * told.
+   * This fold used to carry `repairs`, `pendingRepair` and `repairRun`: the
+   * event was appended just before the release, so between the two the item
+   * carried a pending repair and the next claim *became* it
+   * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). A lane
+   * refusal buys nothing since
+   * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+   * §Consequences, so the type is retired — readable for ever, appended never —
+   * and the three fields are gone with the purchase.
+   *
+   * **The property pinned here is that the rows are harmless, not that they are
+   * absent.** A replay of Lingtai's own log reaches this event, and a reducer
+   * that threw or skipped it would take `projection rebuild` out for the exact
+   * reason 0019 gives. So: the same lifecycle as a log without it, and the
+   * version still advancing, so the next append does not use a stale
+   * expectation.
    */
-  it("hands a pending repair to the next claim, and to no other", () => {
+  it("folds a retired RepairRequested as nothing but a version bump", () => {
     const e = makeStream("wi-p-1");
     const bought = {
       runId: "run-a",
@@ -218,42 +228,24 @@ describe("reduceWorkItem", () => {
       attempt: 1,
     };
 
-    const pending = reduceWorkItem([
+    const withIt = reduceWorkItem([
       e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
       e("RepairRequested", bought),
       e("WorkItemReleased", { runId: "run-a", reason: "repairing conflict (attempt 1)" }),
-    ]);
-    // Queued, and carrying what the next attempt has to be told.
-    expect(pending.lifecycle.status).toBe("backlog");
-    expect(pending.pendingRepair?.after).toBe("run-a");
-    expect(pending.repairs).toHaveLength(1);
-
-    const claimed = reduceWorkItem([
-      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
-      e("RepairRequested", bought),
-      e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
       e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
     ]);
-    expect(claimed.pendingRepair).toBeNull();
-    // `after` is the run that *failed*; `runId` on the record is the run that
-    // is repairing it. Two different runs, so two different names.
-    const { runId: _bought, ...rest } = bought;
-    expect(claimed.repairRun).toEqual({ runId: "run-b", of: { after: "run-a", ...rest } });
 
-    // And the claim after *that* is an ordinary run again. Without this a
-    // failure three attempts later would still count as an analysis of the
-    // analysis and buy nothing.
-    const later = reduceWorkItem([
-      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
-      e("RepairRequested", bought),
-      e("WorkItemReleased", { runId: "run-a", reason: "repairing" }),
-      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
-      e("WorkItemReleased", { runId: "run-b", reason: "no commits" }),
-      e("WorkItemClaimed", { runId: "run-c", worker: "w", title: null, kind: null }),
+    const f = makeStream("wi-p-2");
+    const without = reduceWorkItem([
+      f("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+      f("WorkItemReleased", { runId: "run-a", reason: "repairing conflict (attempt 1)" }),
+      f("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
     ]);
-    expect(later.repairRun).toBeNull();
-    // The ceiling still counts it: the repair happened, whatever came after.
-    expect(later.repairs).toHaveLength(1);
+
+    expect(withIt.lifecycle).toEqual(without.lifecycle);
+    expect(withIt.runs).toEqual(without.runs);
+    // One event more, so one version more — and nothing else moved.
+    expect(withIt.version).toBe(without.version + 1);
   });
 
   /**
@@ -261,10 +253,10 @@ describe("reduceWorkItem", () => {
    * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §2).
    *
    * The property that matters is what it does *not* have: no pending record, and
-   * nothing a claim consumes. A repair needs one because the next claim has to
+   * nothing a claim consumes. A repair needed one because the next claim had to
    * *become* the repair; a restart is an ordinary claim, told what every second
    * attempt is told, so the only thing the fold owes anybody is the count and
-   * each arm's evidence.
+   * each arm's evidence. Since `#143` it is the only list of its kind left.
    */
   it("counts the approaches a ticket abandoned, and hands the next claim nothing", () => {
     const e = makeStream("wi-p-1");
@@ -294,12 +286,11 @@ describe("reduceWorkItem", () => {
       e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
     ]);
 
-    // The claim does not consume it, unlike a pending repair: this is a bound
-    // on the ticket and not an instruction to the next run.
+    // The claim does not consume it, unlike the pending repair this fold used
+    // to carry: this is a bound on the ticket and not an instruction to the
+    // next run.
     expect(after.restarts).toHaveLength(1);
     expect(after.restarts[0]!.after).toBe("run-a");
-    expect(after.pendingRepair).toBeNull();
-    expect(after.repairRun).toBeNull();
     // And it is claimed, not blocked — a restart is not a state an item is in.
     expect(after.lifecycle.status).toBe("claimed");
 
@@ -331,8 +322,8 @@ describe("reduceWorkItem", () => {
    * The one-shot edit
    * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
    * §5). It applies to the next run and to no other, which is what makes a
-   * stale instruction impossible rather than merely guarded against — the same
-   * shape `pendingRepair` has, and cleared by the same event.
+   * stale instruction impossible rather than merely guarded against. It is the
+   * only thing a claim consumes now that `pendingRepair` is gone (`#143`).
    */
   it("holds a prompt edit until the next claim, and no longer", () => {
     const e = makeStream("wi-p-1");

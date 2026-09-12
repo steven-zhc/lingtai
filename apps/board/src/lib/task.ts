@@ -205,10 +205,16 @@ export interface RunView {
    * True when this attempt is the one a `RepairRequested` bought.
    *
    * There is no event saying so — 0025 refuses a repair a vocabulary of its own,
-   * and the claim is what consumes the pending repair. This is that fold, the
-   * same one `work-item.ts` and `task-view.ts` make, and it is here because a
-   * page that showed one money figure would fold a default-on agent's spend into
-   * the work's and make it an invisible bill (#84).
+   * and the claim is what consumes the pending repair. This is that fold, and it
+   * is here because a page that showed one money figure would fold a default-on
+   * agent's spend into the work's and make it an invisible bill (#84).
+   *
+   * **Never true of an attempt started after `#143`**, and still read for ever.
+   * A refusal buys no run now, so nothing appends `RepairRequested` and
+   * `work-item.ts` and `task-view.ts` have dropped the folds this mirrored. This
+   * one stays because a log that holds the event holds a second attempt that
+   * *was* a repair, and reading it as ordinary work would move real money into
+   * the wrong figure.
    */
   repair: boolean;
   baseSha: string | null;
@@ -246,8 +252,11 @@ export interface RunView {
  * notes).
  *
  * `repairUsd` is apart from `costUsd` for the reason the board keeps it apart
- * (#84): a repair is default-on and spends an agent without being asked again,
- * so folding the two into one figure is exactly the invisible bill.
+ * (#84): a repair was default-on and spent an agent without being asked again,
+ * so folding the two into one figure is exactly the invisible bill. It is zero
+ * on every ticket since `#143`, because nothing buys one — and the split is
+ * dropped when there is only one kind of money, so those cards say nothing
+ * about it.
  *
  * `discussions` and `discussionUsd` arrived with `#105`. They are apart from
  * the attempts' figures for the reason `repairUsd` is apart from `costUsd`:
@@ -390,7 +399,7 @@ export interface StandingView {
  *
  * Listed rather than inferred, because *when the state began* is the second
  * half of this block and nothing else on the item's stream may move it: a
- * `RepairRequested`, a `WorkItemLinked` or a gate reporting late are all
+ * a `WorkItemLinked`, a `PassRestarted` or a gate reporting late are all
  * appended while the hold stands, and none of them is the hold starting.
  */
 const LIFECYCLE_MOVES = new Set([
@@ -757,10 +766,12 @@ const VERDICT: Record<string, string> = {
  * Deduplicated by `runId` the way `work-item.ts` deduplicates `runs`: a second
  * claim naming a run already claimed is the same attempt, not a fourth one.
  *
- * The repair walk mirrors that fold exactly — `RepairRequested` leaves a repair
- * pending and the next claim consumes it — and is written here rather than
- * borrowed because this needs it for *every* run, where the aggregate keeps
- * only the current one.
+ * The repair walk mirrored a fold in `work-item.ts` — `RepairRequested` left a
+ * repair pending and the next claim consumed it — and was written here rather
+ * than borrowed because this needs it for *every* run, where the aggregate kept
+ * only the current one. The aggregate's half is gone with the purchase (`#143`)
+ * and this half stays, because an old log still holds the event and the attempt
+ * it bought.
  */
 export function claimsOf(own: readonly Envelope[]): Claim[] {
   const claims: Claim[] = [];

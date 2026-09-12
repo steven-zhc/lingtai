@@ -109,7 +109,6 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
 /** The bit of a `task_view` row the backoff reads, and nothing more. */
 export interface BackoffInput {
   lastAttemptAt: Date | null;
-  repairPending: boolean;
 }
 
 /**
@@ -121,16 +120,17 @@ export interface BackoffInput {
  * `#95`; the answer is one addition, and it belongs beside the subtraction that
  * uses it rather than in the CLI and again in the board.
  *
- * **A repair jumps the backoff, and only a repair.** The guard exists to stop
- * *blind* retries — the same ticket at the top of the queue, failing the same
- * way, at agent prices. A repair is neither blind nor unbounded: it is told
- * what went wrong, there is at most one per distinct failure, and the recipe
- * caps how many an item may buy (0025 §3). Making it wait an hour would leave
- * the thing this is for — an item stuck with no path forward — stuck for an
- * hour longer, which is the complaint rather than the fix.
+ * **Nothing jumps it any more**, and that is `#143`. A repair used to: it was
+ * told what went wrong, there was at most one per distinct failure, and the
+ * recipe capped how many an item could buy, so it was neither blind nor
+ * unbounded and making it wait an hour would have left the thing this is for —
+ * an item stuck with no path forward — stuck for an hour longer. A lane refusal
+ * buys no run now (0039 §Consequences), so there is no exemption to read and no
+ * `repairPending` to read it from. What answers a refusal inside the hour is a
+ * round in the pass that was refused, which never releases the item and never
+ * reaches this rule; `lingtai now` is what a person uses to jump it.
  */
 export function heldUntil(row: BackoffInput, backoffMs: number, now: number = Date.now()): Date | null {
-  if (row.repairPending) return null;
   if (row.lastAttemptAt === null) return null;
   const until = row.lastAttemptAt.getTime() + backoffMs;
   return until > now ? new Date(until) : null;

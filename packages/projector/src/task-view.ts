@@ -146,22 +146,18 @@ export const taskViewProjection: Projection = {
         -- reintroduce.
         blocked      boolean not null default false,
 
-        -- A repair bought and not yet claimed. It exempts the row from the
-        -- queue's backoff: that guard exists to stop *blind* retries, and a
-        -- repair is told what went wrong and bounded by construction (0025 §3).
-        repair_pending boolean not null default false,
-        -- Which run is the repair, so its spend is counted apart from the
-        -- work's. Set by the claim that consumes repair_pending.
-        repair_run_id  text,
-        -- { "run-abc": 1.42 }. A map for the reason the gates column is one:
-        -- assignment replays to the same number and += does not.
+        -- { "run-abc#fix1": 1.42 }. A map for the reason the gates column is
+        -- one: assignment replays to the same number and += does not.
         --
-        -- **Wider than its name since 0039 §3.** It began as what a *repair*
-        -- cost — an agent the merge lane bought for the next run — and now holds
-        -- every round a pass buys to answer a refusal, keyed run#fixN for
-        -- those. The name is kept because renaming a column is a rebuild of
-        -- every row to change nothing anybody reads; the board says
-        -- "answering", which is what a person actually sees.
+        -- **Wider than its name since 0039 §3, and now the whole of it.** It
+        -- began as what a *repair* cost — an agent the merge lane bought for the
+        -- next run — and holds every round a pass buys to answer a refusal,
+        -- keyed run#fixN. Nothing buys a repair since #143, so repair_costs
+        -- is exactly *the rounds*, and the two columns beside it — a pending
+        -- repair, and which run was one — are gone with the purchase. The name
+        -- is kept because renaming a column is a rebuild of every row to change
+        -- nothing anybody reads; the board says "answering", which is what a
+        -- person actually sees.
         repair_costs   jsonb not null default '{}'::jsonb,
 
         -- Retention and ordering. From the event's own clock, never now().
@@ -314,25 +310,20 @@ export const taskViewProjection: Projection = {
           break;
 
         /**
-         * A failure bought an agent. The row is still `running` here — the
-         * release that follows moves it to `queued` and writes the note — so
-         * the only thing to record is the exemption from the backoff.
-         */
-        case "RepairRequested":
-          await set(ctx, event.streamId, seq, at, { repair_pending: true });
-          break;
-
-        /**
          * A pass spent its rounds and the ticket is starting over (0040).
          *
          * The row is still `running` here — the release that follows moves it to
          * `queued` and writes the reason as the note — so what this records is
-         * only which arm the item is now on. **Not `repair_pending`**, and the
-         * difference is the backoff: a repair is exempt because the next claim
-         * *is* the repair and is told what went wrong, while a restart is an
-         * ordinary claim and `source.backoff` is exactly the guard that should
-         * apply to it. An arm that comes straight back is the whole queue on a
-         * repository running one ticket at a time.
+         * only which arm the item is now on. A restart is an ordinary claim and
+         * `source.backoff` is exactly the guard that should apply to it: an arm
+         * that comes straight back is the whole queue on a repository running
+         * one ticket at a time.
+         *
+         * `RepairRequested` used to have a case above this one, writing
+         * `repair_pending` so that the next claim jumped the backoff. It is
+         * retired (`#143`) and so is the column; a log that still holds the
+         * event reaches the `default` below and moves nothing but the
+         * checkpoint.
          */
         case "PassRestarted": {
           const d = event.data as PayloadOf<"PassRestarted">;
@@ -414,33 +405,27 @@ export const taskViewProjection: Projection = {
         }
 
         /**
-         * Turns and cost — and a repair's cost is not the work's.
+         * Turns and cost — the work's, which is every run's.
          *
          * "An operator must be able to see what diagnosis is costing them"
          * (#84), which a single `cost_usd` cannot say: a default-on agent whose
-         * spend is folded into the number beside it is an invisible bill. So a
-         * run that is this item's repair writes into `repair_costs` and leaves
-         * `cost_usd` alone, and the card shows the two apart.
+         * spend is folded into the number beside it is an invisible bill. That
+         * used to need a branch here, because a *run* could be a repair and its
+         * money was diagnosis rather than work — which of the two columns to
+         * write was a fact the row held, in `repair_run_id`, so it was one
+         * statement rather than a read-then-write.
          *
-         * One statement rather than a read-then-write, because which of the two
-         * columns to write is a fact the row holds and the projector does not.
+         * Nothing buys a repair now (`#143`), so no run is one and every run's
+         * cost is the work's. What diagnosis costs is `FixApplied` below, keyed
+         * by the round inside the run that bought it — a narrower fact and the
+         * same column.
          */
         case "RunFinished": {
           const d = event.data as PayloadOf<"RunFinished">;
-          await viaRunQuery(
-            ctx,
-            event.streamId,
-            `update task_view
-             set turns = $4::int,
-                 cost_usd = case when repair_run_id = $5 then cost_usd else $6::double precision end,
-                 repair_costs = case when repair_run_id = $5
-                                     then repair_costs || jsonb_build_object($5::text, $6::double precision)
-                                     else repair_costs end,
-                 updated_at = $3,
-                 updated_seq = $2::bigint
-             where task_id = $1 and updated_seq <= $2::bigint`,
-            [seq, at, d.turns, event.streamId, d.costUsd],
-          );
+          await viaRun(ctx, event.streamId, seq, at, {
+            turns: d.turns,
+            cost_usd: d.costUsd,
+          });
           break;
         }
 
@@ -463,10 +448,11 @@ export const taskViewProjection: Projection = {
          * and a fixer is not a run of its own.
          *
          * It goes to `repair_costs` rather than to `cost_usd`, for `#84`'s
-         * argument unchanged: *a repair is default-on and spends an agent
-         * without being asked again*, so its money is kept apart from the
+         * argument unchanged: *a repair was default-on and spent an agent
+         * without being asked again*, so its money was kept apart from the
          * work's. A fix is default-on and spends an agent without being asked
-         * again. Same bucket, keyed by the run it was spent inside.
+         * again. Same bucket, keyed by the run it was spent inside — and since
+         * `#143` it is the only thing in it.
          */
         case "FixRequested": {
           const d = event.data as PayloadOf<"FixRequested">;
@@ -676,12 +662,10 @@ async function upsert(
            -- run's conflict on a card that is running.
            needs = case when $10::int > 0 then null else task_view.needs end,
            diagnosis = case when $10::int > 0 then null else task_view.diagnosis end,
-           -- The claim is what consumes a pending repair, exactly as the fold
-           -- in work-item.ts does: this run *is* the repair, and naming it here
-           -- is what lets its spend be counted apart from the work's.
-           repair_run_id = case when $10::int > 0 and task_view.repair_pending
-                                then excluded.run_id else task_view.repair_run_id end,
-           repair_pending = case when $10::int > 0 then false else task_view.repair_pending end,
+           -- A claim used to consume a pending repair here, exactly as the
+           -- fold in work-item.ts did, naming the run so that its spend could
+           -- be counted apart from the work's. Nothing buys a repair (#143),
+           -- so there is nothing to consume and no column to consume it into.
            updated_at = excluded.updated_at,
            updated_seq = excluded.updated_seq
      where task_view.updated_seq < excluded.updated_seq`,
@@ -733,10 +717,10 @@ async function viaRun(
 /**
  * The same lookup, for a write `set` cannot express.
  *
- * One case needs it: which column a run's cost lands in depends on the row's
- * own `repair_run_id`, which the projector does not know and must not read
- * separately — a read-then-write would be two statements over a value that
- * decides money, and the second could see a different row than the first.
+ * One case needs it: `FixApplied` merges a key into `repair_costs`, which is an
+ * expression over the column's current value rather than an assignment to it,
+ * and reading it back first would be two statements over a value that decides
+ * money — the second could see a different row than the first.
  *
  * `$1` is the task id, `$2` the seq and `$3` the timestamp; the caller's own
  * parameters start at `$4`.
@@ -872,12 +856,10 @@ export interface TaskCard {
    * offer Approve without the sha Approve needs.
    */
   awaitingApproval: boolean;
-  /** A repair bought and not yet claimed. Exempt from the queue's backoff. */
-  repairPending: boolean;
   /**
-   * What diagnosis has cost, apart from the work. Null when nothing has been
-   * spent on one — which is most cards, and has to read as absence rather than
-   * as zero.
+   * What diagnosis has cost, apart from the work — every round a pass bought to
+   * answer a refusal. Null when nothing has been spent on one, which is most
+   * cards, and has to read as absence rather than as zero.
    */
   repairCostUsd: number | null;
 }
@@ -1011,10 +993,11 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
             .map(([, verdict]) => verdict)
         : [];
       const count = (v: string) => verdicts.filter((x) => x === v).length;
-      // Summed on read, for the reason the map exists: one item may buy more
-      // than one repair, and an operator asking what diagnosis cost means all
-      // of it. Null rather than 0 when nothing was spent — no repair and a free
-      // repair are different facts, and only one of them has ever happened.
+      // Summed on read, for the reason the map exists: one pass may buy more
+      // than one round, and an operator asking what diagnosis cost means all of
+      // it. Null rather than 0 when nothing was spent — nothing bought and
+      // something bought for free are different facts, and only one of them has
+      // ever happened.
       const spent = Object.values((row.repair_costs ?? {}) as Record<string, number | null>).filter(
         (v): v is number => typeof v === "number",
       );
@@ -1052,7 +1035,6 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
         awaitingSha: row.awaiting_sha,
         awaitingApproval: row.awaiting_sha !== null,
-        repairPending: row.repair_pending === true,
         repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
       };
     });

@@ -179,9 +179,14 @@ async function seed(): Promise<void> {
     },
   ]);
 
-  // 9 — approved, the merge hit a conflict, and the failure bought an agent.
-  //     The whole of #84 in one stream: the approval is spent, the item goes
-  //     back to the queue as a repair, and the repair's spend is its own.
+  // 9 — approved, and the merge hit a conflict anyway. The whole of #84 in one
+  //     stream: the approval is spent, `approve()` refuses every further click,
+  //     and the item is blocked with a diagnosis rather than a headstone.
+  //
+  //     It used to buy an agent here, and the fixture used to carry the second
+  //     attempt that agent was. `#143` takes the purchase away — and takes
+  //     `RepairRequested` with it, which `store.append` now refuses as retired,
+  //     so this could not be seeded even if it were still meant.
   await store.append(wi(9), 0, [discovered(9, "approved, then conflicted"), claimedWith(attempt(9, "a"))]);
   await store.append(attempt(9, "a"), 0, [
     started(9),
@@ -207,22 +212,26 @@ async function seed(): Promise<void> {
   ]);
   await store.append(wi(9), 2, [
     {
-      type: "RepairRequested",
+      type: "WorkItemBlocked",
       actor: "conductor",
       data: {
+        question: "conflict: agent/9 does not merge into develop: page.tsx",
+        needsFrom: "human",
         runId: attempt(9, "a"),
-        reason: "conflict",
-        detail: "agent/9 does not merge into develop: page.tsx",
-        fingerprint: "0123456789ab",
-        attempt: 1,
+        // A failure to acknowledge and not a judgement: the approval was spent
+        // and the merge still refused, so nothing is being asked of anybody's
+        // opinion — the diagnosis carries the move that is left.
+        needs: "acknowledgement",
+        diagnosis: {
+          what: "agent/9 does not merge into develop.",
+          done:
+            "develop was merged in first and it still would not merge. No agent was " +
+            "bought: a refusal is answered inside the pass it happened in.",
+          raw: "agent/9 does not merge into develop: page.tsx",
+          recommendation: { action: "requeue", why: "the base has moved since" },
+        },
       },
     },
-    released(attempt(9, "a"), "repairing conflict (attempt 1)"),
-    claimedWith(attempt(9, "b")),
-  ]);
-  await store.append(attempt(9, "b"), 0, [
-    started(9),
-    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
   ]);
 
   // 10 — the branch was repaired and approval re-requested on the new head.
@@ -328,6 +337,15 @@ async function seed(): Promise<void> {
       actor: "conductor",
       data: { runId: run(13), round: 1, of: 3, action: "review", onSha: "sha-13", findings: [] },
     },
+    // What the round cost, which is the only thing `repair_costs` holds since
+    // `#143`: a run is never a repair, so a run's money is always the work's
+    // and what answering a refusal cost is keyed by the round that bought it.
+    {
+      type: "FixApplied",
+      actor: "conductor",
+      data: { runId: run(13), round: 1, headSha: "sha-13b", turns: 7, costUsd: 0.75, failure: null },
+    },
+    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
   ]);
 
   // 14 — the rounds were spent and the ticket started over
@@ -481,9 +499,6 @@ describe("task_view", () => {
     expect(over.state).toBe("queued");
     expect(over.blocked).toBe(false);
     expect(over.note).toContain("restart 1 of 2");
-    // And a repair's exemption from the backoff is *not* borrowed: a restart is
-    // an ordinary claim, and the backoff is exactly the guard that should apply.
-    expect(over.repairPending).toBe(false);
 
     // Nothing on a ticket that has only ever had one approach, so a card on a
     // project that buys no restart reads exactly as it did.
@@ -556,16 +571,23 @@ describe("task_view", () => {
    * would refuse every click — the approval had been spent on the merge that
    * conflicted, and the run was back to `gating`. Sitting in the column and
    * being asked a question are two facts, and the card now carries both.
+   *
+   * **And the refusal reaches a person**, which since `#143` is the only place
+   * it can reach: no agent is bought, so the block and its diagnosis are the
+   * whole outcome and the card has to carry a sentence rather than a control
+   * that refuses.
    */
   it("stops offering an approval once the merge that consumed it failed", async () => {
     const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 });
     const nine = card(tasks, 9)!;
 
     expect(nine.awaitingApproval).toBe(false);
-    // And the repair it bought has been claimed, so the exemption is spent too.
-    expect(nine.repairPending).toBe(false);
-    // Queued again, and therefore nobody's question at the moment.
-    expect(nine.blocked).toBe(false);
+    // Somebody's question, with the reason on it.
+    expect(nine.state).toBe("waiting");
+    expect(nine.blocked).toBe(true);
+    expect(nine.needs).toBe("acknowledgement");
+    expect(nine.diagnosis?.done).toContain("No agent was bought");
+    expect(nine.diagnosis?.recommendation?.action).toBe("requeue");
 
     // The lane holds more than questions: a refused dispatch is `waiting` and
     // is not an item anybody can hand back, so the card must not offer to.
@@ -655,17 +677,23 @@ describe("task_view", () => {
   /**
    * What diagnosis costs, apart from the work.
    *
-   * A repair is on by default and spends an agent without being asked again, so
-   * folding its cost into the number beside it would make it an invisible bill.
+   * Answering a refusal is on by default and spends an agent without being
+   * asked again, so folding its cost into the number beside it would make it an
+   * invisible bill (#84).
+   *
+   * **It is a round's cost and nothing else since `#143`.** The bill used to be
+   * a whole *run* the merge lane bought, told which column to land in by the
+   * row's own `repair_run_id`; nothing buys a run now, so a run's money is
+   * always the work's and this figure is exactly the rounds a pass spent.
    */
-  it("counts a repair's spend separately from the work's", async () => {
+  it("counts what answering a refusal cost separately from the work's", async () => {
     const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 });
-    const nine = card(tasks, 9)!;
+    const thirteen = card(tasks, 13)!;
 
-    expect(nine.costUsd).toBe(2.1);
-    expect(nine.repairCostUsd).toBe(0.75);
-    // And a card that never bought one says nothing rather than zero: no repair
-    // and a free repair are different facts.
+    expect(thirteen.costUsd).toBe(2.1);
+    expect(thirteen.repairCostUsd).toBe(0.75);
+    // And a card that never bought a round says nothing rather than zero:
+    // nothing bought and something bought for free are different facts.
     expect(card(tasks, 2)!.repairCostUsd).toBeNull();
   });
 

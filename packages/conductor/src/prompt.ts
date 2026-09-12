@@ -16,9 +16,8 @@
  * without a database and out of the board's server bundle's way.
  *
  * **Two calls and not one**, because the conductor cannot make one. It needs
- * the version *before* it claims — the claim is what consumes the edit and the
- * repair — and the ticket only *after*, from inside the scope that has a
- * worktree. So `nextPrompt` settles everything the streams decide, and
+ * the version *before* it claims — the claim is what consumes the edit — and
+ * the ticket only *after*, from inside the scope that has a worktree. So `nextPrompt` settles everything the streams decide, and
  * `renderPrompt` fills the ticket in. The board makes both calls in a row; the
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
@@ -32,7 +31,6 @@ import {
   promptVersionFor,
   type PromptBudget,
 } from "./attempts.ts";
-import { repairBrief } from "./repair.ts";
 
 /**
  * Re-exported so that everything about *the document an attempt is handed* has
@@ -51,10 +49,13 @@ export interface NextPrompt {
   /** 1-based. This prompt is for attempt `n`, and the page says `attempt 3 only`. */
   attempt: number;
   /**
-   * `{{failure}}`, whole: the history of the earlier attempts, the refusal that
-   * bought a repair, and the human's sentence. Empty on a first attempt with no
-   * edit, and on nothing else — which is what makes attempt 1 render
-   * byte-identically to the template.
+   * `{{failure}}`, whole: the history of the earlier attempts and the human's
+   * sentence. Empty on a first attempt with no edit, and on nothing else —
+   * which is what makes attempt 1 render byte-identically to the template.
+   *
+   * There used to be a third block here, the refusal that bought a repair
+   * (`repairBrief`). Nothing buys one since `#143`, so what an attempt is told
+   * about an earlier failure is `attemptBrief`'s history and only that.
    */
   failure: string;
   /** `ticket@1924+failure@1c5708ba+human@a91f2e`. */
@@ -77,9 +78,9 @@ export interface NextPrompt {
 /**
  * Everything about the next attempt's prompt that the streams decide.
  *
- * Called with the work item's events read **before** the claim, exactly as
- * `pendingRepair` is: the claim consumes both the repair and the edit, so a
- * read taken afterwards finds neither and the run is silently told nothing.
+ * Called with the work item's events read **before** the claim: the claim is
+ * what consumes the edit, so a read taken afterwards finds none and the run is
+ * silently told nothing.
  *
  * `lastRun` is the previous attempt's own stream, and `null` means *it was not
  * read*. That distinction is the one `PriorAttempt.outcome` already makes and
@@ -97,29 +98,24 @@ export function nextPrompt(input: {
 }): NextPrompt {
   const attempts = priorAttempts(input.item);
   const state = reduceWorkItem(input.item);
-  const repair = state.pendingRepair;
   const edit = state.pendingPrompt;
 
   const previous = attempts[attempts.length - 1];
   if (previous && input.lastRun !== null) {
     previous.outcome = attemptOutcome(input.lastRun, input.budget);
   }
-  // `repairBrief` prints the refusal that bought this run verbatim and at
-  // length, so the history defers to it rather than printing a second copy: a
-  // bound kept inside `attempts.ts` and undone by composition is not a bound.
-  if (previous && repair?.after === previous.runId) previous.refusal = null;
 
-  // Three blocks and not one. The history is what every second attempt has; the
-  // repair brief is one specific ending — the integrator refused a diff that
-  // exists — with an instruction about what to produce
-  // ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)); and the
+  // Two blocks and not one. The history is what every second attempt has; the
   // human's is what a person is asking *this* attempt to do, which is a
-  // different kind of thing from what the earlier ones did. None of them stands
-  // in for another, which is why they are joined rather than merged.
+  // different kind of thing from what the earlier ones did. Neither stands in
+  // for the other, which is why they are joined rather than merged.
+  //
+  // There was a third — the refusal that bought a repair, printed verbatim,
+  // which the history deferred to so the same output did not appear twice. A
+  // refusal buys no run now (`#143`), so `attemptBrief` is the only thing that
+  // quotes one and the bound it keeps is no longer undone by composition.
   const history = attemptBrief(attempts, input.budget);
-  const bought = repair ? repairBrief(repair) : "";
-  const composed = join([history, bought]);
-  const failure = join([history, bought, humanBrief(edit)]);
+  const failure = join([history, humanBrief(edit)]);
 
   return {
     attempt: attempts.length + 1,
@@ -129,7 +125,7 @@ export function nextPrompt(input: {
     // the version has to say which of the two kinds moved (0032 §5).
     version: promptVersionFor(input.base, failure, edit?.text ?? ""),
     edit,
-    composed: { failure: composed, version: promptVersionFor(input.base, composed) },
+    composed: { failure: history, version: promptVersionFor(input.base, history) },
   };
 }
 
@@ -146,21 +142,19 @@ function join(blocks: readonly string[]): string {
  * that writes its own prompt can leave any of them out.
  *
  * `{{failure}}` is empty on a **first** attempt with no edit, and on nothing
- * else. It carries what the earlier attempts did (`attempts.ts`, `#82`), on a
- * repair the refusal that bought this one
- * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)), and the
+ * else. It carries what the earlier attempts did (`attempts.ts`, `#82`) and the
  * sentence a person added for this attempt (`#104`). It is the only thing that
  * distinguishes a second attempt from the first one again, which is why it goes
  * through the same substitution as everything else rather than through a second
- * prompt: a repair *is* a run, and giving it its own template would be the
- * beginning of the sixth gate point 0016 closed the set against.
+ * prompt: every attempt *is* a run, and giving one of them its own template
+ * would be the beginning of the sixth gate point 0016 closed the set against.
  *
  * **A template with no slot gets it appended, rather than losing it.** That is
  * the one placeholder this is true of, and deliberately: a project writing its
- * own prompt can leave `{{title}}` out and mean it, but a repair whose failure
- * silently did not reach the agent is a run that costs the same and knows
- * nothing — a control the recipe claims and the code does not have, which is
- * `#58`'s shape and the thing this feature must not reintroduce.
+ * own prompt can leave `{{title}}` out and mean it, but an attempt whose
+ * history silently did not reach the agent is a run that costs the same and
+ * knows nothing — a control the recipe claims and the code does not have, which
+ * is `#58`'s shape and the thing this feature must not reintroduce.
  */
 export function renderPrompt(
   template: string,

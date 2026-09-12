@@ -215,6 +215,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // Both of a failure's outcomes read on the history, including the one where
   // nothing happened: "no agent was bought, and here is the rule that said
   // so" is the half an operator otherwise has to guess at.
+  //
+  // **Retired, and still read for ever** (0019, `#143`), exactly as the outbox
+  // pair below is. A refusal buys no run now, so nothing appends either of
+  // these — and a row that renders nothing is as unreadable whether or not
+  // anything appends the type again.
   RepairRequested: (d) => `attempt ${need(d, "attempt")} on ${need(d, "reason")}`,
   RepairDeclined: (d) => `${need(d, "reason")} — ${clip(d["why"])}`,
 

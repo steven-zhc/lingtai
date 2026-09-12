@@ -205,26 +205,34 @@ describe("heldUntil", () => {
   const now = at.getTime() + 10 * 60_000;
 
   it("says when the window ends, while it is still open", () => {
-    const until = heldUntil({ lastAttemptAt: at, repairPending: false }, HOUR, now);
+    const until = heldUntil({ lastAttemptAt: at }, HOUR, now);
     expect(until?.toISOString()).toBe("2026-09-08T13:00:00.000Z");
   });
 
   it("holds nothing once the window has passed", () => {
-    expect(heldUntil({ lastAttemptAt: at, repairPending: false }, 5 * 60_000, now)).toBeNull();
+    expect(heldUntil({ lastAttemptAt: at }, 5 * 60_000, now)).toBeNull();
   });
 
   it("holds nothing that has never been attempted", () => {
-    expect(heldUntil({ lastAttemptAt: null, repairPending: false }, HOUR, now)).toBeNull();
+    expect(heldUntil({ lastAttemptAt: null }, HOUR, now)).toBeNull();
   });
 
   /**
-   * A repair jumps the backoff, and only a repair (0025 §3, 0028). It is told
-   * what went wrong and the recipe caps how many an item may buy, so it is
-   * neither blind nor unbounded — and making it wait would leave the item it
-   * exists for stuck an hour longer, which is the complaint rather than the fix.
+   * **Nothing jumps it, and the exemption that used to is the point of the
+   * assertion** (`#143`).
+   *
+   * A pending repair jumped the backoff (0025 §3, 0028): it was told what went
+   * wrong and the recipe capped how many an item could buy, so it was neither
+   * blind nor unbounded, and making it wait would have left the item it existed
+   * for stuck an hour longer. A lane refusal buys no run now, so `BackoffInput`
+   * has one field and an attempt inside the window is held whatever else the
+   * log says about it — which is what makes `lingtai now` the only thing that
+   * jumps the guard.
    */
-  it("holds nothing with a repair pending", () => {
-    expect(heldUntil({ lastAttemptAt: at, repairPending: true }, HOUR, now)).toBeNull();
+  it("holds an attempt inside the window whatever else happened", () => {
+    expect(heldUntil({ lastAttemptAt: at }, HOUR, now)?.toISOString()).toBe(
+      "2026-09-08T13:00:00.000Z",
+    );
   });
 });
 

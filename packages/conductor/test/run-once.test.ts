@@ -167,6 +167,24 @@ const NO_ROUNDS_RECIPE = REFUSING_RECIPE.replace(
   "rounds: 0",
 );
 
+/**
+ * A gate at the **merge** point that refuses, which is how a `gate-failed`
+ * reaches the lane.
+ *
+ * The one refusal the round loop never sees: `proposed` is where `buyRound`
+ * runs, and a `merge`-point verdict is taken by `integrate()` as
+ * `gatesPassed: false` and comes back out as `gate-failed`. Before `#143` that
+ * bought a whole new run — for exactly the refusal `decideFix` declines to buy
+ * a *round* for, a hundred lines away, which is the incoherence the ticket
+ * leads with.
+ */
+const LANE_REFUSING_RECIPE = RECIPE.replace(
+  "runtime: {",
+  `  merge:
+    - { name: policy, run: "echo this branch may not land; exit 1", timeout: 2m }
+runtime: {`,
+);
+
 /** GitHub, minus GitHub. Serves the issue and the recipe from the base branch. */
 function fakeClient(over: Partial<GitHubClient> & { recipe?: string } = {}): GitHubClient {
   const { recipe = RECIPE, ...rest } = over;
@@ -584,6 +602,89 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
     expect(log.stdout).not.toContain("unrepaired change");
   }, 240_000);
 
+  /**
+   * **A lane refusal buys nothing and reaches a person with a reason** — the
+   * path `#143` turns into the only one, and the one it had to be pinned by.
+   *
+   * `decideRepair` used to stand here and buy a whole new run for a
+   * `gate-failed` or a `no-commits`. Both are answered by
+   * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+   * §Consequences and neither deserved one: a `gate-failed` at the lane is the
+   * refusal `decideFix` declines to buy a *round* for, and a `no-commits` is a
+   * branch holding nothing, which a run starting from scratch answers by
+   * definition and expensively.
+   *
+   * So what is asserted is the whole outcome, because there is nothing else:
+   * blocked, a question carrying the refusal, and `diagnoseRefusal`'s three
+   * sentences — what refused, whose failure it is and why no agent is coming,
+   * and the raw output underneath. Plus the absence that is the change:
+   * nothing released the item and nothing appended either retired event.
+   */
+  it("blocks for a person when the lane refuses, and buys nothing", async () => {
+    const other = { ...issue, number: 143 };
+    created.add(workItemStream(PROJECT, 143));
+
+    const agent = await agentThat(`
+mkdir -p src && echo "export const fix = 143;" > src/fix.ts
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm 'a change the lane will not take'
+`);
+
+    const result = await once({
+      ...options(agent),
+      issue: 143,
+      client: fakeClient({
+        recipe: LANE_REFUSING_RECIPE,
+        getIssue: async () => other,
+        listOpenIssues: async () => [other],
+      }),
+    });
+
+    // A typed refusal at `integrate`, and not a hold: the `merge` point ran a
+    // command rather than asking anybody, so the lane is what said no.
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("integrate");
+    expect(result.detail).toContain("gate-failed");
+    if (result.runId) created.add(result.runId);
+
+    const events = await store.read(workItemStream(PROJECT, 143));
+    const types = events.map((e) => e.type);
+    // **Nothing was bought and nothing was declined**, because there is no
+    // longer a decision to record either way. Both types are retired and
+    // `store.append` refuses them, so this is the shape of the code rather
+    // than a promise about it.
+    expect(types).not.toContain("RepairRequested");
+    expect(types).not.toContain("RepairDeclined");
+    // And it did not go back to the queue, which is the other wrong answer: a
+    // fresh pass would cut a branch from the base and meet the same gate.
+    expect(types).not.toContain("WorkItemReleased");
+    expect(types).toContain("WorkItemBlocked");
+
+    const item = reduceWorkItem(events).lifecycle;
+    expect(item.status).toBe("blocked");
+    if (item.status !== "blocked") return;
+    // A failure to acknowledge, not a judgement being asked for.
+    expect(item.needs).toBe("acknowledgement");
+    expect(item.question).toContain("gate-failed");
+    // The sentence, rather than the reason code the question still carries.
+    expect(item.diagnosis?.what).toBe(
+      `a gate refused agent/143, so it was not merged into develop.`,
+    );
+    // Whose failure it is and why nothing is coming — `whoseFailure`'s answer,
+    // composed by `diagnoseRefusal` and handed in by nobody.
+    expect(item.diagnosis?.done).toContain("No agent was bought");
+    expect(item.diagnosis?.done).toContain("inside the pass it happened in");
+    // The gate's own output underneath, never summarised away (#83).
+    expect(item.diagnosis?.raw).toContain("this branch may not land");
+    // And no move: approving a red diff over a refusing gate, waiving it, or
+    // rejecting it is the one judgement nothing but a person should make.
+    expect(item.diagnosis?.recommendation).toBeNull();
+
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("the lane will not take");
+  }, 240_000);
+
   it("lets a person hand a still-red item back to the queue", async () => {
     const back = await requeue({
       project: PROJECT,
@@ -895,13 +996,12 @@ printf '%s\\n' '${receipt()}'
     // The findings verbatim underneath, scenario included.
     expect(item.lifecycle.diagnosis?.raw).toContain(scenario);
 
-    // ---- and the two purses stayed apart ----
-    // No repair was bought and none was declined, because the merge lane was
-    // never reached: a review refusal is spent out of `repair.fix`, and
-    // `repair.maxAttempts` is untouched and still available to a broken build.
+    // ---- and nothing bought a whole new run ----
+    // The merge lane was never reached, so there was never a `RepairRequested`
+    // here — and since `#143` there is nowhere one could come from: the type is
+    // retired and `store.append` refuses it.
     expect(types).not.toContain("RepairRequested");
     expect(events.map((e) => e.type)).not.toContain("RepairRequested");
-    expect(item.repairs).toEqual([]);
     const lane = await store.read(integrationStream(PROJECT, "develop"));
     expect(
       lane.filter((e) => (e.data as { workItemId?: string }).workItemId === workItemStream(PROJECT, 136)),

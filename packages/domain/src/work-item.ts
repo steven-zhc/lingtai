@@ -52,31 +52,10 @@ export type WorkItemLifecycle =
 export type WorkItemStatus = WorkItemLifecycle["status"];
 
 /**
- * A failure that bought an agent, as `RepairRequested` recorded it.
- *
- * `after` is the run that failed, not the run that will repair it — the second
- * does not exist yet when this is written down.
- */
-export interface RepairRecord {
-  after: string;
-  reason: string;
-  detail: string;
-  fingerprint: string;
-  attempt: number;
-}
-
-/** A run that is a repair, and the failure it was bought for. */
-export interface RepairRun {
-  runId: string;
-  of: RepairRecord;
-}
-
-/**
  * An approach this ticket abandoned, as `PassRestarted` recorded it.
  *
  * `after` is the pass whose rounds were spent, not the pass that will try the
  * next approach — the second does not exist yet when this is written down.
- * Same shape and same reason as `RepairRecord`.
  *
  * `findings` is the arm's own, and the reason this is a record rather than a
  * count: the person asked when the last restart is spent is shown every arm
@@ -124,40 +103,23 @@ export interface WorkItemState {
   runs: readonly string[];
 
   /**
-   * Every repair this item has bought, oldest first.
-   *
-   * **The ceiling is counted here rather than remembered anywhere.** 0025 §3
-   * calls the bound structural and not aspirational, and a length against a
-   * number from the recipe is as structural as it gets: a restart inherits it,
-   * a rebuild recomputes it, and there is no counter to forget to increment.
-   */
-  repairs: readonly RepairRecord[];
-
-  /**
    * Every approach this item has abandoned, oldest first
    * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
-   * **The second ceiling is counted here rather than remembered anywhere**, for
-   * `repairs`' reason: a length against a number from the recipe is structural,
-   * a rebuild recomputes it, and there is no counter to forget to increment.
+   * **The ceiling is counted here rather than remembered anywhere**, which is
+   * the shape `repairs` had before `#143` deleted it: a length against a number
+   * from the recipe is structural rather than aspirational, a rebuild
+   * recomputes it, and there is no counter to forget to increment.
    *
-   * There is deliberately no `pendingRestart` beside `pendingRepair`. A repair
-   * needs one because the next claim has to *become* the repair — it is told
-   * something an ordinary run is not. A restart is told nothing extra:
+   * There is deliberately no `pendingRestart`. A restart is told nothing extra:
    * `attempts.ts` already writes the abandoned branch, its sha and the findings
    * into every second prompt, so the next claim is an ordinary pass and the
-   * only thing this list decides is whether there is one left to buy.
+   * only thing this list decides is whether there is one left to buy. The one
+   * thing that ever needed a pending record was a repair, because the next
+   * claim had to *become* one — and nothing buys a repair any more (0039
+   * §Consequences).
    */
   restarts: readonly RestartRecord[];
-
-  /**
-   * A repair asked for and not yet claimed. The next claim is that repair.
-   *
-   * This is the whole of how a run learns it is one. `RepairRequested` is
-   * appended just before the release, so between the two the item carries a
-   * pending repair; the claim consumes it into `repairRun` and it is gone.
-   */
-  pendingRepair: RepairRecord | null;
 
   /**
    * A sentence somebody added for the next run, and not yet consumed.
@@ -165,7 +127,7 @@ export interface WorkItemState {
    * The whole of how a `PromptEdited` reaches an agent
    * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
    * §5). It applies to the **next run only**, whoever starts it — the next
-   * `WorkItemClaimed` clears it, exactly as a claim clears `pendingRepair`.
+   * `WorkItemClaimed` clears it.
    *
    * One-shot rather than durable, and that removes a failure mode rather than
    * mitigating one: a lasting override would need the page to guard against a
@@ -173,15 +135,6 @@ export interface WorkItemState {
    * the GitHub ticket where everybody can see it (§6).
    */
   pendingPrompt: { text: string; by: string } | null;
-
-  /**
-   * The run holding this item, when that run is a repair.
-   *
-   * Kept past the run's ending on purpose — it is what makes *an analysis that
-   * fails does not trigger an analysis of the analysis* checkable at the moment
-   * the repair fails. Only the next claim replaces it.
-   */
-  repairRun: RepairRun | null;
 
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number;
@@ -200,11 +153,8 @@ export const emptyWorkItem: WorkItemState = {
   links: [],
   dispatchRefusals: [],
   runs: [],
-  repairs: [],
   restarts: [],
-  pendingRepair: null,
   pendingPrompt: null,
-  repairRun: null,
   version: 0,
   lastSeq: null,
 };
@@ -241,40 +191,23 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
           worker: d.worker,
         },
         runs: state.runs.includes(d.runId) ? state.runs : [...state.runs, d.runId],
-        // The claim consumes whatever repair was pending. This run *is* it, and
-        // there is no second event saying so — which is deliberate: a repair is
-        // an ordinary run and 0025 refuses to give it a vocabulary of its own.
-        pendingRepair: null,
-        // And whatever sentence a person added for the next run, for the same
-        // reason and by the same rule: `PromptEdited` applies to one run, and
-        // this is the run (0032 §5).
+        // The claim consumes whatever sentence a person added for the next run:
+        // `PromptEdited` applies to one run, and this is the run (0032 §5).
+        //
+        // It used to consume a *pending repair* here too, and that clause is the
+        // one `#143` deleted. `RepairRequested` is retired, so nothing puts a
+        // repair on an item and no claim can become one — a log that still holds
+        // the event folds through the default below and changes nothing but the
+        // version.
         pendingPrompt: null,
-        repairRun: state.pendingRepair
-          ? { runId: d.runId, of: state.pendingRepair }
-          : null,
       };
-    }
-
-    case "RepairRequested": {
-      const d = event.data as PayloadOf<"RepairRequested">;
-      const record: RepairRecord = {
-        after: d.runId,
-        reason: d.reason,
-        detail: d.detail,
-        fingerprint: d.fingerprint,
-        attempt: d.attempt,
-      };
-      // The lifecycle is untouched. A repair is not a state an item is in — the
-      // release that follows this puts it back in the queue, and being queued is
-      // the state.
-      return { ...state, ...at, repairs: [...state.repairs, record], pendingRepair: record };
     }
 
     case "PassRestarted": {
       const d = event.data as PayloadOf<"PassRestarted">;
-      // The lifecycle is untouched, exactly as `RepairRequested` leaves it: a
-      // restart is not a state an item is in — the release that follows this
-      // puts it back in the queue, and being queued is the state.
+      // The lifecycle is untouched: a restart is not a state an item is in — the
+      // release that follows this puts it back in the queue, and being queued is
+      // the state.
       return {
         ...state,
         ...at,

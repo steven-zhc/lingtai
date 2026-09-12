@@ -918,9 +918,12 @@ function newestFirst(a: BoardCard, b: BoardCard): number {
  * nobody ever added them up (#81), so the one number an operator acts on was on
  * the page eleven times and stated once, never.
  *
- * Repair is a second number for the reason the card keeps it as one: it is
- * default-on and spends an agent without being asked again, and folding it into
- * the figure beside it makes it an invisible bill (#84).
+ * Answering a refusal is a second number for the reason the card keeps it as
+ * one: it is default-on and spends an agent without being asked again, and
+ * folding it into the figure beside it makes it an invisible bill (#84). The
+ * field is still called `repair` because the column is still `repair_costs`;
+ * what it holds is every round a pass bought (0039 §3), which since `#143` is
+ * the whole of it.
  */
 export interface Spend {
   /** What the work itself cost, over every card on the board. */

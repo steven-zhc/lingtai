@@ -69,17 +69,11 @@ export {
 } from "./schedule.ts";
 export { approve, reject, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
 export {
-  decideRepair,
   diagnoseRefusal,
-  repairBrief,
-  repairFingerprint,
   whoseFailure,
   type Failure,
   type FailureOwner,
-  type RepairDecision,
-  type RepairInput,
-  type RepairPolicy,
-} from "./repair.ts";
+} from "./attribution.ts";
 export {
   attemptBrief,
   attemptOutcome,

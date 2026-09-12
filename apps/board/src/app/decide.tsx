@@ -168,9 +168,14 @@ export function Decide({
  *
  * So the card offers what it really has. Putting it back in the queue means the
  * next attempt is cut from a base that has since moved, which for the
- * commonest case — a conflict nobody chose to repair — is the fix. The reason
- * is required for the same reason a waiver's is: a person overruling a block
- * without saying why is how a system stops being able to explain itself.
+ * commonest case — a conflict the pass could not resolve — is the fix. The
+ * reason is required for the same reason a waiver's is: a person overruling a
+ * block without saying why is how a system stops being able to explain itself.
+ *
+ * **And this is the move for every refused merge now** (`#143`). A lane refusal
+ * used to buy a whole new run for some of them; nothing does, so the button is
+ * what answers the commonest failure in the system rather than the leftover it
+ * was written as.
  */
 export function Requeue({
   project,

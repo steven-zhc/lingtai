@@ -464,9 +464,16 @@ export const Recipe = z.object({
          * other limits are. A boolean beside a count whose zero already means
          * the same thing is a redundant pair (0039 §4).
          *
-         * Only Lingtai's *own* failures are excluded unconditionally, in code
-         * (`whoseFailure`): no recipe can make an agent able to fix a database
-         * it cannot reach.
+         * **And it is the only number a refusal spends against** (`#143`). It
+         * was read twice for a while: once here, for a round inside the pass,
+         * and once by `decideRepair` for a whole new run the merge lane bought
+         * — one key naming two extents, which is what `#141` left behind and
+         * 0039 §Consequences says should not exist. The second reading is gone
+         * with the purchase, so `rounds` means one thing: how many times a
+         * **pass** sends the agent back.
+         *
+         * Lingtai's *own* failures never reach it, in code (`whoseFailure`): no
+         * recipe can make an agent able to fix a database it cannot reach.
          */
         rounds: z.number().int().nonnegative().default(2),
         /**

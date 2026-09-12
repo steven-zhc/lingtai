@@ -22,10 +22,9 @@ import { parsePayload, reduceRun, reduceWorkItem } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
-import { releaseWorkItem } from "./claim.ts";
-import { appendEndActions, resolveEndActions } from "./end-point.ts";
+import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
-import { decideRepair, diagnoseRefusal, type RepairPolicy } from "./repair.ts";
+import { diagnoseRefusal } from "./attribution.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
 
@@ -140,16 +139,15 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   // Before the approval is recorded, so an unreadable recipe refuses without
   // merging rather than landing a change whose `end` point silently could not
   // run. That silence is the defect this is fixing.
+  //
+  // The `end` plan is the whole of what this read is for. It used to also lift
+  // `runtime.limits.rounds` out, because a failed merge here asked the recipe
+  // whether it bought an agent; `#143` takes that question away, so a refusal
+  // needs nothing from the recipe but the point it has to resolve.
   let end: readonly GateAction[];
-  let repairPolicy: RepairPolicy;
   try {
     const recipe = await resolveRecipe((p, r) => options.client.fileAt(p, r), options.base);
     end = recipe.recipe.gates.end;
-    // From the same read, because this is the path the two stuck items took: an
-    // approval is granted, the merge hits a conflict, and the approval has been
-    // consumed. Whether that failure buys an agent is the recipe's, and this is
-    // where it has to be known.
-    repairPolicy = { rounds: recipe.recipe.runtime.limits.rounds };
   } catch (err) {
     return {
       ok: false,
@@ -205,65 +203,20 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
      * that item could never be approved again. Three items sat here, one of
      * them for four days.
      *
-     * So the failure gets an outcome rather than a headstone: if it belongs to
-     * the managed repository and the bound is not spent, it buys an agent and
-     * the item goes back to the queue as a repair — which ends by requesting
-     * approval on the head it produced. If it does not, the block carries the
-     * reason no agent was bought, so the card has a sentence and a move instead
-     * of a control that refuses.
+     * So the failure gets an outcome rather than a headstone: it is **blocked
+     * with a diagnosis**, so the card has a sentence saying what refused, whose
+     * failure it is and what move is left, instead of a control that refuses.
+     *
+     * 0025 answered it by buying an agent here — a whole new run, told what
+     * went wrong, which came back asking for approval on the head it produced.
+     * `#143` takes the purchase away and keeps the outcome: there is nothing
+     * for this branch to send a second worktree to do that `Requeue` does not
+     * do for the price of a click, and 0039 §Consequences says a refusal buys
+     * nothing. Which means this path is now the *only* one a refused merge
+     * takes, from here or from a pass.
      */
-    const failed = await store.read(workItemId);
-    const decision = decideRepair({
-      failure: { source: "integration", reason: merged.reason, detail: merged.detail },
-      policy: repairPolicy,
-      item: reduceWorkItem(failed),
-      runId,
-    });
-
-    if (decision.repair) {
-      // Recorded then released, in that order: the fold carries a pending
-      // repair between the two and the next claim is it.
-      await store.append(workItemId, failed.length, [
-        {
-          type: "RepairRequested",
-          actor: "conductor",
-          data: parsePayload("RepairRequested", {
-            runId,
-            reason: merged.reason,
-            detail: merged.detail.slice(0, 4_000),
-            fingerprint: decision.fingerprint,
-            attempt: decision.attempt,
-          }),
-        },
-      ]);
-      const reason = `repairing ${merged.reason} (attempt ${decision.attempt})`;
-      await releaseWorkItem(workItemId, runId, reason, store);
-      // On its own append, because the release owns the one above — the same
-      // shape `run-once`'s release uses, and for the same reason.
-      const ended = await appendEndActions(store, workItemId, end, "failed");
-      await tellGitHubAbout({
-        store,
-        github: options.client,
-        workItemId,
-        labels: labelsFor("queued"),
-        appended: ended,
-      });
-      log(`bought a repair for ${merged.reason} — attempt ${decision.attempt}`);
-      // The merge did not happen, so this is a refusal — but the operator has
-      // to be told that something is going to be done about it, or the button
-      // reads as the dead end it used to be.
-      return {
-        ok: false,
-        workItemId,
-        reason: merged.reason,
-        detail:
-          `${merged.detail}\n\nNothing was merged. A repair was bought (attempt ` +
-          `${decision.attempt}); it will come back asking you to approve its diff.`,
-      };
-    }
-
     const blocked = await store.read(workItemId);
-    const question = `${merged.reason}: ${merged.detail.slice(0, 400)} — no repair: ${decision.why}`;
+    const question = `${merged.reason}: ${merged.detail.slice(0, 400)}`;
     // Beside the question, the same reading of the refusal `run-once`'s merge
     // lane writes — from the one function, so an approval that failed and a pass
     // that failed cannot describe the same conflict differently (#83).
@@ -272,21 +225,9 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
       detail: merged.detail,
       branch,
       base: options.base,
-      why: decision.why,
     });
     const ended = resolveEndActions(blocked, end, "blocked");
     await store.append(workItemId, blocked.length, [
-      {
-        type: "RepairDeclined",
-        actor: "conductor",
-        data: parsePayload("RepairDeclined", {
-          runId,
-          reason: merged.reason,
-          detail: merged.detail.slice(0, 4_000),
-          fingerprint: decision.fingerprint,
-          why: decision.why,
-        }),
-      },
       {
         type: "WorkItemBlocked",
         actor: "conductor",
@@ -378,11 +319,14 @@ export async function reject(
  * no diff to approve.
  *
  * **A card must never offer only a control that refuses.** That is the `#84`
- * complaint stated as a rule: an item whose integration failed and whose repair
- * was declined — because the recipe says the project does not repair, or
- * because the ceiling is spent — is `blocked` with a question, its run is
- * `gating`, and `approve()` will not touch it. Before this, the board rendered
- * Approve on it anyway and the button could not work.
+ * complaint stated as a rule: an item whose integration failed is `blocked`
+ * with a question, its run is `gating`, and `approve()` will not touch it.
+ * Before this, the board rendered Approve on it anyway and the button could not
+ * work.
+ *
+ * **And since `#143` every refused merge ends there**, rather than some of them
+ * buying a run instead — so this is the move the commonest failure in the
+ * system waits on, and not the leftover it was written as.
  *
  * The move is not a new mechanism. `WorkItemUnblocked` has been in the
  * catalogue since the beginning and means exactly this: a person answered the

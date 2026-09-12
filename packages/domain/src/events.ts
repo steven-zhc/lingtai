@@ -494,29 +494,39 @@ export const IntegrationSucceeded = z.object({
 // -------------------------------------------------------------- repair ----
 
 /**
- * A failure of the managed repository's bought one agent.
+ * **Retired** (`#143`). Readable for ever, appended never: `RETIRED` below,
+ * refused by `store.append`.
  *
- * **Not a sixth gate point** ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)).
- * The five stay closed; this is what happens *after* a failure, and the repair
- * it buys is an ordinary run — same claim, same worktree, same gates. The only
- * thing that distinguishes it is that its prompt was told what went wrong.
+ * It recorded that a failure of the managed repository's had bought one agent —
+ * a whole new run, told what went wrong, which the next claim became. That was
+ * [0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md), and
+ * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+ * §Consequences takes the purchase away: the worktree lives as long as the
+ * pass, so **a refusal is answered where it happened** and a new run stops
+ * being the answer to anything except a run that ended. `FixRequested` below
+ * is what a refusal buys now.
  *
- * On the **work item's** stream, immediately before the release that puts it
- * back in the queue, because that ordering is the whole mechanism: the fold
- * sees a repair pending, and the next claim is that repair.
+ * `#142` had already taken the conflict, which was the whole of what this was
+ * for. What was left reaching it was a `gate-failed` carrying no criterion —
+ * the one refusal `decideFix` declines to buy for, so buying a whole *run* for
+ * it was the same decision made twice with opposite answers — and a
+ * `no-commits`, which is a branch holding nothing the base does not, and a new
+ * run from scratch is 0039's expensive wrong answer stated as a definition.
+ * Both now block for a person carrying `diagnoseRefusal`'s reading of them.
  *
- * Three fields carry the bound, and all three are needed (0025 §3):
+ * The rows stay because [0019](../../../doc/decisions/0019-a-second-reset.md)
+ * says they must, for the reasons written out on `OutboxDelivered` below: a
+ * type the log still holds can be neither deleted nor skipped on read.
+ * `priorAttempts` still folds both of these into an earlier attempt's refusal,
+ * which is the *keep reading them for ever* half of retirement.
  *
- *   `fingerprint`  the failure, hashed. One agent per **distinct** failure, not
- *                  one per pass — a second `conflict` on the same files is the
- *                  same failure and buys nothing.
- *   `attempt`      1-based, against the recipe's ceiling.
- *   `runId`        the run that failed. A repair whose own run fails is
- *                  recognisable from this, and does not buy an analysis of the
- *                  analysis.
- *
- * `detail` is the refusal verbatim, not a summary of it: the raw failure has to
- * stay reachable, which is the `#112` complaint inverted.
+ * The three fields that carried the bound are described as they were written,
+ * and nothing reads them to decide anything now. `fingerprint` is the failure
+ * hashed, so one agent was bought per **distinct** failure; `attempt` was
+ * 1-based against a ceiling from the recipe; `runId` is the run that failed,
+ * which is how a repair whose own run failed was recognised. `detail` is the
+ * refusal verbatim, which is the `#112` complaint inverted and the reason these
+ * rows are still worth reading.
  */
 export const RepairRequested = z.object({
   /** The run whose failure bought this. */
@@ -528,19 +538,14 @@ export const RepairRequested = z.object({
 });
 
 /**
- * A failure that bought nothing, and why.
+ * **Retired** with `RepairRequested` above, and for the same reasons.
  *
- * Appended beside the block rather than instead of it, because **an item whose
- * integration failed must never be left with no path forward**. A card that
- * says only `conflict: agent/112 does not merge into develop` is the thing
- * `#84` is about; one that also says *no repair: this is Lingtai's own failure
- * and an agent has nothing it could change* tells an operator what is left to
- * do.
- *
- * Every decline is recorded, including the ordinary one where a recipe simply
- * does not repair. "Nothing happened because nobody asked for it" and "nothing
- * happened and we do not know why" are the two things a log exists to keep
- * apart.
+ * It recorded a failure that bought nothing and named the rule that refused,
+ * so that a card was never left saying only `conflict: agent/112 does not
+ * merge into develop` (`#84`). Every lane refusal is that now, so there is no
+ * longer a pair for the event to keep apart: the sentence it carried is the
+ * block's own `diagnosis.done`, written from `whoseFailure` rather than from a
+ * decision about money.
  */
 export const RepairDeclined = z.object({
   runId: z.string(),
@@ -1266,7 +1271,14 @@ export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
  * things and only the second can be enforced: stop writing them, and keep
  * reading them for ever.
  */
-export const RETIRED: ReadonlySet<EventType> = new Set<EventType>(["OutboxDelivered", "OutboxFailed"]);
+export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
+  "OutboxDelivered",
+  "OutboxFailed",
+  // A lane refusal buys nothing, so nothing decides whether it bought an agent
+  // (`#143`, 0039 §Consequences). See the note on `RepairRequested`.
+  "RepairRequested",
+  "RepairDeclined",
+]);
 
 export function isRetiredEventType(t: string): boolean {
   return isEventType(t) && RETIRED.has(t);

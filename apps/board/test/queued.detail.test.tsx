@@ -190,11 +190,15 @@ describe("the backoff, folded from the item's own stream", () => {
   });
 
   /**
-   * A repair jumps it, and only a repair (0028). The guard is against *blind*
-   * retries; a repair is told what went wrong and the recipe caps how many an
-   * item may buy.
+   * **Nothing jumps it, and a retired `RepairRequested` least of all** (`#143`).
+   *
+   * A repair used to (0028): the guard is against *blind* retries, and a repair
+   * was told what went wrong and capped by the recipe. A lane refusal buys no
+   * run now, so the event is retired — and a log that still holds one must not
+   * quietly exempt an old ticket from the backoff for ever, which is what
+   * folding it would do.
    */
-  it("does not hold an item with a repair pending", () => {
+  it("holds an item whose log still carries a retired repair request", () => {
     const own = [
       e("wi-lingtai-89", "WorkItemClaimed", { runId: "run-1" }, "2026-09-09T03:45:00Z"),
       e("wi-lingtai-89", "RepairRequested", {
@@ -204,7 +208,7 @@ describe("the backoff, folded from the item's own stream", () => {
         after: "run-1",
       }, "2026-09-09T03:50:00Z"),
     ];
-    expect(backoffOf(own, HOUR, now)).toBeNull();
+    expect(backoffOf(own, HOUR, now)?.toISOString()).toBe("2026-09-09T04:45:00.000Z");
   });
 });
 

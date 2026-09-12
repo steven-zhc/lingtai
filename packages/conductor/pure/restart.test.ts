@@ -141,7 +141,7 @@ describe("whether a spent pass buys another approach", () => {
    * The order the refusals are checked in is the order an operator reads them,
    * and the first refusal wins — so the sentence on a card is the most
    * fundamental reason and not the last one checked. Same property `decideFix`
-   * and `decideRepair` are written for.
+   * is written for, and `decideRepair` was before `#143` deleted it.
    */
   it("names the recipe before the ceiling when both would refuse", () => {
     const no = decideRestart({

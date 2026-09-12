@@ -84,8 +84,8 @@ export interface RestartInput {
  * Whether this spent pass buys another approach.
  *
  * **Every rule that can refuse is here, in order, and each names itself**, as in
- * `decideFix` and `decideRepair` — the first refusal wins, so the sentence on
- * the card is the most fundamental reason and not the last one checked. The
+ * `decideFix` — the first refusal wins, so the sentence on the card is the most
+ * fundamental reason and not the last one checked. The
  * order is the order an operator would want to read it: does this repository
  * restart at all, is this the kind of refusal a restart answers, was the ceiling
  * what stopped it, is anybody else waiting, and only then the bound.

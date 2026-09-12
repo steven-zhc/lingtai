@@ -140,9 +140,10 @@ export interface FixInput {
 /**
  * Whether this refusal buys an agent.
  *
- * **Every rule that can refuse is here, in order, and each names itself**, as in
- * `decideRepair` — the first refusal wins, so the sentence on the card is the
- * most fundamental reason and not the last one checked.
+ * **Every rule that can refuse is here, in order, and each names itself** — the
+ * first refusal wins, so the sentence on the card is the most fundamental reason
+ * and not the last one checked. `decideRepair` was written to the same shape and
+ * is gone (`#143`); this is now the only place a refusal buys an agent.
  *
  * The first rule is the one that makes the loop safe to have at all, and
  * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2

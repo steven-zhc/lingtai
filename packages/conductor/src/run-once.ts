@@ -25,15 +25,15 @@
  * with a question. The old loop could end in silence in at least seven places;
  * that is the thing being replaced.
  *
- * **And a failure that belongs to the managed repository has a third exit**
- * since [0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md): it
- * buys one agent. Not a sixth gate point — the set stays five and stays closed
- * — but an *outcome* of the merge lane refusing. `RepairRequested` goes down,
- * the item is released, and the next claim is the repair, told what went wrong
- * and ending by asking a person to approve the diff it produced. The decision
- * of whether to buy one is `repair.ts`'s; what is here is where it is asked.
+ * **A failure of the managed repository's used to have a third exit** — it
+ * bought one agent, a whole new run, and the next claim became that repair
+ * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). There is
+ * no such exit any more (`#143`). A refusal the loop below cannot answer is a
+ * question for a person, carrying `attribution.ts`'s reading of it: what
+ * refused, whose failure it is, and the move that is left. Nothing re-implements
+ * a branch that already exists, which is 0039 §Consequences.
  *
- * **A refused *review* buys an agent too, and spends it here rather than next
+ * **A refused *review* buys an agent, and spends it here rather than next
  * time** ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
  * Still not a sixth point: `proposed` simply runs again, on the head a fixing
  * agent committed, with the refused findings' failure scenarios handed to the
@@ -108,7 +108,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier, writeUnhookedSettingsEffect } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
-import { decideRepair, diagnoseRefusal } from "./repair.ts";
+import { diagnoseRefusal } from "./attribution.ts";
 import {
   type FixOn,
   type RestartArm,
@@ -214,9 +214,10 @@ class Stopped extends Data.TaggedError("Stopped")<{
 /**
  * A failure's own words, at the width one line on a card survives.
  *
- * The same 300 the repair's handover question clips to, and for its reason: a
- * `detail` is the runtime's output verbatim, a release reason is a sentence
+ * A `detail` is the runtime's output verbatim, a release reason is a sentence
  * somebody reads in a column, and the whole of it is on the log a click away.
+ * 300 is what the repair's handover question used to clip to, kept because the
+ * column it is read in has not changed.
  * Whitespace is flattened because the output has newlines in it and the card
  * does not.
  */
@@ -428,44 +429,30 @@ export function runOnce(
 
     const runId = `run-${crypto.randomUUID()}`;
 
-    /**
-     * Whether this run is a repair, read **before** the claim consumes it.
-     *
-     * A failure that bought an agent appended `RepairRequested` and then
-     * released the item, so between those two the fold carries a pending
-     * repair and the next claim is it
-     * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). There
-     * is no second event and no flag on `RunStarted`: a repair is an ordinary
-     * run, and the only thing that differs is what its prompt was told and that
-     * it ends by asking a person rather than by merging.
-     *
-     * Read here rather than after the claim because the claim is what clears
-     * it — `claimWorkItem` appends, and the fold moves it into `repairRun`.
-     */
     const before = yield* Effect.promise(() => store.read(workItemId));
     const item = reduceWorkItem(before);
-    const repairOf = item.pendingRepair;
     /**
      * A sentence a person added for this attempt, and only this one.
      *
-     * Read here and not after the claim for the same reason `repairOf` is: the
-     * claim below is what consumes it (0032 §5), so a read taken afterwards
-     * would find nothing and the edit would silently never reach the agent —
-     * a control the page claims and the code does not have, which is exactly
-     * the shape `renderPrompt` refuses for `{{failure}}`.
+     * Read **before** the claim because the claim is what consumes it (0032
+     * §5), so a read taken afterwards would find nothing and the edit would
+     * silently never reach the agent — a control the page claims and the code
+     * does not have, which is exactly the shape `renderPrompt` refuses for
+     * `{{failure}}`.
+     *
+     * It used to have a `repairOf` beside it, read here for the same reason: a
+     * failure that bought an agent left a pending repair on the item and the
+     * next claim *became* it. Nothing buys one since `#143`, so every claim is
+     * an ordinary pass and the only thing consumed here is the sentence.
      */
     const edit = item.pendingPrompt;
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`);
-    if (repairOf) {
-      log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt})`);
-    }
 
     /**
      * What the earlier attempts did, for this one's prompt.
      *
-     * Read from the same envelopes and for the same reason `repairOf` is read
-     * here: the claim below appends, and this run must not appear in its own
-     * history. Empty for a first attempt, and then everything downstream —
+     * Read from the same envelopes and for the same reason the edit is: the
+     * claim below appends, and this run must not appear in its own history. Empty for a first attempt, and then everything downstream —
      * prompt bytes, `promptVersion` — is what it was before `#82` (`attempts.ts`).
      *
      * **One extra stream read, and only when there is a history.** The last
@@ -487,9 +474,9 @@ export function runOnce(
      * that builds its own approximation of the prompt invites somebody to
      * approve a document that is not the one that runs.
      *
-     * Settled **before the claim**, like `repairOf` and `edit`: the claim is
-     * what consumes both, so a version computed afterwards would describe a
-     * prompt this run is not getting. The ticket is filled in much later, from
+     * Settled **before the claim**, like `edit`: the claim is what consumes it,
+     * so a version computed afterwards would describe a prompt this run is not
+     * getting. The ticket is filled in much later, from
      * inside the scope that has a worktree, which is why `renderPrompt` is a
      * second call rather than part of this one.
      */
@@ -539,17 +526,20 @@ export function runOnce(
 
     let released = false;
     /**
-     * How a run that did not land gives the item back — and there are two ways.
+     * How a run that did not land gives the item back.
      *
-     * An ordinary run **releases**: the item returns to the queue, and the
-     * backoff decides when it is seen again. A repair **hands over**: it blocks
-     * with a question naming the failure it was bought for and how far it got.
+     * **One way, and `#143` is what made it one.** The item returns to the
+     * queue, and the backoff decides when it is seen again.
      *
-     * That difference is `#84`'s *a repair that cannot fix it says so and hands
-     * over the question, rather than proposing something it did not do*.
-     * Releasing a failed repair would be worse than doing nothing — the pending
-     * repair has been consumed, so the next attempt would be an ordinary run
-     * that knows nothing about the conflict and walks straight back into it.
+     * A repair used to hand over instead — block with a question naming the
+     * failure it had been bought for and how far it got — because releasing one
+     * would have been worse than doing nothing: the pending repair had been
+     * consumed, so the next attempt would have been an ordinary run that knew
+     * nothing about the conflict and walked straight back into it. Nothing buys
+     * a repair now, so no run arrives here carrying a failure of its
+     * predecessor's that a release would throw away. What a refusal this pass
+     * could not answer gets instead is the hold at section 13, which asks a
+     * person rather than the queue.
      */
     const release = (reason: string): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -557,57 +547,6 @@ export function runOnce(
         released = true;
         return Effect.tryPromise({
           try: async () => {
-            if (repairOf) {
-              const question =
-                `the repair could not fix it — ${repairOf.reason}: ` +
-                `${repairOf.detail.slice(0, 300)} — this attempt ended: ${reason}`;
-              const held = await store.read(workItemId);
-              const handed = resolveEndActions(held, recipe.gates.end, "blocked");
-              // A failure needing acknowledgement rather than a decision: the
-              // repair was Lingtai's move and it did not work, so what a person
-              // is being handed is a fact, not a question about a diff.
-              //
-              // The refusal's own reading, with what the repair did put in place
-              // of the decline — and **no recommendation**. There is no diff to
-              // approve (#84), and requeueing is what the code above refuses to
-              // do on its own: the pending repair is spent, so the next
-              // ordinary attempt would know nothing about this failure and walk
-              // back into it. Nothing here can honestly name a move.
-              const diagnosis = {
-                ...diagnoseRefusal({
-                  reason: repairOf.reason,
-                  detail: repairOf.detail,
-                  branch,
-                  base,
-                  why: "one was, and it could not fix it",
-                }),
-                done: `a repair ran as ${runId} and ended: ${reason}`,
-                recommendation: null,
-              };
-              await store.append(workItemId, held.length, [
-                {
-                  type: "WorkItemBlocked",
-                  actor: "conductor",
-                  data: parsePayload("WorkItemBlocked", {
-                    question,
-                    needsFrom: "human",
-                    runId,
-                    needs: "acknowledgement",
-                    diagnosis,
-                  }),
-                },
-                ...handed,
-              ]);
-              await tellGitHubAbout({
-                store,
-                github: options.client,
-                workItemId,
-                question,
-                labels: labelsFor("waiting"),
-                appended: handed,
-              });
-              return;
-            }
             // A work item that does not land goes back to the queue rather than
             // sitting claimed by a run that is over.
             await releaseWorkItem(workItemId, runId, reason, store).catch(() => {});
@@ -1226,9 +1165,9 @@ export function runOnce(
                * place the difference can be said, and a card that cost nothing
                * must not read like one that bought an hour of agent.
                *
-               * Clipped where `repairOf`'s question above is clipped, and for
-               * its reason: a crash's detail is the runtime's output verbatim,
-               * and the whole of it is on the log a click away.
+               * Clipped by `said`, and for its reason: a crash's detail is
+               * the runtime's output verbatim, and the whole of it is on the
+               * log a click away.
                */
               release:
                 outcome.failure.kind === "never-started"
@@ -1391,11 +1330,12 @@ export function runOnce(
       /**
        * One round: decide, record, dispatch, record what came back.
        *
-       * Whether it happens at all is `decideFix`'s and not this file's, for
-       * `decideRepair`'s reason — a rule about spending money inside an `if`
-       * here is a rule nobody can check. What is here is the order, and the
-       * order is the same for all three refusals, which is 0039 §2 in one
-       * function rather than in three.
+       * Whether it happens at all is `decideFix`'s and not this file's: a rule
+       * about spending money inside an `if` here is a rule nobody can check,
+       * which is why the only purchase left in the system is decided in a pure
+       * module with tests. What is here is the order, and the order is the same
+       * for all three refusals, which is 0039 §2 in one function rather than in
+       * three.
        */
       const buyRound = (refusal: {
         action: string;
@@ -1414,11 +1354,12 @@ export function runOnce(
             log(`no fix for ${refusal.action}: ${decision.why}`);
             runLog.note("fix", `none: ${decision.why}`);
             // **Every refusal this loop could have bought for is recorded
-            // declining it**, which is `RepairDeclined`'s reason: "nothing
-            // happened because nobody asked for it" and "nothing happened and we
-            // do not know why" are the two things a log exists to keep apart.
-            // Until 0039 a red build was neither — it was the merge lane's
-            // business, so it left no `FixDeclined` and no trace here at all.
+            // declining it**, which was `RepairDeclined`'s reason before that
+            // event was retired: "nothing happened because nobody asked for it"
+            // and "nothing happened and we do not know why" are the two things
+            // a log exists to keep apart. Until 0039 a red build was neither —
+            // it was the merge lane's business, so it left no `FixDeclined` and
+            // no trace here at all.
             //
             // The one refusal that still records nothing is the one this loop
             // was never able to act on: `decideFix` refused it for carrying no
@@ -1455,10 +1396,9 @@ export function runOnce(
             };
           }
 
-          // Appended **before** the agent runs, as `RepairRequested` is appended
-          // before the release: the evidence it was handed is the acceptance
-          // contract, and a log that learned it afterwards could only ever show
-          // the rounds that survived.
+          // Appended **before** the agent runs: the evidence it was handed is
+          // the acceptance contract, and a log that learned it afterwards could
+          // only ever show the rounds that survived.
           yield* appendAtEnd(runId, [
             {
               type: "FixRequested",
@@ -1692,8 +1632,8 @@ export function runOnce(
         // mirror is bare with a `+refs/heads/*:refs/heads/*` refspec — there
         // are no `refs/remotes/origin/*` for it to read, so git refuses with
         // `stale info` the moment `agent/<n>` already exists on origin. That
-        // never showed while every run was an issue's first attempt; a repair
-        // is a second run on the same branch, so it is now the ordinary case.
+        // never showed while every run was an issue's first attempt, and a
+        // second attempt on the same branch is now the ordinary case.
         // The value is what origin had **when we last looked**, which is the
         // lease anyone would want: refuse if somebody else pushed since.
         //
@@ -1770,7 +1710,7 @@ export function runOnce(
          */
         const headSha = head;
 
-        if (atMerge.heldAt !== null || options.merge === false || repairOf !== null) break;
+        if (atMerge.heldAt !== null || options.merge === false) break;
 
         // ---- the merge lane -------------------------------------------------
         // Only one of the two can have refused — `merge` runs only when
@@ -1887,13 +1827,12 @@ export function runOnce(
        * the loop above.
        *
        * **The whole of the arms' history is on the item's stream**, appended
-       * before the release, exactly as `RepairRequested` is: the fold has to
-       * carry this arm before anything can claim the next one, or the ceiling
-       * counts one restart short for ever.
+       * before the release: the fold has to carry this arm before anything can
+       * claim the next one, or the ceiling counts one restart short for ever.
        *
-       * Read fresh rather than off the `item` folded before the claim, for
-       * `decideRepair`'s reason one screen down: this is a rule about spending
-       * money and it asks the log what it says now.
+       * Read fresh rather than off the `item` folded before the claim, because
+       * this is a rule about spending money and it asks the log what it says
+       * now rather than what it said before this pass began.
        */
       let restartDeclined: string | null = null;
       /**
@@ -1920,9 +1859,7 @@ export function runOnce(
             ? `the ${pipeline.heldAt} action`
             : atMerge.heldAt !== null
               ? `the ${atMerge.heldAt} action`
-              : repairOf !== null
-                ? "a repair"
-                : null;
+              : null;
         const folded = reduceWorkItem(yield* Effect.promise(() => store.read(workItemId)));
         // Newest first, which is the order they are read in. The fold keeps them
         // oldest first because that is the order they happened.
@@ -2038,23 +1975,22 @@ export function runOnce(
       // waiver is for — and pre-empting it would make the flag mean something
       // different on a red run than on a green one.
       //
-      // **And a repair always asks.** This is the requirement the two stuck
-      // items prove is missing: fixing the branch is not enough, because the
-      // run whose approval was consumed is still `gating` and nothing re-offers
-      // the decision. A repair that leaves an item unapprovable has not
-      // repaired it — so it ends by requesting approval on the *new* head,
-      // whatever the recipe says at `merge` and whatever the flag says. Merging
-      // a repair unattended would also be the one thing 0025 refuses: the
-      // person is meant to approve the diff the repair produced.
+      // **A repair used to always ask**, because the run whose approval had been
+      // consumed was still `gating` and nothing re-offered the decision, so a
+      // repair that left an item unapprovable had not repaired it. Nothing buys
+      // one since `#143`; what a refused merge leaves is a block a person can
+      // answer, which is the same requirement met without a second run.
       //
       // **And a point that spent its rounds asks, rather than going to the merge
       // lane** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
       // Something refused, an agent was bought or declined, and it still
       // refuses. Stopping here rather than below is what makes `rounds` the one
       // ceiling it claims to be: the merge lane would refuse with `gate-failed`
-      // and `decideRepair` would buy *another* agent for a refusal this pass has
-      // already paid up to `rounds` for. One ceiling has to mean one
-      // destination, or it is not a ceiling.
+      // and — while a lane refusal still bought a run — `decideRepair` would
+      // buy *another* agent for a refusal this pass has already paid up to
+      // `rounds` for. One ceiling has to mean one destination, or it is not a
+      // ceiling. `#143` finished that reading from the other end: the lane buys
+      // nothing at all now, so the two cannot disagree even by accident.
       //
       // 0038 made this argument for a refused review and kept a red build out of
       // it, because a build was the merge lane's business then. It is not any
@@ -2074,13 +2010,11 @@ export function runOnce(
         pipeline.heldAt !== null ||
         atMerge.heldAt !== null ||
         options.merge === false ||
-        repairOf !== null ||
         unresolved !== null
       ) {
         // `heldAt` is an *action* name; the point is the pipeline it came from.
         // The operator's `--no-merge` is a hold at the `merge` point that names
-        // itself as the action, so a card tells it from a configured one; a
-        // repair names itself `repair` for the same reason.
+        // itself as the action, so a card tells it from a configured one.
         // **An unresolved point names itself, for exactly the reason the two
         // above do, and it is worth saying why the obvious alternative destroys
         // the thing it was trying to point at.**
@@ -2102,7 +2036,7 @@ export function runOnce(
           pipeline.heldAt ??
           atMerge.heldAt ??
           (unresolved ? (unresolved.on === "findings" ? "disagreement" : "unfixed") : null) ??
-          (repairOf ? "repair" : "no-merge");
+          "no-merge";
 
         if (pipeline.heldAt === null && atMerge.heldAt === null) {
           yield* appendAtEnd(runId, [
@@ -2115,12 +2049,8 @@ export function runOnce(
                 runId,
                 onSha: headSha,
                 // Either point's refusal, since the flag asks on a red run
-                // too and the question has to say which colour it is. A
-                // repair says what it was repairing, because that is the
-                // thing being judged — the diff answers a failure, and
-                // "approve this" without naming it is half a question.
+                // too and the question has to say which colour it is.
                 question:
-                  (repairOf ? `A repair for ${repairOf.reason}. ` : "") +
                   // How many approaches this is, when it is more than one. A
                   // person deciding whether to merge over a live finding wants
                   // to know whether the ticket has been attempted from scratch
@@ -2149,9 +2079,7 @@ export function runOnce(
           ? unresolved.on === "findings"
             ? disagreementQuestion({ ...unresolved, branch, base, restarts: arms.length })
             : unfixedQuestion({ ...unresolved, branch, base, restarts: arms.length })
-          : repairOf
-            ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
-            : `held at the ${gate} gate: ${branch} into ${base}`;
+          : `held at the ${gate} gate: ${branch} into ${base}`;
         /**
          * The hold, as something a person can act on rather than only read.
          *
@@ -2206,21 +2134,18 @@ export function runOnce(
                 (green
                   ? `every gate passed. The ${gate} point holds for ${action}.`
                   : `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`),
-              // What was done about it, when something was: a repair spent an
-              // agent and this diff is what it produced. An ordinary hold had no
-              // failure to do anything about, and says so by saying nothing.
-              done: repairOf
-                ? `a repair for ${repairOf.reason} ran as ${runId} and produced this diff`
-                : null,
+              // Nothing was *done* about it. A hold at a gate point is a
+              // question about a diff and not a failure anything answered — a
+              // repair used to put a sentence here saying which failure it had
+              // been bought for, and nothing buys one now (`#143`).
+              done: null,
               // No raw output: nothing failed here that a git message describes.
               // The gate verdicts are on the task's own page with their evidence.
               raw: null,
               recommendation: green
                 ? {
                     action: "approve" as const,
-                    why: repairOf
-                      ? `every gate passed on what the repair for ${repairOf.reason} produced`
-                      : "every gate passed on this diff; approving merges what this run produced",
+                    why: "every gate passed on this diff; approving merges what this run produced",
                   }
                 : null,
             };
@@ -2285,81 +2210,51 @@ export function runOnce(
 
       if (!merged.ok) {
         // ---- the failure's own outcome -------------------------------------
-        // A failure of the managed repository's buys one agent, and Lingtai's
-        // own never does
-        // ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)).
-        // The decision is `decideRepair`'s and not this file's: it is a rule
-        // about spending money, and a rule about spending money inside an `if`
-        // here is a rule nobody can check.
-        //
-        // The mechanical remedy has already run by the time this line is
-        // reached — `integrate()` merges the base in before it merges out — and
-        // `IntegrationRefused` is on the log as the record of its exhaustion.
-        // That ordering is 0025 §4 and it is why a conflict costs nothing by
-        // default.
-        const failed = yield* Effect.promise(() => store.read(workItemId));
-        const decision = decideRepair({
-          failure: { source: "integration", reason: merged.reason, detail: merged.detail },
-          policy: { rounds: recipe.runtime.limits.rounds },
-          item: reduceWorkItem(failed),
-          runId,
-        });
-
-        if (decision.repair) {
-          // Recorded, then released — in that order, because the order *is* the
-          // mechanism: the fold carries a pending repair between the two, and
-          // the next claim is that repair.
-          yield* appendAtEnd(workItemId, [
-            {
-              type: "RepairRequested",
-              actor: "conductor",
-              data: parsePayload("RepairRequested", {
-                runId,
-                reason: merged.reason,
-                detail: merged.detail.slice(0, 4_000),
-                fingerprint: decision.fingerprint,
-                attempt: decision.attempt,
-              }),
-            },
-          ]);
-          yield* release(`repairing ${merged.reason} (attempt ${decision.attempt})`);
-          log(`bought a repair for ${merged.reason} — attempt ${decision.attempt}`);
-          return refusal("integrate", `${merged.reason}: ${merged.detail}`);
-        }
-
-        // Blocked rather than released: a refusal is a question for a person,
-        // and the board's "Waiting on you" column is where it goes. The decline
-        // goes on the log beside it so the card can say *why* no agent was
-        // bought — an item whose integration failed must never be left with a
-        // control that refuses and no sentence explaining it.
-        const question = `${merged.reason}: ${merged.detail.slice(0, 400)} — no repair: ${decision.why}`;
+        /**
+         * **A lane refusal buys nothing, and asks a person.** Every one of them,
+         * with no rule to consult and no recipe key to read
+         * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+         * §Consequences, `#143`).
+         *
+         * 0025 asked `decideRepair` here whether the failure bought a whole new
+         * run. What is left reaching this line does not deserve one and two of
+         * them never did. A `conflict` is answered in this pass's own worktree
+         * and never arrives (`#142`). A `gate-failed` only arrives from a
+         * refusal `decideFix` declined to buy for, because it carried no
+         * criterion — so buying a *run* for exactly what a *round* is refused
+         * for was the same decision made twice with opposite answers. And a
+         * `no-commits` means the branch holds nothing, which a new run starting
+         * from scratch answers by definition and expensively.
+         *
+         * The mechanical remedy has already run by the time this line is
+         * reached — `integrate()` merges the base in before it merges out — and
+         * `IntegrationRefused` is on the log as the record of its exhaustion.
+         * That ordering is 0025 §4 and it is the one part of that decision this
+         * path still depends on.
+         *
+         * Blocked rather than released: a refusal is a question for a person,
+         * and the board's "Waiting on you" column is where it goes. An item
+         * whose integration failed must never be left with a control that
+         * refuses and no sentence explaining it.
+         */
+        const question = `${merged.reason}: ${merged.detail.slice(0, 400)}`;
         // The question above is #83's own exhibit — a reason code, 400 characters
         // of git output and a colon — and it is still appended, because it is
         // what the log has always said and shortening it would lose the failure.
-        // What is new is beside it: the refusal read as a sentence, what had
-        // already been tried, the output verbatim, and the move it implies.
+        // What is beside it is the answer: the refusal read as a sentence, what
+        // had already been tried, whose failure it is, the output verbatim, and
+        // the move it implies. `diagnoseRefusal` composes all of it from
+        // `whoseFailure`, so this line hands it no judgement of its own.
         const diagnosis = diagnoseRefusal({
           reason: merged.reason,
           detail: merged.detail,
           branch,
           base,
-          why: decision.why,
         });
         const ended = yield* Effect.promise(async () => {
           const blocked = await store.read(workItemId);
           const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
           await store.append(workItemId, blocked.length, [
-            {
-              type: "RepairDeclined",
-              actor: "conductor",
-              data: parsePayload("RepairDeclined", {
-                runId,
-                reason: merged.reason,
-                detail: merged.detail.slice(0, 4_000),
-                fingerprint: decision.fingerprint,
-                why: decision.why,
-              }),
-            },
             {
               type: "WorkItemBlocked",
               actor: "conductor",

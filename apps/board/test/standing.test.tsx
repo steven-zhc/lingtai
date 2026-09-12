@@ -207,7 +207,8 @@ describe("the evidence", () => {
       e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
-    // The repair: it finished, cleanly, and produced nothing.
+    // The repair, from a log written before `#143` retired the purchase: it
+    // finished, cleanly, and produced nothing.
     const repair = foldRun(
       { runId: RUN_2, at: "2026-09-08T06:00:00.000Z", repair: true, released: null },
       2,
@@ -217,6 +218,8 @@ describe("the evidence", () => {
     const standing = standingOf(
       [
         e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
+        // Retired, and still read: this is an old ticket's stream, and the
+        // walk below has to work on one (`#143`).
         e(ITEM, "RepairRequested", { runId: RUN_1, reason: "gate-failed", detail: TAIL, fingerprint: "x", attempt: 1 }),
         e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "repair" }),
         e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
