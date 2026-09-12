@@ -249,42 +249,39 @@ runtime:
     # repository that has to be able to read its own policy without opening its
     # own source — and because the number is a deliberate one here.
     #
-    # **Ten, raised from two on 2026-09-12, and it is an experiment rather than
-    # a policy.** The question being asked is *how many rounds does this
-    # converge in*, and two was not enough to answer it: `#144`'s first pass
-    # spent both and stopped with three reviews, three refusals, and each
-    # refusal about code the previous round had just written —
-    # `health.ts`'s never-ageing beacon, then a beat that still missed the
-    # longest stretch of startup, then a `startBeacon` sitting between the lock
-    # and the try/catch that releases it.
+    # **Three, and the number is a hypothesis about what a refusal means.**
     #
-    # **It is a number and not "unlimited", and that is the interesting part.**
-    # There is no unlimited here to reach for: 0039 §3's whole claim is that
-    # what a pass may spend is `(rounds + 1) × wall`, one block, readable
-    # without arithmetic. A sentinel meaning "no ceiling" would delete that
-    # property rather than raise it, and the drain, `lingtai add`, the board and
-    # `doctor` all say the product — there is nothing for them to say when there
-    # is no product. If unbounded is ever wanted it is an ADR, not a value.
+    # Two was the first value and ten was an afternoon's experiment; three is
+    # what [011](../doc/experiments/011-patching-versus-starting-over.md) argues
+    # for. That experiment ran `#144` both ways against the same cold reviewer:
+    # patching across two rounds refused three times, cost ~$12 and landed
+    # nothing, while starting over carrying those findings passed first read for
+    # $6.56 — **using none of the ten rounds it had.**
     #
-    # **What ten buys and what it does not.** It buys attempts. It does not buy
-    # convergence, and the pattern to watch for is the one above: a round whose
-    # diff is what the next round's review refuses is not converging slowly, it
-    # is a fixer finding new ways to be wrong, and ten of those costs ten times
-    # as much to arrive in the same place. If that is what happens, the answer
-    # is a better brief or a person — not a bigger number.
+    # What the three refusals had in common is the point. Each was about the
+    # code the round before it had written; the last was a deadlock that did not
+    # exist until the round before created it. A round buys another attempt at
+    # *this approach*, so when the approach is the defect every round pays to
+    # get further away, and the ceiling's only contribution is deciding when to
+    # stop paying.
     #
-    # What one pass of this repository costs at most is 11 × 1h. The three
+    # **So three is a reading of the signal rather than a budget.** One refusal
+    # is an ordinary finding. Two is a fix that missed. By the third the pattern
+    # — a reviewer refusing what the last round wrote — is legible, and the
+    # honest conclusion is that the approach is wrong and the money belongs in a
+    # fresh start rather than a fourth patch. Raising it past three buys more of
+    # a thing this project has watched fail; lowering it to two stops before the
+    # pattern is readable.
+    #
+    # Today that conclusion is a person's: the pass stops and asks. `#146` is
+    # the mechanism for taking it automatically, bounded by a second ceiling —
+    # and it keeps this number as the depth half of the pair.
+    #
+    # What one pass of this repository costs at most is 4 × 1h. The three
     # numbers above decide that between them, which is why they are one block
     # and why `lingtai add`, the board and the drain all say it from
     # `passCeiling` rather than each writing it out.
-    #
-    # **The reason for a low ceiling changed on 2026-09-08 and still holds.** It
-    # used to bound only spend: every merge waited for a person, so an agent's
-    # correction produced a diff that was read before it landed. `merge` is
-    # empty now, so a round that passes `proposed` lands unread. This is
-    # therefore the whole of the limit on how far an agent may go correcting
-    # itself, not just on what that costs.
-    rounds: 10
+    rounds: 3
 
   # How much an agent is told about the attempts before it
   # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
