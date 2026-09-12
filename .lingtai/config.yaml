@@ -249,10 +249,34 @@ runtime:
     # repository that has to be able to read its own policy without opening its
     # own source — and because the number is a deliberate one here.
     #
-    # **Two, and this is what one pass of this repository costs at most:**
-    # 3 × 1h. The three numbers above decide that between them, which is why
-    # they are one block and why `lingtai add`, the board and the drain all say
-    # it from `passCeiling` rather than each writing it out.
+    # **Ten, raised from two on 2026-09-12, and it is an experiment rather than
+    # a policy.** The question being asked is *how many rounds does this
+    # converge in*, and two was not enough to answer it: `#144`'s first pass
+    # spent both and stopped with three reviews, three refusals, and each
+    # refusal about code the previous round had just written —
+    # `health.ts`'s never-ageing beacon, then a beat that still missed the
+    # longest stretch of startup, then a `startBeacon` sitting between the lock
+    # and the try/catch that releases it.
+    #
+    # **It is a number and not "unlimited", and that is the interesting part.**
+    # There is no unlimited here to reach for: 0039 §3's whole claim is that
+    # what a pass may spend is `(rounds + 1) × wall`, one block, readable
+    # without arithmetic. A sentinel meaning "no ceiling" would delete that
+    # property rather than raise it, and the drain, `lingtai add`, the board and
+    # `doctor` all say the product — there is nothing for them to say when there
+    # is no product. If unbounded is ever wanted it is an ADR, not a value.
+    #
+    # **What ten buys and what it does not.** It buys attempts. It does not buy
+    # convergence, and the pattern to watch for is the one above: a round whose
+    # diff is what the next round's review refuses is not converging slowly, it
+    # is a fixer finding new ways to be wrong, and ten of those costs ten times
+    # as much to arrive in the same place. If that is what happens, the answer
+    # is a better brief or a person — not a bigger number.
+    #
+    # What one pass of this repository costs at most is 11 × 1h. The three
+    # numbers above decide that between them, which is why they are one block
+    # and why `lingtai add`, the board and the drain all say it from
+    # `passCeiling` rather than each writing it out.
     #
     # **The reason for a low ceiling changed on 2026-09-08 and still holds.** It
     # used to bound only spend: every merge waited for a person, so an agent's
@@ -260,7 +284,7 @@ runtime:
     # empty now, so a round that passes `proposed` lands unread. This is
     # therefore the whole of the limit on how far an agent may go correcting
     # itself, not just on what that costs.
-    rounds: 2
+    rounds: 10
 
   # How much an agent is told about the attempts before it
   # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
