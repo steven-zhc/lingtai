@@ -47,8 +47,11 @@ export class ProductionValueError extends Error {
  * **A floor, and on a managed database an inert one** (`#51`). Supabase,
  * Neon, PlanetScale and RDS name a database by a random ref —
  * `db.eliwlauokdzgsqfgczkv.supabase.co` has no segment either of these match.
- * So ADR 0005's production host patterns are the recipe's, as `env.refuseHosts`,
- * and a repository whose production host is one of those names its ref there:
+ * ADR 0005 put production host patterns in *policy*, outside the repository;
+ * 0016 deleted policy and nothing took that row over. Until something does, the
+ * recipe's `env.refuseHosts` carries them — a file the governed agent can edit,
+ * guarded only by `tamper` — and a repository whose production host is one of
+ * those names its ref there:
  * a deliberate disclosure of an identifier, where a reviewer reads it, rather
  * than a default that silently lets the real host through.
  *

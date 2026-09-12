@@ -402,13 +402,20 @@ export const Recipe = z.object({
      * run, and `runOnce` calls before the claim.
      *
      * An entry is a segment or a run of them — `<ref>`, `prod-db`, or a whole
-     * host — matched segment by segment. One with an empty segment
-     * (`.supabase.co`) could never match anything, so it is refused here
-     * rather than shown to a reviewer as a host being refused.
+     * host — matched segment by segment against a URL's hostname. One that
+     * could never equal a run of a hostname's segments is refused here rather
+     * than shown to a reviewer as a host being refused: an empty segment
+     * (`.supabase.co`), and anything a hostname does not hold — a port
+     * (`db.<ref>.supabase.co:5432`), a scheme (`postgresql://…`), a user, a path.
      */
     refuseHosts: z
       .array(
-        z.string().regex(/^[^.\-]+(?:[.\-][^.\-]+)*$/, "a host, or segments of one, with no empty segment"),
+        z
+          .string()
+          .regex(
+            /^[a-z0-9_]+(?:[.\-][a-z0-9_]+)*$/i,
+            "a host, or segments of one — no port, scheme, user or path, and no empty segment",
+          ),
       )
       .default([]),
     /** Where the filtered env file is planted inside the worktree. Rarely the

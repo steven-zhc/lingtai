@@ -89,6 +89,19 @@ describe("resolveRecipe", () => {
     await expect(resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: inert }), "develop")).rejects.toBeInstanceOf(
       RecipeInvalidError,
     );
+
+    // Nor one copied out of a connection string with what a hostname does not hold.
+    for (const entry of [
+      '"db.eliwlauokdzgsqfgczkv.supabase.co:5432"',
+      '"postgresql://db.eliwlauokdzgsqfgczkv.supabase.co"',
+      '"postgres.eliwlauokdzgsqfgczkv@aws-0-us-east-1.pooler.supabase.com"',
+      '"db.eliwlauokdzgsqfgczkv.supabase.co/postgres"',
+    ]) {
+      const copied = VALID.replace("  plantAt:", `  refuseHosts: [${entry}]\n  plantAt:`);
+      await expect(resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: copied }), "develop")).rejects.toBeInstanceOf(
+        RecipeInvalidError,
+      );
+    }
   });
 
   it("says which branch has no recipe, and that the agent's does not count", async () => {
