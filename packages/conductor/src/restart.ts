@@ -190,3 +190,25 @@ export function restartReason(input: {
     `approach is abandoned and the ticket starts over — restart ${input.n} of ${input.of}`
   );
 }
+
+/**
+ * Where an abandoned approach is published, so a later one cannot overwrite it.
+ *
+ * **A ref per arm, because `agent/<n>` is one ref and there are as many arms as
+ * the ceiling allows.** The restart pushes the branch it is abandoning, and
+ * that push is what makes the next prompt's `git fetch origin agent/<n>` true
+ * (0040 §2) — but the arm after it pushes the same name, force, from a history
+ * with no ancestor in common. So `agent/<n>` is the *newest* arm and this is
+ * every arm: `PassRestarted` names one of these, and the claim that an arm on
+ * the log is an arm that can be read is then true of all of them and not only
+ * the last.
+ *
+ * A sibling of `agent/<n>` rather than a child of it, because git cannot hold
+ * `refs/heads/agent/7` and `refs/heads/agent/7/restart-1` at once — a ref
+ * cannot also be a directory. The name says which arm rather than which sha,
+ * so a pass that pushed and then failed to record its arm re-pushes the same
+ * name on the retry instead of stranding one.
+ */
+export function armBranch(branch: string, n: number): string {
+  return `${branch}-restart-${n}`;
+}

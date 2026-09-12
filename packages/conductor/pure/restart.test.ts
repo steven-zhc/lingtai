@@ -17,7 +17,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { emptyWorkItem, type RestartRecord, type WorkItemState } from "@lingtai/domain";
-import { decideRestart, restartReason } from "../src/restart.ts";
+import { armBranch, decideRestart, restartReason } from "../src/restart.ts";
 
 const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
   after: "run-1",
@@ -168,5 +168,34 @@ describe("what the release says", () => {
     expect(reason).toContain("review reviewer still refused after 3 round(s)");
     expect(reason).toContain("approach is abandoned");
     expect(reason).toContain("restart 1 of 2");
+  });
+});
+
+/**
+ * **Where an abandoned arm is published**, which is the other half of the push:
+ * the working branch is one ref and there are as many arms as the ceiling
+ * allows, so `agent/7` can only ever hold the newest.
+ *
+ * The property under test is that two arms of one ticket do not share a name.
+ * Without it the card shown when the last restart is spent — every arm, each
+ * headed by the branch and sha it was refused at (0040 §3) — names commits
+ * origin dropped when the next arm force-pushed over them, and it does so at
+ * exactly the moment a person is being asked to compare the arms.
+ */
+describe("where an abandoned approach is published", () => {
+  it("gives each arm a ref of its own, beside the working branch", () => {
+    expect(armBranch("agent/7", 1)).toBe("agent/7-restart-1");
+    expect(armBranch("agent/7", 2)).toBe("agent/7-restart-2");
+    expect(armBranch("agent/7", 1)).not.toBe(armBranch("agent/7", 2));
+  });
+
+  /**
+   * A sibling and not a child: git cannot hold `refs/heads/agent/7` and
+   * `refs/heads/agent/7/restart-1` at once, because a ref cannot also be a
+   * directory — and `agent/7` has to keep existing, since it is the name
+   * `attempts.ts` spells out in the next attempt's prompt.
+   */
+  it("does not nest under the branch it is abandoning", () => {
+    expect(armBranch("agent/7", 1).startsWith("agent/7/")).toBe(false);
   });
 });

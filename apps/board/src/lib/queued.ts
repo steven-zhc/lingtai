@@ -79,6 +79,20 @@ export interface PlanView {
    * nobody can audit. Zero is the whole of what `repair.on: false` used to say.
    */
   rounds: number;
+  /**
+   * How many passes one ticket may buy, `runtime.limits.restarts`
+   * ([0040](../../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+   *
+   * **Beside `rounds` because the two multiply**, and a footer built from the
+   * depth ceiling alone advertises the wrong number: `rounds: 0, restarts: 2`
+   * — 0040's *never patch, start over twice* — buys three agent runs on the
+   * ticket while `rounds` says it buys none. This page is where somebody
+   * decides whether to press the button, so it is the last place a ceiling
+   * should be invisible.
+   *
+   * Rendered when it is zero too, for `rounds`' reason and `passCeiling`'s.
+   */
+  restarts: number;
 }
 
 /** Why GitHub is not offering this issue to the conductor, in words. */
@@ -140,7 +154,10 @@ export interface QueuedView {
 /** The recipe's plan, as the page states it. Pure, and asserted as such. */
 export function planOf(
   plan: GatePlan,
-  runtime: { limits: { turns: number; wall: string; rounds: number }; tier: string },
+  runtime: {
+    limits: { turns: number; wall: string; rounds: number; restarts: number };
+    tier: string;
+  },
 ): PlanView {
   return {
     points: GATE_POINTS.map((point) => {
@@ -151,6 +168,7 @@ export function planOf(
     wall: runtime.limits.wall,
     tier: runtime.tier,
     rounds: runtime.limits.rounds,
+    restarts: runtime.limits.restarts,
   };
 }
 

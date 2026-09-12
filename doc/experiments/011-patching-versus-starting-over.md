@@ -84,6 +84,11 @@ the judgement explicitly. It chose to start over — and the diff it produced
 addresses the finding from arm A's *first* review as well as the last, which
 means it read all of them and not just the one that stopped the pass.
 
+**One line of that prompt was false, and it matters more than the rest.** Arm
+A never pushed, so `git fetch origin agent/144` would have failed; see the last
+section. What informed arm B were the findings, which the prompt carried
+honestly.
+
 ## What this does not show
 
 **n = 1.** One ticket, one reviewer, one pair of arms. Arm B being cheaper may be
@@ -133,5 +138,20 @@ The pieces that make this readable off the log without a person taking notes:
 of 2*, and a card says which arm an item is on.
 
 `#145` was written before this and claimed the branch was unreachable by the
-system. It is not: the prompt above is what makes arm B work at all. It has been
-corrected.
+system. **`#145` was right, and this file said otherwise for a day**
+([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §Context
+settles it). The prompt is what made arm B *informed* — it carried the findings
+and the judgement — but the one thing in it that was not true was the fetch. A
+pass that spends its rounds pushes nothing: the only push is after `proposed`
+passes, so arm A's commits were in a `--force --detach` worktree that was
+deleted when the pass ended, on no ref on origin and none in the mirror. `git
+fetch origin agent/144` off arm A would have failed with `couldn't find remote
+ref`, and `8634c5d` is reachable from nothing to this day — `agent/144` on
+origin is `b8c583d`, which is arm B's.
+
+So the prompt alone does **not** make a restart work, and anyone porting this
+should read that as the load-bearing sentence: 0040 §2 makes the restart push
+the approach it is abandoning, at a ref of its own, precisely so the paragraph
+above stops being a promise the system cannot keep. Drop that push and the
+mechanism is arm B choosing to start over because the alternative it was
+offered did not exist.

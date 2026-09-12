@@ -389,7 +389,9 @@ describe("what a person is shown when the restarts are over too", () => {
     restart: 1,
     of: 2,
     action: "review",
-    branch: "agent/123",
+    // The arm's own ref, which is what `PassRestarted` records: `agent/123`
+    // itself is the newest arm and this one is two force-pushes ago.
+    branch: "agent/123-restart-1",
     headSha: "8634c5d0000000",
     rounds: 3,
     findings: [
@@ -420,7 +422,9 @@ describe("what a person is shown when the restarts are over too", () => {
 
   it("keeps every arm's findings, each said whose it is", () => {
     expect(diagnosis.raw).toContain("this approach · agent/123@c0ffee1");
-    expect(diagnosis.raw).toContain("restart 1 of 2 · review refused agent/123@8634c5d after 3 round(s)");
+    expect(diagnosis.raw).toContain(
+      "restart 1 of 2 · review refused agent/123-restart-1@8634c5d after 3 round(s)",
+    );
     // The abandoned arm's scenario verbatim, which is the thing that would
     // otherwise be gone: its run's stream is not read by any later pass.
     expect(diagnosis.raw).toContain("startDaemon exits holding the conductor lock");

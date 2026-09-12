@@ -16,6 +16,7 @@
  *   run the agent                           on the socket, restricted by nothing
  *   the diff → `proposed`                   each refusal typed and recorded
  *   a refused review → a fix → `proposed`   the findings bought an agent (0038)
+ *   the rounds spent → a restart            a fresh pass, if one is bought (0040)
  *   → `merge`                               only when `proposed` passed
  *   → integrate                             a point with actions always runs
  *
@@ -41,6 +42,17 @@
  * thing under discussion, so nothing is released and nothing is re-claimed; when
  * the rounds are spent and the review still refuses, a person is asked, and what
  * they are shown says **two agents disagreed**. The decisions are `fix.ts`'s.
+ *
+ * **A spent pass is not always the person's, since**
+ * [0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md).
+ * `rounds` bounds depth and `runtime.limits.restarts` bounds breadth: above
+ * zero, a review that outlasted the rounds pushes the approach it is
+ * abandoning, appends `PassRestarted` and **releases** the item, and the next
+ * claim is an ordinary pass from the base carrying the findings. Section 12 is
+ * where that is asked and `restart.ts` is what decides it — only a judgement
+ * buys one, so a red build and a conflict still end at section 13's hold. The
+ * key defaults to zero, which is every project today, and then the paragraph
+ * above is the whole of it and the person is asked on the first spent pass.
  *
  * It used to say so and then keep the promise by hand: two nested `finally`
  * blocks and a `catch (err)` whose own comment admitted what it was. Since
@@ -108,7 +120,7 @@ import {
   fixBrief,
   unfixedQuestion,
 } from "./fix.ts";
-import { decideRestart, restartReason } from "./restart.ts";
+import { armBranch, decideRestart, restartReason } from "./restart.ts";
 import { standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
@@ -1941,16 +1953,29 @@ export function runOnce(
            * `agent/<n>` may be the arm before this one, and what this pass has
            * of it is what it last looked at.
            *
+           * **Two refs, because they answer two different questions.**
+           * `agent/<n>` is the one `attempts.ts` names, so it has to be the
+           * *newest* arm — which means the arm after this one overwrites it,
+           * force, from a history with no ancestor in common. `armBranch` is
+           * this arm's own and nothing else ever writes it, so every abandoned
+           * approach stays fetchable and `PassRestarted` can name a ref that
+           * is still there when the last restart is spent and a person is
+           * shown all of them. Forced, not created: a pass that pushed and
+           * then failed to record its arm comes back with the same ordinal,
+           * and a rejected non-fast-forward there would wedge the ticket.
+           *
            * Before the append, not after. A push that is refused leaves no arm
            * on the log — the pass ends as a `push` failure, the item goes back
            * through the backoff, and nothing has claimed one of the restarts
            * for an approach nobody can read.
            */
+          const arm = armBranch(branch, second.n);
           yield* gitInWorktree([
             "push",
             `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
             "origin",
             `HEAD:refs/heads/${branch}`,
+            `+HEAD:refs/heads/${arm}`,
           ]).pipe(failing("push"));
 
           const reason = restartReason({
@@ -1969,7 +1994,11 @@ export function runOnce(
                 of: second.of,
                 action: unresolved.action,
                 rounds: unresolved.rounds,
-                branch,
+                // This arm's own ref and not `agent/<n>`, which the next arm
+                // takes. The event is read when the *last* restart is spent,
+                // so the branch it names has to be the one still holding this
+                // arm's commits then.
+                branch: arm,
                 headSha,
                 findings: unresolved.findings,
               }),

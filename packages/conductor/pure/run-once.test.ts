@@ -265,11 +265,16 @@ function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
       remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
       git: (args) =>
         Effect.sync(() => {
-          // The refspec too, for a push and only for a push: *which ref* is the
-          // whole of what the restart path needs from it, since the branch the
-          // next attempt is told to fetch is the branch this has to leave on
-          // origin. Everything else is assertable by its verb.
-          did.push(args[0] === "push" ? `git push ${args.at(-1)}` : `git ${args[0]}`);
+          // The refspecs too, for a push and only for a push: *which refs* is
+          // the whole of what the restart path needs from it, since the branch
+          // the next attempt is told to fetch and the branch this arm keeps
+          // for the card are two different names. Everything else is
+          // assertable by its verb.
+          did.push(
+            args[0] === "push"
+              ? `git push ${args.filter((a) => a.includes(":refs/heads/")).join(" ")}`
+              : `git ${args[0]}`,
+          );
           // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
           // is what the diff summary is counted from.
           if (args[0] === "rev-parse") return "b".repeat(40);
@@ -699,19 +704,30 @@ describe("runOnce, with no world to run in", () => {
         branch: string;
         findings: { claim: string }[];
       };
-      expect(arm).toMatchObject({ restart: 1, of: 1, action: "review", branch: "agent/7" });
+      // **The arm's own ref, not the working branch.** `agent/7` is what the
+      // next prompt names, so the arm after this one takes it over — and a
+      // person shown every arm at the end would then be reading shas origin
+      // dropped. `agent/7-restart-1` is written by this arm and by nothing
+      // else, so the heading on that card stays fetchable.
+      expect(arm).toMatchObject({
+        restart: 1,
+        of: 1,
+        action: "review",
+        branch: "agent/7-restart-1",
+      });
       expect(arm.findings[0]!.claim).toBe("the approach cannot work");
 
-      // **And the branch it names is on origin.** The only push in a pass is
+      // **And both branches are on origin.** The only push in a pass is
       // after its gates pass, which a spent review never reaches, so these
       // commits were in a `--force --detach` worktree with no ref anywhere —
       // while `attempts.ts` tells the next agent `git fetch origin agent/7`,
-      // which is the whole of the mechanism (0040 §2). Pushed while the
-      // worktree still exists, which is the only place those commits are.
-      expect(did).toContain("git push HEAD:refs/heads/agent/7");
-      expect(did.indexOf("git push HEAD:refs/heads/agent/7")).toBeLessThan(
-        did.indexOf(`remove ${result.runId}`),
-      );
+      // which is the whole of the mechanism (0040 §2). One push, two refspecs:
+      // the working branch moves to the newest arm and the arm's own ref
+      // keeps this one. Pushed while the worktree still exists, which is the
+      // only place those commits are.
+      const push = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-restart-1";
+      expect(did).toContain(push);
+      expect(did.indexOf(push)).toBeLessThan(did.indexOf(`remove ${result.runId}`));
 
       // And the release says which arm, in the sentence that becomes both the
       // card's line and the next attempt's own history row.

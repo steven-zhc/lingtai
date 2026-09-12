@@ -219,7 +219,7 @@ const GATES: GatePlan = new Map([
 ]);
 
 const PLAN: PlanView = planOf(GATES, {
-  limits: { turns: 150, wall: "1h", rounds: 2 },
+  limits: { turns: 150, wall: "1h", rounds: 2, restarts: 0 },
   tier: "guarded",
 });
 
@@ -247,6 +247,9 @@ describe("what will happen", () => {
     // The third number in the same block, because what a pass costs is all
     // three of them and 0039 §3 put them together for exactly that reason.
     expect(PLAN.rounds).toBe(2);
+    // And the fourth, because what a *ticket* costs is the product of the two
+    // ceilings (0040 §5) — a page built from one of them names the wrong one.
+    expect(PLAN.restarts).toBe(0);
   });
 
   it("renders the plan and the bounds together", () => {
@@ -258,7 +261,7 @@ describe("what will happen", () => {
     expect(html).toContain("close the ticket");
     // Twice: `admit` and `merge`, each stated rather than omitted.
     expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(2);
-    expect(html).toContain("150 turns · 1h · guarded · 2 round(s) back");
+    expect(html).toContain("150 turns · 1h · guarded · 2 round(s) back · then straight to you");
   });
 
   /**
@@ -271,10 +274,32 @@ describe("what will happen", () => {
     // §4), and it has to render as loudly: a project that sends every refusal
     // to a person is making a choice somebody should be able to see.
     const none = planOf(GATES, {
-      limits: { turns: 300, wall: "2h", rounds: 0 },
+      limits: { turns: 300, wall: "2h", rounds: 0, restarts: 0 },
       tier: "guarded",
     });
     expect(renderToStaticMarkup(<Plan plan={none} />)).toContain("straight to you");
+  });
+
+  /**
+   * **The other ceiling, on the one page where somebody is deciding whether to
+   * press the button** (0040 §5).
+   *
+   * `rounds: 0, restarts: 2` is 0040's *never patch, start over twice* and it
+   * is the configuration this footer used to describe backwards: no round is
+   * bought, and then the ticket is released for two further passes — three
+   * agent runs — before any refusal is the operator's. Saying `straight to
+   * you` there is the 2026-09-10 drain failure on the page that costs the most
+   * to be wrong on.
+   */
+  it("does not promise a refusal is yours when a restart is bought", () => {
+    const over = planOf(GATES, {
+      limits: { turns: 150, wall: "1h", rounds: 0, restarts: 2 },
+      tier: "guarded",
+    });
+    const html = renderToStaticMarkup(<Plan plan={over} />);
+
+    expect(html).toContain("no rounds · 2 restart(s)");
+    expect(html).not.toContain("straight to you");
   });
 
   /**

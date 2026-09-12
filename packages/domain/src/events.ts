@@ -682,6 +682,14 @@ export const PassRestarted = z.object({
    * `attempts.ts` told the next agent to fetch them. The conductor publishes
    * the approach before it records the arm; an arm on the log is therefore an
    * arm that can be read.
+   *
+   * **This arm's own ref — `agent/<n>-restart-<k>` — and not `agent/<n>`**
+   * (`armBranch`). The working branch is what the next prompt names, so each
+   * restart takes it over, force, from a history with no ancestor in common
+   * with the last: recording it here would make every arm but the newest name
+   * a sha origin no longer has, which is the reading a person gets exactly
+   * when they are shown all of them at once. One name per arm, so the
+   * paragraph above is true of every one of them.
    */
   branch: z.string(),
   headSha: z.string(),

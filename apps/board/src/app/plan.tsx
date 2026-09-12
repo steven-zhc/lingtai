@@ -32,15 +32,25 @@ import type { PlanView } from "@/lib/queued";
  * it buys anything or not (0025 §2): a default that spends money and only
  * appears when it is doing something is a default nobody can audit.
  *
- * The three that bound a pass sit together here because they do in the recipe
- * (0039 §3) — what this footer says and what the file says are the same block.
+ * The four that bound a ticket sit together here because they do in the recipe
+ * (0039 §3, [0040](../../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5)
+ * — what this footer says and what the file says are the same block.
+ *
+ * **Two cells for the two ceilings, and `straight to you` is the second one's**
+ * (0040 §5). It used to be what `rounds: 0` rendered, which was true while
+ * depth was the whole policy and is false beside a non-zero `restarts`: the
+ * configuration 0040 calls *never patch, start over twice* buys no round and
+ * three agent runs, and this footer would have promised the operator standing
+ * over the button that the first refusal was theirs. Depth says how many
+ * rounds a pass buys; breadth says whether a spent pass is yours.
  */
 function limits(plan: PlanView): string {
   return [
     `${plan.turns} turns`,
     plan.wall,
     plan.tier,
-    plan.rounds === 0 ? "straight to you" : `${plan.rounds} round(s) back`,
+    plan.rounds === 0 ? "no rounds" : `${plan.rounds} round(s) back`,
+    plan.restarts === 0 ? "then straight to you" : `${plan.restarts} restart(s)`,
   ].join(" · ");
 }
 

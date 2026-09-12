@@ -79,6 +79,15 @@ one thing it hands the agent. So a restart pushes the approach it is abandoning
 before it names it, and before the arm is on the log: a push origin refuses
 leaves no arm, and the ceiling is not spent on an approach nobody can read.
 
+**Two refs, one per question.** `agent/<n>` is the name the prompt above
+spells out, so it has to be the arm the *next* pass would build on — which
+means the arm after that takes it over, force, from a history sharing no
+ancestor. Every arm therefore also gets a ref of its own,
+`agent/<n>-restart-<k>`, and that is the one `PassRestarted` records. Without
+it the card at the end of §3 — every arm's findings, each headed by the branch
+and sha it was refused at — would name commits origin dropped two arms ago, and
+would do it precisely when a person is being asked to compare the arms.
+
 ## Decision
 
 ### 1. Two ceilings, meaning two different things
