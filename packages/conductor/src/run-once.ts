@@ -139,7 +139,7 @@ import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 
 import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
-import { extensionEnv, runnableEnv } from "@lingtai/agent-env";
+import { extensionEnv, productionPatterns, runnableEnv } from "@lingtai/agent-env";
 import { stateDir } from "@lingtai/env";
 import type { TokenSource } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
@@ -348,6 +348,7 @@ export function runOnce(
         required: recipe.env.required,
         allow: recipe.env.allow,
         deny: recipe.env.deny,
+        patterns: productionPatterns(recipe.env.refuseHosts),
         home,
       }),
     );
@@ -380,7 +381,7 @@ export function runOnce(
      * put an operator's typo between an agent's work and its gates.
      */
     const envForExtension = (declared: readonly string[]): Record<string, string> =>
-      runnableEnv(extensionEnv(env.merged, declared).values);
+      runnableEnv(extensionEnv(env.merged, declared, productionPatterns(recipe.env.refuseHosts)).values);
 
     // ---- 3. capability matching, before anything is claimed ------------------
     const tier: Tier = resolved.tier;

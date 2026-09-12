@@ -84,6 +84,18 @@ env:
   required:
     - LINGTAI_TEST_DATABASE_URL
     - LINGTAI_TEST_DIRECT_DATABASE_URL
+
+  # Host segments a value is refused for, whatever reaches the agent from either
+  # file (#51) — on top of `prod` and `production`, which a recipe cannot remove.
+  #
+  # **`eliwlauokdzgsqfgczkv` is this system's own production database** — the
+  # Supabase project #51 names. A managed database is named by a random ref, so
+  # the default never matched it: `db.<ref>.supabase.co` has no `prod` segment,
+  # and the pooler puts the ref in the username instead of the host. Naming it
+  # here is a deliberate disclosure of an identifier, not of a credential, in a
+  # private repository — so a `cp` of a `.env` holding both connection strings
+  # into ~/.lingtai/env/lingtai.env refuses the run instead of planting it.
+  refuseHosts: [eliwlauokdzgsqfgczkv]
   # `@lingtai/env` loads `.env.local` from the workspace root, so that is where
   # a worktree's copy has to land.
   plantAt: .env.local

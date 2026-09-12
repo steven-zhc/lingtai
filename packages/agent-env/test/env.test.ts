@@ -22,6 +22,7 @@ import {
   filterEnv,
   hostLooksProduction,
   parseEnvFile,
+  productionPatterns,
   projectEnvNames,
   projectEnvPath,
   renderEnvFile,
@@ -119,6 +120,10 @@ describe("extensionEnv — the declared set is the whole set", () => {
     expect(() => extensionEnv({ DB: "postgres://db.prod.example.com/x" }, ["DB"])).toThrow(
       ProductionValueError,
     );
+    // And with the recipe's patterns, not only the default's.
+    const supabase = { DB: "postgresql://postgres:x@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres" };
+    expect(extensionEnv(supabase, ["DB"]).values).toEqual(supabase);
+    expect(() => extensionEnv(supabase, ["DB"], ["eliwlauokdzgsqfgczkv"])).toThrow(ProductionValueError);
   });
 });
 
@@ -217,6 +222,42 @@ describe("resolveAgentEnv — merge first, filter second", () => {
     );
   });
 
+  /**
+   * `#51`. A managed database is named by a random ref, so the default patterns
+   * pass the host this project actually uses — and the recipe's `refuseHosts`
+   * is what refuses it, read from the project's file before any run.
+   */
+  it("refuses a Supabase host by the ref the recipe names, which the default passes", async () => {
+    await project("DATABASE_URL=postgresql://postgres:s3cr3tpass@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres\n");
+    const passed = await resolveAgentEnv({ project: PROJECT, home, machine: {} });
+    expect(passed.values["DATABASE_URL"]).toContain("supabase.co");
+
+    const refused = resolveAgentEnv({
+      project: PROJECT,
+      home,
+      machine: {},
+      patterns: productionPatterns(["eliwlauokdzgsqfgczkv"]),
+    });
+    await expect(refused).rejects.toBeInstanceOf(ProductionValueError);
+    await expect(refused).rejects.toThrow(/DATABASE_URL looks like production.*"eliwlauokdzgsqfgczkv"/);
+    // Names the pattern, never the value.
+    await expect(refused).rejects.not.toThrow(/s3cr3tpass/);
+  });
+
+  /** Supabase's pooler moves the ref out of the host and into the username. */
+  it("refuses a pooler URL whose username carries the ref", async () => {
+    await project(
+      "DATABASE_URL=postgresql://postgres.eliwlauokdzgsqfgczkv:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres\n",
+    );
+    await expect(
+      resolveAgentEnv({ project: PROJECT, home, machine: {}, patterns: ["eliwlauokdzgsqfgczkv"] }),
+    ).rejects.toBeInstanceOf(ProductionValueError);
+    // A different project's ref on the same pooler is not this one.
+    await expect(
+      resolveAgentEnv({ project: PROJECT, home, machine: {}, patterns: ["someotherprojectref"] }),
+    ).resolves.toBeDefined();
+  });
+
   /** A denied value never reaches an agent, so it is not the tripwire's business. */
   it("does not refuse a production value the recipe denies", async () => {
     await project("DB=postgres://user:pw@db.prod.example.com/app\n");
@@ -234,6 +275,11 @@ describe("the pieces the layers are built from", () => {
 
   it("quotes what it renders, so a # or a space cannot truncate a value", () => {
     expect(renderEnvFile({ A: "a b # c" })).toContain('A="a b # c"');
+  });
+
+  it("adds the recipe's hosts to the default and never drops it", () => {
+    expect(productionPatterns()).toEqual(["prod", "production"]);
+    expect(productionPatterns(["eliwlauokdzgsqfgczkv", "prod"])).toEqual(["prod", "production", "eliwlauokdzgsqfgczkv"]);
   });
 
   it("names a production host and passes an opaque one", () => {

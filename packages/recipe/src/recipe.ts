@@ -385,6 +385,23 @@ export const Recipe = z.object({
      * need to see it.
      */
     required: z.array(z.string()).default([]),
+    /**
+     * Host segments that refuse a value outright — production host patterns,
+     * and the field `agent-env`'s tripwire said it was waiting for.
+     *
+     * **Added to `prod` and `production`, never in place of them**
+     * (`productionPatterns`): 0005 lets a recipe add strictness and not remove
+     * it. Those two are inert on a managed database named by a random ref
+     * (`#51`), so a repository
+     * whose production host is `db.<ref>.supabase.co` names `<ref>` here. That
+     * puts an identifier — not a credential — in a committed file, and it is
+     * meant to: a reviewer sees the host being refused.
+     *
+     * Checked against every value that reaches the agent or an extension, from
+     * either file, by `resolveAgentEnv` — which `lingtai doctor` calls before a
+     * run, and `runOnce` calls before the claim.
+     */
+    refuseHosts: z.array(z.string().min(1)).default([]),
     /** Where the filtered env file is planted inside the worktree. Rarely the
      *  repo root — Next/Prisma/vitest read it from the app directory. */
     plantAt: z.string(),

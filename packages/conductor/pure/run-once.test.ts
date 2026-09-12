@@ -778,3 +778,42 @@ describe("runOnce, with no world to run in", () => {
     });
   });
 });
+
+/**
+ * `env.refuseHosts` reaches the tripwire, which is the whole of `#51`.
+ *
+ * A field carried through the recipe and handed to nothing is `#89`'s shape,
+ * and it would pass every test in `agent-env`: the tripwire works there with
+ * whatever patterns it is given. This asserts the conductor gives it these.
+ */
+describe("runOnce hands the recipe's production hosts to the environment", () => {
+  it("passes env.refuseHosts to resolveEnv, before anything is claimed", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const ports = fakePorts(did, store);
+    let seen: readonly string[] | undefined;
+    ports.agent.resolveEnv = (options) => {
+      seen = options.patterns;
+      return Effect.succeed({ values: {}, names: [], refusal: "refused here" }) as never;
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], RECIPE.replace("required: [],", "required: [], refuseHosts: [abcdefghijklmnopqrst],")),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "env" });
+    // The recipe's added to the default, which it cannot remove (0005).
+    expect(seen).toEqual(["prod", "production", "abcdefghijklmnopqrst"]);
+  });
+});

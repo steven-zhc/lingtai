@@ -72,6 +72,15 @@ describe("resolveRecipe", () => {
     expect(other.configHash).not.toBe(resolved.configHash);
   });
 
+  it("reads env.refuseHosts, empty when a recipe names none", async () => {
+    const plain = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
+    expect(plain.recipe.env.refuseHosts).toEqual([]);
+
+    const named = VALID.replace("  plantAt:", "  refuseHosts: [eliwlauokdzgsqfgczkv]\n  plantAt:");
+    const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: named }), "develop");
+    expect(resolved.recipe.env.refuseHosts).toEqual(["eliwlauokdzgsqfgczkv"]);
+  });
+
   it("says which branch has no recipe, and that the agent's does not count", async () => {
     await expect(resolveRecipe(reader({}), "develop")).rejects.toBeInstanceOf(RecipeMissingError);
     await expect(resolveRecipe(reader({}), "develop")).rejects.toThrow(/not read, by design/);

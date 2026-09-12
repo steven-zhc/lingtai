@@ -22,7 +22,7 @@
  * not about what happened to be installed the day it was written: see
  * `DEFERRED`.
  */
-import { resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
+import { productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
   currentRecipe,
   landedWithoutEndActions,
@@ -1220,6 +1220,7 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
         required: resolved.recipe.env.required,
         allow: resolved.recipe.env.allow,
         deny: resolved.recipe.env.deny,
+        patterns: productionPatterns(resolved.recipe.env.refuseHosts),
       });
 
       if (agentEnv.names.length === 0) {

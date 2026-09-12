@@ -32,7 +32,7 @@ export class ProductionValueError extends Error {
 
   constructor(variable: string, matched: string) {
     super(
-      `${variable} looks like production (its host matches "${matched}"). ` +
+      `${variable} looks like production (its host or user matches "${matched}"). ` +
         "Refusing to plant it: an agent must never hold a production credential.",
     );
     this.variable = variable;
@@ -41,12 +41,16 @@ export class ProductionValueError extends Error {
 }
 
 /**
- * Host substrings that mean "do not give this to an agent".
+ * Host segments that mean "do not give this to an agent" — the floor that a
+ * recipe's `env.refuseHosts` is added to (`productionPatterns`).
  *
- * **Not yet configurable, and it should be.** ADR 0005 puts production host
- * patterns in configuration, but no field carries them yet, so these are a
- * built-in default a caller can override. Adding that field is a change to the
- * recipe schema, not to this list.
+ * **A floor, and on a managed database an inert one** (`#51`). Supabase,
+ * Neon, PlanetScale and RDS name a database by a random ref —
+ * `db.eliwlauokdzgsqfgczkv.supabase.co` has no segment either of these match.
+ * So ADR 0005's production host patterns are the recipe's, as `env.refuseHosts`,
+ * and a repository whose production host is one of those names its ref there:
+ * a deliberate disclosure of an identifier, where a reviewer reads it, rather
+ * than a default that silently lets the real host through.
  *
  * Matched against the *host* of a URL-shaped value, by segment. Matching the
  * whole string trips on a password containing "prod"; matching the host by
@@ -55,6 +59,17 @@ export class ProductionValueError extends Error {
  * for one. See `hostLooksProduction`.
  */
 export const DEFAULT_PRODUCTION_PATTERNS = ["prod", "production"];
+
+/**
+ * The patterns a run refuses: the default, **and** the recipe's `refuseHosts`.
+ *
+ * Added to rather than replaced, because ADR 0005 lets a recipe add strictness
+ * and never remove it. A recipe that could drop `prod` would be a committed
+ * file, editable by the agent it governs, turning the tripwire off.
+ */
+export function productionPatterns(refuseHosts: readonly string[] = []): string[] {
+  return [...new Set([...DEFAULT_PRODUCTION_PATTERNS, ...refuseHosts])];
+}
 
 /**
  * Whether a host is a production one, by **segment** rather than by substring.
@@ -227,17 +242,23 @@ export function extensionEnv(
 }
 
 function guardProduction(name: string, value: string, patterns: readonly string[]): void {
-  const host = hostOf(value);
-  if (!host) return;
-  const hit = hostLooksProduction(host, patterns);
+  const url = urlOf(value);
+  if (!url) return;
+  // The username too, because Supabase's pooler moves the ref there:
+  // `postgres.<ref>@aws-0-us-east-1.pooler.supabase.com` has a host that names
+  // no project at all. The username is an identifier and not the password,
+  // which stays out of it for the reason the host is split by segment.
+  const hit =
+    hostLooksProduction(url.hostname, patterns) ??
+    (url.username ? hostLooksProduction(decodeURIComponent(url.username), patterns) : null);
   if (hit) throw new ProductionValueError(name, hit);
 }
 
-/** The host of a URL-shaped value, or null when it is not one. */
-function hostOf(value: string): string | null {
+/** A URL-shaped value parsed, or null when it is not one. */
+function urlOf(value: string): URL | null {
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return null;
   try {
-    return new URL(value).hostname;
+    return new URL(value);
   } catch {
     return null;
   }
@@ -382,6 +403,7 @@ export async function resolveAgentEnv(options: {
   /** Layer 2, injectable. Defaults to the machine's own env file. */
   machine?: Record<string, string>;
   home?: string;
+  /** Every pattern refused — `productionPatterns(env.refuseHosts)` for a run. */
   patterns?: readonly string[];
 }): Promise<AgentEnv> {
   const required = options.required ?? [];

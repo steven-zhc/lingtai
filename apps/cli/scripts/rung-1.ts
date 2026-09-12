@@ -27,6 +27,7 @@
 import { resolveRecipe } from "@lingtai/recipe";
 import type { Envelope, ToAppend } from "@lingtai/domain";
 import { prepareWorktree, provisionWorktree, removeWorktree, resolveAgentEnv, runnableEnv } from "@lingtai/conductor";
+import { productionPatterns } from "@lingtai/agent-env";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
 import type { EventStore } from "@lingtai/event-store";
@@ -103,6 +104,7 @@ const env = await resolveAgentEnv({
   required: recipe.env.required,
   allow: recipe.env.allow,
   deny: recipe.env.deny,
+  patterns: productionPatterns(recipe.env.refuseHosts),
 });
 if (env.refusal) {
   console.log(env.refusal);
