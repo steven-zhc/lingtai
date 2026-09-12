@@ -9,9 +9,9 @@ told when it changes, and where each piece of state lives. Read it before
 changing anything that crosses a process boundary.
 **[doc/the-pass.html](doc/the-pass.html)** answers the other question —
 *where does a refusal go* — one pass from `claim` to `end` with the five points
-on it. It draws 0039, which is decided and not yet built, and marks where it is
-ahead of the code. Both drawings come from `scripts/the-pass.py`; the HTML is
-generated.
+on it. It draws 0039 — built on 2026-09-11, so it is the code and not a
+proposal — and marks what it replaced. Both drawings come from
+`scripts/the-pass.py`; the HTML is generated.
 
 [doc/README.md](doc/README.md) indexes the ADRs, which are append-only in
 spirit: a decision that turns out wrong gets a superseding file, not an edit.

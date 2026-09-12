@@ -185,14 +185,27 @@ export function repairFingerprint(failure: Failure): string {
  * `repair.on` and `repair.maxAttempts` are gone; what is left of this decision
  * reads `rounds` and counts it against the repairs on the item.
  *
- * That is a slight abuse and it is deliberate and temporary. `rounds` is
- * documented as *how many times a pass sends the agent back*, and this counts
- * how many **new runs** a work item has bought — a different extent, one level
- * up. It is here because the alternative was keeping a second recipe key alive
- * for one caller that `#142` deletes: when a conflict is answered in the
- * worktree like every other refusal, `decideRepair` stops deciding about money
- * at all and this reading of `rounds` goes with it. Until then the number at
- * least bounds both, and there is one of it.
+ * That is a slight abuse. `rounds` is documented as *how many times a pass sends
+ * the agent back*, and this counts how many **new runs** a work item has bought
+ * — a different extent, one level up. It is here because the alternative was a
+ * second recipe key for a decision that is nearly gone.
+ *
+ * **`#142` took the conflict, which was the whole of what this was for.** A
+ * conflict is answered by a round in the run's own worktree now and never
+ * reaches here. What still does is a short list, and none of it is a good
+ * reason to re-implement a branch:
+ *
+ *   `gate-failed`   only from a refusal `decideFix` would not buy for, because
+ *                   it carried no criterion. Buying an agent here for what we
+ *                   decline to buy for there is incoherent.
+ *   `no-commits`    the branch holds nothing. A new run starts from scratch,
+ *                   which is 0039's expensive wrong answer by definition.
+ *
+ * So 0039 §Consequences is right that this stops deciding about money
+ * altogether, and `#144` is that change: it deletes `RepairRequested`, the
+ * pending-repair fold, the repair prompt and the board's columns for them, which
+ * is four packages and not a conflict ticket's business. Until then the number
+ * at least bounds both, and there is one of it.
  */
 export interface RepairPolicy {
   /** `runtime.limits.rounds`. Zero means this repository buys no agent. */

@@ -930,7 +930,7 @@ export function runOnce(
        * implementer did before anything released it. The worktree itself moved
        * out — see above.
        */
-      const decided = yield* Effect.scoped(
+      yield* Effect.scoped(
         Effect.gen(function* () {
 
           // ---- 6. the hook, proven to fail closed before anything is dispatched
@@ -1243,405 +1243,571 @@ export function runOnce(
             `finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`,
           );
 
-          // ---- 9. the diff the `proposed` gates will be about ----------------
-          /**
-           * What is committed, counted — asked again after a fix.
-           *
-           * A function because the head moves inside this run now: a refused
-           * review buys an agent that commits
-           * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)),
-           * and the `RunProducedDiff` for the head the gates are judging has to
-           * be the head they are judging. Two copies of three `reduce`s would be
-           * two places for the numbers on a card to stop describing the diff.
-           */
+          // A use, for a variable this block assigns from a hook callback and
+          // nothing reads. It sat below the gates until they moved out from
+          // under it (`#142`), which is where it turned into a dangling name.
+          void proposedSha;
+        }),
+      );
 
-          const headSha = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
-          const { files, insertions, deletions } = yield* numstat;
+      // ---- 9. the diff the `proposed` gates will be about ----------------
+      /**
+       * What is committed, counted — asked again after a fix.
+       *
+       * A function because the head moves inside this run now: a refused
+       * review buys an agent that commits
+       * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)),
+       * and the `RunProducedDiff` for the head the gates are judging has to
+       * be the head they are judging. Two copies of three `reduce`s would be
+       * two places for the numbers on a card to stop describing the diff.
+       */
 
-          if (headSha === worktree.baseSha) {
-            return yield* new Stopped({
-              stage: "diff",
-              detail: "no commits",
-              release: "the agent produced no commits",
-            });
+      const firstHead = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
+      const { files, insertions, deletions } = yield* numstat;
+
+      if (firstHead === worktree.baseSha) {
+        return yield* new Stopped({
+          stage: "diff",
+          detail: "no commits",
+          release: "the agent produced no commits",
+        });
+      }
+
+      yield* appendAtEnd(runId, [
+        {
+          type: "RunProducedDiff",
+          actor: "conductor",
+          data: parsePayload("RunProducedDiff", {
+            branch,
+            headSha: firstHead,
+            files,
+            insertions,
+            deletions,
+          }),
+        },
+        {
+          // The moment the gate pipeline fires.
+          type: "RunProposedCompletion",
+          actor: "conductor",
+          data: parsePayload("RunProposedCompletion", { headSha: firstHead }),
+        },
+      ]);
+
+      // ---- 10. one pass, and it is a loop -----------------------------------
+      /**
+       * **The shape [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+       * draws, written as what it is.**
+       *
+       * A pass was three pieces of one loop: a `while` around the `proposed`
+       * point for a refused review, the merge lane a hundred lines below it, and
+       * the code that asks a person in between. Each had its own idea of what a
+       * refusal costs, and only the first could send anything back to the agent
+       * — which is why a red build and a conflict each bought a **whole new
+       * run**, re-implementing a branch that was sitting on disk.
+       *
+       * It is one loop now, and every refusal is an iteration of it:
+       *
+       *     the point refuses    → the agent, with the findings
+       *     the build goes red   → the agent, with the output
+       *     the lane conflicts   → the agent, with the conflict in its tree
+       *     rounds spent         → a person
+       *     it merges            → it landed
+       *
+       * **One ceiling, so one counter.** `rounds` is spent by whichever refusal
+       * happened, and that is only honest because they all end in the same
+       * place: 0038 §4 kept two purses precisely because the two failures went
+       * to two destinations, and a shared ceiling was then a race.
+       *
+       * The worktree outlives every iteration (0039 §1, `#140`), which is the
+       * whole reason this can be a loop at all. Before it, the third case had
+       * nowhere to go back to.
+       */
+      let head = firstHead;
+      let rounds = 0;
+      /**
+       * What origin last had for this branch, as far as this pass knows.
+       *
+       * Starts as what it had when the worktree was cut and moves to whatever
+       * this pass pushed. See the push below: a lease that does not move is a
+       * lease this pass breaks itself on its second round.
+       */
+      let lease: string | null = worktree.remoteHead;
+      /** The findings the next `proposed` run is asked about again (0038 §2). */
+      let recheck: readonly GateFinding[] = [];
+      let pipeline: PipelineResult = { ok: true, failedAt: null, heldAt: null, results: [], skipped: [] };
+      let atMerge: PipelineResult = { ok: true, failedAt: null, heldAt: null, results: [], skipped: [] };
+      let merged: Effect.Effect.Success<ReturnType<typeof repo.integrate>> | null = null;
+
+      /**
+       * The point still refuses and there are no rounds left to buy.
+       *
+       * **Whatever refused, this is where it stops.** The approval below reads
+       * it and asks a person. `on` is carried because the three read nothing
+       * alike: *two agents disagreed* is the right sentence for a judgement and
+       * the wrong one for a typecheck error or a moved base.
+       */
+      let unresolved: {
+        action: string;
+        on: FixOn;
+        findings: readonly GateFinding[];
+        evidence: string;
+        rounds: number;
+        why: string;
+      } | null = null;
+
+      // One controller for every round: a fixer left running when this run ends
+      // would hold the worktree the way an implementer did before it was
+      // released by anything.
+      const fixAbort = yield* Effect.acquireRelease(
+        Effect.sync(() => new AbortController()),
+        (controller) => Effect.sync(() => controller.abort()),
+      );
+
+      /**
+       * One round: decide, record, dispatch, record what came back.
+       *
+       * Whether it happens at all is `decideFix`'s and not this file's, for
+       * `decideRepair`'s reason — a rule about spending money inside an `if`
+       * here is a rule nobody can check. What is here is the order, and the
+       * order is the same for all three refusals, which is 0039 §2 in one
+       * function rather than in three.
+       */
+      const buyRound = (refusal: {
+        action: string;
+        findings: readonly GateFinding[];
+        evidence: string;
+        on?: FixOn;
+      }) =>
+        Effect.gen(function* () {
+          const decision = decideFix({
+            refusal,
+            rounds: recipe.runtime.limits.rounds,
+            roundsSpent: rounds,
+          });
+
+          if (!decision.fix) {
+            log(`no fix for ${refusal.action}: ${decision.why}`);
+            runLog.note("fix", `none: ${decision.why}`);
+            // **Every refusal this loop could have bought for is recorded
+            // declining it**, which is `RepairDeclined`'s reason: "nothing
+            // happened because nobody asked for it" and "nothing happened and we
+            // do not know why" are the two things a log exists to keep apart.
+            // Until 0039 a red build was neither — it was the merge lane's
+            // business, so it left no `FixDeclined` and no trace here at all.
+            //
+            // The one refusal that still records nothing is the one this loop
+            // was never able to act on: `decideFix` refused it for carrying no
+            // criterion, so there was no decision about money to record, and the
+            // lane is left to record the gate failure instead.
+            if (refusal.findings.length === 0 && refusal.evidence.trim() === "") {
+              return { kind: "unbought" as const };
+            }
+            yield* appendAtEnd(runId, [
+              {
+                type: "FixDeclined",
+                actor: "conductor",
+                data: parsePayload("FixDeclined", {
+                  runId,
+                  round: rounds,
+                  action: refusal.action,
+                  why: decision.why,
+                  findings: refusal.findings,
+                }),
+              },
+            ]);
+            return { kind: "declined" as const, round: rounds, why: decision.why, on: refusal.on ?? (refusal.findings.length > 0 ? ("findings" as const) : ("output" as const)) };
           }
 
+          // Appended **before** the agent runs, as `RepairRequested` is appended
+          // before the release: the evidence it was handed is the acceptance
+          // contract, and a log that learned it afterwards could only ever show
+          // the rounds that survived.
+          yield* appendAtEnd(runId, [
+            {
+              type: "FixRequested",
+              actor: "conductor",
+              data: parsePayload("FixRequested", {
+                runId,
+                round: decision.round,
+                action: refusal.action,
+                onSha: head,
+                findings: refusal.findings,
+              }),
+            },
+          ]);
+          log(`bought a fix for ${refusal.action} — round ${decision.round}`);
+          runLog.note("fix", `round ${decision.round} for ${refusal.action}`);
+
+          // Its own settings with no hook in them, exactly as the reviewer's:
+          // the hook carries the lifecycle of a *run*, and a round is a step
+          // inside one. And its own id — `sessionIdFor` is a function of the run
+          // id, so handing it this run's would resume the implementer's session
+          // and give it back the reasoning 0038 §3 takes away.
+          const fixSettings = yield* writeUnhookedSettingsEffect(
+            runId,
+            `fix-${decision.round}`,
+            home,
+          ).pipe(failing("hook"));
+
+          // The same diff the reviewer was shown, from the same function and
+          // under the same ceiling: two agents arguing about a change have to be
+          // looking at the same change.
+          const underReview = yield* Effect.promise(() => gateDeps.agent.diff());
+
+          const fixed = yield* Effect.promise(() =>
+            options.runtime
+              .run({
+                runId: `${runId}:fix:${decision.round}`,
+                cwd: worktree.path,
+                // The one argument that differs between the three (0039 §2).
+                // `decideFix` already worked out which shape the refusal is, and
+                // re-deciding it here would be a second source of truth for one
+                // question.
+                prompt: fixBrief({
+                  refusal:
+                    decision.on === "findings"
+                      ? { on: "findings", findings: refusal.findings }
+                      : decision.on === "conflict"
+                        ? { on: "conflict", base, paths: refusal.evidence }
+                        : { on: "output", output: refusal.evidence },
+                  round: decision.round,
+                  of: recipe.runtime.limits.rounds,
+                  action: refusal.action,
+                  diff: underReview,
+                  diffBytes: recipe.runtime.budget.diff,
+                }),
+                settingsPath: fixSettings,
+                env: runnableEnv(env.values),
+                limits: {
+                  turns: recipe.runtime.limits.turns,
+                  wallMs: parseDuration(recipe.runtime.limits.wall),
+                },
+                signal: fixAbort.signal,
+              })
+              // A fixer that threw is a fixer that produced nothing, and this
+              // run still has somewhere to go: the refusal stands and a person
+              // is shown it. Failing the whole run here would throw away the
+              // diff, the verdicts and the findings.
+              .catch((err) => ({
+                exitCode: null,
+                turns: 0,
+                durationMs: 0,
+                costUsd: null,
+                failure: { kind: "crash" as const, detail: (err as Error).message },
+                text: null,
+                sessionId: "",
+              })),
+          );
+
+          const after = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
+          const committed = after !== head;
+
+          yield* appendAtEnd(runId, [
+            {
+              type: "FixApplied",
+              actor: "conductor",
+              data: parsePayload("FixApplied", {
+                runId,
+                round: decision.round,
+                headSha: committed ? after : null,
+                turns: fixed.turns,
+                costUsd: fixed.costUsd,
+                failure: fixed.failure ? `${fixed.failure.kind}: ${fixed.failure.detail}` : null,
+              }),
+            },
+          ]);
+          runLog.note(
+            "fix",
+            `round ${decision.round}: ${committed ? after.slice(0, 7) : "no commit"}` +
+              ` · ${fixed.turns} turns, ${fixed.costUsd ?? "unknown"} usd` +
+              (fixed.failure ? ` · ${fixed.failure.kind}` : ""),
+          );
+
+          if (!committed) {
+            // Nothing to run again: the point would be asked the same question
+            // about the same commit and would answer it the same way, and paying
+            // for that is the one thing a second opinion must not be. The
+            // refusal stands, and a person is asked.
+            //
+            // **A decline and a crash arrive here as the same branch and are not
+            // the same event** (0039 §5). Committing nothing is the fixer's one
+            // way to object, and `fixBrief` tells it so; a fixer that threw
+            // produced nothing and meant nothing by it. One sentence for both
+            // would tell a person "the fixing agent committed nothing" about a
+            // process that was killed.
+            return {
+              kind: "declined" as const,
+              round: decision.round,
+              on: decision.on,
+              why: fixed.failure
+                ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
+                  "so there is nothing new for the review to read"
+                : declineWhy(fixed.text),
+            };
+          }
+
+          // The card's numbers describe the diff that is now under review, not
+          // the one that was refused two events ago.
+          const moved = yield* numstat;
           yield* appendAtEnd(runId, [
             {
               type: "RunProducedDiff",
               actor: "conductor",
-              data: parsePayload("RunProducedDiff", {
-                branch,
-                headSha,
-                files,
-                insertions,
-                deletions,
-              }),
-            },
-            {
-              // The moment the gate pipeline fires.
-              type: "RunProposedCompletion",
-              actor: "conductor",
-              data: parsePayload("RunProposedCompletion", { headSha }),
+              data: parsePayload("RunProducedDiff", { branch, headSha: after, ...moved }),
             },
           ]);
-          void proposedSha;
+          return { kind: "committed" as const, round: decision.round, head: after };
+        });
 
-          // ---- 10. the gates ---------------------------------------------------
-          // The reviewer sees the ticket and the diff, and gets the diff from here
-          // because the gates package does not know about git and should not learn.
-          //
-          // `runPromise` here and nowhere else below the host: 0023 keeps
-          let head = headSha;
-          let pipeline = yield* judge(head, []);
-          log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
+      /**
+       * Put the moved base into the run's own worktree, conflict and all.
+       *
+       * **A description of a conflict is not something anyone can resolve.** The
+       * markers are. So the lane's refusal is not forwarded as prose: the base
+       * is merged in here, left exactly as `git merge` left it, and the agent
+       * arrives in the middle of it. That is the one way the three briefs differ
+       * in more than an argument, and it is why.
+       *
+       * From `origin` rather than from the mirror's copy of the base, which is
+       * what the lane just found stale. Returns the conflicting paths, or `null`
+       * when it applies cleanly after all — the base can move twice, and the
+       * second move can be the one that makes the first mergeable. That costs no
+       * round, because no agent was bought.
+       */
+      const stageConflict = Effect.gen(function* () {
+        yield* gitInWorktree(["fetch", "origin", base]).pipe(failing("push"));
+        const applied = yield* Effect.either(gitInWorktree(["merge", "--no-edit", "FETCH_HEAD"]));
+        if (Either.isRight(applied)) return null;
+        const paths = yield* gitInWorktree(["diff", "--name-only", "--diff-filter=U"]).pipe(
+          Effect.orElseSucceed(() => ""),
+        );
+        return paths;
+      });
 
-          // ---- 10a. a refusal buys an agent, and the review runs again ---------
-          /**
-           * The loop [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
-           * §1 draws, and the rule it replaces was one line long: a gate refused,
-           * the item blocked, a person decided. Nothing sat between *refused* and
-           * *your problem*, so on 2026-09-10 the three items waiting on a person
-           * were the three whose fixes were least in doubt.
-           *
-           * **Here and not in the merge lane**, which is the difference between
-           * this and a repair: the worktree is still up, the head is still the
-           * thing under discussion, and the gates can simply run again. Nothing
-           * is released, nothing is claimed, and a fix never becomes a second
-           * attempt at the ticket.
-           *
-           * Whether it happens at all is `decideFix`'s and not this file's, for
-           * `decideRepair`'s reason — a rule about spending money inside an `if`
-           * here is a rule nobody can check. What is here is the order.
-           */
-          let rounds = 0;
-          /**
-           * The point still refuses and there are no rounds left to buy.
-           *
-           * **Whatever refused, this is where it stops** (0039 §2, §3): the
-           * approval below reads it and asks a person instead of walking on to
-           * the merge lane. Before 0039 only a findings-shaped refusal could get
-           * here, and a red build walked on to be refused a second time and buy
-           * a whole new run — so a build that spent every round would also spend
-           * a repair. One ceiling means one destination.
-           *
-           * `on` is carried because the two read nothing alike. *Two agents
-           * disagreed* is the right sentence for a judgement and the wrong one
-           * for a typecheck error, which is why 0038 kept a red build out of
-           * this shape rather than describing it badly.
-           */
-          let unresolved: {
-            action: string;
-            on: FixOn;
-            findings: readonly GateFinding[];
-            evidence: string;
-            rounds: number;
-            why: string;
-          } | null = null;
+      for (;;) {
+        // ---- the `proposed` point -------------------------------------------
+        // The reviewer sees the ticket and the diff, and gets the diff from the
+        // gate deps because the gates package does not know about git and should
+        // not learn.
+        //
+        // A function of the head and the findings, because it runs once per
+        // round: the same actions, in the same order, with one thing added — the
+        // scenarios the last refusal was made of, which the reviewer is asked
+        // about by name (0038 §2).
+        pipeline = yield* judge(head, recheck);
+        recheck = [];
+        log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
 
-          // One controller for every round: a fixer left running when this scope
-          // closes would hold the worktree the same way an implementer did before
-          // it was released by anything.
-          const fixAbort = yield* Effect.acquireRelease(
-            Effect.sync(() => new AbortController()),
-            (controller) => Effect.sync(() => controller.abort()),
-          );
+        if (!pipeline.ok && pipeline.failedAt !== null) {
+          // The refusal, by verdict rather than by position: the pipeline stops
+          // at the first one, so it is also the last result — and asking for the
+          // verdict says what is meant. It carries the findings, which is why
+          // `PipelineResult.results` does.
+          const refused = pipeline.results.filter((r) => r.verdict === "failed").at(-1)!;
+          const bought = yield* buyRound({
+            action: refused.gate,
+            findings: refused.findings,
+            evidence: refused.evidence,
+          });
+          if (bought.kind === "committed") {
+            head = bought.head;
+            rounds = bought.round;
+            recheck = refused.findings;
+            continue;
+          }
+          if (bought.kind === "declined") {
+            unresolved = {
+              action: refused.gate,
+              on: bought.on,
+              findings: refused.findings,
+              evidence: refused.evidence,
+              rounds: bought.round,
+              why: bought.why,
+            };
+            break;
+          }
+          // Nothing this loop could have bought for. The lane below records the
+          // gate failure, which is where a refusal with no criterion has always
+          // gone.
+        }
 
-          while (!pipeline.ok && pipeline.failedAt !== null) {
-            // The refusal, by verdict rather than by position: the pipeline stops
-            // at the first one, so it is also the last result — and asking for
-            // the verdict says what is meant. It carries the findings, which is
-            // why `PipelineResult.results` does.
-            const refused = pipeline.results.filter((r) => r.verdict === "failed").at(-1)!;
-            const decision = decideFix({
-              refusal: {
-                action: refused.gate,
-                findings: refused.findings,
-                evidence: refused.evidence,
+        if (pipeline.heldAt !== null) break;
+
+        // The agent's branch has to exist on the remote for the integrator to
+        // merge it; it works in a worktree, not on origin.
+        //
+        // **The lease is spelled out, and it has to be.** Bare
+        // `--force-with-lease` reads a remote-tracking ref, and Lingtai's
+        // mirror is bare with a `+refs/heads/*:refs/heads/*` refspec — there
+        // are no `refs/remotes/origin/*` for it to read, so git refuses with
+        // `stale info` the moment `agent/<n>` already exists on origin. That
+        // never showed while every run was an issue's first attempt; a repair
+        // is a second run on the same branch, so it is now the ordinary case.
+        // The value is what origin had **when we last looked**, which is the
+        // lease anyone would want: refuse if somebody else pushed since.
+        //
+        // *Last looked*, not *when the worktree was cut*, and `#142` is why that
+        // distinction became load-bearing. A pass pushes once per round now, and
+        // the snapshot taken at provisioning says "this branch does not exist" —
+        // true the first time and made false by that very push. The second
+        // round's push was then rejected as `stale info` by its own predecessor.
+        // The lease has to move with what this pass has put there.
+        yield* gitInWorktree([
+          "push",
+          `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+          "origin",
+          `HEAD:refs/heads/${branch}`,
+        ]).pipe(failing("push"));
+        lease = head;
+
+        // ---- 11. the `merge` point -------------------------------------------
+        // A pipeline like the two before it, at the point that decides whether
+        // this branch reaches the base branch at all.
+        //
+        // It was resolved into `GatesResolved`, printed by `lingtai add` and drawn
+        // on the board from the day a recipe could name it, and never built into a
+        // pipeline — so Lingtai's own `human:` action here watched two of its own
+        // changes merge with nobody's approval (#58). A control the log claims and
+        // the code does not have is worse than an unimplemented one, because every
+        // signal an operator has says it is there.
+        //
+        // In the worktree and before it is removed, since an action here runs
+        // commands like any other; after the push, so the branch it is judging
+        // exists on the remote.
+        //
+        // Only when `proposed` passed. A pipeline stops at the first refusal and
+        // so do the points: a change whose gates refused is not about to merge,
+        // and asking a person to approve one — or paying a reviewer to read it —
+        // is a question about a diff that is going nowhere. The refusal already
+        // on the log is the answer.
+        // Reset rather than declared: this runs once per round, and the loop
+        // reads it after. A `let` here would shadow the one the hold below asks
+        // about — a hold that renders and does nothing, which is the exact shape
+        // of #58.
+        atMerge = { ok: true, failedAt: null, heldAt: null, results: [], skipped: [] };
+        if (pipeline.ok) {
+          atMerge = yield* Effect.promise(() =>
+            runGatePipeline({
+              point: "merge",
+              gates: gatesFromRecipe(recipe.gates.merge, gateDeps),
+              context: {
+                runId,
+                onSha: head,
+                cwd: worktree.path,
+                env: runnableEnv(env.values),
               },
-              rounds: recipe.runtime.limits.rounds,
-              roundsSpent: rounds,
-            });
-
-            if (!decision.fix) {
-              log(`no fix for ${refused.gate}: ${decision.why}`);
-              runLog.note("fix", `none: ${decision.why}`);
-              // **Every refusal this loop could have bought for is recorded
-              // declining it**, which is `RepairDeclined`'s reason: "nothing
-              // happened because nobody asked for it" and "nothing happened and
-              // we do not know why" are the two things a log exists to keep
-              // apart. Until 0039 a red build was neither — it was the merge
-              // lane's business, so it left no `FixDeclined` and no trace here
-              // at all.
-              //
-              // The one refusal that still records nothing is the one this loop
-              // was never able to act on: `decideFix` refused it for carrying no
-              // criterion, so there was no decision about money to record.
-              const actionable = refused.findings.length > 0 || refused.evidence.trim() !== "";
-              if (actionable) {
-                unresolved = {
-                  action: refused.gate,
-                  on: refused.findings.length > 0 ? "findings" : "output",
-                  findings: refused.findings,
-                  evidence: refused.evidence,
-                  rounds,
-                  why: decision.why,
-                };
-                yield* appendAtEnd(runId, [
-                  {
-                    type: "FixDeclined",
-                    actor: "conductor",
-                    data: parsePayload("FixDeclined", {
-                      runId,
-                      round: rounds,
-                      action: refused.gate,
-                      why: decision.why,
-                      findings: refused.findings,
-                    }),
-                  },
+              emit: async (event) => {
+                const at = (await store.read(runId)).length;
+                await store.append(runId, at, [
+                  { type: event.type, actor: "conductor", data: event.data },
                 ]);
-              }
-              break;
-            }
-
-            // Appended **before** the agent runs, as `RepairRequested` is
-            // appended before the release: the scenarios it was handed are the
-            // acceptance contract, and a log that learned them afterwards could
-            // only ever show the ones that survived.
-            yield* appendAtEnd(runId, [
-              {
-                type: "FixRequested",
-                actor: "conductor",
-                data: parsePayload("FixRequested", {
-                  runId,
-                  round: decision.round,
-                  action: refused.gate,
-                  onSha: head,
-                  findings: refused.findings,
-                }),
               },
-            ]);
-            log(`bought a fix for ${refused.gate} — round ${decision.round}`);
-            runLog.note("fix", `round ${decision.round} for ${refused.gate}`);
-
-            // Its own settings with no hook in them, exactly as the reviewer's:
-            // the hook carries the lifecycle of a *run*, and a fixer is a step
-            // inside one. And its own id — `sessionIdFor` is a function of the
-            // run id, so handing it this run's would resume the implementer's
-            // session and give it back the reasoning 0038 §3 takes away.
-            const fixSettings = yield* writeUnhookedSettingsEffect(
-              runId,
-              `fix-${decision.round}`,
-              home,
-            ).pipe(failing("hook"));
-
-            // The same diff the reviewer was shown, from the same function and
-            // under the same ceiling: two agents arguing about a change have to
-            // be looking at the same change.
-            const underReview = yield* Effect.promise(() => gateDeps.agent.diff());
-
-            const fixed = yield* Effect.promise(() =>
-              options.runtime
-                .run({
-                  runId: `${runId}:fix:${decision.round}`,
-                  cwd: worktree.path,
-                  // The one argument that differs between a refused review and
-                  // a red build (0039 §2). `decideFix` already worked out which
-                  // shape the refusal is, and re-deciding it here would be a
-                  // second source of truth for one question.
-                  prompt: fixBrief({
-                    refusal:
-                      decision.on === "findings"
-                        ? { on: "findings", findings: refused.findings }
-                        : { on: "output", output: refused.evidence },
-                    round: decision.round,
-                    of: recipe.runtime.limits.rounds,
-                    action: refused.gate,
-                    diff: underReview,
-                    diffBytes: recipe.runtime.budget.diff,
-                  }),
-                  settingsPath: fixSettings,
-                  env: runnableEnv(env.values),
-                  limits: {
-                    turns: recipe.runtime.limits.turns,
-                    wallMs: parseDuration(recipe.runtime.limits.wall),
-                  },
-                  signal: fixAbort.signal,
-                })
-                // A fixer that threw is a fixer that produced nothing, and this
-                // run still has somewhere to go: the refusal stands and a person
-                // is shown it. Failing the whole run here would throw away the
-                // diff, the verdicts and the findings.
-                .catch((err) => ({
-                  exitCode: null,
-                  turns: 0,
-                  durationMs: 0,
-                  costUsd: null,
-                  failure: { kind: "crash" as const, detail: (err as Error).message },
-                  text: null,
-                  sessionId: "",
-                })),
-            );
-
-            const after = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
-            const committed = after !== head;
-            rounds = decision.round;
-
-            yield* appendAtEnd(runId, [
-              {
-                type: "FixApplied",
-                actor: "conductor",
-                data: parsePayload("FixApplied", {
-                  runId,
-                  round: decision.round,
-                  headSha: committed ? after : null,
-                  turns: fixed.turns,
-                  costUsd: fixed.costUsd,
-                  failure: fixed.failure ? `${fixed.failure.kind}: ${fixed.failure.detail}` : null,
-                }),
-              },
-            ]);
-            runLog.note(
-              "fix",
-              `round ${decision.round}: ${committed ? after.slice(0, 7) : "no commit"}` +
-                ` · ${fixed.turns} turns, ${fixed.costUsd ?? "unknown"} usd` +
-                (fixed.failure ? ` · ${fixed.failure.kind}` : ""),
-            );
-
-            if (!committed) {
-              // Nothing to run again: the point would be asked the same
-              // question about the same commit and would answer it the same way,
-              // and paying for that is the one thing a second opinion must not
-              // be. The refusal stands, and a person is asked.
-              //
-              // **A decline and a crash arrive here as the same branch and are
-              // not the same event** (0039 §5). Committing nothing is the
-              // fixer's one way to object, and `fixBrief` now tells it so; a
-              // fixer that threw produced nothing and meant nothing by it. One
-              // sentence for both would tell a person "the fixing agent
-              // committed nothing" about a process that was killed.
-              //
-              // And a decline with no reason attached is barely a decline, so
-              // the agent's last message travels with it. It is the whole of
-              // the objection the prompt promises will reach somebody — clipped
-              // here, because this sentence is read on a card.
-              unresolved = {
-                action: refused.gate,
-                on: decision.on,
-                findings: refused.findings,
-                evidence: refused.evidence,
-                rounds,
-                why: fixed.failure
-                  ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
-                    "so there is nothing new for the review to read"
-                  : declineWhy(fixed.text),
-              };
-              break;
-            }
-
-            head = after;
-            const moved = yield* numstat;
-            // The card's numbers describe the diff that is now under review, not
-            // the one that was refused two events ago.
-            yield* appendAtEnd(runId, [
-              {
-                type: "RunProducedDiff",
-                actor: "conductor",
-                data: parsePayload("RunProducedDiff", { branch, headSha: head, ...moved }),
-              },
-            ]);
-
-            // And the question asked again, with the scenarios the fixer was
-            // handed. `recheck` is what makes it a re-review rather than a second
-            // review: the reviewer is asked whether those sequences still produce
-            // those outcomes, which is the one question a deleted line cannot
-            // answer for itself.
-            pipeline = yield* judge(head, refused.findings);
-            log(
-              `gates after fix ${rounds}: ` +
-                pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" "),
-            );
+            }),
+          );
+          if (atMerge.results.length > 0) {
+            log(`merge: ${atMerge.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
           }
+        }
 
-          // The agent's branch has to exist on the remote for the integrator to
-          // merge it; it works in a worktree, not on origin.
-          //
-          // **The lease is spelled out, and it has to be.** Bare
-          // `--force-with-lease` reads a remote-tracking ref, and Lingtai's
-          // mirror is bare with a `+refs/heads/*:refs/heads/*` refspec — there
-          // are no `refs/remotes/origin/*` for it to read, so git refuses with
-          // `stale info` the moment `agent/<n>` already exists on origin. That
-          // never showed while every run was an issue's first attempt; a repair
-          // is a second run on the same branch, so it is now the ordinary case.
-          // The value is what origin had when this worktree was cut, which is
-          // the lease anyone would want: refuse if somebody else pushed since.
-          yield* gitInWorktree([
-            "push",
-            `--force-with-lease=refs/heads/${branch}:${worktree.remoteHead ?? ""}`,
-            "origin",
-            `HEAD:refs/heads/${branch}`,
-          ]).pipe(failing("push"));
+        /**
+         * **The head the gates gave their verdicts about.**
+         *
+         * The implementer's, or whatever the last round committed — which is the
+         * same thing said twice only when no round was bought. Everything below
+         * asks about *this* commit, and 0025's rule that an approval is bound to a
+         * sha is why it has a name of its own rather than being read again.
+         */
+        const headSha = head;
 
-          // ---- 11. the `merge` point -------------------------------------------
-          // A pipeline like the two before it, at the point that decides whether
-          // this branch reaches the base branch at all.
-          //
-          // It was resolved into `GatesResolved`, printed by `lingtai add` and drawn
-          // on the board from the day a recipe could name it, and never built into a
-          // pipeline — so Lingtai's own `human:` action here watched two of its own
-          // changes merge with nobody's approval (#58). A control the log claims and
-          // the code does not have is worse than an unimplemented one, because every
-          // signal an operator has says it is there.
-          //
-          // In the worktree and before it is removed, since an action here runs
-          // commands like any other; after the push, so the branch it is judging
-          // exists on the remote.
-          //
-          // Only when `proposed` passed. A pipeline stops at the first refusal and
-          // so do the points: a change whose gates refused is not about to merge,
-          // and asking a person to approve one — or paying a reviewer to read it —
-          // is a question about a diff that is going nowhere. The refusal already
-          // on the log is the answer.
-          let atMerge: PipelineResult = {
-            ok: true,
-            failedAt: null,
-            heldAt: null,
-            results: [],
-            skipped: [],
+        if (atMerge.heldAt !== null || options.merge === false || repairOf !== null) break;
+
+        // ---- the merge lane -------------------------------------------------
+        // Only one of the two can have refused — `merge` runs only when
+        // `proposed` passed — and the integrator records that one.
+        const refusedAt = pipeline.failedAt !== null ? pipeline : atMerge;
+        merged = yield* repo.integrate({
+          project,
+          owner: options.client.owner,
+          repo: options.client.repo,
+          base,
+          branch,
+          workItemId,
+          headSha: head,
+          gatesPassed: pipeline.ok && atMerge.ok,
+          gateDetail: refusedAt.failedAt
+            ? `${refusedAt.failedAt}: ${refusedAt.results.find((r) => r.gate === refusedAt.failedAt)?.evidence ?? ""}`
+            : undefined,
+          token: options.token,
+          home,
+          gitEnv: options.gitEnv,
+          store,
+        });
+        if (merged.ok) break;
+
+        /**
+         * **A conflict goes back to the agent, and it is the refusal that used
+         * to cost the most.**
+         *
+         * The lane merged the base in, found it does not apply, aborted, and let
+         * go — `integrate()` returning is what releases the advisory lock and
+         * the lane's own worktree, which are one scope. So nothing below holds
+         * the lane while an agent works, and the lane is simply re-entered
+         * afterwards. That was the objection that looked fatal to this and was
+         * not.
+         *
+         * The base may move again while the agent resolves one. Then this comes
+         * round again, which is ordinary optimistic retry bounded by `rounds`,
+         * and each retry is seconds.
+         */
+        if (merged.reason !== "conflict") break;
+
+        const paths = yield* stageConflict;
+        const afterStaging = yield* gitInWorktree(["rev-parse", "HEAD"]).pipe(failing("diff"));
+        if (paths === null) {
+          // It applies now. No agent, no round — the head moved, so the point is
+          // asked about it again and the lane re-entered.
+          log(`${base} moved again and now merges cleanly — retrying`);
+          head = afterStaging;
+          merged = null;
+          continue;
+        }
+
+        const bought = yield* buyRound({
+          action: "merge",
+          findings: [],
+          evidence: paths,
+          on: "conflict",
+        });
+        if (bought.kind === "committed") {
+          head = bought.head;
+          rounds = bought.round;
+          merged = null;
+          continue;
+        }
+        if (bought.kind === "declined") {
+          unresolved = {
+            action: "merge",
+            on: "conflict",
+            findings: [],
+            evidence: paths,
+            rounds: bought.round,
+            why: bought.why,
           };
-          if (pipeline.ok) {
-            atMerge = yield* Effect.promise(() =>
-              runGatePipeline({
-                point: "merge",
-                gates: gatesFromRecipe(recipe.gates.merge, gateDeps),
-                context: {
-                  runId,
-                  onSha: head,
-                  cwd: worktree.path,
-                  env: runnableEnv(env.values),
-                },
-                emit: async (event) => {
-                  const at = (await store.read(runId)).length;
-                  await store.append(runId, at, [
-                    { type: event.type, actor: "conductor", data: event.data },
-                  ]);
-                },
-              }),
-            );
-            if (atMerge.results.length > 0) {
-              log(`merge: ${atMerge.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
-            }
-          }
+        }
+        break;
+      }
 
-          return { headSha: head, pipeline, atMerge, unresolved };
-        }),
-      );
-
-      // The agent is done and **the worktree is not** (0039 §1). The scope above
-      // took down the fixer's abort controller; everything below — the hold, the
-      // merge lane, the repair decision — runs with the branch, the build and
-      // the diff still on disk.
-      const { headSha, pipeline, atMerge, unresolved } = decided;
+      /**
+       * **The head every verdict above was about**, and the one a person is
+       * asked to approve.
+       *
+       * The implementer's, or whatever the last round committed — the same thing
+       * said twice only when no round was bought. It has a name of its own
+       * rather than being read again from git because 0025's rule is that an
+       * approval is bound to a sha: reading `HEAD` here a second time would
+       * quietly re-point the question at whatever the worktree happens to hold.
+       */
+      const headSha = head;
 
       // ---- 12. hold, if anything asked for a person -------------------------
       // Three things can ask: a gate at `proposed` whose verdict is
@@ -1855,27 +2021,23 @@ export function runOnce(
         return { ok: "held", workItemId, runId, headSha, gate } satisfies RunOnceResult;
       }
 
-      // ---- 13. the merge lane ---------------------------------------------
-      // Only one of the two can have refused — `merge` runs only when
-      // `proposed` passed — and the integrator records that one.
-      const refused = pipeline.failedAt !== null ? pipeline : atMerge;
-      const merged = yield* repo.integrate({
-        project,
-        owner: options.client.owner,
-        repo: options.client.repo,
-        base,
-        branch,
-        workItemId,
-        headSha,
-        gatesPassed: pipeline.ok && atMerge.ok,
-        gateDetail: refused.failedAt
-          ? `${refused.failedAt}: ${refused.results.find((r) => r.gate === refused.failedAt)?.evidence ?? ""}`
-          : undefined,
-        token: options.token,
-        home,
-        gitEnv: options.gitEnv,
-        store,
-      });
+      // ---- 13. what the lane produced --------------------------------------
+      /**
+       * The lane itself is the loop's last step now (`#142`); this is the two
+       * things that can be true when it is over.
+       *
+       * **Every way out of that loop without entering the lane asks a person**,
+       * and the hold above returned. Reaching here with nothing is a fourth kind
+       * of ending nobody wrote, so it says so and releases rather than reading a
+       * null as a failure.
+       */
+      if (merged === null) {
+        return yield* new Stopped({
+          stage: "integrate",
+          detail: "the pass ended without reaching the merge lane and without asking anybody",
+          release: "the pass ended without reaching the merge lane",
+        });
+      }
 
       if (!merged.ok) {
         // ---- the failure's own outcome -------------------------------------

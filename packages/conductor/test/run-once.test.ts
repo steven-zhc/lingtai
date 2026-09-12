@@ -626,6 +626,112 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
    * a red build because 0039 stopped treating the two as different flows.
    */
   /**
+   * **A conflict is answered in the worktree, not by a new run** (0039 §2,
+   * `#142`), and this is the refusal that used to cost the most.
+   *
+   * The lane merged the base in, found it does not apply, aborted, and the item
+   * went back to the queue so a *whole new run* could re-implement a branch that
+   * was sitting on disk, finished and green, needing a merge resolved. git had
+   * already named the conflicting files. What was missing was somewhere to send
+   * it back to — the worktree was released before the integrator ran, and `#140`
+   * is what changed that.
+   *
+   * **The base is moved by the agent's own first invocation**, which is the only
+   * way to make the race deterministic: the worktree is already cut, so a commit
+   * pushed to `develop` from anywhere at that moment is exactly the situation
+   * the lane meets a second later.
+   *
+   * The fixer knows which invocation it is by asking git, not by being told —
+   * `MERGE_HEAD` exists only in the middle of a merge, which is where the
+   * conductor leaves it. That is the design under test as much as the routing
+   * is: **a description of a conflict is not something anyone can resolve, and
+   * the markers are.**
+   */
+  it("sends a conflict back to the worktree, and the lane is re-entered after it", async () => {
+    const other = { ...issue, number: 152 };
+    created.add(workItemStream(PROJECT, 152));
+
+    const prompts = join(root, "conflict-prompts.txt");
+    const mover = join(root, "mover");
+    const agent = await agentThat(`
+printf '%s\n=====\n' "$2" >> ${prompts}
+if git rev-parse -q --verify MERGE_HEAD > /dev/null 2>&1; then
+  printf 'theirs\nours\n' > CONFLICT.md
+  git add -A
+  git -c user.name=agent -c user.email=a@example.invalid commit -qm 'resolved the conflict'
+else
+  mkdir -p src && echo "export const fix = 152;" > src/fix.ts
+  printf 'ours\n' > CONFLICT.md
+  git add -A
+  git -c user.name=agent -c user.email=a@example.invalid commit -qm 'the change'
+  rm -rf ${mover}
+  git clone -q ${originPath} ${mover}
+  cd ${mover}
+  git checkout -q develop
+  printf 'theirs\n' > CONFLICT.md
+  git add -A
+  git -c user.name=other -c user.email=o@example.invalid commit -qm 'somebody else landed this'
+  git push -q origin develop
+fi
+`);
+
+    // The lane's stream is per base and every test in this file merges into the
+    // same one, so what this run did is what came after here.
+    const laneBefore = (await store.read(integrationStream(PROJECT, "develop"))).length;
+
+    const result = await once({
+      ...options(agent),
+      issue: 152,
+      client: fakeClient({ getIssue: async () => other, listOpenIssues: async () => [other] }),
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (result.ok !== true) return;
+    created.add(result.runId);
+
+    const run = await store.read(result.runId);
+
+    // One round, bought by the lane rather than by a gate — the same ceiling,
+    // spent on the refusal that happened.
+    const requested = run.filter((e) => e.type === "FixRequested");
+    expect(requested).toHaveLength(1);
+    expect(requested[0]!.data).toMatchObject({ round: 1, action: "merge" });
+
+    // **No repair.** The whole point is that this costs a round inside the pass
+    // rather than a run outside it.
+    expect(run.some((e) => e.type === "RepairRequested")).toBe(false);
+    const items = (await store.read(workItemStream(PROJECT, 152))).map((e) => e.type);
+    expect(items).not.toContain("RepairRequested");
+
+    // The lane refused once and was re-entered. Its own stream, per base, is
+    // where it records that — `#58`'s rule that no path leaves the integrator
+    // without an event is what makes this readable at all.
+    const lane = (await store.read(integrationStream(PROJECT, "develop"))).slice(laneBefore);
+    const refusedConflict = lane.filter(
+      (e) => e.type === "IntegrationRefused" && (e.data as { reason?: string }).reason === "conflict",
+    );
+    expect(refusedConflict.length, "the lane never hit the conflict this test sets up").toBe(1);
+    // And then it landed, which is the re-entry: one refusal, one success, one
+    // pass.
+    expect(lane.filter((e) => e.type === "IntegrationSucceeded")).toHaveLength(1);
+
+    // What the resolving agent was handed: the conflict in its tree, and the
+    // file git named. Not a description of one.
+    const handed = (await readFile(prompts, "utf8")).split("\n=====\n");
+    const toTheFixer = handed[1]!;
+    expect(toTheFixer).toMatch(/in the middle of that merge right now/i);
+    expect(toTheFixer).toContain("CONFLICT.md");
+    expect(toTheFixer).toContain("`develop` moved");
+    // And the acceptance test that stops it taking a side.
+    expect(toTheFixer).toMatch(/both have to\s+pass/i);
+
+    // It landed, with both sides of the conflict in the base.
+    const merged = await exec("git", ["show", "develop:CONFLICT.md"], { cwd: originPath });
+    expect(merged.stdout).toContain("theirs");
+    expect(merged.stdout).toContain("ours");
+  }, 300_000);
+
+  /**
    * A refused review buys an agent, the review runs again, and **the cheap way
    * to pass is caught**
    * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).

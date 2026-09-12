@@ -167,7 +167,7 @@ things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of
 |---|---|---|
 | `runtime.limits.turns` | `300` | turns before the runtime stops the agent, **per run** |
 | `runtime.limits.wall` | `2h` | wall clock before the same, **per run** |
-| `runtime.limits.rounds` | `2` | how many times a pass sends the agent back, carrying what refused it — findings, a build's output, and after `#142` the conflicting paths. `0` means every refusal goes straight to a person |
+| `runtime.limits.rounds` | `2` | how many times a pass sends the agent back, carrying what refused it — findings, a build's output, or the conflict left standing in its worktree. `0` means every refusal goes straight to a person |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
