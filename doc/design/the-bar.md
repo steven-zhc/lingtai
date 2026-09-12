@@ -9,7 +9,7 @@ Eleven objects, nine of them boxed, wrapping to a second line at 1440.
 
 `#81` split a sum nobody could act on into its parts. `#84` separated a repair's
 spend from the work's. `#86` made an empty board say *whose* emptiness it is.
-`0025 §2` put the repair default on screen because a default that spends money
+`0025 §2` put the spending default on screen because a default that spends money
 invisibly is one nobody can audit. `#64` and `#98` each added a health chip.
 
 Every argument is sound. **The row is the thing none of them was about** — and a
@@ -29,7 +29,7 @@ side, added to one element at a time from the other.
 
 ```tsx
 // apps/board/src/app/page.tsx:672
-<span className="chip sig">${cost.repair.toFixed(2)} repair</span>
+<span className="chip sig">${cost.repair.toFixed(2)} answering</span>
 ```
 
 Amber, for money. A second amber dilutes the first, which is the entire reason
@@ -48,8 +48,8 @@ while working on something else. Two questions, and no third:
 | `1 waiting on you` | **stays, as the headline** | the only reason to look up, and the only amber left |
 | `daemon N behind` + `current` | **merge into one health** | one dot, and a sentence only when it is red — two chips for two independent facts is two things to learn to read |
 | `10 queued · 1 running · 45 landed` | **stays, unboxed** | a box says *this is a thing*; this is a reading. Kept as parts — `#81` stands |
-| `$488.52` · `$81.83 repair` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
-| `<project>: repairs ×N` | **to the recipe view** | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
+| `$488.52` · `$81.83 answering` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
+| `<project>: rounds ×N` | **to the recipe view** | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
 
 Eleven to four: filters left, reading and health right, the headline last where
 the eye lands. Nothing new in the palette — amber returns to meaning one thing,
@@ -61,3 +61,19 @@ have been.
 **A chip is not free, and the row is the unit.** Anything added here has to be
 argued against the four that are left, not against the empty space beside them —
 which is the argument none of the six tickets above was asked to make.
+
+## What #141 and #142 changed under this
+
+The row still has the shape this page objects to; two of its chips were renamed
+when [0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and
+the quotes above say the new names.
+
+- `$N repair` → **`$N answering`**. The column behind it is still `repair_costs`
+  and now holds every round a pass buys, of which a repair is no longer one.
+- `<project>: repairs ×1` → **`<project>: rounds ×2`**, with `passCeiling`'s
+  sentence as its title — the same sentence `lingtai add`, `lingtai doctor` and
+  the drain say, so the four cannot disagree about one recipe.
+
+**Neither rename touches the argument.** The count is the same, the weight is the
+same, and `chip sig` — amber, reserved for *a human is being waited on* — is
+still on the money chip, twenty lines below the comment that states the rule.
