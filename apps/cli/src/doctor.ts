@@ -35,13 +35,13 @@ import { createGitHubClient } from "@lingtai/github";
 import { type Recipe, baseDivergence } from "@lingtai/recipe";
 import { isEventType } from "@lingtai/domain";
 import {
-  STALE_AFTER_MS,
   codeCurrency,
   conductorLockHolder,
   describeCurrency,
   describeInFlight,
   findOrphans,
   inFlight,
+  lastBeat,
   readControl,
   readStatus,
 } from "@lingtai/daemon";
@@ -599,29 +599,43 @@ async function daemonLiveness(): Promise<CheckResult> {
     };
   }
 
-  const age = Date.now() - status.lastSeenAt.getTime();
+  // Both of the beacon's fields, through the one function the board reads it
+  // with. This row used to compute the age here and ignore the state, and so
+  // called a daemon that was still starting `not running` — for twelve seconds,
+  // in the window just after a restart, which is exactly when somebody is
+  // reading this row to decide whether to restart (`#144`).
+  const beat = lastBeat(status);
+  const age = beat.ageMs;
 
-  if (age > STALE_AFTER_MS) {
+  if (!beat.up) {
+    // What it last said, because a stale beacon still knows what the process
+    // was doing when it fell silent: `stopping` is a daemon that was told to
+    // go, `starting` one that died on the way up and never took work.
+    const last = beat.state === "up" ? "" : `, last said ${beat.state}`;
     return {
       name: "daemon: liveness",
       status: "ok",
       // Reported, not failed: a stopped daemon is a choice as often as a
       // crash, and doctor exiting non-zero on it would make the command
       // useless as a restart gate.
-      detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid}) — not running${paused}${asked}`,
+      detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid})${last} — not running${paused}${asked}`,
     };
   }
 
   // `draining` says stopping; what it is stopping *for* is the pass, and the
   // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
   // was what this said for both, which is the folding #77 argued against.
-  const held = status.state === "draining" ? await inFlight().catch(() => []) : [];
-  const stopping = status.state === "draining" ? ` — ${describeInFlight(held)}` : "";
+  const held = beat.state === "draining" ? await inFlight().catch(() => []) : [];
+  const stopping = beat.state === "draining" ? ` — ${describeInFlight(held)}` : "";
+  // The same argument one state along. `starting` is up and taking nothing
+  // yet, and saying only `starting` would invite the restart that `#144`'s
+  // `not running` invited.
+  const starting = beat.state === "starting" ? " — reconciling; it takes no work until that finishes" : "";
 
   return {
     name: "daemon: liveness",
     status: "ok",
-    detail: `${status.state}${stopping}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
+    detail: `${beat.state}${stopping}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
   };
 }
 
@@ -661,11 +675,11 @@ async function daemonCurrency(): Promise<CheckResult> {
     return { name, status: "ok", detail: "no daemon has run — nothing is holding code open" };
   }
 
-  const age = Date.now() - status.lastSeenAt.getTime();
-  if (age > STALE_AFTER_MS) {
+  const beat = lastBeat(status);
+  if (!beat.up) {
     // Nothing is holding stale modules if nothing is running. Said rather than
     // omitted, because a check that disappears is one nobody misses.
-    return { name, status: "ok", detail: `no daemon is up (last beat ${Math.round(age / 1000)}s ago) — no process is holding old code` };
+    return { name, status: "ok", detail: `no daemon is up (last beat ${Math.round(beat.ageMs / 1000)}s ago) — no process is holding old code` };
   }
 
   if (!status.codeSha) {

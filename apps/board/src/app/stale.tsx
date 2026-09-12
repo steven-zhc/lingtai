@@ -24,7 +24,7 @@
  * the board does — an append, or a reload — and the fact it reports only
  * changes when somebody restarts a process.
  */
-import { STALE_AFTER_MS, readStatus } from "@lingtai/daemon/control";
+import { lastBeat, readStatus } from "@lingtai/daemon/control";
 import { codeCurrency, describeCurrency } from "@lingtai/daemon/currency";
 
 export async function Stale() {
@@ -32,7 +32,7 @@ export async function Stale() {
   // No daemon, or one that stopped: nothing is holding old modules open, and
   // `live.tsx` already says the board is not being advanced.
   if (!status) return null;
-  if (Date.now() - status.lastSeenAt.getTime() > STALE_AFTER_MS) return null;
+  if (!lastBeat(status).up) return null;
 
   if (!status.codeSha) {
     return (

@@ -19,8 +19,6 @@ import { describeFilters, loadProjects, passCeiling, projectFilters } from "@lin
 import { taskViewProjection } from "@lingtai/projector";
 import type { Tier } from "@lingtai/domain";
 import {
-  HEARTBEAT_MS,
-  beat,
   clientsForProjects,
   createStatusTable,
   createNotifier,
@@ -35,6 +33,7 @@ import {
   requestRun,
   requestShutdown,
   resumeConductor,
+  startBeacon,
   startDaemon,
   type ShutdownRequest,
 } from "@lingtai/daemon";
@@ -294,7 +293,16 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
   // and does not reach this. #88 landed thirty-nine minutes after a daemon
   // started and never executed once; nothing in the beacon could have said so.
   const code = await readCodeVersion();
-  await beat("starting", { code });
+
+  // **Beating from here**, and not from after the reconcile below — which is
+  // what `#144` was. The two lines that follow this one read a recipe per
+  // project over the network, and the reconcile after them writes GitHub
+  // labels; a startup with two divergences to fix crossed fifteen seconds, and
+  // for the second half of it `lingtai doctor` said `not running` about a
+  // daemon whose lock it printed on the next line. `startBeacon` keeps one
+  // timer for the whole life of the process, so there is no stretch of it
+  // during which nothing says "still here".
+  const beacon = startBeacon("starting", { code });
   console.log(
     `running ${code.sha ? code.sha.slice(0, 7) : "an unrecorded commit"}` +
       `${code.dirty ? " (worktree dirty)" : ""} — lingtai doctor says how far behind that is`,
@@ -337,9 +345,9 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     return [];
   });
   if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`));
-  const heartbeat = setInterval(() => {
-    void beat("up", { code }).catch(() => {});
-  }, HEARTBEAT_MS);
+  // The slow half is done. The timer has been running throughout it; this is
+  // the word changing, not the beating starting.
+  void beacon.say("up");
 
   // Taking work is the default now that there is a way to stop it (#45).
   // `--no-conduct` is for a daemon you want keeping the board current while
@@ -374,9 +382,10 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     if (stopping) return;
     stopping = true;
     console.log(paint.held(why));
-    clearInterval(heartbeat);
     void (async () => {
-      await beat("stopping", { code }).catch(() => {});
+      // The last word, and the timer off with it — `stop` does both, in that
+      // order, so nothing lands after it.
+      await beacon.stop("stopping");
       started.daemon.stop();
       // The projections are stopped and the lock is released by this; what it
       // does not do, and must not, is wait for the pass.
@@ -424,7 +433,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
           : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
       ),
     );
-    await beat("draining", { code }).catch(() => {});
+    await beacon.say("draining");
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (timeoutMs !== null) {
@@ -443,8 +452,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     clearTimeout(timer);
     if (stopping) return;
     stopping = true;
-    clearInterval(heartbeat);
-    await beat("stopping", { code }).catch(() => {});
+    await beacon.stop("stopping");
     started.daemon.stop();
   };
 

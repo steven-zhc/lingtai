@@ -6,6 +6,7 @@
  * exit criterion written as an assertion.
  */
 import { createDb, createEventStore, databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
+import { beat, createStatusTable } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
@@ -336,6 +337,47 @@ describe("lingtai doctor — against the real database", () => {
     // are listed here so neither can be quietly absorbed into the other.
     expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
     expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  /**
+   * `#144`, as the row somebody reads in the one window they are most likely to
+   * read it: just after starting a daemon.
+   *
+   * The beacon carries two fields and this check used to read one of them. A
+   * `starting` row twenty-one seconds old was reported as `not running` while
+   * the conductor lock on the next line named the very process that had written
+   * it — and that row is the restart gate `#98` exists to make somebody read.
+   *
+   * What the beacon does about it is in `packages/daemon/test/beacon.test.ts`,
+   * which drives a startup slower than `STALE_AFTER_MS` and shows the row
+   * staying fresh. This end asserts the sentence: a beacon that says `starting`
+   * reads as starting, and never as a daemon to restart.
+   */
+  it("does not call a daemon that is still starting `not running`", async () => {
+    await createStatusTable();
+    // What startup now writes before it begins the slow half — a fresh row
+    // whose word is `starting`.
+    await beat("starting");
+
+    try {
+      const report = await runDoctor(
+        env({ LINGTAI_DATABASE_URL: databaseUrl(), LINGTAI_DIRECT_DATABASE_URL: directDatabaseUrl() }),
+      );
+      const liveness = find(report.results, "daemon: liveness");
+
+      expect(liveness.detail).toContain("starting");
+      expect(liveness.detail).not.toContain("not running");
+      // And the row says what it is doing, so `starting` is not read as an
+      // invitation to start a second one — which `#93` would turn away anyway.
+      expect(liveness.detail).toContain("takes no work");
+    } finally {
+      // One row for the whole installation: left behind, it tells every later
+      // test in the suite that a daemon is up.
+      const client = new pg.Client({ connectionString: directDatabaseUrl() });
+      await client.connect();
+      await client.query("delete from daemon_status where id = 1").catch(() => {});
+      await client.end();
+    }
   }, 60_000);
 
   /**

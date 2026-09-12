@@ -15,7 +15,7 @@
  * holds a projector of its own, so lag with no daemon is normal during a run
  * and a standing accusation after one.
  */
-import { STALE_AFTER_MS, readStatus } from "@lingtai/daemon/control";
+import { lastBeat, readStatus } from "@lingtai/daemon/control";
 import { projectionLag } from "@lingtai/projector";
 
 export interface Health {
@@ -44,11 +44,17 @@ export async function readHealth(): Promise<Health> {
     const lag = row ? Number(row.lag) : null;
 
     if (!status) return { lag, daemon: "never", sinceBeatMs: null };
-    const since = Date.now() - status.lastSeenAt.getTime();
+    // The same function `lingtai doctor` reads this row with, so the chip and
+    // the check cannot come to different answers about one row — which is the
+    // shape of `#64`. `starting` counts as `up` here and reads as *catching
+    // up* rather than *nobody is coming*, because a daemon that is reconciling
+    // is a daemon that is about to fold: the lag it has is temporary, and
+    // `#144` is the ticket about calling it dead.
+    const beat = lastBeat(status);
     return {
       lag,
-      daemon: since > STALE_AFTER_MS ? "stale" : "up",
-      sinceBeatMs: since,
+      daemon: beat.up ? "up" : "stale",
+      sinceBeatMs: beat.ageMs,
     };
   } catch (err) {
     // Reported as its own state. A board that cannot tell you whether it is

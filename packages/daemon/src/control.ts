@@ -264,6 +264,117 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
   }
 }
 
+/**
+ * The beacon, for as long as this process lives.
+ *
+ * One timer, one writer, and — the part `#144` was about — it starts **before**
+ * the slow half of startup rather than after it. `lingtai daemon` used to write
+ * `starting` by hand, then read a recipe per project over the network and run a
+ * reconcile that writes GitHub labels, and only then begin beating. A startup
+ * that crossed fifteen seconds — two divergences, one of them a write — left
+ * the row three missed beats old while the daemon was perfectly alive, and
+ * `lingtai doctor` said `not running` about a process whose lock it was
+ * printing on the next line. That row is the restart gate `#98` exists to make
+ * somebody read, and it was wrong in the one window somebody is most likely to
+ * be reading it: just after starting one.
+ *
+ * The remedy is not a longer threshold. Three missed beats is a sound rule for
+ * a process that beats, and the startup window has no bound worth picking a
+ * number against; what was wrong is that there was a stretch of this process's
+ * life during which nothing beat at all. There is none now, so `starting` is an
+ * answer carried by a fresh row rather than the absence of one.
+ *
+ * **Ordered, because every beat is an UPSERT of the same row.** Two in flight
+ * can land in either order, and the older word landing last is a row that says
+ * `starting` about a daemon that has already announced `up`. Every write goes
+ * through one chain, so the last word asked for is the last word written.
+ *
+ * **And the word survives the ticks**, which the timer it replaces did not: it
+ * carried a literal `up`, so the `draining` a drain announced was overwritten
+ * five seconds later and stayed overwritten for the minutes-to-hours the drain
+ * ran. [0030](../../../doc/decisions/0030-shutting-down-safely.md) gave the row
+ * that state precisely so the board and `lingtai doctor` could say *stopping,
+ * finishing lingtai#94* rather than `up`, and outside the first beat of a drain
+ * they went on saying `up`. One writer holding one word is what makes that
+ * promise true rather than momentary.
+ *
+ * **It cannot throw.** A beacon that cannot be written is reported by the row
+ * going stale — the mechanism that already exists — and a daemon that threw on
+ * it would strand the conductor lock it is holding while it conducts nothing.
+ */
+export interface Beacon {
+  /** The word the row carries now. */
+  readonly state: string;
+  /** Say something new, at once. Resolves when that write has landed. */
+  say(state: string): Promise<void>;
+  /** A last word, and then nothing further is written. Idempotent. */
+  stop(last?: string): Promise<void>;
+}
+
+export interface BeaconOptions extends BeatOptions {
+  /** How often to say "still here". `HEARTBEAT_MS` is the only one in production. */
+  every?: number;
+}
+
+export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
+  const { every = HEARTBEAT_MS, ...beatOptions } = options;
+  let current = state;
+  let stopped = false;
+  /** The writes, in the order they were asked for, and never two at once. */
+  let chain: Promise<void> = Promise.resolve();
+  /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
+  let owed = 0;
+
+  const write = (word: string): Promise<void> => {
+    owed += 1;
+    chain = chain.then(async () => {
+      try {
+        await beat(word, beatOptions);
+      } catch {
+        // Every beat, the first one included — and that is a change. Startup
+        // used to `await beat("starting")` uncaught, and the CLI's top-level
+        // handler prints and sets `exitCode` without exiting: the conductor
+        // lock's session connection is a live handle, so the event loop would
+        // not drain and a daemon that failed its first beat would sit on the
+        // lock conducting nothing. A row that cannot be written is reported by
+        // its going stale, which is a report; a held lock is not.
+      } finally {
+        owed -= 1;
+      }
+    });
+    return chain;
+  };
+
+  // Announced before the timer, so the row is the new daemon's from the first
+  // moment it can be — and then again every `every` milliseconds, whatever the
+  // process is doing in between.
+  void write(current);
+  const timer = setInterval(() => {
+    if (owed === 0) void write(current);
+  }, every);
+
+  return {
+    get state() {
+      return current;
+    },
+    say: (next) => {
+      if (stopped) return Promise.resolve();
+      current = next;
+      return write(next);
+    },
+    stop: async (last) => {
+      clearInterval(timer);
+      if (!stopped && last !== undefined) {
+        current = last;
+        void write(last);
+      }
+      stopped = true;
+      // Everything scheduled, including the last word, has landed by here.
+      await chain;
+    },
+  };
+}
+
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
 export async function readStatus(url = directDatabaseUrl()): Promise<DaemonStatus | null> {
   const client = new pg.Client({ connectionString: url });
@@ -292,6 +403,37 @@ export async function readStatus(url = directDatabaseUrl()): Promise<DaemonStatu
   } finally {
     await client.end();
   }
+}
+
+/**
+ * What the beacon says, read from **both** of its fields.
+ *
+ * The staleness test lived in five places — two rows of `lingtai doctor`, three
+ * chips on the board — each spelling `Date.now() - lastSeenAt > STALE_AFTER_MS`
+ * for itself and each throwing the state word away. `#64` is the ticket about
+ * two readers of this row disagreeing; one function is how they cannot.
+ *
+ * **The age is what decides whether anything is beating, and it is the only
+ * thing that can.** A state word is what a process *said*, and a process that
+ * has died goes on saying it forever, so exempting `starting` from staleness
+ * would trade a wrong answer that lasted twelve seconds for one that lasts
+ * until the next daemon starts. What the word adds is what it was doing when it
+ * stopped — `starting` is a daemon that died on the way up, `stopping` one that
+ * was told to go — so the sentence can name that instead of flattening both
+ * into "not running".
+ */
+export interface Beating {
+  /** Something is beating: a beat landed within `STALE_AFTER_MS`. */
+  up: boolean;
+  /** The word the beacon carries — `starting`, `up`, `draining`, `stopping`. */
+  state: string;
+  /** Since the last beat. */
+  ageMs: number;
+}
+
+export function lastBeat(status: DaemonStatus, now: number = Date.now()): Beating {
+  const ageMs = now - status.lastSeenAt.getTime();
+  return { up: ageMs <= STALE_AFTER_MS, state: status.state, ageMs };
 }
 
 function hostname(): string {
