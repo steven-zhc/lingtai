@@ -79,6 +79,16 @@ describe("resolveRecipe", () => {
     const named = VALID.replace("  plantAt:", "  refuseHosts: [eliwlauokdzgsqfgczkv]\n  plantAt:");
     const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: named }), "develop");
     expect(resolved.recipe.env.refuseHosts).toEqual(["eliwlauokdzgsqfgczkv"]);
+
+    const host = VALID.replace("  plantAt:", "  refuseHosts: [db.eliwlauokdzgsqfgczkv.supabase.co, prod-db]\n  plantAt:");
+    const whole = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: host }), "develop");
+    expect(whole.recipe.env.refuseHosts).toEqual(["db.eliwlauokdzgsqfgczkv.supabase.co", "prod-db"]);
+
+    // An entry with an empty segment could never match, so it is not accepted.
+    const inert = VALID.replace("  plantAt:", "  refuseHosts: [.supabase.co]\n  plantAt:");
+    await expect(resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: inert }), "develop")).rejects.toBeInstanceOf(
+      RecipeInvalidError,
+    );
   });
 
   it("says which branch has no recipe, and that the agent's does not count", async () => {

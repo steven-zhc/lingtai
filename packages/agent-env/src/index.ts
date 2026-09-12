@@ -52,7 +52,10 @@ export class ProductionValueError extends Error {
  * a deliberate disclosure of an identifier, where a reviewer reads it, rather
  * than a default that silently lets the real host through.
  *
- * Matched against the *host* of a URL-shaped value, by segment. Matching the
+ * Matched against the *host* of a URL-shaped value, by segment — and only the
+ * host: a recipe's `refuseHosts` is also matched against the username, but
+ * these two are not, because a local role named `prod` is not production.
+ * Matching the
  * whole string trips on a password containing "prod"; matching the host by
  * substring trips on `reproducible.dev.example.com`. Either way a tripwire that
  * cries wolf trains people to pass an override flag, which is the worst outcome
@@ -80,6 +83,10 @@ export function productionPatterns(refuseHosts: readonly string[] = []): string[
  * outright — `db.prod.example.com` and `prod-db.example.com` both do,
  * `reproducible.dev.example.com` does not.
  *
+ * A pattern is split the same way and matches as a **run** of segments, so a
+ * recipe that names a whole host — `db.<ref>.supabase.co`, or `prod-db` — is
+ * refusing that host and not an entry no single segment could ever equal.
+ *
  * Lived in `guard.ts` and moved here when the guard was deleted (ADR 0016 §6).
  * It was never the guard's: the filtered environment is one of the three real
  * boundaries, and this is what makes it refuse rather than warn.
@@ -87,7 +94,10 @@ export function productionPatterns(refuseHosts: readonly string[] = []): string[
 export function hostLooksProduction(host: string, patterns: readonly string[]): string | null {
   const segments = host.toLowerCase().split(/[.\-]/);
   for (const pattern of patterns) {
-    if (segments.includes(pattern.toLowerCase())) return pattern;
+    const run = pattern.toLowerCase().split(/[.\-]/);
+    for (let i = 0; i + run.length <= segments.length; i++) {
+      if (run.every((piece, j) => segments[i + j] === piece)) return pattern;
+    }
   }
   return null;
 }
@@ -248,10 +258,22 @@ function guardProduction(name: string, value: string, patterns: readonly string[
   // `postgres.<ref>@aws-0-us-east-1.pooler.supabase.com` has a host that names
   // no project at all. The username is an identifier and not the password,
   // which stays out of it for the reason the host is split by segment.
+  // Only the recipe's refs, not `prod`/`production`: those name hosts, and a
+  // local database with a role called `prod` is not a production one.
+  const refs = patterns.filter((p) => !DEFAULT_PRODUCTION_PATTERNS.includes(p.toLowerCase()));
   const hit =
     hostLooksProduction(url.hostname, patterns) ??
-    (url.username ? hostLooksProduction(decodeURIComponent(url.username), patterns) : null);
+    (url.username && refs.length > 0 ? hostLooksProduction(usernameOf(url), refs) : null);
   if (hit) throw new ProductionValueError(name, hit);
+}
+
+/** The username decoded, or as written when its `%` is not an escape — never a throw. */
+function usernameOf(url: URL): string {
+  try {
+    return decodeURIComponent(url.username);
+  } catch {
+    return url.username;
+  }
 }
 
 /** A URL-shaped value parsed, or null when it is not one. */

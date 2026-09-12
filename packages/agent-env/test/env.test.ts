@@ -287,6 +287,34 @@ describe("the pieces the layers are built from", () => {
     expect(hostLooksProduction("db.abcdef.supabase.co", DEFAULT_PRODUCTION_PATTERNS)).toBeNull();
   });
 
+  /** A recipe that names a whole host is refusing it, not writing an entry nothing matches. */
+  it("matches a pattern with a dot or a dash as a run of segments", () => {
+    const host = "db.eliwlauokdzgsqfgczkv.supabase.co";
+    expect(hostLooksProduction(host, [host])).toBe(host);
+    expect(hostLooksProduction("prod-db.example.com", ["prod-db"])).toBe("prod-db");
+    expect(hostLooksProduction("db.other.supabase.co", [host])).toBeNull();
+    expect(hostLooksProduction("reprod-db.example.com", ["prod-db"])).toBeNull();
+    expect(() =>
+      extensionEnv({ DB: `postgresql://postgres:x@${host}:5432/postgres` }, ["DB"], productionPatterns([host])),
+    ).toThrow(ProductionValueError);
+  });
+
+  /** `prod` and `production` name hosts; a local role called `prod` is not production. */
+  it("does not refuse a local URL whose username is prod", () => {
+    const local = { DATABASE_URL: "postgres://prod:pw@localhost:5432/app" };
+    expect(extensionEnv(local, ["DATABASE_URL"], productionPatterns()).values).toEqual(local);
+    expect(extensionEnv(local, ["DATABASE_URL"], productionPatterns(["someref"])).values).toEqual(local);
+  });
+
+  /** A `%` that is not an escape is a username as written, not a bare URIError. */
+  it("does not throw on a username that is not valid percent-encoding", () => {
+    const odd = { DB: "postgres://user%zz:pw@localhost/x" };
+    expect(extensionEnv(odd, ["DB"], productionPatterns(["someref"])).values).toEqual(odd);
+    expect(() =>
+      extensionEnv({ DB: "postgres://someref.%zz:pw@localhost/x" }, ["DB"], productionPatterns(["someref"])),
+    ).toThrow(ProductionValueError);
+  });
+
   /** Layer 1 is what a process needs to be a process, and is not the recipe's. */
   it("adds what a command needs to run at all, without letting it win", () => {
     const out = runnableEnv({ PATH: "/from/recipe" }, { PATH: "/from/os", HOME: "/h" });

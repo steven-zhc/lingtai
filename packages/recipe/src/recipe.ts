@@ -400,8 +400,17 @@ export const Recipe = z.object({
      * Checked against every value that reaches the agent or an extension, from
      * either file, by `resolveAgentEnv` — which `lingtai doctor` calls before a
      * run, and `runOnce` calls before the claim.
+     *
+     * An entry is a segment or a run of them — `<ref>`, `prod-db`, or a whole
+     * host — matched segment by segment. One with an empty segment
+     * (`.supabase.co`) could never match anything, so it is refused here
+     * rather than shown to a reviewer as a host being refused.
      */
-    refuseHosts: z.array(z.string().min(1)).default([]),
+    refuseHosts: z
+      .array(
+        z.string().regex(/^[^.\-]+(?:[.\-][^.\-]+)*$/, "a host, or segments of one, with no empty segment"),
+      )
+      .default([]),
     /** Where the filtered env file is planted inside the worktree. Rarely the
      *  repo root — Next/Prisma/vitest read it from the app directory. */
     plantAt: z.string(),
