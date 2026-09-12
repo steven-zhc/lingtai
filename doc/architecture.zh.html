@@ -662,77 +662,98 @@
 
   <section>
     <h2>一件活，从头到尾</h2>
-    <p class="lede">五个闸口点是固定且封闭的。每个点上跑什么由被托管仓库的 recipe 说了算；
-      追加下来的是什么，由 Lingtai 说了算。</p>
+    <p class="lede">五个闸口点是固定且封闭的。每个点上跑什么由被托管仓库的 recipe 说了算；追加下来的是什么，
+      由 Lingtai 说了算。<b>它不是一条直线。</b>一次拒绝会回到 agent 那里，回到它本来就站着的
+      那个工作树；只有上限用尽才轮到你。</p>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 250" role="img" aria-label="一件活依次经过队列、认领、prepared、代理、proposed、merge、并入与 end。每一步列出它追加的事件。merge 点在 proposed 通过之后、工作树被移除之前，跑自己的闸口流水线。">
+        <svg viewBox="0 0 900 300" role="img" aria-label="一件活依次经过队列、认领、prepared、agent、proposed、merge，再到 integrate 与 end，每一步列出它追加的事件。线下方，来自 proposed、merge 和 integrator 的拒绝汇到同一条总线上，回到同一个工作树里的 agent，由 runtime.limits.rounds 封顶。另一条线把 review 被拒、轮次用尽的一趟 pass 送回认领处，成为新的一趟，由 runtime.limits.restarts 封顶，该键默认为零。只有上限全部用尽才会到人这里。">
           <defs>
             <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
             </marker>
           </defs>
 
-          <line x1="20" y1="70" x2="878" y2="70" stroke="currentColor" opacity=".3"/>
+          <line x1="20" y1="95" x2="878" y2="95" stroke="currentColor" opacity=".3"/>
 
           <g font-size="12.5" fill="currentColor">
-            <circle cx="60"  cy="70" r="5" fill="currentColor"/>
-            <text x="60"  y="52" text-anchor="middle">队列</text>
-            <text x="60"  y="96" text-anchor="middle" font-size="10.5" opacity=".55">来自 GitHub</text>
-            <text x="60"  y="112" text-anchor="middle" font-size="10.5" opacity=".55">无事件，无缓存</text>
-
-            <circle cx="185" cy="70" r="5" fill="currentColor"/>
-            <text x="185" y="52" text-anchor="middle">认领</text>
-            <text x="185" y="96" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemClaimed</text>
-
-            <circle cx="310" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
-            <text x="310" y="52" text-anchor="middle">prepared</text>
-            <text x="310" y="96" text-anchor="middle" font-size="10.5" opacity=".55">Gate*  ×3</text>
-
-            <circle cx="435" cy="70" r="5" fill="currentColor"/>
-            <text x="435" y="52" text-anchor="middle">代理</text>
-            <text x="435" y="96" text-anchor="middle" font-size="10.5" opacity=".55">RunStarted · RunFinished</text>
-
-            <circle cx="560" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
-            <text x="560" y="52" text-anchor="middle">proposed</text>
-            <text x="560" y="96" text-anchor="middle" font-size="10.5" opacity=".55">Gate*  ×3</text>
-
-            <circle cx="685" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
-            <text x="685" y="52" text-anchor="middle">merge</text>
-            <text x="685" y="96" text-anchor="middle" font-size="10.5" opacity=".55">Gate*  ×3</text>
-
-            <circle cx="810" cy="70" r="5" fill="#96701F" style="fill:var(--brass)"/>
-            <text x="810" y="52" text-anchor="middle">并入 → end</text>
-            <text x="810" y="96" text-anchor="middle" font-size="10.5" opacity=".55">IntegrationSucceeded</text>
-            <text x="810" y="111" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemLanded · IssueUpdated</text>
+            <text x="60" y="40" text-anchor="middle" font-size="10.5" opacity=".55">来自 GitHub</text>
+            <text x="60" y="54" text-anchor="middle" font-size="10.5" opacity=".55">无事件，无缓存</text>
+            <text x="60" y="72" text-anchor="middle">队列</text>
+            <circle cx="60" cy="95" r="5" fill="currentColor"/>
+            <text x="190" y="54" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemClaimed</text>
+            <text x="190" y="72" text-anchor="middle">认领</text>
+            <circle cx="190" cy="95" r="5" fill="currentColor"/>
+            <text x="305" y="54" text-anchor="middle" font-size="10.5" opacity=".55">Gate* ×3</text>
+            <text x="305" y="72" text-anchor="middle">prepared</text>
+            <circle cx="305" cy="95" r="5" fill="currentColor"/>
+            <text x="420" y="40" text-anchor="middle" font-size="10.5" opacity=".55">RunStarted · RunFinished</text>
+            <text x="420" y="54" text-anchor="middle" font-size="10.5" opacity=".55">FixRequested · FixApplied</text>
+            <text x="420" y="72" text-anchor="middle">agent</text>
+            <circle cx="420" cy="95" r="6" fill="currentColor"/>
+            <text x="545" y="54" text-anchor="middle" font-size="10.5" opacity=".55">Gate* ×3</text>
+            <text x="545" y="72" text-anchor="middle">proposed</text>
+            <circle cx="545" cy="95" r="5" fill="currentColor"/>
+            <text x="665" y="54" text-anchor="middle" font-size="10.5" opacity=".55">Gate* ×3</text>
+            <text x="665" y="72" text-anchor="middle">merge</text>
+            <circle cx="665" cy="95" r="5" fill="currentColor"/>
+            <text x="800" y="40" text-anchor="middle" font-size="10.5" opacity=".55">IntegrationSucceeded</text>
+            <text x="800" y="54" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemLanded · IssueUpdated</text>
+            <text x="800" y="72" text-anchor="middle">integrate → end</text>
+            <circle cx="800" cy="95" r="5" fill="currentColor"/>
           </g>
 
-          <line x1="66" y1="70" x2="178" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
-          <line x1="191" y1="70" x2="303" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
-          <line x1="316" y1="70" x2="428" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
-          <line x1="441" y1="70" x2="553" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
-          <line x1="566" y1="70" x2="678" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
-          <line x1="691" y1="70" x2="803" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#a5)"/>
+          <!-- Three points can refuse and they go to one place, which is 0039 §2. -->
+          <g stroke="currentColor" fill="none" opacity=".7">
+            <path d="M545 101 V150"/>
+            <path d="M665 101 V150"/>
+            <path d="M800 101 V150"/>
+            <path d="M545 150 H800"/>
+          </g>
 
-          <rect x="596" y="150" width="282" height="72" fill="none" stroke="currentColor" opacity=".25" stroke-width="1.5"/>
-          <line x1="685" y1="80" x2="685" y2="150" stroke="currentColor" opacity=".25" stroke-dasharray="5 4"/>
-          <text x="612" y="171" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".75">仅当 proposed 通过才跑</text>
-          <text x="612" y="190" font-size="11.5" fill="currentColor" opacity=".75">和前两个一样的一条流水线，在工作树里，</text>
-          <text x="612" y="206" font-size="11.5" fill="currentColor" opacity=".75">在它被移除之前</text>
+          <!-- Back to the agent, in the worktree it is already standing in. Built. -->
+          <path d="M545 150 Q470 150 425 110" stroke="currentColor" fill="none"
+                opacity=".8" marker-end="url(#a5)"/>
+          <text x="400" y="176" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".7">一次拒绝带着拒绝它的东西回来</text>
+          <text x="400" y="191" text-anchor="middle" font-size="10.5" fill="currentColor"
+                opacity=".55">× runtime.limits.rounds · 同一个工作树</text>
 
-          <text x="20" y="150" font-size="11.5" fill="currentColor" opacity=".6">「挂起等人」恰好只有三条路径：</text>
-          <text x="20" y="169" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">proposed</tspan> 上某个动作判定为需要批准</text>
-          <text x="20" y="185" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">merge</tspan> 上的动作同样如此</text>
-          <text x="20" y="201" font-size="11.5" fill="currentColor" opacity=".75">· <tspan font-family="IBM Plex Mono, monospace">--no-merge</tspan> 这个开关</text>
-          <text x="20" y="222" font-size="11" fill="currentColor" opacity=".55">同一套词汇：三者都发出 ApprovalRequested。</text>
+          <!-- Rounds spent on a refused review: the ticket starts over, carrying
+               the findings. It leaves from the `proposed` corner and not from the
+               bus, because that is the whole of it — a red build and a conflict
+               never take this step, since for them the work is still in the tree.
+               Orthogonal, not a curve: an arc back to `claim` has to rise through
+               the label it is supposed to pass under. -->
+          <polyline points="545,150 545,230 190,230 190,108" fill="none"
+                stroke="currentColor" opacity=".55" marker-end="url(#a5)"/>
+          <text x="380" y="252" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".7">review 被拒、rounds 用尽 → 工单从基线重开</text>
+          <text x="380" y="267" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".55">× runtime.limits.restarts · 0040 · 默认 0，所以今天仍是：你</text>
+
+          <!-- And the one exit that is a person. -->
+          <path d="M800 150 Q848 150 852 176" stroke="currentColor" fill="none"
+                opacity=".8" marker-end="url(#a5)"/>
+          <circle cx="852" cy="188" r="5" fill="#96701F" style="fill:var(--brass)"/>
+          <text x="852" y="208" text-anchor="middle" font-size="11" fill="#96701F"
+                style="fill:var(--brass)">你</text>
+          <text x="852" y="222" text-anchor="middle" font-size="10" fill="currentColor"
+                opacity=".55">上限全部用尽</text>
         </svg>
       </div>
-      <figcaption><b>五个点里有四个会跑自己的动作；<code>admit</code> 不会。</b>
-        <code>prepared</code>、<code>proposed</code> 和 <code>merge</code> 各自搭起一条真的闸口流水线，
-        <code>end</code> 则在这件活自己的流上落成若干追加 —— 和落地在同一个事务里，
-        所以不管一件活是从哪条路落的地，这个点都会被结清。<code>admit</code> 至今只被读来
-        为 <code>GatesResolved</code> 贡献名字。</figcaption>
+      <figcaption><b>一次拒绝花掉的是一轮，不是一趟 run。</b>三个能拒绝的地方 ——
+        <code>proposed</code> 的闸口、<code>merge</code> 的闸口，以及 integrator ——
+        都把活送回 agent 那里，回到它本来就站着的那个工作树，并带上拒绝它的东西：findings、
+        某个命令的输出，或者留在树里的冲突本身。
+        <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a>
+        是工作树能活过合并道的原因，而那正是这一切成立的前提。
+        <b><code>rounds</code> 管深度，<code>restarts</code> 管广度。</b>
+        <a href="decisions/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a>
+        加上了下面那条线：一次被 <i>review</i> 拒绝的活把轮次用尽之后，工单被放回去，
+        下一次认领从基线重开，并带上那些 findings —— 而
+        <a href="experiments/011-patching-versus-starting-over.md">实验 011</a>
+        测出那是再来一轮的一半价钱。它只从 <code>proposed</code> 出发，别处都不走，
+        因为构建变红和合并冲突的活还在树里。<code>restarts</code> 默认是 <code>0</code>，
+        这个仓库自己也是 <code>0</code>，所以通向人的那根箭头仍是这里实际发生的事。</figcaption>
     </figure>
 
     <div class="gap">
@@ -877,13 +898,14 @@
 
     <div class="prop">
       <h3>把它写成事实，而不是留给以后被发现</h3>
-      <p><b><code>runOnce</code> 仍然是 <code>async</code>/<code>await</code>。</b>
-        <a href="decisions/0023-effect-at-the-boundary.md">0023</a> 说适配器包和 <code>conductor</code>
-        都是 Effect；今天只有接缝是。端口是 <code>Context.Tag</code>，projector 是
-        <code>Layer.scoped</code>，<code>run()</code> 的五处拒绝走的是带类型的错误通道 ——
-        再往下一行，<code>Effect.promise</code> 就把控制权交给了 754 行代码，
-        那里的释放由两个 <code>finally</code> 块把着，「每条出口都会追加」由一个兜底 catch 把着。
-        <code>#73</code>。</p>
+      <p><b>还有两个接口是 promise，而且是有意的。</b>
+        <a href="decisions/0026-the-conversion-past-the-seam.md">0026</a> 把 <code>runOnce</code>、
+        端口和适配器都带进了 Effect：工作树、hook socket 和 agent 进程各自是一个
+        <code>Scope</code>，从前兜着「每条出口都会追加」的那个 catch-all，现在是一个具名的
+        defect handler，背后有测试。没有转过去的是 <code>Runtime</code> —— 因为
+        <code>actions</code> 要用它，而 0023 让那个包保持朴素 —— 以及
+        <code>GitHubClient</code>，因为看板、daemon 和四个命令都在用它。
+        两者各自是一张 ticket，只有真有东西开口要，才值得做。</p>
       <p><b><code>admit</code> 什么都不跑。</b>它是五个点之一，会被解析进 <code>GatesResolved</code>、
         也画在看板上，却没有为它搭任何流水线。这和 <code>#58</code> 是同一句话 ——
         所以 <code>gate-audit</code> 把它包含在内，而不是给它开例外。</p>
