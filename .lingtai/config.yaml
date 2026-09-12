@@ -299,21 +299,33 @@ runtime:
     # base instead of asking a person
     # ([0040](../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
     #
-    # **Zero, which is what it was before the key existed** — a pass whose
-    # rounds are spent blocks and asks. Written out rather than left to the
-    # default for the reason `rounds` and `backoff` are: this is the repository
-    # that has to be able to read its own policy without opening its own source,
-    # and a ceiling that spends a whole extra pass is the last thing that should
-    # be invisible when it is off (0025 §2).
+    # **One, and it is the experiment the line above used to describe.** This
+    # was `0` until 2026-09-12, written out so that a ceiling spending a whole
+    # extra pass could not be invisible while it was off (0025 §2). It is
+    # written out for the same reason now that it is on: at `1` this repository
+    # spends at most 8 × 1h on a ticket before it is anyone's, and that number
+    # should not have to be derived from a default.
     #
-    # **Zero on the evidence, not on the argument.** Experiment 011 is one
-    # ticket, and the failure that would justify the second ceiling — two fresh
-    # starts both exhausting their rounds — has never been observed. So the
-    # mechanism is built and off, and what turns it on is more runs in
-    # `doc/experiments/`. Raising it here is the experiment: at `1` this
-    # repository would spend at most 8 × 1h on a ticket before it is anyone's,
-    # which is the number to be sure about first.
-    restarts: 0
+    # **What is actually known, on 2026-09-12.** Three observations, and they
+    # do not agree:
+    #
+    #   experiment 011  starting over cost half what a fourth patch cost, and
+    #                   landed where the patching arm landed nothing. n = 1.
+    #   `#51`           spent all three rounds and landed on the third. Each
+    #                   refusal named a new boundary rather than re-refusing
+    #                   the last round's work, which is the case rounds are for.
+    #   `#148`          spent all three and was still refused — and one of the
+    #                   three went on repairing a build the round before had
+    #                   broken. Two rounds reached the finding, not three.
+    #
+    # So this is not settled and is not being claimed as settled. `#148` is the
+    # reason to try: a ceiling that can be eaten by self-inflicted damage is a
+    # ceiling whose depth was never really three. What would put it back to `0`
+    # is the failure this ceiling is supposed to prevent happening anyway — a
+    # restarted pass exhausting its rounds too — twice.
+    #
+    # Whoever changes this next writes the run into `doc/experiments/` first.
+    restarts: 1
 
   # How much an agent is told about the attempts before it
   # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
