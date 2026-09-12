@@ -202,7 +202,7 @@ export function repairFingerprint(failure: Failure): string {
  *                   which is 0039's expensive wrong answer by definition.
  *
  * So 0039 §Consequences is right that this stops deciding about money
- * altogether, and `#144` is that change: it deletes `RepairRequested`, the
+ * altogether, and `#143` is that change: it deletes `RepairRequested`, the
  * pending-repair fold, the repair prompt and the board's columns for them, which
  * is four packages and not a conflict ticket's business. Until then the number
  * at least bounds both, and there is one of it.
