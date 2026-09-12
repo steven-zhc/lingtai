@@ -383,6 +383,26 @@ export function runOnce(
     const envForExtension = (declared: readonly string[]): Record<string, string> =>
       runnableEnv(extensionEnv(env.merged, declared, productionPatterns(recipe.env.refuseHosts)).values);
 
+    // The tripwire over every extension's declared values, here and not only
+    // when `envForExtension` is first called. `resolveAgentEnv` checks what
+    // reaches the agent, after `deny`; a name an extension declares is read
+    // from `merged`, so a denied production value would otherwise first throw
+    // at `gates.prepared` — past the claim, as a defect in the middle of a run.
+    const extensionRefusal = Either.try(() => {
+      for (const point of Object.values(recipe.gates)) {
+        for (const action of point) {
+          if ("run" in action) extensionEnv(env.merged, action.env, productionPatterns(recipe.env.refuseHosts));
+        }
+      }
+      for (const subscriber of recipe.subscribers) {
+        extensionEnv(env.merged, subscriber.env, productionPatterns(recipe.env.refuseHosts));
+      }
+    });
+    if (Either.isLeft(extensionRefusal)) {
+      const detail = extensionRefusal.left instanceof Error ? extensionRefusal.left.message : String(extensionRefusal.left);
+      return { ok: false, workItemId: null, runId: null, stage: "env", detail };
+    }
+
     // ---- 3. capability matching, before anything is claimed ------------------
     const tier: Tier = resolved.tier;
     const missing = missingForTier(options.runtime.capabilities, tier);

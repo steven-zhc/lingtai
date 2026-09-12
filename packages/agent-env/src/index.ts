@@ -69,9 +69,10 @@ export const DEFAULT_PRODUCTION_PATTERNS = ["prod", "production"];
 /**
  * The patterns a run refuses: the default, **and** the recipe's `refuseHosts`.
  *
- * Added to rather than replaced, because ADR 0005 lets a recipe add strictness
- * and never remove it. A recipe that could drop `prod` would be a committed
- * file, editable by the agent it governs, turning the tripwire off.
+ * Added to rather than replaced, because a recipe that could drop `prod` would
+ * be a committed file, editable by the agent it governs, turning the tripwire
+ * off. That is the whole ground: 0005's "a recipe may add strictness and never
+ * remove it" was withdrawn by 0016 along with policy, so it is not cited here.
  */
 export function productionPatterns(refuseHosts: readonly string[] = []): string[] {
   return [...new Set([...DEFAULT_PRODUCTION_PATTERNS, ...refuseHosts])];

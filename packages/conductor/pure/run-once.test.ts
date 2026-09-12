@@ -813,7 +813,59 @@ describe("runOnce hands the recipe's production hosts to the environment", () =>
     );
 
     expect(result).toMatchObject({ ok: false, stage: "env" });
-    // The recipe's added to the default, which it cannot remove (0005).
+    // The recipe's added to the default, which a file the agent can edit must not remove.
     expect(seen).toEqual(["prod", "production", "abcdefghijklmnopqrst"]);
+  });
+});
+
+/**
+ * The same tripwire over what an **extension** declares, before the claim.
+ *
+ * `resolveEnv` checks the agent's values, after `deny`, so a denied production
+ * value a `run:` extension declares used to pass stage `env` and first throw at
+ * `gates.prepared` — past the claim and the worktree, as a defect mid-run.
+ */
+describe("runOnce refuses an extension's production value before anything is claimed", () => {
+  it("stops at stage env when a run: extension declares a denied production host", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const ports = fakePorts(did, store);
+    const prod = "postgresql://postgres:s3cr3t@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres";
+    ports.agent.resolveEnv = () =>
+      Effect.succeed({
+        values: {},
+        merged: { PROD_DATABASE_URL: prod },
+        names: [],
+        missing: [],
+        deferred: [],
+        file: "/tmp/fake-home/env/demo.env",
+        refusal: null,
+      }) as never;
+
+    const recipe = RECIPE.replace("required: [],", "required: [], deny: [PROD_DATABASE_URL], refuseHosts: [eliwlauokdzgsqfgczkv],").replace(
+      "gates: {}",
+      "gates:\n  prepared:\n    - name: migrate\n      run: pnpm migrate\n      env: [PROD_DATABASE_URL]",
+    );
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], recipe),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "env", workItemId: null });
+    expect((result as { detail: string }).detail).toMatch(/PROD_DATABASE_URL looks like production.*"eliwlauokdzgsqfgczkv"/);
+    expect((result as { detail: string }).detail).not.toContain("s3cr3t");
+    // Nothing claimed, nothing provisioned.
+    expect(did).toEqual([]);
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
   });
 });

@@ -390,16 +390,20 @@ export const Recipe = z.object({
      * and the field `agent-env`'s tripwire said it was waiting for.
      *
      * **Added to `prod` and `production`, never in place of them**
-     * (`productionPatterns`): 0005 lets a recipe add strictness and not remove
-     * it. Those two are inert on a managed database named by a random ref
+     * (`productionPatterns`): this file is one the governed agent can edit, and
+     * a field that could drop `prod` would let that edit turn the tripwire off.
+     * (0005's "add strictness, never remove it" is not the ground: 0016
+     * withdrew it.) Those two are inert on a managed database named by a random ref
      * (`#51`), so a repository
      * whose production host is `db.<ref>.supabase.co` names `<ref>` here. That
      * puts an identifier — not a credential — in a committed file, and it is
      * meant to: a reviewer sees the host being refused.
      *
-     * Checked against every value that reaches the agent or an extension, from
-     * either file, by `resolveAgentEnv` — which `lingtai doctor` calls before a
-     * run, and `runOnce` calls before the claim.
+     * Checked before the claim against every value that reaches the agent or an
+     * extension, from either file: the agent's by `resolveAgentEnv`, after
+     * `allow`/`deny`, and each extension's declared names by `extensionEnv`,
+     * which reads them before `deny` — both in `runOnce`, at stage `env`, and
+     * both in `lingtai doctor` (`env: <project>`, `env: <project> extensions`).
      *
      * An entry is a segment or a run of them — `<ref>`, `prod-db`, or a whole
      * host — matched segment by segment against a URL's hostname. One that

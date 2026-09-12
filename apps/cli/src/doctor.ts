@@ -22,7 +22,7 @@
  * not about what happened to be installed the day it was written: see
  * `DEFERRED`.
  */
-import { productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
+import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
   currentRecipe,
   landedWithoutEndActions,
@@ -1154,6 +1154,17 @@ export function extensionRow(
           ? "no extension is declared"
           : `${extensions.length} declared, none asking for a variable — each gets PATH and nothing else`,
     };
+  }
+
+  // The production tripwire over what each extension would be handed, which
+  // `resolveAgentEnv` does not see: it checks the agent's values, after `deny`,
+  // and an extension reads its names from the merged files. Named, never valued.
+  for (const extension of asking) {
+    try {
+      extensionEnv(agentEnv.merged, extension.env, productionPatterns(recipe.env.refuseHosts));
+    } catch (err) {
+      return { name, status: "fail", detail: `${extension.name}: ${(err as Error).message}` };
+    }
   }
 
   const layerOf = new Map(agentEnv.names.map((n) => [n.name, n.layer]));

@@ -222,6 +222,31 @@ subscribers:
     expect(row.detail).toContain("lingtai env set demo TELEGRAM_BOT_TOKEN");
   });
 
+  /**
+   * `#51`. The agent's row checks what survives `deny`; an extension reads its
+   * names from the merged files, so a denied production value it declares is
+   * only caught here — before a run, not at `gates.prepared` after the claim.
+   */
+  it("is red before a run when an extension declares a denied production value", async () => {
+    const recipe = await resolveRecipe(
+      async () =>
+        RECIPE.replace("  required: []", "  required: []\n  deny: [SCANNER_TOKEN]\n  refuseHosts: [eliwlauokdzgsqfgczkv]"),
+      "main",
+    );
+    const row = extensionRow(
+      "demo",
+      recipe.recipe,
+      agentEnv({
+        SCANNER_TOKEN: "postgresql://postgres:s3cr3t@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres",
+        TELEGRAM_BOT_TOKEN: "t",
+      }),
+    );
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toMatch(/scan: SCANNER_TOKEN looks like production.*"eliwlauokdzgsqfgczkv"/);
+    expect(row.detail).not.toContain("s3cr3t");
+  });
+
   it("says so plainly when no extension asks for anything", async () => {
     const bare = await resolveRecipe(
       async () => RECIPE.replace(/\n +env: \[[A-Z_]+\]/g, ""),
