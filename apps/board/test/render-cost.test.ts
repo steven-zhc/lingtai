@@ -71,7 +71,9 @@ function resolvedFilter(name: string, kinds: string[]) {
     ok: true,
     kinds,
     backoffMs: 0,
-    limits: { rounds: 2, turns: 150, wall: "1h", wallMs: 3_600_000 },
+    // `restarts` among them since 0040: the fold reads it for the bar's chip,
+    // which names both ceilings because they multiply.
+    limits: { rounds: 2, restarts: 0, turns: 150, wall: "1h", wallMs: 3_600_000 },
     plan: new Map(),
   } as unknown as Extract<ProjectQueue, { state: "listed" }>["filter"];
 }

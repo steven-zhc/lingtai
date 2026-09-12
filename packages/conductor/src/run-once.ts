@@ -1859,15 +1859,20 @@ export function runOnce(
        *                                  an ordinary fresh pass
        *     restarts spent  → a person   the hold below
        *
-       * **The mechanism is a release and nothing else**, which is why this is
-       * fifteen lines rather than a second dispatcher. `attempts.ts` already
-       * writes the abandoned branch, its sha, the `git fetch` and the findings
-       * into every second attempt's prompt, and hands the judgement — build on
-       * it or start over — to the agent explicitly. That prompt is what made
+       * **The mechanism is a push, an append and a release**, which is why
+       * this is one branch rather than a second dispatcher. `attempts.ts` already writes the
+       * abandoned branch, its sha, the `git fetch` and the findings into every
+       * second attempt's prompt, and hands the judgement — build on it or start
+       * over — to the agent explicitly. That prompt is what made
        * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)'s
-       * second arm land for half the money. What was missing was never a code
-       * path; it was the decision to take it, and until now that decision was a
-       * person typing `requeue`.
+       * second arm land for half the money. What was missing was never a
+       * dispatcher; it was the decision to take it, and until now that decision
+       * was a person typing `requeue`.
+       *
+       * The push is what makes that prompt true rather than a lie — see it
+       * below. A restart is the one ending that promises another agent a
+       * branch, and a pass that spent its rounds never reached the push inside
+       * the loop above.
        *
        * **The whole of the arms' history is on the item's stream**, appended
        * before the release, exactly as `RepairRequested` is: the fold has to
@@ -1918,6 +1923,36 @@ export function runOnce(
         });
 
         if (second.restart) {
+          /**
+           * **The abandoned approach is published before anything names it.**
+           *
+           * The only push in a pass is inside the loop above, *after* the
+           * refusal is handled, so a review that spent the rounds never
+           * reaches it: the branch has commits and no ref. The worktree is cut
+           * `--force --detach` and `removeWorktree` deletes it when this scope
+           * closes, so without this the `branch` and `headSha` below name an
+           * approach that exists nowhere — and `attempts.ts` would tell the
+           * next agent `git fetch origin agent/<n>` for a ref origin has never
+           * heard of. That prompt is the whole of the restart mechanism
+           * (0040 §2), so the ending that promises the branch is the ending
+           * that has to put it there.
+           *
+           * The same lease as the push above, for the same reason: origin's
+           * `agent/<n>` may be the arm before this one, and what this pass has
+           * of it is what it last looked at.
+           *
+           * Before the append, not after. A push that is refused leaves no arm
+           * on the log — the pass ends as a `push` failure, the item goes back
+           * through the backoff, and nothing has claimed one of the restarts
+           * for an approach nobody can read.
+           */
+          yield* gitInWorktree([
+            "push",
+            `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+            "origin",
+            `HEAD:refs/heads/${branch}`,
+          ]).pipe(failing("push"));
+
           const reason = restartReason({
             action: unresolved.action,
             rounds: unresolved.rounds,

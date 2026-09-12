@@ -673,7 +673,16 @@ export const PassRestarted = z.object({
   action: z.string(),
   /** Rounds this arm spent before the ceiling stopped it. */
   rounds: z.number().int().nonnegative(),
-  /** The branch the abandoned approach is on, and the head it left there. */
+  /**
+   * The branch the abandoned approach is on, and the head it left there.
+   *
+   * **On origin, because this is appended after the pass pushes it.** A pass
+   * that spent its rounds never reached its own push, so these two named
+   * commits that lived in a deleted worktree and nowhere else — while
+   * `attempts.ts` told the next agent to fetch them. The conductor publishes
+   * the approach before it records the arm; an arm on the log is therefore an
+   * arm that can be read.
+   */
   branch: z.string(),
   headSha: z.string(),
   /** What was still refused when this arm ended, as the reviewer last said it. */

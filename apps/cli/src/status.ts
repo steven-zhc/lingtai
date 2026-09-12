@@ -113,8 +113,22 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
     // not a fallback for the recipe's value (0028) — there is no such thing.
     const backoffMs = filter.ok ? filter.backoffMs : 0;
     const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs });
-    const queuedRows = runnable.map((r) => ({ ...r, state: "queued" as const }));
     const known = await readTasks({ project: name });
+    // **The arm comes from the row, because the offer cannot carry it.**
+    // `selectRunnable` answers *what could start next* out of GitHub's offer
+    // and the log's claims — `Runnable` is four fields and none of them is a
+    // restart. A restarted ticket is queued, so without `--all` it is listed
+    // from here and from nowhere else, and reading the arm off the projection
+    // is what stops `lingtai status` saying nothing about an approach the
+    // board's card names (#100). Zero for an issue Lingtai has never touched:
+    // it has no row, and no approach has been abandoned.
+    const rowOf = new Map(known.map((t) => [t.taskId, t]));
+    const queuedRows = runnable.map((r) => ({
+      ...r,
+      state: "queued" as const,
+      restarts: rowOf.get(r.taskId)?.restarts ?? 0,
+      restartsOf: rowOf.get(r.taskId)?.restartsOf ?? 0,
+    }));
 
     // **Where the rest went**, in the same breath as the number. A reader who
     // sees eight eligible and none runnable has to be told why, or the honest

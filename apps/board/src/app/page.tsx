@@ -730,16 +730,29 @@ export default async function Page({
 
             The chip is the short form and the title is `passCeiling`'s
             sentence, which is the same sentence `lingtai add` prints and the
-            drain says (0039 §3). */}
+            drain says (0039 §3).
+
+            **Both ceilings, because they multiply** (0040 §5). `rounds ×3` was
+            the whole chip while `rounds` was the whole policy; beside a
+            non-zero `restarts` it names the ceiling a reader can see and hides
+            the one they cannot — and `rounds: 0, restarts: 2`, which is 0040's
+            *never patch, start over twice*, would have read as the greyed `no
+            rounds` of a project that buys nothing while spending three agent
+            runs a ticket. Idle only when neither buys anything, since that is
+            what the grey means: every refusal is yours. */}
         {limits.map((l) => (
           // A fragment, not a wrapper: `.bar` lays its children out directly,
           // and an element around the pair would be one flex item instead of
           // two.
           <Fragment key={l.project}>
             <span className="sep" />
-            <span className={`chip ${l.rounds === 0 ? "idle" : ""}`} title={l.summary}>
+            <span
+              className={`chip ${l.rounds === 0 && l.restarts === 0 ? "idle" : ""}`}
+              title={l.summary}
+            >
               {limits.length > 1 ? `${l.project}: ` : ""}
               {l.rounds === 0 ? "no rounds" : `rounds ×${l.rounds}`}
+              {l.restarts === 0 ? "" : ` · restarts ×${l.restarts}`}
             </span>
           </Fragment>
         ))}

@@ -204,8 +204,20 @@ export interface BoardCard {
  */
 export interface PassLimitsView {
   project: string;
-  /** `runtime.limits.rounds`. Zero means every refusal goes straight to a person. */
+  /** `runtime.limits.rounds`. Zero means nothing patches a diff in place. */
   rounds: number;
+  /**
+   * `runtime.limits.restarts`. Zero means a pass whose rounds are spent asks a
+   * person, which is every project today
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+   *
+   * **Beside `rounds` because the chip is about what a ticket costs**, and the
+   * two ceilings multiply: `rounds: 0, restarts: 2` buys three agent runs on a
+   * ticket while advertising a depth ceiling of none. A chip that named only
+   * the first would be the 2026-09-10 drain failure on the one always-visible
+   * surface — a sentence that is true of a number it is not made of.
+   */
+  restarts: number;
   /** `passCeiling`'s sentence, for the chip's title. */
   summary: string;
 }
@@ -514,6 +526,7 @@ export async function queuedCards(
     limits.push({
       project: filter.project,
       rounds: filter.limits.rounds,
+      restarts: filter.limits.restarts,
       summary: passCeiling(filter.limits),
     });
     backoffMs.set(filter.project, filter.backoffMs);

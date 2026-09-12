@@ -65,9 +65,19 @@ what is worth keeping from `8634c5d`; if it does not, ignore them.
 
 The findings travel, the branch is named, its sha is given, the fetch is spelled
 out, and the *judgement* — build on it or start over — is handed to the agent
-explicitly. **The restart mechanism was complete.** What was missing was the
-decision to take it: a spent ceiling asked a person, and the person typed
-`requeue`.
+explicitly. **The prompt was complete; the branch it names was not.** What was
+missing was the decision to take it — a spent ceiling asked a person, and the
+person typed `requeue` — and one `git push`.
+
+**A pass that spends its rounds has pushed nothing.** The only push in a pass is
+after `proposed` passes, so a review that kept refusing leaves its commits in a
+worktree that is cut `--force --detach` and deleted when the pass ends: no ref
+on origin, none in the mirror. Whatever made `agent/144` fetchable for arm B, it
+was not the refused pass, and `git fetch origin agent/144` off a spent one would
+have failed with `couldn't find remote ref` — the prompt above lying about the
+one thing it hands the agent. So a restart pushes the approach it is abandoning
+before it names it, and before the arm is on the log: a push origin refuses
+leaves no arm, and the ceiling is not spent on an approach nobody can read.
 
 ## Decision
 
@@ -93,14 +103,17 @@ without a bound is a money pump on a ticket that is simply wrong. The person is
 not removed; they are moved to where their judgement is worth something, which
 is after the *second* approach has failed rather than after the first.
 
-### 2. A restart is a release and nothing else
+### 2. A restart is a push and a release
 
-`PassRestarted` on the work item's stream, then the ordinary release — that
-order, as `RepairRequested`'s is, because the fold has to carry the arm before
-anything can claim the next one. **There is no new code path and no prompt of
-its own**: the next claim is an ordinary pass, and `attempts.ts` is what makes it
-work. There is deliberately no `pendingRestart` beside `pendingRepair`, because
-a repair has to *become* the next run and a restart does not.
+The push of the abandoned approach, then `PassRestarted` on the work item's
+stream, then the ordinary release. The last two are in that order as
+`RepairRequested`'s are, because the fold has to carry the arm before anything
+can claim the next one; the push is first because the event names a branch and a
+sha, and an event that names a ref nobody published is a lie the next prompt
+repeats. **There is no new prompt**: the next claim is an ordinary pass, and
+`attempts.ts` is what makes it work — which is exactly why the ref it spells out
+has to exist. There is deliberately no `pendingRestart` beside `pendingRepair`,
+because a repair has to *become* the next run and a restart does not.
 
 `source.backoff` applies. A repair is exempt from it because the next claim is
 the repair and is told what went wrong; a restart is an ordinary claim, and an
