@@ -127,7 +127,14 @@ EN = dict(
     th2="<b>Any refusal returns to the agent, carrying its own evidence.</b> "
         "Findings, the build's output, the conflicting paths: three prompts "
         "differing in one argument, not three flows. A person is asked when "
-        "<code>runtime.limits.rounds</code> is spent — and only then.",
+        "<code>runtime.limits.rounds</code> is spent — and, by default, only "
+        "then. <a href=\"decisions/0040-rounds-bound-depth-restarts-bound-breadth.md\">0040</a> "
+        "adds one step before that person for a refused <i>review</i>: with "
+        "<code>runtime.limits.restarts</code> above zero, a spent pass releases "
+        "the ticket and the next claim starts over from the base carrying the "
+        "findings. The key defaults to zero, so the arrow below is still what "
+        "happens; a red build and a conflict never take that step at all, "
+        "because for them the work is still there.",
 
     s1h="One pass, and where a refusal goes",
     s1l="Node names are the section comments in <code>run-once.ts</code>; the gate "
@@ -178,11 +185,12 @@ EN = dict(
            "the same worktree, bounded by limits.rounds.",
 
     s3h="What one pass may spend",
-    s3l="Three numbers in one block, because two of them already had to agree with a "
-        "third kept somewhere else.",
+    s3l="Four numbers in one block, because two of them already had to agree with a "
+        "third kept somewhere else — and the fourth multiplies all three.",
     c_turns="# inside one agent run",
     c_wall="# inside one agent run",
     c_rounds="# how many times a pass sends the agent back",
+    c_restarts="# how many passes one ticket may buy",
     s3p="<code>round</code> is the word the code already speaks — "
         "<code>FixRequested.round</code>, <code>roundsSpent</code>, <i>round 1 of 2</i>. "
         "It is not <code>attempts</code>, which already means two other things: "
@@ -192,10 +200,22 @@ EN = dict(
         "spend is then one block, <code>(rounds + 1) × wall</code>. On 2026-09-10 the "
         "drain told an operator it would wait at most one <code>wall</code>, which the "
         "fix loop had already made false — a sentence chasing a number kept elsewhere. "
-        "Three numbers in one place cannot drift apart like that. "
+        "Numbers in one place cannot drift apart like that. "
         "<code>repair.maxAttempts</code> and <code>repair.fix</code> are what "
         "<code>rounds</code> now counts, and <code>repair.on</code> is "
         "<code>rounds: 0</code>.",
+    s3p2="<b><code>restarts</code> is the same argument one ceiling out</b> "
+         "(<a href=\"decisions/0040-rounds-bound-depth-restarts-bound-breadth.md\">0040</a>). "
+         "<code>rounds</code> bounds <i>depth</i> — another attempt at this approach — "
+         "and <a href=\"experiments/011-patching-versus-starting-over.md\">experiment "
+         "011</a> found a failure it cannot reach: every refusal in the patching arm "
+         "was about the code the round before it had written, so each round paid to "
+         "get further from a fix. That is <i>breadth</i>, and it is what this number "
+         "bounds. So what a <i>ticket</i> may spend is "
+         "<code>(restarts + 1) × (rounds + 1) × wall</code>, and it is in the same "
+         "block for the reason above. It is <b>zero by default</b>: the evidence is "
+         "one ticket, and turning a new way to spend an agent on for every project "
+         "would be the opposite of what that evidence supports.",
 
     s4h="What this replaced, and the constraint it had to solve first",
     prop_h="What it was until 2026-09-11",
@@ -286,7 +306,13 @@ ZH = dict(
         "结束了的 run。",
     th2="<b>任何拒绝都带着自己的证据回到 agent。</b>findings、build 的输出、"
         "冲突的路径：三个 prompt 只差一个参数，不是三条流程。"
-        "只有 <code>runtime.limits.rounds</code> 用尽，才去问人。",
+        "只有 <code>runtime.limits.rounds</code> 用尽，才去问人 —— 这是默认行为。"
+        "<a href=\"decisions/0040-rounds-bound-depth-restarts-bound-breadth.md\">0040</a> "
+        "在那个人之前多加了一步，只针对被 <i>review</i> 拒绝的情况："
+        "把 <code>runtime.limits.restarts</code> 设成正数，用尽 rounds 的一趟 pass "
+        "会把工单放回队列，下一次认领从基线重新开始，并带上那些 findings。"
+        "该键默认为零，所以下面那根箭头仍是实际发生的事；而构建变红和合并冲突"
+        "永远不走这一步 —— 对它们来说，活儿还在原地。",
 
     s1h="一趟 pass，以及一次拒绝去哪里",
     s1l="节点名取自 <code>run-once.ts</code> 的分节注释；gate 点和动作名取自 "
@@ -332,10 +358,12 @@ ZH = dict(
            "一趟新的 run。0039 之后三者都回到同一个工作树，由 limits.rounds 封顶。",
 
     s3h="一趟 pass 最多花多少",
-    s3l="三个数放在同一个块里，因为其中两个本来就得和另一个放在别处的数保持一致。",
+    s3l="四个数放在同一个块里，因为其中两个本来就得和另一个放在别处的数保持一致 —— "
+        "而第四个把前三个都乘了一遍。",
     c_turns="# 一次 agent run 之内",
     c_wall="# 一次 agent run 之内",
     c_rounds="# 一趟 pass 把 agent 打回去几次",
+    c_restarts="# 一个工单最多买几趟 pass",
     s3p="<code>round</code> 是代码里已经在说的词 —— <code>FixRequested.round</code>、"
         "<code>roundsSpent</code>、<i>round 1 of 2</i>。不是 <code>attempts</code>，"
         "那个词已经有两个别的意思了：<code>budget.attempts</code> 是一个 prompt 带多少"
@@ -343,10 +371,20 @@ ZH = dict(
         "<code>wall</code> 旁边是目的本身，不是为了整齐：一趟 pass 最多花多少，从此就是"
         "一个块，<code>(rounds + 1) × wall</code>。2026-09-10 那天，排空提示告诉操作者"
         "最多等一个 <code>wall</code> —— 而修复循环早就让这句话不成立了，一句话在追一个"
-        "存在别处的数。三个数在同一处，就没法这样各自漂移。"
+        "存在别处的数。这些数在同一处，就没法这样各自漂移。"
         "<code>repair.maxAttempts</code> 和 <code>repair.fix</code> 就是 "
         "<code>rounds</code> 现在数的东西，<code>repair.on</code> 就是 "
         "<code>rounds: 0</code>。",
+    s3p2="<b><code>restarts</code> 是同一个论证再往外一层</b>"
+         "（<a href=\"decisions/0040-rounds-bound-depth-restarts-bound-breadth.md\">0040</a>）。"
+         "<code>rounds</code> 封的是<i>深度</i> —— 在同一条路子上再试一次 —— 而"
+         "<a href=\"experiments/011-patching-versus-starting-over.md\">实验 011</a> "
+         "找到了它到不了的那种失败：打补丁那一支里，每一次拒绝说的都是上一轮刚写出来的"
+         "代码，于是每一轮都在花钱离修好更远。那是<i>广度</i>，也正是这个数封的东西。"
+         "所以一个<i>工单</i>最多花多少是 "
+         "<code>(restarts + 1) × (rounds + 1) × wall</code>，放在同一个块里的理由如上。"
+         "它<b>默认为零</b>：证据只有一个工单，而在这点证据上给所有项目都打开一种新的"
+         "花钱方式，恰好和证据说的相反。",
 
     s4h="它替换掉了什么，以及必须先解决的那个约束",
     prop_h="2026-09-11 之前是这样",
@@ -608,8 +646,10 @@ def page(T, other):
     turns: 150   <span class="c">{T['c_turns']}</span>
     wall:  1h    <span class="c">{T['c_wall']}</span>
     <b>rounds: 2</b>    <span class="c">{T['c_rounds']}</span>
+    <b>restarts: 0</b>  <span class="c">{T['c_restarts']}</span>
 </pre>
     <p>{T['s3p']}</p>
+    <p>{T['s3p2']}</p>
   </section>
 
   <section>

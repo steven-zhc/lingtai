@@ -117,6 +117,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0037](decisions/0037-an-extension-is-a-command.md) | **An extension is a command, and the only question is whether the core waits** | accepted; supersedes 0016 §5's "plugins are trusted code" |
 | [0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) | **A finding buys an agent before it buys your attention** | accepted; §4's two purses superseded by 0039 |
 | [0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) | **The worktree is the whole of a pass, and a refusal never costs it** | accepted; supersedes 0025 §2–§3 and 0038 §4 |
+| [0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) | **`rounds` bound depth; a second ceiling bounds breadth** | accepted; extends 0039 §2–§3, off by default |
 
 ## Experiments
 
@@ -131,6 +132,8 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [007](experiments/007-the-log-before-the-reset.md) | What was in the log before ADR 0016 reset it? | 106 events, Phase 0 through 2a, kept because it is the only copy |
 | [008](experiments/008-deny-survives-bypass.md) | Does `permissions.deny` survive `bypassPermissions`? | yes, by removing the tool — so the guard is deleted, not renamed |
 | [009](experiments/009-the-end-gate-closes-its-own-issue.md) | Does the new model land and close a ticket by itself? | yes — admin #157, 8 turns, $0.63, closed with its label intact |
+| [010](experiments/010-the-log-before-the-second-reset.md) | What was in the log before ADR 0019 reset it? | 56 events, `seq` 10 to 65, kept because it is the only copy |
+| [011](experiments/011-patching-versus-starting-over.md) | When a reviewer keeps refusing, is another round or a fresh start cheaper? | the fresh start, decisively — and it needed none of its rounds ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 
 ## Open
 

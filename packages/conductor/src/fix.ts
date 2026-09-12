@@ -12,7 +12,14 @@
  *       └── an agent fixes, given the evidence
  *             └── the whole point runs again
  *                   ├── passes → it lands
- *                   └── refuses → another round, or a person
+ *                   └── refuses → another round, or `restart.ts`
+ *
+ * **What happens when the rounds are over is no longer only a person**
+ * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+ * `decideRestart` gets the refusal first and may hand the ticket back to the
+ * queue for a fresh pass instead; the two diagnoses below are what a person is
+ * shown once *that* ceiling is spent too, or immediately, which is every
+ * project whose recipe leaves `restarts` at its default of zero.
  *
  * On 2026-09-10 there was nothing between *refused* and *your problem*, and the
  * three items that produced were the three whose fixes were least in doubt: a
@@ -69,10 +76,27 @@ import type { BlockDiagnosis } from "@lingtai/domain";
  */
 export type FixOn = "findings" | "output" | "conflict";
 
+/**
+ * Which rule refused, as something other than prose.
+ *
+ * `why` is a sentence and has to stay one — it is read on a card. This is for a
+ * caller that has to **decide** on the refusal, and `#146` is the caller that
+ * does: `runtime.limits.restarts` buys a second approach when the *ceiling* is
+ * what stopped this one, and must not when the refusal carried no criterion,
+ * because that is a gate with nothing to hold anybody to and starting over
+ * answers none of it.
+ *
+ * Matching on the sentence would have worked and would have made every edit to
+ * the wording a change to what money is spent — which is the shape this
+ * repository keeps finding, one level up: a claim that was true where it was
+ * written and is load-bearing somewhere it cannot be seen.
+ */
+export type FixRule = "no-criterion" | "no-rounds" | "spent";
+
 export type FixDecision =
   | { fix: true; round: number; on: FixOn }
   /** `why` is a sentence for the card, naming the rule that refused. */
-  | { fix: false; why: string };
+  | { fix: false; rule: FixRule; why: string };
 
 export interface FixInput {
   /**
@@ -147,7 +171,7 @@ export interface FixInput {
  */
 export function decideFix(input: FixInput): FixDecision {
   const { refusal, rounds, roundsSpent } = input;
-  const no = (why: string): FixDecision => ({ fix: false, why });
+  const no = (rule: FixRule, why: string): FixDecision => ({ fix: false, rule, why });
 
   // Which shape of refusal this is, decided by what the gate produced rather
   // than by the action's name: a `run:` action is a command whatever it is
@@ -158,6 +182,7 @@ export function decideFix(input: FixInput): FixDecision {
 
   if (on === "findings" && actionable.length === 0) {
     return no(
+      "no-criterion",
       `the ${refusal.action} action refused with findings but no failure scenario, ` +
         "and an opinion is not something an agent can be asked to make stop happening",
     );
@@ -165,20 +190,36 @@ export function decideFix(input: FixInput): FixDecision {
 
   if (on !== "findings" && output === "") {
     return no(
+      "no-criterion",
       `the ${refusal.action} action refused and printed nothing, so there is no ` +
         "output to make go green and nothing to hold a fixer to",
     );
   }
 
+  // `no-rounds` rather than `spent`, and they are kept apart because they are
+  // different sentences — *this recipe never patches* is not *this pass has
+  // patched as often as it may*. To `#146` they are one thing: the depth
+  // ceiling is spent and the point still refuses, which is exactly when a
+  // second approach is worth considering. `rounds: 0` beside a non-zero
+  // `restarts` is therefore a legible configuration — never patch, start over
+  // twice — and it is the closest thing to experiment 011's winning arm.
   if (rounds === 0) {
+    // **It says what it refuses, not where the refusal goes.** It used to say
+    // "sends every refusal straight to a person", which was true while this was
+    // the only ceiling and is not true beside a non-zero `restarts`: a person
+    // is then the *third* destination, not the second. A sentence that names
+    // another module's behaviour is a sentence that goes stale when that module
+    // changes, which is this repository's signature defect.
     return no(
-      "this project's recipe sends every refusal straight to a person " +
-        "(runtime.limits.rounds: 0)",
+      "no-rounds",
+      "this project's recipe buys no round of fix-and-recheck, so nothing " +
+        "patches this diff in place (runtime.limits.rounds: 0)",
     );
   }
 
   if (roundsSpent >= rounds) {
     return no(
+      "spent",
       `the ceiling of ${rounds} round(s) for this pass is spent, and the ` +
         `${refusal.action} action still refuses`,
     );
@@ -476,7 +517,13 @@ export function declineWhy(text: string | null): string {
 }
 
 /**
- * What a person is shown when the rounds are over and the review still refuses.
+ * What a person is shown when the rounds are over, no restart was bought, and
+ * the review still refuses.
+ *
+ * *No restart was bought* is the clause 0040 adds and it is true of every
+ * project today: `restarts` defaults to zero, so this is still reached on the
+ * first spent pass. Where it is not zero, this is the third destination rather
+ * than the second, and `earlier` below is what makes the card say so.
  *
  * **It says two agents disagreed, not that a gate refused**, and that is 0038's
  * consequence rather than a nicety: the thing arriving at a queue is no longer a
@@ -503,24 +550,115 @@ export function diagnoseDisagreement(input: {
   rounds: number;
   /** Why no further fixer was bought, in `decideFix`'s own words. */
   why: string;
+  /**
+   * The approaches already abandoned on this item, **newest first**
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   *
+   * Empty for every project that leaves `restarts` at zero, which is all of
+   * them today, and then every sentence below is the one it was before.
+   *
+   * **Each arm's findings, and not a count of them**, because the claim being
+   * tested is that the arms disagree about *different* things: arm A's third
+   * refusal in experiment 011 was a deadlock round 2 had created, and a person
+   * shown only the last arm cannot see that. They live on run streams no later
+   * pass reads, which is why `PassRestarted` carries them.
+   */
+  earlier?: readonly RestartArm[];
 }): BlockDiagnosis {
   const worst = severest(input.findings);
+  const earlier = input.earlier ?? [];
   return {
     what:
       `Two agents disagreed about ${input.branch} at ${input.headSha.slice(0, 7)}. ` +
       `The \`${input.action}\` reviewer refused it with ${count(input.findings)} ` +
-      `(worst: ${worst}), and it is still refused. This is a judgement, not a broken build.`,
+      `(worst: ${worst}), and it is still refused. This is a judgement, not a broken build.` +
+      (earlier.length === 0
+        ? ""
+        : // **Not "refused for the same reason"**, which is the thing nothing
+          // here checks and the thing worth knowing: whether the arms agree is
+          // the judgement being handed over, so the sentence says how many
+          // approaches there were and puts every arm's findings below rather
+          // than asserting what they have in common (0040 §Open).
+          ` This is approach ${earlier.length + 1}: ${earlier.length} earlier ` +
+          `one(s) were also refused by a reviewer and started over, so what is in ` +
+          `doubt may be the ticket and not only this diff. Their findings are below.`),
     done:
       (input.rounds === 0
         ? "No fixing agent ran. "
         : `${input.rounds} round(s) of fix-and-re-review ran, and the review refused what they produced. `) +
+      (earlier.length === 0
+        ? ""
+        : `${earlier.length} earlier approach(es) were abandoned and the ticket started ` +
+          `over; every arm's findings are below. `) +
       `No further agent was bought: ${input.why}`,
     // The findings verbatim, including every failure scenario. This is the
     // evidence the sentence above is a reading of, and a reading that hides what
-    // it was made from is worse than the output (#83).
-    raw: input.findings.length === 0 ? null : quoteFindings(input.findings),
+    // it was made from is worse than the output (#83) — which is why an earlier
+    // arm's findings are quoted whole here rather than summarised into the
+    // sentence above.
+    raw: withArms(
+      input.findings.length === 0 ? null : quoteFindings(input.findings),
+      `this approach · ${input.branch}@${input.headSha.slice(0, 7)}`,
+      earlier,
+    ),
     recommendation: null,
   };
+}
+
+/**
+ * One abandoned approach, as `WorkItemState.restarts` holds it.
+ *
+ * Declared here rather than imported from `@lingtai/domain` for the reason
+ * `PromptBudget` is declared in `attempts.ts`: this module is pure decisions
+ * and prose, and what it needs of a restart record is the fields that go on a
+ * card, not the fold that produced them. `RestartRecord` satisfies it
+ * structurally, so the conductor passes the fold's own values straight through.
+ */
+export interface RestartArm {
+  restart: number;
+  of: number;
+  action: string;
+  branch: string;
+  headSha: string;
+  rounds: number;
+  findings: readonly GateFinding[];
+}
+
+/**
+ * This arm's evidence, and the abandoned arms' under a heading each.
+ *
+ * **Untouched when there is nothing to add**, which is the criterion behind
+ * 0040 §4 read all the way down to the bytes on a card: a project that has
+ * bought no restart gets the exact string this function's callers produced
+ * before it existed — no headings, no framing, nothing to notice. Headings
+ * appear only when there is more than one arm to tell apart, which is when they
+ * are the difference between a person seeing one refusal and seeing why the
+ * ticket is in doubt.
+ *
+ * Newest first, because that is the order a person triages in: what refused the
+ * thing in front of them, then what refused the approaches before it. An arm
+ * that recorded no findings still gets its heading — *this arm was refused and
+ * recorded nothing* is a fact, and a silently missing section reads as an arm
+ * that never happened.
+ */
+function withArms(
+  mine: string | null,
+  at: string,
+  earlier: readonly RestartArm[],
+): string | null {
+  if (earlier.length === 0) return mine;
+  const arms = [
+    { at, body: mine },
+    ...earlier.map((a) => ({
+      at:
+        `restart ${a.restart} of ${a.of} · ${a.action} refused ${a.branch}@${a.headSha.slice(0, 7)} ` +
+        `after ${a.rounds} round(s)`,
+      body: a.findings.length === 0 ? null : quoteFindings(a.findings),
+    })),
+  ];
+  return arms
+    .map((arm) => [`## ${arm.at}`, "", arm.body ?? "(no findings recorded)"].join("\n"))
+    .join("\n\n");
 }
 
 /**
@@ -548,12 +686,26 @@ export function diagnoseUnfixed(input: {
   rounds: number;
   /** Why no further fixer was bought, in `decideFix`'s own words. */
   why: string;
+  /**
+   * The approaches already abandoned on this item, newest first.
+   *
+   * A restart is never bought *for* a red build — for one of those the work is
+   * still there (0039 §2) — but a pass that is itself a restart can go red, and
+   * then the arms behind it are on streams nobody reads. Carried for that case
+   * and empty in every other, which is every block today.
+   */
+  earlier?: readonly RestartArm[];
 }): BlockDiagnosis {
+  const earlier = input.earlier ?? [];
   return {
     what:
       `\`${input.action}\` still refuses ${input.branch} at ${input.headSha.slice(0, 7)}. ` +
       "This is a check that failed and stayed failed, not a judgement: whatever it " +
-      "runs, it ran again and said the same thing.",
+      "runs, it ran again and said the same thing." +
+      (earlier.length === 0
+        ? ""
+        : ` It is approach ${earlier.length + 1}: ${earlier.length} earlier one(s) were ` +
+          `refused on judgement and started over, and their findings are below.`),
     done:
       (input.rounds === 0
         ? "No fixing agent ran. "
@@ -562,7 +714,11 @@ export function diagnoseUnfixed(input: {
     // The output verbatim. It is already clipped to the recipe's budget by the
     // action that produced it, and clipping a clipping is how evidence becomes
     // a summary of itself.
-    raw: input.evidence.trim() === "" ? null : input.evidence,
+    raw: withArms(
+      input.evidence.trim() === "" ? null : input.evidence,
+      `this approach · ${input.branch}@${input.headSha.slice(0, 7)} · what \`${input.action}\` printed`,
+      earlier,
+    ),
     recommendation: null,
   };
 }
@@ -573,10 +729,12 @@ export function unfixedQuestion(input: {
   branch: string;
   base: string;
   rounds: number;
+  /** Approaches already abandoned. Absent or zero on every card today. */
+  restarts?: number;
 }): string {
   return (
     `${input.action} still refuses ${input.branch} into ${input.base} after ` +
-    `${input.rounds} fix round(s)`
+    `${input.rounds} fix round(s)${armSuffix(input.restarts)}`
   );
 }
 
@@ -587,12 +745,28 @@ export function disagreementQuestion(input: {
   base: string;
   findings: readonly GateFinding[];
   rounds: number;
+  /** Approaches already abandoned. Absent or zero on every card today. */
+  restarts?: number;
 }): string {
   return (
     `two agents disagreed about ${input.branch} into ${input.base}: the ` +
-    `${input.action} reviewer still refuses it after ${input.rounds} fix round(s), ` +
+    `${input.action} reviewer still refuses it after ${input.rounds} fix round(s)` +
+    `${armSuffix(input.restarts)}, ` +
     `with ${count(input.findings)} (worst: ${severest(input.findings)})`
   );
+}
+
+/**
+ * *and 2 restart(s)*, or nothing at all.
+ *
+ * The one line is what a listing shows, so what it has to carry is the fact a
+ * reader would act differently on: three rounds spent on one approach is a
+ * stubborn diff, three rounds spent on each of three approaches is a ticket
+ * nobody has managed to do. Nothing when there have been none, so a card on a
+ * project that buys no restart reads exactly as it did.
+ */
+function armSuffix(restarts: number | undefined): string {
+  return restarts === undefined || restarts === 0 ? "" : ` and ${restarts} restart(s)`;
 }
 
 /** The findings, whole — severity, place, claim and scenario, nothing dropped. */

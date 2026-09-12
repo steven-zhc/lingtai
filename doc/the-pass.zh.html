@@ -297,7 +297,7 @@
 
   <div class="thesis">
     <p><b>工作树就是一趟 pass 的全部现场。</b>回答一次拒绝所需要的一切 —— 分支、构建产物、那份 diff —— 在这趟 pass 跑着的时候都还在磁盘上。<code>Effect.scoped</code> 外扩到把合并道也包进去，于是这句话到这趟 pass 结束都成立，而<i>开新的一趟 run</i> 不再是任何问题的答案 —— 除了一趟真的结束了的 run。</p>
-    <p><b>任何拒绝都带着自己的证据回到 agent。</b>findings、build 的输出、冲突的路径：三个 prompt 只差一个参数，不是三条流程。只有 <code>runtime.limits.rounds</code> 用尽，才去问人。</p>
+    <p><b>任何拒绝都带着自己的证据回到 agent。</b>findings、build 的输出、冲突的路径：三个 prompt 只差一个参数，不是三条流程。只有 <code>runtime.limits.rounds</code> 用尽，才去问人 —— 这是默认行为。<a href="decisions/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a> 在那个人之前多加了一步，只针对被 <i>review</i> 拒绝的情况：把 <code>runtime.limits.restarts</code> 设成正数，用尽 rounds 的一趟 pass 会把工单放回队列，下一次认领从基线重新开始，并带上那些 findings。该键默认为零，所以下面那根箭头仍是实际发生的事；而构建变红和合并冲突永远不走这一步 —— 对它们来说，活儿还在原地。</p>
   </div>
 
   <section>
@@ -324,14 +324,16 @@
 
   <section>
     <h2>一趟 pass 最多花多少</h2>
-    <p class="lede">三个数放在同一个块里，因为其中两个本来就得和另一个放在别处的数保持一致。</p>
+    <p class="lede">四个数放在同一个块里，因为其中两个本来就得和另一个放在别处的数保持一致 —— 而第四个把前三个都乘了一遍。</p>
 <pre class="code">runtime:
   limits:
     turns: 150   <span class="c"># 一次 agent run 之内</span>
     wall:  1h    <span class="c"># 一次 agent run 之内</span>
     <b>rounds: 2</b>    <span class="c"># 一趟 pass 把 agent 打回去几次</span>
+    <b>restarts: 0</b>  <span class="c"># 一个工单最多买几趟 pass</span>
 </pre>
-    <p><code>round</code> 是代码里已经在说的词 —— <code>FixRequested.round</code>、<code>roundsSpent</code>、<i>round 1 of 2</i>。不是 <code>attempts</code>，那个词已经有两个别的意思了：<code>budget.attempts</code> 是一个 prompt 带多少历史，看板上的一次 <i>attempt</i> 是一次 claim。把它摆在 <code>turns</code> 和 <code>wall</code> 旁边是目的本身，不是为了整齐：一趟 pass 最多花多少，从此就是一个块，<code>(rounds + 1) × wall</code>。2026-09-10 那天，排空提示告诉操作者最多等一个 <code>wall</code> —— 而修复循环早就让这句话不成立了，一句话在追一个存在别处的数。三个数在同一处，就没法这样各自漂移。<code>repair.maxAttempts</code> 和 <code>repair.fix</code> 就是 <code>rounds</code> 现在数的东西，<code>repair.on</code> 就是 <code>rounds: 0</code>。</p>
+    <p><code>round</code> 是代码里已经在说的词 —— <code>FixRequested.round</code>、<code>roundsSpent</code>、<i>round 1 of 2</i>。不是 <code>attempts</code>，那个词已经有两个别的意思了：<code>budget.attempts</code> 是一个 prompt 带多少历史，看板上的一次 <i>attempt</i> 是一次 claim。把它摆在 <code>turns</code> 和 <code>wall</code> 旁边是目的本身，不是为了整齐：一趟 pass 最多花多少，从此就是一个块，<code>(rounds + 1) × wall</code>。2026-09-10 那天，排空提示告诉操作者最多等一个 <code>wall</code> —— 而修复循环早就让这句话不成立了，一句话在追一个存在别处的数。这些数在同一处，就没法这样各自漂移。<code>repair.maxAttempts</code> 和 <code>repair.fix</code> 就是 <code>rounds</code> 现在数的东西，<code>repair.on</code> 就是 <code>rounds: 0</code>。</p>
+    <p><b><code>restarts</code> 是同一个论证再往外一层</b>（<a href="decisions/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a>）。<code>rounds</code> 封的是<i>深度</i> —— 在同一条路子上再试一次 —— 而<a href="experiments/011-patching-versus-starting-over.md">实验 011</a> 找到了它到不了的那种失败：打补丁那一支里，每一次拒绝说的都是上一轮刚写出来的代码，于是每一轮都在花钱离修好更远。那是<i>广度</i>，也正是这个数封的东西。所以一个<i>工单</i>最多花多少是 <code>(restarts + 1) × (rounds + 1) × wall</code>，放在同一个块里的理由如上。它<b>默认为零</b>：证据只有一个工单，而在这点证据上给所有项目都打开一种新的花钱方式，恰好和证据说的相反。</p>
   </section>
 
   <section>

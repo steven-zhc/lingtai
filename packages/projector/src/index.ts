@@ -31,6 +31,7 @@ export {
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
+  describeArm,
   describeHold,
   readTaskProjects,
   readTasks,

@@ -35,6 +35,8 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     updatedAt: new Date("2026-09-04T04:27:22Z"),
     closedAt: null,
     attempts: 0,
+    restarts: 0,
+    restartsOf: 0,
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,

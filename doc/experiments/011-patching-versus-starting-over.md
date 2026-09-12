@@ -106,6 +106,32 @@ than ask, and let the next claim be a fresh pass — bounded by a second ceiling
 with a person at the end of *that*. The evidence above is the argument for it and
 the `n = 1` is the argument for proving it on more than one ticket first.
 
+**It is built, and it is off**
+([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md), 2026-09-12).
+`runtime.limits.restarts` defaults to `0`, which is the behaviour above arm A:
+a pass whose rounds are spent asks a person. Nothing changes for any project
+until a recipe writes a number down, and what should change the default is runs
+in this directory rather than the one above.
+
+**What a run that turns it on has to record**, so that a later reader can do the
+comparison this one could only do by accident:
+
+- the recipe's `rounds` and `restarts`, and the ticket;
+- per arm: turns, cost, how many rounds it used, and every finding that refused
+  it — the middle column above is what made arm A legible, and it is the column
+  a `$`-total hides;
+- **whether the arms refused the same thing.** Arm A's three refusals were three
+  *different* defects, each created by the round before. Two arms refused for the
+  same reason would say the ticket is wrong rather than the approach, which is
+  the case this experiment never produced and the one the second ceiling exists
+  for;
+- the outcome, and the cost of the whole ticket — `(restarts + 1) × (rounds + 1)`
+  agent runs is what was risked, and what was spent is the number that matters.
+
+The pieces that make this readable off the log without a person taking notes:
+`PassRestarted` carries each arm's findings, the release reason says *restart 1
+of 2*, and a card says which arm an item is on.
+
 `#145` was written before this and claimed the branch was unreachable by the
 system. It is not: the prompt above is what makes arm B work at all. It has been
 corrected.

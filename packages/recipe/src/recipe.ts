@@ -431,12 +431,15 @@ export const Recipe = z.object({
      * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
      *
      * `turns` and `wall` bound **one agent run**; `rounds` bounds **how many of
-     * them a pass may buy**. Keeping the third here rather than in a section of
-     * its own is the decision, not tidiness: what a pass costs is then
-     * `(rounds + 1) × wall`, readable without leaving the block. On 2026-09-10
-     * the drain told an operator it would wait at most one `wall`, which the fix
-     * loop had already made false — a sentence in one file chasing a number kept
-     * in another. Three numbers in one place cannot drift apart like that.
+     * them a pass may buy**; `restarts` bounds **how many passes one ticket may
+     * buy** (0040). Keeping all four here rather than in sections of their own
+     * is the decision, not tidiness: what a ticket costs is then
+     * `(restarts + 1) × (rounds + 1) × wall`, readable without leaving the
+     * block. On 2026-09-10 the drain told an operator it would wait at most one
+     * `wall`, which the fix loop had already made false — a sentence in one file
+     * chasing a number kept in another. Four numbers in one place cannot drift
+     * apart like that, and `passCeiling` is the one function that multiplies
+     * them, so nothing else writes the product down.
      */
     limits: z
       .object({
@@ -466,8 +469,43 @@ export const Recipe = z.object({
          * it cannot reach.
          */
         rounds: z.number().int().nonnegative().default(2),
+        /**
+         * How many times a spent `rounds` ceiling starts the work over instead
+         * of asking a person — a fresh pass, from a worktree cut off the base.
+         *
+         * **The breadth half of the pair `rounds` is the depth half of**
+         * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+         * A round buys another attempt at *this* approach; a restart buys
+         * another approach. When the approach is the defect, no value of
+         * `rounds` reaches the fix — which is what
+         * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)
+         * measured: `#144` patched across two rounds refused three times, cost
+         * ~$12 and landed nothing, while the same ticket started over carrying
+         * those findings passed first read for $6.56, using none of the ten
+         * rounds it had. Each refusal in the first arm was about the code the
+         * round before it had written.
+         *
+         * **Zero by default, and zero is today's behaviour**: a pass whose
+         * rounds are spent asks a person, exactly as it did before this key
+         * existed. That is 0040 §4 and it is the whole of why this is a key
+         * rather than a change — the evidence is one ticket, and no second
+         * restart has ever been observed.
+         *
+         * 0025 §3's rule for a spending default — *the smallest number that
+         * makes the feature exist* — would say one, and it does not apply here.
+         * That rule is about not taking a feature away by defaulting it too
+         * low; this default takes nothing away, because until a project writes
+         * a number down there is no feature to take. Turning it on for every
+         * project on the strength of n = 1 is the thing being avoided.
+         *
+         * Only a **judgement** is answered this way, in code and not by recipe:
+         * a red build and a conflict stay in the worktree, because for those
+         * *the work is still there* is a fact rather than an assumption
+         * (0039 §2). See `decideRestart`.
+         */
+        restarts: z.number().int().nonnegative().default(0),
       })
-      .default({ turns: 300, wall: "2h", rounds: 2 }),
+      .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
     /**
      * How much an agent is told, in characters and rows
      * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).

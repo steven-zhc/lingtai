@@ -256,6 +256,66 @@ describe("reduceWorkItem", () => {
     expect(later.repairs).toHaveLength(1);
   });
 
+  /**
+   * The second ceiling, counted off the log rather than remembered
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §2).
+   *
+   * The property that matters is what it does *not* have: no pending record, and
+   * nothing a claim consumes. A repair needs one because the next claim has to
+   * *become* the repair; a restart is an ordinary claim, told what every second
+   * attempt is told, so the only thing the fold owes anybody is the count and
+   * each arm's evidence.
+   */
+  it("counts the approaches a ticket abandoned, and hands the next claim nothing", () => {
+    const e = makeStream("wi-p-1");
+    const arm = (runId: string, restart: number) => ({
+      runId,
+      restart,
+      of: 2,
+      action: "review",
+      rounds: 3,
+      branch: "agent/1",
+      headSha: "8634c5d",
+      findings: [
+        {
+          file: "packages/daemon/src/daemon.ts",
+          line: 124,
+          claim: "startBeacon sits inside the lock",
+          failureScenario: "the first beat throws and the lock is never released",
+          severity: "major" as const,
+        },
+      ],
+    });
+
+    const after = reduceWorkItem([
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+      e("PassRestarted", arm("run-a", 1)),
+      e("WorkItemReleased", { runId: "run-a", reason: "…restart 1 of 2" }),
+      e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
+    ]);
+
+    // The claim does not consume it, unlike a pending repair: this is a bound
+    // on the ticket and not an instruction to the next run.
+    expect(after.restarts).toHaveLength(1);
+    expect(after.restarts[0]!.after).toBe("run-a");
+    expect(after.pendingRepair).toBeNull();
+    expect(after.repairRun).toBeNull();
+    // And it is claimed, not blocked — a restart is not a state an item is in.
+    expect(after.lifecycle.status).toBe("claimed");
+
+    // **Each arm's findings survive**, which is the criterion 0040 §3 rests on:
+    // the run that was refused is on a stream no later pass reads, so if they
+    // were not here a person asked after the last restart would see one
+    // refusal and have to guess about the others.
+    expect(after.restarts[0]!.findings[0]!.failureScenario).toContain("never released");
+
+    const twice = reduceWorkItem([
+      e("PassRestarted", arm("run-a", 1)),
+      e("PassRestarted", arm("run-b", 2)),
+    ]);
+    expect(twice.restarts.map((r) => r.restart)).toEqual([1, 2]);
+  });
+
   it("ignores an event type it has never heard of, but still advances", () => {
     const e = makeStream("wi-p-1");
     const first = e("WorkItemDiscovered", discovered);

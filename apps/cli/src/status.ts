@@ -16,7 +16,7 @@ import {
   selectRunnable,
 } from "@lingtai/conductor";
 import { paint, stateInk } from "@lingtai/env/colour";
-import { describeHold, readTasks, type TaskCard } from "@lingtai/projector";
+import { describeArm, describeHold, readTasks, type TaskCard } from "@lingtai/projector";
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -152,6 +152,9 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
       note?: string | null;
       /** Whether a person is holding a question, as opposed to merely waiting. */
       blocked?: boolean;
+      /** Approaches abandoned, and the ceiling. Absent on a GitHub offer. */
+      restarts?: number;
+      restartsOf?: number;
       /** The hold, as `describeHold` reads it. Absent on a GitHub offer. */
       needs?: TaskCard["needs"];
       diagnosis?: TaskCard["diagnosis"];
@@ -205,6 +208,22 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
               ? `  ${paint.muted("[not offered]")}`
               : "";
       log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`);
+
+      // **Which arm, on every row that has one** (0040 §3) — not only the
+      // blocked ones below, because the interesting moment is the arm that is
+      // *running*: a ticket on its second approach looks, in this listing,
+      // exactly like one on its first. `attempts` cannot say it, since a claim
+      // after a crash and a claim after an approach was thrown away are the same
+      // claim.
+      //
+      // The sentence is `describeArm`'s and not this file's, so the card and
+      // this command say it in the same words (#100). The depth half of the
+      // pair — `fixing round 2 of 3` — is the row's `note`, which this listing
+      // prints only where a person is holding a question (below); on the board
+      // it is on every card. So this line is the whole of what a terminal says
+      // about a running arm, which is why it is not inside that `if`.
+      const arm = describeArm({ restarts: t.restarts ?? 0, restartsOf: t.restartsOf ?? 0 });
+      if (arm) log(`             ${paint.muted(arm)}`);
 
       // **The same thing the card says.** This line used to stop at `[waiting]`:
       // the question was on the board and nowhere else, so the two places an

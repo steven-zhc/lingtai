@@ -190,6 +190,17 @@ export function repairFingerprint(failure: Failure): string {
  * — a different extent, one level up. It is here because the alternative was a
  * second recipe key for a decision that is nearly gone.
  *
+ * **There is now a key at that extent and this still does not read it.**
+ * `runtime.limits.restarts`
+ * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md))
+ * bounds how many passes one ticket may buy, which is the shape this paragraph
+ * says it wanted — and the two would still not be the same ceiling. A restart is
+ * an ordinary claim and answers a *judgement*; what reaches here is a
+ * `gate-failed` with no criterion or a branch with no commits, and neither is
+ * something a second approach was argued for. Pointing this at `restarts` would
+ * make its default of zero silently stop every repair, which is a behaviour
+ * change nobody asked for in a decision `#143` deletes.
+ *
  * **`#142` took the conflict, which was the whole of what this was for.** A
  * conflict is answered by a round in the run's own worktree now and never
  * reaches here. What still does is a short list, and none of it is a good
@@ -205,7 +216,7 @@ export function repairFingerprint(failure: Failure): string {
  * altogether, and `#143` is that change: it deletes `RepairRequested`, the
  * pending-repair fold, the repair prompt and the board's columns for them, which
  * is four packages and not a conflict ticket's business. Until then the number
- * at least bounds both, and there is one of it.
+ * at least bounds both, and this decision reads one of it.
  */
 export interface RepairPolicy {
   /** `runtime.limits.rounds`. Zero means this repository buys no agent. */

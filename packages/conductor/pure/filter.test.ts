@@ -207,8 +207,9 @@ describe("describeFilter", () => {
  * only way to make it wrong is to change the numbers.
  */
 describe("what a pass may spend", () => {
-  const limits = (rounds: number, wall = "1h", wallMs = 3_600_000) => ({
+  const limits = (rounds: number, wall = "1h", wallMs = 3_600_000, restarts = 0) => ({
     rounds,
+    restarts,
     turns: 150,
     wall,
     wallMs,
@@ -249,5 +250,37 @@ describe("what a pass may spend", () => {
     expect(none).toContain("runtime.limits.rounds: 0");
     // And no product, because there is nothing to multiply.
     expect(none).not.toContain("agent runs");
+  });
+
+  /**
+   * **The second ceiling multiplies the first**
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5),
+   * and this is the assertion that stops it being a ceiling nobody was told
+   * about. A restart buys a whole further pass, so the thing an operator is
+   * deciding about is `(restarts + 1) × (rounds + 1) × wall` — and a sentence
+   * that named `rounds` and not `restarts` would be exactly the 2026-09-10
+   * failure again, with more money on it.
+   */
+  it("multiplies again for the passes a restart can buy", () => {
+    // Two rounds is three runs a pass; one restart is two passes. Six runs.
+    const once = passCeiling(limits(2, "1h", 3_600_000, 1));
+
+    expect(once).toContain("up to 3 agent runs");
+    expect(once).toContain("up to 1 restart(s)");
+    expect(once).toContain("at most 2 passes, 6 agent runs and 6h");
+  });
+
+  /**
+   * 0025 §2 again, one ceiling along: a default that spends money is shown when
+   * it is off as well as when it is on. `restarts: 0` is the default and is
+   * every project today, so this is the line an operator reads to learn that a
+   * spent pass is theirs.
+   */
+  it("says a spent pass is yours when no restart is bought", () => {
+    const none = passCeiling(limits(2));
+
+    expect(none).toContain("runtime.limits.restarts: 0");
+    expect(none).toContain("goes to you");
+    expect(none).not.toContain("restart(s) —");
   });
 });

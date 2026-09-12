@@ -174,6 +174,22 @@ export const taskViewProjection: Projection = {
         attempts        int not null default 0,
         last_attempt_at timestamptz,
 
+        -- Which arm this item is on, and the ceiling it is counted against
+        -- (0040 §3). The attempts column counts claims and says nothing about
+        -- why one happened; a claim after a crash, after a backoff and after an
+        -- approach was abandoned all read as "attempt 3". These two say
+        -- "restart 1 of 2", which is a different sentence and the one a person
+        -- acts on differently.
+        --
+        -- Assignment and not an increment, which is why there is no updated_seq
+        -- subtlety here: PassRestarted carries its own ordinal, so a replay
+        -- lands on the same number. attempts has to increment because a claim
+        -- carries none.
+        --
+        -- Zero means no restart has been bought, which is every row today.
+        restarts     int not null default 0,
+        restarts_of  int not null default 0,
+
         updated_seq  bigint not null
       )`);
     await ctx.query("create index if not exists task_view_state_idx on task_view (project, state)");
@@ -306,6 +322,24 @@ export const taskViewProjection: Projection = {
           await set(ctx, event.streamId, seq, at, { repair_pending: true });
           break;
 
+        /**
+         * A pass spent its rounds and the ticket is starting over (0040).
+         *
+         * The row is still `running` here — the release that follows moves it to
+         * `queued` and writes the reason as the note — so what this records is
+         * only which arm the item is now on. **Not `repair_pending`**, and the
+         * difference is the backoff: a repair is exempt because the next claim
+         * *is* the repair and is told what went wrong, while a restart is an
+         * ordinary claim and `source.backoff` is exactly the guard that should
+         * apply to it. An arm that comes straight back is the whole queue on a
+         * repository running one ticket at a time.
+         */
+        case "PassRestarted": {
+          const d = event.data as PayloadOf<"PassRestarted">;
+          await set(ctx, event.streamId, seq, at, { restarts: d.restart, restarts_of: d.of });
+          break;
+        }
+
         case "WorkItemLanded": {
           const d = event.data as PayloadOf<"WorkItemLanded">;
           await set(ctx, event.streamId, seq, at, {
@@ -436,9 +470,13 @@ export const taskViewProjection: Projection = {
          */
         case "FixRequested": {
           const d = event.data as PayloadOf<"FixRequested">;
+          // `of` is zero on every event written before the field existed, and
+          // the reading of zero is *not recorded* — so the round is named
+          // without a denominator rather than as `round 2 of 0`.
+          const round = d.of > 0 ? `round ${d.round} of ${d.of}` : `round ${d.round}`;
           await viaRun(ctx, event.streamId, seq, at, {
             state: "running",
-            note: `fixing round ${d.round}: ${d.findings.length} finding(s) from ${d.action}`,
+            note: `fixing ${round}: ${d.findings.length} finding(s) from ${d.action}`,
           });
           break;
         }
@@ -787,6 +825,18 @@ export interface TaskCard {
   attempts: number;
   lastAttemptAt: Date | null;
   /**
+   * How many approaches this ticket has abandoned, and the ceiling
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   *
+   * Both zero on every card today, because `runtime.limits.restarts` defaults
+   * to zero. `attempts` is not this number and never was: it counts claims, so
+   * a claim after a crash, after a backoff and after an approach was thrown
+   * away all read as `attempt 3`. Read through `describeArm`, which is what
+   * keeps the board and `lingtai status` saying it in the same words.
+   */
+  restarts: number;
+  restartsOf: number;
+  /**
    * Whether a person is holding a question. `waiting` says which lane the card
    * is in; this says whether there is anything on it to answer.
    */
@@ -882,6 +932,36 @@ export function describeHold(card: Pick<TaskCard, "needs" | "diagnosis">): HoldL
   return lines;
 }
 
+/**
+ * *restart 1 of 2*, or null when this ticket has only ever had one approach.
+ *
+ * **Beside `describeHold` and for its reason** (#83, #100): the board and
+ * `lingtai status` both show it, and two places that word the same fact
+ * differently is the failure this repository keeps finding. So the sentence is
+ * decided once, here, beside the fields it is read from.
+ *
+ * Null rather than `restart 0 of 2`, because a ticket on its first approach is
+ * not *on* an arm — there is nothing to tell apart yet, and a card that said so
+ * on every row would spend the reader's attention on an absence. That is the
+ * same reading `[not offered]` earns by saying nothing (#100).
+ *
+ * **The other half of the sentence is the note.** `round 2 of 3` is what
+ * `FixRequested` writes there, because depth is a fact about the pass in flight
+ * and lives as long as that pass; this is a fact about the ticket and outlives
+ * every pass of it. Together they read *round 2 of 3, restart 1 of 2*, which is
+ * what 0040 §3 asks a card to be able to say.
+ */
+export function describeArm(card: Pick<TaskCard, "restarts" | "restartsOf">): string | null {
+  if (card.restarts === 0) return null;
+  // `restartsOf` is zero only on a row whose `PassRestarted` predates the
+  // field, which cannot exist — the two were written in the same commit. It is
+  // still read defensively rather than asserted, because a projection has to
+  // fold whatever the log holds.
+  return card.restartsOf > 0
+    ? `restart ${card.restarts} of ${card.restartsOf}`
+    : `restart ${card.restarts}`;
+}
+
 export interface ReadTasksOptions {
   project?: string;
   /**
@@ -963,6 +1043,8 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         closedAt: row.closed_at,
         attempts: row.attempts,
         lastAttemptAt: row.last_attempt_at,
+        restarts: row.restarts ?? 0,
+        restartsOf: row.restarts_of ?? 0,
         blocked: row.blocked === true,
         needs: row.needs ?? null,
         // Written from a parsed payload and read back as it was written, so the

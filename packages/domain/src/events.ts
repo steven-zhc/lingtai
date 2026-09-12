@@ -574,8 +574,19 @@ export const RepairDeclined = z.object({
 export const FixRequested = z.object({
   /** The run whose review refused. The fixer runs inside it. */
   runId: z.string(),
-  /** 1-based, against the recipe's `repair.fix`. */
+  /** 1-based, against `runtime.limits.rounds` (0039 §3 — `repair.fix` is gone). */
   round: z.number().int().positive(),
+  /**
+   * That ceiling, so *round 2 of 3* is readable from the event.
+   *
+   * A projection is a fold and may not read a recipe, so a card carrying
+   * `round` alone carries a numerator with no denominator — and with `#146`'s
+   * second ceiling beside it, *which arm is this* becomes a question the log
+   * has to be able to answer on its own. Zero on every event written before the
+   * field existed, and the reading of zero is *not recorded*, which is why the
+   * note says `round 2` rather than `round 2 of 0` for one of those.
+   */
+  of: z.number().int().nonnegative().default(0),
   /** The action whose refusal bought this — the reviewer's name. */
   action: z.string(),
   /** The head the findings were made against. */
@@ -620,6 +631,52 @@ export const FixDeclined = z.object({
   /** The sentence the card shows. Names the rule that refused, not just "no". */
   why: z.string(),
   /** What is still live, as the reviewer last said it. */
+  findings: z.array(Finding),
+});
+
+// ------------------------------------------------------------- restart ----
+
+/**
+ * A pass spent its rounds, and the recipe bought another **approach** rather
+ * than a person's attention
+ * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+ *
+ * On the **work item's** stream, immediately before the release that puts it
+ * back in the queue — the same ordering as `RepairRequested`, and for a
+ * related reason. There it is what the *next claim becomes*; here it is only
+ * what the next claim is *allowed to be*, because a restart is told nothing a
+ * second attempt is not already told. `attempts.ts` writes the abandoned
+ * branch, its sha, the fetch command and the findings into every second prompt
+ * already, which is what made
+ * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)'s
+ * second arm work at all — so there is no pending record to consume and no
+ * prompt of its own. The next pass is an ordinary one.
+ *
+ * **The second ceiling is counted off these rather than remembered**, exactly
+ * as `repairs` is (0025 §3): a length against a number from the recipe survives
+ * a rebuild and has no counter to forget to increment.
+ *
+ * `findings` is what was still refused when this arm ended, and it is why the
+ * event is worth its bytes. Each later arm's findings are on that arm's own run
+ * stream; this arm's are on a stream no later pass reads, so a person handed the
+ * item when the last restart is spent would otherwise see only the final
+ * refusal — and the claim being tested is precisely that the arms disagree.
+ */
+export const PassRestarted = z.object({
+  /** The pass whose rounds were spent. */
+  runId: z.string(),
+  /** 1-based, against `runtime.limits.restarts`. */
+  restart: z.number().int().positive(),
+  /** That ceiling, so a card can say *restart 1 of 2* without reading a recipe. */
+  of: z.number().int().positive(),
+  /** The action that refused — the reviewer's name. */
+  action: z.string(),
+  /** Rounds this arm spent before the ceiling stopped it. */
+  rounds: z.number().int().nonnegative(),
+  /** The branch the abandoned approach is on, and the head it left there. */
+  branch: z.string(),
+  headSha: z.string(),
+  /** What was still refused when this arm ended, as the reviewer last said it. */
   findings: z.array(Finding),
 });
 
@@ -1114,6 +1171,7 @@ export const EVENTS = {
   FixRequested,
   FixApplied,
   FixDeclined,
+  PassRestarted,
   ConductorPaused,
   ConductorResumed,
   ConductorShutdownRequested,
@@ -1161,6 +1219,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   PromptEdited: 2,
   // 2: each finding gained `action`. See Reconciled above.
   Reconciled: 2,
+  // 2: added `of` — the `rounds` ceiling the round is counted against, so a
+  // fold can say *round 2 of 3* without reading a recipe (`#146`).
+  FixRequested: 2,
   // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carry a
   // `GatePoint`, so nine of them move together — a payload whose `gate` is
   // still `diff` would fail the enum rather than pass wrongly, which is why

@@ -71,6 +71,28 @@ export interface RepairRun {
   of: RepairRecord;
 }
 
+/**
+ * An approach this ticket abandoned, as `PassRestarted` recorded it.
+ *
+ * `after` is the pass whose rounds were spent, not the pass that will try the
+ * next approach — the second does not exist yet when this is written down.
+ * Same shape and same reason as `RepairRecord`.
+ *
+ * `findings` is the arm's own, and the reason this is a record rather than a
+ * count: the person asked when the last restart is spent is shown every arm
+ * (0040 §3), and each arm's refusal lives on a run stream no later pass reads.
+ */
+export interface RestartRecord {
+  after: string;
+  restart: number;
+  of: number;
+  action: string;
+  rounds: number;
+  branch: string;
+  headSha: string;
+  findings: PayloadOf<"PassRestarted">["findings"];
+}
+
 /** How this item is connected to another — a filed bug to the merge that caused it. */
 export interface WorkItemLink {
   relation: "caused-by" | "follows-up" | "duplicates";
@@ -110,6 +132,23 @@ export interface WorkItemState {
    * a rebuild recomputes it, and there is no counter to forget to increment.
    */
   repairs: readonly RepairRecord[];
+
+  /**
+   * Every approach this item has abandoned, oldest first
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+   *
+   * **The second ceiling is counted here rather than remembered anywhere**, for
+   * `repairs`' reason: a length against a number from the recipe is structural,
+   * a rebuild recomputes it, and there is no counter to forget to increment.
+   *
+   * There is deliberately no `pendingRestart` beside `pendingRepair`. A repair
+   * needs one because the next claim has to *become* the repair — it is told
+   * something an ordinary run is not. A restart is told nothing extra:
+   * `attempts.ts` already writes the abandoned branch, its sha and the findings
+   * into every second prompt, so the next claim is an ordinary pass and the
+   * only thing this list decides is whether there is one left to buy.
+   */
+  restarts: readonly RestartRecord[];
 
   /**
    * A repair asked for and not yet claimed. The next claim is that repair.
@@ -162,6 +201,7 @@ export const emptyWorkItem: WorkItemState = {
   dispatchRefusals: [],
   runs: [],
   repairs: [],
+  restarts: [],
   pendingRepair: null,
   pendingPrompt: null,
   repairRun: null,
@@ -228,6 +268,30 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // release that follows this puts it back in the queue, and being queued is
       // the state.
       return { ...state, ...at, repairs: [...state.repairs, record], pendingRepair: record };
+    }
+
+    case "PassRestarted": {
+      const d = event.data as PayloadOf<"PassRestarted">;
+      // The lifecycle is untouched, exactly as `RepairRequested` leaves it: a
+      // restart is not a state an item is in — the release that follows this
+      // puts it back in the queue, and being queued is the state.
+      return {
+        ...state,
+        ...at,
+        restarts: [
+          ...state.restarts,
+          {
+            after: d.runId,
+            restart: d.restart,
+            of: d.of,
+            action: d.action,
+            rounds: d.rounds,
+            branch: d.branch,
+            headSha: d.headSha,
+            findings: d.findings,
+          },
+        ],
+      };
     }
 
     case "PromptEdited": {

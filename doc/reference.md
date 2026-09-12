@@ -16,7 +16,7 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 43 types
+## event — 53 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -30,9 +30,13 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
 | repair (2) | `RepairRequested` `RepairDeclined` |
+| fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
+| restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 | control (3) | `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired**, `RETIRED` in the same file |
+| discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
+| prompt (1) | `PromptEdited` |
 | project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |
 | extension (1) | `PluginFailed` |
 
@@ -157,17 +161,20 @@ reports. A megabyte produces a worse review, not a better one.
 
 ### what a pass may spend — `runtime.limits`, the recipe's
 
-Two of these bound **one agent run**; the third bounds **how many of them a pass
-buys**. They sit in one block because the number anybody actually wants is the
-product, `(rounds + 1) × wall`, and it is computed once — `passCeiling` — so
-`lingtai add`, the board's chip and `lingtai shutdown` cannot say different
-things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+Two of these bound **one agent run**; `rounds` bounds **how many of them a pass
+buys**; `restarts` bounds **how many passes one ticket buys**. They sit in one
+block because the number anybody actually wants is the product,
+`(restarts + 1) × (rounds + 1) × wall`, and it is computed once — `passCeiling`
+— so `lingtai add`, the board's chip and `lingtai shutdown` cannot say different
+things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
+[0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
 
 | Key | Default | What it decides |
 |---|---|---|
 | `runtime.limits.turns` | `300` | turns before the runtime stops the agent, **per run** |
 | `runtime.limits.wall` | `2h` | wall clock before the same, **per run** |
-| `runtime.limits.rounds` | `2` | how many times a pass sends the agent back, carrying what refused it — findings, a build's output, or the conflict left standing in its worktree. `0` means every refusal goes straight to a person |
+| `runtime.limits.rounds` | `2` | how many times a pass sends the agent back **into the same worktree**, carrying what refused it — findings, a build's output, or the conflict left standing there. `0` means nothing patches a diff in place |
+| `runtime.limits.restarts` | `0` | how many times a pass whose `rounds` are spent **starts the ticket over** from the base, carrying the findings, instead of asking a person. Only a refused *review* is answered this way; a red build and a conflict stay in the worktree, because for those the work is still there. `0` is what it did before the key existed |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
@@ -178,6 +185,17 @@ that were one each, and [0038](decisions/0038-a-finding-buys-an-agent-before-it-
 different failures, and one round shared between them means whichever happens
 first decides whether the other gets an attempt at all. A pass that fixes a red
 build and then meets a finding needs two rounds to do what two purses of one did.
+
+**Why `restarts` defaults to zero, which is the opposite argument.** That rule
+about spending defaults is about not taking a feature away by defaulting it too
+low, and this default takes nothing away: until a recipe writes a number down
+there is no feature to take. The evidence for the second ceiling is
+[experiment 011](experiments/011-patching-versus-starting-over.md) — **one
+ticket**, on which starting over landed for half what patching cost and landed
+nothing — and the failure the ceiling itself exists for, two fresh starts both
+exhausting their rounds, has never been observed. So the mechanism is built and
+off, and what changes the default is more runs in `doc/experiments/`
+([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §4).
 
 **`repair.maxAttempts`, `repair.fix` and `repair.on` are gone**, and a recipe
 still carrying a `repair` block is **refused by name** rather than ignored —

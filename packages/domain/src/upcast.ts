@@ -154,6 +154,20 @@ export const UPCASTERS: UpcastRegistry = {
      */
     1: (data) => ({ ...(data as object), hash: null, basedOn: null }),
   },
+  FixRequested: {
+    /**
+     * 1 → 2: `of` was added — the `rounds` ceiling the round is counted against
+     * — because a projection may not read a recipe and a card showing *round 2*
+     * with no denominator cannot say which arm an item is on (`#146`).
+     *
+     * Zero, meaning *not recorded*, and it is not guessable: the ceiling is the
+     * recipe's at the moment of that round, the recipe is read from the base
+     * branch every pass (0005), and the value it had in September is not the
+     * value it has now. Reading today's number back onto a v1 event would be
+     * the log claiming a bound nobody applied.
+     */
+    1: (data) => ({ ...(data as object), of: 0 }),
+  },
   GatesResolved: { 1: (data) => ({
     ...(data as object),
     points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>

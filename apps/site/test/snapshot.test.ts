@@ -42,6 +42,8 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     closedAt: null,
     attempts: 1,
     lastAttemptAt: null,
+    restarts: 0,
+    restartsOf: 0,
     awaitingSha: null,
     awaitingApproval: false,
     blocked: false,

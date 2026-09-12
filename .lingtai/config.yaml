@@ -273,15 +273,35 @@ runtime:
     # a thing this project has watched fail; lowering it to two stops before the
     # pattern is readable.
     #
-    # Today that conclusion is a person's: the pass stops and asks. `#146` is
-    # the mechanism for taking it automatically, bounded by a second ceiling —
-    # and it keeps this number as the depth half of the pair.
+    # Taking that conclusion automatically is `restarts` below
+    # ([0040](../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)),
+    # and this number stays the depth half of the pair.
     #
-    # What one pass of this repository costs at most is 4 × 1h. The three
-    # numbers above decide that between them, which is why they are one block
-    # and why `lingtai add`, the board and the drain all say it from
-    # `passCeiling` rather than each writing it out.
+    # What one pass of this repository costs at most is 4 × 1h. The four
+    # numbers in this block decide what a *ticket* costs between them, which is
+    # why they are one block and why `lingtai add`, the board and the drain all
+    # say it from `passCeiling` rather than each writing it out.
     rounds: 3
+
+    # How many times a spent `rounds` ceiling starts the ticket over from the
+    # base instead of asking a person
+    # ([0040](../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+    #
+    # **Zero, which is what it was before the key existed** — a pass whose
+    # rounds are spent blocks and asks. Written out rather than left to the
+    # default for the reason `rounds` and `backoff` are: this is the repository
+    # that has to be able to read its own policy without opening its own source,
+    # and a ceiling that spends a whole extra pass is the last thing that should
+    # be invisible when it is off (0025 §2).
+    #
+    # **Zero on the evidence, not on the argument.** Experiment 011 is one
+    # ticket, and the failure that would justify the second ceiling — two fresh
+    # starts both exhausting their rounds — has never been observed. So the
+    # mechanism is built and off, and what turns it on is more runs in
+    # `doc/experiments/`. Raising it here is the experiment: at `1` this
+    # repository would spend at most 8 × 1h on a ticket before it is anyone's,
+    # which is the number to be sure about first.
+    restarts: 0
 
   # How much an agent is told about the attempts before it
   # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).

@@ -99,6 +99,7 @@ import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { decideRepair, diagnoseRefusal } from "./repair.ts";
 import {
   type FixOn,
+  type RestartArm,
   decideFix,
   declineWhy,
   diagnoseDisagreement,
@@ -107,6 +108,7 @@ import {
   fixBrief,
   unfixedQuestion,
 } from "./fix.ts";
+import { decideRestart, restartReason } from "./restart.ts";
 import { standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
@@ -1353,6 +1355,17 @@ export function runOnce(
         evidence: string;
         rounds: number;
         why: string;
+        /**
+         * Whether the **ceiling** is what stopped the rounds, as opposed to an
+         * agent declining or a refusal carrying no criterion.
+         *
+         * Carried rather than re-derived because it is what `decideRestart`
+         * turns on (0040), and the alternative was reading `why` — a sentence
+         * written for a card. A decline is somebody's objection and a restart
+         * would bury it; the ceiling being spent is the only one of the three
+         * endings a second approach answers.
+         */
+        exhausted: boolean;
       } | null = null;
 
       // One controller for every round: a fixer left running when this run ends
@@ -1415,7 +1428,19 @@ export function runOnce(
                 }),
               },
             ]);
-            return { kind: "declined" as const, round: rounds, why: decision.why, on: refusal.on ?? (refusal.findings.length > 0 ? ("findings" as const) : ("output" as const)) };
+            return {
+              kind: "declined" as const,
+              round: rounds,
+              why: decision.why,
+              on: refusal.on ?? (refusal.findings.length > 0 ? ("findings" as const) : ("output" as const)),
+              // The ceiling, or the recipe declining to have one — both mean
+              // *nothing more patches this diff in place*, which is the
+              // question `decideRestart` asks. `no-criterion` does not: a gate
+              // that refused with nothing to hold a fixer to is not a spent
+              // budget, and a whole fresh pass answers it no better than a
+              // round would have.
+              exhausted: decision.rule !== "no-criterion",
+            };
           }
 
           // Appended **before** the agent runs, as `RepairRequested` is appended
@@ -1429,6 +1454,12 @@ export function runOnce(
               data: parsePayload("FixRequested", {
                 runId,
                 round: decision.round,
+                // The ceiling this round is counted against, so *round 2 of 3*
+                // is readable off the log by a projection, which may not open a
+                // recipe. Written here because a field declared and handed to
+                // nothing is `#89`'s shape, and the zod default of zero would
+                // have made it look present.
+                of: recipe.runtime.limits.rounds,
                 action: refusal.action,
                 onSha: head,
                 findings: refusal.findings,
@@ -1543,6 +1574,13 @@ export function runOnce(
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                   "so there is nothing new for the review to read"
                 : declineWhy(fixed.text),
+              // **Not exhausted, and the rounds may well be left over.** This
+              // pass stopped because an agent objected or died, not because it
+              // ran out of money, so a restart is not what answers it (0040):
+              // an objection is for a person to read, and a crash is for a
+              // person to see. Either would be buried by paying for a fresh
+              // approach.
+              exhausted: false,
             };
           }
 
@@ -1623,6 +1661,7 @@ export function runOnce(
               evidence: refused.evidence,
               rounds: bought.round,
               why: bought.why,
+              exhausted: bought.exhausted,
             };
             break;
           }
@@ -1792,6 +1831,7 @@ export function runOnce(
             evidence: paths,
             rounds: bought.round,
             why: bought.why,
+            exhausted: bought.exhausted,
           };
         }
         break;
@@ -1809,7 +1849,116 @@ export function runOnce(
        */
       const headSha = head;
 
-      // ---- 12. hold, if anything asked for a person -------------------------
+      // ---- 12. the rounds are spent, and there may be another approach ------
+      /**
+       * **`rounds` bounds depth; this bounds breadth**
+       * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+       *
+       *     refusal         → round      the loop above
+       *     rounds spent    → restart    here: release, and the next claim is
+       *                                  an ordinary fresh pass
+       *     restarts spent  → a person   the hold below
+       *
+       * **The mechanism is a release and nothing else**, which is why this is
+       * fifteen lines rather than a second dispatcher. `attempts.ts` already
+       * writes the abandoned branch, its sha, the `git fetch` and the findings
+       * into every second attempt's prompt, and hands the judgement — build on
+       * it or start over — to the agent explicitly. That prompt is what made
+       * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)'s
+       * second arm land for half the money. What was missing was never a code
+       * path; it was the decision to take it, and until now that decision was a
+       * person typing `requeue`.
+       *
+       * **The whole of the arms' history is on the item's stream**, appended
+       * before the release, exactly as `RepairRequested` is: the fold has to
+       * carry this arm before anything can claim the next one, or the ceiling
+       * counts one restart short for ever.
+       *
+       * Read fresh rather than off the `item` folded before the claim, for
+       * `decideRepair`'s reason one screen down: this is a rule about spending
+       * money and it asks the log what it says now.
+       */
+      let restartDeclined: string | null = null;
+      /**
+       * Every approach already abandoned on this item, newest first.
+       *
+       * Empty on every project that leaves `restarts` at zero, and then the
+       * block below is byte-identical to the one it was. When it is not empty it
+       * is the criterion 0040 §3 asks for: *reaching the second ceiling blocks
+       * for a person with every arm's findings on the card.* Each arm's refusal
+       * is on a run stream no later pass reads, so `PassRestarted` is where they
+       * survive and this is where they are read back.
+       */
+      let arms: readonly RestartArm[] = [];
+      if (unresolved !== null) {
+        // Who else is waiting, named rather than counted, because the sentence
+        // a declined restart leaves on the card has to say which of them it
+        // deferred to. `--no-merge` is deliberately **not** here: it says *do
+        // not merge without me*, and a restart merges nothing — the fresh pass
+        // will hold at the same flag. Excluding it would also make this
+        // unreachable on the one repository that has to prove it, since Lingtai
+        // on Lingtai passes the flag every time.
+        const alsoAsked =
+          pipeline.heldAt !== null
+            ? `the ${pipeline.heldAt} action`
+            : atMerge.heldAt !== null
+              ? `the ${atMerge.heldAt} action`
+              : repairOf !== null
+                ? "a repair"
+                : null;
+        const folded = reduceWorkItem(yield* Effect.promise(() => store.read(workItemId)));
+        // Newest first, which is the order they are read in. The fold keeps them
+        // oldest first because that is the order they happened.
+        arms = [...folded.restarts].reverse();
+        const second = decideRestart({
+          refusal: { action: unresolved.action, on: unresolved.on, exhausted: unresolved.exhausted },
+          restarts: recipe.runtime.limits.restarts,
+          item: folded,
+          alsoAsked,
+        });
+
+        if (second.restart) {
+          const reason = restartReason({
+            action: unresolved.action,
+            rounds: unresolved.rounds,
+            n: second.n,
+            of: second.of,
+          });
+          yield* appendAtEnd(workItemId, [
+            {
+              type: "PassRestarted",
+              actor: "conductor",
+              data: parsePayload("PassRestarted", {
+                runId,
+                restart: second.n,
+                of: second.of,
+                action: unresolved.action,
+                rounds: unresolved.rounds,
+                branch,
+                headSha,
+                findings: unresolved.findings,
+              }),
+            },
+          ]);
+          log(`starting over — restart ${second.n} of ${second.of}`);
+          runLog.note("restart", reason);
+          // Through `Stopped` and not through a `release(...)` beside a
+          // `return`: the handler at the bottom of this function releases with
+          // the reason and reports the stage, once, for every refusal taken
+          // after the claim. A restart is one of those — the pass did not land.
+          return yield* new Stopped({ stage: "restart", detail: reason, release: reason });
+        }
+        // Not its own event. "Nothing happened because nobody asked for it" and
+        // "nothing happened and we do not know why" still have to be kept apart
+        // — but the sentence that keeps them apart is on the block's own
+        // `diagnosis`, which is an event payload and is therefore on the log.
+        // A `PassRestartDeclined` would append on every spent pass of every
+        // project that leaves `restarts` at zero, which is all of them, to say
+        // what the recipe already says.
+        restartDeclined = second.why;
+      }
+
+      // ---- 13. hold, if anything asked for a person -------------------------
       // Three things can ask: a gate at `proposed` whose verdict is
       // `needs-approval` — a `human` action, or a `watch` one that saw a
       // migration — a gate at `merge`, and the operator, with `--no-merge`.
@@ -1848,6 +1997,15 @@ export function runOnce(
       // more, and the argument never depended on which kind of failure it was.
       // A person can still merge it: the approval below is requested on this
       // head like any other.
+      //
+      // **And since 0040 it asks only once the *second* ceiling is spent too.**
+      // The block above got the refusal first and may have released the item for
+      // a fresh approach instead; reaching here means either that this project
+      // buys no restart — the default, and every project today — or that the
+      // restarts are spent as well. `restartDeclined` is which, in
+      // `decideRestart`'s own words, and it goes on the card beside the reason
+      // no further round was bought: an item that stopped must never be left
+      // with a ceiling nobody can see.
       if (
         pipeline.heldAt !== null ||
         atMerge.heldAt !== null ||
@@ -1899,6 +2057,12 @@ export function runOnce(
                 // "approve this" without naming it is half a question.
                 question:
                   (repairOf ? `A repair for ${repairOf.reason}. ` : "") +
+                  // How many approaches this is, when it is more than one. A
+                  // person deciding whether to merge over a live finding wants
+                  // to know whether the ticket has been attempted from scratch
+                  // and refused each time — that is a different question from
+                  // one stubborn diff.
+                  (arms.length > 0 ? `Approach ${arms.length + 1} of ${arms[0]!.of + 1}. ` : "") +
                   (unresolved
                     ? unresolved.on === "findings"
                       ? `Merge ${branch} into ${base} anyway? Two agents disagreed: ` +
@@ -1919,8 +2083,8 @@ export function runOnce(
         // another run could claim it and throw the question away.
         const question = unresolved
           ? unresolved.on === "findings"
-            ? disagreementQuestion({ ...unresolved, branch, base })
-            : unfixedQuestion({ ...unresolved, branch, base })
+            ? disagreementQuestion({ ...unresolved, branch, base, restarts: arms.length })
+            : unfixedQuestion({ ...unresolved, branch, base, restarts: arms.length })
           : repairOf
             ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
             : `held at the ${gate} gate: ${branch} into ${base}`;
@@ -1952,10 +2116,26 @@ export function runOnce(
          * them would save a branch and cost the reader the only thing they need
          * to know first: whether there is anything here to decide.
          */
+        /**
+         * Why no further agent was bought, both ceilings in one sentence.
+         *
+         * `unresolved.why` names the rule that stopped the rounds and
+         * `restartDeclined` names the rule that stopped the approaches, and a
+         * card that carried only the first would report a ceiling a reader can
+         * see and hide the one they cannot. Null on nothing: a spent pass always
+         * reaches `decideRestart`, and `restarts: 0` is a rule with a sentence
+         * like any other.
+         */
+        const whyNoMore =
+          unresolved === null
+            ? ""
+            : restartDeclined === null
+              ? unresolved.why
+              : `${unresolved.why}. And no second approach: ${restartDeclined}`;
         const diagnosis = unresolved
           ? unresolved.on === "findings"
-            ? diagnoseDisagreement({ ...unresolved, branch, base, headSha })
-            : diagnoseUnfixed({ ...unresolved, branch, headSha })
+            ? diagnoseDisagreement({ ...unresolved, branch, base, headSha, why: whyNoMore, earlier: arms })
+            : diagnoseUnfixed({ ...unresolved, branch, headSha, why: whyNoMore, earlier: arms })
           : {
               what:
                 `${branch} is at ${headSha.slice(0, 7)} and ` +
@@ -2021,7 +2201,7 @@ export function runOnce(
         return { ok: "held", workItemId, runId, headSha, gate } satisfies RunOnceResult;
       }
 
-      // ---- 13. what the lane produced --------------------------------------
+      // ---- 14. what the lane produced --------------------------------------
       /**
        * The lane itself is the loop's last step now (`#142`); this is the two
        * things that can be true when it is over.

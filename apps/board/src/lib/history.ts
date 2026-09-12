@@ -224,7 +224,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // themselves are in the disclosure, verbatim, where the contract lives.
   FixRequested: (d) => {
     const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
-    return `round ${need(d, "round")} for ${need(d, "action")} — ${n} finding${n === 1 ? "" : "s"}`;
+    // `of` is zero on an event written before the field existed, and the
+    // reading of zero is *not recorded* — so the round is named without a
+    // denominator rather than as `round 1 of 0`.
+    const of = typeof d["of"] === "number" && d["of"] > 0 ? ` of ${d["of"]}` : "";
+    return `round ${need(d, "round")}${of} for ${need(d, "action")} — ${n} finding${n === 1 ? "" : "s"}`;
   },
   // The cost is on the row because a fix is bought without being asked again,
   // the same argument `#84` made for a repair's. A default-on agent whose spend
@@ -235,6 +239,21 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     (typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "") +
     (d["failure"] === null ? "" : ` · ${clip(d["failure"])}`),
   FixDeclined: (d) => `${need(d, "action")} — ${clip(d["why"])}`,
+
+  // -------------------------------------------------------------- restart --
+  // The row a person reads to learn that the ticket, and not just this diff, is
+  // what was in doubt (0040). It says which arm and what the spent arm cost in
+  // rounds; the findings it carries are in the disclosure, verbatim, because
+  // they are the only copy — the run they refused is on a stream no later pass
+  // reads.
+  PassRestarted: (d) => {
+    const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
+    return (
+      `restart ${need(d, "restart")} of ${need(d, "of")} — ${need(d, "action")} refused ` +
+      `${need(d, "branch")} after ${need(d, "rounds")} round(s), ` +
+      `${n} finding${n === 1 ? "" : "s"} left live`
+    );
+  },
 
   // -------------------------------------------------------------- control --
   ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,

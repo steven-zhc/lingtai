@@ -111,12 +111,47 @@ describe("whether a refusal buys an agent", () => {
 
       expect(decision.fix).toBe(false);
       expect(decision.fix === false && decision.why).toMatch(/runtime\.limits\.rounds: 0/);
+      // **And it says what it refuses, not where the refusal goes.** It used to
+      // say "sends every refusal straight to a person", which was true while
+      // this was the only ceiling and is false beside a non-zero `restarts`
+      // (0040): a person is then the third destination, not the second.
+      expect(decision.fix === false && decision.why).not.toMatch(/straight to a person/);
     }
+  });
+
+  /**
+   * **The rule, as something other than prose** (0040 §Consequences).
+   *
+   * `decideRestart` asks one question of this decision — *was the ceiling what
+   * stopped it* — and it has to be able to ask it without reading a sentence
+   * written for a card. `no-criterion` is the one that must not read as a spent
+   * budget: a gate that refused with nothing to hold a fixer to is answered no
+   * better by a fresh pass than it was by a round.
+   */
+  it("names the rule that refused, so a caller can decide on it", () => {
+    const rules = (decision: ReturnType<typeof decideFix>) =>
+      decision.fix === false ? decision.rule : "bought";
+
+    expect(rules(decideFix({ refusal: refusal(), rounds: 0, roundsSpent: 0 }))).toBe("no-rounds");
+    expect(rules(decideFix({ refusal: refusal(), rounds: 1, roundsSpent: 1 }))).toBe("spent");
+    expect(
+      rules(
+        decideFix({
+          refusal: refusal([finding({ failureScenario: "   " })], "said a lot"),
+          rounds: 1,
+          roundsSpent: 0,
+        }),
+      ),
+    ).toBe("no-criterion");
+    expect(rules(decideFix({ refusal: redBuild("   "), rounds: 1, roundsSpent: 0 }))).toBe(
+      "no-criterion",
+    );
   });
 
   it("stops at the ceiling, and says which ceiling", () => {
     expect(decideFix({ refusal: refusal(), rounds: 1, roundsSpent: 1 })).toEqual({
       fix: false,
+      rule: "spent",
       why: expect.stringContaining("ceiling of 1 round(s) for this pass"),
     });
     // And a recipe that raised it gets the rounds it asked for.
@@ -330,6 +365,97 @@ describe("what a person is shown when the rounds are over", () => {
     expect(question).toContain("two agents disagreed about agent/123 into main");
     expect(question).toContain("2 findings");
     expect(question).toContain("worst: blocker");
+    // And says nothing about restarts, because there have been none. A card on
+    // a project that leaves `restarts` at zero reads exactly as it did.
+    expect(question).not.toContain("restart");
+  });
+});
+
+/**
+ * **Every arm's findings on the card** (0040 §3), which is the criterion the
+ * second ceiling stands or falls on.
+ *
+ * Each arm's refusal lives on a run stream no later pass reads, so if
+ * `PassRestarted` did not carry the findings and this did not quote them, a
+ * person handed the item after the last restart would see one refusal and have
+ * to guess whether the earlier approaches were refused for the same reason.
+ * That guess is the judgement they are being asked to make: arm A's third
+ * refusal in experiment 011 was a defect round 2 had created, and two arms
+ * refused for the *same* reason would say the ticket is wrong rather than the
+ * approach.
+ */
+describe("what a person is shown when the restarts are over too", () => {
+  const earlier = {
+    restart: 1,
+    of: 2,
+    action: "review",
+    branch: "agent/123",
+    headSha: "8634c5d0000000",
+    rounds: 3,
+    findings: [
+      finding({
+        file: "packages/daemon/src/daemon.ts",
+        line: 124,
+        severity: "major",
+        claim: "startBeacon sits between the lock and the try/catch that releases it",
+        failureScenario: "the first beat throws; startDaemon exits holding the conductor lock",
+      }),
+    ],
+  };
+  const diagnosis = diagnoseDisagreement({
+    action: "review",
+    branch: "agent/123",
+    base: "main",
+    headSha: "c0ffee1234567890",
+    findings: [finding()],
+    rounds: 3,
+    why: "the ceiling of 2 restart(s) for this item is spent, and the review reviewer still refuses",
+    earlier: [earlier],
+  });
+
+  it("says how many approaches, so the ticket is what reads as in doubt", () => {
+    expect(diagnosis.what).toContain("This is approach 2");
+    expect(diagnosis.what).toContain("the ticket and not only this diff");
+  });
+
+  it("keeps every arm's findings, each said whose it is", () => {
+    expect(diagnosis.raw).toContain("this approach · agent/123@c0ffee1");
+    expect(diagnosis.raw).toContain("restart 1 of 2 · review refused agent/123@8634c5d after 3 round(s)");
+    // The abandoned arm's scenario verbatim, which is the thing that would
+    // otherwise be gone: its run's stream is not read by any later pass.
+    expect(diagnosis.raw).toContain("startDaemon exits holding the conductor lock");
+    // And this arm's, still.
+    expect(diagnosis.raw).toContain(SCENARIO.split("\n")[0]!);
+  });
+
+  it("leaves a card with no restarts exactly as it was", () => {
+    const one = diagnoseDisagreement({
+      action: "review",
+      branch: "agent/123",
+      base: "main",
+      headSha: "c0ffee1234567890",
+      findings: [finding()],
+      rounds: 3,
+      why: "the ceiling of 3 round(s) for this pass is spent, and the review action still refuses",
+    });
+
+    // 0040 §4 read all the way down to the bytes: no headings, no framing,
+    // nothing for a reader on a project that buys no restart to notice.
+    expect(one.raw).toBe(quoteFindings([finding()]));
+    expect(one.what).not.toContain("approach");
+  });
+
+  it("puts the arm count on the one line too", () => {
+    expect(
+      disagreementQuestion({
+        action: "review",
+        branch: "agent/123",
+        base: "main",
+        findings: [finding()],
+        rounds: 3,
+        restarts: 2,
+      }),
+    ).toContain("after 3 fix round(s) and 2 restart(s)");
   });
 });
 

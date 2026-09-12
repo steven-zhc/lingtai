@@ -99,6 +99,29 @@ gates: {}
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
+/**
+ * The same, with a cold reviewer at `proposed` and no round to patch with.
+ *
+ * `rounds: 0` and a non-zero `restarts` is the configuration
+ * [0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)
+ * makes legible — *never patch, start over twice* — and it is also the shortest
+ * path to the branch under test: one review, refused, and the depth ceiling
+ * spent by the recipe rather than by three agent runs.
+ */
+const restartRecipe = (restarts: number) => `
+version: 1
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+gates:
+  proposed:
+    - name: review
+      agent: look at it coldly
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
+`;
+
 const issue: Issue = {
   number: 7,
   title: "a race in the importer",
@@ -119,7 +142,7 @@ const project: ProjectState = {
 };
 
 /** GitHub, as a record of what it was told. */
-function fakeGitHub(said: string[]): GitHubClient {
+function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
   return {
     owner: "nobody",
     repo: PROJECT,
@@ -128,7 +151,7 @@ function fakeGitHub(said: string[]): GitHubClient {
     token: async () => "not-a-real-token",
     defaultBranch: async () => "main",
     fileAt: async (path: string, ref: string) =>
-      path === ".lingtai/config.yaml" && ref === "main" ? RECIPE : null,
+      path === ".lingtai/config.yaml" && ref === "main" ? recipe : null,
     refSha: async () => "0".repeat(40),
     listOpenIssues: async () => [issue],
     getIssue: async () => issue,
@@ -161,6 +184,39 @@ const runtime: Runtime = {
     failure: null,
     text: "done",
     sessionId: "sess-1",
+  }),
+};
+
+/**
+ * A runtime that refuses whatever it is shown, in the reviewer's own contract.
+ *
+ * One runtime for every agent in the pass, which is what `runOnce` has: the
+ * implementer's `text` is only ever read as a decline message, so a
+ * runtime that answers findings to both is the cheapest way to get a cold
+ * review to refuse without a subprocess. `blocker` is what makes `verdictFor`
+ * say `failed`, and the scenario is what makes the finding survive
+ * `parseFindings` — a finding without one is dropped rather than repaired.
+ */
+const refusingRuntime: Runtime = {
+  ...runtime,
+  run: async () => ({
+    exitCode: 0,
+    turns: 5,
+    durationMs: 2_000,
+    costUsd: 1.25,
+    failure: null,
+    text: JSON.stringify({
+      findings: [
+        {
+          file: "src/fix.ts",
+          line: 12,
+          severity: "blocker",
+          claim: "the approach cannot work",
+          failureScenario: "call it twice and the second call deadlocks on the lock the first took",
+        },
+      ],
+    }),
+    sessionId: "sess-review",
   }),
 };
 
@@ -215,6 +271,11 @@ function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
           if (args[0] === "rev-parse") return "b".repeat(40);
           if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
           if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
+          // `base...HEAD`, which is what a reviewer is shown. Non-empty on
+          // purpose: an `agent:` gate short-circuits to `passed` on an empty
+          // diff, so a fake that answered "" would make every review pass and
+          // the refusal under test unreachable.
+          if (args[0] === "diff") return "diff --git a/src/fix.ts b/src/fix.ts\n+  return ok;\n";
           return "";
         }),
       integrate: () =>
@@ -563,5 +624,126 @@ describe("runOnce, with no world to run in", () => {
 
     // And the worktree it had already taken went with it.
     expect(did).toContain(`remove ${result.runId}`);
+  });
+
+  /**
+   * **`rounds` bound depth; `restarts` bound breadth**
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+   *
+   * Both arms of the same pass, because the interesting claim is the
+   * *difference* between them and either alone would read as correct:
+   *
+   *   `restarts: 1`   the item is **released**, the arm is on the log, and the
+   *                   next claim is an ordinary fresh pass
+   *   `restarts: 0`   the item is **blocked** and asks, which is what it did
+   *                   before this key existed — 0040 §4's default
+   *
+   * `--no-merge` is passed in both, as Lingtai passes it to itself, and it is
+   * deliberately not a reason to refuse a restart: the flag says *do not merge
+   * without me*, and a restart merges nothing. Excluding it would make this
+   * branch unreachable on the one repository that has to prove it.
+   */
+  describe("when the rounds are spent and the review still refuses", () => {
+    const spentPass = async (restarts: number) => {
+      const store = memoryStore();
+      const did: string[] = [];
+      const said: string[] = [];
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said, restartRecipe(restarts)),
+          runtime: refusingRuntime,
+          issue: 7,
+          hookBinary: "/tmp/fake/lingtai-hook",
+          prompt: "fix {{issue}}",
+          merge: false,
+          home: "/tmp/fake-home",
+          store,
+        },
+        fakePorts(did, store),
+      );
+      return { result, store, did, said, item: await store.read(`wi-${PROJECT}-7`) };
+    };
+
+    it("releases the item for a fresh pass when the recipe buys one", async () => {
+      const { result, item, did, said } = await spentPass(1);
+
+      expect(result.ok).toBe(false);
+      if (result.ok !== false) return;
+      expect(result.stage).toBe("restart");
+
+      // **Released and not blocked**, which is the whole of the change: a
+      // question for a person sits in "Waiting on you" and a released item is
+      // back in the queue, where the next pass claims it.
+      const types = item.map((e) => e.type);
+      expect(types).toContain("PassRestarted");
+      expect(types).toContain("WorkItemReleased");
+      expect(types).not.toContain("WorkItemBlocked");
+
+      // Recorded *before* the release, which is the mechanism and not an
+      // ordering preference: the fold has to carry the arm before anything can
+      // claim the next one, or the ceiling counts one restart short for ever.
+      expect(types.indexOf("PassRestarted")).toBeLessThan(types.indexOf("WorkItemReleased"));
+
+      // The arm carries what refused it, because its run's stream is not read
+      // by any later pass — so this is where a person asked after the *last*
+      // restart finds out what the first approach was refused for.
+      const arm = item.find((e) => e.type === "PassRestarted")!.data as {
+        restart: number;
+        of: number;
+        action: string;
+        branch: string;
+        findings: { claim: string }[];
+      };
+      expect(arm).toMatchObject({ restart: 1, of: 1, action: "review", branch: "agent/7" });
+      expect(arm.findings[0]!.claim).toBe("the approach cannot work");
+
+      // And the release says which arm, in the sentence that becomes both the
+      // card's line and the next attempt's own history row.
+      const reason = (item.find((e) => e.type === "WorkItemReleased")!.data as { reason: string })
+        .reason;
+      expect(reason).toContain("restart 1 of 1");
+      expect(reason).toContain("approach is abandoned");
+
+      // Back in the queue as far as GitHub is concerned, not waiting on anyone
+      // — which is what makes the next claim possible at all: an issue left
+      // reading `lingtai:working` is one a person has to go and fix by hand.
+      expect(said.filter((l) => l.startsWith("labels #7"))).toEqual([
+        "labels #7 bug,lingtai:working",
+        "labels #7 bug",
+      ]);
+      expect(did).toContain(`remove ${result.runId}`);
+    });
+
+    /**
+     * 0040 §4: the default is today's behaviour. One ticket of evidence does
+     * not turn a new way to spend an agent on for every project, so with the
+     * key left alone the pass stops and asks — and the card says what happened
+     * and why nothing more was bought.
+     */
+    it("asks a person when the recipe buys none, and says which ceiling stopped it", async () => {
+      const { result, item } = await spentPass(0);
+
+      expect(result.ok).toBe("held");
+
+      const types = item.map((e) => e.type);
+      expect(types).toContain("WorkItemBlocked");
+      expect(types).not.toContain("PassRestarted");
+
+      // **Both ceilings in one sentence.** A card that named only the rounds
+      // would report a ceiling a reader can see and hide the one they cannot.
+      const blocked = item.find((e) => e.type === "WorkItemBlocked")!.data as {
+        question: string;
+        diagnosis: { done: string; raw: string | null } | null;
+      };
+      expect(blocked.question).toContain("two agents disagreed");
+      expect(blocked.question).not.toContain("restart");
+      expect(blocked.diagnosis!.done).toContain("runtime.limits.rounds: 0");
+      expect(blocked.diagnosis!.done).toContain("runtime.limits.restarts: 0");
+      // And the findings are still the evidence, unframed — no headings, because
+      // there is only one approach to tell apart.
+      expect(blocked.diagnosis!.raw).toContain("deadlocks on the lock the first took");
+      expect(blocked.diagnosis!.raw).not.toContain("## this approach");
+    });
   });
 });

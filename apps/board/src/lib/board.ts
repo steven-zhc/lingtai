@@ -24,6 +24,7 @@
 // pipeline and its child-process types, which a page rendering cards has no
 // business compiling.
 import {
+  describeArm,
   readTaskProjects,
   readTasks,
   type TaskCard,
@@ -120,6 +121,21 @@ export interface BoardCard {
   updatedAt: string | null;
   /** Attempts so far, so a card that keeps failing reads as one. */
   attempts: number;
+  /**
+   * *restart 1 of 2*, or null on a ticket that has only ever had one approach
+   * — which is every ticket until a recipe sets `runtime.limits.restarts`
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   *
+   * **The sentence and not the numbers**, because `lingtai status` shows the
+   * same fact and the two must not word it differently (#100). It is
+   * `describeArm`'s, beside the columns it reads, and the board does not get to
+   * have its own version of it — the same rule `runnableAt` and `describeHold`
+   * already follow.
+   *
+   * It is not `attempts`. That counts claims, so a claim after a crash, after a
+   * backoff and after an approach was thrown away all read as `attempt 3`.
+   */
+  arm: string | null;
   /**
    * Whether a person is holding a question at all. The waiting lane also holds
    * a refused dispatch and a run that asked something mid-flight, and neither
@@ -354,6 +370,7 @@ export function toCard(
     note: t.note,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
+    arm: describeArm(t),
     blocked: t.blocked,
     needs: t.needs,
     diagnosis: t.diagnosis,
@@ -533,6 +550,8 @@ export async function queuedCards(
         costUsd: null,
         note: null,
         attempts: 0,
+        // Nothing has run, so no approach has been abandoned.
+        arm: null,
         blocked: false,
         // Nothing has run, so nothing is held and nothing has been diagnosed.
         needs: null,

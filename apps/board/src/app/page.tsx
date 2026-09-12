@@ -304,6 +304,21 @@ function Card({
             attempt {card.attempts}
           </li>
         ) : null}
+        {/* **Which arm, beside how many attempts** (0040 §3). The two are not
+            the same number and the difference is what a person acts on: an
+            attempt is a claim, so a crash, a backoff and an abandoned approach
+            all read as `attempt 3`, while this says the reviewer refused a whole
+            approach and the ticket was started over. `hold` rather than `sig`
+            because it is the pill that says a ceiling is being spent.
+
+            The sentence is `describeArm`'s, so this and `lingtai status` cannot
+            drift apart (#100). Null on every card whose recipe leaves
+            `restarts` at zero, which is all of them today. */}
+        {card.arm ? (
+          <li className="pill hold" title="approaches abandoned, against the recipe's ceiling">
+            {card.arm}
+          </li>
+        ) : null}
         {/* When, not whether (#95) — and, since #100, which of the three a
             Queued card is. A card the backoff is holding, a card nothing will
             start because the conductor is stopped, and a card nobody has got to

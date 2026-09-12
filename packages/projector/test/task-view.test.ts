@@ -19,7 +19,13 @@ import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/e
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { integrationStream } from "@lingtai/domain";
-import { createProjectionRunner, describeHold, readTasks, taskViewProjection } from "../src/index.ts";
+import {
+  createProjectionRunner,
+  describeArm,
+  describeHold,
+  readTasks,
+  taskViewProjection,
+} from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
@@ -304,6 +310,57 @@ async function seed(): Promise<void> {
     },
     { type: "WorkItemUnblocked", actor: "human:steven", data: { by: "human:steven", note: "requeued" } },
   ]);
+
+  // 13 — a round in flight, so the note has to say which round *of how many*.
+  //      `FixRequested.of` is what makes that readable off the log: a
+  //      projection is a fold and may not read the recipe the ceiling is in.
+  await store.append(wi(13), 0, [discovered(13, "patching, round one"), claimed(13)]);
+  await store.append(run(13), 0, [
+    started(13),
+    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-13" } },
+    {
+      type: "GateFailed",
+      actor: "conductor",
+      data: { gate: "proposed", action: "review", runId: run(13), onSha: "sha-13", evidence: "one finding", findings: [] },
+    },
+    {
+      type: "FixRequested",
+      actor: "conductor",
+      data: { runId: run(13), round: 1, of: 3, action: "review", onSha: "sha-13", findings: [] },
+    },
+  ]);
+
+  // 14 — the rounds were spent and the ticket started over
+  //      ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+  //      Released rather than blocked, which is the whole of the change, and
+  //      carrying which arm it is now on — the thing `attempts` cannot say.
+  await store.append(wi(14), 0, [discovered(14, "started over once"), claimed(14)]);
+  await store.append(run(14), 0, [
+    started(14),
+    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-14" } },
+    {
+      type: "GateFailed",
+      actor: "conductor",
+      data: { gate: "proposed", action: "review", runId: run(14), onSha: "sha-14", evidence: "still refused", findings: [] },
+    },
+  ]);
+  await store.append(wi(14), 2, [
+    {
+      type: "PassRestarted",
+      actor: "conductor",
+      data: {
+        runId: run(14),
+        restart: 1,
+        of: 2,
+        action: "review",
+        rounds: 3,
+        branch: "agent/14",
+        headSha: "sha-14",
+        findings: [],
+      },
+    },
+    released(run(14), "the review reviewer still refused after 3 round(s) — restart 1 of 2"),
+  ]);
 }
 
 /** Appended after the rebuild, so `fold` is what folds it. */
@@ -395,6 +452,43 @@ describe("task_view", () => {
     expect(two.attempts).toBe(1);
     expect(two.lastAttemptAt).toBeInstanceOf(Date);
     expect(card(tasks, 1)!.attempts).toBe(0);
+  });
+
+  /**
+   * **Which arm, beside how many attempts**
+   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   *
+   * `attempts` counts claims, so a claim after a crash, after a backoff and
+   * after an approach was thrown away all read as the same number — which is
+   * why *round 2 of 3, restart 1 of 2* had to become sayable and *attempt 3*
+   * was not enough. The sentence is `describeArm`'s so that the board and
+   * `lingtai status` cannot word it differently (#100).
+   */
+  it("says which arm a ticket is on, and which round of that arm", async () => {
+    const tasks = await readTasks({ project: PROJECT });
+
+    // The depth half, while a pass is in flight. `of` is what makes the
+    // denominator readable: a fold cannot open the recipe the ceiling is in.
+    expect(card(tasks, 13)!.note).toBe("fixing round 1 of 3: 0 finding(s) from review");
+
+    // The breadth half, which outlives the pass that spent it.
+    const over = card(tasks, 14)!;
+    expect(over.restarts).toBe(1);
+    expect(over.restartsOf).toBe(2);
+    expect(describeArm(over)).toBe("restart 1 of 2");
+    // **Released, not waiting.** A question for a person sits in the waiting
+    // lane; a restarted ticket is back in the queue for an ordinary claim.
+    expect(over.state).toBe("queued");
+    expect(over.blocked).toBe(false);
+    expect(over.note).toContain("restart 1 of 2");
+    // And a repair's exemption from the backoff is *not* borrowed: a restart is
+    // an ordinary claim, and the backoff is exactly the guard that should apply.
+    expect(over.repairPending).toBe(false);
+
+    // Nothing on a ticket that has only ever had one approach, so a card on a
+    // project that buys no restart reads exactly as it did.
+    expect(card(tasks, 2)!.restarts).toBe(0);
+    expect(describeArm(card(tasks, 2)!)).toBeNull();
   });
 
   it("says why a task is waiting, in one line", async () => {
