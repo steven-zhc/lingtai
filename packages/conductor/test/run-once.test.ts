@@ -173,10 +173,10 @@ const NO_ROUNDS_RECIPE = REFUSING_RECIPE.replace(
  *
  * The one refusal the round loop never sees: `proposed` is where `buyRound`
  * runs, and a `merge`-point verdict is taken by `integrate()` as
- * `gatesPassed: false` and comes back out as `gate-failed`. Before `#143` that
- * bought a whole new run — for exactly the refusal `decideFix` declines to buy
- * a *round* for, a hundred lines away, which is the incoherence the ticket
- * leads with.
+ * `gatesPassed: false` and comes back out as `gate-failed`. `decideFix` is
+ * never asked about it — no `FixRequested` and no `FixDeclined` — so it is the
+ * case that proves a lane `gate-failed` is not always one a round declined.
+ * Before `#143` it bought a whole new run.
  */
 const LANE_REFUSING_RECIPE = RECIPE.replace(
   "runtime: {",
@@ -609,10 +609,11 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'unrepaired ch
    * `decideRepair` used to stand here and buy a whole new run for a
    * `gate-failed` or a `no-commits`. Both are answered by
    * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
-   * §Consequences and neither deserved one: a `gate-failed` at the lane is the
-   * refusal `decideFix` declines to buy a *round* for, and a `no-commits` is a
-   * branch holding nothing, which a run starting from scratch answers by
-   * definition and expensively.
+   * §Consequences and neither deserved one: a `gate-failed` at the lane is a
+   * `merge:` gate no round could run for, or a `proposed` refusal `decideFix`
+   * declined to buy a *round* for, and a `no-commits` is a branch holding
+   * nothing, which a run starting from scratch answers by definition and
+   * expensively.
    *
    * So what is asserted is the whole outcome, because there is nothing else:
    * blocked, a question carrying the refusal, and `diagnoseRefusal`'s three
@@ -674,7 +675,14 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'a change the 
     // Whose failure it is and why nothing is coming — `whoseFailure`'s answer,
     // composed by `diagnoseRefusal` and handed in by nobody.
     expect(item.diagnosis?.done).toContain("No agent was bought");
-    expect(item.diagnosis?.done).toContain("inside the pass it happened in");
+    expect(item.diagnosis?.done).toContain("at the merge lane or at approval");
+    // And it does not blame the rounds: no round ran for a `merge:` gate, so
+    // raising `runtime.limits.rounds` would buy the next identical refusal
+    // nothing, and the card must not say it would.
+    expect(item.diagnosis?.done).not.toContain("runtime.limits.rounds");
+    // Nor did the round loop see it — the merge point is past where it runs.
+    expect(types).not.toContain("FixRequested");
+    expect(types).not.toContain("FixDeclined");
     // The gate's own output underneath, never summarised away (#83).
     expect(item.diagnosis?.raw).toContain("this branch may not land");
     // And no move: approving a red diff over a refusing gate, waiving it, or
@@ -683,6 +691,86 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'a change the 
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
     expect(log.stdout).not.toContain("the lane will not take");
+  }, 240_000);
+
+  /**
+   * **A repair the old code bought is still a repair when the new code claims
+   * it** — the deploy seam `#143` crosses.
+   *
+   * Before the daemon restarts, the old code appends `RepairRequested` and
+   * releases the item. After it, this build is what claims it. Dropped, that
+   * claim is an ordinary pass which merges unattended where the repair it was
+   * released for would have asked; so it must still hold at `merge` and name the
+   * failure it was bought for. No `--no-merge` here, deliberately: the flag
+   * would hold it for a different reason and hide the one under test.
+   */
+  it("holds a repair bought before #143 at merge, rather than merging it unattended", async () => {
+    const legacy = { ...issue, number: 145 };
+    const itemId = workItemStream(PROJECT, 145);
+    created.add(itemId);
+    const earlier = `run-${crypto.randomUUID()}`;
+    await store.append(itemId, 0, [
+      {
+        type: "WorkItemClaimed",
+        actor: "conductor",
+        data: { runId: earlier, worker: "w", title: null, kind: null },
+      },
+    ]);
+    // Beneath the store, because the store refuses a retired type — which is
+    // right for everything that writes, and is why this is the old code's row.
+    const c = new pg.Client({ connectionString: directDatabaseUrl() });
+    await c.connect();
+    try {
+      await c.query(
+        "insert into events (stream_id, version, type, data, actor) values ($1, 2, 'RepairRequested', $2::jsonb, 'conductor')",
+        [
+          itemId,
+          JSON.stringify({
+            runId: earlier,
+            reason: "gate-failed",
+            detail: "policy: this branch may not land",
+            fingerprint: "0123456789ab",
+            attempt: 1,
+          }),
+        ],
+      );
+    } finally {
+      await c.end();
+    }
+    await store.append(itemId, 2, [
+      {
+        type: "WorkItemReleased",
+        actor: "conductor",
+        data: { runId: earlier, reason: "repairing gate-failed (attempt 1)" },
+      },
+    ]);
+
+    const agent = await agentThat(`
+mkdir -p src && echo "export const repaired = 145;" > src/fix.ts
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm 'the repair the old code bought'
+`);
+    const before = await g(["rev-parse", "develop"], originPath);
+
+    const result = await once({
+      ...options(agent),
+      issue: 145,
+      client: fakeClient({ getIssue: async () => legacy, listOpenIssues: async () => [legacy] }),
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
+    expect(result.gate).toBe("merge");
+    // Nothing reached the base branch without a person.
+    expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before.stdout);
+
+    const events = await store.read(itemId);
+    const item = reduceWorkItem(events).lifecycle;
+    expect(item.status).toBe("blocked");
+    if (item.status !== "blocked") return;
+    expect(item.question).toContain("a repair for gate-failed");
+    expect(item.diagnosis?.done).toContain("a repair for gate-failed");
   }, 240_000);
 
   it("lets a person hand a still-red item back to the queue", async () => {

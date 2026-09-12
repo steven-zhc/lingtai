@@ -146,18 +146,26 @@ export const taskViewProjection: Projection = {
         -- reintroduce.
         blocked      boolean not null default false,
 
+        -- A repair bought and not yet claimed, and which run was one. Written
+        -- only by the retired RepairRequested (#143), so nothing sets either on
+        -- a new ticket — and both stay, because a log that holds the event is
+        -- replayed by every rebuild. Without them an old repair's spend moves
+        -- into cost_usd on rebuild and the card stops agreeing with the task
+        -- page, and an item released for a repair just before a deploy loses
+        -- the backoff exemption its repair was bought with.
+        repair_pending boolean not null default false,
+        repair_run_id  text,
         -- { "run-abc#fix1": 1.42 }. A map for the reason the gates column is
         -- one: assignment replays to the same number and += does not.
         --
-        -- **Wider than its name since 0039 §3, and now the whole of it.** It
-        -- began as what a *repair* cost — an agent the merge lane bought for the
-        -- next run — and holds every round a pass buys to answer a refusal,
-        -- keyed run#fixN. Nothing buys a repair since #143, so repair_costs
-        -- is exactly *the rounds*, and the two columns beside it — a pending
-        -- repair, and which run was one — are gone with the purchase. The name
-        -- is kept because renaming a column is a rebuild of every row to change
-        -- nothing anybody reads; the board says "answering", which is what a
-        -- person actually sees.
+        -- **Wider than its name since 0039 §3.** It began as what a *repair*
+        -- cost — an agent the merge lane bought for the next run — and holds
+        -- every round a pass buys to answer a refusal, keyed run#fixN. Nothing
+        -- buys a repair since #143, so on a new ticket repair_costs is exactly
+        -- *the rounds*; an old ticket's repair run is still keyed by its run.
+        -- The name is kept because renaming a column is a rebuild of every row
+        -- to change nothing anybody reads; the board says "answering", which is
+        -- what a person actually sees.
         repair_costs   jsonb not null default '{}'::jsonb,
 
         -- Retention and ordering. From the event's own clock, never now().
@@ -310,20 +318,30 @@ export const taskViewProjection: Projection = {
           break;
 
         /**
+         * A failure bought an agent — **retired** (`#143`), and still folded.
+         *
+         * Nothing appends it now, and a log that holds it is replayed by every
+         * rebuild. The row is still `running` here; what this records is the
+         * exemption from the backoff, which the claim below consumes into
+         * `repair_run_id` so that the repair's spend lands apart from the
+         * work's. Dropping the case would move an old repair's money into
+         * `cost_usd` on the next rebuild, and make an item released for a
+         * repair just before a deploy wait out a backoff it was exempt from.
+         */
+        case "RepairRequested":
+          await set(ctx, event.streamId, seq, at, { repair_pending: true });
+          break;
+
+        /**
          * A pass spent its rounds and the ticket is starting over (0040).
          *
          * The row is still `running` here — the release that follows moves it to
          * `queued` and writes the reason as the note — so what this records is
-         * only which arm the item is now on. A restart is an ordinary claim and
-         * `source.backoff` is exactly the guard that should apply to it: an arm
+         * only which arm the item is now on. **Not `repair_pending`**: a restart
+         * is an ordinary claim and `source.backoff` is exactly the guard that
+         * should apply to it: an arm
          * that comes straight back is the whole queue on a repository running
          * one ticket at a time.
-         *
-         * `RepairRequested` used to have a case above this one, writing
-         * `repair_pending` so that the next claim jumped the backoff. It is
-         * retired (`#143`) and so is the column; a log that still holds the
-         * event reaches the `default` below and moves nothing but the
-         * checkpoint.
          */
         case "PassRestarted": {
           const d = event.data as PayloadOf<"PassRestarted">;
@@ -405,27 +423,39 @@ export const taskViewProjection: Projection = {
         }
 
         /**
-         * Turns and cost — the work's, which is every run's.
+         * Turns and cost — and a repair's cost is not the work's.
          *
          * "An operator must be able to see what diagnosis is costing them"
          * (#84), which a single `cost_usd` cannot say: a default-on agent whose
-         * spend is folded into the number beside it is an invisible bill. That
-         * used to need a branch here, because a *run* could be a repair and its
-         * money was diagnosis rather than work — which of the two columns to
-         * write was a fact the row held, in `repair_run_id`, so it was one
-         * statement rather than a read-then-write.
+         * spend is folded into the number beside it is an invisible bill. So a
+         * run that is this item's repair writes into `repair_costs` and leaves
+         * `cost_usd` alone, and the card shows the two apart.
          *
-         * Nothing buys a repair now (`#143`), so no run is one and every run's
-         * cost is the work's. What diagnosis costs is `FixApplied` below, keyed
-         * by the round inside the run that bought it — a narrower fact and the
-         * same column.
+         * Nothing buys a repair since `#143`, so on a new ticket `repair_run_id`
+         * is null and every run's cost is the work's. The branch stays because
+         * an old ticket's second attempt *was* a repair, and a rebuild that
+         * dropped it would quietly move that money into the work's figure while
+         * the task page, which still folds `RepairRequested`, kept it apart.
+         *
+         * One statement rather than a read-then-write, because which of the two
+         * columns to write is a fact the row holds and the projector does not.
          */
         case "RunFinished": {
           const d = event.data as PayloadOf<"RunFinished">;
-          await viaRun(ctx, event.streamId, seq, at, {
-            turns: d.turns,
-            cost_usd: d.costUsd,
-          });
+          await viaRunQuery(
+            ctx,
+            event.streamId,
+            `update task_view
+             set turns = $4::int,
+                 cost_usd = case when repair_run_id = $5 then cost_usd else $6::double precision end,
+                 repair_costs = case when repair_run_id = $5
+                                     then repair_costs || jsonb_build_object($5::text, $6::double precision)
+                                     else repair_costs end,
+                 updated_at = $3,
+                 updated_seq = $2::bigint
+             where task_id = $1 and updated_seq <= $2::bigint`,
+            [seq, at, d.turns, event.streamId, d.costUsd],
+          );
           break;
         }
 
@@ -662,10 +692,13 @@ async function upsert(
            -- run's conflict on a card that is running.
            needs = case when $10::int > 0 then null else task_view.needs end,
            diagnosis = case when $10::int > 0 then null else task_view.diagnosis end,
-           -- A claim used to consume a pending repair here, exactly as the
-           -- fold in work-item.ts did, naming the run so that its spend could
-           -- be counted apart from the work's. Nothing buys a repair (#143),
-           -- so there is nothing to consume and no column to consume it into.
+           -- The claim is what consumes a pending repair: this run *is* the
+           -- repair, and naming it here is what lets its spend be counted apart
+           -- from the work's. Only a retired RepairRequested sets one (#143), so
+           -- on a new ticket both lines leave the row as it was.
+           repair_run_id = case when $10::int > 0 and task_view.repair_pending
+                                then excluded.run_id else task_view.repair_run_id end,
+           repair_pending = case when $10::int > 0 then false else task_view.repair_pending end,
            updated_at = excluded.updated_at,
            updated_seq = excluded.updated_seq
      where task_view.updated_seq < excluded.updated_seq`,
@@ -717,10 +750,12 @@ async function viaRun(
 /**
  * The same lookup, for a write `set` cannot express.
  *
- * One case needs it: `FixApplied` merges a key into `repair_costs`, which is an
- * expression over the column's current value rather than an assignment to it,
- * and reading it back first would be two statements over a value that decides
- * money — the second could see a different row than the first.
+ * Two cases need it. `FixApplied` merges a key into `repair_costs`, and
+ * `RunFinished` chooses between that column and `cost_usd` by the row's own
+ * `repair_run_id`. Both are expressions over the row's current values rather
+ * than assignments, and reading them back first would be two statements over a
+ * value that decides money — the second could see a different row than the
+ * first.
  *
  * `$1` is the task id, `$2` the seq and `$3` the timestamp; the caller's own
  * parameters start at `$4`.
@@ -856,6 +891,14 @@ export interface TaskCard {
    * offer Approve without the sha Approve needs.
    */
   awaitingApproval: boolean;
+  /**
+   * A repair bought and not yet claimed. Exempt from the queue's backoff.
+   *
+   * Only a retired `RepairRequested` sets it (`#143`), so it is false on every
+   * new ticket — and true on one released for a repair before the deploy, which
+   * is owed the exemption its repair was bought with.
+   */
+  repairPending: boolean;
   /**
    * What diagnosis has cost, apart from the work — every round a pass bought to
    * answer a refusal. Null when nothing has been spent on one, which is most
@@ -1035,6 +1078,7 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
         diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
         awaitingSha: row.awaiting_sha,
         awaitingApproval: row.awaiting_sha !== null,
+        repairPending: row.repair_pending === true,
         repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
       };
     });

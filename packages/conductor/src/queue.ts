@@ -109,6 +109,11 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
 /** The bit of a `task_view` row the backoff reads, and nothing more. */
 export interface BackoffInput {
   lastAttemptAt: Date | null;
+  /**
+   * A repair bought and not yet claimed. Only a retired `RepairRequested` sets
+   * it (`#143`), so it is false on every new ticket.
+   */
+  repairPending: boolean;
 }
 
 /**
@@ -120,17 +125,19 @@ export interface BackoffInput {
  * `#95`; the answer is one addition, and it belongs beside the subtraction that
  * uses it rather than in the CLI and again in the board.
  *
- * **Nothing jumps it any more**, and that is `#143`. A repair used to: it was
- * told what went wrong, there was at most one per distinct failure, and the
- * recipe capped how many an item could buy, so it was neither blind nor
- * unbounded and making it wait an hour would have left the thing this is for —
- * an item stuck with no path forward — stuck for an hour longer. A lane refusal
- * buys no run now (0039 §Consequences), so there is no exemption to read and no
- * `repairPending` to read it from. What answers a refusal inside the hour is a
- * round in the pass that was refused, which never releases the item and never
- * reaches this rule; `lingtai now` is what a person uses to jump it.
+ * **A pending repair jumps it, and nothing new can buy one.** A repair was told
+ * what went wrong, there was at most one per distinct failure, and the recipe
+ * capped how many an item could buy, so it was neither blind nor unbounded
+ * (0025 §3). A lane refusal buys no run since `#143`, so the exemption is only
+ * ever read off a log written before it: an item the old code released for a
+ * repair just before the daemon restarted is still owed the run it was
+ * released for, and making it wait an hour would leave it stuck for an hour
+ * longer. What answers a refusal inside the hour now is a round in the pass
+ * that was refused, which never releases the item and never reaches this rule;
+ * `lingtai now` is what a person uses to jump it.
  */
 export function heldUntil(row: BackoffInput, backoffMs: number, now: number = Date.now()): Date | null {
+  if (row.repairPending) return null;
   if (row.lastAttemptAt === null) return null;
   const until = row.lastAttemptAt.getTime() + backoffMs;
   return until > now ? new Date(until) : null;

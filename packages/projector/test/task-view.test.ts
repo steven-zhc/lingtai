@@ -105,6 +105,28 @@ const started = (n: number) => ({
   },
 });
 
+/**
+ * An event this build refuses to append, written the way an older build did.
+ *
+ * `store.append` refuses a retired type, which is right for everything that
+ * writes — and would make it impossible to seed the one thing a rebuild has to
+ * survive: a log from before the type was retired. So the row goes in beneath
+ * the store, with the next version on the stream, and the store reads it back
+ * exactly as it reads a real one.
+ */
+async function appendRetired(streamId: string, version: number, type: string, data: object): Promise<void> {
+  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  await c.connect();
+  try {
+    await c.query(
+      "insert into events (stream_id, version, type, data, actor) values ($1, $2, $3, $4::jsonb, 'conductor')",
+      [streamId, version, type, JSON.stringify(data)],
+    );
+  } finally {
+    await c.end();
+  }
+}
+
 async function seed(): Promise<void> {
   // 1 — queued and nothing else.
   await store.append(wi(1), 0, [discovered(1, "still waiting")]);
@@ -233,6 +255,44 @@ async function seed(): Promise<void> {
       },
     },
   ]);
+
+  // 15 — a ticket from before #143: run-a finished, the lane refused, the old
+  //      code bought a repair, and run-b was that repair. The rebuild has to
+  //      keep the repair's money apart, exactly as the live projection did and
+  //      as the task page's own fold still does.
+  await store.append(wi(15), 0, [discovered(15, "repaired before #143"), claimedWith(attempt(15, "a"))]);
+  await store.append(attempt(15, "a"), 0, [
+    started(15),
+    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
+  ]);
+  await appendRetired(wi(15), 3, "RepairRequested", {
+    runId: attempt(15, "a"),
+    reason: "gate-failed",
+    detail: "policy: exit 1",
+    fingerprint: "0123456789ab",
+    attempt: 1,
+  });
+  await store.append(wi(15), 3, [
+    released(attempt(15, "a"), "repairing gate-failed (attempt 1)"),
+    claimedWith(attempt(15, "b")),
+  ]);
+  await store.append(attempt(15, "b"), 0, [
+    started(15),
+    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
+  ]);
+
+  // 16 — the old code bought a repair and released the item, and then the
+  //      daemon restarted onto #143. Nothing has claimed it, so it is still
+  //      owed the backoff exemption the repair was bought with.
+  await store.append(wi(16), 0, [discovered(16, "released for a repair, then deployed"), claimed(16)]);
+  await appendRetired(wi(16), 3, "RepairRequested", {
+    runId: run(16),
+    reason: "gate-failed",
+    detail: "policy: exit 1",
+    fingerprint: "0123456789ab",
+    attempt: 1,
+  });
+  await store.append(wi(16), 3, [released(run(16), "repairing gate-failed (attempt 1)")]);
 
   // 10 — the branch was repaired and approval re-requested on the new head.
   //      The run produced `sha-10a` and is asking about `sha-10b`, which is
@@ -692,6 +752,16 @@ describe("task_view", () => {
 
     expect(thirteen.costUsd).toBe(2.1);
     expect(thirteen.repairCostUsd).toBe(0.75);
+    // A ticket from before #143 keeps its repair's money apart on a rebuild:
+    // the second attempt *was* a repair, and the task page still says so.
+    const fifteen = card(tasks, 15)!;
+    expect(fifteen.costUsd).toBe(2.1);
+    expect(fifteen.repairCostUsd).toBe(0.75);
+    expect(fifteen.repairPending).toBe(false);
+    // And an item released for one and not yet claimed is still owed the
+    // exemption from the backoff.
+    expect(card(tasks, 16)!.repairPending).toBe(true);
+
     // And a card that never bought a round says nothing rather than zero:
     // nothing bought and something bought for free are different facts.
     expect(card(tasks, 2)!.repairCostUsd).toBeNull();

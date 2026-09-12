@@ -97,7 +97,7 @@
  * intention.
  */
 import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/recipe";
-import { type Tier, parsePayload } from "@lingtai/domain";
+import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
   type GateFinding,
   type PipelineResult,
@@ -440,13 +440,28 @@ export function runOnce(
      * does not have, which is exactly the shape `renderPrompt` refuses for
      * `{{failure}}`.
      *
-     * It used to have a `repairOf` beside it, read here for the same reason: a
-     * failure that bought an agent left a pending repair on the item and the
-     * next claim *became* it. Nothing buys one since `#143`, so every claim is
-     * an ordinary pass and the only thing consumed here is the sentence.
+     * It has a `repairOf` beside it, read here for the same reason: a failure
+     * that bought an agent left a pending repair on the item and the next claim
+     * *became* it. Nothing buys one since `#143`, so on a new ticket `repairOf`
+     * is null and every claim is an ordinary pass.
      */
     const edit = item.pendingPrompt;
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`);
+    /**
+     * A repair the old code bought, released, and never claimed — **only on a
+     * log written before `#143`**, which is exactly the item a daemon restarted
+     * onto this code finds in its queue.
+     *
+     * Honoured rather than dropped. It was bought already, so honouring it
+     * spends nothing new; dropping it makes this claim an ordinary pass that is
+     * told nothing about the failure and merges unattended, where the repair it
+     * was released for would have asked a person (0025). So it is briefed
+     * (`nextPrompt`) and it holds at `merge` below, as it always did.
+     */
+    const repairOf = retiredRepairPending(before);
+    if (repairOf) {
+      log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt}), bought before #143`);
+    }
 
     /**
      * What the earlier attempts did, for this one's prompt.
@@ -1710,7 +1725,7 @@ export function runOnce(
          */
         const headSha = head;
 
-        if (atMerge.heldAt !== null || options.merge === false) break;
+        if (atMerge.heldAt !== null || options.merge === false || repairOf !== null) break;
 
         // ---- the merge lane -------------------------------------------------
         // Only one of the two can have refused — `merge` runs only when
@@ -1859,7 +1874,9 @@ export function runOnce(
             ? `the ${pipeline.heldAt} action`
             : atMerge.heldAt !== null
               ? `the ${atMerge.heldAt} action`
-              : null;
+              : repairOf !== null
+                ? "a repair"
+                : null;
         const folded = reduceWorkItem(yield* Effect.promise(() => store.read(workItemId)));
         // Newest first, which is the order they are read in. The fold keeps them
         // oldest first because that is the order they happened.
@@ -1975,11 +1992,12 @@ export function runOnce(
       // waiver is for — and pre-empting it would make the flag mean something
       // different on a red run than on a green one.
       //
-      // **A repair used to always ask**, because the run whose approval had been
-      // consumed was still `gating` and nothing re-offered the decision, so a
-      // repair that left an item unapprovable had not repaired it. Nothing buys
-      // one since `#143`; what a refused merge leaves is a block a person can
-      // answer, which is the same requirement met without a second run.
+      // **And a repair always asks.** The run whose approval had been consumed
+      // was still `gating` and nothing re-offered the decision, so a repair that
+      // left an item unapprovable had not repaired it. Nothing buys one since
+      // `#143` — what a refused merge leaves is a block a person can answer —
+      // but a repair bought before it and claimed after is still one, and still
+      // asks rather than merging unattended.
       //
       // **And a point that spent its rounds asks, rather than going to the merge
       // lane** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
@@ -2010,6 +2028,7 @@ export function runOnce(
         pipeline.heldAt !== null ||
         atMerge.heldAt !== null ||
         options.merge === false ||
+        repairOf !== null ||
         unresolved !== null
       ) {
         // `heldAt` is an *action* name; the point is the pipeline it came from.
@@ -2036,7 +2055,7 @@ export function runOnce(
           pipeline.heldAt ??
           atMerge.heldAt ??
           (unresolved ? (unresolved.on === "findings" ? "disagreement" : "unfixed") : null) ??
-          "no-merge";
+          (repairOf ? "repair" : "no-merge");
 
         if (pipeline.heldAt === null && atMerge.heldAt === null) {
           yield* appendAtEnd(runId, [
@@ -2051,6 +2070,10 @@ export function runOnce(
                 // Either point's refusal, since the flag asks on a red run
                 // too and the question has to say which colour it is.
                 question:
+                  // A repair bought before `#143` says what it was repairing,
+                  // because the diff answers a failure and "approve this"
+                  // without naming it is half a question.
+                  (repairOf ? `A repair for ${repairOf.reason}. ` : "") +
                   // How many approaches this is, when it is more than one. A
                   // person deciding whether to merge over a live finding wants
                   // to know whether the ticket has been attempted from scratch
@@ -2079,7 +2102,9 @@ export function runOnce(
           ? unresolved.on === "findings"
             ? disagreementQuestion({ ...unresolved, branch, base, restarts: arms.length })
             : unfixedQuestion({ ...unresolved, branch, base, restarts: arms.length })
-          : `held at the ${gate} gate: ${branch} into ${base}`;
+          : repairOf
+            ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
+            : `held at the ${gate} gate: ${branch} into ${base}`;
         /**
          * The hold, as something a person can act on rather than only read.
          *
@@ -2134,11 +2159,12 @@ export function runOnce(
                 (green
                   ? `every gate passed. The ${gate} point holds for ${action}.`
                   : `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`),
-              // Nothing was *done* about it. A hold at a gate point is a
-              // question about a diff and not a failure anything answered — a
-              // repair used to put a sentence here saying which failure it had
-              // been bought for, and nothing buys one now (`#143`).
-              done: null,
+              // What was done about it, when something was: a repair bought
+              // before `#143` spent an agent and this diff is what it produced.
+              // An ordinary hold had no failure to do anything about.
+              done: repairOf
+                ? `a repair for ${repairOf.reason} ran as ${runId} and produced this diff`
+                : null,
               // No raw output: nothing failed here that a git message describes.
               // The gate verdicts are on the task's own page with their evidence.
               raw: null,
@@ -2219,10 +2245,16 @@ export function runOnce(
          * 0025 asked `decideRepair` here whether the failure bought a whole new
          * run. What is left reaching this line does not deserve one and two of
          * them never did. A `conflict` is answered in this pass's own worktree
-         * and never arrives (`#142`). A `gate-failed` only arrives from a
-         * refusal `decideFix` declined to buy for, because it carried no
-         * criterion — so buying a *run* for exactly what a *round* is refused
-         * for was the same decision made twice with opposite answers. And a
+         * and never arrives (`#142`). A `gate-failed` arrives two ways, and
+         * neither is a reason to buy a run. From `proposed`, it is a refusal
+         * `decideFix` declined to buy for, because it carried no criterion — so
+         * buying a *run* for exactly what a *round* is refused for was the same
+         * decision made twice with opposite answers. From a `merge:` gate it
+         * never met `decideFix` at all: the merge point runs after the round
+         * loop, `integrate()` takes its verdict as `gatesPassed: false`, and it
+         * comes here with no `FixRequested` or `FixDeclined` on the log — so
+         * this block, with its diagnosis, is the whole of what that path gets,
+         * and nothing upstream has already answered it. And a
          * `no-commits` means the branch holds nothing, which a new run starting
          * from scratch answers by definition and expensively.
          *

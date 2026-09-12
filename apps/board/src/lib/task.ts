@@ -211,10 +211,10 @@ export interface RunView {
    *
    * **Never true of an attempt started after `#143`**, and still read for ever.
    * A refusal buys no run now, so nothing appends `RepairRequested` and
-   * `work-item.ts` and `task-view.ts` have dropped the folds this mirrored. This
-   * one stays because a log that holds the event holds a second attempt that
-   * *was* a repair, and reading it as ordinary work would move real money into
-   * the wrong figure.
+   * `work-item.ts` has dropped the fold this mirrored; `task-view.ts` keeps its
+   * own for the same reason this one stays: a log that holds the event holds a
+   * second attempt that *was* a repair, and reading it as ordinary work would
+   * move real money into the wrong figure.
    */
   repair: boolean;
   baseSha: string | null;

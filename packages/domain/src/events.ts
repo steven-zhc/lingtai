@@ -507,9 +507,11 @@ export const IntegrationSucceeded = z.object({
  * is what a refusal buys now.
  *
  * `#142` had already taken the conflict, which was the whole of what this was
- * for. What was left reaching it was a `gate-failed` carrying no criterion —
- * the one refusal `decideFix` declines to buy for, so buying a whole *run* for
- * it was the same decision made twice with opposite answers — and a
+ * for. What was left reaching it was a `gate-failed` — either a `proposed`
+ * refusal carrying no criterion, the one `decideFix` declines to buy for, so
+ * buying a whole *run* for it was the same decision made twice with opposite
+ * answers, or a `merge:` gate, which runs after the round loop and reaches the
+ * lane without `decideFix` ever being asked — and a
  * `no-commits`, which is a branch holding nothing the base does not, and a new
  * run from scratch is 0039's expensive wrong answer stated as a definition.
  * Both now block for a person carrying `diagnoseRefusal`'s reading of them.

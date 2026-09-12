@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyWorkItem, reduceWorkItem } from "../src/index.ts";
+import { emptyWorkItem, reduceWorkItem, retiredRepairPending } from "../src/index.ts";
 import { makeStream, unknownEvent } from "./support.ts";
 
 const discovered = {
@@ -246,6 +246,40 @@ describe("reduceWorkItem", () => {
     expect(withIt.runs).toEqual(without.runs);
     // One event more, so one version more — and nothing else moved.
     expect(withIt.version).toBe(without.version + 1);
+  });
+
+  /**
+   * The one question an old stream is still asked: is a repair the old code
+   * bought waiting for a claim? That is the item a daemon restarted onto
+   * `#143` finds in its queue, and it is owed the run it was released for —
+   * so the answer is there until the next claim, and gone after it.
+   */
+  it("reports a retired repair as pending until the next claim consumes it", () => {
+    const e = makeStream("wi-p-3");
+    const bought = {
+      runId: "run-a",
+      reason: "gate-failed" as const,
+      detail: "policy: exit 1",
+      fingerprint: "0123456789ab",
+      attempt: 1,
+    };
+    const released = [
+      e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
+      e("RepairRequested", bought),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing gate-failed (attempt 1)" }),
+    ];
+    expect(retiredRepairPending(released)).toEqual({
+      after: "run-a",
+      reason: "gate-failed",
+      detail: "policy: exit 1",
+      attempt: 1,
+    });
+    expect(
+      retiredRepairPending([
+        ...released,
+        e("WorkItemClaimed", { runId: "run-b", worker: "w", title: null, kind: null }),
+      ]),
+    ).toBeNull();
   });
 
   /**

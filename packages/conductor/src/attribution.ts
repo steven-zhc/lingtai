@@ -50,8 +50,10 @@ import type {
  * Three values, not two, because there are three things a refusal can be:
  *
  *   `repository`  a defect in the managed repository. A red build, failing
- *                 tests, a branch that does not merge. The pass it happened in
- *                 could act on it, and — up to `runtime.limits.rounds` — did.
+ *                 tests, a branch that does not merge. Something with a
+ *                 worktree could act on it — but by the time one reaches this
+ *                 file it has reached the merge lane or an approval, where no
+ *                 round runs.
  *   `lingtai`     Lingtai's own. No GitHub App, a recipe that will not parse, a
  *                 required env value missing, no hook binary, an unreachable
  *                 database. Nothing in the repository is broken, so nothing a
@@ -255,16 +257,19 @@ const REFUSAL_READING: Record<
  *
  * Said out loud on every card, including the `repository` one where the reason
  * is least obvious: the branch is the repository's and a person may well ask
- * why it did not get another agent. Because the pass it happened in already
- * had one, and a second worktree cut from scratch is the expensive wrong answer
- * to a branch that already exists.
+ * why it did not get another agent. Because a refusal reaches this sentence
+ * only from the merge lane or from `approve()`, and **neither is a place a
+ * round runs** — a `merge:` gate goes from `integrate()` straight to a block,
+ * and an approval that meets a moved base has no pass at all. So the sentence
+ * must not point at `runtime.limits.rounds`: raising it buys nothing here, and
+ * a card that implied otherwise would send an operator to change a key that
+ * the next identical refusal still ignores.
  */
 const OWNER_SAYS: Record<FailureOwner, string> = {
   repository:
-    "No agent was bought: a refusal is answered inside the pass it happened in, up to " +
-    "runtime.limits.rounds, and this one is past that or carried nothing to hold an " +
-    "agent to. Re-implementing a branch that already exists is the expensive wrong " +
-    "answer (0039)",
+    "No agent was bought: a refusal at the merge lane or at approval buys none, and " +
+    "no fix round runs there, so no recipe key would have changed this. Re-implementing " +
+    "a branch that already exists is the expensive wrong answer (0039)",
   lingtai:
     "No agent was bought: this is Lingtai's own failure, not the repository's — an " +
     "agent has no access to the thing that is broken and nothing it could change",

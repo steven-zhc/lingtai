@@ -190,15 +190,15 @@ describe("the backoff, folded from the item's own stream", () => {
   });
 
   /**
-   * **Nothing jumps it, and a retired `RepairRequested` least of all** (`#143`).
+   * **A repair the old code bought jumps it, until a claim consumes it** (0028,
+   * `#143`).
    *
-   * A repair used to (0028): the guard is against *blind* retries, and a repair
-   * was told what went wrong and capped by the recipe. A lane refusal buys no
-   * run now, so the event is retired — and a log that still holds one must not
-   * quietly exempt an old ticket from the backoff for ever, which is what
-   * folding it would do.
+   * The guard is against *blind* retries, and a repair was told what went wrong
+   * and capped by the recipe. Nothing buys one since `#143` — but an item the
+   * old code released for a repair just before a deploy is still owed it, and
+   * holding it for an hour would leave it stuck for an hour longer.
    */
-  it("holds an item whose log still carries a retired repair request", () => {
+  it("does not hold an item a retired repair request is still pending on", () => {
     const own = [
       e("wi-lingtai-89", "WorkItemClaimed", { runId: "run-1" }, "2026-09-09T03:45:00Z"),
       e("wi-lingtai-89", "RepairRequested", {
@@ -207,6 +207,24 @@ describe("the backoff, folded from the item's own stream", () => {
         reason: "conflict",
         after: "run-1",
       }, "2026-09-09T03:50:00Z"),
+    ];
+    expect(backoffOf(own, HOUR, now)).toBeNull();
+  });
+
+  /**
+   * And only until then. The claim is the repair, so a log that still holds the
+   * event does not exempt an old ticket from the backoff for ever.
+   */
+  it("holds an item once the claim has consumed the retired repair", () => {
+    const own = [
+      e("wi-lingtai-89", "WorkItemClaimed", { runId: "run-1" }, "2026-09-09T03:30:00Z"),
+      e("wi-lingtai-89", "RepairRequested", {
+        runId: "run-1",
+        attempt: 1,
+        reason: "conflict",
+        after: "run-1",
+      }, "2026-09-09T03:40:00Z"),
+      e("wi-lingtai-89", "WorkItemClaimed", { runId: "run-2" }, "2026-09-09T03:45:00Z"),
     ];
     expect(backoffOf(own, HOUR, now)?.toISOString()).toBe("2026-09-09T04:45:00.000Z");
   });

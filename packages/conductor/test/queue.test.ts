@@ -205,34 +205,28 @@ describe("heldUntil", () => {
   const now = at.getTime() + 10 * 60_000;
 
   it("says when the window ends, while it is still open", () => {
-    const until = heldUntil({ lastAttemptAt: at }, HOUR, now);
+    const until = heldUntil({ lastAttemptAt: at, repairPending: false }, HOUR, now);
     expect(until?.toISOString()).toBe("2026-09-08T13:00:00.000Z");
   });
 
   it("holds nothing once the window has passed", () => {
-    expect(heldUntil({ lastAttemptAt: at }, 5 * 60_000, now)).toBeNull();
+    expect(heldUntil({ lastAttemptAt: at, repairPending: false }, 5 * 60_000, now)).toBeNull();
   });
 
   it("holds nothing that has never been attempted", () => {
-    expect(heldUntil({ lastAttemptAt: null }, HOUR, now)).toBeNull();
+    expect(heldUntil({ lastAttemptAt: null, repairPending: false }, HOUR, now)).toBeNull();
   });
 
   /**
-   * **Nothing jumps it, and the exemption that used to is the point of the
-   * assertion** (`#143`).
+   * A pending repair jumps the backoff, and only a repair (0025 §3, 0028).
    *
-   * A pending repair jumped the backoff (0025 §3, 0028): it was told what went
-   * wrong and the recipe capped how many an item could buy, so it was neither
-   * blind nor unbounded, and making it wait would have left the item it existed
-   * for stuck an hour longer. A lane refusal buys no run now, so `BackoffInput`
-   * has one field and an attempt inside the window is held whatever else the
-   * log says about it — which is what makes `lingtai now` the only thing that
-   * jumps the guard.
+   * Nothing buys one since `#143`, so the only row that carries one is an item
+   * the old code released for a repair before a deploy — which is still owed
+   * the run it was released for, and making it wait an hour would leave it
+   * stuck an hour longer.
    */
-  it("holds an attempt inside the window whatever else happened", () => {
-    expect(heldUntil({ lastAttemptAt: at }, HOUR, now)?.toISOString()).toBe(
-      "2026-09-08T13:00:00.000Z",
-    );
+  it("holds nothing with a repair pending", () => {
+    expect(heldUntil({ lastAttemptAt: at, repairPending: true }, HOUR, now)).toBeNull();
   });
 });
 

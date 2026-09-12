@@ -49,6 +49,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     blocked: false,
     needs: null,
     diagnosis: null,
+    repairPending: false,
     repairCostUsd: null,
     ...over,
   };

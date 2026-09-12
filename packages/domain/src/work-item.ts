@@ -310,3 +310,31 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
 export function reduceWorkItem(events: readonly Envelope[]): WorkItemState {
   return events.reduce(applyWorkItem, emptyWorkItem);
 }
+
+/**
+ * A repair the old code bought and no claim has consumed yet — **read off a log
+ * written before `#143`**, and never produced by this build.
+ *
+ * Deliberately not a field of `WorkItemState`. The fold treats the retired
+ * `RepairRequested` as a version bump, so nothing new can depend on it; this is
+ * the one question that still has to be asked of an old stream, and only at the
+ * seam a deploy crosses: the old code appended the request and released the
+ * item, and the new code is what claims it. Without this that claim is an
+ * ordinary pass — backed off, told nothing it was bought to be told, and free
+ * to merge unattended where the repair it was released for would have asked.
+ *
+ * The last `RepairRequested` after the last `WorkItemClaimed`, or null.
+ */
+export function retiredRepairPending(
+  events: readonly Envelope[],
+): { after: string; reason: string; detail: string; attempt: number } | null {
+  let pending: { after: string; reason: string; detail: string; attempt: number } | null = null;
+  for (const event of events) {
+    if (event.type === "WorkItemClaimed") pending = null;
+    if (event.type === "RepairRequested") {
+      const d = event.data as PayloadOf<"RepairRequested">;
+      pending = { after: d.runId, reason: d.reason, detail: d.detail, attempt: d.attempt };
+    }
+  }
+  return pending;
+}

@@ -292,8 +292,8 @@ built the section above so the next one has somewhere to land.
 | where it is decided | the recipe, `source.backoff`. There is no constant and no override |
 | default | `1h`, **flat** — the wait does not grow with attempts |
 | measured from | `task_view.last_attempt_at`, written by the claim, so it outlives the release |
-| what jumps it | `lingtai now`, which is not a *blind* retry — the only thing this guards against. A pending repair used to (0025 §3); nothing buys one since `#143`, so `BackoffInput` has one field |
-| what does not jump it | an ordinary release, however the run ended — and a log that still carries a retired `RepairRequested` |
+| what jumps it | `lingtai now`, and a pending repair (0025 §3) — neither is a *blind* retry, which is the only thing this guards against. Nothing buys a repair since `#143`, so the only pending one is an item the old code released for a repair before the deploy, and the next claim consumes it |
+| what does not jump it | an ordinary release, however the run ended — and a retired `RepairRequested` a claim has already consumed |
 | where a person sees it | `[backing off — runnable in 12m]` in `lingtai status`, a `runnable in 12m` pill on a Queued card, and the `retries` line wherever a project is described |
 
 Zero is not a shorter backoff, so the schema refuses anything that is not a

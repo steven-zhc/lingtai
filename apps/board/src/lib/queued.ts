@@ -29,7 +29,7 @@
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { GATE_POINTS, type Envelope } from "@lingtai/domain";
+import { GATE_POINTS, retiredRepairPending, type Envelope } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
@@ -176,12 +176,14 @@ export function planOf(
 /**
  * When the backoff stops holding this item, from its own stream.
  *
- * The one input `heldUntil` reads, folded here rather than read back off
+ * The two inputs `heldUntil` reads, folded here rather than read back off
  * `task_view`: the projection writes `last_attempt_at` from the claim's own
- * timestamp, so this fold and that row cannot disagree. It used to be two —
- * a pending repair jumped the backoff, and `#143` removed both the exemption
- * and the thing that set it. The *rule* is still imported: this supplies its
- * arguments and nothing else, which is the split every fold in `task.ts` makes.
+ * timestamp and clears `repair_pending` on the same event, so this fold and
+ * that row cannot disagree. A pending repair is only ever one a log written
+ * before `#143` holds, and it is read here for the reason the projection still
+ * reads it: an item released for one is owed the exemption it was bought with.
+ * The *rule* is still imported — this supplies its arguments and nothing else,
+ * which is the split every fold in `task.ts` makes.
  */
 export function backoffOf(
   own: readonly Envelope[],
@@ -190,7 +192,11 @@ export function backoffOf(
 ): Date | null {
   let lastAttemptAt: Date | null = null;
   for (const e of own) if (e.type === "WorkItemClaimed") lastAttemptAt = e.at;
-  return heldUntil({ lastAttemptAt }, backoffMs, now);
+  return heldUntil(
+    { lastAttemptAt, repairPending: retiredRepairPending(own) !== null },
+    backoffMs,
+    now,
+  );
 }
 
 function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {

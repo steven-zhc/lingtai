@@ -194,9 +194,23 @@ describe("a refusal, read for a person", () => {
    * *never left with no path forward* failing for the opposite reason.
    */
   it("says why no agent is coming in the owner's own terms", () => {
-    expect(read("gate-failed").done).toContain("inside the pass it happened in");
+    expect(read("gate-failed").done).toContain("at the merge lane or at approval");
     expect(read("dirty-base").done).toContain("Lingtai's own failure");
     expect(read("pending-migration").done).toContain("yours to answer");
+  });
+
+  /**
+   * **A refusal that reaches a person reached no round**, and the sentence must
+   * not say otherwise. A `merge:` gate goes from `integrate()` straight to a
+   * block and an approval that conflicts has no pass at all, so a card naming
+   * `runtime.limits.rounds` sends an operator to raise a key the next identical
+   * refusal still ignores.
+   */
+  it("never tells a person that raising the rounds would have helped", () => {
+    for (const reason of REASONS) {
+      expect(read(reason).done, reason).not.toContain("runtime.limits.rounds");
+      expect(read(reason).done, reason).not.toContain("inside the pass");
+    }
   });
 
   it("recommends the queue for a conflict, and says the remedy is spent", () => {

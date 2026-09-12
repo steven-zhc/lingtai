@@ -22,7 +22,7 @@
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
  */
-import { reduceWorkItem, type Envelope } from "@lingtai/domain";
+import { reduceWorkItem, retiredRepairPending, type Envelope } from "@lingtai/domain";
 import {
   attemptBrief,
   attemptOutcome,
@@ -110,11 +110,15 @@ export function nextPrompt(input: {
   // different kind of thing from what the earlier ones did. Neither stands in
   // for the other, which is why they are joined rather than merged.
   //
-  // There was a third — the refusal that bought a repair, printed verbatim,
-  // which the history deferred to so the same output did not appear twice. A
-  // refusal buys no run now (`#143`), so `attemptBrief` is the only thing that
-  // quotes one and the bound it keeps is no longer undone by composition.
-  const history = attemptBrief(attempts, input.budget);
+  // **A third, only on a log written before `#143`.** A refusal buys no run
+  // now, but an item the old code released for a repair is still owed the
+  // brief it was released for: this claim *is* that repair, and without it the
+  // run would be an ordinary pass that was never told to commit a fix. The
+  // history defers to it for the refusal it quotes, so the output does not
+  // appear twice.
+  const repair = retiredRepairPending(input.item);
+  if (previous && repair?.after === previous.runId) previous.refusal = null;
+  const history = join([attemptBrief(attempts, input.budget), repair ? repairBrief(repair) : ""]);
   const failure = join([history, humanBrief(edit)]);
 
   return {
@@ -127,6 +131,37 @@ export function nextPrompt(input: {
     edit,
     composed: { failure: history, version: promptVersionFor(input.base, history) },
   };
+}
+
+/**
+ * What a repair the old code bought is told, as the old code told it.
+ *
+ * Only ever reached from `retiredRepairPending`, so only on an item released
+ * for a repair before `#143` and claimed after it. Says three things and stops:
+ * what failed, verbatim; that the mechanical remedy is already spent; and that
+ * the answer is a commit rather than advice, because what a person is asked to
+ * approve is a diff.
+ */
+function repairBrief(record: { reason: string; detail: string; attempt: number }): string {
+  return [
+    "## The last attempt failed, and this one is the repair",
+    "",
+    `Lingtai could not land the previous run's branch. This is repair attempt ${record.attempt};`,
+    "the mechanical remedy has already been tried and did not work — for a conflict",
+    "that means the integrator merged the base branch in, and it still would not merge.",
+    "",
+    `The refusal was **${record.reason}**, verbatim:`,
+    "",
+    "```",
+    record.detail.trim(),
+    "```",
+    "",
+    "Fix it and **commit**. A recommendation is not enough: what a person is asked to",
+    "approve is a diff, so an attempt that ends with advice and no commit produces",
+    "nothing they can act on. If it cannot be fixed from here, say so plainly in your",
+    "final message and do not commit something you have not verified — the item is",
+    "handed back with your reason rather than merged.",
+  ].join("\n");
 }
 
 /** The blocks that said something, in order, one blank line apart. */
