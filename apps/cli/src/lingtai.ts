@@ -407,14 +407,20 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     console.log(
       paint.muted(
         timeoutMs === null
-          // **A pass is no longer one agent.** It was the agent, the gates and
-          // the merge lane, bounded by one `runtime.limits.wall`. A refused
-          // review now buys up to `repair.fix` more agent runs inside the same
-          // pass, and each is given a fresh wall — so the sentence that told an
-          // operator how long to wait became one that understates it by a
-          // multiple. Said as a multiple rather than a number, because the
-          // recipe that decides it is the project's and this line is not.
-          ? `a pass is the agents, the gates and the merge lane — a refused review can buy more agent runs, each with its own ${WALL_LIMIT}, so this can take several times that. It is waiting, not hung.`
+          // **A pass is no longer one agent**, and this sentence has now been
+          // wrong twice for the same reason. It first said one
+          // `runtime.limits.wall`, which the fix loop made an understatement.
+          // It was then rewritten as *each with its own <wall>, so several
+          // times that* — a multiple, to avoid naming a number this line cannot
+          // know. `#141` then made `WALL_LIMIT` a whole sentence rather than a
+          // phrase, and the two collided into "each with its own the recipe's
+          // runtime.limits — by default, up to 3 agent runs".
+          //
+          // It says the product now, because `passCeiling` computes one and
+          // there is no longer anything to approximate: the multiple *is* the
+          // number, and asking the reader to multiply was only ever the cost of
+          // not having it.
+          ? `a pass is the agents, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
           : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
       ),
     );
