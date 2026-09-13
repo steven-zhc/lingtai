@@ -91,10 +91,15 @@ only when it is a *different* one — which happens on a block with no diagnosis
 because `decidingOf` searches back through earlier attempts when the named one
 refused nothing, and an earlier attempt's refusal is unreadable without the
 attempt attached to it. **A diagnosis answers rank 2 or nothing does**: `raw` is
-written beside `what` and is about this hold, so null there means nothing
-refused, and the honest rendering of that is no rank — never a line found by
-searching backwards, printed under *every gate passed* as though it were the
-cause.
+written beside `what` and is about this hold — but `raw` being null does **not**
+mean nothing refused. `diagnoseUnfixed` writes null for a command that printed
+nothing, `diagnoseDisagreement` for a reviewer that recorded no findings, and
+every gate hold written before `#132` carries null. So whether anything refused
+is read off the named attempt's failed verdicts: where one stands, rank 2 states
+that refusal — its own deciding line, or the absence in words — and never
+renders blank; only where none does (every gate passed, or a gate asked for a
+person) is the honest rendering no rank. Never a line found by searching
+backwards, printed under *every gate passed* as though it were the cause.
 
 ### 3. The verdict has two renderings, and degrades
 

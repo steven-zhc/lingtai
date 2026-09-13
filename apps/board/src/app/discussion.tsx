@@ -127,10 +127,25 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
  * Both look the same to a follower, and only the first has an answer behind it,
  * so the sentence claims neither — and the follower asks again (`asksAgain`), so
  * a second daemon's trace replaces this one as soon as it is opened.
+ *
+ * **And an open trace is not said to be work unless a daemon is beating.** A
+ * daemon killed mid-answer leaves its file, and nothing removes it while the
+ * item is blocked: a follower opens it, reports `reading`, and tails a file
+ * nobody writes. The file cannot tell the two apart, so the beacon does —
+ * `daemonUp` is read when the page renders, and false means what is on screen
+ * is what a daemon wrote before it stopped. Null, when the beacon could not be
+ * read, keeps the ordinary sentence rather than accusing a daemon that may be
+ * running.
  */
-export function traceSays(state: TailState, lines: number): string {
+export function traceSays(state: TailState, lines: number, daemonUp: boolean | null = null): string {
   switch (state) {
     case "reading":
+      if (daemonUp === false) {
+        return (
+          "no daemon is running, so nothing is answering this now · what is here is what one wrote " +
+          "before it stopped. The question is answered when a daemon starts, and asking again would buy a second one"
+        );
+      }
       return lines === 0
         ? "the daemon has started on this — nothing written yet"
         : `answering · ${lines} line${lines === 1 ? "" : "s"} so far`;
@@ -170,9 +185,12 @@ export function traceSays(state: TailState, lines: number): string {
 export function Trace({
   lines,
   state,
+  daemonUp = null,
 }: {
   lines: readonly string[];
   state: TailState;
+  /** Whether a daemon was beating when the page rendered. See `traceSays`. */
+  daemonUp?: boolean | null;
 }) {
   const tail = useRef<HTMLDivElement | null>(null);
 
@@ -186,7 +204,7 @@ export function Trace({
   return (
     <>
       <p className="chatwait" data-trace={state}>
-        {traceSays(state, lines.length)}
+        {traceSays(state, lines.length, daemonUp)}
       </p>
       {lines.length > 0 ? (
         <div className="chattrace" ref={tail}>
@@ -226,20 +244,23 @@ export function Trace({
  * question asked with no daemon running is still going to be answered
  * (`againAfter`).
  */
-function Thinking({ chatId }: { chatId: string }) {
+function Thinking({ chatId, daemonUp }: { chatId: string; daemonUp: boolean | null }) {
   const { lines, state } = useLogTail(chatId, true, true);
-  return <Trace lines={lines} state={state} />;
+  return <Trace lines={lines} state={state} daemonUp={daemonUp} />;
 }
 
 export function Discussion({
   taskId,
   attempt,
   discussions,
+  daemonUp = null,
 }: {
   taskId: string;
   /** The attempt a new question is about — the newest one, or null. */
   attempt: number | null;
   discussions: DiscussionView[];
+  /** Whether a daemon was beating when the page rendered. See `traceSays`. */
+  daemonUp?: boolean | null;
 }) {
   const [question, setQuestion] = useState("");
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -264,9 +285,11 @@ export function Discussion({
    * off: which chats, how many turns each, which of them are answered, and
    * whether a chat has been concluded.
    *
-   * The live trace inside a turn is not in here and must not be: it has its own
-   * bounded scroller (`.chattrace`) and pins itself, so a line arriving there
-   * scrolls that pane and never this one.
+   * The live trace inside a turn is not in here: it is client state this fold
+   * never sees, and it has its own bounded scroller (`.chattrace`) that pins
+   * itself. What it *does* change is this pane's height — a trace box mounting
+   * under an unanswered turn grows the turn by up to 9rem — and that is the
+   * observer below.
    */
   const shown = discussions
     .map(
@@ -274,8 +297,25 @@ export function Discussion({
         `${d.chatId}:${d.turns.length}:${d.turns.filter((t) => t.answer !== null).length}:${d.held ?? ""}`,
     )
     .join("|");
+  /** Whether the reader is at the end, so growth follows them and never pulls them back. */
+  const atEnd = useRef(true);
   useEffect(() => {
-    conversation.current?.scrollTo({ top: conversation.current.scrollHeight });
+    const pane = conversation.current;
+    if (!pane) return;
+    pane.scrollTo({ top: pane.scrollHeight });
+    atEnd.current = true;
+
+    // **Growth the key cannot see** (#132): the trace mounting under a turn, and
+    // its box growing to its bound. Watched on the chats themselves, because a
+    // scroller's own box does not change size when its content does. Only while
+    // the reader is at the end — somebody who scrolled up to reread is left
+    // where they are.
+    if (typeof ResizeObserver === "undefined") return;
+    const follow = new ResizeObserver(() => {
+      if (atEnd.current) pane.scrollTo({ top: pane.scrollHeight });
+    });
+    for (const child of Array.from(pane.children)) follow.observe(child);
+    return () => follow.disconnect();
   }, [shown]);
 
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
@@ -306,7 +346,15 @@ export function Discussion({
       {/* The conversation, in its own scroller. The box has one height and this
           is the part of it that grows, so a long exchange scrolls here instead
           of moving the input box under it and the moves under that (#132). */}
-      <div className="chatscroll" ref={conversation}>
+      <div
+        className="chatscroll"
+        ref={conversation}
+        onScroll={(event) => {
+          const pane = event.currentTarget;
+          // A pixel of slack: fractional scroll positions never reach exactly.
+          atEnd.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight <= 1;
+        }}
+      >
       {discussions.map((d) => (
         <div key={d.chatId} className={d.held === null ? "chatlog" : "chatlog done"}>
           {d.turns.map((t) => (
@@ -329,7 +377,7 @@ export function Discussion({
               ) : null}
 
               {t.answer === null ? (
-                <Thinking chatId={d.chatId} />
+                <Thinking chatId={d.chatId} daemonUp={daemonUp} />
               ) : (
                 <>
                   {t.answer.failure ? (

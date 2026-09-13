@@ -406,12 +406,28 @@ export interface StandingView {
 }
 
 /**
- * Whether `raw` quotes this evidence. A gate that printed nothing is quoted only
+ * Whether `raw` quotes this verdict. A gate that printed nothing is quoted only
  * by a quote that is also empty — an empty string is in every string, and a
  * conflict is not a silent build.
+ *
+ * **A reviewer is quoted by its findings, not its evidence.** A disagreement
+ * hold's `raw` is `quoteFindings` — `[major] src/x.ts:4 — claim` and the
+ * scenario — while the review gate's evidence is its own summary, `major
+ * src/x.ts:4 — claim` and a turns line, which is in no quote. Matched on the
+ * evidence alone, the most common gate hold there is never named the gate it
+ * quoted. So a verdict with findings is quoted when every finding's head line,
+ * as `quoteFindings` (`packages/conductor/src/fix.ts`) writes it, is in `raw`.
  */
-function quotes(raw: string, evidence: string | null): boolean {
-  const said = (evidence ?? "").trim();
+function quotes(raw: string, verdict: GateVerdict): boolean {
+  if (
+    verdict.findings.length > 0 &&
+    verdict.findings.every((f) =>
+      raw.includes(`[${f.severity}] ${f.line === null ? f.file : `${f.file}:${f.line}`} — ${f.claim}`),
+    )
+  ) {
+    return true;
+  }
+  const said = (verdict.evidence ?? "").trim();
   return said === "" ? raw.trim() === "" : raw.includes(said);
 }
 
@@ -558,7 +574,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     saidBy:
       raw === null
         ? null
-        : ([...(run?.gates ?? [])].reverse().find((g) => g.state === "failed" && quotes(raw, g.evidence))
+        : ([...(run?.gates ?? [])].reverse().find((g) => g.state === "failed" && quotes(raw, g))
             ?.gate ?? null),
     deciding: decidingOf(runs, run),
   };

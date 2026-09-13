@@ -505,6 +505,67 @@ describe("the block, rendered", () => {
   });
 
   /**
+   * The disagreement hold, which is the commonest gate hold there is. Its `raw`
+   * is `quoteFindings` — a bracketed severity and the scenario — and the review
+   * gate's evidence is its own summary with a turns line, so the evidence is in
+   * no quote and the gate has to be recognised by its findings.
+   */
+  it("names the reviewer whose findings a disagreement quotes", () => {
+    const finding = {
+      severity: "major",
+      file: "src/x.ts",
+      line: 4,
+      claim: "claim",
+      failureScenario: "scenario",
+    };
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: "two agents disagreed",
+          needsFrom: "human",
+          runId: RUN_2,
+          needs: "judgement",
+          diagnosis: {
+            what: "Two agents disagreed.",
+            done: null,
+            // `quoteFindings([finding])`, verbatim.
+            raw: "[major] src/x.ts:4 — claim\n\nscenario",
+            recommendation: null,
+          },
+        }),
+      ],
+      [
+        foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
+          e(RUN_2, "RunStarted", { baseSha: SHA }),
+          e(RUN_2, "GateFailed", {
+            gate: "proposed",
+            action: "review",
+            // `agent-gate.ts`'s `summarise` and its turns line.
+            evidence: "major src/x.ts:4 — claim\n\n(12 turns · $0.40)",
+            findings: [finding],
+          }),
+        ]),
+      ],
+    );
+    expect(standing.saidBy).toBe("proposed:review");
+
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={standing}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("proposed / review");
+    expect(html).not.toContain("what refused, verbatim");
+  });
+
+  /**
    * A command that printed nothing and stayed red. `diagnoseUnfixed` writes
    * `raw: null` for blank evidence — not `""` — so a block that read null as
    * *nothing refused* left rank 2 empty under *`test` still refuses*.

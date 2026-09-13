@@ -740,11 +740,14 @@ details[open] > summary::before { content: "▾"; }
   max-height: 18rem;
 }
 
-/* The one deciding line, for a block that has no diagnosis at all — every block
-   written before #83. The teal is structural, and it is deliberately not a
-   verdict colour. It keeps its `in attempt N ↓`, because `decidingOf` searches
-   back through earlier attempts and a line from one of those is only readable
-   with the attempt attached to it (#132). */
+/* One deciding line at rank 2, in two cases. A block that has no diagnosis at
+   all — every block written before #83 — keeps its `in attempt N ↓`, because
+   `decidingOf` searches back through earlier attempts and a line from one of
+   those is only readable with the attempt attached to it. A diagnosed block
+   whose `raw` is null beside a failed verdict renders its own attempt's line
+   here too, with no pointer, or the absence in words (`.snone`) — so a refusal
+   with nothing quoted is never a blank rank (#132). The teal is structural,
+   and it is deliberately not a verdict colour. */
 .sevidence {
   display: flex;
   flex-wrap: wrap;
@@ -999,8 +1002,11 @@ details[open] > summary::before { content: "▾"; }
   background: var(--surface-2);
 }
 .chat > * { flex: 0 0 auto; }
-/* Pinned to the bottom: `Thinking` and the answer both scroll this to its end,
-   because the newest line is the one being read. */
+/* Pinned to the bottom, because the newest line is the one being read — and
+   pinned by `Discussion`, not by what is inside it: a turn or an answer
+   arriving scrolls this to its end, and so does a live trace growing while the
+   reader is already there (a `ResizeObserver` on the chats). `Thinking`/`Trace`
+   scroll only their own `.chattrace` and never this pane. */
 .chatscroll {
   flex: 1 1 auto;
   min-height: 0;

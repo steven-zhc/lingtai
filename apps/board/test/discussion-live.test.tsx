@@ -160,6 +160,21 @@ describe("what a reader is handed for each state of the trace", () => {
     expect(html).toContain("doc/architecture.html");
   });
 
+  it("never says a trace is being answered when no daemon is beating", () => {
+    // Daemon A wrote 40 lines and was killed before its `finally` removed the
+    // file; nothing restarted. The follower opens the leftover and reports
+    // `reading` — and the file cannot say nobody writes it, so the beacon does.
+    const forty = Array.from({ length: 40 }, (_, i) => `12:00:${i}  think`);
+    const dead = renderToStaticMarkup(<Trace lines={forty} state="reading" daemonUp={false} />);
+    expect(dead).not.toMatch(/answering ·|lines so far|has started on this/);
+    expect(dead).toContain("no daemon is running, so nothing is answering this now");
+    expect(dead).toContain('data-trace="reading"');
+
+    // A beating daemon, or a beacon nobody could read, is the ordinary sentence.
+    expect(traceSays("reading", 40, true)).toBe("answering · 40 lines so far");
+    expect(traceSays("reading", 40, null)).toBe("answering · 40 lines so far");
+  });
+
   it("says a question nothing has picked up is queued, and that asking again costs", () => {
     const html = show([], "queued");
     expect(html).toContain("no daemon has started on this yet");
