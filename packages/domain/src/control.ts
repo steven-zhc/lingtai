@@ -57,6 +57,18 @@ export interface Handoff {
   version: number;
 }
 
+/**
+ * How long a handoff waits for the supervisor's start before it is nobody's.
+ *
+ * A start the next minute is the restart's; a start the next day is not, even on
+ * the same commit — a supervisor that refused `service start` leaves the
+ * handoff standing, and `service start` typed by somebody else after
+ * `reset-failed` would otherwise be recorded as the restart's person and reason.
+ * Past the restart's own wait for the start, with room for the supervisor's
+ * throttle, and no longer.
+ */
+export const HANDOFF_LAPSES_MS = 5 * 60_000;
+
 export interface ControlState {
   paused: boolean;
   /** Who paused it and why, when it is paused. */
@@ -86,9 +98,10 @@ export interface ControlState {
   /**
    * The restart a supervisor's start is to answer, or null.
    *
-   * **The next start takes it or clears it**, whoever makes it. A handoff the
-   * supervisor never acted on must not be claimed days later by a daemon it
-   * has nothing to do with, and a newer drain supersedes it.
+   * **The next start takes it or clears it**, whoever makes it, and it lapses
+   * `HANDOFF_LAPSES_MS` after the withdrawal whether or not anything started. A
+   * handoff the supervisor never acted on must not be claimed days later by a
+   * daemon it has nothing to do with, and a newer drain supersedes it.
    */
   handoff: Handoff | null;
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
@@ -141,6 +154,8 @@ export const emptyControl: ControlState = {
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
   const state: ControlState = { ...emptyControl, requested: [], discussions: [] };
+  /** When the standing handoff was made, so the fold can say it lapsed. */
+  let handoffAt: Date | null = null;
 
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>;
@@ -187,6 +202,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
             dirty: h.dirty === true,
             version: e.version,
           };
+          handoffAt = e.at;
         }
         break;
       }
@@ -237,6 +253,13 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
     state.by = null;
     state.reason = null;
     state.until = null;
+  }
+
+  // The handoff that nothing answered, lapsing — the same shape as the pause
+  // above, and for the same reason nothing is appended. Any start after this is
+  // not recorded as the restart's.
+  if (handoffAt !== null && now.getTime() - handoffAt.getTime() > HANDOFF_LAPSES_MS) {
+    state.handoff = null;
   }
 
   return state;

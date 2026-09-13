@@ -222,14 +222,18 @@ checks examined, beside the `by` and `reason` it already had. Then `service
 start`.
 
 The daemon the supervisor starts cannot know who typed the restart; the fold
-tells it. `reduceControl` keeps the handoff until the next start, and that start
+tells it. `reduceControl` keeps the handoff until the next start — or five
+minutes after the withdrawal, whichever is first — and that start
 takes the restart's `by` and `reason` **only if it is running the commit that
 was checked**, recording the handoff's version on `ConductorStarted.handoff`.
 On any other commit it is recorded as `daemon`, saying which commit was checked
 and which is running. A start typed at a terminal ends the handoff and is the
 typist's; so does any start, so a handoff the supervisor never acted on cannot
 be claimed days later by a daemon it has nothing to do with, and a newer drain
-supersedes it.
+supersedes it. The lapse is what makes that true when nothing starts at all: a
+supervisor that refused `service start` leaves the handoff standing, and without
+it somebody else's `service start` the next day, on the same commit, would be
+recorded as the restart's person and reason.
 
 The restart then waits — up to 90 seconds, past two of the supervisor's
 throttles — for the start to be recorded, and exits 0 only for one that

@@ -12,6 +12,7 @@
  * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)).
  */
 import type { Identity, ShutdownRequest } from "@lingtai/daemon";
+import { type Envelope, reduceControl } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import { describeRefusal } from "../src/doctor.ts";
 import {
@@ -202,7 +203,7 @@ describe("a doctor failure whose remedy is the restart", () => {
   };
 
   it("does not gate the restart, while a refusal by the code here still does", () => {
-    const stale = describeRefusal("lingtai", refusal, { daemonUp: true, here: NEW });
+    const stale = describeRefusal("lingtai", refusal, { daemonUp: true, here: NEW, behind: true });
     expect(stale.status).toBe("fail");
     expect(stale.restartAnswers).toBe(true);
     const sameCode = describeRefusal("lingtai", refusal, { daemonUp: true, here: OLD });
@@ -214,6 +215,14 @@ describe("a doctor failure whose remedy is the restart", () => {
     ]);
     expect(failed).toBe(0);
     expect(planRestart(before({ doctorFailed: failed }), none).go).toBe("drain");
+
+    // A refusal by code *newer* than this checkout — which only differs from it
+    // — is not answered by starting older code, and still gates the restart.
+    const newer = describeRefusal("lingtai", { ...refusal, codeSha: NEW }, { daemonUp: true, here: OLD, behind: false });
+    expect(newer.status).toBe("fail");
+    expect(newer.restartAnswers).toBe(false);
+    expect(gatingFailures([{ status: "fail", restartAnswers: newer.restartAnswers }])).toBe(1);
+    expect(describeRefusal("lingtai", refusal, { daemonUp: true, here: NEW }).restartAnswers).toBe(false);
 
     // Anything else that failed still refuses, and still needs its flag.
     expect(gatingFailures([{ status: "fail", restartAnswers: true }, { status: "fail" }])).toBe(1);
@@ -374,6 +383,19 @@ describe("whose start it is", () => {
     const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, control: { shutdown: null, handoff } });
     expect(a).toMatchObject({ record: true, by: "daemon", handoff: 4 });
     expect(a.record && a.reason).toContain("582a0f8");
+  });
+
+  it("does not give a start the restart's name once the handoff has lapsed, even on the checked commit", () => {
+    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
+    const envelopes = [
+      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
+      {
+        type: "ConductorShutdownWithdrawn",
+        data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
+      },
+    ].map((e, i) => ({ seq: BigInt(i + 1), streamId: "ctl-conductor", version: i + 1, schemaVer: 1, actor: "human:steven", causation: null, at: withdrawnAt, ...e }) as Envelope);
+    const nextDay = reduceControl(envelopes, new Date("2026-09-14T10:00:00Z"));
+    expect(attributeStart({ ...base, control: nextDay })).toMatchObject({ record: true, by: "daemon", reason: null, handoff: null });
   });
 
   it("does not give a typed start the restart's name", () => {

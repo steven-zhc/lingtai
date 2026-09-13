@@ -81,6 +81,7 @@ import pg from "pg";
 // stays here is what it always was: the I/O, and the commands that append.
 export {
   CONTROL_STREAM,
+  HANDOFF_LAPSES_MS,
   type ControlState,
   type Handoff,
   type ShutdownRequest,
@@ -205,11 +206,23 @@ export async function recordStart(
   /** The withdrawal this start answers, when a supervisor made a restart's start (0042 §8). */
   handoff: number | null = null,
 ): Promise<void> {
-  await append(
-    "ConductorStarted",
-    { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff },
-    store,
-  );
+  // Retried on a lost version race, as the two writers below are: nothing about
+  // a start depends on what else landed, so a `RunRequested` between the read
+  // and the append is a reason to read again, not a start with no record.
+  for (let attempt = 0; ; attempt++) {
+    const at = (await store.read(CONTROL_STREAM)).length;
+    try {
+      await append(
+        "ConductorStarted",
+        { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff },
+        store,
+        at,
+      );
+      return;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+    }
+  }
 }
 
 /** What a start after a restart's handoff recorded, as the log has it. */

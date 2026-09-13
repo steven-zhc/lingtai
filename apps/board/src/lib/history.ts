@@ -266,7 +266,10 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // process's code is chosen, and "who restarted it at 23:06" was unanswerable
   // until this event existed (0042).
   ConductorStarted: (d) =>
-    `${need(d, "by")} started ${sha(d, "sha")}${d["dirty"] === true ? " (worktree dirty)" : ""}` +
+    // A null sha is a copy with no checkout, which the schema allows — said, not
+    // a reason to fall back to the raw payload.
+    `${need(d, "by")} started ${d["sha"] == null ? "an unrecorded commit" : sha(d, "sha")}` +
+    `${d["dirty"] === true ? " (worktree dirty)" : ""}` +
     (d["reason"] ? `: ${clip(d["reason"])}` : ""),
   ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,
   ConductorResumed: (d) => need(d, "by"),

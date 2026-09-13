@@ -19,7 +19,7 @@ import { ConcurrencyError, type EventStore } from "@lingtai/event-store";
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { afterEach, describe, expect, it } from "vitest";
 import { killWorker } from "../src/reconcile.ts";
-import { readControl, requestShutdownUnlessStanding, withdrawShutdown } from "../src/control.ts";
+import { readControl, recordStart, requestShutdownUnlessStanding, withdrawShutdown } from "../src/control.ts";
 
 /** Just enough of a store to fold. `readControl` reads one stream and nothing else. */
 function storeOf(events: { type: string; data: unknown }[]): EventStore {
@@ -288,5 +288,20 @@ describe("withdrawing a drain", () => {
     expect(await requestShutdownUnlessStanding("human:steven", "restarting", 300_000, store)).toEqual({ asked: true, version: 2 });
     expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownRequested"]);
     expect(await withdrawShutdown("human:steven", 2, "restarted", null, store)).toMatchObject({ withdrew: true });
+  });
+
+  /**
+   * A `RunRequested` landing between the start's read and its append used to
+   * cost the record: the daemon printed an error nobody under launchd reads and
+   * conducted with no `ConductorStarted`, and the restart waiting on it timed out.
+   */
+  it("records a start even when a control append lands in the middle", async () => {
+    const { store, held, appended, before } = recording([restarting]);
+    before.next = () => held.push({ type: "RunRequested", data: { project: "lingtai", issue: "88", by: "human:ops" } });
+
+    await recordStart("human:steven", "restarted", { sha: "2926f2d", dirty: false }, store, 2);
+
+    expect(appended.map((e) => e.type)).toEqual(["ConductorStarted"]);
+    expect(held.map((e) => e.type)).toEqual(["ConductorShutdownRequested", "RunRequested", "ConductorStarted"]);
   });
 });

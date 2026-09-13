@@ -36,6 +36,7 @@ import { type Recipe, baseDivergence } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
+  codeRoot,
   conductorLockHolder,
   describeCurrency,
   describeInFlight,
@@ -49,6 +50,7 @@ import {
 import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
+import { git } from "@lingtai/repo";
 import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
 import { describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
@@ -678,10 +680,12 @@ export async function daemonLiveness(
  * would be red most afternoons. It is also not `ok`: `ok` is where this hid.
  *
  * It reports and stops there, but this report is no longer read only by a
- * person: `lingtai restart` runs the same doctor and refuses on any failure
- * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)), so turning
- * this `warn` into a `fail` would refuse every restart that is behind — which is
- * every restart that has something to pick up. Whether a daemon should restart
+ * person: `lingtai restart` runs the same doctor and refuses on every failure
+ * not marked `restartAnswers`
+ * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)). Turning
+ * this `warn` into a plain `fail` would refuse every restart that is behind —
+ * which is every restart that has something to pick up — and marking it would
+ * make `lingtai doctor` exit 1 on something the restart lets through. Whether a daemon should restart
  * *itself* when `main` moves is still open; 0042 decided only the command.
  */
 async function daemonCurrency(): Promise<CheckResult> {
@@ -749,7 +753,11 @@ async function passRefusals(): Promise<CheckResult> {
   const status = await readStatus().catch(() => null);
   const daemonUp = status !== null && lastBeat(status).up;
   const here = (await readCodeVersion()).sha;
-  const read = refusing.map((p) => describeRefusal(p.project!, p.refused!, { daemonUp, here }));
+  const read = await Promise.all(
+    refusing.map(async (p) =>
+      describeRefusal(p.project!, p.refused!, { daemonUp, here, behind: await isBehind(p.refused!.codeSha, here) }),
+    ),
+  );
   const failing = read.filter((r) => r.status === "fail");
   return {
     name,
@@ -760,6 +768,21 @@ async function passRefusals(): Promise<CheckResult> {
     // would refuse again after the restart, and still gates it.
     ...(failing.length > 0 && failing.every((r) => r.restartAnswers) ? { restartAnswers: true } : {}),
   };
+}
+
+/**
+ * Whether `sha` is an ancestor of `here` and not `here` itself — code this
+ * checkout has moved past. False where it could not be said: a commit this
+ * clone never fetched, or no checkout at all, is not proof of being older.
+ */
+async function isBehind(sha: string | null, here: string | null): Promise<boolean> {
+  if (!sha || !here || sha === here) return false;
+  try {
+    await git(["merge-base", "--is-ancestor", sha, here], { cwd: codeRoot() });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -776,7 +799,16 @@ async function passRefusals(): Promise<CheckResult> {
 export function describeRefusal(
   project: string,
   r: RecordedRefusal,
-  now: { daemonUp: boolean; here: string | null },
+  now: {
+    daemonUp: boolean;
+    here: string | null;
+    /**
+     * The refusing commit is an ancestor of `here`. Only then is a restart onto
+     * this checkout the remedy: a refusal by *newer* code is not answered by
+     * starting older code, and still gates the restart.
+     */
+    behind?: boolean;
+  },
 ): { status: "fail" | "warn"; detail: string; restartAnswers: boolean } {
   const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "an unrecorded commit");
   const head =
@@ -784,9 +816,10 @@ export function describeRefusal(
     `reading ${r.ref ?? "a branch it never reached"} — ${r.detail}.`;
   // The sentence #148 was missing: whether the recipe rows in this report
   // read with the refusing code or with newer code.
-  const older = Boolean(r.codeSha && now.here && r.codeSha !== now.here);
+  const differs = Boolean(r.codeSha && now.here && r.codeSha !== now.here);
+  const older = differs && now.behind === true;
   const witness =
-    older
+    differs
       ? ` This checkout is at ${short(now.here)}, so the recipe rows here read with other code than the ` +
         "process that refused: if they are ok, the recipe is fine and that process is too old for it — restart it"
       : r.codeSha && r.codeSha === now.here

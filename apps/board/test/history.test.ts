@@ -47,6 +47,14 @@ describe("a line of history", () => {
     expect(said).toContain("n=3");
   });
 
+  /** A copy with no checkout records `sha: null`, which the schema allows. */
+  it("says who started a conductor with no recorded commit, rather than the raw payload", () => {
+    const said = summarise(
+      e("ConductorStarted", { by: "daemon", reason: null, sha: null, dirty: false, worker: "h:1", handoff: null }),
+    );
+    expect(said).toBe("daemon started an unrecorded commit");
+  });
+
   it("keeps a null in the payload, because a null is a statement", () => {
     expect(describePayload({ prompt: null })).toBe("prompt=null");
   });

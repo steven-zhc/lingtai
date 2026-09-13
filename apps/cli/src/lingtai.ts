@@ -134,9 +134,10 @@ Projections: ${taskViewProjection.name}
 async function doctor(): Promise<number> {
   const report = await doctorReport();
   console.log(formatReport(report));
-  // Non-zero on any failure, so this can gate a restart — which since 0042 it
-  // does: `lingtai restart` runs the same report and refuses on the same number.
-  // A deferred check is not a failure; a missing one would be.
+  // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
+  // does not refuse on the same number: a failure marked `restartAnswers` exits
+  // this 1 and lets a restart through, since the restart is its remedy — see
+  // `gatingFailures`. A deferred check is not a failure; a missing one would be.
   return report.failed === 0 ? 0 : 1;
 }
 
@@ -241,6 +242,22 @@ async function projectionCommand(args: string[]): Promise<number> {
   return 2;
 }
 
+/** What `lingtai service` reads off the log, shared with the restart that starts through it. */
+function serviceOptions(): ServiceOptions {
+  return {
+    // A read that throws, so a beacon that could not be read says so.
+    // Doctor folds that into "no daemon has run", and here it would be the
+    // one wrong answer this command exists to avoid. It is the only read:
+    // a second one could fail where this succeeded.
+    liveness: async () => (await daemonLiveness(() => readStatus())).detail,
+    shutdown: async () => (await readControl()).shutdown,
+    pause: async () => {
+      const c = await readControl();
+      return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
+    },
+  };
+}
+
 /**
  * `lingtai daemon` — the process that holds the long-lived work.
  *
@@ -261,22 +278,6 @@ async function projectionCommand(args: string[]): Promise<number> {
  * reconcile, the `ConductorStarted` append and the drain handlers are one
  * sequence, and a second way in would be a second place for them to drift apart.
  */
-/** What `lingtai service` reads off the log, shared with the restart that starts through it. */
-function serviceOptions(): ServiceOptions {
-  return {
-    // A read that throws, so a beacon that could not be read says so.
-    // Doctor folds that into "no daemon has run", and here it would be the
-    // one wrong answer this command exists to avoid. It is the only read:
-    // a second one could fail where this succeeded.
-    liveness: async () => (await daemonLiveness(() => readStatus())).detail,
-    shutdown: async () => (await readControl()).shutdown,
-    pause: async () => {
-      const c = await readControl();
-      return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
-    },
-  };
-}
-
 async function daemonCommand(
   flags: Record<string, string> = {},
   /** Who asked for this start, why, and the code their checks examined — when it is a restart. */

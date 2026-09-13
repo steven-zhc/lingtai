@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Envelope } from "../src/envelope.ts";
-import { reduceControl } from "../src/control.ts";
+import { HANDOFF_LAPSES_MS, reduceControl } from "../src/control.ts";
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
@@ -246,6 +246,19 @@ describe("a restart's handoff to the supervisor", () => {
   it("is ended by the next start, whoever made it, so one the supervisor never acted on is not claimed days later", () => {
     const started = { type: "ConductorStarted", data: { by: "human:ops", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: null } };
     expect(reduceControl(log([asked, handed, started]), NOW).handoff).toBeNull();
+  });
+
+  /**
+   * The supervisor refused `service start`, so nothing started and nothing
+   * ended the handoff. A start the next day — somebody else's `service start`
+   * after `reset-failed`, on the same commit — must not be the restart's.
+   */
+  it("lapses when nothing started in time, so a start the next day is nobody's restart", () => {
+    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
+    const events = log([asked, handed]).map((ev, i) => (i === 1 ? { ...ev, at: withdrawnAt } : ev));
+    expect(reduceControl(events, new Date(withdrawnAt.getTime() + 60_000)).handoff).not.toBeNull();
+    expect(reduceControl(events, new Date(withdrawnAt.getTime() + HANDOFF_LAPSES_MS + 1))).toMatchObject({ handoff: null });
+    expect(reduceControl(events, new Date("2026-09-14T09:00:00Z")).handoff).toBeNull();
   });
 
   it("is superseded by a newer drain", () => {

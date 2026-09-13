@@ -66,6 +66,7 @@ import {
   requestShutdownUnlessStanding,
   startAfter,
   withdrawShutdown,
+  HANDOFF_LAPSES_MS,
   type CodeVersion,
   type ControlState,
   type Identity,
@@ -776,6 +777,9 @@ export function attributeStart(input: {
 /** How long a restart waits for the supervisor's start: past two of its thirty-second throttles. */
 const HANDOFF_WAIT_MS = 90_000;
 
+/** How long after the withdrawal a start is still recorded as the restart's, in words. */
+const LAPSES = `${HANDOFF_LAPSES_MS / 60_000} minutes of the withdrawal`;
+
 /**
  * Ask the supervisor to start, then wait for the start to be recorded.
  *
@@ -804,7 +808,7 @@ export async function startSupervised(
     log(
       paint.fail(
         "the supervisor refused the start, above. The drain is withdrawn, so its own next start takes work — " +
-          "on the checked commit, recorded as your restart. lingtai service status says whether it did.",
+          `recorded as your restart only within ${LAPSES}, and as nobody's after. lingtai service status says whether it did.`,
       ),
     );
     return 1;
@@ -836,13 +840,13 @@ export async function startSupervised(
         return 1;
       }
       if (interrupted) {
-        log(paint.held("stopped waiting. The start was asked of the supervisor, and the handoff stands for its next start."));
+        log(paint.held(`stopped waiting. The start was asked of the supervisor, and the handoff stands for its next start within ${LAPSES}.`));
         return 130;
       }
       if (Date.now() - began > waitMs) {
         log(
           paint.held(
-            `no start was recorded in ${waitMs / 1000}s. The handoff stands for the supervisor's next start — ` +
+            `no start was recorded in ${waitMs / 1000}s. The handoff stands for the supervisor's next start within ${LAPSES} — ` +
               "lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up.",
           ),
         );

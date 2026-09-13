@@ -654,7 +654,9 @@ commit and start that one's. It asks the drain even when nothing is conducting,
 waits as above, and withdraws with a **handoff**: who, why, and the commit it
 checked. Then `service start`, and it waits up to 90 seconds for the start to
 be recorded. The supervised daemon that starts next takes the restart's name
-off the handoff only if it is running the commit that was checked; on any other
+off the handoff only if it is running the commit that was checked, and only
+within five minutes of the withdrawal — a start after that is nobody's restart,
+whoever typed it; on any other commit
 it is recorded as `daemon` and says why, and the restart exits non-zero naming
 what did start. `--no-conduct` and `--no-merge` are refused there, because the
 unit decides how the supervisor starts it. A file left after `service stop` is
