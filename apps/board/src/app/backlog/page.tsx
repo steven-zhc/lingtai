@@ -4,11 +4,17 @@
  * §5, `#137`).
  *
  * A read of `finding_backlog`, which is a fold like `task_view` — nothing on
- * this page writes to it. The two buttons append, through the same functions
- * `lingtai backlog` calls, and the next fold closes the entry.
+ * this page writes to it but the fold. The two buttons append, through the same
+ * functions `lingtai backlog` calls, and the next fold closes the entry.
+ *
+ * **Folded on render, and said so.** Nothing else is guaranteed to fold this
+ * projection — a daemon older than it follows `task_view` alone — so each render
+ * brings it to the head first (`@/lib/backlog`), and the chip says whether that
+ * worked. *Nothing open* is printed only when it did.
  */
 import Link from "next/link";
-import { readBacklog, type BacklogEntry } from "@lingtai/projector";
+import type { BacklogEntry } from "@lingtai/projector";
+import { backlogChip, currentBacklog } from "@/lib/backlog";
 import { DecideFinding, OpenAccepted } from "./decide-finding.tsx";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +60,8 @@ function Entry({ entry }: { entry: BacklogEntry }) {
 }
 
 export default async function BacklogPage() {
-  const entries = await readBacklog();
+  const { entries, currency } = await currentBacklog();
+  const chip = backlogChip(currency);
   // An accepted entry whose issue is not recorded still owes something, so it
   // is listed with the open ones.
   const owed = (e: BacklogEntry) => e.status === "open" || (e.status === "accepted" && e.proposedRef === null);
@@ -71,11 +78,17 @@ export default async function BacklogPage() {
         <span>backlog</span>
         <span className="sep" />
         <span className="chip idle">{open.length} open</span>
+        <span className="sep" />
+        <span className={`chip ${chip.tone}`} title={chip.title}>
+          {chip.label}
+        </span>
       </div>
       <div className="detail-body">
         <section>
           <h2>Open</h2>
-          {open.length === 0 ? <p className="why">nothing open</p> : <ul>{open.map((e) => <Entry key={`${e.project}:${e.key}`} entry={e} />)}</ul>}
+          {open.length === 0 ? (
+            <p className="why">{chip.current ? "nothing open" : `nothing open that this page could read — ${chip.title}`}</p>
+          ) : <ul>{open.map((e) => <Entry key={`${e.project}:${e.key}`} entry={e} />)}</ul>}
         </section>
         <section>
           <h2>Decided</h2>

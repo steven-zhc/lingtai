@@ -2,13 +2,19 @@
  * `TicketStore` — where tickets come from, and the one door a new one goes in by
  * ([0036](../../../doc/decisions/0036-the-core-takes-a-ticket.md) §2).
  *
- * **`propose` is the only verb here yet.** 0036 names `list`, `get` and `save`
- * as the port's shape, and their extraction out of `@lingtai/github` has not
- * happened: discovery, the prompt and `end` still hold the client directly.
- * This file does not do that extraction under another ticket's name. It puts
- * the third verb where the other three will go, so that the backlog's accept
- * calls *the thing that owns tickets* rather than a GitHub call of its own
- * (`#137`).
+ * **`propose`, and the `withdraw` that undoes it, are the only verbs here yet.**
+ * 0036 names `list`, `get` and `save` as the port's shape, and their extraction
+ * out of `@lingtai/github` has not happened: discovery, the prompt and `end`
+ * still hold the client directly. This file does not do that extraction under
+ * another ticket's name. It puts the verbs the backlog needs where the others
+ * will go, so that the backlog's accept calls *the thing that owns tickets*
+ * rather than a GitHub call of its own (`#137`).
+ *
+ * **An adapter implements both, and `withdraw` really closes.** `propose` is
+ * safe to race only because the loser withdraws what it wrote: the backlog's
+ * `settle` calls `withdraw` on the duplicate an opener created after another
+ * recorded first, and reports it closed. A no-op `withdraw` leaves that
+ * duplicate open while the caller is told it is not.
  *
  * > **Lingtai proposes; a person decides it exists.**
  *
@@ -71,8 +77,8 @@ export function keyMarker(key: string): string {
 }
 
 /**
- * Clocks disagree, and GitHub's `since` is its own `updated_at`. An hour is
- * far wider than any skew and still keeps the listing to recent issues.
+ * Clocks disagree, and GitHub's `since` and `created_at` are its own clock. An
+ * hour is far wider than any skew and still keeps the listing to recent issues.
  */
 const SKEW_MS = 60 * 60_000;
 

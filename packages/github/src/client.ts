@@ -123,12 +123,18 @@ export interface GitHubClient {
   listOpenIssues(): Promise<Issue[]>;
 
   /**
-   * Every issue, open or closed, updated at or after `since` — oldest first.
+   * Every issue, open or closed, created at or after `since` — oldest first.
    *
    * The listing endpoint and not search: search is an index that lags the
    * write by seconds or more, and the one caller (the ticket store's
    * idempotent `propose`, `#137`) is asking whether an issue it may just have
    * opened exists.
+   *
+   * **Complete, or it throws.** The caller reads *not listed* as *does not
+   * exist* and opens one, so a listing that silently stopped short would be a
+   * duplicate. Paged newest first and stopped at the first issue created
+   * before `since`, so the pages are the window's issues and not every issue
+   * anybody commented on since.
    */
   listIssuesSince(since: Date): Promise<Issue[]>;
   getIssue(number: number): Promise<Issue>;
@@ -210,6 +216,9 @@ export interface GitHubClient {
    */
   token(): Promise<string>;
 }
+
+/** How far `listIssuesSince` pages before it refuses to answer rather than answer short. */
+const LIST_SINCE_PAGES = 50;
 
 export interface CreateClientOptions {
   auth: AppAuth;
@@ -409,16 +418,26 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
 
     async listIssuesSince(since) {
       const out: Issue[] = [];
-      for (let page = 1; page <= 10; page++) {
-        const raw = await request<Parameters<typeof toIssue>[0][]>(
+      for (let page = 1; ; page++) {
+        if (page > LIST_SINCE_PAGES) {
+          throw new Error(
+            `more than ${LIST_SINCE_PAGES * 100} issues in ${owner}/${repo} were created since ${since.toISOString()} — ` +
+              `the listing is incomplete, so it cannot say an issue is not there`,
+          );
+        }
+        // `since` filters on `updated_at`, which every issue created since also
+        // passes; the order is by creation, so the window ends at the first
+        // issue older than it.
+        const raw = await request<(Parameters<typeof toIssue>[0] & { created_at: string })[]>(
           "GET",
           `/repos/${owner}/${repo}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
-            `&sort=created&direction=asc&per_page=100&page=${page}`,
+            `&sort=created&direction=desc&per_page=100&page=${page}`,
         );
-        out.push(...raw.filter((r) => !("pull_request" in r)).map(toIssue));
-        if (raw.length < 100) break;
+        const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime());
+        out.push(...inWindow.filter((r) => !("pull_request" in r)).map(toIssue));
+        if (raw.length < 100 || inWindow.length < raw.length) break;
       }
-      return out;
+      return out.reverse();
     },
 
     async getIssue(number) {
