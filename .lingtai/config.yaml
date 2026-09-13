@@ -244,14 +244,22 @@ gates:
     # conductor and the CLI load**, and the test below derives that set from
     # their `package.json`s rather than trusting this list to keep up.
     #
+    # `apps/board` is on it because a hold is only as sound as the approval that
+    # lifts it. The board is where a person approves, rejects or waives a held
+    # card, and it appends that decision itself with `@lingtai/conductor/decide`
+    # — so a board that recorded `approve` for a Reject, or for nobody, would
+    # turn the second merge's hold into an approval no person gave. The test
+    # counts every workspace that depends on `@lingtai/conductor` as a root, so
+    # the next thing that decides is held too.
+    #
     # The rest decide what `install` and `build` above actually run, so a
     # change to them is a change to the verification — `TAMPER_WATCH`'s reason:
     # every `package.json`, the lockfile and `.npmrc` (what is installed), the
     # workspace file (which packages `pnpm -r test` visits), every `tsconfig`
     # (what `typecheck` checks), and every vitest config (what `test` collects).
     #
-    # What stays unwatched is what judges nothing: `apps/board`, `apps/site`,
-    # `doc`, `scripts`.
+    # What stays unwatched is what neither judges nor records a judgement:
+    # `apps/site`, `doc`, `scripts`.
     #
     # A path leaving a watched place counts as touching it: the conductor lists
     # both ends of a rename, so `git mv` out of `packages/actions/test` is held.
@@ -280,6 +288,7 @@ gates:
         - "packages/projector/**"
         - "packages/daemon/**"
         - "apps/cli/**"
+        - "apps/board/**"
         - "package.json"
         - "**/package.json"
         - "pnpm-lock.yaml"

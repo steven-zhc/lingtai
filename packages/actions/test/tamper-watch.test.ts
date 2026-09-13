@@ -6,7 +6,7 @@
  * a path out of `.lingtai/config.yaml`, which is exactly the edit it exists to
  * notice.
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { type GateAction, RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
@@ -47,10 +47,14 @@ describe("this repository's tamper watch", () => {
     "packages/daemon/src/index.ts",
     "packages/repo/src/integrate.ts",
     "apps/cli/src/lingtai.ts",
+    "apps/board/src/app/actions.ts",
+    "apps/board/src/app/decide.tsx",
     "pnpm-workspace.yaml",
     "pnpm-lock.yaml",
     "tsconfig.base.json",
     "packages/actions/tsconfig.json",
+    ".npmrc",
+    "packages/foo/.npmrc",
   ])("holds a diff touching %s for a person", async (file) => {
     const result = await judge("main", ["README.md", file]);
 
@@ -65,8 +69,13 @@ describe("this repository's tamper watch", () => {
    * package the conductor and the CLI load, however indirectly, is part of what
    * judges a change — so a new dependency, or a package renamed, fails here
    * until the watch covers it.
+   *
+   * And every workspace that depends on the conductor is a root, because that
+   * is how a process reaches `@lingtai/conductor/decide` and appends a person's
+   * approval: a hold is only as sound as what records the decision lifting it.
+   * That is how `apps/board` is found, and how the next thing that decides is.
    */
-  it("holds every workspace package the conductor and the CLI load", async () => {
+  it("holds every workspace package the conductor and the CLI load, and everything that decides", async () => {
     const manifest = async (dir: string) =>
       JSON.parse(await readFile(`${root}${dir}/package.json`, "utf8")) as { dependencies?: Record<string, string> };
     const seen = new Set<string>();
@@ -81,7 +90,14 @@ describe("this repository's tamper watch", () => {
     await visit("packages/conductor");
     await visit("packages/hook");
     await visit("apps/cli");
+    for (const parent of ["apps", "packages"]) {
+      for (const name of await readdir(`${root}${parent}`)) {
+        const deps = (await manifest(`${parent}/${name}`).catch(() => ({}))) as { dependencies?: Record<string, string> };
+        if (deps.dependencies?.["@lingtai/conductor"]) await visit(`${parent}/${name}`);
+      }
+    }
     expect(seen.size).toBeGreaterThan(10);
+    expect(seen).toContain("apps/board");
 
     for (const dir of seen) {
       expect((await judge("main", [`${dir}/src/index.ts`])).heldAt, dir).toBe("tamper");
@@ -89,7 +105,7 @@ describe("this repository's tamper watch", () => {
   });
 
   it("asks nothing about a diff that touches none of it", async () => {
-    const result = await judge("main", ["apps/board/src/app/page.tsx", "doc/README.md"]);
+    const result = await judge("main", ["apps/site/src/app/page.tsx", "doc/README.md"]);
 
     expect(result.ok).toBe(true);
   });
