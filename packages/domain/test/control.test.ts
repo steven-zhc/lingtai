@@ -178,3 +178,84 @@ describe("the discussions somebody asked for", () => {
     expect(state.discussions).toHaveLength(1);
   });
 });
+
+/**
+ * `lingtai restart` lifts the drain it asked for and nothing else (0042). The
+ * first attempt at that resumed — which lifts a pause and *any* request — and
+ * then re-appended the pause, so a person's pause and a second person's drain
+ * were both one race away from being overruled by a command about neither.
+ */
+describe("withdrawing one shutdown request", () => {
+  const asked = (by: string, reason: string) => ({
+    type: "ConductorShutdownRequested",
+    data: { by, reason, timeoutMs: null },
+  });
+
+  it("lifts the request it names, and leaves a pause exactly as it was", () => {
+    const state = reduceControl(
+      log([
+        { type: "ConductorPaused", data: { by: "human:ops", reason: "the importer is flaky", until: null } },
+        asked("human:steven", "restarting: picking up #88"),
+        { type: "ConductorShutdownWithdrawn", data: { by: "human:steven", version: 2, reason: "restarted" } },
+      ]),
+      NOW,
+    );
+
+    expect(state.shutdown).toBeNull();
+    expect(state.paused).toBe(true);
+    expect(state.by).toBe("human:ops");
+    expect(state.reason).toBe("the importer is flaky");
+  });
+
+  it("does not lift a newer request somebody else made", () => {
+    const state = reduceControl(
+      log([
+        asked("human:steven", "restarting: picking up #88"),
+        asked("human:ops", "the database is being moved"),
+        { type: "ConductorShutdownWithdrawn", data: { by: "human:steven", version: 1, reason: "restarted" } },
+      ]),
+      NOW,
+    );
+
+    expect(state.shutdown).toEqual({ by: "human:ops", reason: "the database is being moved", timeoutMs: null, version: 2 });
+  });
+});
+
+/**
+ * A restart under launchd or systemd hands its start to the supervisor, and the
+ * handoff is how the daemon the supervisor starts knows whose restart it is
+ * (0042 §8). What matters is when it must **not** be there to be claimed.
+ */
+describe("a restart's handoff to the supervisor", () => {
+  const asked = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
+  const handed = {
+    type: "ConductorShutdownWithdrawn",
+    data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
+  };
+
+  it("stands after the withdrawal that carries it, naming who, why, the commit and its own version", () => {
+    expect(reduceControl(log([asked, handed]), NOW).handoff).toEqual({
+      by: "human:steven",
+      reason: "restarted: picking up #88",
+      sha: "2926f2d",
+      dirty: false,
+      version: 2,
+    });
+  });
+
+  it("is ended by the next start, whoever made it, so one the supervisor never acted on is not claimed days later", () => {
+    const started = { type: "ConductorStarted", data: { by: "human:ops", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: null } };
+    expect(reduceControl(log([asked, handed, started]), NOW).handoff).toBeNull();
+  });
+
+  it("is superseded by a newer drain", () => {
+    expect(reduceControl(log([asked, handed, asked]), NOW).handoff).toBeNull();
+  });
+
+  it("is not set by a withdrawal that lifted nothing, nor by one that starts the daemon itself", () => {
+    const stale = { ...handed, data: { ...handed.data, version: 7 } };
+    expect(reduceControl(log([asked, stale]), NOW).handoff).toBeNull();
+    const itself = { ...handed, data: { ...handed.data, handoff: null } };
+    expect(reduceControl(log([asked, itself]), NOW).handoff).toBeNull();
+  });
+});

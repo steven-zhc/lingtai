@@ -15,11 +15,11 @@
  */
 import { spawn } from "node:child_process";
 import type { Envelope } from "@lingtai/domain";
-import type { EventStore } from "@lingtai/event-store";
+import { ConcurrencyError, type EventStore } from "@lingtai/event-store";
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { afterEach, describe, expect, it } from "vitest";
 import { killWorker } from "../src/reconcile.ts";
-import { readControl } from "../src/control.ts";
+import { readControl, requestShutdownUnlessStanding, withdrawShutdown } from "../src/control.ts";
 
 /** Just enough of a store to fold. `readControl` reads one stream and nothing else. */
 function storeOf(events: { type: string; data: unknown }[]): EventStore {
@@ -84,7 +84,7 @@ describe("the control stream, folded", () => {
         { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "picking up #88", timeoutMs: null } },
       ]),
     );
-    expect(state.shutdown).toEqual({ by: "human:steven", reason: "picking up #88", timeoutMs: null });
+    expect(state.shutdown).toMatchObject({ by: "human:steven", reason: "picking up #88", timeoutMs: null });
     // Being told to stop is not being paused. Two facts, and the board and
     // doctor say them separately (#77 is the precedent).
     expect(state.paused).toBe(false);
@@ -168,5 +168,125 @@ describe("the process a dead claim names", () => {
 
   it("refuses a worker that names no process at all", async () => {
     expect(await killWorker("nonsense")).toContain("names no process");
+  });
+});
+
+/**
+ * `lingtai restart` has to lift the drain it asked for — the request stands in
+ * the stream for ever, so the daemon it is about to start would read it and
+ * stop again — and nothing else (0042).
+ *
+ * Against a store that enforces expected versions the way Postgres does,
+ * because the defect this replaces was a race: a resume and a re-pause as two
+ * appends, with a person's pause lost to whatever landed between them.
+ */
+describe("withdrawing a drain", () => {
+  /** A store that keeps what it is given and refuses a stale expected version. */
+  function recording(initial: { type: string; data: unknown }[] = []): {
+    store: EventStore;
+    held: { type: string; data: unknown }[];
+    appended: { type: string; data: unknown }[];
+    /** Runs once, just before the next append is checked — the concurrent writer. */
+    before: { next: (() => void) | null };
+  } {
+    const held = [...initial];
+    const appended: { type: string; data: unknown }[] = [];
+    const before: { next: (() => void) | null } = { next: null };
+    const store: EventStore = {
+      read: async () => storeOf(held).read("ctl-conductor"),
+      append: async (stream, at, events) => {
+        const race = before.next;
+        before.next = null;
+        race?.();
+        if (at !== held.length) throw new ConcurrencyError(stream, at, [at + 1]);
+        for (const e of events) {
+          held.push({ type: e.type, data: e.data });
+          appended.push({ type: e.type, data: e.data });
+        }
+        return [];
+      },
+      readAll: async () => [],
+    };
+    return { store, held, appended, before };
+  }
+
+  const restarting = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
+
+  it("lifts the request it names, with one append", async () => {
+    const { store, appended } = recording([restarting]);
+
+    const lifted = await withdrawShutdown("human:steven", 1, "restarted", null, store);
+
+    expect(lifted.withdrew).toBe(true);
+    expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownWithdrawn"]);
+    expect((await readControl(store)).shutdown).toBeNull();
+  });
+
+  it("appends nothing when there was nothing to withdraw", async () => {
+    const { store, appended } = recording([]);
+
+    expect(await withdrawShutdown("human:steven", 1, "restarted", null, store)).toEqual({ withdrew: false, standing: null });
+    expect(appended).toEqual([]);
+  });
+
+  /**
+   * Restarting a paused conductor must not start it taking work. Nothing is
+   * appended about the pause at all, so there is nothing to lose a race with.
+   */
+  it("leaves a pause alone, even when a control append lands in the middle", async () => {
+    const { store, held, appended, before } = recording([
+      { type: "ConductorPaused", data: { by: "human:ops", reason: "the importer is flaky today", until: null } },
+      { ...restarting },
+    ]);
+    before.next = () => held.push({ type: "RunRequested", data: { project: "lingtai", issue: "88", by: "human:ops" } });
+
+    const lifted = await withdrawShutdown("human:steven", 2, "restarted", null, store);
+
+    expect(lifted.withdrew).toBe(true);
+    expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownWithdrawn"]);
+    const after = await readControl(store);
+    expect(after.shutdown).toBeNull();
+    expect(after.paused).toBe(true);
+    expect(after.by).toBe("human:ops");
+  });
+
+  /** The one refusal a restart may not waive: a drain somebody else asked for. */
+  it("leaves standing a drain a second person asked for, even one that raced the withdrawal", async () => {
+    const { store, held, appended, before } = recording([restarting]);
+    before.next = () =>
+      held.push({ type: "ConductorShutdownRequested", data: { by: "human:ops", reason: "moving the database", timeoutMs: null } });
+
+    const lifted = await withdrawShutdown("human:steven", 1, "restarted", null, store);
+
+    expect(lifted.withdrew).toBe(false);
+    expect(appended).toEqual([]);
+    expect((await readControl(store)).shutdown?.by).toBe("human:ops");
+  });
+
+  /**
+   * The race on the other side: the restart read no request, and a second
+   * person's landed before the restart's append. Appended over it, the fold
+   * would show only the restart's — and withdrawing that by version would lift
+   * ops's with no event withdrawing it.
+   */
+  it("never asks over a request that landed after the read that decided to ask", async () => {
+    const { store, held, appended, before } = recording([]);
+    before.next = () =>
+      held.push({ type: "ConductorShutdownRequested", data: { by: "human:ops", reason: "moving the database", timeoutMs: null } });
+
+    const asked = await requestShutdownUnlessStanding("human:steven", "restarting", null, store);
+
+    expect(asked).toMatchObject({ asked: false, standing: { by: "human:ops", version: 1 } });
+    expect(appended).toEqual([]);
+    // And so the restart has nothing of its own to withdraw, and ops's stands.
+    expect((await readControl(store)).shutdown?.by).toBe("human:ops");
+  });
+
+  it("asks, and names the version it landed at, when nothing stands", async () => {
+    const { store, appended } = recording([{ type: "ConductorPaused", data: { by: "human:ops", reason: "x", until: null } }]);
+
+    expect(await requestShutdownUnlessStanding("human:steven", "restarting", 300_000, store)).toEqual({ asked: true, version: 2 });
+    expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownRequested"]);
+    expect(await withdrawShutdown("human:steven", 2, "restarted", null, store)).toMatchObject({ withdrew: true });
   });
 });

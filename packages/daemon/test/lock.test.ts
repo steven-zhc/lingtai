@@ -10,8 +10,9 @@
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { taskViewProjection } from "@lingtai/projector";
-import { describe, expect, it } from "vitest";
-import { acquireDaemonLock, startDaemon } from "../src/index.ts";
+import pg from "pg";
+import { describe, expect, it, vi } from "vitest";
+import { acquireDaemonLock, conductorLockHolder, startDaemon } from "../src/index.ts";
 
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`;
 
@@ -63,6 +64,32 @@ describe("the daemon lock", () => {
     const after = await acquireDaemonLock({ key: k });
     expect(after.ok).toBe(true);
     if (after.ok) await after.lock.release();
+  });
+});
+
+/**
+ * `lingtai restart` waits on this read, and only an answer of *nobody* ends the
+ * wait. A query that failed after the connection opened — a statement timeout,
+ * a backend the pooler dropped — used to come back as that answer, so the drain
+ * was withdrawn while the old daemon was still in its pass (0042 §6).
+ */
+describe("who holds the lock", () => {
+  it("throws when the query fails after connecting, rather than saying nobody holds it", async () => {
+    const k = key();
+    const held = await acquireDaemonLock({ key: k });
+    expect(held.ok).toBe(true);
+    const query = vi.spyOn(pg.Client.prototype, "query").mockImplementation((() =>
+      Promise.reject(new Error("terminating connection due to administrator command"))) as never);
+    try {
+      await expect(conductorLockHolder({ key: k })).rejects.toThrow("administrator command");
+    } finally {
+      query.mockRestore();
+      if (held.ok) await held.lock.release();
+    }
+  });
+
+  it("says nobody when the query answered and nobody holds it", async () => {
+    expect(await conductorLockHolder({ key: key() })).toBeNull();
   });
 });
 

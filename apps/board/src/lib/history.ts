@@ -262,6 +262,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   },
 
   // -------------------------------------------------------------- control --
+  // The commit is the row, not a detail under it. A start is the only moment a
+  // process's code is chosen, and "who restarted it at 23:06" was unanswerable
+  // until this event existed (0042).
+  ConductorStarted: (d) =>
+    `${need(d, "by")} started ${sha(d, "sha")}${d["dirty"] === true ? " (worktree dirty)" : ""}` +
+    (d["reason"] ? `: ${clip(d["reason"])}` : ""),
   ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,
   ConductorResumed: (d) => need(d, "by"),
   // The timeout is on the row because it is the whole difference between a
@@ -269,6 +275,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   ConductorShutdownRequested: (d) =>
     `${need(d, "by")}: ${clip(d["reason"])}` +
     (typeof d["timeoutMs"] === "number" ? ` (timeout ${Math.round(d["timeoutMs"] / 1000)}s)` : ""),
+  // Which request, because a withdrawal lifts that one and no other (0042).
+  ConductorShutdownWithdrawn: (d) => `${need(d, "by")} withdrew request v${need(d, "version")}: ${clip(d["reason"])}`,
   // Retired, and still read for ever (0019). A row that renders nothing is
   // exactly as unreadable whether or not anything appends the type again.
   OutboxDelivered: (d) =>

@@ -104,13 +104,36 @@ now carries the commit the daemon started at; `lingtai doctor`'s
 `daemon: currency` and the board's health dot say how far behind `origin/main`
 that is — the same dot #64 put there, because *is this current* and *is it
 running the code we merged* are one question to a reader (#134). Neither
-restarts it — that is still yours, and whether it should be is open.
+restarts it, and a daemon still does not restart itself when `main` moves; what
+closed is the gap between noticing and acting:
 
-**The restart is now safe to perform** (0030). `pnpm lingtai shutdown "why"`
-appends, returns, and the daemon finishes the pass in flight before it exits —
-the pass, not the agent, so the gates and the merge lane run too. That waits as
-long as `runtime.limits.wall`, `1h` here, and the command says so rather than
-looking hung. Ctrl+C does the same and tells you what a second one costs;
+    pnpm lingtai restart "picking up #88"
+
+**One command drains, waits and starts** (0042). It refuses first and drains
+second, because a refusal after the drain is a system that is down: a `HEAD` the
+tracking remote does not have is refused by name, and nothing overrides that — a
+process holds its code for hours, and `582a0f8` was rebased out of existence
+twenty minutes after a daemon started from it. A dirty worktree is named in the
+same refusal (`--dirty`), `lingtai doctor` has to pass (`--despite-doctor`,
+except for a failure whose own remedy is the restart), and a drain somebody else
+asked for is theirs to lift. The commit and worktree are checked again after
+the wait. Where `lingtai service` keeps the daemon, the start is the
+supervisor's: the restart withdraws its drain with a handoff naming who, why
+and the checked commit, runs `service start`, and waits for the start to be
+recorded — a terminal daemon beside a supervised one would be two conductors
+taking turns. Every start that takes work appends `ConductorStarted` with who,
+why and the commit, so *who restarted it at 23:06* is a question the log
+answers. What makes it never two daemons is still the lock, not the ordering:
+if something else takes it first the restart starts nothing and exits non-zero,
+and `lingtai doctor` says whether a daemon is up.
+
+**The drain underneath it is safe on its own** (0030). `pnpm lingtai shutdown
+"why"` appends, returns, and the daemon finishes the pass in flight before it
+exits — the pass, not the agent, so the gates and the merge lane run too. That
+waits as long as `runtime.limits.wall`, `1h` here, and both commands say so
+rather than looking hung. Ctrl+C does the same and tells you what a second one
+costs; during a `restart`'s wait it leaves the drain standing, the next
+`restart` by the same person picks that request up rather than refusing it, and
 `lingtai resume` lifts a request nothing acted on. An agent left behind by a
 second Ctrl+C or a `--timeout` is killed by the next conductor before it
 releases the claim, guarded on the host and the process's own argv.

@@ -119,6 +119,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) | **The worktree is the whole of a pass, and a refusal never costs it** | accepted; supersedes 0025 §2–§3 and 0038 §4 |
 | [0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) | **`rounds` bound depth; a second ceiling bounds breadth** | accepted; extends 0039 §2–§3, off by default |
 | [0041](decisions/0041-a-gate-that-never-ran.md) | **A gate that never ran has judged nothing, and the same quota stops the conductor** | accepted; extends 0031 to the agent inside a gate |
+| [0042](decisions/0042-the-restart-is-a-command.md) | **The restart is a command, the checks come before the drain, and a start is an event** | accepted; completes 0030 |
 
 ## Experiments
 

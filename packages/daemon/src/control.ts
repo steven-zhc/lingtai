@@ -43,6 +43,8 @@
  * `ConductorResumed` lifts a shutdown request as it lifts a pause, and it has
  * to: the request outlives the daemon it was aimed at, so without something to
  * withdraw it the next daemon to start would read it and stop again.
+ * `ConductorShutdownWithdrawn` lifts one request by its version and nothing
+ * else, which is what `lingtai restart` needs (0042).
  *
  * ## The one pause nobody has to lift
  *
@@ -59,8 +61,16 @@
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { type EventStore, eventStore } from "@lingtai/event-store";
-import { CONTROL_STREAM, type ControlState, parsePayload, reduceControl } from "@lingtai/domain";
+import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
+import {
+  CONTROL_STREAM,
+  type ControlState,
+  type Handoff,
+  type ShutdownRequest,
+  parsePayload,
+  reduceControl,
+} from "@lingtai/domain";
+import { conductorWorker } from "@lingtai/conductor/claim";
 import { readTasks } from "@lingtai/projector";
 import type { CodeVersion } from "./currency.ts";
 import pg from "pg";
@@ -72,6 +82,7 @@ import pg from "pg";
 export {
   CONTROL_STREAM,
   type ControlState,
+  type Handoff,
   type ShutdownRequest,
 } from "@lingtai/domain";
 
@@ -80,11 +91,13 @@ export async function readControl(store: EventStore = eventStore): Promise<Contr
   return reduceControl(await store.read(CONTROL_STREAM));
 }
 
-async function append(type: string, data: unknown, store: EventStore): Promise<void> {
-  const at = (await store.read(CONTROL_STREAM)).length;
-  await store.append(CONTROL_STREAM, at, [
+/** Appends one event and returns the version it landed at. */
+async function append(type: string, data: unknown, store: EventStore, at?: number): Promise<number> {
+  const expected = at ?? (await store.read(CONTROL_STREAM)).length;
+  await store.append(CONTROL_STREAM, expected, [
     { type, actor: (data as { by: string }).by, data: parsePayload(type as never, data) },
   ]);
+  return expected + 1;
 }
 
 /**
@@ -121,8 +134,166 @@ export async function requestShutdown(
   reason: string,
   timeoutMs: number | null = null,
   store: EventStore = eventStore,
+): Promise<number> {
+  // The version is what names the request, so a caller that means to withdraw
+  // it later — `lingtai restart` — can withdraw that one and no other.
+  return append("ConductorShutdownRequested", { by, reason, timeoutMs }, store);
+}
+
+/** What `requestShutdownUnlessStanding` found, and so what it did. */
+export type Asking =
+  /** Nothing was standing, and this request now is — at `version`. */
+  | { asked: true; version: number }
+  /** A request was already standing, and nothing was appended over it. */
+  | { asked: false; standing: ShutdownRequest };
+
+/**
+ * Ask for a drain only if none stands, as one write.
+ *
+ * The fold keeps the newest request and nothing else, so a request appended
+ * over a standing one hides it — and a caller that later withdraws its own by
+ * version would then lift the one it hid, with no event withdrawing that. A
+ * read that found nothing followed by `requestShutdown` is exactly that race:
+ * a second person's `lingtai shutdown` landing between the two is overwritten
+ * in the state without anybody deciding so.
+ *
+ * So the append is at the version of the read that decided it, as
+ * `withdrawShutdown`'s is; if the stream moved, it is read and asked again.
+ */
+export async function requestShutdownUnlessStanding(
+  by: string,
+  reason: string,
+  timeoutMs: number | null = null,
+  store: EventStore = eventStore,
+): Promise<Asking> {
+  for (let attempt = 0; ; attempt++) {
+    const events = await store.read(CONTROL_STREAM);
+    const standing = reduceControl(events).shutdown;
+    if (standing !== null) return { asked: false, standing };
+    try {
+      const version = await append("ConductorShutdownRequested", { by, reason, timeoutMs }, store, events.length);
+      return { asked: true, version };
+    } catch (err) {
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+    }
+  }
+}
+
+/**
+ * A conductor started: who, why, and the commit it froze.
+ *
+ * **Stopping was an event and starting was state** until
+ * [0042](../../../doc/decisions/0042-the-restart-is-a-command.md). The beacon
+ * below is one mutable row, so it says *a daemon is running now* and is
+ * overwritten by the next one — it has never been able to answer "who restarted
+ * it at 23:06", which on 2026-09-09 was the question that mattered.
+ *
+ * Appended by the daemon itself, once, after it has won the lock and read its
+ * commit — so it records a start that actually happened rather than one that was
+ * intended, and so `lingtai daemon` typed by hand is in the log beside
+ * `lingtai restart`. A start that loses the lock appends nothing, because
+ * nothing started.
+ *
+ * It does not withdraw a standing shutdown request, deliberately: a daemon
+ * started while one stands reads it and stops again. See `withdrawShutdown`.
+ */
+export async function recordStart(
+  by: string,
+  reason: string | null,
+  code: CodeVersion,
+  store: EventStore = eventStore,
+  /** The withdrawal this start answers, when a supervisor made a restart's start (0042 §8). */
+  handoff: number | null = null,
 ): Promise<void> {
-  await append("ConductorShutdownRequested", { by, reason, timeoutMs }, store);
+  await append(
+    "ConductorStarted",
+    { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff },
+    store,
+  );
+}
+
+/** What a start after a restart's handoff recorded, as the log has it. */
+export interface RecordedStart {
+  by: string;
+  reason: string | null;
+  sha: string | null;
+  dirty: boolean;
+  worker: string;
+  handoff: number | null;
+  at: Date;
+}
+
+/**
+ * The first `ConductorStarted` after `version` on `ctl-conductor`, or null.
+ *
+ * What `lingtai restart` waits on when a supervisor makes the start: not the
+ * beacon, which says a daemon is up and not which start put it there, but the
+ * record the new daemon appends — so the restart can say whose start it was and
+ * from what commit, or that the one that happened was not the one it handed off.
+ */
+export async function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
+  const found = (await store.read(CONTROL_STREAM)).find((e) => e.type === "ConductorStarted" && e.version > version);
+  if (!found) return null;
+  const d = (found.data ?? {}) as Record<string, unknown>;
+  return {
+    by: typeof d["by"] === "string" ? d["by"] : "",
+    reason: typeof d["reason"] === "string" ? d["reason"] : null,
+    sha: typeof d["sha"] === "string" ? d["sha"] : null,
+    dirty: d["dirty"] === true,
+    worker: typeof d["worker"] === "string" ? d["worker"] : "",
+    handoff: typeof d["handoff"] === "number" ? d["handoff"] : null,
+    at: found.at,
+  };
+}
+
+/** What `withdrawShutdown` found, and so what it did. */
+export type Withdrawal =
+  /** The request named was standing, and is lifted. */
+  | { withdrew: true; request: ShutdownRequest; version: number }
+  /** Nothing is standing — somebody's `lingtai resume` already lifted it. */
+  | { withdrew: false; standing: null }
+  /** A different request is standing, and it is left exactly where it is. */
+  | { withdrew: false; standing: ShutdownRequest };
+
+/**
+ * Lift one drain — the one at `version` — and touch nothing else.
+ *
+ * `lingtai restart` has to withdraw the request it made: it stands in the
+ * stream for ever, so the daemon the command is about to start would read it
+ * and stop again. `ConductorResumed` would do that and would also lift a pause,
+ * which is somebody else's decision and nothing to do with this restart.
+ *
+ * **One append, at the version of the read that decided it.** The first version
+ * of this resumed and then re-paused, as two appends: anything that landed
+ * between them made the second one lose its race, and a person's pause was
+ * gone. Here the decision and the write are bound by the store's own
+ * concurrency control — if the stream moved, the append refuses, and the
+ * stream is read and the question asked again. What moved it may be a second
+ * person's drain, and then the answer is `standing`, not a withdrawal.
+ */
+export async function withdrawShutdown(
+  by: string,
+  version: number,
+  reason: string,
+  /**
+   * The code the restart examined, when a supervisor is to make the start —
+   * so the daemon it starts can record whose restart it was (0042 §8).
+   */
+  handoff: Pick<Handoff, "sha" | "dirty"> | null = null,
+  store: EventStore = eventStore,
+): Promise<Withdrawal> {
+  for (let attempt = 0; ; attempt++) {
+    const events = await store.read(CONTROL_STREAM);
+    const standing = reduceControl(events).shutdown;
+    if (standing === null) return { withdrew: false, standing: null };
+    if (standing.version !== version) return { withdrew: false, standing };
+    try {
+      const at = await append("ConductorShutdownWithdrawn", { by, version, reason, handoff }, store, events.length);
+      return { withdrew: true, request: standing, version: at };
+    } catch (err) {
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+    }
+  }
 }
 
 /**

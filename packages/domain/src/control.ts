@@ -29,6 +29,32 @@ export interface ShutdownRequest {
    * leaves the agent running on purpose — the orphan `reconcile` now kills.
    */
   timeoutMs: number | null;
+  /**
+   * Where the request sits on `ctl-conductor`, which is what names it.
+   *
+   * A request carries no id of its own and does not need one: the stream is
+   * the installation's, and a position on it is unique. `ConductorShutdownWithdrawn`
+   * names a request by this, so withdrawing one can never lift a newer one.
+   */
+  version: number;
+}
+
+/**
+ * A restart whose start a supervisor is to make, not yet answered by a start.
+ *
+ * `lingtai restart` under launchd or systemd cannot start the daemon itself —
+ * that would be a second conductor in a terminal beside the supervised one — so
+ * it withdraws its drain with this and asks the supervisor. The daemon the
+ * supervisor starts reads it here, and records the restart's `by` and `reason`
+ * when the commit it is running is `sha` (0042 §8).
+ */
+export interface Handoff {
+  by: string;
+  reason: string;
+  sha: string | null;
+  dirty: boolean;
+  /** The withdrawal's own version, which `ConductorStarted.handoff` names. */
+  version: number;
 }
 
 export interface ControlState {
@@ -57,6 +83,14 @@ export interface ControlState {
    * nor the exit it is asking for.
    */
   shutdown: ShutdownRequest | null;
+  /**
+   * The restart a supervisor's start is to answer, or null.
+   *
+   * **The next start takes it or clears it**, whoever makes it. A handoff the
+   * supervisor never acted on must not be claimed days later by a daemon it
+   * has nothing to do with, and a newer drain supersedes it.
+   */
+  handoff: Handoff | null;
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
   requested: { project: string; issue: string; by: string }[];
   /**
@@ -89,6 +123,7 @@ export const emptyControl: ControlState = {
   reason: null,
   until: null,
   shutdown: null,
+  handoff: null,
   requested: [],
   discussions: [],
 };
@@ -129,17 +164,46 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
           by: str("by") ?? "",
           reason: str("reason") ?? "",
           timeoutMs: typeof timeout === "number" ? timeout : null,
+          version: e.version,
         };
+        // A drain asked after a handoff is a newer decision than it.
+        state.handoff = null;
         break;
       }
+      case "ConductorShutdownWithdrawn": {
+        // The request named, or nothing. A withdrawal that lost a race to a
+        // newer request must leave that request standing — it is somebody
+        // else's, and lifting it is the one thing a restart may not do (0042).
+        // A pause is untouched either way, which is the whole difference
+        // between this and `ConductorResumed`.
+        if (state.shutdown === null || state.shutdown.version !== d["version"]) break;
+        state.shutdown = null;
+        const h = d["handoff"] as { sha?: unknown; dirty?: unknown } | null | undefined;
+        if (h && typeof h === "object") {
+          state.handoff = {
+            by: str("by") ?? "",
+            reason: str("reason") ?? "",
+            sha: typeof h.sha === "string" ? h.sha : null,
+            dirty: h.dirty === true,
+            version: e.version,
+          };
+        }
+        break;
+      }
+      case "ConductorStarted":
+        // Any start ends a handoff — the one that answered it, or one that did
+        // not and so says it will not be answered (see `handoff` above).
+        state.handoff = null;
+        break;
       case "ConductorResumed":
         state.paused = false;
         state.by = null;
         state.reason = null;
         state.until = null;
-        // Resume is the only way to withdraw a shutdown, and it must be one:
-        // the request is in the stream for ever, so a daemon started after it
-        // would find it waiting and stop again, and again.
+        // Resume withdraws any shutdown, and it must: `ConductorShutdownWithdrawn`
+        // lifts only the one request it names, and a person typing `lingtai
+        // resume` means all of it. The request is in the stream for ever, so a
+        // daemon started after it would find it waiting and stop again, and again.
         state.shutdown = null;
         break;
       case "RunRequested":

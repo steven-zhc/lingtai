@@ -33,7 +33,7 @@
  * unprivileged user work: install *as* that user and every path is theirs.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
@@ -319,6 +319,64 @@ export interface ServiceOptions {
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
   error?: (line: string) => void;
+}
+
+/** Whether launchd or systemd keeps a daemon here, as `lingtai restart` needs to know it (0042 §8). */
+export type Keeper =
+  /** No supervisor has the job, or none exists here: whoever restarts starts it. */
+  | { kept: false }
+  /** The supervisor has it, and it runs this checkout. The start is the supervisor's. */
+  | { kept: true; platform: ServicePlatform; path: string }
+  /** It could not be told, or the unit runs a different checkout. Refused before anything stops. */
+  | { unread: string };
+
+/**
+ * Whether a supervisor keeps the daemon, asked before a restart stops anything.
+ *
+ * **Kept means the supervisor would start one again by itself** — the job is
+ * loaded under launchd, or the unit is active or restarting under systemd. A
+ * file that is on disk after `service stop` is not a keeper: nothing will start
+ * from it, and the daemon somebody is restarting is in a terminal.
+ *
+ * A unit written from another checkout is refused rather than started: the
+ * restart would check this checkout's commit and the supervisor would start
+ * that one's.
+ */
+export function keeper(
+  options: Pick<ServiceOptions, "platform" | "env" | "root" | "uid" | "exec" | "which"> = {},
+): Keeper {
+  const platform = platformFor(options.platform ?? process.platform);
+  const which = options.which ?? whichBin;
+  if (!platform || !which(platform === "launchd" ? "launchctl" : "systemctl")) return { kept: false };
+  const env = options.env ?? process.env;
+  const root = options.root ?? repoRoot();
+  let path: string;
+  try {
+    path = (platform === "launchd" ? launchdPlist : systemdUnit)({ node: "node", root, env }).path;
+  } catch {
+    // A HOME-less environment, or a checkout path systemd cannot carry: `service
+    // install` refuses both, so nothing was installed from here to keep it.
+    return { kept: false };
+  }
+  if (!existsSync(path)) return { kept: false };
+
+  const answer = askSupervisor(platform, options.exec ?? execCall, options.uid ?? process.getuid?.() ?? 0);
+  if ("unread" in answer) return { unread: `could not ask the supervisor whether it keeps the daemon — ${answer.unread}` };
+  const kept =
+    platform === "launchd"
+      ? answer.loaded
+      : answer.loaded && !answer.lines.some((l) => l === "ActiveState=inactive" || l === "ActiveState=failed");
+  if (!kept) return { kept: false };
+
+  const entry = join(root, "apps/cli/src/lingtai.ts");
+  if (!readFileSync(path, "utf8").includes(entry)) {
+    return {
+      unread:
+        `${path} runs a different checkout than this one (${root}) — a restart here would check this commit and ` +
+        "the supervisor would start that one's. Restart from that checkout, or pnpm lingtai service install from this one",
+    };
+  }
+  return { kept: true, platform, path };
 }
 
 export async function serviceCommand(args: string[], options: ServiceOptions): Promise<number> {

@@ -571,6 +571,7 @@ the lock.
 pnpm lingtai pause "the importer is flaky today"   # take nothing new
 pnpm lingtai resume
 pnpm lingtai shutdown "picking up #88"             # finish the pass, then stop
+pnpm lingtai restart "picking up #88"              # …and start one again, checked
 pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 ```
 
@@ -591,6 +592,82 @@ it trips, which is stop taking work, **leave the agent running** and exit.
 
 `lingtai resume` lifts a shutdown nobody acted on, as it lifts a pause. Without
 that the request would stop every daemon started after it.
+
+**Starting again is `lingtai restart`**, which is the drain above and then one
+daemon — in that terminal, or by the supervisor that keeps it
+([0042](decisions/0042-the-restart-is-a-command.md)):
+
+```bash
+pnpm lingtai restart "picking up #88"
+```
+
+It refuses **before** it stops anything, because a refusal after the drain is a
+system that is down and a person reading about why it may not come back up:
+
+- **a `HEAD` the tracking remote does not have**, by name. A process holds the
+  code it started with for hours, and on 2026-09-09 a daemon started from
+  `582a0f8` — a local commit a `git pull --rebase` rewrote out of existence
+  twenty minutes later, leaving `daemon: currency` reporting a commit that is
+  not reachable from `origin/main` at all. Being *behind* the remote is not a
+  refusal: that code can still be fetched and read.
+- **a dirty worktree**, in the same refusal, for the same reason — code that no
+  commit names.
+- **anything `lingtai doctor` failed on.** The failed checks are printed; the
+  thirty green ones are not. A failure whose own remedy is a restart — a pass
+  refused by a process at a commit older than this checkout (#148) — is printed
+  and does not refuse, since this is the command it asks for.
+- **a shutdown somebody else asked for**, because it is another person's
+  decision. `lingtai resume` lifts it. One you asked for yourself — a `shutdown`,
+  or a `restart` you Ctrl+C'd — is picked up and waited on, not refused.
+
+One flag per refusal, so overriding one never overrides the rest: `--dirty` for
+the worktree and `--despite-doctor` for the doctor. Nothing overrides an
+unpushed commit or a drain that is somebody else's. What a flag waved through is
+still printed.
+
+Then it waits, saying what is still finishing and repeating itself so it never
+reads as hung; checks the commit and the worktree **again**, because a drain can
+take an hour and those are what the start freezes; withdraws the request it
+made — `ConductorShutdownWithdrawn`, naming that request, so a pause and a drain
+somebody asked for meanwhile are both left exactly as they are — and starts a
+daemon in that terminal, unless a supervisor keeps one (below). **What makes
+it never two daemons is the lock, not the order of operations** — and losing the
+lock is not a daemon running. If anything takes it first, the restart starts
+nothing and exits non-zero: the winner may be a `lingtai run` that exits when its
+pass ends, or a copy something else started that read the drain before it was
+withdrawn and drains straight back out, and either leaves no daemon. `lingtai
+doctor` says whether one is up; if none is, run `lingtai restart` again. Ctrl+C
+during the wait leaves the drain standing.
+
+The lock held with no fresh beacon is drained too, not just waited on: it is a
+`lingtai run`, which finishes its pass regardless, or a daemon whose beacon
+writes are failing, which would otherwise never exit. A lock or a beacon that
+could not be read refuses before anything is asked to stop.
+
+**Under `lingtai service`, the start is the supervisor's.** When launchd has
+the job loaded, or the systemd unit is active, a daemon started in the terminal
+would be a second conductor beside the one it keeps, and the supervised one
+would come back the moment the terminal closed. So `restart` asks first whether
+a supervisor keeps it — refusing, before anything stops, a supervisor it could
+not ask or a unit written from another checkout, since it would check this
+commit and start that one's. It asks the drain even when nothing is conducting,
+waits as above, and withdraws with a **handoff**: who, why, and the commit it
+checked. Then `service start`, and it waits up to 90 seconds for the start to
+be recorded. The supervised daemon that starts next takes the restart's name
+off the handoff only if it is running the commit that was checked; on any other
+it is recorded as `daemon` and says why, and the restart exits non-zero naming
+what did start. `--no-conduct` and `--no-merge` are refused there, because the
+unit decides how the supervisor starts it. A file left after `service stop` is
+not a keeper — nothing starts from it — so that restart runs in the terminal.
+
+A start is now in the log as well as in the beacon — `ConductorStarted`, with
+who, why and the commit. `by` is `human:<you>` for a restart, for the
+supervisor's start that answered your restart's handoff, or for a `lingtai
+daemon` typed at a terminal, and `daemon` for one launchd or systemd started by
+itself — so *who restarted it at 23:06* is a question the log answers. A start
+into a standing drain is not recorded: it takes nothing and exits, and a
+supervisor repeats it every thirty seconds until the drain is lifted. A beacon
+is one mutable row the next start overwrites, and it never could.
 
 Ctrl+C is the same drain and says what it is doing: the first one names what is
 finishing and what a second one costs, and the second stops immediately. Both
@@ -687,8 +764,10 @@ uses the new unit. `service restart` is what applies it now — on macOS
 **`stop` and `restart` are the supervisor's signal.** The daemon drains on it as
 it does on Ctrl+C, but launchd and systemd wait seconds, not a pass, before they
 SIGKILL, which leaves the agent for the next conductor to kill. To wait for the
-pass in flight, use `lingtai shutdown "why"` *instead of* `restart`, not before
-it. A shutdown request outlives the process, so under a supervisor every copy
+pass in flight, use `lingtai restart "why"` instead of `service restart`: it
+drains, withdraws only its own request — a pause stays — and has the supervisor
+start the daemon, recorded as yours (above). By hand, it is `lingtai shutdown
+"why"` *instead of* `service restart`, not before it. A shutdown request outlives the process, so under a supervisor every copy
 it brings back reads it and exits again until `lingtai resume` lifts it — which
 makes the shutdown the restart: once `service status` says the daemon it was
 aimed at has exited, `lingtai resume`, and the supervisor's next start takes
@@ -790,39 +869,13 @@ red and says which.
 Whether the conductor is *paused* is a third fact and stays its own chip, absent
 unless there is something to say.
 
-Neither restarts anything. `lingtai doctor` never writes, and whether a daemon
-should restart itself when `main` moves is deliberately still open — 0030 made
-a shutdown safe, and the restart is a decision that wants an ADR first. Take the
-commits by hand:
+Neither restarts anything: `lingtai doctor` never writes, and a daemon still
+does not restart itself when `main` moves — that remains open, and 0042 decided
+only that the restart is a command somebody types. Take the commits with it:
 
 ```bash
-pnpm lingtai service restart   # now, signalling the pass in flight; or ^C and re-run
+pnpm lingtai restart "taking 3 commits"   # drains, checks, and starts — itself, or through the supervisor
 ```
-
-To wait for the pass instead, under a supervisor, do not follow the shutdown
-with `restart` — the request would outlive the restart and every daemon it
-started would exit (`restart` refuses while one stands). The shutdown is the
-restart once it is lifted:
-
-```bash
-pnpm lingtai shutdown "pick up #NN"
-pnpm lingtai service status    # until the beacon says that daemon is not running
-pnpm lingtai resume            # the supervisor's next start takes work on the new code
-```
-
-`resume` also lifts a pause. If one is in force and you mean to keep it, do not
-run the last line alone — replace it with:
-
-```bash
-pnpm lingtai service stop      # the daemon has exited; this keeps the supervisor from starting another
-pnpm lingtai resume            # lifts the shutdown, and the pause with it
-pnpm lingtai pause "the importer is flaky today"   # the pause again, before anything is up to read its absence
-pnpm lingtai service start
-```
-
-That is for a pause somebody set. A pause with a time on it lifts itself, and
-the pause again would not — for that one, run the last line alone after its
-time.
 
 `daemon: currency` is a `note`, not a failure. Being a commit behind is normal
 for the minutes between a merge and a restart; a doctor that went red for it

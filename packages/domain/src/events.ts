@@ -826,6 +826,107 @@ export const ConductorShutdownRequested = z.object({
 });
 
 /**
+ * A conductor started, from this commit, at this person's hand.
+ *
+ * **Stopping was an event and starting was state**, and the asymmetry cost an
+ * answer. A daemon was restarted at 23:06 on 2026-09-09 and nobody can say by
+ * whom: a start left a beacon, and a beacon says *a daemon is running now* — not
+ * that one started, from what code, or who asked for it.
+ *
+ * `sha` is the whole reason this is worth remembering later, and it is the field
+ * `daemon_status` could never carry honestly. That evening's daemon started from
+ * `582a0f8`, a commit that had not been pushed; a `git pull --rebase` twenty
+ * minutes later rewrote it to `2926f2d` and `582a0f8` stopped existing anywhere
+ * but in that process's memory. The beacon is one mutable row, so the next start
+ * overwrote what the last one was running; a row in the log cannot be
+ * overwritten, and [0042](../../../doc/decisions/0042-the-restart-is-a-command.md)
+ * is what keeps the commit it names pushed.
+ *
+ * It does **not** withdraw a standing `ConductorShutdownRequested`. Starting and
+ * being told to stop are independent facts — a daemon started while a request
+ * stands reads it and stops again, deliberately. `ConductorShutdownWithdrawn`
+ * is the withdrawal, and it names the request it lifts.
+ */
+export const ConductorStarted = z.object({
+  /**
+   * `human:<user>` only where a person's hand is actually on it: `lingtai
+   * restart`, or `lingtai daemon` typed at a terminal. A daemon whose stdin is
+   * not a terminal — launchd's `KeepAlive`, a script, `nohup` — is recorded as
+   * `daemon`, because the log saying a person started what launchd started by
+   * itself is the unattributable 23:06 again, only confidently wrong.
+   */
+  by: z.string(),
+  /** Why, when whoever started it said. `lingtai restart` carries its reason. */
+  reason: z.string().nullable().default(null),
+  /**
+   * The commit `HEAD` pointed at, frozen for the life of the process.
+   *
+   * Null only where there was no checkout to read — an installed copy or a
+   * tarball. 0010's *the source runs unbuilt* removes the build and not the
+   * restart, so this is the deployed version of Lingtai, recorded at the one
+   * moment it is decided.
+   */
+  sha: z.string().nullable(),
+  dirty: z.boolean(),
+  /**
+   * `host:pid`, spelled the way `WorkItemClaimed.worker` spells it.
+   *
+   * One string, so a claim and the start of the process that made it join
+   * without anybody translating between two conventions.
+   */
+  worker: z.string(),
+  /**
+   * The `ConductorShutdownWithdrawn` this start answers, by its version on
+   * `ctl-conductor`, or null.
+   *
+   * Set only where a supervisor made the start a `lingtai restart` asked for:
+   * the restart drains, withdraws with a handoff naming who, why and the commit
+   * its checks examined, and asks launchd or systemd to start the daemon — so
+   * the process that appends this is not the one somebody typed. It takes `by`
+   * and `reason` from that handoff, and only when the commit it read is the one
+   * that was examined (0042 §8).
+   */
+  handoff: z.number().int().positive().nullable().default(null),
+});
+
+/**
+ * One shutdown request lifted — the one named, and nothing else.
+ *
+ * `ConductorResumed` lifts a request too, and it lifts a pause with it, which
+ * is right for `lingtai resume` and wrong for `lingtai restart`: a restart has
+ * to withdraw the drain *it* asked for, so the daemon it starts does not read
+ * the request and stop again, and a pause somebody else made is none of its
+ * business. The first attempt at this resumed and then re-appended the pause —
+ * two appends, so an append landing between them destroyed a person's pause —
+ * and resumed whatever request stood, so a drain a second person asked for
+ * during the wait was lifted too.
+ *
+ * `version` is that request's position on `ctl-conductor`. The fold lifts the
+ * standing request only when it is at that version, so a withdrawal that lost a
+ * race to a newer request is a no-op in the log rather than an overruling of it.
+ */
+export const ConductorShutdownWithdrawn = z.object({
+  by: z.string(),
+  version: z.number().int().positive(),
+  reason: z.string(),
+  /**
+   * The code a restart's checks examined, when the start is the supervisor's to
+   * make rather than this process's — or null, when the restart starts the
+   * daemon itself.
+   *
+   * The next conductor to start reads it off the fold and, if it is running
+   * that commit, records the restart's `by` and `reason` on its
+   * `ConductorStarted` rather than `daemon`. Without it, a restart under
+   * launchd would put *daemon started 65b7439* in the log and nobody's name —
+   * 23:06 again, by a longer route (0042 §8).
+   */
+  handoff: z
+    .object({ sha: z.string().nullable(), dirty: z.boolean() })
+    .nullable()
+    .default(null),
+});
+
+/**
  * Run this one now, ahead of the queue.
  *
  * The same mechanism rather than a second channel: a person asking for a
@@ -1311,6 +1412,8 @@ export const EVENTS = {
   ConductorPaused,
   ConductorResumed,
   ConductorShutdownRequested,
+  ConductorStarted,
+  ConductorShutdownWithdrawn,
   OutboxDelivered,
   OutboxFailed,
   IssueUpdated,

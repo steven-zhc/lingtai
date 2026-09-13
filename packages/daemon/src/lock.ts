@@ -70,17 +70,15 @@ export interface AcquireOptions {
  * name.
  */
 async function holderOf(client: pg.Client, key: string): Promise<string | null> {
-  const who = await client
-    .query<{ holder: string }>(
-      `select coalesce(a.application_name, '') || ' pid ' || a.pid::text as holder
-       from pg_locks l
-       join pg_stat_activity a on a.pid = l.pid
-       where l.locktype = 'advisory' and l.granted and l.objid = (hashtext($1)::bigint & 4294967295)
-       limit 1`,
-      [key],
-    )
-    .catch(() => null);
-  return who?.rows[0]?.holder?.trim() ?? null;
+  const who = await client.query<{ holder: string }>(
+    `select coalesce(a.application_name, '') || ' pid ' || a.pid::text as holder
+     from pg_locks l
+     join pg_stat_activity a on a.pid = l.pid
+     where l.locktype = 'advisory' and l.granted and l.objid = (hashtext($1)::bigint & 4294967295)
+     limit 1`,
+    [key],
+  );
+  return who.rows[0]?.holder?.trim() ?? null;
 }
 
 export async function acquireDaemonLock(options: AcquireOptions = {}): Promise<LockResult> {
@@ -98,7 +96,9 @@ export async function acquireDaemonLock(options: AcquireOptions = {}): Promise<L
     );
 
     if (!got.rows[0]?.locked) {
-      const holder = await holderOf(client, key);
+      // Best effort here, and only here: the lock was already refused, so a
+      // failed query costs the holder's name and not the answer.
+      const holder = await holderOf(client, key).catch(() => null);
       await client.end();
       return { ok: false, holder };
     }
@@ -128,6 +128,11 @@ export async function acquireDaemonLock(options: AcquireOptions = {}): Promise<L
  * lock — which is exactly what a diagnostic must not do. `lingtai doctor` never
  * writes and must never take a lock the thing it is diagnosing needs, so this
  * reads `pg_locks` and nothing else.
+ *
+ * **A query that fails throws**, as a connection that fails does. Null means
+ * `pg_locks` was read and nobody holds the lock; a statement timeout or a reset
+ * backend read as that would tell `lingtai restart` the drain was over while the
+ * old daemon was still in its pass (0042 §6).
  */
 export async function conductorLockHolder(options: AcquireOptions = {}): Promise<string | null> {
   const client = new pg.Client({

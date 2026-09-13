@@ -18,6 +18,7 @@ import {
   LAUNCHCTL_NO_SUCH_SERVICE,
   LAUNCHD_LABEL,
   NO_SUPERVISOR,
+  keeper,
   launchdPlist,
   lingering,
   platformFor,
@@ -507,5 +508,56 @@ describe("install on Linux", () => {
     const { go, err } = command("linux", s.exec);
     expect(await go("install")).toBe(1);
     expect(err.join("\n")).toContain("machinectl shell");
+  });
+});
+
+/**
+ * `lingtai restart` asks this before anything stops (0042 §8): whether the
+ * start is the supervisor's to make, or this terminal's.
+ */
+describe("whether a supervisor keeps the daemon, for a restart", () => {
+  const env = () => ({ HOME: home, USER: "lingtai" });
+  const which = (bin: string) => `/usr/bin/${bin}`;
+  const install = async (platform: "launchd" | "systemd", root: string) => {
+    const f = (platform === "launchd" ? launchdPlist : systemdUnit)({ node: NODE, root, env: env() });
+    await mkdir(dirname(f.path), { recursive: true });
+    await writeFile(f.path, f.content);
+  };
+
+  it("does not, with nothing installed — the restart starts one here", () => {
+    const { exec, calls } = supervisor([]);
+    expect(keeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
+    expect(calls).toEqual([]);
+  });
+
+  it("does, when launchd has this checkout's job loaded", async () => {
+    await install("launchd", ROOT);
+    const { exec } = supervisor([["launchctl print", { status: 0, out: LOADED_BUT_NOT_RUNNING }]]);
+    expect(keeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toMatchObject({ kept: true, platform: "launchd" });
+  });
+
+  it("does not, for a file somebody `service stop`ped — nothing would start from it", async () => {
+    await install("launchd", ROOT);
+    const { exec } = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    expect(keeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
+  });
+
+  it("does not, for a systemd unit that is inactive", async () => {
+    await install("systemd", ROOT);
+    const { exec } = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=inactive\n" }]]);
+    expect(keeper({ platform: "linux", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
+  });
+
+  it("refuses a supervisor it could not ask, rather than guessing either way", async () => {
+    await install("launchd", ROOT);
+    const { exec } = supervisor([["launchctl print", { status: 112, out: "Could not find domain" }]]);
+    expect(keeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toHaveProperty("unread");
+  });
+
+  it("refuses a unit that runs another checkout: the restart would check one commit and start another", async () => {
+    await install("systemd", "/srv/other");
+    const { exec } = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }]]);
+    const kept = keeper({ platform: "linux", env: env(), root: ROOT, uid: UID, exec, which });
+    expect("unread" in kept && kept.unread).toContain("different checkout");
   });
 });

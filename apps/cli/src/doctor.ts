@@ -46,7 +46,7 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
@@ -79,6 +79,13 @@ export interface CheckResult {
    * cannot go stale. See `DEFERRED`.
    */
   deferred?: boolean;
+  /**
+   * True for a failure whose remedy the check itself names as restarting the
+   * daemon. `lingtai restart` gates on this report and does not count these:
+   * refusing the one command a failure asks for, unless a waiver is typed, is
+   * how that waiver becomes a habit that hides the failures it should not (0042).
+   */
+  restartAnswers?: boolean;
 }
 
 /**
@@ -670,11 +677,12 @@ export async function daemonLiveness(
  * minutes between a merge and a restart, and a doctor that went red for it
  * would be red most afternoons. It is also not `ok`: `ok` is where this hid.
  *
- * It reports and stops there. Whether a daemon should restart itself when
- * `main` moves is left open deliberately —
- * [0030](../../../doc/decisions/0030-shutting-down-safely.md) made the shutdown
- * safe, and the restart is a decision that wants an ADR before an
- * implementation.
+ * It reports and stops there, but this report is no longer read only by a
+ * person: `lingtai restart` runs the same doctor and refuses on any failure
+ * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)), so turning
+ * this `warn` into a `fail` would refuse every restart that is behind — which is
+ * every restart that has something to pick up. Whether a daemon should restart
+ * *itself* when `main` moves is still open; 0042 decided only the command.
  */
 async function daemonCurrency(): Promise<CheckResult> {
   const name = "daemon: currency";
@@ -742,10 +750,15 @@ async function passRefusals(): Promise<CheckResult> {
   const daemonUp = status !== null && lastBeat(status).up;
   const here = (await readCodeVersion()).sha;
   const read = refusing.map((p) => describeRefusal(p.project!, p.refused!, { daemonUp, here }));
+  const failing = read.filter((r) => r.status === "fail");
   return {
     name,
-    status: read.some((r) => r.status === "fail") ? "fail" : "warn",
+    status: failing.length > 0 ? "fail" : "warn",
     detail: read.map((r) => r.detail).join("\n         "),
+    // Only when every failing project is one a restart is the remedy for — one
+    // refused by code older than this checkout. A refusal by the code here
+    // would refuse again after the restart, and still gates it.
+    ...(failing.length > 0 && failing.every((r) => r.restartAnswers) ? { restartAnswers: true } : {}),
   };
 }
 
@@ -764,25 +777,27 @@ export function describeRefusal(
   project: string,
   r: RecordedRefusal,
   now: { daemonUp: boolean; here: string | null },
-): { status: "fail" | "warn"; detail: string } {
+): { status: "fail" | "warn"; detail: string; restartAnswers: boolean } {
   const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "an unrecorded commit");
   const head =
     `${project}: refused since seq ${r.seq} (${r.at.toISOString()}) by a process at ${short(r.codeSha)}, ` +
     `reading ${r.ref ?? "a branch it never reached"} — ${r.detail}.`;
   // The sentence #148 was missing: whether the recipe rows in this report
   // read with the refusing code or with newer code.
+  const older = Boolean(r.codeSha && now.here && r.codeSha !== now.here);
   const witness =
-    r.codeSha && now.here && r.codeSha !== now.here
+    older
       ? ` This checkout is at ${short(now.here)}, so the recipe rows here read with other code than the ` +
         "process that refused: if they are ok, the recipe is fine and that process is too old for it — restart it"
       : r.codeSha && r.codeSha === now.here
         ? " This checkout is at the same commit, so the recipe rows here read with the code that refused"
         : " Which code the recipe rows here read with, beside the refusing process's, cannot be said";
   return now.daemonUp
-    ? { status: "fail", detail: `${head}${witness}` }
+    ? { status: "fail", detail: `${head}${witness}`, restartAnswers: older }
     : {
         status: "warn",
         detail: `${head}${witness}. No daemon is up; the next pass records whether it still refuses`,
+        restartAnswers: older,
       };
 }
 
@@ -1519,6 +1534,32 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     skipped: results.filter((r) => r.status === "skip").length,
     warned: results.filter((r) => r.status === "warn").length,
   };
+}
+
+/**
+ * The report, with the environment built the one legal way.
+ *
+ * Touching the loaders rather than reading `process.env` keeps the one rule
+ * about environment loading true even in the command that inspects it — and
+ * this is a function rather than four lines at a call site because there are two
+ * call sites now: `lingtai doctor`, and the `lingtai restart` it gates
+ * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)). A gate that
+ * ran a *slightly* different doctor than the one you type would be the worst of
+ * both.
+ */
+export async function doctorReport(): Promise<DoctorReport> {
+  const env = { ...process.env };
+  try {
+    env["DATABASE_URL"] = databaseUrl();
+  } catch {
+    delete env["DATABASE_URL"];
+  }
+  try {
+    env["DIRECT_DATABASE_URL"] = directDatabaseUrl();
+  } catch {
+    delete env["DIRECT_DATABASE_URL"];
+  }
+  return runDoctor(env);
 }
 
 /**
