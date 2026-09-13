@@ -1199,7 +1199,12 @@ export const Reconciled = z.object({
  * the control stream, which is where a pause, a shutdown and a question live.
  */
 export const PluginFailed = z.object({
-  /** Which subscriber, as the daemon names it: `notify`, `discuss`. */
+  /**
+   * Which subscriber: the `name:` of a recipe's `subscribers:` entry — this
+   * repository's is `desktop` — or `discuss`, the one the daemon still names
+   * for itself. Rows appended before #123 say `notify`, which was the daemon's
+   * name for the notifier it built by hand.
+   */
   name: z.string(),
   /** The type it was given. Not the payload: a failure is not a place to copy one. */
   eventType: z.string(),

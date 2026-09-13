@@ -258,9 +258,15 @@ describe("the work loop", () => {
    *
    * Three failures in one test on purpose: they are three shapes of the same
    * defect and the boundary has to hold all three. A throw never reaches a
-   * `.catch` at all; a rejection reaches one only if somebody wrote it, and
-   * `notify` had none; and a subscriber that simply never settles produces no
-   * signal whatsoever, which is the failure a notifier must not have.
+   * `.catch` at all; a rejection reaches one only if somebody wrote it, and the
+   * one notifier there was had none; and a subscriber that simply never settles
+   * produces no signal whatsoever, which is the failure a notifier must not
+   * have.
+   *
+   * It is a declared subscriber rather than the old `notify` callback since
+   * `#123`, and the name it is recorded under is its own — the assertion below
+   * is on `desktop` because that is what `PluginFailed` has to say when there
+   * is more than one of them.
    */
   it("survives a subscriber that throws, rejects or hangs, and records each one", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
@@ -279,14 +285,21 @@ describe("the work loop", () => {
       // Short, because the property is that a hang is *reported*; how long a
       // real subscriber is given before that is a separate decision.
       subscriberTimeoutMs: 150,
-      notify: (event) => {
-        seen.push(event.streamId);
-        if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
-        if (event.streamId === stream("rejects")) return Promise.reject(new Error("rejected afterwards"));
-        // Never settles. Nothing cancels it; the boundary times it out.
-        if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
-        return Promise.resolve();
-      },
+      subscribers: [
+        {
+          name: "desktop",
+          deliver: (event) => {
+            seen.push(event.streamId);
+            if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
+            if (event.streamId === stream("rejects")) {
+              return Promise.reject(new Error("rejected afterwards"));
+            }
+            // Never settles. Nothing cancels it; the boundary times it out.
+            if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
+            return Promise.resolve();
+          },
+        },
+      ],
       pass: async () => {},
     });
 
@@ -320,7 +333,7 @@ describe("the work loop", () => {
       expect(new Set(failures.map((f) => f.project))).toEqual(
         new Set([project("throws"), project("rejects"), project("hangs")]),
       );
-      expect(new Set(failures.map((f) => f.name))).toEqual(new Set(["notify"]));
+      expect(new Set(failures.map((f) => f.name))).toEqual(new Set(["desktop"]));
       expect(new Set(failures.map((f) => f.eventType))).toEqual(new Set(["WorkItemLanded"]));
       const hung = failures.find((f) => f.project === project("hangs"));
       expect(hung?.reason).toMatch(/did not return within/);
