@@ -80,10 +80,12 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 base that has since moved. --note is required —
                                 a person overruling a block is not anonymous
   lingtai waive <project> --issue <n> --gate <point:action> --reason <why>
-                                merge past a verdict — a flaky check, a scan
-                                whose service is down. --reason is required and
-                                never defaulted; a gate that is not there is
-                                refused by listing the gates there are
+                                overrule a verdict on the record — a flaky check,
+                                a scan whose service is down. It merges nothing
+                                and moves no card: it says what the item is
+                                still waiting on. --reason is required and never
+                                defaulted; a gate that is not there is refused
+                                by listing the gates there are
 
   lingtai attach <runId>            follow a run's log — what it is doing, as it
                                 does it, from the beginning however late you

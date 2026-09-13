@@ -18,17 +18,20 @@ import { waive } from "@lingtai/conductor";
 import { directDatabaseUrl } from "@lingtai/env";
 import { GATE_POINTS, parsePayload, projectStream, workItemStream } from "@lingtai/domain";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import { userInfo } from "node:os";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { actor } from "../../board/src/lib/actor.ts";
 import { claimsOf, foldRun, standingOf } from "../../board/src/lib/task.ts";
 import { waiveCommand } from "../src/waive.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>([projectStream(PROJECT)]);
 const SHA = "a".repeat(40);
-/** What the board's `waiveGate` records, which is the local account (0007). */
-const ACTOR = `human:${userInfo().username}`;
+/**
+ * What the board's `waiveGate` records — its own `actor()`, called rather than
+ * copied, so a board that started recording something else fails here.
+ */
+const ACTOR = actor();
 
 let client: Db;
 let store: EventStore;
@@ -194,6 +197,65 @@ describe("lingtai waive", () => {
   });
 
   /**
+   * The flaky build that blocked the item. No merge path reads `GateWaived`, so
+   * the waiver leaves the item blocked — and an exit 0 that said only "waived"
+   * would let a person believe the item was on its way to merging.
+   */
+  it("says a blocked item is still blocked and nothing merged", async () => {
+    const { workItemId, runId } = await gatedRun(9);
+    await store.append(workItemId, 2, [
+      {
+        type: "WorkItemBlocked",
+        actor: "conductor",
+        data: parsePayload("WorkItemBlocked", {
+          question: "gate-failed: proposed:build",
+          needsFrom: "human",
+          runId,
+          needs: "acknowledgement",
+          diagnosis: null,
+        }),
+      },
+    ]);
+
+    const { code, out } = await said({ project: PROJECT, issue: 9, gate: "proposed:build", reason: "flake", store });
+
+    expect(code).toBe(0);
+    expect(out).toContain("nothing merged");
+    expect(out).toContain("the item is still blocked");
+    expect(out).toContain(`lingtai requeue ${PROJECT} --issue 9`);
+    expect(out).not.toContain("lingtai approve");
+  });
+
+  /**
+   * A verdict on a head the branch has since moved past is not waivable as a
+   * verdict — but it happened, and the list must not say the gate never reported.
+   */
+  it("names an earlier head's verdict on a planned gate when refusing", async () => {
+    const { runId } = await gatedRun(10);
+    const moved = "b".repeat(40);
+    await store.append(runId, (await store.read(runId)).at(-1)!.version, [
+      {
+        type: "RunProducedDiff",
+        actor: "conductor",
+        data: parsePayload("RunProducedDiff", {
+          branch: "agent/10",
+          headSha: moved,
+          files: 2,
+          insertions: 2,
+          deletions: 0,
+        }),
+      },
+    ]);
+
+    const { code, out } = await said({ project: PROJECT, issue: 10, gate: "proposed:tests", reason: "flaky", store });
+
+    expect(code).toBe(1);
+    expect(out).toContain("proposed:build (planned, failed on aaaaaaa, not reported on bbbbbbb)");
+    expect(out).not.toContain("proposed:build (planned, no verdict)");
+    expect(out).toContain("merge:review (planned, no verdict)");
+  });
+
+  /**
    * A person at a prompt typed the gate from memory. The refusal lists every
    * gate there is and what each says, planned ones included, so the next
    * attempt is spelled right without opening a browser.
@@ -328,7 +390,7 @@ describe("lingtai waive", () => {
       project: PROJECT,
       issue: 8,
       gate,
-      by: ACTOR,
+      by: actor(),
       reason,
       onSha: standing.headSha ?? "",
       store,

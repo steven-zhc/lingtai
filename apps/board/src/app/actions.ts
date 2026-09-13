@@ -42,18 +42,9 @@ import { revalidatePath } from "next/cache";
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from "@/lib/diff";
-import { userInfo } from "node:os";
-
-/**
- * Who is acting.
- *
- * The local account, because the board runs on one machine for one person
- * (0007). A weak claim, but a true one, and an approval that recorded nobody
- * would be the silent waiver this system exists to remove.
- */
-function actor(): string {
-  return `human:${userInfo().username}`;
-}
+// Who is acting — next door for the same reason, and so a test can hold the
+// CLI's actor to this one rather than to a copy.
+import { actor } from "@/lib/actor";
 
 async function project(name: string) {
   const state = await loadProject(name);

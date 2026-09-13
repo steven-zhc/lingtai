@@ -944,6 +944,13 @@ waiver acceptable. It appends the same `GateWaived` the board's button does,
 bound to the head it listed the gates on, so a branch that moves in between is
 refused rather than waived unread.
 
+**A waiver merges nothing**, from here or from the board: no merge path reads
+`GateWaived`. It is a verdict on the record — the card shows it, `doctor`
+counts it, the next attempt is not told the gate died — and the item stays
+where it was. So the command ends by saying what the item is still waiting on:
+a held run is still `approve`'s to merge, and a blocked one is still blocked,
+with `requeue` the move left and a new head this waiver will not count on.
+
 ### Let it merge
 
 Drop the flag once you are willing:

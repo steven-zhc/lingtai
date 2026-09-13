@@ -1,6 +1,14 @@
 /**
  * `lingtai waive <project> --issue <n> --gate <point:action> --reason <why>` —
- * merging past a verdict from the terminal the verdict was read in.
+ * overruling a verdict, on the record, from the terminal the verdict was read in.
+ *
+ * **A waiver merges nothing.** It is a verdict: the card shows it, `lingtai
+ * doctor`'s `landedWithoutGatePoints` counts it, and the next attempt is not
+ * told the gate died. No merge path reads `GateWaived` — the board's button
+ * included — so a blocked item stays blocked and a held run still needs
+ * `lingtai approve`. The command says so after it appends, naming where the
+ * item is, because an exit 0 that let a person think the item was on its way
+ * would be a decision reported as taken that took nothing.
  *
  * The escape hatch existed and could only be reached from a browser on the
  * machine running the daemon (#129). The case it exists for — a flaky check, a
@@ -31,6 +39,31 @@ import { eventStore, type EventStore } from "@lingtai/event-store";
 import { withProjector } from "./projector.ts";
 import { userInfo } from "node:os";
 
+/**
+ * What the waiver left the item waiting on, since it did not move it.
+ *
+ * Read after the append, off the same streams `approve` and `requeue` refuse
+ * on, so the move named is one that command will take.
+ */
+function whereItStands(
+  item: ReturnType<typeof reduceWorkItem>,
+  run: ReturnType<typeof reduceRun>,
+  project: string,
+  issue: number,
+): string {
+  const nothing = "nothing merged: a waiver is a verdict on the record, and no merge reads it";
+  if (run.lifecycle.status === "awaiting-approval") {
+    return `${nothing} — the run is waiting for approval, and lingtai approve ${project} --issue ${issue} merges it`;
+  }
+  if (item.lifecycle.status === "blocked") {
+    return (
+      `${nothing} — the item is still blocked. No command merges a blocked run's diff; ` +
+      `lingtai requeue ${project} --issue ${issue} --note <why> starts a new run, on whose new head this waiver does not count`
+    );
+  }
+  return `${nothing} — the item is ${item.lifecycle.status} and the run is ${run.lifecycle.status}`;
+}
+
 export interface WaiveCommandOptions {
   project: string;
   issue: number;
@@ -41,8 +74,11 @@ export interface WaiveCommandOptions {
   store?: EventStore;
 }
 
-/** What a gate on the current head says, or that the run planned it and nothing ran. */
-type Standing = GateVerdict | "planned";
+/**
+ * What a gate on the current head says, or that the run planned it and nothing
+ * reported on this head — with the verdict it had on an earlier one, if any.
+ */
+type Standing = GateVerdict | { planned: { verdict: GateVerdict; onSha: string } | null };
 
 /**
  * The gates a waiver on the latest run could name, or null when `waive()` will
@@ -73,7 +109,13 @@ function gatesHere(
   if (plan) {
     for (const point of parsePayload("GatesResolved", plan.data).points) {
       if (point.gate === "end") continue;
-      for (const action of point.actions) gates.set(`${point.gate}:${action}`, "planned");
+      for (const action of point.actions) {
+        const key = `${point.gate}:${action}`;
+        // A verdict on a sha the branch has moved past still happened, and a
+        // refusal that called the gate unreported would say it never did.
+        const earlier = run.gates[key];
+        gates.set(key, { planned: earlier ? { verdict: earlier.verdict, onSha: earlier.onSha } : null });
+      }
     }
   }
   // On the current head, the filter the fold applies everywhere else: a verdict
@@ -87,12 +129,17 @@ function gatesHere(
  * expected. "No such gate" sends a person back to the board to find out what
  * the gates are called, which is the trip this command exists to remove.
  */
-function refusal(gates: Map<string, Standing>, gate: string): string | null {
+function refusal(gates: Map<string, Standing>, gate: string, headSha: string): string | null {
   if (gates.has(gate)) return null;
   if (gates.size === 0) {
     return `no gate named "${gate}" — this run has no verdict on its head and planned no gate, so there is nothing to waive`;
   }
-  const listed = [...gates].map(([name, s]) => `${name} (${s === "planned" ? "planned, no verdict" : s})`);
+  const said = (s: Standing): string => {
+    if (typeof s === "string") return s;
+    if (!s.planned) return "planned, no verdict";
+    return `planned, ${s.planned.verdict} on ${s.planned.onSha.slice(0, 7)}, not reported on ${headSha.slice(0, 7)}`;
+  };
+  const listed = [...gates].map(([name, s]) => `${name} (${said(s)})`);
   return `no gate named "${gate}" — there is ${listed.join(", ")}`;
 }
 
@@ -122,7 +169,7 @@ export async function waiveCommand(
     const here = runId ? gatesHere(await store.read(runId)) : null;
 
     if (here) {
-      const refused = refusal(here.gates, options.gate);
+      const refused = refusal(here.gates, options.gate, here.headSha);
       if (refused) {
         log(refused);
         return 1;
@@ -152,6 +199,10 @@ export async function waiveCommand(
     });
 
     log(result.detail);
-    return result.ok ? 0 : 1;
+    if (!result.ok) return 1;
+    // `waive()` appended to the latest run, so there is one to read.
+    const after = reduceWorkItem(await store.read(result.workItemId));
+    log(whereItStands(after, reduceRun(await store.read(after.runs.at(-1)!)), options.project, options.issue));
+    return 0;
   });
 }
