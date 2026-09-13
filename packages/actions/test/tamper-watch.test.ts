@@ -41,6 +41,16 @@ describe("this repository's tamper watch", () => {
     "package.json",
     "packages/actions/package.json",
     "packages/conductor/vitest.config.ts",
+    "packages/conductor/vitest.pure.config.ts",
+    "packages/github/src/client.ts",
+    "packages/agent-env/src/index.ts",
+    "packages/daemon/src/index.ts",
+    "packages/repo/src/integrate.ts",
+    "apps/cli/src/lingtai.ts",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "tsconfig.base.json",
+    "packages/actions/tsconfig.json",
   ])("holds a diff touching %s for a person", async (file) => {
     const result = await judge("main", ["README.md", file]);
 
@@ -48,6 +58,34 @@ describe("this repository's tamper watch", () => {
     // machine's to wave through.
     expect(result.heldAt).toBe("tamper");
     expect(result.failedAt).toBeNull();
+  });
+
+  /**
+   * The list kept correct by something other than the list. Every workspace
+   * package the conductor and the CLI load, however indirectly, is part of what
+   * judges a change — so a new dependency, or a package renamed, fails here
+   * until the watch covers it.
+   */
+  it("holds every workspace package the conductor and the CLI load", async () => {
+    const manifest = async (dir: string) =>
+      JSON.parse(await readFile(`${root}${dir}/package.json`, "utf8")) as { dependencies?: Record<string, string> };
+    const seen = new Set<string>();
+    const visit = async (dir: string): Promise<void> => {
+      if (seen.has(dir)) return;
+      seen.add(dir);
+      const deps = (await manifest(dir)).dependencies ?? {};
+      for (const name of Object.keys(deps).filter((dep) => deps[dep]!.startsWith("workspace:"))) {
+        await visit(`packages/${name.replace("@lingtai/", "")}`);
+      }
+    };
+    await visit("packages/conductor");
+    await visit("packages/hook");
+    await visit("apps/cli");
+    expect(seen.size).toBeGreaterThan(10);
+
+    for (const dir of seen) {
+      expect((await judge("main", [`${dir}/src/index.ts`])).heldAt, dir).toBe("tamper");
+    }
   });
 
   it("asks nothing about a diff that touches none of it", async () => {
@@ -67,6 +105,12 @@ describe("this repository's tamper watch", () => {
    * the conductor under it. The run is governed by `main` (0005), so the
    * deletion changes nothing about it — and the deletion is itself in the
    * watched file, so the diff is held however it was written.
+   *
+   * This half picks `main` itself, so it proves only what the watch does once
+   * it is read from the base. That the conductor reads it from the base, and
+   * not from the branch it is judging, is asserted where the conductor decides
+   * it: `packages/conductor/pure/run-once.test.ts`, *judges a change by the
+   * recipe on its base*.
    */
   it("cannot be weakened by the change it is judging", async () => {
     const onMain = await readFile(`${root}${RECIPE_PATH}`, "utf8");

@@ -60,8 +60,9 @@ So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
 The one exception is at `proposed`, not `merge`: the `tamper` watch (#31) holds
-any diff touching the conductor, the store, the hook, the actions, the recipe,
-the domain, a `package.json`, a vitest config, or `.lingtai/config.yaml` itself —
+any diff touching a workspace package the conductor or the CLI loads, a
+`package.json`, the lockfile, the workspace file, a `tsconfig`, a vitest config,
+or `.lingtai/config.yaml` itself — including a file moved out of one of those —
 so an agent cannot weaken its own gates in one merge.
 
 The board follows a bare `lingtai run` live: **every process that appends holds

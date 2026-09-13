@@ -922,3 +922,59 @@ describe("runOnce refuses an extension's production value before anything is cla
     expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
   });
 });
+
+/**
+ * **An agent cannot weaken its own gates in one merge** (#31), asserted where
+ * the recipe is actually resolved.
+ *
+ * `packages/actions/test/tamper-watch.test.ts` proves the watch holds when it is
+ * read from `main`, but it picks `main` itself. Which ref governs the run is the
+ * conductor's decision (0005), so this hands `runOnce` a GitHub whose base has
+ * the watch and whose every other ref has the agent's disarmed copy, lets the
+ * run merge if nothing holds it, and shows it the diff that deletes the watch.
+ */
+describe("runOnce judges a change by the recipe on its base, not the branch it is judging", () => {
+  it("holds a diff that deletes the tamper watch, though the branch's own recipe no longer has one", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const ports = fakePorts(did, store, true);
+    const git = ports.repo.git;
+    ports.repo.git = (...call: Parameters<typeof git>) =>
+      call[0][0] === "diff" && call[0][1] === "--name-only"
+        ? git(...call).pipe(Effect.as(".lingtai/config.yaml\npackages/actions/src/watch-gate.ts\n"))
+        : git(...call);
+
+    const armed = RECIPE.replace(
+      "gates: {}",
+      'gates:\n  proposed:\n    - name: tamper\n      watch: [".lingtai/config.yaml", "packages/actions/**"]\n      then: request-approval',
+    );
+    const disarmed = RECIPE;
+    const client = {
+      ...fakeGitHub([], armed),
+      fileAt: async (path: string, ref: string) =>
+        path !== ".lingtai/config.yaml" ? null : ref === "main" ? armed : disarmed,
+    } as unknown as GitHubClient;
+
+    const result = await once(
+      {
+        project,
+        client,
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    expect(result).toMatchObject({ ok: "held", gate: "proposed" });
+    // Held by the base's watch, which the branch's recipe does not have.
+    const asked = (await store.read(result.runId)).filter((e) => e.type === "ApprovalRequested");
+    expect(asked.map((e) => e.data)).toMatchObject([{ gate: "proposed", action: "tamper" }]);
+    expect(did).not.toContain("integrate");
+  });
+});

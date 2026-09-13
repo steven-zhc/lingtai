@@ -234,11 +234,27 @@ gates:
     # watches **this file**, so the edit is itself held. Weakening the watch
     # takes two merges and a person between them, never one.
     #
-    # The paths are the ones #31 named, under the names they have now: the
-    # store is `event-store`, the gates are `actions`, the config is `recipe`,
-    # the core is `domain`. `package.json` and the vitest configs are here for
-    # the reason `TAMPER_WATCH` gives — they decide what `build` above runs, so
-    # a change to them is a change to the verification.
+    # The paths began as the ones #31 named — the store is `event-store`, the
+    # gates are `actions`, the config is `recipe`, the core is `domain` — and
+    # that was not enough, because the gates are only as sound as what they
+    # stand on. `github` is how this file is read from main at all; `agent-env`
+    # decides what an agent is given; `agent`, `repo`, `env` and `projector` are
+    # the rest of what the conductor loads; `daemon` and `apps/cli` are the
+    # processes that conduct. So the list is **every workspace package the
+    # conductor and the CLI load**, and the test below derives that set from
+    # their `package.json`s rather than trusting this list to keep up.
+    #
+    # The rest decide what `install` and `build` above actually run, so a
+    # change to them is a change to the verification — `TAMPER_WATCH`'s reason:
+    # every `package.json`, the lockfile and `.npmrc` (what is installed), the
+    # workspace file (which packages `pnpm -r test` visits), every `tsconfig`
+    # (what `typecheck` checks), and every vitest config (what `test` collects).
+    #
+    # What stays unwatched is what judges nothing: `apps/board`, `apps/site`,
+    # `doc`, `scripts`.
+    #
+    # A path leaving a watched place counts as touching it: the conductor lists
+    # both ends of a rename, so `git mv` out of `packages/actions/test` is held.
     #
     # **Last, deliberately.** A hold stops the point as a refusal does, so a
     # watch placed first would ask a person about a diff that does not compile
@@ -256,9 +272,21 @@ gates:
         - "packages/actions/**"
         - "packages/recipe/**"
         - "packages/domain/**"
+        - "packages/github/**"
+        - "packages/agent/**"
+        - "packages/agent-env/**"
+        - "packages/env/**"
+        - "packages/repo/**"
+        - "packages/projector/**"
+        - "packages/daemon/**"
+        - "apps/cli/**"
         - "package.json"
         - "**/package.json"
-        - "**/vitest.config.*"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - "**/.npmrc"
+        - "**/tsconfig*.json"
+        - "**/vitest*.config.*"
       then: request-approval
 
   # Nothing holds here any more, and this is the moment the previous version of

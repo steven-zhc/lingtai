@@ -148,6 +148,22 @@ import { AgentHost, Repo } from "./ports.ts";
 import { spawn } from "node:child_process";
 import { RUN_LOG_END, runLogEnd, runLogPath } from "./run-log.ts";
 
+/**
+ * What a `watch:` action is shown: every path the diff touches, **both ends of
+ * a rename**.
+ *
+ * `--no-renames` is the whole of it. With rename detection on, which is git's
+ * default, `--name-only` prints only where a file went — so moving a watched
+ * file somewhere unwatched listed nothing the watch matched, and `tamper`
+ * passed the deletion of the test that pins it (#31).
+ */
+export const changedFilesArgs = (baseSha: string): string[] => [
+  "diff",
+  "--name-only",
+  "--no-renames",
+  `${baseSha}...HEAD`,
+];
+
 export interface RunOnceOptions {
   project: ProjectState;
   client: GitHubClient;
@@ -862,11 +878,7 @@ export function runOnce(
         },
         watch: {
           changedFiles: async () => {
-            const names = await gitForGates([
-              "diff",
-              "--name-only",
-              `${worktree.baseSha}...HEAD`,
-            ]);
+            const names = await gitForGates(changedFilesArgs(worktree.baseSha));
             return names.split("\n").filter(Boolean);
           },
         },
