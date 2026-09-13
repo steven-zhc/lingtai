@@ -48,8 +48,16 @@ than filed. House style, as in #52, #55, #58:
 
 ## Running Lingtai on Lingtai
 
-Pass `--no-merge`, by hand, every time. The `merge` gate point does not execute
-(#58), so a run without the flag merges itself into `main` unapproved.
+**This repository merges its own work unattended, and that is configuration
+rather than a gap.** `gates.merge` is `[]` — nothing is declared there, so
+nothing holds. Declare a `human:` action there and the point runs it: #58 was
+fixed, and the test that pins it is `conductor/test/run-once.test.ts`'s *holds
+at a human action at the merge point, with no --no-merge anywhere*, which
+asserts the base branch does not move. `--no-merge` remains the way to hold a
+run whose recipe asks for nothing.
+
+So the question to ask before a run is not *did I pass the flag* but *what does
+`merge:` say today*, and `lingtai add` prints the answer.
 
 The board follows a bare `lingtai run` live: **every process that appends holds
 a projector while it runs** (0022), so there is nothing to start in a second
