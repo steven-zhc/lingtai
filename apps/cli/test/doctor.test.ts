@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
 import {
+  daemonLiveness,
   declaredExtensions,
   describeRefusal,
   extensionRow,
@@ -534,4 +535,16 @@ describe("lingtai doctor — against the real database", () => {
       }
     }
   }, 60_000);
+});
+
+describe("daemon: liveness, given the read to report", () => {
+  it("lets a beacon read that failed fail, rather than calling it no daemon having run", async () => {
+    // What `lingtai service status` passes: the read it reports is the read
+    // that failed, not a second one on another connection that might.
+    await expect(
+      daemonLiveness(async () => {
+        throw new Error("sorry, too many clients already");
+      }),
+    ).rejects.toThrow("sorry, too many clients already");
+  });
 });

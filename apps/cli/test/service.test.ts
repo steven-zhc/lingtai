@@ -60,7 +60,7 @@ function command(
     env?: NodeJS.ProcessEnv;
     liveness?: () => Promise<string>;
     shutdown?: () => Promise<{ by: string; reason: string } | null>;
-    pause?: () => Promise<{ by: string | null; reason: string | null } | null>;
+    pause?: () => Promise<{ by: string | null; reason: string | null; until?: Date | null } | null>;
     /** `"default"` leaves `root` unset, so the command resolves it as it would for real. */
     root?: string | "default";
     uid?: number;
@@ -317,6 +317,26 @@ describe("while a shutdown request stands", () => {
       'pnpm lingtai service stop, pnpm lingtai resume, pnpm lingtai pause "the importer is flaky today", pnpm lingtai service start.',
     );
     expect(said).not.toContain("the supervisor's next start takes work");
+  });
+
+  it("never advises pausing again over a pause that lifts itself, which would then never lift", async () => {
+    // A run never started on an account limit and the conductor paused until
+    // 23:00; then `shutdown "pick up #NN"` and `service restart`. `lingtai
+    // pause` carries no time, so the advice cannot be to set it again.
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    const until = new Date("2026-09-13T23:00:00.000Z");
+    const { go, err } = command("darwin", s.exec, {
+      shutdown: STANDS,
+      pause: async () => ({ by: "conductor", reason: "account limit", until }),
+    });
+    await launchdFile();
+    expect(await go("restart")).toBe(1);
+    expect(s.calls).toEqual([]);
+    const said = err.join("\n");
+    expect(said).toContain(`A pause is in force too — conductor (account limit) — until ${until.toISOString()}, when it lifts by itself`);
+    expect(said).toContain(`After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited`);
+    expect(said).not.toContain("pnpm lingtai pause");
+    expect(said).not.toContain("pnpm lingtai service stop");
   });
 });
 

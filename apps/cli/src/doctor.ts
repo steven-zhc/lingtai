@@ -576,9 +576,16 @@ export interface DoctorReport {
  * A daemon that is down is **not a failure here**. Not running one is a
  * legitimate state, and `lingtai run` still works by hand. What would be a failure
  * is not being able to tell.
+ *
+ * `read` is the beacon read, and doctor's own folds a failure into "no daemon
+ * has run". `lingtai service status` passes one that throws, so the read it
+ * reports is the read that failed rather than a second one on another
+ * connection.
  */
-export async function daemonLiveness(): Promise<CheckResult> {
-  const status = await readStatus().catch(() => null);
+export async function daemonLiveness(
+  read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
+): Promise<CheckResult> {
+  const status = await read();
   // Read before the early return. A pause is in force whether or not a daemon
   // has ever run, and it is exactly the thing somebody will forget they set —
   // reporting liveness without it would be the same silence this check exists

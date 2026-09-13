@@ -705,6 +705,11 @@ daemon take the work you were holding. To keep the pause, take the supervisor
 out of the way first so nothing starts between the two commands: once the daemon
 has exited, `service stop`, `resume`, `pause "why"` again, `service start`. The
 refusal above names the pause and prints that order when one is in force.
+**Not for a pause that lifts itself** — the conductor's own, after a run that
+never started, carries a time (0031 §3) and `lingtai pause` cannot: pausing
+again would hold past that time until somebody resumed by hand. Wait out its
+time instead, then `resume`, which by then lifts only the shutdown. The refusal
+says which kind it found.
 
 #### Under a dedicated unprivileged user (Linux)
 
@@ -814,6 +819,10 @@ pnpm lingtai resume            # lifts the shutdown, and the pause with it
 pnpm lingtai pause "the importer is flaky today"   # the pause again, before anything is up to read its absence
 pnpm lingtai service start
 ```
+
+That is for a pause somebody set. A pause with a time on it lifts itself, and
+the pause again would not — for that one, run the last line alone after its
+time.
 
 `daemon: currency` is a `note`, not a failure. Being a commit behind is normal
 for the minutes between a merge and a restart; a doctor that went red for it

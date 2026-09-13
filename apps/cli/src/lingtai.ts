@@ -778,17 +778,15 @@ async function main(argv: string[]): Promise<number> {
       return daemonCommand(parseFlags(rest).flags);
     case "service":
       return serviceCommand(rest, {
-        // Read first so a beacon that could not be read says so. Doctor folds
-        // that into "no daemon has run", and here it would be the one wrong
-        // answer this command exists to avoid.
-        liveness: async () => {
-          await readStatus();
-          return (await daemonLiveness()).detail;
-        },
+        // A read that throws, so a beacon that could not be read says so.
+        // Doctor folds that into "no daemon has run", and here it would be the
+        // one wrong answer this command exists to avoid. It is the only read:
+        // a second one could fail where this succeeded.
+        liveness: async () => (await daemonLiveness(() => readStatus())).detail,
         shutdown: async () => (await readControl()).shutdown,
         pause: async () => {
           const c = await readControl();
-          return c.paused ? { by: c.by, reason: c.reason } : null;
+          return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
         },
       });
     case "pause":
