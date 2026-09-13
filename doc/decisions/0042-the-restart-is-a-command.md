@@ -147,6 +147,11 @@ recorded**: it takes nothing, and under a supervisor it is repeated every thirty
 seconds until the request is lifted — an hour's drain would put a hundred
 `ConductorStarted` in the log, none of them a conductor.
 
+**Whether to record and whether to take work are one read.** The daemon decides
+both off the control read before its first pass — not off a read at startup and
+another after the reconcile, between which a restart's withdrawal can land and
+leave a start that saw the drain, recorded nothing, and conducted anyway.
+
 ### 6. The lock decides "exactly one", not any sequencing here
 
 `lingtai run` and `lingtai daemon` already stand down on one advisory lock

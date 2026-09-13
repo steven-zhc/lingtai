@@ -43,7 +43,7 @@ import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { attributeStart, parseRestartArgs, prepareRestart, startSupervised } from "./restart.ts";
+import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -375,21 +375,20 @@ async function daemonCommand(
   // **A person only where a person's hand is on it**, and whose hand is
   // `attributeStart`'s to decide: `lingtai restart` here, a restart that handed
   // its start to launchd or systemd (0042 §8), a terminal, or nobody's.
-  const attribution = attributeStart({
+  //
+  // **Not decided here.** A read taken now and a shutdown noticed after the
+  // reconcile are two reads, and a restart's withdrawal can land between them —
+  // a start that saw the drain, recorded nothing, and then took work. So this
+  // is handed the one read that decides whether work is taken: the loop's
+  // shutdown check, or the `--no-conduct` listener's (`startRecorder`).
+  const noteStart = startRecorder({
     restart,
-    control: await readControl().catch(() => null),
     code,
     tty: Boolean(process.stdin.isTTY),
     user: process.env["USER"] ?? "operator",
+    record: (a) => recordStart(a.by, a.reason, code, undefined, a.handoff),
+    log: (line) => console.log(line),
   });
-  if (!attribution.record) {
-    console.log(paint.muted(`not recorded as a start: ${attribution.why}`));
-  } else {
-    if (attribution.note) console.log(paint.signal(attribution.note));
-    await recordStart(attribution.by, attribution.reason, code, undefined, attribution.handoff).catch((err: unknown) => {
-      console.error(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
-    });
-  }
 
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
@@ -591,7 +590,11 @@ async function daemonCommand(
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
-        asked = (await readControl()).shutdown;
+        const control = await readControl();
+        asked = control.shutdown;
+        // The start is recorded off this read and no other, before the first
+        // pass it permits — see `startRecorder`.
+        await noteStart(control);
         // The remedy in the sentence, because this is also what a daemon
         // started *after* an unwithdrawn request prints on its way straight
         // back out — and at that point it is the only thing worth knowing.
@@ -647,7 +650,9 @@ async function daemonCommand(
     // the honest shape of "finish what you are holding" for a daemon holding
     // nothing.
     const hearShutdown = async (): Promise<void> => {
-      const standing = (await readControl().catch(() => null))?.shutdown ?? null;
+      const control = await readControl().catch(() => null);
+      if (control) await noteStart(control);
+      const standing = control?.shutdown ?? null;
       if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs);
     };
     listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS);

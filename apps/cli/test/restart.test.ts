@@ -19,6 +19,7 @@ import {
   attributeStart,
   gatingFailures,
   parseRestartArgs,
+  startRecorder,
   startSupervised,
   planRestart,
   waitForTheLock,
@@ -403,6 +404,65 @@ describe("whose start it is", () => {
       by: "human:ops",
       handoff: null,
     });
+  });
+});
+
+/**
+ * The finding against the third fix: the start was attributed off a read at
+ * startup and the drain noticed off a later one, so a launchd respawn that saw
+ * the restart's drain first and its withdrawal second recorded nothing and took
+ * work. The recorder is handed the read that decides, and only that one counts.
+ */
+describe("the read a start is recorded from", () => {
+  const code = { sha: "2926f2d", dirty: false };
+  const drain = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
+  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
+
+  it("records the handoff off the read that takes work, however many reads a drain stood for before it", async () => {
+    const recorded: unknown[] = [];
+    const note = startRecorder({
+      restart: null,
+      code,
+      tty: false,
+      user: "steven",
+      record: async (a) => void recorded.push(a),
+      log: () => {},
+    });
+
+    // The respawn's startup no longer reads the stream for this. The loop's
+    // first check, after the reconcile, reads the withdrawal and takes work —
+    // and that read is the one recorded, with the restart's name.
+    await note({ shutdown: null, handoff });
+    expect(recorded).toEqual([{ record: true, by: "human:steven", reason: "restarted: picking up #88", handoff: 4, note: null }]);
+
+    // Once: every later pass asks again, and records nothing more.
+    await note({ shutdown: null, handoff: null });
+    expect(recorded).toHaveLength(1);
+  });
+
+  it("records nothing off a read that finds the drain, which is the read the daemon exits on", async () => {
+    const recorded: unknown[] = [];
+    const lines: string[] = [];
+    const note = startRecorder({ restart: null, code, tty: false, user: "s", record: async (a) => void recorded.push(a), log: (l) => lines.push(l) });
+    await note({ shutdown: drain, handoff: null });
+    expect(recorded).toEqual([]);
+    expect(lines.join("\n")).toContain("not recorded as a start");
+  });
+
+  it("says a record that failed, and does not throw into the loop that would then take no work", async () => {
+    const lines: string[] = [];
+    const note = startRecorder({
+      restart: null,
+      code,
+      tty: false,
+      user: "s",
+      record: async () => {
+        throw new Error("version race, five times");
+      },
+      log: (l) => lines.push(l),
+    });
+    await expect(note({ shutdown: null, handoff: null })).resolves.toBeUndefined();
+    expect(lines.join("\n")).toContain("version race");
   });
 });
 

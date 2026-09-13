@@ -722,8 +722,8 @@ export type Attribution =
 /**
  * Who a start is recorded as, from what the daemon can know about itself.
  *
- * Pure, for the reason `planRestart` is. The daemon reads its commit and the
- * control stream once, and this decides:
+ * Pure, for the reason `planRestart` is. The daemon reads its commit once, and
+ * hands this the control read it acts on (`startRecorder`), and this decides:
  *
  * - **a start into a standing drain is not recorded.** It reads the request and
  *   exits without taking anything — and under launchd or systemd it is started
@@ -772,6 +772,47 @@ export function attributeStart(input: {
     `a restart by ${handoff.by} checked ${describeIdentity(handoff)} and handed the start to the supervisor, ` +
     `and this is running ${describeIdentity(code)}`;
   return { record: true, by: "daemon", reason: why, handoff: handoff.version, note: why };
+}
+
+/**
+ * Record a start once, off **the control read on which the daemon decides to
+ * take work** — never off an earlier one.
+ *
+ * The daemon used to attribute its start from a read taken at startup and
+ * notice a shutdown only later, when the work loop's first pass read the stream
+ * again after the filters and the reconcile. A launchd respawn that read a
+ * restart's drain the first time and its withdrawal the second recorded nothing
+ * and took work: a conductor nobody could attribute, and a restart timing out on
+ * a start that had happened. One read now decides both, so a start that reads a
+ * standing drain exits on that read, and a start that takes work has recorded
+ * itself — with the handoff that read carries — before its first pass.
+ *
+ * Called with every read the daemon acts on and does anything only on the
+ * first. Never throws: a start that could not be recorded is said, and the
+ * daemon still conducts.
+ */
+export function startRecorder(input: {
+  restart: { by: string; reason: string } | null;
+  code: CodeVersion;
+  tty: boolean;
+  user: string;
+  record: (a: Extract<Attribution, { record: true }>) => Promise<void>;
+  log: (line: string) => void;
+}): (control: Pick<ControlState, "shutdown" | "handoff">) => Promise<void> {
+  let decided = false;
+  return async (control) => {
+    if (decided) return;
+    decided = true;
+    const attribution = attributeStart({ restart: input.restart, control, code: input.code, tty: input.tty, user: input.user });
+    if (!attribution.record) {
+      input.log(paint.muted(`not recorded as a start: ${attribution.why}`));
+      return;
+    }
+    if (attribution.note) input.log(paint.signal(attribution.note));
+    await input.record(attribution).catch((err: unknown) => {
+      input.log(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
+    });
+  };
 }
 
 /** How long a restart waits for the supervisor's start: past two of its thirty-second throttles. */
