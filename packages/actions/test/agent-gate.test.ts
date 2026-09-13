@@ -41,7 +41,7 @@ function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
     capabilities: {
       id: "claude-code",
       hooks: [],
-      canBlockToolUse: true,
+      canFailClosed: true,
       canRewriteToolCall: false,
       providesTier: "guarded",
       enforces: ["turns", "wall"],

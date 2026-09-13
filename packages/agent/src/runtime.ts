@@ -35,8 +35,16 @@ export interface RuntimeCapabilities {
   id: RuntimeId;
   /** The lifecycle hooks this runtime actually emits. */
   hooks: readonly string[];
-  /** Whether `PreToolUse` can refuse a call. Both can; a future one might not. */
-  canBlockToolUse: boolean;
+  /**
+   * Whether a hook's refusal is honoured, so the record can fail closed.
+   *
+   * Not mediation — the hook refuses nothing it is not forced to (ADR 0016 §6).
+   * It is for the other half of `run-once.ts`'s step 6: *"a hook that cannot
+   * reach the conductor must stop the run rather than let it produce nothing
+   * and look like it produced everything."* A runtime that only notifies its
+   * hook cannot stop anything. Both declare it; a future one might not.
+   */
+  canFailClosed: boolean;
   /** Codex can rewrite a call as well as refuse it. Claude Code cannot. */
   canRewriteToolCall: boolean;
   /** The strongest containment this runtime provides on its own. */
@@ -209,11 +217,14 @@ export interface Runtime {
 }
 
 /**
- * Whether this runtime can carry a project at that containment tier.
+ * Whether this runtime can be asked to do what the tier names.
  *
- * `guarded` is what the first project runs at and what carried the old loop's 73
- * runs; `sandboxed` needs a hard filesystem boundary that Lingtai has not
- * built yet.
+ * The tiers are about the runtime, not a policy on the tools: containment is
+ * the worktree and the filtered environment, at every tier. `guarded` is a
+ * runtime that hands control to a hook before every tool use and stops the
+ * run on its refusal (`canFailClosed`) — what the first project runs at and what carried
+ * the old loop's 73 runs. `sandboxed` adds a filesystem boundary the runtime
+ * enforces itself, which nothing implemented provides.
  */
 export function meetsTier(capabilities: RuntimeCapabilities, required: Tier): boolean {
   const rank: Record<Tier, number> = { open: 0, guarded: 1, sandboxed: 2 };
@@ -226,7 +237,10 @@ export function missingForTier(capabilities: RuntimeCapabilities, required: Tier
   if (required === "sandboxed") {
     return ["filesystem-sandbox"];
   }
-  if (required === "guarded" && !capabilities.canBlockToolUse) {
+  // A stated precondition, not a branch that fires today: both runtimes declare
+  // `canFailClosed`. The name predates 0016 and is kept because `DispatchRefused`
+  // records it.
+  if (required === "guarded" && !capabilities.canFailClosed) {
     return ["pre-tool-use-interception"];
   }
   return [`tier-${required}`];

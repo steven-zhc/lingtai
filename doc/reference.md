@@ -473,7 +473,17 @@ event to the verdicts that follow is how the second becomes detectable.
 
 ## tier — 3
 
-`open` · `guarded` · `sandboxed`. Source: `Tier` in `packages/domain/src/events.ts:42`.
+`open` · `guarded` · `sandboxed`. Source: `Tier` in `packages/domain/src/events.ts:50`.
+
+A tier names what a runtime can be asked to do, not a policy on the tools —
+containment is the worktree and the filtered environment, at every tier.
+Source: `meetsTier` and `missingForTier` in `packages/agent/src/runtime.ts`.
+
+| tier | the runtime… | refused as |
+|---|---|---|
+| `open` | runs the agent | — |
+| `guarded` | hands control to a hook before every tool use, and that hook's refusal stops the run (`canFailClosed`) — so a hook that cannot reach the conductor stops the run rather than let it record nothing. Not a guard on the tools: Lingtai refuses no tool call ([ADR 0016](decisions/0016-the-settled-model.md) §6) | `pre-tool-use-interception`, a name kept from before 0016 |
+| `sandboxed` | also enforces a filesystem boundary of its own | `filesystem-sandbox` |
 
 **It is the recipe's** — `runtime.tier`, defaulting to `guarded`. There is no
 comparison to make and no floor underneath: `run-once.ts` refuses to dispatch

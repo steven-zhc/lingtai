@@ -165,6 +165,20 @@ describe("capabilities", () => {
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "guarded")).toEqual([]);
   });
 
+  /**
+   * `#138` renamed `canBlockToolUse` to `canFailClosed` and changed nothing
+   * else: the same capabilities name the same things on `DispatchRefused`.
+   */
+  it("refuses the same capabilities with the same names after the rename", () => {
+    const notifyOnly = { ...CLAUDE_CODE_CAPABILITIES, providesTier: "open" as const, canFailClosed: false };
+    const refusable = { ...notifyOnly, canFailClosed: true };
+
+    expect(missingForTier(notifyOnly, "guarded")).toEqual(["pre-tool-use-interception"]);
+    expect(missingForTier(refusable, "guarded")).toEqual(["tier-guarded"]);
+    expect(missingForTier(notifyOnly, "sandboxed")).toEqual(["filesystem-sandbox"]);
+    expect(missingForTier(notifyOnly, "open")).toEqual([]);
+  });
+
   /** `#89`: a limit is declared applied only where the adapter applies it. */
   it("says which declared limits it applies", () => {
     expect([...CLAUDE_CODE_CAPABILITIES.enforces].sort()).toEqual([...RUN_LIMITS].sort());

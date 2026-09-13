@@ -95,7 +95,7 @@ export default async function Home() {
                 <p>
                   One item, one branch, one worktree cut from the base and deleted when the run
                   ends. Its environment holds the variables your recipe names and no others, and a
-                  hook refuses tool calls that reach outside the directory. What survives a run is
+                  hook records the run or stops it. What survives a run is
                   what the run committed.
                 </p>
               </div>
@@ -227,8 +227,8 @@ export default async function Home() {
                 </b>{" "}
                 <span>
                   Containerising the whole toolchain is its own piece of work. What exists is{" "}
-                  <code>guarded</code>: a worktree of its own, a filtered environment, and a guard
-                  that refuses tool calls outside it.
+                  <code>guarded</code>: a worktree of its own, a filtered environment, and a hook
+                  that stops the run if it cannot record it.
                 </span>
               </li>
               <li>

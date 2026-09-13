@@ -66,12 +66,12 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
     "PreCompact",
     "Notification",
   ],
-  canBlockToolUse: true,
+  canFailClosed: true,
   // Codex can rewrite a call; Claude Code refuses or allows.
   canRewriteToolCall: false,
-  // No filesystem sandbox of its own. `guarded` is what the worktree plus the
-  // filtered environment plus PreToolUse interception add up to, and it is what
-  // carried the old loop's 73 runs.
+  // No filesystem sandbox of its own. `guarded` is a hook before every tool use
+  // whose refusal stops the run, so the record fails closed; containment is the worktree
+  // and the filtered environment. It is what carried the old loop's 73 runs.
   providesTier: "guarded",
   /**
    * Both. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns` in
@@ -178,7 +178,7 @@ function argsFor(
     // Not a loosening. `guarded` has always meant the worktree plus the
     // hook (see `providesTier` above, and ADR 0007): containment is the
     // filtered environment and the disposable worktree, and the hook is
-    // what makes a tool call refusable. Deferring to it is the design, and
+    // what makes the record fail closed. Deferring to it is the design, and
     // leaving a second layer in front of it only hides the first.
     "--permission-mode",
     permissionMode,

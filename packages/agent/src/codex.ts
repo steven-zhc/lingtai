@@ -20,7 +20,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // The intersection only. Codex has no SessionEnd, PreCompact or Notification,
   // which is exactly why the adapter contract is the intersection.
   hooks: ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
-  canBlockToolUse: true,
+  canFailClosed: true,
   // Codex can rewrite a tool call, not merely refuse it.
   canRewriteToolCall: true,
   // `sandbox_mode: workspace-write` is a real filesystem boundary, which is more

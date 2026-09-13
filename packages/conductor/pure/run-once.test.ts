@@ -173,7 +173,7 @@ const runtime: Runtime = {
   capabilities: {
     id: "claude-code",
     hooks: ["PreToolUse", "PostToolUse", "Stop"],
-    canBlockToolUse: true,
+    canFailClosed: true,
     canRewriteToolCall: false,
     providesTier: "guarded",
     enforces: ["turns", "wall"],
