@@ -7,9 +7,12 @@
  * for saying more than it knew — "it is taking work" on the strength of a job
  * launchd had loaded and was failing to spawn.
  */
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { repoRoot } from "@lingtai/env";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   LAUNCHCTL_NO_SUCH_SERVICE,
@@ -17,6 +20,7 @@ import {
   NO_SUPERVISOR,
   launchdPlist,
   lingering,
+  platformFor,
   serviceCommand,
   systemdUnit,
   type Exec,
@@ -46,16 +50,31 @@ function supervisor(answers: [string, { status: number; out: string } | (() => {
   return { calls, exec };
 }
 
-function command(platform: NodeJS.Platform, exec: Exec, extra: { env?: NodeJS.ProcessEnv; liveness?: () => Promise<string> } = {}) {
+/** Whoever runs the suite, so the checkout `install` stats is theirs. */
+const UID = process.getuid!();
+
+function command(
+  platform: NodeJS.Platform,
+  exec: Exec,
+  extra: {
+    env?: NodeJS.ProcessEnv;
+    liveness?: () => Promise<string>;
+    shutdown?: () => Promise<{ by: string; reason: string } | null>;
+    /** `"default"` leaves `root` unset, so the command resolves it as it would for real. */
+    root?: string | "default";
+    uid?: number;
+  } = {},
+) {
   const out: string[] = [];
   const err: string[] = [];
   const go = (verb: string) =>
     serviceCommand([verb], {
       liveness: extra.liveness ?? (async () => "last seen 3000s ago (pid 41) — not running"),
+      shutdown: extra.shutdown ?? (async () => null),
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
-      root: ROOT,
-      uid: 501,
+      ...(extra.root === "default" ? {} : { root: extra.root ?? home }),
+      uid: extra.uid ?? UID,
       username: "lingtai",
       exec,
       which: (bin) => (bin === "node" ? NODE : `/usr/bin/${bin}`),
@@ -131,6 +150,7 @@ describe("no service manager", () => {
     const err: string[] = [];
     const code = await serviceCommand(["status"], {
       liveness: async () => "",
+      shutdown: async () => null,
       platform: "linux",
       env: { HOME: home },
       which: (bin) => (bin === "node" ? NODE : null),
@@ -153,7 +173,7 @@ describe("install on macOS", () => {
     ]);
     const { go, out } = command("darwin", s.exec);
     expect(await go("install")).toBe(0);
-    expect(s.calls).toContain(`launchctl bootstrap gui/501 ${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
+    expect(s.calls).toContain(`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
     expect(await readFile(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`), "utf8")).toContain(LAUNCHD_LABEL);
     expect((await stat(join(home, ".lingtai/logs"))).isDirectory()).toBe(true);
     expect(out).toContain("  state = running");
@@ -200,6 +220,88 @@ describe("restart on macOS", () => {
     expect(verbs).toEqual(["launchctl print", "launchctl bootout", "launchctl print", "launchctl print", "launchctl bootstrap"]);
     expect(s.calls.join("\n")).not.toContain("kickstart");
   });
+
+  it("starts nothing while a shutdown request stands, which the daemon it started would read and exit on", async () => {
+    // `lingtai shutdown "pick up #NN"`, then `service restart`: the request is
+    // still on the control stream, so every copy KeepAlive brings back exits.
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    const { go, out, err } = command("darwin", s.exec, {
+      shutdown: async () => ({ by: "steven", reason: "pick up #NN" }),
+    });
+    await launchdFile();
+    expect(await go("restart")).toBe(1);
+    expect(s.calls).toEqual([]);
+    const said = err.join("\n");
+    expect(said).toContain("a shutdown request stands — asked by steven (pick up #NN)");
+    expect(said).toContain("pnpm lingtai resume");
+    expect(out.join("\n")).not.toContain("shutdown \"why\"` first");
+  });
+
+  it("restarts when whether a shutdown stands could not be read, and says what that would mean", async () => {
+    let prints = 0;
+    const s = supervisor([
+      ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+    ]);
+    const { go, out } = command("darwin", s.exec, {
+      shutdown: async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+    });
+    await launchdFile();
+    expect(await go("restart")).toBe(0);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
+    expect(out.join("\n")).toContain("could not read whether a shutdown request stands — connect ECONNREFUSED");
+  });
+
+  it("offers shutdown instead of restart, then resume, never shutdown before it", async () => {
+    let prints = 0;
+    const s = supervisor([
+      ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+    ]);
+    const { go, out } = command("darwin", s.exec);
+    await launchdFile();
+    expect(await go("restart")).toBe(0);
+    const text = out.join("\n");
+    expect(text).toContain('`pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited');
+    expect(text).not.toContain("first");
+  });
+});
+
+describe("start on Linux", () => {
+  it("starts nothing while a shutdown request stands", async () => {
+    const s = supervisor([]);
+    const { go, err } = command("linux", s.exec, { shutdown: async () => ({ by: "steven", reason: "pick up #NN" }) });
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(join(home, ".config/systemd/user"), { recursive: true });
+    await writeFile(join(home, ".config/systemd/user/lingtai.service"), "");
+    expect(await go("start")).toBe(1);
+    expect(s.calls).toEqual([]);
+    expect(err.join("\n")).toContain("pnpm lingtai resume");
+  });
+});
+
+describe("install, and whose checkout it names", () => {
+  it("writes this checkout into the unit when the installing user owns it — repoRoot(), not a path the test chose", async () => {
+    const s = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }],
+      ["loginctl", { status: 0, out: "yes\n" }],
+    ]);
+    const { go } = command("linux", s.exec, { root: "default" });
+    expect(await go("install")).toBe(0);
+    const unit = await readFile(join(home, ".config/systemd/user/lingtai.service"), "utf8");
+    expect(unit).toContain(`ExecStart=${NODE} ${repoRoot()}/apps/cli/src/lingtai.ts daemon`);
+  });
+
+  it("refuses a checkout another user owns, and writes and loads nothing", async () => {
+    // `machinectl shell lingtai@`, then `pnpm --dir /home/admin/lingtai lingtai
+    // service install`: repoRoot() is the admin's, the uid is lingtai's.
+    const s = supervisor([]);
+    const { go, err } = command("linux", s.exec, { root: "default", uid: UID + 1 });
+    expect(await go("install")).toBe(1);
+    expect(err.join("\n")).toContain(`${repoRoot()} is owned by uid ${UID}, not uid ${UID + 1}`);
+    expect(s.calls).toEqual([]);
+    expect(existsSync(join(home, ".config/systemd/user/lingtai.service"))).toBe(false);
+  });
 });
 
 async function launchdFile() {
@@ -221,6 +323,41 @@ describe("status", () => {
     expect(out).toContain("  could not read it — connect ECONNREFUSED");
     expect(out.join("\n")).not.toContain("no daemon has run");
   });
+
+  it.skipIf(!platformFor(process.platform))(
+    "as `lingtai service status` really wires it, prints an unreachable beacon as unread, never as no daemon having run",
+    async () => {
+      // Through lingtai.ts, not an injected `liveness`: doctor's liveness folds
+      // an unreadable beacon into "no daemon has run", and only the wiring
+      // there keeps that answer out of this command. The supervisor is a
+      // script on PATH; the database is a port nothing listens on.
+      const bin = join(home, "bin");
+      await mkdir(bin);
+      const fake = (name: string, body: string) =>
+        writeFile(join(bin, name), `#!/bin/sh\nprintf '${body}'\n`, { mode: 0o755 });
+      await fake("launchctl", "\\tstate = running\\n");
+      await fake("systemctl", "LoadState=loaded\\nActiveState=active\\n");
+      const dead = "postgresql://lingtai@127.0.0.1:1/lingtai";
+      const env: NodeJS.ProcessEnv = {
+        PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
+        HOME: home,
+        LINGTAI_DATABASE_URL: dead,
+        LINGTAI_DIRECT_DATABASE_URL: dead,
+      };
+      const r = await new Promise<{ code: number | null; stdout: string; stderr: string }>((done) => {
+        execFile(
+          process.execPath,
+          ["--experimental-strip-types", join(repoRoot(), "apps/cli/src/lingtai.ts"), "service", "status"],
+          { cwd: repoRoot(), env, timeout: 60_000 },
+          (err, stdout, stderr) => done({ code: err ? ((err as { code?: number }).code ?? 1) : 0, stdout, stderr }),
+        );
+      });
+      expect(r.stdout).toContain("supervisor");
+      expect(r.stdout).toMatch(/could not read it — /);
+      expect(r.stdout).not.toContain("no daemon has run");
+    },
+    90_000,
+  );
 
   it("does not print `not loaded` for a launchd that did not answer", async () => {
     const s = supervisor([["launchctl print", { status: 112, out: "Could not find domain" }]]);

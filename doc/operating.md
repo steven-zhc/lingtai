@@ -687,9 +687,14 @@ uses the new unit. `service restart` is what applies it now — on macOS
 **`stop` and `restart` are the supervisor's signal.** The daemon drains on it as
 it does on Ctrl+C, but launchd and systemd wait seconds, not a pass, before they
 SIGKILL, which leaves the agent for the next conductor to kill. To wait for the
-pass in flight, `lingtai shutdown "why"` first. A shutdown request outlives the
-process, so under a supervisor every copy it brings back reads it and exits
-again until `lingtai resume` lifts it.
+pass in flight, use `lingtai shutdown "why"` *instead of* `restart`, not before
+it. A shutdown request outlives the process, so under a supervisor every copy
+it brings back reads it and exits again until `lingtai resume` lifts it — which
+makes the shutdown the restart: once `service status` says the daemon it was
+aimed at has exited, `lingtai resume`, and the supervisor's next start takes
+work on the new code. `service start` and `service restart` refuse, exit 1 and
+touch nothing while a shutdown request stands, because the daemon they started
+would exit at once and keep doing so behind a command that had said 0.
 
 #### Under a dedicated unprivileged user (Linux)
 
@@ -709,8 +714,14 @@ pnpm install && pnpm lingtai doctor && pnpm lingtai service install
 is no session; `service` names that and points here. Without lingering the user
 manager, and the daemon with it, stops at that user's last logout — `install`
 says when lingering is off, and says separately when `loginctl` could not tell
-it. `apps/cli/test/service.test.ts` pins that the unit carries only the
-installing user's paths.
+it. The checkout the unit names is the one the command ran from, not the
+installing user's, so `install` refuses one that user does not own — `pnpm
+--dir /home/admin/lingtai` from `lingtai`'s session is turned away rather than
+written into a unit that runs someone else's code. `node` is whichever the
+shell finds on `PATH`, so install from that user's own shell.
+`apps/cli/test/service.test.ts` pins the refusal through the command's own
+`repoRoot()`, and that `HOME`, `USER` and `LINGTAI_HOME` in the unit are the
+environment it was given.
 
 **A running daemon holds the code it started with. Merging is not deploying —
 restarting is.** [0010](decisions/0010-source-runs-unbuilt.md) says the source
@@ -770,7 +781,18 @@ a shutdown safe, and the restart is a decision that wants an ADR first. Take the
 commits by hand:
 
 ```bash
-pnpm lingtai service restart   # or ^C and re-run; `lingtai shutdown` first to wait for the pass
+pnpm lingtai service restart   # now, signalling the pass in flight; or ^C and re-run
+```
+
+To wait for the pass instead, under a supervisor, do not follow the shutdown
+with `restart` — the request would outlive the restart and every daemon it
+started would exit (`restart` refuses while one stands). The shutdown is the
+restart once it is lifted:
+
+```bash
+pnpm lingtai shutdown "pick up #NN"
+pnpm lingtai service status    # until the beacon says that daemon is not running
+pnpm lingtai resume            # the supervisor's next start takes work on the new code
 ```
 
 `daemon: currency` is a `note`, not a failure. Being a commit behind is normal

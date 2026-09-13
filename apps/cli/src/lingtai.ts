@@ -785,6 +785,7 @@ async function main(argv: string[]): Promise<number> {
           await readStatus();
           return (await daemonLiveness()).detail;
         },
+        shutdown: async () => (await readControl()).shutdown,
       });
     case "pause":
       return controlCommand("pause", rest);

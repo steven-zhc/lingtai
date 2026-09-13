@@ -34,7 +34,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { repoRoot, stateDir } from "@lingtai/env";
@@ -296,6 +296,13 @@ const UNLOAD_WAIT_MS = 60_000;
 export interface ServiceOptions {
   /** `daemon_status`, the beacon outside the log (#46). Injected so this file loads without a database. */
   liveness: () => Promise<string>;
+  /**
+   * The shutdown request in force, off the control stream, or null. Injected
+   * for the same reason. A request outlives the daemon it was aimed at, so a
+   * daemon the supervisor starts while one stands reads it and exits — and is
+   * started again, and exits, until `lingtai resume`.
+   */
+  shutdown: () => Promise<{ by: string; reason: string } | null>;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   root?: string;
@@ -414,11 +421,47 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     return 1;
   };
 
+  /**
+   * Whether a daemon started now would stay up. Not when a shutdown request
+   * stands: it would read it on its first pass and exit, the supervisor would
+   * start it again, and a command that returned 0 would leave the queue idle.
+   * A request that could not be read is said and not treated as none — nor as
+   * one, since a restart is often what somebody reaches for when the database
+   * is the trouble.
+   */
+  const shutdownStands = async (): Promise<boolean> => {
+    let asked: { by: string; reason: string } | null;
+    try {
+      asked = await options.shutdown();
+    } catch (err) {
+      log(`note  could not read whether a shutdown request stands — ${(err as Error).message}`);
+      log("      if one does, the daemon this starts exits again at once, until: pnpm lingtai resume");
+      return false;
+    }
+    if (!asked) return false;
+    error(`a shutdown request stands — asked by ${asked.by} (${asked.reason}) — and a daemon started now reads it and exits,`);
+    error("then the supervisor starts it again, and it exits again, until it is lifted. Nothing was started or stopped.");
+    error("Under a supervisor the shutdown is already the restart: once the daemon it was aimed at has exited");
+    error("(pnpm lingtai service status), pnpm lingtai resume, and the supervisor's next start takes work on the code at HEAD.");
+    return true;
+  };
+
   switch (verb) {
     case "status":
       return report();
 
     case "install": {
+      // The checkout is `repoRoot()` — wherever this command was run from, not
+      // the installing user's. `pnpm --dir /home/admin/lingtai` as the service
+      // user would write a unit that runs another user's code, or cannot.
+      const owner = (await stat(inputs.root)).uid;
+      if (owner !== uid) {
+        error(
+          `${inputs.root} is owned by uid ${owner}, not uid ${uid}, who would run it — ` +
+            "install from a checkout this user owns (see doc/operating.md)",
+        );
+        return 1;
+      }
       let started = false;
       await mkdir(file.logs, { recursive: true });
       await mkdir(dirname(file.path), { recursive: true });
@@ -474,6 +517,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
 
     case "start": {
       if (!installed) return notInstalled();
+      if (await shutdownStands()) return 1;
       if (platform === "systemd") return run(["systemctl", "--user", "start", SYSTEMD_UNIT]) ? 0 : 1;
       const answer = ask();
       if (!answer) return 1;
@@ -487,9 +531,16 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     case "stop":
     case "restart": {
       if (!installed) return notInstalled();
+      if (verb === "restart" && (await shutdownStands())) return 1;
       // The supervisor's signal drains the pass as Ctrl+C does, but it waits
-      // seconds, not a pass, before SIGKILL (0030).
-      log('the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` first');
+      // seconds, not a pass, before SIGKILL (0030). A shutdown waits for the
+      // pass, and under a supervisor it is a restart by itself once lifted —
+      // so it is offered instead of `restart`, never before it.
+      log(
+        verb === "stop"
+          ? 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` first'
+          : 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited',
+      );
       if (platform === "systemd") return run(["systemctl", "--user", verb, SYSTEMD_UNIT]) ? 0 : 1;
       const answer = ask();
       if (!answer) return 1;
