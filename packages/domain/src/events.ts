@@ -1108,7 +1108,10 @@ export const ProjectConfigured = z.object({
  * reaches.
  *
  * It is `PassOutcome.refused` on the log — the catch in `conduct.ts`, and
- * nothing else. A run that `runOnce` stops before its claim is not this.
+ * nothing else — for a throw before the pass had looked at the project. A throw
+ * after, from a project whose recipe resolved and whose queue was being worked,
+ * stays in the outcome and is not this. A run that `runOnce` stops before its
+ * claim is not this either.
  *
  * **`ref` and `codeSha` are what make it worth having.** The same message means
  * *this repository's recipe is broken* when the process is current, and *this

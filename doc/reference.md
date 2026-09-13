@@ -55,7 +55,9 @@ pass that cannot look at a project — the catch in `conduct.ts`, a recipe that
 will not resolve or a client that will not build — appends `ProjectRefused` to
 `prj-{project}`, carrying the message, the `ref` the recipe was read from and
 the `codeSha` of the refusing process. A later pass that looks at the project
-without refusing appends `ProjectRecovered`. A pass whose refusal matches the
+without refusing appends `ProjectRecovered`. Something that fails after the
+project was looked at — the issue listing, a run, the merge lane — is reported by
+the pass and is not a `ProjectRefused`: that project was read and worked. A pass whose refusal matches the
 one on record — same `ref`, same `codeSha`, same message with its digits taken
 out — appends nothing, so N sweeps against one broken recipe are one event. The
 decision is read off the project's own fold (`passTransition`,

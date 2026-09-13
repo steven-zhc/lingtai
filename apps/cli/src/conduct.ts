@@ -212,7 +212,9 @@ export interface Where {
 export interface ProjectsOptions {
   projects: readonly ProjectState[];
   /**
-   * One project's share of the pass. Throwing is refusing it. `"looked-away"`
+   * One project's share of the pass. Throwing before `where.looked` is refusing
+   * it; throwing after is a failure the outcome reports and the log does not
+   * record as a refusal. `"looked-away"`
    * is returning before anything was read, which is neither a refusal nor a
    * recovery. Sets `where.ref` once it knows the branch, and calls `where.looked`
    * once it has read enough to know it does not refuse; `"looked"` calls it on
@@ -240,9 +242,13 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
     const name = project.project;
     if (!name || !project.owner) continue;
     outcome.projects += 1;
+    let looked = false;
     const where: Where = {
       ref: null,
-      looked: () => record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log }),
+      looked: () => {
+        looked = true;
+        return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log });
+      },
     };
 
     try {
@@ -256,6 +262,13 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
       // while a daemon too old for its recipe refused every sweep. Appended on
       // the transition only — `passTransition` compares with what the stream
       // already holds, so the next identical sweep appends nothing.
+      //
+      // **Only before the project was looked at.** A throw after `looked()` —
+      // an issue listing GitHub refuses, a merge lane's 502 — comes from a
+      // project that was read and worked, which is not what `ProjectRefused`
+      // says. Recorded, it would follow this sweep's `ProjectRecovered` with a
+      // refusal, and every later sweep would append the same pair again.
+      if (looked) continue;
       await record(
         project,
         { refused: true, detail: (err as Error).message, ref: where.ref, codeSha: options.codeSha },

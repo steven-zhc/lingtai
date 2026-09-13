@@ -122,30 +122,39 @@ describe("a pass that refuses a project", () => {
   /**
    * A restart whose first pass resolves the recipe and then runs an agent for
    * most of an hour: the recovery is on the log while the run is in flight, and
-   * stays there if the run then throws.
+   * stays there if the run then throws — which the pass reports, and which is
+   * not a refusal of a project it looked at.
    */
   it("records the recovery once the project is looked at, before the rest of its work returns", async () => {
     await sweep(true, OLD);
     expect((await types(BROKEN)).at(-1)).toBe("ProjectRefused");
+    const before = (await types(BROKEN)).length;
 
     let midRun: string | undefined;
-    await conductProjects({
-      projects: [(await loadProject(BROKEN, store))!],
-      codeSha: NEW,
-      store,
-      outcome: { projects: 0, ran: 0, refused: [] },
-      log: () => {},
-      work: async (_project, where) => {
-        where.ref = "main";
-        await where.looked();
-        // The run, in flight.
-        midRun = (await types(BROKEN)).at(-1);
-        expect((await loadProject(BROKEN, store))!.refused).toBeNull();
-        throw new Error("merge lane: 502 Bad Gateway");
-      },
-    });
+    const N = 5;
+    for (let i = 0; i < N; i++) {
+      const outcome = await conductProjects({
+        projects: [(await loadProject(BROKEN, store))!],
+        codeSha: NEW,
+        store,
+        outcome: { projects: 0, ran: 0, refused: [] },
+        log: () => {},
+        work: async (_project, where) => {
+          where.ref = "main";
+          await where.looked();
+          // The run, in flight.
+          midRun ??= (await types(BROKEN)).at(-1);
+          expect((await loadProject(BROKEN, store))!.refused).toBeNull();
+          throw new Error(`merge lane: 502 Bad Gateway, request ${i}`);
+        },
+      });
+      expect(outcome.refused).toHaveLength(1);
+    }
 
     expect(midRun).toBe("ProjectRecovered");
-    expect((await types(BROKEN)).slice(-2)).toEqual(["ProjectRecovered", "ProjectRefused"]);
+    // One recovery across N sweeps that each fail after looking, and no refusal
+    // after it: not a Recovered→Refused pair per sweep.
+    expect((await types(BROKEN)).slice(before)).toEqual(["ProjectRecovered"]);
+    expect((await loadProject(BROKEN, store))!.refused).toBeNull();
   });
 });
