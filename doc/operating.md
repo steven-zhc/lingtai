@@ -911,6 +911,8 @@ The same decisions from the terminal, if you prefer:
 pnpm lingtai approve nextloom-ai-admin --issue 120
 pnpm lingtai approve nextloom-ai-admin --issue 120 --reject "wrong approach"
 pnpm lingtai requeue nextloom-ai-admin --issue 120 --note "the block was the harness, not the diff"
+pnpm lingtai waive nextloom-ai-admin --issue 120 \
+  --gate proposed:build --reason "unrelated flake in the importer suite"
 ```
 
 `approve` merges **what the held run actually produced**, not a fresh attempt.
@@ -928,7 +930,19 @@ block overruled anonymously is the silent waiver this whole system exists to
 remove. It appends the same `WorkItemUnblocked` the board's button does and
 makes no GitHub call — `reconcile` converges the label the block left behind.
 
-`waive` is the one decision that is still the board's alone (`#129`).
+`waive` is the escape hatch, and it arrives where you already are: the case it
+exists for — a flaky check, a scan whose service is down, a failure you have
+read and judged unrelated — is one you meet at a prompt, not in a browser
+(`#129`). The gate is named as `point:action`, the key the card shows. Any gate
+on the run's current head can be named, whatever it says — including one left
+`running` by a run that gave up on it, which nothing else will ever answer — and
+so can any gate the run planned and never reported, which is how a
+`landedWithoutGatePoints` failure in `lingtai doctor` is closed. A name that is
+neither is refused by listing the gates there are. `--reason` is required and is
+never filled in for you: *recorded, never silent* is the whole of what makes a
+waiver acceptable. It appends the same `GateWaived` the board's button does,
+bound to the head it listed the gates on, so a branch that moves in between is
+refused rather than waived unread.
 
 ### Let it merge
 

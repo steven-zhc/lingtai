@@ -667,18 +667,20 @@ Four rules:
   which is under the boundary's ten — that one is the backstop for a promise
   that never settles at all.
 
-## lingtai subcommand — 16
+## lingtai subcommand — 19
 
 Source: the switch in `apps/cli/src/lingtai.ts`.
 
-`add` · `run` · `approve` · `requeue` · `attach` · `status` · `doctor` · `env` ·
-`end` · `daemon` · `pause` · `resume` · `shutdown` · `now` · `projection` ·
-`version`
+`add` · `run` · `approve` · `requeue` · `waive` · `attach` · `status` · `doctor`
+· `env` · `end` · `daemon` · `service` · `restart` · `pause` · `resume` ·
+`shutdown` · `now` · `projection` · `version`
 
-`approve` and `requeue` are the two decisions a person can take from here.
-`waive` is still the board's alone (`#129`), which is worth knowing from this
-list rather than by trying it — that the set was not countable from the CLI's
-side is how `requeue` went missing for as long as it did (`#130`).
+`approve` (with `--reject`), `requeue` and `waive` are the decisions a person
+can take from here, and they are all of the board's: `apps/board/src/app/actions.ts`
+imports the same four from `@lingtai/conductor/decide`. That the set was not
+countable from the CLI's side is how `requeue` (`#130`) and `waive` (`#129`)
+went missing — and the count here was two short again, `service` and `restart`
+having joined the switch without it moving.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 

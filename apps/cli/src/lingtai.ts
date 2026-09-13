@@ -50,6 +50,7 @@ import { requeueCommand } from "./requeue.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { status } from "./status.ts";
+import { waiveCommand } from "./waive.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
 import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
 
@@ -65,7 +66,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
     --once                      the same as --max 1
     --no-merge                  stop after the gates and ask before merging
-    lingtai approve <project> --issue <n>
+
+  the decisions — each the one the board's card takes, recorded the same way:
+  lingtai approve <project> --issue <n>
                                 merge what a held run produced, if its head has
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval
@@ -76,6 +79,12 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 and the next pass cuts a fresh branch from a
                                 base that has since moved. --note is required —
                                 a person overruling a block is not anonymous
+  lingtai waive <project> --issue <n> --gate <point:action> --reason <why>
+                                merge past a verdict — a flaky check, a scan
+                                whose service is down. --reason is required and
+                                never defaulted; a gate that is not there is
+                                refused by listing the gates there are
+
   lingtai attach <runId>            follow a run's log — what it is doing, as it
                                 does it, from the beginning however late you
                                 attach. Reads a file and asks nothing of the
@@ -843,6 +852,19 @@ async function main(argv: string[]): Promise<number> {
       // same silence as leaving the flag off — so both arrive as "" and the
       // command refuses them identically. Not defaulted here or there.
       return requeueCommand({ project: positional[0], issue, note: flags["note"] ?? "" });
+    }
+    case "waive": {
+      const { positional, flags } = parseFlags(rest);
+      const issue = Number(flags["issue"]);
+      const gate = flags["gate"];
+      if (!positional[0] || !Number.isInteger(issue) || !gate) {
+        console.error("lingtai waive <project> --issue <n> --gate <point:action> --reason <why>");
+        return 2;
+      }
+      // Not defaulted, unlike `--reject`'s "no reason given": *recorded, never
+      // silent* is the whole of `GateWaived`'s claim on existing. A missing and
+      // an empty `--reason` both arrive as "" and are refused by the command.
+      return waiveCommand({ project: positional[0], issue, gate, reason: flags["reason"] ?? "" });
     }
     case "attach": {
       const runId = parseFlags(rest).positional[0];
