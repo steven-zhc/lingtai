@@ -621,6 +621,14 @@ describe("runOnce, with no world to run in", () => {
     expect(endings.map((e) => e.type)).toEqual(["RunFinished", "RunFailed"]);
     expect(endings[0]!.data).toEqual({ exitCode: 1, turns: 150, durationMs: 900_000, costUsd: 24.1 });
     expect((endings[1]!.data as { kind: string }).kind).toBe("out-of-turns");
+
+    // **Held, not released.** A release puts the item back in the queue, and
+    // the next pass after the backoff would buy another run to the same limit
+    // — every backoff, with nothing counting. The limit's reading is that the
+    // ticket was wrong, which is a person's to fix.
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(item).toContain("WorkItemBlocked");
+    expect(item).not.toContain("WorkItemReleased");
   });
 
   /**

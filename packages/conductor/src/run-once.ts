@@ -1202,6 +1202,63 @@ export function runOnce(
             if (outcome.failure.kind === "never-started") {
               yield* standDownConductor(outcome.failure.detail);
             }
+            /**
+             * **Held, not released.** A release is a backoff and another claim
+             * with the whole turn budget, and nothing counts these endings, so
+             * the ticket would buy a run to the limit every backoff until
+             * somebody noticed. The recipe's reading of the limit is *"the
+             * ticket was scoped wrong"* — which no retry of the same ticket
+             * answers — so it goes to a person, as a lane refusal does.
+             * `released` is set so the `Stopped` below reports the stage and
+             * does not undo the block by putting the item back in the queue.
+             */
+            if (outcome.failure.kind === "out-of-turns") {
+              const { detail } = outcome.failure;
+              const question = `out-of-turns: ${said(detail)}`;
+              const ended = yield* Effect.promise(async () => {
+                const blocked = await store.read(workItemId);
+                const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
+                await store.append(workItemId, blocked.length, [
+                  {
+                    type: "WorkItemBlocked",
+                    actor: "conductor",
+                    data: parsePayload("WorkItemBlocked", {
+                      question,
+                      needsFrom: "human",
+                      runId,
+                      needs: "acknowledgement",
+                      diagnosis: {
+                        what:
+                          `the run reached the recipe's turn limit (${recipe.runtime.limits.turns}) and was stopped: ` +
+                          `${said(detail)}. The limit is a scope alarm — the ticket asks ` +
+                          `for more than one run should do.`,
+                        done: null,
+                        raw: detail,
+                        recommendation: {
+                          action: "requeue",
+                          why:
+                            "narrow or split the ticket first; requeued as written, it buys another run " +
+                            "to the same limit",
+                        },
+                      },
+                    }),
+                  },
+                  ...resolvedEnd,
+                ]);
+                return resolvedEnd;
+              });
+              released = true;
+              yield* Effect.promise(() =>
+                tellGitHubAbout({
+                  store,
+                  github: options.client,
+                  workItemId,
+                  question,
+                  labels: labelsFor("waiting"),
+                  appended: ended,
+                }),
+              );
+            }
             return yield* new Stopped({
               stage: "run",
               detail: outcome.failure.detail,

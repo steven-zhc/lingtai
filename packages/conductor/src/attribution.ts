@@ -137,14 +137,15 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
  * A total record for the reason `INTEGRATION_OWNER` is one, and this is the
  * record 0031 says was missing.
  *
- * None of them is the repository's, and each is not for its own reason.
- * `never-started` is 0031 §2: the agent could not begin, so nothing in the
- * repository was reached, let alone broken. The other four are endings the
- * queue already answers with a backoff and a better prompt (#82) — the ticket
- * is coming back, and a card that blamed the repository for a quota would send
- * somebody to read a diff that is not the problem.
+ * One of them is the repository's, and each of the rest is not for its own
+ * reason. `never-started` is 0031 §2: the agent could not begin, so nothing in
+ * the repository was reached, let alone broken. `timeout`, `crash`, `aborted`
+ * and `no-commits` are endings the queue already answers with a backoff and a
+ * better prompt (#82) — the ticket is coming back, and a card that blamed the
+ * repository for a quota would send somebody to read a diff that is not the
+ * problem.
  *
- * `lingtai` rather than `person` because none of these is a hold anybody meant.
+ * `lingtai` rather than `person` because none of those is a hold anybody meant.
  */
 const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   "never-started": "lingtai",
@@ -153,10 +154,12 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   aborted: "lingtai",
   "no-commits": "lingtai",
   // The recipe calls a run that needs this many turns *"a ticket that was
-  // scoped wrong"*, which reads as the repository's — but `repository` is the
-  // owner that buys a repair agent, and spending a second agent to explain the
-  // first one's overspending is `#84` twice.
-  "out-of-turns": "lingtai",
+  // scoped wrong"*, and guide.md reads the limit firing as *the ticket was
+  // wrong* (`#89`). The ticket is the repository's, and Lingtai did what the
+  // recipe asked — so a card calling this Lingtai's would send somebody to
+  // look for a fault that is not there. The owner buys nothing either way
+  // (`#143`); it is only what the card says.
+  "out-of-turns": "repository",
 };
 
 /**
