@@ -102,7 +102,8 @@ export function createSubjectResolver(
 
 export interface BuildSubscribersOptions {
   /** One per registered project, recipe already resolved. A project whose recipe
-   *  will not parse has no `recipe` on it and therefore declares nothing. */
+   *  could not be read has no `recipe` on it, and is returned as `unread` — never
+   *  as a project that declared nothing. */
   filters: readonly ProjectFilter[];
   /** Where a subscriber's process runs. The daemon's own directory; there is no worktree for an event. */
   cwd: string;
@@ -118,6 +119,22 @@ export interface BuiltSubscriber {
   subscriber: Subscriber;
   /** As the recipe wrote it, so the operator can see what it will and will not hear. */
   on: readonly string[];
+}
+
+/** A project whose declaration is not known — its recipe or its env files could not be read. */
+export interface UnreadProject {
+  project: string;
+  problem: string;
+}
+
+export interface SubscriberBuild {
+  built: BuiltSubscriber[];
+  /**
+   * Said apart from `built` because *declared none* and *could not be read* are
+   * different answers, and only the first is a quiet project. A daemon started
+   * at login before the network is up reads every recipe as the second.
+   */
+  unread: UnreadProject[];
 }
 
 /**
@@ -140,13 +157,17 @@ export interface BuiltSubscriber {
  * the answer is still cheap; an operator's typo does not belong between an
  * event and the person waiting to hear about it.
  */
-export async function buildSubscribers(options: BuildSubscribersOptions): Promise<BuiltSubscriber[]> {
+export async function buildSubscribers(options: BuildSubscribersOptions): Promise<SubscriberBuild> {
   const resolve = options.resolveEnv ?? resolveAgentEnv;
-  const log = options.log ?? (() => {});
   const built: BuiltSubscriber[] = [];
+  const unread: UnreadProject[] = [];
 
   for (const filter of options.filters) {
-    if (!filter.ok || filter.recipe.subscribers.length === 0) continue;
+    if (!filter.ok) {
+      unread.push({ project: filter.project, problem: filter.problem });
+      continue;
+    }
+    if (filter.recipe.subscribers.length === 0) continue;
     const declared = [...new Set(filter.recipe.subscribers.flatMap((s) => s.env))];
 
     // One read of the two files per project, not one per subscriber: `merged`
@@ -157,11 +178,14 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
     // different decision from the one that was made.
     const env = await resolve({ project: filter.project, required: [], allow: declared }).catch(
       (err: unknown) => {
-        // Said, and then this project's subscribers are not built. Silence is
-        // the one thing a notifier must not fail into, so it is a line rather
-        // than a swallow — and it is not fatal, because the daemon's job is to
-        // conduct and a subscriber has never been allowed to stop it.
-        log(`subscribers: ${filter.project} declares ${declared.length} name(s) and none could be read — ${(err as Error).message}`);
+        // Returned as unread, and then this project's subscribers are not built.
+        // Silence is the one thing a notifier must not fail into, so it is said
+        // rather than swallowed — and it is not fatal, because the daemon's job
+        // is to conduct and a subscriber has never been allowed to stop it.
+        unread.push({
+          project: filter.project,
+          problem: `declares ${declared.length} name(s) and none could be read — ${(err as Error).message}`,
+        });
         return null;
       },
     );
@@ -182,7 +206,7 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
     }
   }
 
-  return built;
+  return { built, unread };
 }
 
 /**
@@ -200,11 +224,81 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
  * `subscribers:` anywhere and one whose notifier has stopped working look
  * identical from a quiet afternoon, and only the first of them is fine.
  */
-export function describeSubscribers(built: readonly BuiltSubscriber[]): string[] {
-  if (built.length === 0) {
+export function describeSubscribers({ built, unread }: SubscriberBuild): string[] {
+  // Not "declared none" while any project is unread: that sentence would tell
+  // the operator a project chose to be quiet when its recipe did not load.
+  if (built.length === 0 && unread.length === 0) {
     return ["no subscriber declared — nothing is told about anything (recipe: subscribers:)"];
   }
-  return built.map(
-    ({ subscriber, on }) => `subscriber ${subscriber.project}/${subscriber.name} on ${on.join(", ")}`,
-  );
+  return [
+    ...built.map(
+      ({ subscriber, on }) => `subscriber ${subscriber.project}/${subscriber.name} on ${on.join(", ")}`,
+    ),
+    ...unread.map(
+      ({ project, problem }) =>
+        `subscribers: ${project} unknown, so nothing it declares is running yet — asked again each pass: ${problem}`,
+    ),
+  ];
+}
+
+export interface SubscriberSetOptions extends BuildSubscribersOptions {
+  /** Reads these projects' recipes again. The daemon's is `projectFilters` over the registered projects. */
+  reread: (projects: readonly string[]) => Promise<readonly ProjectFilter[]>;
+}
+
+/** The daemon's subscribers, as they are now — which a later pass can add to. */
+export interface SubscriberSet {
+  /** Asked on every event, so a project built after startup is told about what follows. */
+  subscribers(): readonly Subscriber[];
+  /** The lines the daemon prints at startup. */
+  describe(): string[];
+  /**
+   * Reads every unread project's recipe again, and builds what it declares.
+   * Costs nothing once every project has been read. Never rejects.
+   */
+  retry(): Promise<void>;
+}
+
+/**
+ * The subscribers, built at startup and completed later.
+ *
+ * Built once and never again would leave a daemon started before its recipes
+ * could be read — `launchd`'s `RunAtLoad`, at login, before the network is up —
+ * with no subscriber until somebody restarted it, while every pass after the
+ * first conducted normally off the same recipe. So an unread project is asked
+ * again, and the daemon calls `retry` before each pass: that is when the
+ * recipe is being read anyway, and it is no more often than a pass is.
+ *
+ * Only an *unread* project is asked. A project that was read keeps what it
+ * declared until the daemon restarts, which is what the recipe's own note on
+ * `subscribers:` promises.
+ */
+export async function createSubscriberSet(options: SubscriberSetOptions): Promise<SubscriberSet> {
+  const log = options.log ?? (() => {});
+  let current = await buildSubscribers(options);
+
+  return {
+    subscribers: () => current.built.map((b) => b.subscriber),
+    describe: () => describeSubscribers(current),
+    async retry() {
+      if (current.unread.length === 0) return;
+      try {
+        const filters = await options.reread(current.unread.map((u) => u.project));
+        const next = await buildSubscribers({ ...options, filters });
+        const still = new Set(next.unread.map((u) => u.project));
+        for (const { project } of current.unread) {
+          if (still.has(project)) continue;
+          const mine = next.built.filter((b) => b.subscriber.project === project);
+          if (mine.length === 0) log(`subscribers: ${project} read — it declares none`);
+          for (const { subscriber, on } of mine) {
+            log(`subscriber ${subscriber.project}/${subscriber.name} on ${on.join(", ")}`);
+          }
+        }
+        // Replaced, not mutated: `subscribers()` may be mid-iteration on an event.
+        current = { built: [...current.built, ...next.built], unread: next.unread };
+      } catch (err) {
+        log(`subscribers: could not ask the unread recipes again — ${(err as Error).message}`);
+      }
+    },
+  };
 }

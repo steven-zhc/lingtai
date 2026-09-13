@@ -78,7 +78,7 @@
  * must not have. `lingtai doctor` reads them back.
  */
 import { directDatabaseUrl } from "@lingtai/env";
-import { type Envelope, SUBSCRIBER_STREAM, parseWorkItemStream, parsePayload } from "@lingtai/domain";
+import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
 import { type EventStore, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
 import pg from "pg";
 
@@ -145,6 +145,16 @@ export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000;
 export interface EventSubscriber {
   /** As the recipe named it. It is what `PluginFailed` records. */
   readonly name: string;
+  /**
+   * The project whose recipe declared it, and what `PluginFailed.project` says
+   * when it fails.
+   *
+   * Carried rather than read off the event, because the event cannot say: of
+   * the four types Lingtai's own recipe declares, three are on a `run-<uuid>`
+   * stream or an `int-{project}-{base}` lane, and cutting either at its last
+   * dash names a project that does not exist. The subscriber already knows.
+   */
+  readonly project?: string;
   deliver(event: Envelope): Promise<void>;
 }
 
@@ -202,10 +212,14 @@ export interface WorkLoopOptions {
    * its own connection would be another session-mode connection held open for
    * the life of the daemon, for events it is being handed anyway.
    *
+   * A function when the set can change while the daemon runs — a project whose
+   * recipe could not be read at startup is built on a later pass — and asked
+   * again on every event, so a subscriber built after `start` is told too.
+   *
    * Their failures are held by `deliver`, not by them. See the note on the
    * subscriber boundary at the top of this file.
    */
-  subscribers?: readonly EventSubscriber[];
+  subscribers?: readonly EventSubscriber[] | (() => readonly EventSubscriber[]);
   /**
    * Somebody asked the discussion assistant a question. Answer it.
    *
@@ -293,7 +307,8 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
   // ------------------------------------------------ the subscriber boundary --
 
   const store = options.store ?? eventStore;
-  const subscribers = options.subscribers ?? [];
+  const subscribers = (): readonly EventSubscriber[] =>
+    typeof options.subscribers === "function" ? options.subscribers() : (options.subscribers ?? []);
   const subscriberTimeoutMs = options.subscriberTimeoutMs ?? SUBSCRIBER_TIMEOUT_MS;
 
   /**
@@ -316,7 +331,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    */
   let recording: Promise<void> = Promise.resolve();
 
-  function record(name: string, event: Envelope, reason: string): void {
+  function record(name: string, event: Envelope, reason: string, owner: string | undefined): void {
     // The loop, closed. A `PluginFailed` is an append like any other, so the
     // subscription hands it back to the subscribers, and a subscriber that is
     // failing on everything would fail on this one too — appending another, for
@@ -324,7 +339,11 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     // down again.
     if (event.type === "PluginFailed") return;
 
-    const project = parseWorkItemStream(event.streamId)?.project ?? null;
+    // The subscriber's own project when it has one. Otherwise only what the
+    // event names *exactly* — its `wi-` stream or its `workItemId` — and null
+    // rather than a guess: `parseWorkItemStream` cuts any id at its last dash,
+    // so `run-3f2a…-0123` would be recorded as project `run-3f2a…`.
+    const project = owner ?? workItemOf(event)?.project ?? null;
     const data = { name, eventType: event.type, project, reason };
     recording = recording.then(async () => {
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -364,13 +383,18 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * `settled` is why a subscriber that rejects an hour after timing out does
    * not append a second `PluginFailed` for the same event.
    */
-  function deliver(name: string, event: Envelope, run: (e: Envelope) => Promise<void>): void {
+  function deliver(
+    name: string,
+    event: Envelope,
+    run: (e: Envelope) => Promise<void>,
+    project?: string,
+  ): void {
     let settled = false;
     const failed = (reason: string): void => {
       if (settled) return;
       settled = true;
       log(`${name} failed on ${event.type}: ${reason}`);
-      record(name, event, reason);
+      record(name, event, reason, project);
     };
 
     const timer = setTimeout(
@@ -488,7 +512,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // That is the boundary this file's header is about: what a subscriber
           // does with an event is its own business, and what it does *to the
           // process following the log* is not its business at all.
-          for (const s of subscribers) deliver(s.name, event, (e) => s.deliver(e));
+          for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project);
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
           if (event.type === "DiscussionRequested" && options.discuss) {

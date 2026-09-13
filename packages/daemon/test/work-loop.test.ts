@@ -345,6 +345,74 @@ describe("the work loop", () => {
     }
   });
 
+  /**
+   * A failure on a run stream or an integration lane is recorded under the
+   * project whose recipe declared the subscriber — not under whatever cutting
+   * `run-<uuid>` at its last dash produces, which is what it said before.
+   *
+   * And the subscriber is one handed over *after* `start`, through the getter:
+   * a project whose recipe could not be read at startup is built on a later
+   * pass, and it has to be told about the events that follow.
+   */
+  it("records a subscriber's failure under its own project, whatever stream the event was on", async () => {
+    const tag = crypto.randomUUID().slice(0, 8);
+    const project = `esctestowner${tag}`;
+    const run = `run-${crypto.randomUUID()}`;
+    const lane = `int-${project}-main`;
+    created.add(run);
+    created.add(lane);
+    created.add(SUBSCRIBER_STREAM);
+
+    const declared: { name: string; project: string; deliver: () => Promise<void> }[] = [];
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      store,
+      subscribers: () => declared,
+      pass: async () => {},
+    });
+
+    await loop.start();
+    try {
+      declared.push({
+        name: "desktop",
+        project,
+        deliver: () => Promise.reject(new Error("osascript exited 1")),
+      });
+      await store.append(run, 0, [
+        { type: "RunAwaitingInput", actor: `agent:${run}`, data: { prompt: "which base?" } },
+      ]);
+      await store.append(lane, 0, [
+        {
+          type: "IntegrationRefused",
+          actor: "conductor",
+          data: { workItemId: `wi-${project}-1`, branch: "agent/1", reason: "conflict", detail: "no" },
+        },
+      ]);
+
+      type Failure = { name: string; eventType: string; project: string | null };
+      const mine = async (): Promise<Failure[]> =>
+        (await store.read(SUBSCRIBER_STREAM))
+          .filter((r) => r.type === "PluginFailed")
+          .map((r) => r.data as Failure)
+          .filter((d) => d.project?.includes(tag) === true);
+
+      let failures = await mine();
+      const deadline = Date.now() + 10_000;
+      while (failures.length < 2) {
+        if (Date.now() > deadline) throw new Error(`timed out with ${failures.length} failure(s) recorded`);
+        await new Promise((r) => setTimeout(r, 50));
+        failures = await mine();
+      }
+
+      expect(new Set(failures.map((f) => f.project))).toEqual(new Set([project]));
+      expect(new Set(failures.map((f) => f.eventType))).toEqual(
+        new Set(["RunAwaitingInput", "IntegrationRefused"]),
+      );
+    } finally {
+      await loop.stop();
+    }
+  });
+
   it("takes nothing while a pause holds, and takes work again when it lifts by itself", async () => {
     let passes = 0;
     // Stands in for `reduceControl` reaching the expiry: the same fold, asked

@@ -48,7 +48,7 @@ import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { status } from "./status.ts";
-import { buildSubscribers, createSubjectResolver, describeSubscribers } from "./subscribers.ts";
+import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
@@ -465,19 +465,23 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
     //
     // Fire and forget, as it always was: a notification retried later, about a
     // decision already made, trains you to ignore the next one.
-    const declared = await buildSubscribers({
+    //
+    // A project whose recipe could not be read here is said to be unread, not
+    // quiet, and asked again before each pass until it is.
+    const declared = await createSubscriberSet({
       filters,
+      reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? "(unnamed)"))),
       subject: createSubjectResolver(),
       // The daemon's own directory. There is no worktree for an event — it is
       // not about a diff — and a subscriber that wants one has to make it.
       cwd: process.cwd(),
       log: (line) => console.log(line),
     });
-    for (const line of describeSubscribers(declared)) console.log(line);
+    for (const line of declared.describe()) console.log(line);
 
     loop = createWorkLoop({
       log: (line) => console.log(line),
-      subscribers: declared.map((d) => d.subscriber),
+      subscribers: () => declared.subscribers(),
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.
@@ -499,6 +503,7 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
       onShutdown: (why) => void drain(why, asked?.timeoutMs ?? null),
 
       pass: async (reason) => {
+        await declared.retry();
         const outcome = await conductorPass({
           merge: !("no-merge" in flags),
           // The commit read at startup, so a refusal on the log says which
