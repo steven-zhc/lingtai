@@ -36,7 +36,10 @@ export interface RuntimeCapabilities {
   /** The lifecycle hooks this runtime actually emits. */
   hooks: readonly string[];
   /**
-   * Whether a hook's refusal is honoured, so the record can fail closed.
+   * Whether a refusal from the `UserPromptSubmit` hook stops the run, so the
+ * record can fail closed. That is the hook to check: `PreToolUse` is not wired
+ * (`INTERSECTION_HOOKS`) and `PostToolUse` fires after the tool already ran, so
+ * honouring a refusal before tool calls says nothing about this.
    *
    * Not mediation — the hook refuses nothing it is not forced to (ADR 0016 §6).
    * It is for the other half of `run-once.ts`'s step 6: *"a hook that cannot
@@ -221,8 +224,9 @@ export interface Runtime {
  *
  * The tiers are about the runtime, not a policy on the tools: containment is
  * the worktree and the filtered environment, at every tier. `guarded` is a
- * runtime that hands control to a hook before every tool use and stops the
- * run on its refusal (`canFailClosed`) — what the first project runs at and what carried
+ * runtime that stops the run when the `UserPromptSubmit` hook refuses the
+ * prompt (`canFailClosed`) — not a hook before tool use, which Lingtai does not
+ * install (`INTERSECTION_HOOKS`) — and it is what the first project runs at and what carried
  * the old loop's 73 runs. `sandboxed` adds a filesystem boundary the runtime
  * enforces itself, which nothing implemented provides.
  */

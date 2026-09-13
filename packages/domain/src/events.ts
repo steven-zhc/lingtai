@@ -41,9 +41,9 @@ import { z } from "zod";
 /**
  * What a project asks its runtime to be able to do. See doc/decisions/0007.
  *
- * `guarded`: the runtime hands control to a hook before every tool use, and
- * that hook's refusal stops the run — so a hook that cannot reach the conductor
- * stops the run rather than let it record nothing. Not "Lingtai guards the tools", which
+ * `guarded`: the runtime stops the run when the `UserPromptSubmit` hook refuses
+ * the prompt — so a hook that cannot reach the conductor stops the run at its
+ * first prompt rather than let it record nothing. No hook runs before a tool use. Not "Lingtai guards the tools", which
  * it does not (ADR 0016 §6); containment is the worktree and the filtered
  * environment. `sandboxed` adds a filesystem boundary the runtime enforces.
  */

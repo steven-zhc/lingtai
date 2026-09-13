@@ -28,6 +28,7 @@ import {
   CLAUDE_CODE_CAPABILITIES,
   CODEX_CAPABILITIES,
   CodexNotImplementedError,
+  INTERSECTION_HOOKS,
   PROMPT_ELIDED,
   RUN_LIMITS,
   TRACE_LINE_CHARS,
@@ -177,6 +178,20 @@ describe("capabilities", () => {
     expect(missingForTier(refusable, "guarded")).toEqual(["tier-guarded"]);
     expect(missingForTier(notifyOnly, "sandboxed")).toEqual(["filesystem-sandbox"]);
     expect(missingForTier(notifyOnly, "open")).toEqual([]);
+  });
+
+  /**
+   * `canFailClosed` is about the prompt hook, not a hook before tool use: that
+   * is the refusal that stops a run whose hook cannot reach the conductor. A
+   * definition pointing at a hook Lingtai does not install lets an adapter
+   * declare it for a runtime that can only notify.
+   */
+  it("fails closed at a hook Lingtai installs, which is not one before tool use", () => {
+    expect(INTERSECTION_HOOKS).toContain("UserPromptSubmit");
+    expect(INTERSECTION_HOOKS).not.toContain("PreToolUse");
+    for (const capabilities of [CLAUDE_CODE_CAPABILITIES, CODEX_CAPABILITIES]) {
+      if (capabilities.canFailClosed) expect(capabilities.hooks).toContain("UserPromptSubmit");
+    }
   });
 
   /** `#89`: a limit is declared applied only where the adapter applies it. */

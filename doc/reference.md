@@ -482,7 +482,7 @@ Source: `meetsTier` and `missingForTier` in `packages/agent/src/runtime.ts`.
 | tier | the runtime… | refused as |
 |---|---|---|
 | `open` | runs the agent | — |
-| `guarded` | hands control to a hook before every tool use, and that hook's refusal stops the run (`canFailClosed`) — so a hook that cannot reach the conductor stops the run rather than let it record nothing. Not a guard on the tools: Lingtai refuses no tool call ([ADR 0016](decisions/0016-the-settled-model.md) §6) | `pre-tool-use-interception`, a name kept from before 0016 |
+| `guarded` | honours a refusal from the lifecycle hook Lingtai installs on the prompt — `UserPromptSubmit` exiting 2 stops the run (`canFailClosed`) — so a hook that cannot reach the conductor stops the run at its first prompt rather than let it record nothing. A runtime whose `UserPromptSubmit` can only notify does not qualify. Not a guard on the tools: no hook runs before a tool use (`PreToolUse` is not wired, and `PostToolUse` fires after the tool ran), and Lingtai refuses no tool call ([ADR 0016](decisions/0016-the-settled-model.md) §6) | `pre-tool-use-interception`, a name kept from before 0016 |
 | `sandboxed` | also enforces a filesystem boundary of its own | `filesystem-sandbox` |
 
 **It is the recipe's** — `runtime.tier`, defaulting to `guarded`. There is no

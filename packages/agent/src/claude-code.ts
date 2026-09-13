@@ -69,8 +69,9 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   canFailClosed: true,
   // Codex can rewrite a call; Claude Code refuses or allows.
   canRewriteToolCall: false,
-  // No filesystem sandbox of its own. `guarded` is a hook before every tool use
-  // whose refusal stops the run, so the record fails closed; containment is the worktree
+  // No filesystem sandbox of its own. `guarded` is a `UserPromptSubmit` hook
+  // whose refusal (exit 2) stops the run, so the record fails closed; no hook
+  // runs before a tool use. Containment is the worktree
   // and the filtered environment. It is what carried the old loop's 73 runs.
   providesTier: "guarded",
   /**
@@ -166,20 +167,20 @@ function argsFor(
     // configuration has no hook configuration.
     "--settings",
     request.settingsPath,
-    // The guard is the gate, so the runtime's own permission layer must not
-    // be a second one. Without this a run is not merely stricter, it is
+    // Lingtai refuses no tool call (ADR 0016 §6) and the hook does not stand
+    // in for this permission layer: nothing Lingtai installs runs before a
+    // tool use. Without this a run is not merely stricter, it is
     // impossible: `-p` is non-interactive, so every Write, Edit and most
     // Bash calls come back as "you haven't granted it yet" and there is no
     // prompt to grant anything. One real run spent 45 turns and $3.35
     // reading the repository, designing the change, and then reporting that
-    // it could not write a single file. lingtai-hook denied none of it — none
-    // of it ever reached lingtai-hook.
+    // it could not write a single file. The permission layer refused all of
+    // it, and nothing was left to refuse once it stepped aside.
     //
-    // Not a loosening. `guarded` has always meant the worktree plus the
-    // hook (see `providesTier` above, and ADR 0007): containment is the
-    // filtered environment and the disposable worktree, and the hook is
-    // what makes the record fail closed. Deferring to it is the design, and
-    // leaving a second layer in front of it only hides the first.
+    // It does loosen the tools, and nothing stands behind it: a call outside
+    // the worktree is not stopped by lingtai-hook. Containment is the
+    // filtered environment and the disposable worktree (see `providesTier`
+    // above, and ADR 0007), and the hook only makes the record fail closed.
     "--permission-mode",
     permissionMode,
     "--session-id",
