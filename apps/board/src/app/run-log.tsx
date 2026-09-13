@@ -49,7 +49,8 @@ import { useLatch } from "./latch.tsx";
 const KEEP_LINES = 2_000;
 
 /**
- * How long to wait before asking again for a log that is not there yet.
+ * How long to wait before asking again for a log that is not there yet, the
+ * first time.
  *
  * Only for a follower that has been told the file is coming — the discussion
  * box, whose question the board appended a moment ago and whose daemon has not
@@ -61,30 +62,58 @@ const KEEP_LINES = 2_000;
 const AGAIN_MS = 1_500;
 
 /**
- * How many times, before *not yet* is answered as *not coming*.
+ * The longest wait between two asks, which the delay doubles towards.
  *
- * A bound and not a courtesy. `DiscussionAsked` is appended by the board and
+ * **The asking never stops while the turn is on screen**, and that is the
+ * correction to a bound that did. `DiscussionAsked` is appended by the board and
  * answered by whatever daemon is running, and a question asked with none running
- * waits in the stream until one starts — which may be tomorrow (`answerOutstanding`).
- * Unbounded, that is a tab asking for a 404 every second and a half until it is
- * closed, which is the second half of what #132 found: a box that cannot tell a
- * daemon thinking from a daemon that is not there. Thirty seconds is far past
- * the time it takes a running daemon to open the file, so reaching this is the
- * answer rather than an impatience.
+ * waits in the stream until one starts — which may be tomorrow
+ * (`answerOutstanding`). A follower that gave up after thirty seconds told the
+ * reader the turn was dead while it was queued, and a reader told that asks
+ * again, which buys a second agent for the same question. Backing off keeps the
+ * cost of an unwatched tab at one 404 every fifteen seconds and still catches
+ * the trace the moment a daemon opens it.
  */
-const AGAIN_LIMIT = 20;
+const AGAIN_MAX_MS = 15_000;
+
+/**
+ * How many asks, before *not yet* is said as *nothing has started on it*.
+ *
+ * Not a limit on asking (see `AGAIN_MAX_MS`) — the point past which the box
+ * stops implying a daemon is about to answer. Five asks is about twenty-two
+ * seconds, far past the time a running daemon takes to open the file, so what
+ * is left is a question waiting for a daemon, and the box says that instead.
+ */
+const AGAIN_PATIENCE = 5;
+
+/** The wait before ask `n + 1`, doubling from `AGAIN_MS` to `AGAIN_MAX_MS`. */
+export function againAfter(n: number): number {
+  return Math.min(AGAIN_MS * 2 ** n, AGAIN_MAX_MS);
+}
 
 type Ended = "landed" | "did not land" | "removed";
 
 /**
  * What the follower knows about the file. Never about the run (0034 §8).
  *
- * `waiting` is `gone` seen by a caller that was told the file is coming and is
- * still asking (`awaited`, `AGAIN_LIMIT`). The distinction is the whole of what
- * a reader needs: *it is not there yet* and *it is not coming* are the two
- * sentences a box waiting for an answer has to be able to tell apart.
+ * `waiting` and `queued` are both `gone` seen by a caller that was told the
+ * file is coming (`awaited`): the first while a daemon could still be opening
+ * it, the second once it has been long enough that the likelier reading is that
+ * none is running (`AGAIN_PATIENCE`). Neither is *not coming*, and a box
+ * waiting for an answer must never say that it is.
  */
-export type TailState = "off" | "reading" | "waiting" | "gone" | "trouble" | Ended;
+export type TailState = "off" | "reading" | "waiting" | "queued" | "gone" | "trouble" | Ended;
+
+/**
+ * The state a caller is handed, from the one the stream reported.
+ *
+ * Pure so the reading is testable without an `EventSource`: `gone` is only
+ * `gone` to a follower that was not told the file is coming.
+ */
+export function reported(state: TailState, awaited: boolean, asks: number): TailState {
+  if (state !== "gone" || !awaited) return state;
+  return asks < AGAIN_PATIENCE ? "waiting" : "queued";
+}
 
 /**
  * Follow one log file over the route's SSE, for as long as `following`.
@@ -115,10 +144,13 @@ export function useLogTail(
   const start = useCallback(() => {
     if (source.current) return;
     setLines([]);
-    setState("reading");
+    // `reading` when the stream opens and not before: a 404 never opens, and a
+    // box that said *reading* for the length of one would claim, for a moment,
+    // that a daemon had started on a question nothing has picked up.
 
     const es = new EventSource(`/api/run/${encodeURIComponent(id)}`);
     source.current = es;
+    es.onopen = () => setState("reading");
 
     es.addEventListener("line", (event) => {
       const line = JSON.parse((event as MessageEvent<string>).data) as string;
@@ -146,7 +178,7 @@ export function useLogTail(
     // would need a `fetch` first, and the two sentences are close enough that a
     // second round trip is not worth it.
     es.onerror = () => {
-      setState((was) => (was === "reading" ? "gone" : was));
+      setState((was) => (was === "reading" || was === "gone" || was === "off" ? "gone" : was));
       stop();
     };
   }, [id, stop]);
@@ -163,20 +195,15 @@ export function useLogTail(
     return stop;
   }, [following, again, start, stop]);
 
-  // The file that is coming rather than gone. Asked for again, while somebody is
-  // still waiting for it and while *not yet* is still the likelier reading —
-  // past `AGAIN_LIMIT` the state stands as `gone`, which is what a caller shows
-  // when nothing is writing.
+  // The file that is coming rather than gone, asked for again for as long as
+  // somebody is waiting for it, less often each time (`againAfter`).
   useEffect(() => {
-    if (!following || !awaited || state !== "gone" || again >= AGAIN_LIMIT) return;
-    const timer = setTimeout(() => setAgain((n) => n + 1), AGAIN_MS);
+    if (!following || !awaited || state !== "gone") return;
+    const timer = setTimeout(() => setAgain((n) => n + 1), againAfter(again));
     return () => clearTimeout(timer);
   }, [following, awaited, state, again]);
 
-  // `gone` is only an answer once the asking has stopped. Derived on the way
-  // out rather than held, so the retry above keeps keying on the one state the
-  // stream actually reported.
-  return { lines, state: state === "gone" && awaited && again < AGAIN_LIMIT ? "waiting" : state };
+  return { lines, state: reported(state, awaited, again) };
 }
 
 export function RunLog({
@@ -236,7 +263,7 @@ function say(state: TailState, count: number): string {
   // A run's log is never `awaited`, so this is the discussion box's state and
   // not one a ledger row can reach. Said anyway, rather than falling through to
   // `ends here` on a file that has not started.
-  if (state === "waiting") return "no log yet";
+  if (state === "waiting" || state === "queued") return "no log yet";
   if (state === "gone") return "no log";
   if (state === "trouble") return "the stream failed";
   if (state === "reading") return `${count} lines · following`;

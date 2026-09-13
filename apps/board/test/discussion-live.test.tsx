@@ -24,7 +24,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DiscussionView } from "../src/lib/task.ts";
-import { Discussion, Trace } from "../src/app/discussion.tsx";
+import { Discussion, Trace, traceSays } from "../src/app/discussion.tsx";
+import { againAfter, reported, type TailState } from "../src/app/run-log.tsx";
 
 const waiting: DiscussionView = {
   chatId: "chat-1",
@@ -63,17 +64,55 @@ describe("the box while it is being answered", () => {
 
   it("puts an unanswered turn's trace where the answer will be", () => {
     const html = render([waiting]);
-    // The turn renders the follower and not a sentence about it: this is the
-    // first frame of `Trace`, before a connection has said anything.
-    expect(html).toContain("waiting for the daemon to answer");
+    // The follower, not a sentence: `data-trace` is the state `useLogTail`
+    // handed `Trace`, and a turn that rendered a static paragraph — what this
+    // box was before #132 — has none. Its first frame is `off`, before a
+    // connection has said anything.
+    expect(html).toContain('data-trace="off"');
     // Nothing to show yet, and it says so rather than showing an empty frame
     // (0016 §4).
     expect(html).not.toContain('class="chattrace"');
   });
+
+  it("follows nothing for a turn that has been answered", () => {
+    const answered: DiscussionView = {
+      ...waiting,
+      waiting: false,
+      turns: [
+        {
+          ...waiting.turns[0]!,
+          answer: { text: "it did", failure: null, cannot: [], read: [], costUsd: 0.1, proposal: null },
+        },
+      ],
+    };
+    expect(render([answered])).not.toContain("data-trace");
+  });
+});
+
+describe("asking again for a trace that is not there yet", () => {
+  it("backs off rather than stopping", () => {
+    expect(againAfter(0)).toBe(1_500);
+    expect(againAfter(1)).toBe(3_000);
+    // Capped, and still a number however long the tab has been open: a
+    // question with no daemon running is queued, not dead, and a follower that
+    // stopped asking would miss the trace when one starts.
+    expect(againAfter(4)).toBe(15_000);
+    expect(againAfter(1_000)).toBe(15_000);
+  });
+
+  it("says a missing file is not yet, then queued — and never gone", () => {
+    expect(reported("gone", true, 0)).toBe("waiting");
+    expect(reported("gone", true, 4)).toBe("waiting");
+    expect(reported("gone", true, 5)).toBe("queued");
+    expect(reported("gone", true, 10_000)).toBe("queued");
+    // A run's log is not awaited: there, a 404 is a landed run's deleted file.
+    expect(reported("gone", false, 0)).toBe("gone");
+    expect(reported("reading", true, 7)).toBe("reading");
+  });
 });
 
 describe("what a reader is handed for each state of the trace", () => {
-  const show = (lines: string[], state: Parameters<typeof Trace>[0]["state"]) =>
+  const show = (lines: string[], state: TailState) =>
     renderToStaticMarkup(<Trace lines={lines} state={state} />);
 
   it("says it is waiting while the file has not been opened yet", () => {
@@ -81,7 +120,6 @@ describe("what a reader is handed for each state of the trace", () => {
     // appended the question a moment ago and the daemon has not opened the
     // file. *Not yet*, and it must not read as *not coming*.
     expect(show([], "waiting")).toContain("waiting for the daemon to answer");
-    expect(show([], "waiting")).not.toContain("nothing is writing");
   });
 
   it("shows the lines as they arrive, verbatim and counted", () => {
@@ -95,22 +133,35 @@ describe("what a reader is handed for each state of the trace", () => {
     expect(html).toContain("<pre");
   });
 
-  it("says nothing is writing once the trace has ended with no answer", () => {
-    // The turn is over — `answerDiscussion` deletes the file when it appends
-    // the answer — so a `Thinking` still on screen is one whose
-    // `DiscussionAnswered` never landed. *answering · 2 lines so far* under a
-    // file nobody is writing is the sentence #132 is about, one layer down.
-    const html = show(["12:00:01  Read    doc/architecture.html", "12:00:04  think"], "removed");
-    expect(html).toContain("nothing is writing to this conversation");
-    expect(html).not.toContain("answering ·");
-    // What it did produce is still on screen: the account of a turn that died
-    // is the only account there is.
+  it("reads a deleted trace as an answer on its way, not a turn that died", () => {
+    // `answerDiscussion` appends `DiscussionAnswered` and deletes the file in
+    // its `finally`, milliseconds later; the follower sees the file go well
+    // before the board's re-render lands. The first attempt at this said *no
+    // answer has been recorded — ask again* in exactly that gap, on every
+    // successful turn.
+    const html = show(["12:00:01  Read    doc/architecture.html"], "removed");
+    expect(html).toContain("answered");
+    expect(html).not.toMatch(/ask again|no answer/);
+    // What it produced stays on screen until the answer replaces it.
     expect(html).toContain("doc/architecture.html");
   });
 
-  it("says so too when the asking ran out and no file ever appeared", () => {
-    const html = show([], "gone");
-    expect(html).toContain("nothing is writing to this conversation");
-    expect(html).not.toContain("waiting for the daemon to answer");
+  it("says a question nothing has picked up is queued, and that asking again costs", () => {
+    const html = show([], "queued");
+    expect(html).toContain("no daemon has started on this yet");
+    expect(html).toContain("asking again would buy a second one");
+  });
+
+  it("never tells a reader to ask again, in any state", () => {
+    const states: TailState[] = [
+      "off", "reading", "waiting", "queued", "gone", "trouble", "landed", "did not land", "removed",
+    ];
+    for (const state of states) {
+      for (const lines of [0, 3]) {
+        const said = traceSays(state, lines);
+        expect(said, state).not.toBe("");
+        expect(said, state).not.toMatch(/or ask again|no answer has been recorded/);
+      }
+    }
   });
 });

@@ -812,6 +812,11 @@ details[open] > summary::before { content: "▾"; }
   margin-top: 0;
   overflow: hidden;
 }
+/* The plan has no inner part to hand the scroll to — it is a head and its
+   points — so the frame itself scrolls. `hidden` alone clipped whatever fell
+   past the row height, which is a bound that loses content rather than one
+   that holds it. */
+.spair > .plan { overflow-y: auto; }
 
 /* The moves, under both boxes. One row whatever the item has: Approve, Reject
    and Waive where there is an approval open, Send where there is a prompt to

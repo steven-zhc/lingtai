@@ -108,25 +108,56 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
 };
 
 /**
- * What the box shows for a turn nothing has answered yet — the trace, and the
- * one sentence about it.
+ * The sentence above a turn nothing has answered yet, for each state its trace
+ * can be in.
  *
- * Separated from the follow below it so that **this is a value and not a
- * connection**: the three things a reader can be handed here are three states of
- * one file, and each of them is a sentence somebody has to be able to read. A
- * test can hand it those states; it could not hand `Thinking` an `EventSource`.
+ * Separated from the follow so that **this is a value and not a connection**: a
+ * test can hand it every state, where it could not hand `Thinking` an
+ * `EventSource`.
  *
- * The three, and none of them is about the assistant:
+ * **No state here says the turn is dead, and none says to ask again.** Both were
+ * tried and both were wrong. A question with no daemon to answer it is queued on
+ * the log and will be answered when one starts; a trace that has been deleted is
+ * a turn whose `DiscussionAnswered` has already been appended (`answerDiscussion`
+ * deletes it in its `finally`, after `holdDiscussion` records the answer) and the
+ * board's re-render is the only thing still to come. Telling a reader either one
+ * had died sent them to ask again, which buys a second agent for a question that
+ * was going to be answered anyway — the exact cost #132 is about.
+ */
+export function traceSays(state: TailState, lines: number): string {
+  switch (state) {
+    case "reading":
+      return lines === 0
+        ? "the daemon has started on this — nothing written yet"
+        : `answering · ${lines} line${lines === 1 ? "" : "s"} so far`;
+    case "queued":
+      return (
+        "no daemon has started on this yet. The question is on the log and is answered " +
+        "when one runs; the answer appears here when it lands, and asking again would buy a second one"
+      );
+    case "removed":
+    case "landed":
+    case "did not land":
+      // The trace's ending is its deletion, which happens after the answer is
+      // recorded: what is left is this page catching up with the log.
+      return "answered · the answer is on the log and this page is loading it";
+    case "trouble":
+    case "gone":
+      // The follow failed, not the turn. The answer re-renders the board when
+      // it is appended whether or not anything here is following.
+      return "this page stopped following the answer as it is written — it still appears here when it lands; reload to follow it again";
+    case "off":
+    case "waiting":
+      return "waiting for the daemon to answer";
+  }
+}
+
+/**
+ * What the box shows for a turn nothing has answered yet — the sentence, and the
+ * trace under it once there is one.
  *
- * - **nothing yet** — the question is appended and no trace has been opened, so
- *   it says it is waiting for the daemon rather than showing an empty frame
- *   (0016 §4);
- * - **lines** — those lines, verbatim, and how many, which is the whole of what
- *   makes the box move;
- * - **the trace stopped** and no answer landed — said plainly, because
- *   *answering · 41 lines so far* under a file nobody is writing is the exact
- *   sentence #132 is about, one layer down: an assistant that has died is
- *   indistinguishable from one that is thinking, and the reader pays twice.
+ * `data-trace` is the state the sentence was chosen from, on the element, so
+ * what the box is following is a fact of the page and not only of its words.
  */
 export function Trace({
   lines,
@@ -144,21 +175,10 @@ export function Trace({
     tail.current?.scrollTo({ top: tail.current.scrollHeight });
   }, [lines]);
 
-  // Nothing is being written. `off` is before the first connection and
-  // `waiting` is a file that has not been opened yet and is still being asked
-  // for; everything else is an ending — the trace was deleted when the turn
-  // finished (`answerDiscussion`), or the follow failed, or the asking ran out.
-  // The answer would be on the log by now if there were one, and there is not.
-  const stopped = state !== "reading" && state !== "off" && state !== "waiting";
-
   return (
     <>
-      <p className="chatwait">
-        {stopped
-          ? `nothing is writing to this conversation${lines.length > 0 ? " any more" : ""}, and no answer has been recorded — reload, or ask again`
-          : lines.length === 0
-            ? "waiting for the daemon to answer"
-            : `answering · ${lines.length} line${lines.length === 1 ? "" : "s"} so far`}
+      <p className="chatwait" data-trace={state}>
+        {traceSays(state, lines.length)}
       </p>
       {lines.length > 0 ? (
         <div className="chattrace" ref={tail}>
@@ -193,10 +213,10 @@ export function Trace({
  *
  * `awaited`, because the file is *coming*: the board appended the question a
  * moment ago and the daemon has not opened the file yet. A 404 here means not
- * yet, where on a landed attempt it means never — and it means it a bounded
- * number of times, because a question asked with no daemon running is a 404 that
- * would otherwise be asked for again every second and a half until the tab is
- * closed.
+ * yet, where on a landed attempt it means never — and it is asked about again,
+ * less often each time, for as long as the turn is on screen, because a
+ * question asked with no daemon running is still going to be answered
+ * (`againAfter`).
  */
 function Thinking({ chatId }: { chatId: string }) {
   const { lines, state } = useLogTail(chatId, true, true);

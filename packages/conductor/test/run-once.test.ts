@@ -1346,8 +1346,11 @@ git add -A && git commit -q -m "fix the race"
       // anyway" is a decision a person is allowed to make — so this is the
       // shortest path to a hold whose diagnosis has a refusal in it.
       merge: false,
+      // At the merge point, because a `proposed` refusal now buys a round and
+      // reaches a person as `diagnoseUnfixed`, which quotes its evidence
+      // already. A merge-point verdict is the refusal no round sees.
       client: fakeClient({
-        recipe: REFUSING_RECIPE,
+        recipe: LANE_REFUSING_RECIPE,
         getIssue: async () => issue2(137),
         listOpenIssues: async () => [issue2(137)],
       }),
@@ -1364,7 +1367,7 @@ git add -A && git commit -q -m "fix the race"
     // The name is still there, because a reader has to know which gate.
     expect(block.diagnosis?.what).toContain("gate refused it");
     // And the reason is there too, verbatim, which it was not.
-    expect(block.diagnosis?.raw).toContain("the build is broken");
+    expect(block.diagnosis?.raw).toContain("this branch may not land");
   }, 240_000);
 
   /**

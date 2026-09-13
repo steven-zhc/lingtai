@@ -97,7 +97,9 @@ export interface RunRequest {
    * than `RunLog` because closing it carries the keep-or-delete decision, which
    * is the conductor's and is not knowable here.
    *
-   * Absent for a run with no log — a review agent at a gate, or `discuss`.
+   * Absent for a run with no log — a review agent at a gate. A discussion turn
+   * has one since `#132`: its trace is named for the chat and lives for one
+   * turn (`answerDiscussion`), so the board can show the answer being written.
    */
   log?: RunTrace;
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
