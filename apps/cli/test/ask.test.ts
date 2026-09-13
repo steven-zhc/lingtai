@@ -16,6 +16,7 @@ import { userInfo } from "node:os";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { answerCommand, askCommand } from "../src/ask.ts";
+import { requeueCommand } from "../src/requeue.ts";
 import { status } from "../src/status.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -119,6 +120,26 @@ describe("lingtai ask / answer", () => {
   it("refuses a blank question and a blank answer rather than defaulting either", async () => {
     expect(await askCommand({ project: PROJECT, issue: ASKED, text: "  " }, () => {})).toBe(2);
     expect(await answerCommand({ project: PROJECT, issue: ASKED, text: "" }, () => {})).toBe(2);
+  });
+
+  /**
+   * The fold keeps whatever note ends a block with no run as a decision, and
+   * every later prompt carries it. So a requeue's why — which is about an
+   * attempt — must not be able to end one, or *asked by mistake, ignore* is
+   * what the agent is told to build.
+   */
+  it("refuses to requeue a question asked before any run, pointing at answer", async () => {
+    const said: string[] = [];
+    const code = await requeueCommand(
+      { project: PROJECT, issue: ASKED, note: "asked by mistake, ignore" },
+      (l) => said.push(l),
+    );
+    expect(code).toBe(1);
+    expect(said.join("\n")).toContain("lingtai answer");
+
+    const events = await store.read(wi(ASKED));
+    expect(events.some((e) => e.type === "WorkItemUnblocked")).toBe(false);
+    expect(reduceWorkItem(events).answers).toEqual([]);
   });
 
   it("answers on the record, and the fold keeps what the answer was", async () => {

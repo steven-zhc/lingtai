@@ -93,12 +93,6 @@ describe("the next attempt's prompt", () => {
     expect(renderPrompt(TEMPLATE, TICKET, next.failure)).toBe("#104 — The control is the prompt\n\nthe body\n\n");
   });
 
-  /**
-   * The sentence reaches the agent, inside a block that names who wrote it and
-   * says how long it lasts. An edit that composed cleanly and silently did not
-   * reach the run would be a control the page claims and the code does not
-   * have — `#58`'s shape.
-   */
   it("carries an answer given before any run into every attempt, without the issue body", () => {
     const e = stream("wi-lingtai-51");
     const asked = e("WorkItemBlocked", {
@@ -165,6 +159,12 @@ describe("the next attempt's prompt", () => {
     expect(next.failure).not.toContain("Decided before any run");
   });
 
+  /**
+   * The sentence reaches the agent, inside a block that names who wrote it and
+   * says how long it lasts. An edit that composed cleanly and silently did not
+   * reach the run would be a control the page claims and the code does not
+   * have — `#58`'s shape.
+   */
   it("carries a person's sentence into the document, naming them and its bound", () => {
     const e = stream("wi-lingtai-104b");
     const next = nextPrompt({

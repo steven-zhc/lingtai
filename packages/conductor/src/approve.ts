@@ -463,6 +463,19 @@ async function requeueHolding(
       detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
     };
   }
+  // **A block no run holds is a question about the ticket (#147), and only
+  // `answer()` ends it.** The event would be the same, and the fold cannot tell
+  // the two apart: whatever note ends a block with `runId: null` is kept as a
+  // decision and carried into every later prompt (`answersBrief`). A requeue's
+  // why — *asked by mistake, ignore* — would reach the agent as something to
+  // build.
+  if (item.lifecycle.runId === null) {
+    return {
+      ok: false,
+      workItemId,
+      detail: `${workItemId} is asking a question before any run — lingtai answer, since every attempt is told what ends it`,
+    };
+  }
 
   await store.append(workItemId, item.version, [
     {
