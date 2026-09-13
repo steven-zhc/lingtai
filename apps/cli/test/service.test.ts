@@ -60,6 +60,7 @@ function command(
     env?: NodeJS.ProcessEnv;
     liveness?: () => Promise<string>;
     shutdown?: () => Promise<{ by: string; reason: string } | null>;
+    pause?: () => Promise<{ by: string | null; reason: string | null } | null>;
     /** `"default"` leaves `root` unset, so the command resolves it as it would for real. */
     root?: string | "default";
     uid?: number;
@@ -71,6 +72,7 @@ function command(
     serviceCommand([verb], {
       liveness: extra.liveness ?? (async () => "last seen 3000s ago (pid 41) — not running"),
       shutdown: extra.shutdown ?? (async () => null),
+      pause: extra.pause ?? (async () => null),
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
       ...(extra.root === "default" ? {} : { root: extra.root ?? home }),
@@ -264,6 +266,57 @@ describe("restart on macOS", () => {
     const text = out.join("\n");
     expect(text).toContain('`pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited');
     expect(text).not.toContain("first");
+  });
+});
+
+describe("while a shutdown request stands", () => {
+  const STANDS = async () => ({ by: "steven", reason: "pick up #NN" });
+
+  it("install on macOS writes the file and loads nothing, after `service uninstall` unloaded the job", async () => {
+    // `shutdown "pick up #NN"`, then the old habit: uninstall && install.
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, err } = command("darwin", s.exec, { shutdown: STANDS });
+    expect(await go("install")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(true);
+    const said = err.join("\n");
+    expect(said).toContain("a shutdown request stands — asked by steven (pick up #NN)");
+    expect(said).toContain("pnpm lingtai resume,\nthen pnpm lingtai service start");
+  });
+
+  it("install on Linux enables the unit and starts nothing", async () => {
+    const s = supervisor([["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }]]);
+    const { go, err } = command("linux", s.exec, { shutdown: STANDS });
+    expect(await go("install")).toBe(1);
+    expect(s.calls).not.toContain("systemctl --user start lingtai.service");
+    expect(err.join("\n")).toContain("nothing was started");
+  });
+
+  it("install over a job already loaded is not refused, since it starts nothing", async () => {
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    let asked = false;
+    const { go } = command("darwin", s.exec, { shutdown: async () => ((asked = true), { by: "steven", reason: "x" }) });
+    expect(await go("install")).toBe(0);
+    expect(asked).toBe(false);
+  });
+
+  it("names a pause in force, which resume would lift, and gives the order that keeps it", async () => {
+    // `pause "the importer is flaky today"`, later `shutdown`, then the recipe's
+    // `resume` would clear both — and the next start would take the held queue.
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    const { go, err } = command("darwin", s.exec, {
+      shutdown: STANDS,
+      pause: async () => ({ by: "steven", reason: "the importer is flaky today" }),
+    });
+    await launchdFile();
+    expect(await go("restart")).toBe(1);
+    expect(s.calls).toEqual([]);
+    const said = err.join("\n");
+    expect(said).toContain("A pause is in force too — steven (the importer is flaky today) — and pnpm lingtai resume lifts it");
+    expect(said).toContain(
+      'pnpm lingtai service stop, pnpm lingtai resume, pnpm lingtai pause "the importer is flaky today", pnpm lingtai service start.',
+    );
+    expect(said).not.toContain("the supervisor's next start takes work");
   });
 });
 

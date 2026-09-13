@@ -303,6 +303,11 @@ export interface ServiceOptions {
    * started again, and exits, until `lingtai resume`.
    */
   shutdown: () => Promise<{ by: string; reason: string } | null>;
+  /**
+   * The pause in force, or null. `lingtai resume` lifts it along with the
+   * shutdown, so advice that ends in `resume` has to say how to keep it.
+   */
+  pause?: () => Promise<{ by: string | null; reason: string | null } | null>;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   root?: string;
@@ -435,12 +440,36 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       asked = await options.shutdown();
     } catch (err) {
       log(`note  could not read whether a shutdown request stands — ${(err as Error).message}`);
-      log("      if one does, the daemon this starts exits again at once, until: pnpm lingtai resume");
+      log("      if one does, the daemon this starts exits again at once, until: pnpm lingtai resume (which lifts a pause too)");
       return false;
     }
     if (!asked) return false;
     error(`a shutdown request stands — asked by ${asked.by} (${asked.reason}) — and a daemon started now reads it and exits,`);
     error("then the supervisor starts it again, and it exits again, until it is lifted. Nothing was started or stopped.");
+    // `resume` is the only thing that lifts a shutdown, and it lifts a pause in
+    // the same event — so a pause somebody set on purpose is named here, with
+    // the order that keeps it: nothing supervised is up between the resume and
+    // the pause again, so nothing takes work in that window.
+    let paused: { by: string | null; reason: string | null } | null | undefined;
+    try {
+      paused = await options.pause?.();
+    } catch {
+      paused = undefined;
+    }
+    if (paused) {
+      error(`A pause is in force too — ${paused.by ?? "somebody"} (${paused.reason ?? "no reason given"}) — and pnpm lingtai resume lifts it`);
+      error("along with the shutdown. To keep it, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status):");
+      error(
+        `pnpm lingtai service stop, pnpm lingtai resume, pnpm lingtai pause ${JSON.stringify(paused.reason ?? "why")}, pnpm lingtai service start.`,
+      );
+      return true;
+    }
+    if (paused === undefined) error("Whether a pause is in force could not be read — if one is, pnpm lingtai resume lifts it as well.");
+    if (verb === "install") {
+      error("Once the daemon it was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume,");
+      error("then pnpm lingtai service start, which takes work on the code at HEAD.");
+      return true;
+    }
     error("Under a supervisor the shutdown is already the restart: once the daemon it was aimed at has exited");
     error("(pnpm lingtai service status), pnpm lingtai resume, and the supervisor's next start takes work on the code at HEAD.");
     return true;
@@ -481,6 +510,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           // definition already loaded — so this file is not in effect yet.
           log(`note  launchd already had ${LAUNCHD_LABEL} loaded, and keeps using the definition it loaded,`);
           log("      respawns included, until: pnpm lingtai service restart");
+        } else if (await shutdownStands()) {
+          error("the file is written and nothing was loaded");
+          return 1;
         } else if (!run(["launchctl", "bootstrap", `gui/${uid}`, file.path])) {
           return 1;
         } else {
@@ -495,6 +527,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         if (active) {
           log("note  systemd has reloaded the unit, and the process it already had keeps the one it started with");
           log("      until its next start: pnpm lingtai service restart");
+        } else if (await shutdownStands()) {
+          error("the unit is written and enabled, and nothing was started");
+          return 1;
         } else if (!run(["systemctl", "--user", "start", SYSTEMD_UNIT])) {
           return 1;
         } else {
@@ -539,7 +574,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(
         verb === "stop"
           ? 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` first'
-          : 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited',
+          : 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited — resume lifts a pause too, so to keep one: `service stop`, `resume`, `pause` again, `service start`',
       );
       if (platform === "systemd") return run(["systemctl", "--user", verb, SYSTEMD_UNIT]) ? 0 : 1;
       const answer = ask();

@@ -692,9 +692,19 @@ it. A shutdown request outlives the process, so under a supervisor every copy
 it brings back reads it and exits again until `lingtai resume` lifts it — which
 makes the shutdown the restart: once `service status` says the daemon it was
 aimed at has exited, `lingtai resume`, and the supervisor's next start takes
-work on the new code. `service start` and `service restart` refuse, exit 1 and
-touch nothing while a shutdown request stands, because the daemon they started
+work on the new code. `service start`, `service restart`, and `service install`
+over a job the supervisor does not have, refuse and exit 1 without starting
+anything while a shutdown request stands, because the daemon they started
 would exit at once and keep doing so behind a command that had said 0.
+(`install` still writes the file, and after `resume` it is `service start` that
+loads it.)
+
+**`resume` lifts a pause as well as the shutdown** — it is one event, and both
+are cleared by it. If you had paused on purpose, `resume` alone lets the next
+daemon take the work you were holding. To keep the pause, take the supervisor
+out of the way first so nothing starts between the two commands: once the daemon
+has exited, `service stop`, `resume`, `pause "why"` again, `service start`. The
+refusal above names the pause and prints that order when one is in force.
 
 #### Under a dedicated unprivileged user (Linux)
 
@@ -793,6 +803,16 @@ restart once it is lifted:
 pnpm lingtai shutdown "pick up #NN"
 pnpm lingtai service status    # until the beacon says that daemon is not running
 pnpm lingtai resume            # the supervisor's next start takes work on the new code
+```
+
+`resume` also lifts a pause. If one is in force and you mean to keep it, do not
+run the last line alone — replace it with:
+
+```bash
+pnpm lingtai service stop      # the daemon has exited; this keeps the supervisor from starting another
+pnpm lingtai resume            # lifts the shutdown, and the pause with it
+pnpm lingtai pause "the importer is flaky today"   # the pause again, before anything is up to read its absence
+pnpm lingtai service start
 ```
 
 `daemon: currency` is a `note`, not a failure. Being a commit behind is normal
