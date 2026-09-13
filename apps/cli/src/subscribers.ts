@@ -130,6 +130,15 @@ export interface UnreadProject {
 export interface SubscriberBuild {
   built: BuiltSubscriber[];
   /**
+   * Every project whose recipe read and declares no `subscribers:`, by name.
+   *
+   * Kept per project rather than inferred from `built` being empty, because it
+   * never is on a machine where *one* project declares something: a project
+   * that used to be told through `DEFAULT_SUBSCRIPTIONS` and declares none now
+   * has to be named at startup, or its silence looks like a quiet week.
+   */
+  quiet: string[];
+  /**
    * Said apart from `built` because *declared none* and *could not be read* are
    * different answers, and only the first is a quiet project. A daemon started
    * at login before the network is up reads every recipe as the second.
@@ -160,6 +169,7 @@ export interface SubscriberBuild {
 export async function buildSubscribers(options: BuildSubscribersOptions): Promise<SubscriberBuild> {
   const resolve = options.resolveEnv ?? resolveAgentEnv;
   const built: BuiltSubscriber[] = [];
+  const quiet: string[] = [];
   const unread: UnreadProject[] = [];
 
   for (const filter of options.filters) {
@@ -167,7 +177,10 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
       unread.push({ project: filter.project, problem: filter.problem });
       continue;
     }
-    if (filter.recipe.subscribers.length === 0) continue;
+    if (filter.recipe.subscribers.length === 0) {
+      quiet.push(filter.project);
+      continue;
+    }
     const declared = [...new Set(filter.recipe.subscribers.flatMap((s) => s.env))];
 
     // One read of the two files per project, not one per subscriber: `merged`
@@ -206,7 +219,7 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
     }
   }
 
-  return { built, unread };
+  return { built, quiet, unread };
 }
 
 /**
@@ -223,16 +236,23 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
  * `GatesResolved` records an empty point (0016 §4): a machine with no
  * `subscribers:` anywhere and one whose notifier has stopped working look
  * identical from a quiet afternoon, and only the first of them is fine.
+ *
+ * And it is said **per project**, not only when nothing anywhere declared one:
+ * beside a project that declares `desktop`, a project that declares none would
+ * otherwise get no line at all.
  */
-export function describeSubscribers({ built, unread }: SubscriberBuild): string[] {
+export function describeSubscribers({ built, quiet, unread }: SubscriberBuild): string[] {
   // Not "declared none" while any project is unread: that sentence would tell
   // the operator a project chose to be quiet when its recipe did not load.
-  if (built.length === 0 && unread.length === 0) {
+  if (built.length === 0 && quiet.length === 0 && unread.length === 0) {
     return ["no subscriber declared — nothing is told about anything (recipe: subscribers:)"];
   }
   return [
     ...built.map(
       ({ subscriber, on }) => `subscriber ${subscriber.project}/${subscriber.name} on ${on.join(", ")}`,
+    ),
+    ...quiet.map(
+      (project) => `subscribers: ${project} declares none — nothing about it is told to anybody (recipe: subscribers:)`,
     ),
     ...unread.map(
       ({ project, problem }) =>
@@ -295,7 +315,11 @@ export async function createSubscriberSet(options: SubscriberSetOptions): Promis
           }
         }
         // Replaced, not mutated: `subscribers()` may be mid-iteration on an event.
-        current = { built: [...current.built, ...next.built], unread: next.unread };
+        current = {
+          built: [...current.built, ...next.built],
+          quiet: [...current.quiet, ...next.quiet],
+          unread: next.unread,
+        };
       } catch (err) {
         log(`subscribers: could not ask the unread recipes again — ${(err as Error).message}`);
       }

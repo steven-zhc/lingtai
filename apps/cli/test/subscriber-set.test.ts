@@ -84,6 +84,24 @@ describe("a recipe that could not be read at startup", () => {
     expect(set.subscribers()).toHaveLength(1);
   });
 
+  /**
+   * Beside a project that declares one, a project that declares none still gets
+   * its own line: `admin` was told through `DEFAULT_SUBSCRIPTIONS` before, and
+   * its silence now has to be said rather than look like a quiet week.
+   */
+  it("names a project that declares none, even when another project declares one", async () => {
+    const quiet = { project: "admin", ok: true, recipe: { subscribers: [] } } as unknown as ProjectFilter;
+    const set = await createSubscriberSet({
+      ...options,
+      filters: [declaring("lingtai"), quiet],
+      reread: async () => [],
+    });
+
+    const lines = set.describe().join("\n");
+    expect(lines).toContain("subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked");
+    expect(lines).toContain("admin declares none");
+  });
+
   /** The per-project env failure: said, not followed by "no subscriber declared". */
   it("says so when the env files could not be read, rather than declaring none", async () => {
     const set = await createSubscriberSet({
