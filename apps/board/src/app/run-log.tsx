@@ -116,6 +116,22 @@ export function reported(state: TailState, awaited: boolean, asks: number): Tail
 }
 
 /**
+ * Whether a follower in this state asks for the file again.
+ *
+ * **To an awaited follower an ending is not the end.** The file going away is
+ * what a finished turn does, and it is also what the *start* of a turn does:
+ * `answerDiscussion` removes whatever a daemon killed mid-answer left behind
+ * before it opens its own. A follower that stopped at `removed` sat on that
+ * leftover's deletion for the whole of the new answer and never saw its trace.
+ * So it asks again — the turn being on screen at all means no answer has been
+ * folded, and when one is, the board re-renders and this follower is gone.
+ */
+export function asksAgain(state: TailState, awaited: boolean): boolean {
+  if (!awaited) return false;
+  return state === "gone" || state === "removed" || state === "landed" || state === "did not land";
+}
+
+/**
  * Follow one log file over the route's SSE, for as long as `following`.
  *
  * The half of this file that is not chrome, extracted because `#132` gives it a
@@ -131,9 +147,13 @@ export function useLogTail(
 ): { lines: readonly string[]; state: TailState } {
   const [lines, setLines] = useState<readonly string[]>([]);
   const [state, setState] = useState<TailState>("off");
-  // Bumped to ask again for a file that has not been created yet; nothing else
-  // restarts a stream, so a follow is one connection per attempt at one.
+  // Bumped to ask again for a file that has not been created yet, or that an
+  // awaited follower saw end; nothing else restarts a stream, so a follow is one
+  // connection per attempt at one.
   const [again, setAgain] = useState(0);
+  // Asks since a stream last opened, which is what patience is counted in: a
+  // trace that opened and then went away says a daemon was running a moment ago.
+  const [misses, setMisses] = useState(0);
   const source = useRef<EventSource | null>(null);
 
   const stop = useCallback(() => {
@@ -143,14 +163,21 @@ export function useLogTail(
 
   const start = useCallback(() => {
     if (source.current) return;
-    setLines([]);
+    // An awaited follower keeps what it has until a new trace opens: asking
+    // again after a removal must not blank the box for the length of a 404.
+    if (!awaited) setLines([]);
     // `reading` when the stream opens and not before: a 404 never opens, and a
     // box that said *reading* for the length of one would claim, for a moment,
     // that a daemon had started on a question nothing has picked up.
 
     const es = new EventSource(`/api/run/${encodeURIComponent(id)}`);
     source.current = es;
-    es.onopen = () => setState("reading");
+    es.onopen = () => {
+      // From byte zero, so what it had is replaced rather than appended to.
+      if (awaited) setLines([]);
+      setMisses(0);
+      setState("reading");
+    };
 
     es.addEventListener("line", (event) => {
       const line = JSON.parse((event as MessageEvent<string>).data) as string;
@@ -178,10 +205,15 @@ export function useLogTail(
     // would need a `fetch` first, and the two sentences are close enough that a
     // second round trip is not worth it.
     es.onerror = () => {
-      setState((was) => (was === "reading" || was === "gone" || was === "off" ? "gone" : was));
+      setState((was) =>
+        was === "reading" || was === "gone" || was === "off" || asksAgain(was, awaited) ? "gone" : was,
+      );
+      // Counted here and not when asking, so a second 404 in a row — the same
+      // state, which React would not re-render for — still schedules the next.
+      if (awaited) setMisses((n) => n + 1);
       stop();
     };
-  }, [id, stop]);
+  }, [id, awaited, stop]);
 
   // One connection for as long as it is followed, and none at all while it is
   // not. The cleanup is also what closing the tab or navigating away runs — the
@@ -196,14 +228,16 @@ export function useLogTail(
   }, [following, again, start, stop]);
 
   // The file that is coming rather than gone, asked for again for as long as
-  // somebody is waiting for it, less often each time (`againAfter`).
+  // somebody is waiting for it, less often each time (`againAfter`) — and after
+  // an ending too, for an awaited follower (`asksAgain`).
+  // Never while a connection is open or opening: that one has not answered yet.
   useEffect(() => {
-    if (!following || !awaited || state !== "gone") return;
-    const timer = setTimeout(() => setAgain((n) => n + 1), againAfter(again));
+    if (!following || !asksAgain(state, awaited) || source.current !== null) return;
+    const timer = setTimeout(() => setAgain((n) => n + 1), againAfter(Math.max(misses - 1, 0)));
     return () => clearTimeout(timer);
-  }, [following, awaited, state, again]);
+  }, [following, awaited, state, again, misses]);
 
-  return { lines, state: reported(state, awaited, again) };
+  return { lines, state: reported(state, awaited, misses) };
 }
 
 export function RunLog({

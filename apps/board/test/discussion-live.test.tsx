@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DiscussionView } from "../src/lib/task.ts";
 import { Discussion, Trace, traceSays } from "../src/app/discussion.tsx";
-import { againAfter, reported, type TailState } from "../src/app/run-log.tsx";
+import { againAfter, asksAgain, reported, type TailState } from "../src/app/run-log.tsx";
 
 const waiting: DiscussionView = {
   chatId: "chat-1",
@@ -109,6 +109,19 @@ describe("asking again for a trace that is not there yet", () => {
     expect(reported("gone", false, 0)).toBe("gone");
     expect(reported("reading", true, 7)).toBe("reading");
   });
+
+  it("keeps following past a deleted trace, so a second daemon's answer is seen", () => {
+    // Daemon A dies mid-answer and leaves its file; daemon B picks the question
+    // up and removes that file before opening its own. The follower sees
+    // `removed` — and must ask again, or B's whole answer is never shown.
+    expect(asksAgain("removed", true)).toBe(true);
+    expect(asksAgain("gone", true)).toBe(true);
+    expect(asksAgain("reading", true)).toBe(false);
+    expect(asksAgain("trouble", true)).toBe(false);
+    // A run's log is not awaited: its deletion is the end, and nothing polls.
+    expect(asksAgain("removed", false)).toBe(false);
+    expect(asksAgain("gone", false)).toBe(false);
+  });
 });
 
 describe("what a reader is handed for each state of the trace", () => {
@@ -133,14 +146,15 @@ describe("what a reader is handed for each state of the trace", () => {
     expect(html).toContain("<pre");
   });
 
-  it("reads a deleted trace as an answer on its way, not a turn that died", () => {
-    // `answerDiscussion` appends `DiscussionAnswered` and deletes the file in
-    // its `finally`, milliseconds later; the follower sees the file go well
-    // before the board's re-render lands. The first attempt at this said *no
-    // answer has been recorded — ask again* in exactly that gap, on every
-    // successful turn.
+  it("reads a deleted trace as neither a turn that died nor an answer that landed", () => {
+    // `answerDiscussion` deletes the file in its `finally`, after the answer is
+    // recorded — and also at the start of a turn, clearing what a daemon killed
+    // mid-answer left behind. The first attempt at this said *ask again* on
+    // every successful turn; the second said *answered* over a second daemon's
+    // whole answer, with no `DiscussionAnswered` on the log.
     const html = show(["12:00:01  Read    doc/architecture.html"], "removed");
-    expect(html).toContain("answered");
+    expect(html).not.toContain("answered");
+    expect(html).toContain("if a daemon starts this turn over its trace appears here instead");
     expect(html).not.toMatch(/ask again|no answer/);
     // What it produced stays on screen until the answer replaces it.
     expect(html).toContain("doc/architecture.html");

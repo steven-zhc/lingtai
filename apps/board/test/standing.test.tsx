@@ -364,6 +364,7 @@ const HELD: StandingView = {
   awaitingSha: null,
   headSha: SHA,
   failed: [],
+  saidBy: null,
   deciding: { attempt: 1, source: "proposed / build", line: "error TS2741: …" },
 };
 
@@ -401,7 +402,6 @@ describe("the block, rendered", () => {
         standing={{
           ...HELD,
           needs: "acknowledgement",
-          failed: ["proposed:build"],
           diagnosis: {
             what: "the branch does not merge into develop",
             done: "a repair for conflict produced this diff",
@@ -421,16 +421,153 @@ describe("the block, rendered", () => {
     expect(html).toContain("a failure needs acknowledging");
     expect(html).toContain("the branch does not merge into develop");
     expect(html).toContain("recommends requeue");
-    // Rank 2: the refusal in its own words, naming what said it, and open —
-    // the evidence was on this page the whole time, three ranks down behind a
-    // disclosure, and the block whose job is to say why a task stopped had a
-    // gate's name to say it with.
+    // Rank 2: the refusal in its own words, and open — the evidence was on this
+    // page the whole time, three ranks down behind a disclosure, and the block
+    // whose job is to say why a task stopped had a gate's name to say it with.
+    // Git's words and no gate's, so unattributed (see the test below).
     expect(html).toContain("CONFLICT (content)");
     expect(html).toContain('<details class="sreason" open=""');
-    expect(html).toContain("proposed / build");
+    expect(html).toContain("what refused, verbatim");
     // And the question is gone, because `what`, `did` and `rec` say what it
     // said: three sentences overlapping was the defect, not a feature.
     expect(html).not.toContain("conflict: agent/112 does not merge into develop");
+  });
+
+  /**
+   * The merge lane's words under a gate's name. `proposed:build` failed, a
+   * person merged over it, and the lane then refused with a conflict: `failed`
+   * still names the build, and `raw` is git's. Heading the one with the other
+   * is the mislabelled cause #132 is about.
+   */
+  it("does not name a gate as the source of words that gate never said", () => {
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: "conflict: agent/112 does not merge into develop",
+          needsFrom: "human",
+          runId: RUN_2,
+          needs: "acknowledgement",
+          diagnosis: {
+            what: "the branch does not merge into develop",
+            done: null,
+            raw: "CONFLICT (content): Merge conflict in apps/web/page.tsx",
+            recommendation: null,
+          },
+        }),
+      ],
+      [
+        foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
+          e(RUN_2, "RunStarted", { baseSha: SHA }),
+          e(RUN_2, "GateFailed", { gate: "proposed", action: "build", evidence: TAIL }),
+        ]),
+      ],
+    );
+    expect(standing.failed).toEqual(["proposed:build"]);
+    expect(standing.saidBy).toBeNull();
+
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={standing}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("CONFLICT (content)");
+    expect(html).toContain("what refused, verbatim");
+    expect(html).not.toContain("proposed / build");
+  });
+
+  it("names the gate whose own evidence is the quote", () => {
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: "build refused",
+          needsFrom: "human",
+          runId: RUN_2,
+          needs: "judgement",
+          diagnosis: { what: "the proposed:build gate refused it", done: null, raw: TAIL, recommendation: null },
+        }),
+      ],
+      [
+        foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
+          e(RUN_2, "RunStarted", { baseSha: SHA }),
+          e(RUN_2, "GateFailed", { gate: "proposed", action: "build", evidence: TAIL }),
+        ]),
+      ],
+    );
+    expect(standing.saidBy).toBe("proposed:build");
+  });
+
+  /**
+   * A command that printed nothing and stayed red. `diagnoseUnfixed` writes
+   * `raw: null` for blank evidence — not `""` — so a block that read null as
+   * *nothing refused* left rank 2 empty under *`test` still refuses*.
+   */
+  it("still gives a refusal whose diagnosis quoted nothing a second rank", () => {
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+        e(ITEM, "WorkItemBlocked", {
+          question: "test still refuses agent/112 into develop after 2 fix round(s)",
+          needsFrom: "human",
+          runId: RUN_2,
+          needs: "judgement",
+          diagnosis: {
+            what: "`test` still refuses agent/112 at aaaaaaa.",
+            done: "2 round(s) of fix-and-recheck ran.",
+            raw: null,
+            recommendation: null,
+          },
+        }),
+      ],
+      [
+        foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
+          e(RUN_2, "RunStarted", { baseSha: SHA }),
+          e(RUN_2, "GateFailed", { gate: "proposed", action: "test", evidence: "" }),
+        ]),
+      ],
+    );
+
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={standing}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("sevidence");
+    expect(html).toContain("proposed / test");
+    expect(html).toContain("refused, and said nothing");
+  });
+
+  it("states the absence where the refusal is known and no line of it is", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={{
+          ...HELD,
+          failed: ["proposed:review"],
+          deciding: null,
+          diagnosis: { what: "Two agents disagreed.", done: null, raw: null, recommendation: null },
+        }}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html).toContain("The proposed / review gate refused, and nothing it said was recorded here to quote.");
   });
 
   /**
@@ -443,6 +580,7 @@ describe("the block, rendered", () => {
         standing={{
           ...HELD,
           failed: ["proposed:review"],
+          saidBy: "proposed:review",
           diagnosis: { what: "the review gate refused it", done: null, raw: "", recommendation: null },
         }}
         project="lingtai"

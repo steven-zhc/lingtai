@@ -147,17 +147,18 @@ export function Standing({
    * 0.72rem, behind a disclosure. The conductor now records the failing gate's
    * evidence there and this is where it is read (#132).
    *
-   * The name comes from `failed`, which is the list Waive already names a gate
-   * from, so the name on the quote and the name on the button cannot disagree.
-   * A refusal that came from the merge lane rather than from a gate has no
-   * verdict to name, and the quote is unattributed rather than mislabelled.
+   * The name is `saidBy`: the failed verdict whose own evidence is what was
+   * quoted, and never merely the last of `failed`. A refusal that came from the
+   * merge lane rather than from a gate is git's words, and a gate that failed
+   * earlier on the same run did not say them — so the quote is unattributed
+   * rather than mislabelled.
    *
-   * Both are read off the *named* attempt — `standing.failed` is that run's
+   * Both are read off the *named* attempt — `saidBy` is one of that run's
    * failed verdicts and `diagnosis` is the hold written when it stopped — which
    * is why neither needs to say which attempt it came from and `deciding` does.
    */
   const raw = standing.diagnosis?.raw ?? null;
-  const said = standing.failed.at(-1)?.replace(":", " / ") ?? null;
+  const said = standing.saidBy?.replace(":", " / ") ?? null;
 
   /**
    * The question, only where nothing better was written down.
@@ -245,6 +246,7 @@ export function Standing({
             raw={raw}
             said={said}
             diagnosed={standing.diagnosis !== null}
+            refused={standing.failed}
             deciding={standing.deciding}
             attempt={standing.attempt}
           />
@@ -434,9 +436,13 @@ const HELD_CLASS: Record<HoldLine["part"], string> = {
  * findings and the diff that sit beside the verdict.
  *
  * **A diagnosis answers this rank, or nothing does.** `raw` is written by the
- * conductor beside `what` and is about *this* hold: null there means nothing
- * refused — every gate passed, or a gate asked for a person — and the honest
- * rendering of that is no rank at all. `deciding` is the older, weaker thing
+ * conductor beside `what` and is about *this* hold — but null there does not
+ * mean nothing refused. `diagnoseUnfixed` writes null for a command that printed
+ * nothing, `diagnoseDisagreement` for a reviewer that recorded no findings, and
+ * every gate hold written before #132 carries null too. So whether anything
+ * refused is `refused` — the named attempt's verdicts that still stand failed —
+ * and only when that is empty (every gate passed, or a gate asked for a person)
+ * is the honest rendering no rank at all. `deciding` is the older, weaker thing
  * and it is a *search*: `decidingOf` walks back through earlier attempts, so on
  * a block whose own gates passed it can hold attempt 1's build failure. Printed
  * under *every gate passed* with the pointer that used to attribute it moved
@@ -448,15 +454,18 @@ const HELD_CLASS: Record<HoldLine["part"], string> = {
  * Three states where there is a diagnosis, and the middle one is 0016 §4:
  *
  * - **evidence**, which is quoted;
- * - **a gate that refused and recorded nothing** — an empty string — which is
- *   stated, because a blank rank looks exactly like a rank that failed to
- *   render and only one of those is our bug;
+ * - **a refusal with nothing quoted** — an empty string, or null beside a
+ *   failed verdict — which is stated: this attempt's own deciding line where
+ *   there is one, and the absence in words where there is not, because a blank
+ *   rank looks exactly like a rank that failed to render and only one of those
+ *   is our bug;
  * - **nothing that refused at all**, which is no rank and no hole.
  */
 function Reason({
   raw,
   said,
   diagnosed,
+  refused,
   deciding,
   attempt,
 }: {
@@ -466,6 +475,8 @@ function Reason({
   said: string | null;
   /** Whether the hold carries a diagnosis at all. See above: it decides the rank. */
   diagnosed: boolean;
+  /** The named attempt's verdicts that stand failed, by `point:action`. */
+  refused: readonly string[];
   deciding: StandingView["deciding"];
   /** The attempt rank 4 names, so this rank names one only when it differs. */
   attempt: number | null;
@@ -487,9 +498,30 @@ function Reason({
     );
   }
 
-  // Nothing refused: `what` has already said so in a sentence, and a quote of
-  // something else under it would be a cause this hold does not have.
-  if (raw === null) return null;
+  if (raw === null) {
+    // Nothing refused: `what` has already said so in a sentence, and a quote of
+    // something else under it would be a cause this hold does not have.
+    if (refused.length === 0) return null;
+
+    // Something did, and the diagnosis quoted none of it. This attempt's own
+    // deciding line is that refusal — `decidingOf` takes the named attempt's
+    // first, and it has a failed verdict — so it is this hold's and needs no
+    // pointer beside the coordinate rank 4 already is.
+    if (deciding !== null && deciding.attempt === attempt) {
+      return (
+        <p className="sevidence">
+          <span className="sgate">{deciding.source}</span>
+          <span className="sline">{deciding.line}</span>
+        </p>
+      );
+    }
+    const gate = refused.at(-1)!.replace(":", " / ");
+    return (
+      <p className="sevidence snone">
+        The {gate} gate refused, and nothing it said was recorded here to quote.
+      </p>
+    );
+  }
 
   if (raw.trim() === "") {
     return (

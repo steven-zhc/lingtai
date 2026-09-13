@@ -352,6 +352,7 @@ const NEVER_RUN: StandingView = {
   awaitingSha: null,
   headSha: null,
   failed: [],
+  saidBy: null,
   deciding: null,
 };
 

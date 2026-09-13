@@ -391,7 +391,28 @@ export interface StandingView {
   headSha: string | null;
   /** The verdicts that refused, by `point:action` — what a waiver would name. */
   failed: string[];
+  /**
+   * The failed verdict whose evidence `diagnosis.raw` is, by `point:action` — and
+   * null when the quote is not any gate's words.
+   *
+   * Not `failed.at(-1)`. A hold the merge lane wrote carries git's output in
+   * `raw`, and a gate that failed earlier on the same run (and was merged over)
+   * is still in `failed`; naming the quote from that list heads a conflict with a
+   * build gate's name, which is a cause the words never had (#132). So the name
+   * is only given where the gate's own evidence is what was quoted.
+   */
+  saidBy: string | null;
   deciding: Deciding | null;
+}
+
+/**
+ * Whether `raw` quotes this evidence. A gate that printed nothing is quoted only
+ * by a quote that is also empty — an empty string is in every string, and a
+ * conflict is not a silent build.
+ */
+function quotes(raw: string, evidence: string | null): boolean {
+  const said = (evidence ?? "").trim();
+  return said === "" ? raw.trim() === "" : raw.includes(said);
 }
 
 /**
@@ -515,6 +536,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   // its last attempt produced; neither event carries a run id.
   const run = named ?? runs.at(-1) ?? null;
   const blocked = life.status === "blocked";
+  const raw = blocked ? (life.diagnosis?.raw ?? null) : null;
 
   return {
     state: life.status === "claimed" ? "running" : life.status === "backlog" ? "queued" : life.status,
@@ -533,6 +555,11 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     awaitingSha: blocked ? (run?.awaitingSha ?? null) : null,
     headSha: run?.headSha ?? null,
     failed: run?.gates.filter((g) => g.state === "failed").map((g) => g.gate) ?? [],
+    saidBy:
+      raw === null
+        ? null
+        : ([...(run?.gates ?? [])].reverse().find((g) => g.state === "failed" && quotes(raw, g.evidence))
+            ?.gate ?? null),
     deciding: decidingOf(runs, run),
   };
 }

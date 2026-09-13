@@ -117,12 +117,16 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
  *
  * **No state here says the turn is dead, and none says to ask again.** Both were
  * tried and both were wrong. A question with no daemon to answer it is queued on
- * the log and will be answered when one starts; a trace that has been deleted is
- * a turn whose `DiscussionAnswered` has already been appended (`answerDiscussion`
- * deletes it in its `finally`, after `holdDiscussion` records the answer) and the
- * board's re-render is the only thing still to come. Telling a reader either one
- * had died sent them to ask again, which buys a second agent for a question that
- * was going to be answered anyway — the exact cost #132 is about.
+ * the log and will be answered when one starts. Telling a reader it had died sent
+ * them to ask again, which buys a second agent for a question that was going to
+ * be answered anyway — the exact cost #132 is about.
+ *
+ * **And a deleted trace is not said to be an answer.** `answerDiscussion`
+ * deletes the file twice: in its `finally`, after the answer is recorded, and at
+ * the *start* of a turn, to clear what a daemon killed mid-answer left behind.
+ * Both look the same to a follower, and only the first has an answer behind it,
+ * so the sentence claims neither — and the follower asks again (`asksAgain`), so
+ * a second daemon's trace replaces this one as soon as it is opened.
  */
 export function traceSays(state: TailState, lines: number): string {
   switch (state) {
@@ -138,9 +142,13 @@ export function traceSays(state: TailState, lines: number): string {
     case "removed":
     case "landed":
     case "did not land":
-      // The trace's ending is its deletion, which happens after the answer is
-      // recorded: what is left is this page catching up with the log.
-      return "answered · the answer is on the log and this page is loading it";
+      // The trace ended. That is an answer being recorded, or a daemon starting
+      // this turn over after one died — and this page cannot tell which, so it
+      // says what it is doing about both.
+      return (
+        "the trace this page was following has ended · the answer appears here when it is " +
+        "recorded, and if a daemon starts this turn over its trace appears here instead"
+      );
     case "trouble":
     case "gone":
       // The follow failed, not the turn. The answer re-renders the board when
