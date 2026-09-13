@@ -629,13 +629,88 @@ made is worse than none.
 you click it. Without it `osascript` still delivers one and writes the link into
 the message, because it cannot open a URL itself.
 
-To keep it running across logout, sleep and crashes:
+### Keep it running
+
+**No service manager? Run `lingtai daemon` in the foreground.** A container, a
+Linux whose init is not systemd, a box with no user session: `pnpm lingtai
+daemon` under whatever supervises that machine is a first-class way to run
+Lingtai, not a debug mode, and it needs nothing else from this section.
+`lingtai service` says the same when it finds no `launchctl` or `systemctl`.
+
+Where there is one, let it keep the daemon up across logout, sleep, reboots and
+crashes:
 
 ```bash
-./scripts/launchd.sh install     # KeepAlive; there is no start button to press
-./scripts/launchd.sh status
-./scripts/launchd.sh uninstall
+pnpm lingtai service install     # write the file for this platform, and load it
+pnpm lingtai service status      # the supervisor's answer, then the beacon's
+pnpm lingtai service start|stop|restart
+pnpm lingtai service uninstall   # logs are kept
 ```
+
+| | macOS | Linux |
+|---|---|---|
+| supervisor | launchd, `launchctl` | systemd **user** manager, `systemctl --user` |
+| file | `~/Library/LaunchAgents/ai.nextloom.lingtai.daemon.plist` | `~/.config/systemd/user/lingtai.service` |
+| always up | `KeepAlive` | `Restart=always` |
+| crash-loop spacing | `ThrottleInterval` 30 | `RestartSec=30`, `StartLimitIntervalSec=0` |
+| logs | `$LINGTAI_HOME/logs/daemon.log`, `daemon.err` | the same two files |
+
+**`KeepAlive` and `Restart=always` are the same rule**: the daemon is a thing
+that is always supposed to be up, so there is no start button that matters.
+What you steer is whether it takes work — `lingtai pause` and `lingtai resume`.
+The Linux unit also sets `KillMode=process`, because systemd's default kills the
+whole cgroup, agent included, where launchd signals only the daemon.
+
+Both files are generated, never committed: they carry this checkout's absolute
+paths, `node`'s, and the installing user's `HOME`, `USER` and `LINGTAI_HOME`.
+`lingtai daemon` itself is unchanged — `service` only manages what runs it. A
+path a systemd unit cannot carry verbatim (a space, a quote, `%`, `$`, `\`) is
+refused by name rather than written in a form systemd would misread.
+
+**"Loaded" is not "alive", and `service` never says the second on the strength
+of the first.** launchd will keep a job loaded while it fails to spawn it every
+thirty seconds — a `node` the plist names that has since been removed is enough.
+So `install` and `status` both end by printing what the supervisor says, in its
+own words (`state`, `last exit code`; `ActiveState`, `SubState`, `NRestarts`),
+beside what `daemon_status` — the beacon outside the log (#46) — says. A beacon
+that could not be read is printed as unread, and a `launchctl` that did not
+answer is printed as not answering, never as `not loaded`.
+
+`install` over a job the supervisor already has does not restart it, because
+that would signal the pass in flight. It writes the file and says when it takes
+effect: launchd reads a plist only when it loads the job, so even a KeepAlive
+respawn keeps the old one; systemd has run `daemon-reload`, so the next start
+uses the new unit. `service restart` is what applies it now — on macOS
+`bootout`, a wait until the job has gone, and `bootstrap`, never
+`kickstart -k`, which would reuse the old definition.
+
+**`stop` and `restart` are the supervisor's signal.** The daemon drains on it as
+it does on Ctrl+C, but launchd and systemd wait seconds, not a pass, before they
+SIGKILL, which leaves the agent for the next conductor to kill. To wait for the
+pass in flight, `lingtai shutdown "why"` first. A shutdown request outlives the
+process, so under a supervisor every copy it brings back reads it and exits
+again until `lingtai resume` lifts it.
+
+#### Under a dedicated unprivileged user (Linux)
+
+Everything the service touches is the installing user's — `HOME`, the unit
+path, `LINGTAI_HOME` — so the recipe is to install *as* that user, from a
+checkout they own:
+
+```bash
+sudo useradd --system --create-home --home-dir /var/lib/lingtai lingtai
+sudo loginctl enable-linger lingtai     # a user manager that outlives logins
+sudo machinectl shell lingtai@          # a real session, so systemctl --user works
+# as lingtai: clone the repository, fill in .env.local and ~/.lingtai/env, then
+pnpm install && pnpm lingtai doctor && pnpm lingtai service install
+```
+
+`sudo -u lingtai systemctl --user …` fails with no bus to talk to, because there
+is no session; `service` names that and points here. Without lingering the user
+manager, and the daemon with it, stops at that user's last logout — `install`
+says when lingering is off, and says separately when `loginctl` could not tell
+it. `apps/cli/test/service.test.ts` pins that the unit carries only the
+installing user's paths.
 
 **A running daemon holds the code it started with. Merging is not deploying —
 restarting is.** [0010](decisions/0010-source-runs-unbuilt.md) says the source
@@ -695,7 +770,7 @@ a shutdown safe, and the restart is a decision that wants an ADR first. Take the
 commits by hand:
 
 ```bash
-./scripts/launchd.sh uninstall && ./scripts/launchd.sh install   # or ^C and re-run
+pnpm lingtai service restart   # or ^C and re-run; `lingtai shutdown` first to wait for the pass
 ```
 
 `daemon: currency` is a `note`, not a failure. Being a commit behind is normal

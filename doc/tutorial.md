@@ -138,11 +138,15 @@ In another terminal, for the board:
 pnpm --filter @lingtai/board dev     # http://localhost:3200
 ```
 
-To install it as a background service on macOS instead:
+To install it as a background service instead — a LaunchAgent on macOS, a
+systemd user unit on Linux:
 
 ```bash
-./scripts/launchd.sh install
+pnpm lingtai service install
 ```
+
+No service manager, as in a container? The foreground `lingtai daemon` above is
+the answer, not a workaround.
 
 ---
 

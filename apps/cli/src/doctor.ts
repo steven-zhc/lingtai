@@ -577,7 +577,7 @@ export interface DoctorReport {
  * legitimate state, and `lingtai run` still works by hand. What would be a failure
  * is not being able to tell.
  */
-async function daemonLiveness(): Promise<CheckResult> {
+export async function daemonLiveness(): Promise<CheckResult> {
   const status = await readStatus().catch(() => null);
   // Read before the early return. A pause is in force whether or not a daemon
   // has ever run, and it is exactly the thing somebody will forget they set —

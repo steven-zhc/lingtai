@@ -27,6 +27,7 @@ import {
   pauseConductor,
   readCodeVersion,
   readControl,
+  readStatus,
   reconcile,
   requestRun,
   requestShutdown,
@@ -42,11 +43,12 @@ import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
-import { formatReport, runDoctor } from "./doctor.ts";
+import { daemonLiveness, formatReport, runDoctor } from "./doctor.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
 import { run as runOnceCommand } from "./run.ts";
+import { serviceCommand } from "./service.ts";
 import { status } from "./status.ts";
 import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
 
@@ -94,6 +96,10 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai daemon                    hold the projections current and take work
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
+  lingtai service install|start|stop|restart|status|uninstall
+                                keep lingtai daemon running: a LaunchAgent on
+                                macOS, a systemd user unit on Linux. No service
+                                manager? run lingtai daemon in the foreground
   lingtai pause <why>               stop taking new work; a run in flight finishes
   lingtai resume                    take work again, and lift a shutdown nobody
                                 acted on
@@ -260,7 +266,7 @@ async function projectionCommand(args: string[]): Promise<number> {
  * somebody kept a terminal open. It is in `@lingtai/daemon` now, behind one
  * advisory lock, so this is the command and not the mechanism.
  *
- * Losing the lock exits 0. Running this while launchd's copy is up is a
+ * Losing the lock exits 0. Running this while the service's copy is up is a
  * reasonable thing to do, and answering it with an error would teach people to
  * ignore errors.
  */
@@ -770,6 +776,16 @@ async function main(argv: string[]): Promise<number> {
     }
     case "daemon":
       return daemonCommand(parseFlags(rest).flags);
+    case "service":
+      return serviceCommand(rest, {
+        // Read first so a beacon that could not be read says so. Doctor folds
+        // that into "no daemon has run", and here it would be the one wrong
+        // answer this command exists to avoid.
+        liveness: async () => {
+          await readStatus();
+          return (await daemonLiveness()).detail;
+        },
+      });
     case "pause":
       return controlCommand("pause", rest);
     case "resume":
