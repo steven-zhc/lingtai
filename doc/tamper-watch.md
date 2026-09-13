@@ -27,6 +27,11 @@ gates:
         - "packages/repo/**"
         - "packages/projector/**"
         - "packages/daemon/**"
+        # `extension` because the CLI loads it by relative path, which the
+        # dependency walk cannot see. `telegram` is loaded by nothing — it is
+        # spawned — but it is the code the bot token is handed to.
+        - "packages/extension/**"
+        - "packages/telegram/**"
         - "apps/cli/**"
         - "apps/board/**"
         - "package.json"

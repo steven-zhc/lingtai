@@ -431,8 +431,8 @@ Source: `ExtensionEnv` in `packages/recipe/src/recipe.ts` and `extensionEnv` in
 subscribers:
   - name: telegram
     on: [WorkItemLanded]
-    run: npx @lingtai/telegram
-    env: [TELEGRAM_BOT_TOKEN]
+    run: node packages/telegram/src/cli.ts
+    env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 ```
 
 Four rules, and the first is the one that matters:
@@ -607,8 +607,8 @@ Source: `subscribers:` in each project's own recipe
 `packages/recipe/src/recipe.ts`), built by `buildSubscribers` in
 `apps/cli/src/subscribers.ts`.
 
-This repository declares one, and it is the desktop notification that used to be
-constructed by name inside the daemon:
+This repository declares two: the desktop notification that used to be
+constructed by name inside the daemon, and Telegram (`#125`):
 
 ```yaml
 subscribers:
@@ -616,13 +616,29 @@ subscribers:
     on: [ApprovalRequested, IntegrationRefused, RunAwaitingInput, WorkItemBlocked]
     run: node apps/cli/src/notify.ts
     env: []
+  - name: telegram
+    on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+    run: node packages/telegram/src/cli.ts
+    env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 ```
 
-Those four mean the same thing: nothing moves until a person acts. A landed task
-is good news that needed nobody, and is deliberately not in **this** channel — a
-desktop notification interrupts. A Telegram bot, read when you choose rather than
-when it arrives, is a second `subscribers:` entry that names `WorkItemLanded`
-without that changing what interrupts you.
+`desktop`'s four mean the same thing: nothing moves until a person acts. A landed
+task is good news that needed nobody, and is deliberately not in **that** channel
+— a desktop notification interrupts. A Telegram message is read when you choose
+rather than when it arrives, so `telegram` names `WorkItemLanded` and
+`RunFailed` without that changing what interrupts you. Same event, different
+channel, different answer — sayable only because the subscription is in the
+recipe.
+
+Both render with `describe` in `packages/extension` (`@lingtai/extension`),
+which depends on nothing, and Telegram imports nothing else — the path a third
+party's extension would take. Neither is published, so `run:` names the file in
+this checkout, the directory the daemon was started in and starts them in; `npx`
+would find nothing. Telegram's two names go in the project's env file —
+`lingtai env set lingtai TELEGRAM_BOT_TOKEN` reads the value from stdin — and
+until they are there each event it is owed appends `PluginFailed` saying which
+is missing. `TELEGRAM_API_ROOT` is read too, for a self-hosted Bot API server,
+if it is declared.
 
 Four rules:
 

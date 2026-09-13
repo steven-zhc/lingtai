@@ -19,14 +19,8 @@
  * working `osascript` refuse.
  */
 import { describe, expect, it } from "vitest";
-import {
-  describe as render,
-  macNotifier,
-  notifyCommand,
-  parsePayload,
-  type Exec,
-  type NotifyPayload,
-} from "../src/notify.ts";
+import { describe as render, parsePayload, type NotifyPayload } from "@lingtai/extension";
+import { macNotifier, notifyCommand, type Exec } from "../src/notify.ts";
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },

@@ -318,10 +318,10 @@ gates:
 # first-party extension on a privileged path proves nothing — VS Code shipped
 # its own extensions on a special path early and pulled them back onto the
 # extension host later, because first-party code writes infinite loops too. So
-# `desktop` is started by exactly the code that will start `npx
-# @lingtai/telegram`, gets the same JSON on stdin and has its failures recorded
-# the same way; it needs no credentials, which is what makes it the right first
-# crossing rather than merely the easy one (#123).
+# `desktop` is started by exactly the code that starts `telegram` below, gets
+# the same JSON on stdin and has its failures recorded the same way; it needs
+# no credentials, which is what makes it the right first crossing rather than
+# merely the easy one (#123).
 #
 # The four types are the ones `DEFAULT_SUBSCRIPTIONS` used to hold in
 # `packages/daemon/src/notify.ts` for every project ever registered. All four
@@ -353,11 +353,27 @@ gates:
 # daemon that could *not* read this recipe at startup — the network was down,
 # say: it asks again before each pass, and builds whatever this block says on
 # the first pass that reads it, with no restart.
+#
+# **`telegram` names `WorkItemLanded`, and `desktop` deliberately does not.** A
+# desktop notification interrupts you, so it is for what nothing moves without;
+# a Telegram message is read when you choose, so it can carry the good news too.
+# Same event, different channel, different answer (`#125`). It is started from
+# this checkout for the reason `desktop` is — `@lingtai/telegram` is not
+# published, so `npx` would find nothing — and it declares its two names, which
+# `lingtai env set lingtai TELEGRAM_BOT_TOKEN` and `… TELEGRAM_CHAT_ID` put in
+# `~/.lingtai/env/lingtai.env`. Until they are there, each event it is owed
+# appends a `PluginFailed` saying so, and `lingtai doctor`'s
+# `env: lingtai extensions` fails naming the command. That file, unlike this
+# block, is read again for every delivery, so setting them needs no restart.
 subscribers:
   - name: desktop
     on: [ApprovalRequested, IntegrationRefused, RunAwaitingInput, WorkItemBlocked]
     run: node apps/cli/src/notify.ts
     env: []
+  - name: telegram
+    on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+    run: node packages/telegram/src/cli.ts
+    env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 
 runtime:
   agent: claude-code

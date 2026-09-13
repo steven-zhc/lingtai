@@ -446,8 +446,8 @@ export const Recipe = z.object({
    *
    * It is gone since `#123`, and this is the whole of what replaced it: the
    * desktop notification is `node apps/cli/src/notify.ts` under Lingtai's own
-   * `subscribers:`, started by the code that will start `npx
-   * @lingtai/telegram`. There is no list in the daemon to fall back to, which
+   * `subscribers:`, started by the same code that starts
+   * `node packages/telegram/src/cli.ts` beside it (`#125`). There is no list in the daemon to fall back to, which
    * is what makes the paragraph below true rather than decorative.
    *
    * Defaulted to empty rather than optional, like `gates`: a project that

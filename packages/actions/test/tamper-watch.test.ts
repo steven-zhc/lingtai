@@ -71,6 +71,9 @@ describe("this repository's tamper watch", () => {
     "packages/github/src/client.ts",
     "packages/agent-env/src/index.ts",
     "packages/daemon/src/index.ts",
+    // Spawned rather than loaded, so the walk below never reaches it — and it
+    // is the code a bot token is handed to.
+    "packages/telegram/src/telegram.ts",
     "packages/repo/src/integrate.ts",
     "apps/cli/src/lingtai.ts",
     "apps/board/src/app/actions.ts",

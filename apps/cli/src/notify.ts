@@ -14,9 +14,9 @@
  * privileged path proves nothing about the boundary — VS Code shipped its own
  * extensions on a special path early and pulled them back onto the extension
  * host later, because first-party code writes infinite loops too. This is
- * started by exactly the code that will start `npx @lingtai/telegram`, gets
- * exactly the payload it will get, and its failure is recorded exactly the same
- * way. It needs no credentials, which is what makes it the right first crossing
+ * started by exactly the code that starts `packages/telegram` (`#125`), gets
+ * exactly the payload it gets, renders it with the same `describe` out of
+ * `@lingtai/extension`, and its failure is recorded exactly the same way. It needs no credentials, which is what makes it the right first crossing
  * rather than merely the easy one.
  *
  * ## Why this is its own entry point and not a `lingtai` subcommand
@@ -30,8 +30,8 @@
  * convenience.
  *
  * So the file is the command. `node apps/cli/src/notify.ts` loads this module
- * and nothing else, needs no database and no credentials, and is the same shape
- * as the `npx @lingtai/telegram` it stands in for. That is also the honest
+ * and `@lingtai/extension`, which depends on nothing; it needs no database and
+ * no credentials, and is the same shape as `packages/telegram/src/cli.ts`. That is also the honest
  * version of 0037's open note about one process per event: this one starts in
  * milliseconds because there is nothing in it.
  *
@@ -44,82 +44,12 @@
  * `PluginFailed` (0037 §7) and acts on in no other way.
  */
 import { spawn } from "node:child_process";
-import { pathToFileURL } from "node:url";
-
-/** What the operator is being told, and where to go about it. */
-export interface Notification {
-  title: string;
-  body: string;
-  /** The board page for the task this is about. */
-  url: string;
-}
+import { describe, isMain, parsePayload, readStdin } from "@lingtai/extension";
+import type { Notification } from "@lingtai/extension";
 
 export interface NotifyChannel {
   readonly name: string;
   send(notification: Notification): Promise<void>;
-}
-
-/**
- * The event as it arrives over a pipe, and no more of it than is read.
- *
- * Narrower than `Envelope` on purpose: this is JSON from another process, where
- * `seq` is a string and `at` is ISO-8601, so claiming the store's type for it
- * would be claiming a `bigint` and a `Date` that are not in the bytes. See
- * `SubscriberPayload` in `@lingtai/actions` for the whole shape.
- */
-export interface NotifiedEvent {
-  type: string;
-  data: unknown;
-}
-
-/** The work item the daemon resolved this event to. `#123` and the board link come off it. */
-export interface NotifiedWorkItem {
-  id: string;
-  project: string;
-  issue: string;
-}
-
-export interface NotifyPayload {
-  event: NotifiedEvent;
-  workItem: NotifiedWorkItem;
-  board: string;
-}
-
-/**
- * Turns an event into something worth reading on a lock screen.
- *
- * The question, never just the fact. `agent:blocked` carried no question, which
- * is the whole reason the old review queue was unworkable from outside the
- * repository — you had to open the issue to find out what was being asked.
- *
- * The card is named from `workItem` rather than from the stream id, and that is
- * `#123`'s other half. `ApprovalRequested` and `RunAwaitingInput` are appended
- * to a *run* stream, so the old version of this function — which read the
- * stream id and nothing else — rendered them with an empty `#` and no link, for
- * the two events that most needed one.
- */
-export function describe(payload: NotifyPayload): Notification {
-  const { event, workItem } = payload;
-  const d = (event.data ?? {}) as Record<string, unknown>;
-  const url = `${payload.board}/task/${encodeURIComponent(workItem.id)}`;
-  const ref = `#${workItem.issue}`;
-
-  switch (event.type) {
-    case "ApprovalRequested":
-      return { title: `${ref} is waiting on you`, body: String(d["question"] ?? "Approve the merge?"), url };
-    case "WorkItemBlocked":
-      return { title: `${ref} is blocked`, body: String(d["question"] ?? ""), url };
-    case "RunAwaitingInput":
-      return { title: `${ref} is asking`, body: String(d["prompt"] ?? ""), url };
-    case "IntegrationRefused":
-      return {
-        title: `${ref} did not merge`,
-        body: `${String(d["reason"] ?? "")}: ${String(d["detail"] ?? "")}`,
-        url,
-      };
-    default:
-      return { title: ref, body: event.type, url };
-  }
 }
 
 /** Spawn a binary, come back with its exit code. `null` when it never started. */
@@ -208,47 +138,6 @@ export async function macNotifier(exec: Exec = run): Promise<NotifyChannel> {
   };
 }
 
-/**
- * One payload, off stdin, ready to be rendered.
- *
- * Refuses rather than guesses. A subscriber that displayed *something* for
- * malformed input would be a notifier reporting a state nothing is in, and the
- * exit code it returns instead becomes a `PluginFailed` naming this subscriber
- * — a broken contract said out loud, in the log, once per event.
- */
-export function parsePayload(text: string): NotifyPayload {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`stdin was not JSON: ${(err as Error).message}`);
-  }
-  const body = parsed as Partial<NotifyPayload> | null;
-  const event = body?.event;
-  const workItem = body?.workItem;
-  if (!event || typeof event.type !== "string") {
-    throw new Error('stdin carried no event — expected {"event":{"type","data"},"workItem":…}');
-  }
-  if (!workItem || typeof workItem.id !== "string" || typeof workItem.issue !== "string") {
-    throw new Error('stdin carried no workItem — expected {"id","project","issue"}');
-  }
-  return {
-    event,
-    workItem,
-    // The board's address on the one machine this runs on (0008). Defaulted
-    // rather than refused: a notification with a link that may be wrong beats
-    // no notification, which is the trade the rest of this file does not make
-    // and this one line does.
-    board: typeof body?.board === "string" ? body.board : "http://localhost:3200",
-  };
-}
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 export interface NotifyCommandDeps {
   read?: () => Promise<string>;
   channelFor?: () => Promise<NotifyChannel>;
@@ -277,10 +166,10 @@ export async function notifyCommand(deps: NotifyCommandDeps = {}): Promise<numbe
 }
 
 /**
- * Run directly, and only then. Imported — by a test, or by anything that wants
- * `describe` — this does nothing, because a module that notified on import
- * would be a module nobody could read from.
+ * Run directly, and only then. Imported — by a test — this does nothing,
+ * because a module that notified on import would be a module nobody could read
+ * from.
  */
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   process.exitCode = await notifyCommand();
 }
