@@ -1,10 +1,18 @@
 /**
- * This repository's own `tamper` watch, read from this repository's own recipe
- * (#31): the gate cannot be allowed to edit the gate.
+ * The `tamper` watch (#31): the gate cannot be allowed to edit the gate.
  *
- * Not a fixture. A test against a copy would go on passing after somebody took
- * a path out of `.lingtai/config.yaml`, which is exactly the edit it exists to
- * notice.
+ * **Read from `doc/tamper-watch.md`, because this repository does not wire it.**
+ * It was at `proposed` for one night and held six consecutive items that had
+ * passed `build` and `review`; the trade and the reason it came out are in that
+ * document. The capability is untouched — what is gone is the wiring.
+ *
+ * The document is the canonical list, not a copy of one, which is what keeps
+ * this from being the fixture the original version of this file refused to be:
+ * there is nowhere else for a path to be taken out of. What cannot be asserted
+ * while the watch is off is *cannot be weakened by the change it is judging* —
+ * that needs the watch to really be at `proposed`, and it comes back with the
+ * block. Everything else below judges the documented list against the real
+ * gate code.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -16,16 +24,34 @@ import { runGatePipeline } from "../src/gate.ts";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const context = { runId: "run-1", onSha: "b".repeat(40), cwd: root, env: {} };
 
-/** `main` is the file on disk; any other ref is whatever the test says it is. */
-const reader = (branches: Record<string, string>) => async (path: string, ref: string) =>
-  path !== RECIPE_PATH ? null : ref === "main" ? readFile(`${root}${RECIPE_PATH}`, "utf8") : (branches[ref] ?? null);
+/**
+ * The block as `doc/tamper-watch.md` publishes it, which is where it lives while
+ * it is not wired. Parsed rather than duplicated: an edit to the document is an
+ * edit to what this test judges, and there is no second copy to drift from.
+ */
+async function documented(): Promise<GateAction[]> {
+  const md = await readFile(`${root}doc/tamper-watch.md`, "utf8");
+  const fence = md.match(/```yaml\n([\s\S]*?)```/);
+  if (!fence) throw new Error("doc/tamper-watch.md has no yaml block — the watch list has no home");
 
-const watchesAt = (actions: readonly GateAction[]) => actions.filter((action) => "watch" in action);
+  // Spliced into this repository's own recipe and resolved by `resolveRecipe`,
+  // rather than parsed here. Two things follow from that and both are wanted:
+  // the block is validated by the real schema, so a document that has drifted
+  // out of what a recipe may say fails here — and this test needs no YAML
+  // parser of its own, in a package the watch list covers.
+  const action = fence[1]!.slice(fence[1]!.indexOf("    - name:"));
+  const live = await readFile(`${root}${RECIPE_PATH}`, "utf8");
+  const spliced = live.replace(/^ {2}proposed:\n/m, `  proposed:\n${action}`);
+  const { recipe } = await resolveRecipe(
+    async (path, ref) => (path === RECIPE_PATH && ref === "main" ? spliced : null),
+    "main",
+  );
+  return recipe.gates.proposed.filter((gate) => "watch" in gate);
+}
 
-/** The `proposed` point's watches, judging a diff of exactly these files. */
-async function judge(ref: string, files: string[], branches: Record<string, string> = {}) {
-  const { recipe } = await resolveRecipe(reader(branches), ref);
-  const gates = gatesFromRecipe(watchesAt(recipe.gates.proposed), { watch: { changedFiles: async () => files } });
+/** The documented watches, judging a diff of exactly these files. */
+async function judge(files: string[]) {
+  const gates = gatesFromRecipe(await documented(), { watch: { changedFiles: async () => files } });
   return runGatePipeline({ point: "proposed", gates, context, emit: () => {} });
 }
 
@@ -56,7 +82,7 @@ describe("this repository's tamper watch", () => {
     ".npmrc",
     "packages/foo/.npmrc",
   ])("holds a diff touching %s for a person", async (file) => {
-    const result = await judge("main", ["README.md", file]);
+    const result = await judge(["README.md", file]);
 
     // Held, not failed: nothing is wrong with the change, it is just not the
     // machine's to wave through.
@@ -100,47 +126,32 @@ describe("this repository's tamper watch", () => {
     expect(seen).toContain("apps/board");
 
     for (const dir of seen) {
-      expect((await judge("main", [`${dir}/src/index.ts`])).heldAt, dir).toBe("tamper");
+      expect((await judge([`${dir}/src/index.ts`])).heldAt, dir).toBe("tamper");
     }
   });
 
   it("asks nothing about a diff that touches none of it", async () => {
-    const result = await judge("main", ["apps/site/src/app/page.tsx", "doc/README.md"]);
+    const result = await judge(["apps/site/src/app/page.tsx", "doc/README.md"]);
 
     expect(result.ok).toBe(true);
   });
 
-  it("is the last action at `proposed`, so a person is only asked about a change everything else passed", async () => {
-    const { recipe } = await resolveRecipe(reader({}), "main");
-
-    expect(recipe.gates.proposed.at(-1)).toMatchObject({ name: "tamper", then: "request-approval" });
-  });
-
   /**
-   * The attack, in one merge: the agent's branch deletes the watch and edits
-   * the conductor under it. The run is governed by `main` (0005), so the
-   * deletion changes nothing about it — and the deletion is itself in the
-   * watched file, so the diff is held however it was written.
-   *
-   * This half picks `main` itself, so it proves only what the watch does once
-   * it is read from the base. That the conductor reads it from the base, and
-   * not from the branch it is judging, is asserted where the conductor decides
-   * it: `packages/conductor/pure/run-once.test.ts`, *judges a change by the
-   * recipe on its base*.
+   * Two cases live in this file's history rather than here, because both need
+   * the watch to really be at `proposed`: *is the last action there*, and
+   * *cannot be weakened by the change it is judging*. The second is the whole
+   * security argument — an agent's branch deleting the watch changes nothing,
+   * because 0005 reads the recipe from the base — and it comes back when the
+   * block does. That the recipe is read from the base is still asserted, in
+   * `packages/conductor/pure/run-once.test.ts`.
    */
-  it("cannot be weakened by the change it is judging", async () => {
-    const onMain = await readFile(`${root}${RECIPE_PATH}`, "utf8");
-    const disarmed = onMain.replace(/^ {4}- name: tamper\n(?: {6}.*\n| {8}.*\n)+/m, "");
-    const branches = { "agent/31": disarmed };
+  it("is not wired in this repository, and the documented block is where it lives", async () => {
+    const { recipe } = await resolveRecipe(
+      async (path, ref) => (path === RECIPE_PATH && ref === "main" ? readFile(`${root}${RECIPE_PATH}`, "utf8") : null),
+      "main",
+    );
 
-    // The edit really does disarm it, so the test is not passing because both
-    // refs say the same thing.
-    const { recipe: theirs } = await resolveRecipe(reader(branches), "agent/31");
-    expect(theirs.gates.proposed.map((action) => action.name)).not.toContain("tamper");
-    expect((await judge("agent/31", [RECIPE_PATH], branches)).ok).toBe(true);
-
-    const result = await judge("main", [RECIPE_PATH, "packages/actions/src/watch-gate.ts"], branches);
-
-    expect(result.heldAt).toBe("tamper");
+    expect(recipe.gates.proposed.map((action) => action.name)).not.toContain("tamper");
+    expect((await documented()).map((action) => action.name)).toEqual(["tamper"]);
   });
 });

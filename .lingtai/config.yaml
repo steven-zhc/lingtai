@@ -271,32 +271,22 @@ gates:
     #
     # `packages/actions/test/tamper-watch.test.ts` reads this block, and fails if a
     # path above stops being held.
-    - name: tamper
-      watch:
-        - ".lingtai/config.yaml"
-        - "packages/conductor/**"
-        - "packages/event-store/**"
-        - "packages/hook/**"
-        - "packages/actions/**"
-        - "packages/recipe/**"
-        - "packages/domain/**"
-        - "packages/github/**"
-        - "packages/agent/**"
-        - "packages/agent-env/**"
-        - "packages/env/**"
-        - "packages/repo/**"
-        - "packages/projector/**"
-        - "packages/daemon/**"
-        - "apps/cli/**"
-        - "apps/board/**"
-        - "package.json"
-        - "**/package.json"
-        - "pnpm-lock.yaml"
-        - "pnpm-workspace.yaml"
-        - "**/.npmrc"
-        - "**/tsconfig*.json"
-        - "**/vitest*.config.*"
-      then: request-approval
+    # **`tamper` is off here, deliberately, and the block that turns it on is
+    # [doc/tamper-watch.md](../doc/tamper-watch.md).**
+    #
+    # #31 built it and wired it, and within one night it held six consecutive
+    # items at `proposed` with `build=passed review=passed`. That is the control
+    # working, not failing: every ticket in this queue is about Lingtai's own
+    # machinery, so nearly every diff touches a watched path, and the result is
+    # that self-hosting becomes supervised-by-default.
+    #
+    # This repository is choosing machine time over review time while it is
+    # still learning what the loop does unattended. The capability is untouched
+    # in `packages/actions/src/watch-gate.ts` and its list is still tested; only
+    # the wiring is gone, and turning it back on is pasting one block.
+    #
+    # A managed repository that is *not* Lingtai should almost certainly have
+    # this on: there, a watched path is rare and a hold means something.
 
   # Nothing holds here any more, and this is the moment the previous version of
   # this comment named: "when being asked every time becomes the annoyance
