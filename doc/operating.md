@@ -606,19 +606,28 @@ rather than kills anything that fails either guard.
 Control goes through the log, so a pause issued while the daemon is down is
 waiting when it comes back.
 
-It also comments on the ticket when something is waiting on you, sets an
-`lingtai:*` label as a task moves, and sends a macOS notification for the
-four things that mean nothing moves until you act. The comments and labels go
-**directly, as the run goes**, and every attempt appends its outcome —
-`IssueUpdated` or `IssueUpdateFailed`. The outbox that used to stand behind
-those three calls, with its retry queue and its dead letter, was deleted
-(`#56`); what did not land is converged at the daemon's next startup by
-comparing what the log says the issue should look like against what GitHub says
-it does. Notifications deliberately get neither: one delivered an hour late
-about a decision you already made is worse than none.
+It also comments on the ticket when something is waiting on you and sets an
+`lingtai:*` label as a task moves. Both go **directly, as the run goes**, and
+every attempt appends its outcome — `IssueUpdated` or `IssueUpdateFailed`. The
+outbox that used to stand behind those calls, with its retry queue and its dead
+letter, was deleted (`#56`); what did not land is converged at the daemon's next
+startup by comparing what the log says the issue should look like against what
+GitHub says it does.
 
-`terminal-notifier` on your PATH makes a notification clickable, opening that
-task's page. Without it they still arrive, and the daemon says which you got.
+**Whether it also interrupts you is the recipe's to say** (`#123`). The daemon
+starts what each project declared under `subscribers:` and names none of it —
+this repository's own block is `desktop`, `node apps/cli/src/notify.ts`, on the
+four types that mean nothing moves until you act. A project that declares none
+gets none, and the daemon says so on its way past rather than being silent about
+a silence. Each is a process of its own, gets only the credentials it declared
+beside itself, and is never waited for; a failure appends `PluginFailed` and
+`lingtai doctor`'s `subscribers: failures` reads it back. Nothing is retried,
+deliberately: a notification delivered an hour late about a decision you already
+made is worse than none.
+
+`terminal-notifier` on your PATH lets a notification open that task's page when
+you click it. Without it `osascript` still delivers one and writes the link into
+the message, because it cannot open a URL itself.
 
 To keep it running across logout, sleep and crashes:
 

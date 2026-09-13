@@ -258,9 +258,15 @@ describe("the work loop", () => {
    *
    * Three failures in one test on purpose: they are three shapes of the same
    * defect and the boundary has to hold all three. A throw never reaches a
-   * `.catch` at all; a rejection reaches one only if somebody wrote it, and
-   * `notify` had none; and a subscriber that simply never settles produces no
-   * signal whatsoever, which is the failure a notifier must not have.
+   * `.catch` at all; a rejection reaches one only if somebody wrote it, and the
+   * one notifier there was had none; and a subscriber that simply never settles
+   * produces no signal whatsoever, which is the failure a notifier must not
+   * have.
+   *
+   * It is a declared subscriber rather than the old `notify` callback since
+   * `#123`, and the name it is recorded under is its own — the assertion below
+   * is on `desktop` because that is what `PluginFailed` has to say when there
+   * is more than one of them.
    */
   it("survives a subscriber that throws, rejects or hangs, and records each one", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
@@ -279,14 +285,21 @@ describe("the work loop", () => {
       // Short, because the property is that a hang is *reported*; how long a
       // real subscriber is given before that is a separate decision.
       subscriberTimeoutMs: 150,
-      notify: (event) => {
-        seen.push(event.streamId);
-        if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
-        if (event.streamId === stream("rejects")) return Promise.reject(new Error("rejected afterwards"));
-        // Never settles. Nothing cancels it; the boundary times it out.
-        if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
-        return Promise.resolve();
-      },
+      subscribers: [
+        {
+          name: "desktop",
+          deliver: (event) => {
+            seen.push(event.streamId);
+            if (event.streamId === stream("throws")) throw new Error("threw before returning a promise");
+            if (event.streamId === stream("rejects")) {
+              return Promise.reject(new Error("rejected afterwards"));
+            }
+            // Never settles. Nothing cancels it; the boundary times it out.
+            if (event.streamId === stream("hangs")) return new Promise<void>(() => {});
+            return Promise.resolve();
+          },
+        },
+      ],
       pass: async () => {},
     });
 
@@ -320,13 +333,81 @@ describe("the work loop", () => {
       expect(new Set(failures.map((f) => f.project))).toEqual(
         new Set([project("throws"), project("rejects"), project("hangs")]),
       );
-      expect(new Set(failures.map((f) => f.name))).toEqual(new Set(["notify"]));
+      expect(new Set(failures.map((f) => f.name))).toEqual(new Set(["desktop"]));
       expect(new Set(failures.map((f) => f.eventType))).toEqual(new Set(["WorkItemLanded"]));
       const hung = failures.find((f) => f.project === project("hangs"));
       expect(hung?.reason).toMatch(/did not return within/);
       // The one that succeeded appended nothing: a boundary that recorded every
       // delivery would be a second log of the first.
       expect(failures.some((f) => f.project === project("after"))).toBe(false);
+    } finally {
+      await loop.stop();
+    }
+  });
+
+  /**
+   * A failure on a run stream or an integration lane is recorded under the
+   * project whose recipe declared the subscriber — not under whatever cutting
+   * `run-<uuid>` at its last dash produces, which is what it said before.
+   *
+   * And the subscriber is one handed over *after* `start`, through the getter:
+   * a project whose recipe could not be read at startup is built on a later
+   * pass, and it has to be told about the events that follow.
+   */
+  it("records a subscriber's failure under its own project, whatever stream the event was on", async () => {
+    const tag = crypto.randomUUID().slice(0, 8);
+    const project = `esctestowner${tag}`;
+    const run = `run-${crypto.randomUUID()}`;
+    const lane = `int-${project}-main`;
+    created.add(run);
+    created.add(lane);
+    created.add(SUBSCRIBER_STREAM);
+
+    const declared: { name: string; project: string; deliver: () => Promise<void> }[] = [];
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      store,
+      subscribers: () => declared,
+      pass: async () => {},
+    });
+
+    await loop.start();
+    try {
+      declared.push({
+        name: "desktop",
+        project,
+        deliver: () => Promise.reject(new Error("osascript exited 1")),
+      });
+      await store.append(run, 0, [
+        { type: "RunAwaitingInput", actor: `agent:${run}`, data: { prompt: "which base?" } },
+      ]);
+      await store.append(lane, 0, [
+        {
+          type: "IntegrationRefused",
+          actor: "conductor",
+          data: { workItemId: `wi-${project}-1`, branch: "agent/1", reason: "conflict", detail: "no" },
+        },
+      ]);
+
+      type Failure = { name: string; eventType: string; project: string | null };
+      const mine = async (): Promise<Failure[]> =>
+        (await store.read(SUBSCRIBER_STREAM))
+          .filter((r) => r.type === "PluginFailed")
+          .map((r) => r.data as Failure)
+          .filter((d) => d.project?.includes(tag) === true);
+
+      let failures = await mine();
+      const deadline = Date.now() + 10_000;
+      while (failures.length < 2) {
+        if (Date.now() > deadline) throw new Error(`timed out with ${failures.length} failure(s) recorded`);
+        await new Promise((r) => setTimeout(r, 50));
+        failures = await mine();
+      }
+
+      expect(new Set(failures.map((f) => f.project))).toEqual(new Set([project]));
+      expect(new Set(failures.map((f) => f.eventType))).toEqual(
+        new Set(["RunAwaitingInput", "IntegrationRefused"]),
+      );
     } finally {
       await loop.stop();
     }

@@ -121,17 +121,19 @@ export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> 
 /**
  * Run the command and do not wait for it — 0037 §3's other caller. *"The whole
  * taxonomy is: a command, and whether the core waits for it."* A subscriber's
- * exit code is discarded, so the loop that started it goes on immediately.
+ * exit code decides nothing, so the loop that started it goes on immediately.
  *
  * Not waiting is not the same as not looking. The timeout is enforced exactly
  * as it is for a gate, because 0037 §6's point is that an ignored failure and a
  * bounded one are different guarantees and only the second keeps the loop
- * moving — and the outcome, when it arrives, is handed to `report`.
- * `work-loop.ts` already appends `PluginFailed` when an in-process subscriber
- * fails, for §7's reason: a subscriber whose failure is a console line is a
- * notifier that has silently stopped notifying. Nothing reads the exit code of
- * a subscriber that is a command, so this callback is the only place that
- * event could come from.
+ * moving — and the outcome, when it arrives, is handed to `report`, which is
+ * the only place a command's exit code can be read. `createSubscriber` in
+ * `subscriber.ts` reads it there and rejects `deliver` on a non-zero one, and
+ * `work-loop.ts`'s boundary turns that rejection into `PluginFailed` — once,
+ * for every subscriber, in-process or command — for §7's reason: a subscriber
+ * whose failure is a console line is a notifier that has silently stopped
+ * notifying. So a `report` does not append a failure of its own, and a command
+ * that exits 0 on failure is hiding one.
  *
  * It returns nothing to await, deliberately: a caller that could wait for this
  * is a caller a subscriber can stall.
