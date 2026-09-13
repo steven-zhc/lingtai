@@ -10,7 +10,7 @@
  * ## What makes it an extension and not a feature
  *
  * **It imports nothing a third party's could not.** `node:` and
- * `@lingtai/extension`, which itself depends on nothing — asserted by
+ * `packages/extension`, which itself depends on nothing — asserted by
  * `test/imports.test.ts`, not kept by care. No `@lingtai/domain` for a type, no
  * `@lingtai/event-store`, no way to append: the only thing it can say about
  * itself is its exit code, which the daemon turns into `PluginFailed` (0037 §7).
@@ -31,7 +31,10 @@
  * Nothing is retried, for `notify.ts`'s reason: one message per event, and a
  * failure is an exit code the log keeps.
  */
-import { describe, isMain, parsePayload, readStdin } from "@lingtai/extension";
+// By path rather than by package name, like `notify.ts`: started from the
+// daemon's checkout, which a merge reaches with no `pnpm install`, so a
+// workspace symlink this change introduced would not be there to resolve.
+import { describe, isMain, parsePayload, readStdin } from "../../extension/src/index.ts";
 import { sendMessage } from "./telegram.ts";
 
 export interface TelegramCommandDeps {

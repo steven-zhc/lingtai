@@ -102,9 +102,6 @@ importers:
       '@lingtai/event-store':
         specifier: workspace:*
         version: link:../../packages/event-store
-      '@lingtai/extension':
-        specifier: workspace:*
-        version: link:../../packages/extension
       '@lingtai/github':
         specifier: workspace:*
         version: link:../../packages/github
@@ -544,10 +541,6 @@ importers:
         version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/telegram:
-    dependencies:
-      '@lingtai/extension':
-        specifier: workspace:*
-        version: link:../extension
     devDependencies:
       '@types/node':
         specifier: ^26.4.0

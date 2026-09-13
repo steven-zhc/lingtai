@@ -634,7 +634,11 @@ Both render with `describe` in `packages/extension` (`@lingtai/extension`),
 which depends on nothing, and Telegram imports nothing else — the path a third
 party's extension would take. Neither is published, so `run:` names the file in
 this checkout, the directory the daemon was started in and starts them in; `npx`
-would find nothing. Telegram's two names go in the project's env file —
+would find nothing. For the same reason both import `packages/extension` by
+path rather than by package name: a merge reaches the daemon's checkout with no
+`pnpm install`, so a new workspace symlink would not be there to resolve, and a
+path into a package that depends on nothing needs no `node_modules` at all.
+Telegram's two names go in the project's env file —
 `lingtai env set lingtai TELEGRAM_BOT_TOKEN` reads the value from stdin — and
 until they are there each event it is owed appends `PluginFailed` saying which
 is missing. `TELEGRAM_API_ROOT` is read too, for a self-hosted Bot API server,

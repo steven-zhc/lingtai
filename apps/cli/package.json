@@ -19,7 +19,6 @@
     "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
     "@lingtai/event-store": "workspace:*",
-    "@lingtai/extension": "workspace:*",
     "@lingtai/github": "workspace:*",
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",

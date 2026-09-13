@@ -11,8 +11,9 @@
  *   never resolve from the directory its subscribers were spawned in;
  * - a `RunFailed` on a `run-<uuid>` stream reaches Telegram carrying its card,
  *   which only `createSubjectResolver` reading the run's `RunStarted` can name;
- * - the process gets the token from the project's env file and not from this
- *   process, and cannot see `LINGTAI_DATABASE_URL` even when the file holds it;
+ * - the process gets the token from the project's env file, read by the real
+ *   resolver, and not from this process — which holds a different one — and
+ *   cannot see `LINGTAI_DATABASE_URL` even when the file holds it;
  * - an unreachable Telegram, and an extension killed mid-event, each append
  *   `PluginFailed` and the log goes on being followed.
  *
@@ -20,11 +21,12 @@
  * shipped declaration is adding `TELEGRAM_API_ROOT` to its `env:`, which is the
  * only way to point a real process at that server through the same filter.
  */
-import { readFile, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { projectEnvPath, resolveAgentEnv } from "@lingtai/agent-env";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { createWorkLoop, type WorkLoop } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM, workItemStream } from "@lingtai/domain";
@@ -118,23 +120,34 @@ async function freePort(): Promise<number> {
 }
 
 /**
- * The daemon's construction, with the recipe read and the env file stood in
- * for. The file holds `LINGTAI_DATABASE_URL` on purpose: the claim is that the
+ * The daemon's construction, with the recipe read and the project's env file
+ * written: `~/.lingtai/env/<project>.env` under a home of this test's own, read
+ * by the real `resolveAgentEnv`. Only the home is moved, and the machine's file
+ * is empty so that what the process sees is this file's and nobody's shell.
+ *
+ * The file holds `LINGTAI_DATABASE_URL` on purpose: the claim is that the
  * process cannot read it even when it is sitting right beside the token.
  */
 async function started(port: number, spec: Partial<SubscriberSpec> = {}) {
-  const merged = {
-    TELEGRAM_BOT_TOKEN: TOKEN,
-    TELEGRAM_CHAT_ID: "42",
-    TELEGRAM_API_ROOT: `http://127.0.0.1:${port}`,
-    LINGTAI_DATABASE_URL: "postgres://the-log",
-  };
+  const home = await mkdtemp(join(tmpdir(), "lingtai-telegram-home-"));
+  const file = projectEnvPath(PROJECT, home);
+  await mkdir(join(home, "env"), { recursive: true });
+  await writeFile(
+    file,
+    [
+      `TELEGRAM_BOT_TOKEN=${TOKEN}`,
+      "TELEGRAM_CHAT_ID=42",
+      `TELEGRAM_API_ROOT=http://127.0.0.1:${port}`,
+      "LINGTAI_DATABASE_URL=postgres://the-log",
+      "",
+    ].join("\n"),
+  );
   const declared = { ...shipped, env: [...shipped.env, "TELEGRAM_API_ROOT"], ...spec };
   const { built, unread } = await buildSubscribers({
     filters: [{ project: PROJECT, ok: true, recipe: { subscribers: [declared] } } as unknown as ProjectFilter],
     cwd: ROOT,
     subject: createSubjectResolver(store),
-    resolveEnv: (async () => ({ merged })) as never,
+    resolveEnv: (options) => resolveAgentEnv({ ...options, home, machine: {} }),
   });
   expect(unread).toEqual([]);
   loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: async () => {} });
@@ -204,17 +217,39 @@ describe("the telegram subscriber this repository declares", () => {
     ]);
   });
 
-  it("gets the token from the project's file, and never LINGTAI_DATABASE_URL", async () => {
-    expect(process.env["TELEGRAM_BOT_TOKEN"]).toBeUndefined();
-    const dir = await mkdtemp(join(tmpdir(), "lingtai-telegram-env-"));
-    await started(await freePort(), { run: `env > ${join(dir, "env.txt")}` });
-    const run = await aRun();
+  /**
+   * This process is the daemon, so what it has exported is the daemon's
+   * environment: a different token, and a declared name the file does not hold.
+   * Were either to reach the subscriber — folded into the resolver, spread into
+   * the spawn — the token seen would be the wrong one or the extra name would
+   * be there, whichever layer won.
+   */
+  it("gets the token from the project's file, not the daemon's environment, and never LINGTAI_DATABASE_URL", async () => {
+    const DAEMONS = "999999:the-daemon's-own-token";
+    const saved = { token: process.env["TELEGRAM_BOT_TOKEN"], only: process.env["TELEGRAM_DAEMON_ONLY"] };
+    process.env["TELEGRAM_BOT_TOKEN"] = DAEMONS;
+    process.env["TELEGRAM_DAEMON_ONLY"] = "from-the-daemon";
+    try {
+      const dir = await mkdtemp(join(tmpdir(), "lingtai-telegram-env-"));
+      await started(await freePort(), {
+        run: `env > ${join(dir, "env.txt")}`,
+        env: [...shipped.env, "TELEGRAM_API_ROOT", "TELEGRAM_DAEMON_ONLY"],
+      });
+      const run = await aRun();
 
-    await failed(run.runId, "x");
-    const seen = await until(() => readFile(join(dir, "env.txt"), "utf8").catch(() => undefined));
+      await failed(run.runId, "x");
+      const seen = await until(() => readFile(join(dir, "env.txt"), "utf8").catch(() => undefined));
 
-    expect(seen).toContain(`TELEGRAM_BOT_TOKEN=${TOKEN}`);
-    expect(seen).not.toMatch(/^LINGTAI_/m);
+      expect(seen).toMatch(new RegExp(`^TELEGRAM_BOT_TOKEN=${TOKEN}$`, "m"));
+      expect(seen).not.toContain(DAEMONS);
+      expect(seen).not.toMatch(/^TELEGRAM_DAEMON_ONLY=/m);
+      expect(seen).not.toMatch(/^LINGTAI_/m);
+    } finally {
+      for (const [name, value] of [["TELEGRAM_BOT_TOKEN", saved.token], ["TELEGRAM_DAEMON_ONLY", saved.only]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 
   it("records an unreachable Telegram as PluginFailed, and delivers the next event once it is back", async () => {

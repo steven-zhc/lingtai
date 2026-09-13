@@ -18,8 +18,12 @@
  * `exec` is the only seam, and it is a seam because there is no way to make a
  * working `osascript` refuse.
  */
+import { spawn } from "node:child_process";
+import { cp, mkdtemp, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { describe as render, parsePayload, type NotifyPayload } from "@lingtai/extension";
+import { describe as render, parsePayload, type NotifyPayload } from "../../../packages/extension/src/index.ts";
 import { macNotifier, notifyCommand, type Exec } from "../src/notify.ts";
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
@@ -162,5 +166,40 @@ describe("parsePayload", () => {
     );
 
     expect(parsed.board).toBe("http://localhost:3200");
+  });
+});
+
+/**
+ * The daemon's checkout gets a merge and no `pnpm install`. So the file the
+ * `run:` line names is run here from a copy of the two directories it reads,
+ * with no `node_modules` anywhere above it: an import that needs a workspace
+ * symlink fails this with `ERR_MODULE_NOT_FOUND` instead of reaching `main`.
+ */
+describe("the command, in a checkout nobody reinstalled", () => {
+  it("loads, and says what was wrong with its input rather than what it could not find", async () => {
+    const ROOT = join(import.meta.dirname, "..", "..", "..");
+    // Real path: macOS's tmpdir is a symlink, and `isMain` compares against the resolved URL.
+    const copy = await realpath(await mkdtemp(join(tmpdir(), "lingtai-notify-uninstalled-")));
+    for (const dir of ["apps/cli/src", "packages/extension/src"]) {
+      await cp(join(ROOT, dir), join(copy, dir), { recursive: true });
+    }
+    for (const pkg of ["apps/cli", "packages/extension"]) {
+      await cp(join(ROOT, pkg, "package.json"), join(copy, pkg, "package.json"));
+    }
+
+    let stderr = "";
+    const code = await new Promise<number | null>((resolve) => {
+      const child = spawn(process.execPath, [join(copy, "apps/cli/src/notify.ts")], {
+        env: { PATH: process.env["PATH"] ?? "" },
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+      child.stderr.on("data", (c) => (stderr += c));
+      child.on("close", resolve);
+      child.stdin.end("not json");
+    });
+
+    expect(stderr).not.toContain("ERR_MODULE_NOT_FOUND");
+    expect(stderr).toContain("stdin was not JSON");
+    expect(code).toBe(1);
   });
 });

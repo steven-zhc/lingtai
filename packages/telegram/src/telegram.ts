@@ -6,7 +6,7 @@
  * A subscriber is told what happened and exits (0037 §3), so the only request
  * it ever makes is the one that tells you.
  */
-import type { Notification } from "@lingtai/extension";
+import type { Notification } from "../../extension/src/index.ts";
 
 /** Telegram's own limit on a message's text, in characters. */
 export const MAX_TEXT = 4096;
@@ -45,7 +45,12 @@ export function messageText(n: Notification): string {
   if (text.length <= MAX_TEXT) return text;
   // The link is the part that must survive: cut the body, never the URL.
   const room = MAX_TEXT - n.title.length - n.url.length - 3;
-  return [n.title, `${n.body.slice(0, Math.max(0, room - 1))}…`, n.url].join("\n");
+  let body = n.body.slice(0, Math.max(0, room - 1));
+  // `slice` counts UTF-16 code units, so it can keep half of an emoji. A lone
+  // surrogate is not UTF-8 and Telegram refuses the whole message over it —
+  // on exactly the long question that most needed forwarding.
+  if (/[\uD800-\uDBFF]$/.test(body)) body = body.slice(0, -1);
+  return [n.title, `${body}…`, n.url].join("\n");
 }
 
 /**

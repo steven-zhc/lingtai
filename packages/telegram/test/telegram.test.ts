@@ -7,12 +7,14 @@
  * this one is a socket that can refuse, hang or be absent.
  */
 import { spawn } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, realpath } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
-import type { NotifyPayload } from "@lingtai/extension";
+import type { NotifyPayload } from "../../extension/src/index.ts";
 import { MAX_TEXT, messageText, sendMessage, telegramCommand } from "../src/index.ts";
 
 const PKG = join(import.meta.dirname, "..");
@@ -71,6 +73,21 @@ describe("the message", () => {
     const text = messageText({ title: "#125 is asking", body: "x".repeat(10_000), url });
     expect(text.length).toBeLessThanOrEqual(MAX_TEXT);
     expect(text.endsWith(url)).toBe(true);
+  });
+
+  it("never cuts an emoji in half where it cuts the body", () => {
+    const title = "#125 is asking";
+    const url = "http://localhost:3200/task/wi-lingtai-125";
+    const room = MAX_TEXT - title.length - url.length - 3;
+    // The cut keeps `room - 1` code units, so an emoji starting one or two
+    // before that leaves its high surrogate on the kept side for one of them.
+    for (const at of [room - 4, room - 3, room - 2, room - 1]) {
+      const text = messageText({ title, body: `${"x".repeat(at)}😀${"x".repeat(10_000)}`, url });
+      // A surrogate with no partner — what `String.prototype.isWellFormed` asks, below ES2024's lib.
+      expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+      expect(text.length).toBeLessThanOrEqual(MAX_TEXT);
+      expect(text.endsWith(url)).toBe(true);
+    }
   });
 });
 
@@ -178,26 +195,79 @@ describe("the command's exit code", () => {
     expect(api.received[0]!.body.text).toContain("Merge agent/125?");
     expect(await run({ TELEGRAM_BOT_TOKEN: TOKEN, TELEGRAM_CHAT_ID: "42", TELEGRAM_API_ROOT: await closedPort() })).toBe(1);
   });
+
+  /**
+   * The daemon's checkout gets a merge and no `pnpm install`, so the same file
+   * is run from a copy of the two packages with no `node_modules` above it. An
+   * import that needs a workspace symlink is `ERR_MODULE_NOT_FOUND` here, and
+   * would be a `PluginFailed` blaming nothing an operator could find there.
+   */
+  it("runs from a checkout nobody reinstalled, and says which name is missing", async () => {
+    // Real path: macOS's tmpdir is a symlink, and `isMain` compares against the resolved URL.
+    const copy = await realpath(await mkdtemp(join(tmpdir(), "lingtai-telegram-uninstalled-")));
+    for (const pkg of ["extension", "telegram"]) {
+      await cp(join(PKG, "..", pkg, "src"), join(copy, "packages", pkg, "src"), { recursive: true });
+      await cp(join(PKG, "..", pkg, "package.json"), join(copy, "packages", pkg, "package.json"));
+    }
+
+    let stderr = "";
+    const code = await new Promise<number | null>((resolve) => {
+      const child = spawn(process.execPath, [join(copy, "packages", "telegram", "src", "cli.ts")], {
+        env: { PATH: process.env["PATH"] ?? "" },
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+      child.stderr.on("data", (c) => (stderr += c));
+      child.on("close", resolve);
+      child.stdin.end(JSON.stringify(payload("RunFailed", { kind: "crash", detail: "x" })));
+    });
+
+    expect(stderr).not.toContain("ERR_MODULE_NOT_FOUND");
+    expect(stderr).toContain("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID not set");
+    expect(code).toBe(1);
+  });
 });
 
 /**
  * `#125`'s last Done-when, checked rather than promised: `node:`, its own
- * files, and `@lingtai/extension` — which depends on nothing, and has a test
- * of its own that says so.
+ * files, and `packages/extension` by path — which depends on nothing, and has
+ * a test of its own that says so.
+ *
+ * Read by TypeScript's pre-processor, as there, so that `import "x"`,
+ * `await import("x")` and `require("x")` are seen as well as `import … from`.
  */
 describe("what Telegram imports", () => {
+  const EXTENSION = "../../extension/src/index.ts";
+
+  function specifiersIn(text: string): string[] {
+    const found = ts.preProcessFile(text, true, true).importedFiles.map((f) => f.fileName);
+    if (/\b(?:import|require)\s*\(\s*(?!["'])/.test(text)) found.push("<a computed import>");
+    return found;
+  }
+
   it("is nothing a third party's extension could not import", async () => {
     const specifiers: string[] = [];
-    for (const file of await readdir(join(PKG, "src"))) {
-      const text = await readFile(join(PKG, "src", file), "utf8");
-      for (const m of text.matchAll(/^\s*(?:import|export)\b[^;]*?from\s+["']([^"']+)["']/gm)) specifiers.push(m[1]!);
+    const src = join(PKG, "src");
+    for (const file of await readdir(src, { recursive: true })) {
+      if (!/\.[cm]?[jt]s$/.test(file)) continue;
+      specifiers.push(...specifiersIn(await readFile(join(src, file), "utf8")));
     }
 
-    expect(specifiers.length).toBeGreaterThan(0);
-    const foreign = specifiers.filter((s) => !s.startsWith("node:") && !s.startsWith("./") && s !== "@lingtai/extension");
+    expect(specifiers).toContain(EXTENSION);
+    const foreign = specifiers.filter((s) => !s.startsWith("node:") && !s.startsWith("./") && s !== EXTENSION);
     expect(foreign).toEqual([]);
 
     const pkg = JSON.parse(await readFile(join(PKG, "package.json"), "utf8")) as { dependencies?: object };
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual(["@lingtai/extension"]);
+    expect(pkg.dependencies).toBeUndefined();
+  });
+
+  it("sees a side-effect import, a dynamic one and a require, not only `import … from`", () => {
+    const text = [
+      'import "@lingtai/domain/register";',
+      'const store = await import("@lingtai/event-store");',
+      'const pg = require("pg");',
+      "const late = await import(name);",
+    ].join("\n");
+
+    expect(specifiersIn(text)).toEqual(["@lingtai/domain/register", "@lingtai/event-store", "pg", "<a computed import>"]);
   });
 });

@@ -16,7 +16,7 @@
  * host later, because first-party code writes infinite loops too. This is
  * started by exactly the code that starts `packages/telegram` (`#125`), gets
  * exactly the payload it gets, renders it with the same `describe` out of
- * `@lingtai/extension`, and its failure is recorded exactly the same way. It needs no credentials, which is what makes it the right first crossing
+ * `packages/extension`, and its failure is recorded exactly the same way. It needs no credentials, which is what makes it the right first crossing
  * rather than merely the easy one.
  *
  * ## Why this is its own entry point and not a `lingtai` subcommand
@@ -30,7 +30,7 @@
  * convenience.
  *
  * So the file is the command. `node apps/cli/src/notify.ts` loads this module
- * and `@lingtai/extension`, which depends on nothing; it needs no database and
+ * and `packages/extension`, which depends on nothing; it needs no database and
  * no credentials, and is the same shape as `packages/telegram/src/cli.ts`. That is also the honest
  * version of 0037's open note about one process per event: this one starts in
  * milliseconds because there is nothing in it.
@@ -44,8 +44,15 @@
  * `PluginFailed` (0037 §7) and acts on in no other way.
  */
 import { spawn } from "node:child_process";
-import { describe, isMain, parsePayload, readStdin } from "@lingtai/extension";
-import type { Notification } from "@lingtai/extension";
+// By path, not by package name, for the reason the `run:` line is a path: this
+// file is started from whatever the daemon's checkout holds, and a merge reaches
+// that checkout without a `pnpm install`. A workspace name added in the same
+// merge would not resolve there, and every notification — the approvals that
+// worked the day before included — would become `PluginFailed` until somebody
+// reinstalled. A path into a package that depends on nothing needs no
+// `node_modules` at all.
+import { describe, isMain, parsePayload, readStdin } from "../../../packages/extension/src/index.ts";
+import type { Notification } from "../../../packages/extension/src/index.ts";
 
 export interface NotifyChannel {
   readonly name: string;
