@@ -56,7 +56,7 @@ function timeline(): Envelope[] {
   return [
     at("2026-09-04T17:12:20Z", "GateRequested", gate("prepared", "install")),
     at("2026-09-04T17:12:20Z", "GateStarted", gate("prepared", "install")),
-    at("2026-09-04T17:12:26Z", "GatePassed", { ...gate("prepared", "install"), evidence: "ok" }),
+    at("2026-09-04T17:12:26Z", "GatePassed", { ...gate("prepared", "install"), evidence: "ok", findings: [] }),
     at("2026-09-04T17:12:30Z", "RunStarted", {
       workItemId: "wi-lingtai-59",
       invocation: { command: "claude", args: [], tier: "guarded", limits: { turns: 150, wallMs: 3_600_000 } },

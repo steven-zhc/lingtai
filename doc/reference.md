@@ -101,6 +101,7 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `GatePoint`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
+| `GatePassed` | 2 → 3 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v2 pass gets `[]`, not a parse of that prose, which is untouched |
 
 Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
 `packages/domain/src/events.ts`; everything absent from it is 1.

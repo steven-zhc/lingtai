@@ -249,7 +249,7 @@ describe("attemptOutcome", () => {
     const e = stream("run-1");
     const outcome = attemptOutcome([
       e("GateStarted", gate("install")),
-      e("GatePassed", { ...gate("install"), evidence: "ok" }),
+      e("GatePassed", { ...gate("install"), evidence: "ok", findings: [] }),
     ], BUDGET);
 
     expect(outcome.evidence).toBeNull();

@@ -176,7 +176,17 @@ export const UPCASTERS: UpcastRegistry = {
   }) },
   GateRequested: { 1: gatePointRenamed },
   GateStarted: { 1: gatePointRenamed },
-  GatePassed: { 1: gatePointRenamed },
+  GatePassed: {
+    1: gatePointRenamed,
+    /**
+     * 2 → 3: `findings` was added (#135). An empty array, and unlike the nulls
+     * above it is not a guess: a v2 pass's findings exist only as prose inside
+     * `evidence`, which is untouched, and parsing that string back into
+     * structure would be the log claiming a severity and a line nobody recorded
+     * as such. Empty says *none recorded here*; the prose still says the rest.
+     */
+    2: (data) => ({ ...(data as object), findings: [] }),
+  },
   GateFailed: { 1: gatePointRenamed },
   GateWaived: { 1: gatePointRenamed },
   ApprovalRequested: { 1: gatePointRenamed },

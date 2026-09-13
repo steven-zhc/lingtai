@@ -448,7 +448,6 @@ export const EndActionsResolved = z.object({
 
 export const GateRequested = z.object(gateBase);
 export const GateStarted = z.object(gateBase);
-export const GatePassed = z.object({ ...gateBase, evidence: z.string() });
 /**
  * One finding, as a reviewer reported it.
  *
@@ -466,6 +465,22 @@ const Finding = z.object({
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: z.string(),
   severity: z.enum(["blocker", "major", "minor"]),
+});
+
+/**
+ * A pass carries its findings too (`#135`).
+ *
+ * A `minor` does not refuse, so a review whose worst finding is one passes —
+ * and before this field everything it said was flattened into `evidence`, on a
+ * gate nobody opens because it passed. `evidence` is what a person reads and
+ * `findings` is what a program reads; neither replaces the other. A pass with
+ * nothing to say carries an empty array, never an absent field
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
+ */
+export const GatePassed = z.object({
+  ...gateBase,
+  evidence: z.string(),
+  findings: z.array(Finding),
 });
 
 export const GateFailed = z.object({
@@ -1317,7 +1332,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   GatesResolved: 2,
   GateRequested: 2,
   GateStarted: 2,
-  GatePassed: 2,
+  // 3: added `findings`, the shape `GateFailed` carries, so a minor on a
+  // passing review is structured rather than prose inside `evidence` (#135).
+  GatePassed: 3,
   GateFailed: 2,
   GateWaived: 2,
   ApprovalRequested: 2,

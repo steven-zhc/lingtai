@@ -219,14 +219,19 @@ describe("the gate point rename", () => {
     ApprovalRevoked: { by: "human:steven", reason: "force-push" },
   };
 
+  /** What a later step adds on the way up; the rename touches nothing else. */
+  const later: Partial<Record<(typeof GATE_CARRYING)[number], object>> = {
+    GatePassed: { findings: [] },
+  };
+
   it.each(GATE_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
     const v1 = { ...base, ...extra[type], gate: "diff" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, gate: "proposed" });
+    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type], gate: "proposed" });
   });
 
   it.each(GATE_CARRYING)("leaves a v1 %s at another point alone", (type) => {
     const v1 = { ...base, ...extra[type], gate: "merge", action: "human" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual(v1);
+    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type] });
   });
 
   /**
@@ -252,10 +257,52 @@ describe("the gate point rename", () => {
     expect(up.points[2]!.actions).toEqual(["build", "review"]);
   });
 
-  it("is the only reason those nine moved, so none of them is at v1", () => {
+  it("moved all nine past v1, and none of them is still there", () => {
     for (const type of [...GATE_CARRYING, "GatesResolved"] as const) {
-      expect(SCHEMA_VER[type], `${type} carries a GatePoint and must be past v1`).toBe(2);
+      expect(SCHEMA_VER[type], `${type} carries a GatePoint and must be past v1`).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+/**
+ * A pass that carries its findings (#135).
+ *
+ * A `minor` does not refuse, so before this step a review's third tier was
+ * recorded only as prose inside `evidence`. The step adds an empty array rather
+ * than parsing that prose back: `evidence` is untouched and still says what it
+ * said, and a severity read out of a string is a claim nobody recorded.
+ */
+describe("a pass with findings", () => {
+  const v2 = {
+    gate: "proposed",
+    action: "review",
+    runId: "run-01JX",
+    onSha: "sha-a",
+    evidence: "minor packages/actions/src/command.ts:313 — readResult treats every readFile failure as empty",
+  };
+
+  it("walks a v2 GatePassed up with an empty findings array and its prose intact", () => {
+    expect(parseStoredPayload("GatePassed", 2, v2)).toEqual({ ...v2, findings: [] });
+  });
+
+  it("leaves a v3 GatePassed and its findings alone", () => {
+    const v3 = {
+      ...v2,
+      findings: [
+        {
+          file: "packages/actions/src/command.ts",
+          line: 313,
+          claim: "readResult treats every readFile failure as empty",
+          failureScenario: "a result file that exists but is unreadable is read as no result",
+          severity: "minor",
+        },
+      ],
+    };
+    expect(parseStoredPayload("GatePassed", 3, v3)).toEqual(v3);
+  });
+
+  it("is at v3", () => {
+    expect(SCHEMA_VER.GatePassed).toBe(3);
   });
 });
 

@@ -7,12 +7,14 @@
  */
 import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
+import { parsePayload } from "@lingtai/domain";
 import {
   buildReviewPrompt,
   createAgentGate,
   parseFindings,
   verdictFor,
 } from "../src/agent-gate.ts";
+import { type GateEvent, runGatePipeline } from "../src/gate.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
 
@@ -311,6 +313,46 @@ describe("the gate", () => {
     expect(result.verdict).toBe("failed");
     expect(result.findings).toHaveLength(1);
     expect(result.evidence).toContain("src/x.ts:42");
+  });
+
+  /**
+   * The rubric's third tier (#135). A minor does not refuse, so the gate passes
+   * — and before `GatePassed` carried findings, everything the reviewer said
+   * survived only as prose inside `evidence`. Asserted on the event the pipeline
+   * emits, because the event is what a program reads back.
+   */
+  it("passes on a minor-only review and leaves its findings structured on the event", async () => {
+    const minor = finding({ severity: "minor", line: 313, file: "packages/actions/src/command.ts" });
+    const events: GateEvent[] = [];
+    const result = await runGatePipeline({
+      point: "proposed",
+      gates: [gateWith(outcome({ text: JSON.stringify({ findings: [minor] }) }))],
+      context,
+      emit: (e) => void events.push(e),
+    });
+
+    expect(result.ok).toBe(true);
+    const passed = events.at(-1);
+    expect(passed?.type).toBe("GatePassed");
+    if (passed?.type !== "GatePassed") return;
+    expect(passed.data.findings).toEqual([minor]);
+    // The prose stays: it is what a person reads.
+    expect(passed.data.evidence).toContain("packages/actions/src/command.ts:313");
+    expect(parsePayload("GatePassed", passed.data)).toEqual(passed.data);
+  });
+
+  it("writes an empty array, not an absent field, on a pass with nothing to say", async () => {
+    const events: GateEvent[] = [];
+    await runGatePipeline({
+      point: "proposed",
+      gates: [gateWith(outcome({ text: '{"findings":[]}' }))],
+      context,
+      emit: (e) => void events.push(e),
+    });
+
+    const passed = events.at(-1);
+    expect(passed?.type).toBe("GatePassed");
+    expect(passed?.data).toHaveProperty("findings", []);
   });
 
   it("fails when the reviewer's answer cannot be read", async () => {

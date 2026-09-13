@@ -183,7 +183,12 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
     });
 
     if (result.verdict === "passed") {
-      await emit({ type: "GatePassed", data: { ...base, evidence: result.evidence } });
+      // Findings go on a pass as well as a refusal: a minor does not stop the
+      // run, and a finding left only in `evidence` is one nothing can read (#135).
+      await emit({
+        type: "GatePassed",
+        data: { ...base, evidence: result.evidence, findings: result.findings },
+      });
       continue;
     }
 

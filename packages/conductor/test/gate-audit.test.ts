@@ -90,7 +90,7 @@ async function landedItem(
     ...ran.map((r) => ({
       type: "GatePassed",
       actor: "conductor",
-      data: parsePayload("GatePassed", { ...r, runId, onSha: SHA, evidence: "ok" }),
+      data: parsePayload("GatePassed", { ...r, runId, onSha: SHA, evidence: "ok", findings: [] }),
     })),
   ]);
 

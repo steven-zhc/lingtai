@@ -106,7 +106,7 @@ describe("reduceRun", () => {
       e("RunProposedCompletion", { headSha: "sha-a" }),
       e("GateRequested", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a" }),
       e("GateStarted", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a" }),
-      e("GatePassed", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0" }),
+      e("GatePassed", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0", findings: [] }),
       e("GateFailed", {
         gate: "proposed", action: "review",
         runId: "run-01JX",
@@ -141,7 +141,7 @@ describe("reduceRun", () => {
     const approved = [
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
-      e("GatePassed", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0" }),
+      e("GatePassed", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0", findings: [] }),
       e("ApprovalGranted", {
         gate: "merge",
         action: "human",

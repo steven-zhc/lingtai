@@ -87,7 +87,7 @@ const KILLED = "the run was killed by an operator timeout before it produced any
 const passed = (runId: string, point: string, action: string, onSha: string) => ({
   type: "GatePassed",
   actor: "conductor",
-  data: { gate: point, action, runId, onSha, evidence: "exit 0" },
+  data: { gate: point, action, runId, onSha, evidence: "exit 0", findings: [] },
 });
 
 const started = (n: number) => ({
@@ -144,7 +144,7 @@ async function seed(): Promise<void> {
     started(3),
     { type: "RunProducedDiff", actor: "conductor", data: { branch: "agent/3", headSha: "sha-a", files: 3, insertions: 40, deletions: 2 } },
     { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-a" } },
-    { type: "GatePassed", actor: "conductor", data: { gate: "proposed", action: "build", runId: run(3), onSha: "sha-a", evidence: "exit 0" } },
+    { type: "GatePassed", actor: "conductor", data: { gate: "proposed", action: "build", runId: run(3), onSha: "sha-a", evidence: "exit 0", findings: [] } },
     { type: "GateFailed", actor: "conductor", data: { gate: "proposed", action: "review", runId: run(3), onSha: "sha-a", evidence: "two findings", findings: [] } },
   ]);
 
