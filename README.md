@@ -93,18 +93,43 @@ flowchart LR
   AG --> D{{proposed}}
   D --> M{{merge}}
   M --> I[integrate<br/>advisory lock]
-  I --> E{{end}}
-  E --> L[landed]
+  I -->|merged| L[landed]
+  L --> E{{end}}
+
+  D -->|refuses| R
+  M -->|refuses| R
+  I -->|conflict| R
+  R[["a refusal, carrying what refused it"]]
+  R -->|"× runtime.limits.rounds<br/>the same worktree"| AG
+  R -->|"rounds spent on a refused review<br/>× runtime.limits.restarts — from the base"| C
+  R -->|"every ceiling spent"| Y
+  Y(["waiting on you"]) --> E
 
   classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
   classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
+  classDef back fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
   class A,P,D,M,E gate;
   class Q,C,AG,I,L core;
+  class R,Y back;
 ```
 
 The rectangles are the loop's own work and are not configurable. The hexagons
 are the five points where the conductor stops and waits for a verdict — and what
 runs at each is the recipe's.
+
+**It is not a line, and `end` is not the last thing that can happen — it is the
+thing that happens to every outcome.** Landing and waiting on you both reach it,
+which is why its actions are effects and it cannot refuse.
+
+A refusal is answered by the agent that is still standing in the worktree, not
+by a new run: that is the whole of
+[0039](doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md), and
+`runtime.limits.rounds` is how many times. When those are spent on a *refused
+review* — an opinion that the approach is wrong, rather than a red check or a
+moved base, for which the work is still there — the claim is released and the
+next one starts over from the base carrying every finding, `runtime.limits.restarts`
+times ([0040](doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+Only when every ceiling is spent does it reach a person.
 
 | Point | When | May refuse? |
 |---|---|---|
