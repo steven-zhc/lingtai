@@ -120,6 +120,12 @@ describe("the work loop", () => {
 
     const started = loop.start();
     try {
+      // Inside the first pass before appending, not merely after calling
+      // `start`. `start` reads the log's head before it subscribes, so an
+      // append that commits before that read is behind the subscription and
+      // never wakes anything: one pass, and `until` below times out at 20s.
+      // That is how this failed agent/147's build, on nothing agent/147 changed.
+      await until(() => n >= 1);
       const ids = [1, 2, 3].map(() => `wi-esctest-${crypto.randomUUID().slice(0, 8)}`);
       for (const id of ids) {
         created.add(id);
