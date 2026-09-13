@@ -362,8 +362,8 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
          * that has nothing to do with any diff (`#133`).
          *
          * **The classification is the adapter's, not read again here.** `kind`
-         * is `neverStarted`'s three checkable facts — zero turns, zero cost,
-         * `is_error` — and 0031 §1's whole point is that no reading of the
+         * is `neverStarted`'s three checkable facts — at most the one turn the
+         * runtime's own refusal counts as, zero cost, an error — and 0031 §1's whole point is that no reading of the
          * message may decide this. Re-deriving it from `outcome.turns` and
          * `outcome.costUsd` at this seam would give the classification a second
          * home, and the second home is where the two would drift: a receipt

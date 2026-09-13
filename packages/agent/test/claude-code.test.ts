@@ -419,6 +419,46 @@ describe("run", () => {
   });
 
   /**
+   * **The receipt the wall actually printed**, which 0031's fixture above was
+   * not (`#133`, 0041).
+   *
+   * Recorded by the run log on 2026-09-10, a day after the classification
+   * landed, for every run that met the session limit and for `#123`'s reviewer:
+   *
+   *     receipt success · 1 turns · $0.00 · exit 1
+   *     run     failed — crash: You've hit your session limit · resets 2pm …
+   *
+   * Subtype `success`, one turn — the runtime's own refusal — no cost, exit 1.
+   * Every one of them went down as `crash`, so the gate and the dispatch path
+   * both took the per-item road 0031 exists to close. Streamed, because that is
+   * how the adapter is spawned.
+   */
+  it("turns the session limit's own receipt into never-started", async () => {
+    const said = "You've hit your session limit · resets 2pm (America/Chicago)";
+    const binary = await fakeStream(
+      stream({ ...RECEIPT, subtype: "success", is_error: true, num_turns: 1, total_cost_usd: 0, result: said }),
+      1,
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.failure?.kind).toBe("never-started");
+    expect(outcome.failure?.detail).toBe(said);
+    expect(outcome.turns).toBe(1);
+  });
+
+  /** And when the receipt does not say `is_error`, the exit code does. */
+  it("reads a non-zero exit beside a free one-turn receipt as never-started", async () => {
+    const said = "You've hit your session limit · resets 2pm (America/Chicago)";
+    const binary = await fakeStream(
+      stream({ ...RECEIPT, subtype: "success", is_error: false, num_turns: 1, total_cost_usd: 0, result: said }),
+      1,
+    );
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.failure?.kind).toBe("never-started");
+  });
+
+  /**
    * The false positive that would matter: output nobody can parse leaves turns
    * at zero and cost at null out of *ignorance*, and reading that as "never
    * started" would stop the whole conductor over one broken run.
@@ -645,14 +685,19 @@ describe("the agent's output in the run log", () => {
 });
 
 describe("neverStarted", () => {
-  /** Zero turns, zero cost, an error. Three facts, and no words. */
+  /** At most one turn, zero cost, an error. Three facts, and no words. */
   it("is the three facts and nothing else", () => {
     expect(neverStarted({ turns: 0, costUsd: 0, isError: true })).toBe(true);
     // A receipt that recorded no cost recorded no spend.
     expect(neverStarted({ turns: 0, costUsd: null, isError: true })).toBe(true);
+    // The wall as it actually reports: the runtime counts its own refusal as
+    // the turn, and a turn nothing billed was never answered by a model (0041).
+    expect(neverStarted({ turns: 1, costUsd: 0, isError: true })).toBe(true);
 
-    // A run that took a turn failed at its task, not at beginning.
-    expect(neverStarted({ turns: 1, costUsd: 0, isError: true })).toBe(false);
+    // A run that took turns failed at its task, not at beginning.
+    expect(neverStarted({ turns: 2, costUsd: 0, isError: true })).toBe(false);
+    // Nor does one turn that was paid for.
+    expect(neverStarted({ turns: 1, costUsd: 0.01, isError: true })).toBe(false);
     // A run that spent money started.
     expect(neverStarted({ turns: 0, costUsd: 0.02, isError: true })).toBe(false);
     // And a clean ending is not a failure at all.

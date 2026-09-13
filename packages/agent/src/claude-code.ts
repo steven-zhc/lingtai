@@ -500,9 +500,15 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
               // and only of it: `is_error` is the runtime saying so, and output
               // that would not parse leaves turns at zero for a reason that is
               // ignorance rather than evidence — which is a crash, as it was.
+              // A receipt beside a non-zero exit is the runtime saying so too:
+              // the wall's receipt is subtype `success` and exits 1 (0041).
               kind:
                 parsed &&
-                neverStarted({ turns, costUsd, isError: parsed.is_error === true })
+                neverStarted({
+                  turns,
+                  costUsd,
+                  isError: parsed.is_error === true || (code !== null && code !== 0),
+                })
                   ? "never-started"
                   : "crash",
               // Whatever went wrong, something says so. A run that ends with no

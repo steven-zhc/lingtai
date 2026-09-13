@@ -120,11 +120,11 @@ function budgetOf(plan: GatePlan, data: Record<string, unknown>): number | null 
  */
 function stateOf(planned: readonly string[], seen: readonly PointState[]): PointState {
   if (planned.length === 0 && seen.length === 0) return "skipped";
-  if (seen.includes("failed")) return "failed";
-  // Above `running` for the reason `failed` is: it is the ending, and the point
-  // has no later action to reach — the pipeline stopped. Below `failed` because
-  // a refusal that did happen outranks a verdict that never did.
+  // Above `failed`, because it is always the ending: the pipeline and the pass
+  // both stop there (0041 §4), so a `failed` beside it on the same point is a
+  // refusal from an earlier round, about a commit that is no longer the head.
   if (seen.includes("never-ran")) return "never-ran";
+  if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";
   const settled = seen.filter((s) => s === "passed" || s === "waived");
   // Fewer verdicts than actions means the point is part-way through, which is

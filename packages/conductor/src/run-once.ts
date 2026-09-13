@@ -1498,23 +1498,35 @@ export function runOnce(
        * `--no-merge`, which this repository always passes — and the lane would
        * record `gate-failed`. All three are sentences about the diff.
        *
-       * **Pushed first**, with the lease the loop's own push uses: the next
-       * attempt's prompt names `agent/<n>` (`attempts.ts`), and a pass that
-       * stopped for the account should leave the work where it can be read.
+       * **Stood down first, then pushed**, with the lease the loop's own push
+       * uses: the next attempt's prompt names `agent/<n>` (`attempts.ts`), and a
+       * pass that stopped for the account should leave the work where it can be
+       * read. But the push is a courtesy to the next attempt and the pause is the
+       * answer to the account, so a rejected lease or a dropped network must not
+       * turn this ending into a push failure — that would release the item as
+       * `push: …`, leave the conductor running, and let the next claim meet the
+       * same wall (0031 §3). A push that fails is said, and the ending stands.
        */
       const agentNeverStarted = (what: Exclude<NeverStarted, { of: "run" }>, detail: string) =>
         Effect.gen(function* () {
           const who =
             what.of === "gate" ? `the ${what.gate} gate's agent` : `the agent fixing ${what.action}`;
           runLog.note(what.of, `${who} never started — ${detail}`);
-          yield* gitInWorktree([
-            "push",
-            `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-            "origin",
-            `HEAD:refs/heads/${branch}`,
-          ]).pipe(failing("push"));
-          lease = head;
           yield* standDownConductor(what, detail);
+          const pushed = yield* Effect.either(
+            gitInWorktree([
+              "push",
+              `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+              "origin",
+              `HEAD:refs/heads/${branch}`,
+            ]),
+          );
+          if (Either.isRight(pushed)) {
+            lease = head;
+          } else {
+            runLog.note("push", `not pushed, and the pass still ends for the account — ${pushed.left.detail}`);
+          }
+          const unpushed = Either.isLeft(pushed) ? ` (and ${branch} was not pushed: ${said(pushed.left.detail, 120)})` : "";
           return yield* new Stopped({
             stage: what.of,
             detail: `${who} never started: ${detail}`,
@@ -1523,8 +1535,8 @@ export function runOnce(
             // What is true of the diff is that nobody judged it.
             release:
               what.of === "gate"
-                ? `the ${what.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(detail)}`
-                : `the agent fixing ${what.action} never started, so nothing answered the refusal: ${said(detail)}`,
+                ? `the ${what.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(detail)}${unpushed}`
+                : `the agent fixing ${what.action} never started, so nothing answered the refusal: ${said(detail)}${unpushed}`,
           });
         });
 

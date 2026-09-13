@@ -160,7 +160,7 @@ export interface RunOutcome {
  * Whether a receipt describes a run that failed to **begin** rather than to
  * finish ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1).
  *
- * Three facts and nothing else: **zero turns, zero cost, an error**. Not one
+ * Three facts and nothing else: **at most one turn, zero cost, an error**. Not one
  * word of the message is read, and that is the decision rather than an
  * omission. Claude Code 2.1.263's result subtypes carry no quota member —
  * `success`, `error_during_execution`, `error_max_turns`,
@@ -177,13 +177,24 @@ export interface RunOutcome {
  * it on. What must **not** be inferred is the error — an unparseable receipt
  * leaves turns at zero and cost at null by ignorance rather than by evidence,
  * so a caller has to have actually seen the runtime say so.
+ *
+ * **One turn, not zero, because that is what the wall actually reports**
+ * ([0041](../../../doc/decisions/0041-a-gate-that-never-ran.md)). 0031's
+ * fixture said `num_turns: 0`; the receipt Claude Code printed at the session
+ * limit on 2026-09-10 — after this function existed — was
+ * `success · 1 turns · $0.00 · exit 1`, recorded in the run log, and every one
+ * of those runs and `#123`'s reviewer went down as a `crash`. The runtime counts
+ * its own refusal message as the turn. Cost is what carries the fact: a turn
+ * that reached a model is billed, and a turn that cost nothing was the runtime
+ * answering for itself. A second turn would need a model to have replied, so
+ * the bound stays at one.
  */
 export function neverStarted(receipt: {
   turns: number;
   costUsd: number | null;
   isError: boolean;
 }): boolean {
-  return receipt.isError && receipt.turns === 0 && (receipt.costUsd ?? 0) === 0;
+  return receipt.isError && receipt.turns <= 1 && (receipt.costUsd ?? 0) === 0;
 }
 
 /**

@@ -466,15 +466,6 @@ function oneLine(text: string | null): string | null {
  * gate-shaped summary could never name.
  */
 function refusalOn(run: RunView): Deciding | null {
-  const refused = [...run.gates].reverse().find((g) => g.state === "failed");
-  if (refused) {
-    return {
-      attempt: run.attempt,
-      source: refused.gate.replace(":", " / "),
-      line: oneLine(refused.evidence) ?? run.outcome.detail ?? "refused, and said nothing",
-    };
-  }
-
   /**
    * A gate that never ran stopped this attempt without refusing it (#133).
    *
@@ -483,6 +474,13 @@ function refusalOn(run: RunView): Deciding | null {
    * would fall through to an earlier attempt's genuine refusal, putting an old
    * red line at the top of a page whose actual answer is that the account ran
    * out. The line says nothing judged the diff, and names no refusal.
+   *
+   * **Before the refusals, not after.** `foldRun` keeps one entry per gate for
+   * the whole attempt, so a `failed` from an earlier round of the same pass is
+   * still in `run.gates` — about a commit that is no longer the head. A gate
+   * that never ran is always the last thing a pass did (the pipeline and the
+   * pass both stop there, 0041 §4), so when there is one it is the ending, and
+   * any refusal beside it is history.
    */
   const never = [...run.gates].reverse().find((g) => g.state === "never-ran");
   if (never) {
@@ -490,6 +488,15 @@ function refusalOn(run: RunView): Deciding | null {
       attempt: run.attempt,
       source: never.gate.replace(":", " / "),
       line: `never ran — nothing judged this diff: ${oneLine(never.evidence) ?? "no detail was recorded"}`,
+    };
+  }
+
+  const refused = [...run.gates].reverse().find((g) => g.state === "failed");
+  if (refused) {
+    return {
+      attempt: run.attempt,
+      source: refused.gate.replace(":", " / "),
+      line: oneLine(refused.evidence) ?? run.outcome.detail ?? "refused, and said nothing",
     };
   }
 

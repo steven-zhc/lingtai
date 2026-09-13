@@ -213,6 +213,38 @@ describe("the evidence", () => {
   });
 
   /**
+   * The same attempt, two rounds: a refusal the fixer answered, then the quota.
+   *
+   * `foldRun` keeps one entry per gate for the whole attempt, so round 1's
+   * `proposed:test` refusal is still there when round 2's review never runs —
+   * and `test` never runs again to replace it. Looking for a refusal first put
+   * that stale line, about a commit that is no longer the head, where the quota
+   * that actually ended the pass should be.
+   */
+  it("names the gate that never ran over an earlier round's refusal in the same attempt", () => {
+    const FIXED = "c".repeat(40);
+    const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
+      e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
+      e(RUN_1, "GatePassed", { gate: "proposed", action: "review", onSha: SHA, evidence: "ok" }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "test", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "RunProposedCompletion", { headSha: FIXED }),
+      e(RUN_1, "GateNeverRan", {
+        gate: "proposed",
+        action: "review",
+        onSha: FIXED,
+        detail: "You've hit your session limit · resets 2pm (America/Chicago)",
+      }),
+      e(RUN_1, "RunFinished", { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
+    ]);
+
+    const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 })], [run]);
+
+    expect(standing.deciding?.source).toBe("proposed / review");
+    expect(standing.deciding?.line).toContain("never ran");
+    expect(standing.deciding?.line).not.toContain("TS2741");
+  });
+
+  /**
    * The case a gate-shaped summary could never name: a run that died before any
    * verdict landed. `#89`'s `error_max_turns` is exactly this.
    */

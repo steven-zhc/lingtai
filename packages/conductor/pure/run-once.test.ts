@@ -803,6 +803,61 @@ describe("runOnce, with no world to run in", () => {
   });
 
   /**
+   * **A push that fails does not take the stand-down with it.**
+   *
+   * The push is for the next attempt; the pause is the answer to the account.
+   * When the push went first and failed, the pass ended as `push: …` — released
+   * with no pause, so the next claim met the same wall and the card blamed a
+   * push for a quota. A lease `agent/<n>` moved past, or a dropped network, is
+   * all it took.
+   */
+  it("stands the conductor down even when the branch will not push", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const fake = fakePorts(did, store);
+    const ports: RunPorts = {
+      ...fake,
+      repo: {
+        ...fake.repo,
+        git: (args, o) =>
+          args[0] === "push"
+            ? Effect.fail({ _tag: "RepoFailed", operation: "git push", detail: "stale info: agent/7 moved" } as never)
+            : fake.repo.git(args, o),
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("gate");
+
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const reason = (item.find((e) => e.type === "WorkItemReleased")!.data as { reason: string }).reason;
+    expect(reason).toContain("never ran");
+    expect(reason).not.toMatch(/^push:/);
+    // Said, rather than swallowed: the next attempt will not find the branch.
+    expect(reason).toContain("was not pushed");
+  });
+
+  /**
    * **The third agent in a pass meets the same wall.**
    *
    * A refused review buys a fixer (0038), and the fixer asks the same account.

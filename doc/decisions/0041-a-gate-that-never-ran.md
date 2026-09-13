@@ -66,6 +66,25 @@ parse leaves turns at zero out of ignorance rather than evidence, which is a
 crash and must stay one, and a second derivation at this seam is where the two
 would drift.
 
+**And the adapter's facts were wrong about the wall, so they change there.**
+0031's fixture was `num_turns: 0`. What Claude Code actually printed at the
+session limit on 2026-09-10 — a day after the classification landed — is in the
+run log of every run that met it:
+
+```
+receipt success · 1 turns · $0.00 · exit 1
+run     failed — crash: You've hit your session limit · resets 2pm (America/Chicago)
+```
+
+One turn, which is the runtime's own refusal message; subtype `success`; exit 1.
+`#123`'s reviewer was this receipt, recorded as `crash`, and a gate that took the
+adapter's `never-started` would never have seen one. So `neverStarted` is **at
+most one turn**, zero cost, an error — cost is what carries the fact, since a
+turn a model answered is billed — and the error is `is_error` *or* a non-zero
+exit beside a parsed receipt, both of which are the runtime saying so. Still
+not one word of the message. The gate keeps taking the adapter's answer; the
+answer is now true of the wall.
+
 ### 2. The event exists so that the absence of a verdict is readable
 
 The alternative was to emit nothing: the point is reached, `GateRequested` and
@@ -128,9 +147,12 @@ ends there: no merge point, no `ApprovalRequested`, no block. Under
 `--no-merge` — the flag this repository passes every time — the hold would
 otherwise ask a person to *merge anyway* over a gate that refused nothing.
 
-The branch is pushed first, with the loop's own lease. Pushing is not merging,
-and the next attempt's prompt names `agent/<n>` (`attempts.ts`), so the work the
-implementer was paid for is where that attempt can read it.
+The conductor is stood down first, and the branch is pushed after, with the
+loop's own lease. Pushing is not merging, and the next attempt's prompt names
+`agent/<n>` (`attempts.ts`), so the work the implementer was paid for is where
+that attempt can read it. A push that fails is said in the release reason and
+does not replace the ending: a rejected lease must not turn an account-wide stop
+into a per-item `push:` release with the conductor still running.
 
 ## What this does not add: a lane, or a run failure
 
@@ -154,8 +176,14 @@ moving.
 - The card's line for such an item says the gate never ran and that nothing
   judged the diff, and names no refusal. Not *nothing was spent*, which is the
   run-level sentence and would be false: the implementer was paid.
-- `attempts.ts` carries none of it into the next prompt: a quota has nothing to
-  say to an agent about the code.
+- `attempts.ts` gives the next prompt no *evidence* block for it — the failure
+  section is empty on purpose, because a quota has nothing to say to an agent
+  about the code. It does **not** keep it out of the prompt: the release reason,
+  quota text included, is `WorkItemReleased.reason`, which `priorAttempts`
+  stores as the attempt's ending (`attempts.ts:146`) and `attemptBrief` renders
+  in the *how it ended* column (`attempts.ts:325`). So the wording
+  `agentNeverStarted` releases with is prompt content, and changing it changes
+  what the next agent reads.
 - `standDown` takes a `NeverStarted` — `run`, a named gate, or a fix round — and
   0031's sentence is what `run` produces, unchanged. A fourth depth would need a
   fourth clause, and would not compile without one.
