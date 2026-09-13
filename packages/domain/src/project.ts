@@ -159,10 +159,11 @@ export function passTransition(
  *
  * What changes from one request to the next is nearly always a number: GitHub's
  * request ID (`8C3A:1F2B:3D4E5F`), the address a name resolved to, the time a
- * rate limit resets. Compared verbatim, each would be a new refusal on every
- * sweep. So every whole word of hex characters and the `-:.` between them that
- * contains a digit is one token.
+ * rate limit resets (`2026-09-12T10:00:00Z`), a retry-after or a duration
+ * (`42s`, `30012ms`). Compared verbatim, each would be a new refusal on every
+ * sweep. So every run of word characters and the `-:.` between them that
+ * contains a digit is one token — whatever letters the digits are attached to.
  */
 export function refusalText(detail: string): string {
-  return detail.replace(/\b[0-9a-f][0-9a-f:.-]*\b/gi, (m) => (/\d/.test(m) ? "#" : m));
+  return detail.replace(/[\w:.-]+/g, (m) => (/\d/.test(m) ? "#" : m));
 }

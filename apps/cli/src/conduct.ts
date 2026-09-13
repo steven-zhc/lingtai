@@ -120,6 +120,9 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // which branch it was reading (#148).
       where.ref = project.base ?? (await client.defaultBranch());
       const resolved = await currentRecipe(project, client, where.ref);
+      // Looked at, now — not when the run below returns, which can be an hour
+      // away, all of it with a refusal on record for a project being worked.
+      await where.looked();
 
       const common = {
         project,
@@ -198,6 +201,12 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
 /** How far a project's work got before it refused: the branch, once known. */
 export interface Where {
   ref: string | null;
+  /**
+   * The project was looked at without refusing: records the recovery now, while
+   * the rest of the work — a run, up to `runtime.limits.wall` — is still ahead.
+   * Idempotent, since `passTransition` appends nothing once nothing is on record.
+   */
+  looked: () => Promise<void>;
 }
 
 export interface ProjectsOptions {
@@ -205,7 +214,9 @@ export interface ProjectsOptions {
   /**
    * One project's share of the pass. Throwing is refusing it. `"looked-away"`
    * is returning before anything was read, which is neither a refusal nor a
-   * recovery. Sets `where.ref` once it knows the branch.
+   * recovery. Sets `where.ref` once it knows the branch, and calls `where.looked`
+   * once it has read enough to know it does not refuse; `"looked"` calls it on
+   * return if the work did not.
    */
   work: (project: ProjectState, where: Where) => Promise<"looked" | "looked-away">;
   codeSha: string | null;
@@ -229,12 +240,13 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
     const name = project.project;
     if (!name || !project.owner) continue;
     outcome.projects += 1;
-    const where: Where = { ref: null };
+    const where: Where = {
+      ref: null,
+      looked: () => record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log }),
+    };
 
     try {
-      if ((await options.work(project, where)) === "looked") {
-        await record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log });
-      }
+      if ((await options.work(project, where)) === "looked") await where.looked();
     } catch (err) {
       // One project's problem is not the pass's. A misconfigured repository
       // must not stop the others from being worked.

@@ -118,4 +118,34 @@ describe("a pass that refuses a project", () => {
     });
     expect(await types(HEALTHY)).toEqual(before);
   });
+
+  /**
+   * A restart whose first pass resolves the recipe and then runs an agent for
+   * most of an hour: the recovery is on the log while the run is in flight, and
+   * stays there if the run then throws.
+   */
+  it("records the recovery once the project is looked at, before the rest of its work returns", async () => {
+    await sweep(true, OLD);
+    expect((await types(BROKEN)).at(-1)).toBe("ProjectRefused");
+
+    let midRun: string | undefined;
+    await conductProjects({
+      projects: [(await loadProject(BROKEN, store))!],
+      codeSha: NEW,
+      store,
+      outcome: { projects: 0, ran: 0, refused: [] },
+      log: () => {},
+      work: async (_project, where) => {
+        where.ref = "main";
+        await where.looked();
+        // The run, in flight.
+        midRun = (await types(BROKEN)).at(-1);
+        expect((await loadProject(BROKEN, store))!.refused).toBeNull();
+        throw new Error("merge lane: 502 Bad Gateway");
+      },
+    });
+
+    expect(midRun).toBe("ProjectRecovered");
+    expect((await types(BROKEN)).slice(-2)).toEqual(["ProjectRecovered", "ProjectRefused"]);
+  });
 });

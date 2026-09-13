@@ -84,6 +84,23 @@ describe("a pass's refusal, on the project stream", () => {
     expect(refusalText(REFUSAL)).toBe(REFUSAL);
   });
 
+  /** A reset time, a retry-after, a measured duration: digits with letters attached. */
+  it("does not count a timestamp or a duration as a new refusal", () => {
+    const p = project();
+    for (let i = 0; i < 10; i++) {
+      p.pass(
+        refused(
+          OLD,
+          `rate limited, reset at 2026-09-12T1${i}:0${i}:00Z; retry after ${40 + i}s; timed out after ${30000 + i}ms`,
+        ),
+      );
+    }
+    expect(p.types()).toEqual(["ProjectConfigured", "ProjectRefused"]);
+    expect(refusalText("reset at 2026-09-12T10:00:00Z")).toBe(refusalText("reset at 2026-09-12T11:30:00Z"));
+    expect(refusalText("retry after 42s")).toBe(refusalText("retry after 7s"));
+    expect(refusalText("timed out after 30012ms")).toBe(refusalText("timed out after 1ms"));
+  });
+
   it("keeps the refusal across a reconfiguration, which says nothing about the pass", () => {
     const p = project();
     p.pass(refused());
