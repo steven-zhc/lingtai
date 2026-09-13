@@ -463,29 +463,34 @@ async function requeueHolding(
       detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
     };
   }
-  // **A block no run holds is a question about the ticket (#147), and only
-  // `answer()` ends it.** The event would be the same, and the fold cannot tell
-  // the two apart: whatever note ends a block with `runId: null` is kept as a
-  // decision and carried into every later prompt (`answersBrief`). A requeue's
-  // why — *asked by mistake, ignore* — would reach the agent as something to
-  // build.
-  if (item.lifecycle.runId === null) {
-    return {
-      ok: false,
-      workItemId,
-      detail: `${workItemId} is asking a question before any run — lingtai answer, since every attempt is told what ends it`,
-    };
-  }
+  // **A block no run holds is a question about the ticket (#147), and a requeue
+  // withdraws it rather than answering it.** The fold keeps whatever note ends
+  // such a block as a decision and carries it into every later prompt
+  // (`answersBrief`), so a requeue's why — *asked by mistake, ignore* — is
+  // written `withdrawn`, which the fold keeps nothing of. Answering is
+  // `answer()`'s. Refusing here instead left a mistaken question no way out
+  // but an answer every attempt would be told.
+  const withdrawn = item.lifecycle.runId === null;
 
   await store.append(workItemId, item.version, [
     {
       type: "WorkItemUnblocked",
       actor: options.by,
-      data: parsePayload("WorkItemUnblocked", { by: options.by, note: options.note }),
+      data: parsePayload("WorkItemUnblocked", {
+        by: options.by,
+        note: options.note,
+        ...(withdrawn ? { withdrawn: true } : {}),
+      }),
     },
   ]);
 
-  return { ok: true, workItemId, detail: `back in the queue, by ${options.by}` };
+  return {
+    ok: true,
+    workItemId,
+    detail: withdrawn
+      ? `question withdrawn, by ${options.by} — back in the queue, and no attempt is told it`
+      : `back in the queue, by ${options.by}`,
+  };
 }
 
 /**

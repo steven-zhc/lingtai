@@ -141,7 +141,12 @@ export function Standing({
   // the case #76 is about — an unregistered project, a template that is not
   // there — and a Send on a prompt nobody could compose would send whatever the
   // conductor composes later, unseen, which is the opposite of this column.
-  const sendable = outgoing !== null && outgoing.problem === null ? outgoing.attempt : null;
+  //
+  // **And not on a question asked before any run** (#147): what that block wants
+  // is an answer, and sending would put it back in the queue unanswered — the
+  // server refuses it, and a row offering only that would be #84 again.
+  const sendable =
+    outgoing !== null && outgoing.problem === null && !standing.asked ? outgoing.attempt : null;
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
@@ -342,6 +347,7 @@ export function Standing({
             <Requeue
               project={project}
               issue={issue}
+              asked={standing.asked}
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}

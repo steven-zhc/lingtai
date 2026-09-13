@@ -980,7 +980,9 @@ pnpm lingtai answer lingtai --issue 51 "the second — refuse at the hook"
 `ask` appends `WorkItemBlocked` with `runId: null` and refuses an item a run
 holds or one already asking; nothing is claimed and no worktree is cut, and the
 queue passes over it because the fold says blocked. `lingtai status` prints the
-question rather than counting it. `answer` refuses a block a run is holding —
+question rather than counting it. A question asked by mistake is withdrawn with
+`lingtai requeue ... --note "<why>"`, which writes the unblock `withdrawn` so no
+attempt is told it. `answer` refuses a block a run is holding —
 that is `approve` or `requeue` — and its choice is kept by the fold and carried
 into every later attempt's prompt, so nobody edits the issue body to reach the
 agent.

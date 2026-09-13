@@ -519,8 +519,10 @@ export function runOnce(
      * What the earlier attempts did, for this one's prompt.
      *
      * Read from the same envelopes and for the same reason the edit is: the
-     * claim below appends, and this run must not appear in its own history. Empty for a first attempt, and then everything downstream —
-     * prompt bytes, `promptVersion` — is what it was before `#82` (`attempts.ts`).
+     * claim below appends, and this run must not appear in its own history. Empty for a first attempt. A first attempt whose ticket
+     * had no question answered before it (#147) and no edit then gets
+     * everything downstream — prompt bytes, `promptVersion` — as it was before
+     * `#82` (`attempts.ts`); an answered one carries the decision from attempt 1.
      *
      * **One extra stream read, and only when there is a history.** The last
      * attempt is the one whose evidence is quoted, because it is the one the

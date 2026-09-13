@@ -238,8 +238,18 @@ export const WorkItemBlocked = z.object({
  * A person answered the block. `note` **is** the answer — `lingtai answer`'s
  * choice, or `lingtai requeue`'s why — and the fold keeps it (#147): a record
  * that can say what was asked and never what was decided is not a record.
+ *
+ * **`withdrawn`, when a question asked before any run is taken back** rather
+ * than answered — `lingtai requeue` on it. `note` is then why it was withdrawn,
+ * and the fold keeps no answer: *asked by mistake, ignore* is not a decision
+ * any attempt should be told to build. Absent on every other unblock, which is
+ * every one written before it existed.
  */
-export const WorkItemUnblocked = z.object({ by: z.string(), note: z.string() });
+export const WorkItemUnblocked = z.object({
+  by: z.string(),
+  note: z.string(),
+  withdrawn: z.literal(true).optional(),
+});
 
 /**
  * How "merged is not correct" becomes queryable. #134 and #136 were bugs filed

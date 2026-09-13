@@ -95,7 +95,9 @@ export async function ask(options: {
  *
  * The same event `requeue` appends — `WorkItemUnblocked`, whose `note` is the
  * answer — and the fold keeps it, so a replay can say what was decided and
- * every later attempt's prompt carries it.
+ * every later attempt's prompt carries it. A question that should not have been
+ * asked is withdrawn instead — `requeue()`, which writes the unblock
+ * `withdrawn` and keeps no answer.
  *
  * **Refused on a block a run is holding.** That block is about an attempt: a
  * diff waiting at a gate is approved or rejected (`lingtai approve`), and a

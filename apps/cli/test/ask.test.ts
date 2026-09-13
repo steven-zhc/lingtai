@@ -25,6 +25,8 @@ const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const ASKED = 51;
 /** Claimed, so there is no asking it anything before a run. */
 const RUNNING = 52;
+/** Asked by mistake, then withdrawn. */
+const WITHDRAWN = 53;
 
 const wi = (n: number) => workItemStream(PROJECT, n);
 const ACTOR = `human:${userInfo().username}`;
@@ -75,7 +77,7 @@ afterAll(async () => {
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");
     await c.query("delete from events where stream_id = any($1)", [
-      [projectStream(PROJECT), wi(ASKED), wi(RUNNING)],
+      [projectStream(PROJECT), wi(ASKED), wi(RUNNING), wi(WITHDRAWN)],
     ]);
     await c.query("delete from task_view where project = $1", [PROJECT]);
   } finally {
@@ -124,22 +126,29 @@ describe("lingtai ask / answer", () => {
 
   /**
    * The fold keeps whatever note ends a block with no run as a decision, and
-   * every later prompt carries it. So a requeue's why — which is about an
-   * attempt — must not be able to end one, or *asked by mistake, ignore* is
-   * what the agent is told to build.
+   * every later prompt carries it. So a requeue's why must not become one — but
+   * a question asked by mistake still has to have a way out that is not an
+   * answer, or *asked by mistake, ignore* is what the agent is told to build.
    */
-  it("refuses to requeue a question asked before any run, pointing at answer", async () => {
+  it("withdraws a question asked before any run on requeue, and keeps no answer", async () => {
+    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: "which desgin?" }, () => {})).toBe(0);
+
     const said: string[] = [];
     const code = await requeueCommand(
-      { project: PROJECT, issue: ASKED, note: "asked by mistake, ignore" },
+      { project: PROJECT, issue: WITHDRAWN, note: "asked by mistake, ignore" },
       (l) => said.push(l),
     );
-    expect(code).toBe(1);
-    expect(said.join("\n")).toContain("lingtai answer");
+    expect(code).toBe(0);
+    expect(said.join("\n")).toContain("withdrawn");
 
-    const events = await store.read(wi(ASKED));
-    expect(events.some((e) => e.type === "WorkItemUnblocked")).toBe(false);
-    expect(reduceWorkItem(events).answers).toEqual([]);
+    const events = await store.read(wi(WITHDRAWN));
+    expect(events[events.length - 1]!.data).toEqual({ by: ACTOR, note: "asked by mistake, ignore", withdrawn: true });
+    const item = reduceWorkItem(events);
+    expect(item.lifecycle.status).toBe("backlog");
+    expect(item.answers).toEqual([]);
+
+    // And it can be asked again, reworded.
+    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: "which design?" }, () => {})).toBe(0);
   });
 
   it("answers on the record, and the fold keeps what the answer was", async () => {

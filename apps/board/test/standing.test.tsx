@@ -438,6 +438,7 @@ const HELD: StandingView = {
   attempts: 2,
   runId: RUN_2,
   awaitingSha: null,
+  asked: false,
   headSha: SHA,
   failed: [],
   saidBy: null,
@@ -1010,6 +1011,23 @@ describe("the moves the column ends in", () => {
 
     expect(html).toContain("Back to the queue");
     expect(html).not.toContain("Send attempt");
+  });
+
+  /**
+   * #147. A question asked before any run wants an answer, and Send would hand
+   * it to `requeue()` — so the row offers Answer and Withdraw, and no Send
+   * either here or in the editor above it.
+   */
+  it("offers Answer and Withdraw, and no Send, on a question asked before any run", () => {
+    const html = render(
+      { ...HELD, asked: true, who: "waiting for your answer", attempt: null, attempts: 0, runId: null, deciding: null },
+      { ...OUTGOING, attempt: 1 },
+    );
+
+    expect(html).not.toContain("Send attempt");
+    expect(moves(html)).toContain('class="btn pri">Answer');
+    expect(moves(html)).toContain("Withdraw");
+    expect(moves(html).match(/btn pri/g)).toHaveLength(1);
   });
 
   it("offers no move at all on an item nobody is being asked about", () => {

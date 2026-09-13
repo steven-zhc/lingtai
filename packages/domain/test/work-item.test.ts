@@ -145,6 +145,14 @@ describe("reduceWorkItem", () => {
         by: "human:steven",
       },
     ]);
+
+    // Withdrawn rather than answered: back in the backlog, and nothing kept.
+    const withdrawn = reduceWorkItem([
+      ...asked,
+      e("WorkItemUnblocked", { by: "human:steven", note: "asked by mistake, ignore", withdrawn: true }),
+    ]);
+    expect(withdrawn.lifecycle).toEqual({ status: "backlog" });
+    expect(withdrawn.answers).toEqual([]);
   });
 
   /**

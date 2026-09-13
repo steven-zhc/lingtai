@@ -188,6 +188,11 @@ export function Requeue({
    * is an *answer* — the same event, through `answer()`, which refuses anything
    * else — and the words say so: *Back to the queue* and *Why?* are about an
    * attempt that failed, and there has been no attempt.
+   *
+   * **And Withdraw beside it**, for the question that should not have been
+   * asked. It is `requeue()`, which writes the unblock `withdrawn`, so its why
+   * is kept as a reason and never told to an attempt. Without it the only way
+   * out of a mistaken question was an answer every later prompt would carry.
    */
   asked?: boolean;
   /**
@@ -201,8 +206,10 @@ export function Requeue({
   const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
+  // Which box is open: the requeue's why (or the answer), or a withdrawal's why.
+  const [asking, setAsking] = useState<"primary" | "withdraw" | false>(false);
   const [note, setNote] = useState("");
+  const withdrawing = asking === "withdraw";
   const [, startTransition] = useTransition();
 
   if (done) return <p className="decided">{done}</p>;
@@ -213,10 +220,15 @@ export function Requeue({
         <div className="btnrow">
           <button
             className={asked || primaryMove(recommended) === "requeue" ? "btn pri" : "btn"}
-            onClick={() => setAsking(true)}
+            onClick={() => setAsking("primary")}
           >
             {asked ? "Answer" : "Back to the queue"}
           </button>
+          {asked ? (
+            <button className="btn" onClick={() => setAsking("withdraw")}>
+              Withdraw
+            </button>
+          ) : null}
         </div>
         {refusal ? <p className="refusal">{refusal}</p> : null}
       </div>
@@ -226,12 +238,18 @@ export function Requeue({
   return (
     <div className="decide">
       <label className="reason">
-        <span>{asked ? "Your answer" : "Why?"}</span>
+        <span>{withdrawing ? "Why withdraw it?" : asked ? "Your answer" : "Why?"}</span>
         <input
           autoFocus
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder={asked ? "every attempt at this ticket is told this" : "main has moved; a fresh branch should merge"}
+          placeholder={
+            withdrawing
+              ? "asked on the wrong issue — no attempt is told this"
+              : asked
+                ? "every attempt at this ticket is told this"
+                : "main has moved; a fresh branch should merge"
+          }
         />
       </label>
       <div className="btnrow">
@@ -242,7 +260,7 @@ export function Requeue({
             setPending(true);
             setRefusal(null);
             startTransition(async () => {
-              const result = asked
+              const result = asked && !withdrawing
                 ? await answerCard({ project, issue, answer: note })
                 : await requeueCard({ project, issue, note });
               setPending(false);
@@ -256,7 +274,7 @@ export function Requeue({
             });
           }}
         >
-          {pending ? "…" : asked ? "Answer" : "Requeue"}
+          {pending ? "…" : withdrawing ? "Withdraw" : asked ? "Answer" : "Requeue"}
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel

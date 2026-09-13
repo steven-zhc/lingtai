@@ -50,9 +50,12 @@ export interface NextPrompt {
   /** 1-based. This prompt is for attempt `n`, and the page says `attempt 3 only`. */
   attempt: number;
   /**
-   * `{{failure}}`, whole: the history of the earlier attempts and the human's
-   * sentence. Empty on a first attempt with no edit, and on nothing else —
-   * which is what makes attempt 1 render byte-identically to the template.
+   * `{{failure}}`, whole: the decisions answered before any run, the history of
+   * the earlier attempts and the human's sentence. Empty on a first attempt with
+   * no edit and no answered question (#147), and on nothing else — which is what
+   * makes such an attempt 1 render byte-identically to the template. A ticket
+   * someone answered carries `## Decided before any run` from attempt 1 on, and
+   * its version is not bare `ticket@N`.
    *
    * There used to be a third block here, the refusal that bought a repair
    * (`repairBrief`). Nothing buys one since `#143`, so what an attempt is told
@@ -186,9 +189,11 @@ function join(blocks: readonly string[]): string {
  * others are substituted whether or not the template uses them, so a project
  * that writes its own prompt can leave any of them out.
  *
- * `{{failure}}` is empty on a **first** attempt with no edit, and on nothing
- * else. It carries what the earlier attempts did (`attempts.ts`, `#82`) and the
- * sentence a person added for this attempt (`#104`). It is the only thing that
+ * `{{failure}}` is empty on a **first** attempt with no edit and no answered
+ * question, and on nothing else. It carries the answers to questions asked
+ * before any run (`answersBrief`, `#147`) — which reach attempt 1 too — what the
+ * earlier attempts did (`attempts.ts`, `#82`) and the sentence a person added
+ * for this attempt (`#104`). It is the only thing that
  * distinguishes a second attempt from the first one again, which is why it goes
  * through the same substitution as everything else rather than through a second
  * prompt: every attempt *is* a run, and giving one of them its own template

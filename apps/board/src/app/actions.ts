@@ -37,7 +37,7 @@ import { acceptFinding, declineFinding } from "@lingtai/conductor/backlog";
 import { githubTicketStore } from "@lingtai/conductor/ticket-store";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
 import { editHash } from "@lingtai/conductor/prompt";
-import { CONTROL_STREAM, parsePayload, parseWorkItemStream, workItemStream } from "@lingtai/domain";
+import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
 import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
@@ -459,6 +459,14 @@ export async function sendAttempt(input: {
     if (!parsed) return { ok: false, detail: "this id is not a work item" };
 
     const by = actor();
+    // **Not on a question asked before any run** (#147), and refused before the
+    // edit so nothing is appended. `requeue()` would withdraw the question under
+    // a note about a document, and the person pressing Send meant neither to
+    // withdraw it nor to answer it. The page offers Answer there instead.
+    const life = reduceWorkItem(await eventStore.read(input.taskId)).lifecycle;
+    if (life.status === "blocked" && life.runId === null) {
+      return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` };
+    }
     if (typeof input.text === "string" && input.text.trim() !== "") {
       const edited = await editPrompt({
         taskId: input.taskId,

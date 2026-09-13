@@ -387,6 +387,13 @@ export interface StandingView {
    * (#150).
    */
   awaitingSha: string | null;
+  /**
+   * Whether the block is a question asked before any run (`lingtai ask`, #147).
+   * Read off the lifecycle and not `runId` above, which falls back to the last
+   * attempt there was. Then the moves are Answer and Withdraw: Send would hand
+   * the question to `requeue()`, which withdraws it.
+   */
+  asked: boolean;
   /** What that attempt produced, for a waiver, which is a verdict about the diff. */
   headSha: string | null;
   /**
@@ -600,6 +607,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     // Only while a person is holding it. A run mid-flight may have an approval
     // open on its stream and no question anybody has been handed yet.
     awaitingSha: blocked ? (run?.awaitingSha ?? null) : null,
+    asked: blocked && life.runId === null,
     headSha: run?.headSha ?? null,
     failed: run?.gates.filter((g) => g.state === "failed").map((g) => g.gate) ?? [],
     saidBy:

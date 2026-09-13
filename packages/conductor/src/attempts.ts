@@ -477,10 +477,10 @@ It applies to this attempt only. Anything meant to last belongs in the ticket.`;
  * the history table as how that attempt ended; carrying it here as well would
  * turn *the base had moved* into a standing instruction.
  *
- * The filter cannot tell `answer()` from `requeue()` — both append the same
- * `WorkItemUnblocked` — so what keeps a requeue's note out of this block is
- * `requeue()` refusing a block with no run (`approve.ts`). Lift that refusal
- * and a requeue's why becomes a decision here.
+ * The filter cannot tell `answer()` from `requeue()` by the block — both end
+ * one with no run — so what keeps a requeue's note out of this block is
+ * `requeue()` writing it `withdrawn` (`approve.ts`), which the fold keeps no
+ * answer for. Drop that flag and a requeue's why becomes a decision here.
  *
  * **Durable, unlike `humanBrief`.** An edit is for one attempt; a decision about
  * the ticket is owed to every attempt at it, so no claim consumes these.

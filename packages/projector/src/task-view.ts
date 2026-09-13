@@ -337,13 +337,14 @@ export const taskViewProjection: Projection = {
           const d = event.data as PayloadOf<"WorkItemUnblocked">;
           // The answer, beside the question it answered — which is the row's
           // `note` right up until this statement clears it, so both are written
-          // in one statement over the row rather than read back first.
+          // in one statement over the row rather than read back first. A
+          // question withdrawn was never answered, so the last answer stands.
           await ctx.query(
             `update task_view
-             set answer = jsonb_build_object(
+             set answer = case when $6::boolean then answer else jsonb_build_object(
                    'question', case when blocked then note end,
                    'answer', $4::text,
-                   'by', $5::text),
+                   'by', $5::text) end,
                  state = 'queued',
                  note = null,
                  awaiting_sha = null,
@@ -357,7 +358,7 @@ export const taskViewProjection: Projection = {
                  updated_at = $3,
                  updated_seq = $2::bigint
              where task_id = $1 and updated_seq <= $2::bigint`,
-            [event.streamId, seq, at, d.note, d.by],
+            [event.streamId, seq, at, d.note, d.by, d.withdrawn === true],
           );
           break;
         }

@@ -349,6 +349,7 @@ const NEVER_RUN: StandingView = {
   diagnosis: null,
   attempt: null,
   attempts: 0,
+  asked: false,
   runId: null,
   awaitingSha: null,
   headSha: null,

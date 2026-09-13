@@ -309,6 +309,9 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // case used to return to the backlog and drop `note` on the floor, so the
       // log held the decision and no state, projection or prompt could say it.
       const block = state.lifecycle.status === "blocked" ? state.lifecycle : null;
+      // A question withdrawn was never answered, so there is nothing to keep:
+      // the item is back in the backlog and no attempt is told anything.
+      if (d.withdrawn === true) return { ...state, ...at, lifecycle: { status: "backlog" } };
       return {
         ...state,
         ...at,
