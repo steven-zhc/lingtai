@@ -27,11 +27,13 @@
  * completion each map to a kind. The old loop's failures produced no log line,
  * no comment and no label, and that silence is what `RunFailed` exists to end.
  *
- * Five kinds now rather than four: `crash` used to absorb every ending that was
+ * Six kinds now rather than four: `crash` used to absorb every ending that was
  * not a clean result, so a quota, a segfault and a bad flag were one word and
  * six tickets burned in ninety-two seconds looked like six crashes
  * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)). What told
- * them apart was never the message — it is `neverStarted`'s three facts.
+ * them apart was never the message — it is `neverStarted`'s three facts. `#89`
+ * took one more off the same word: a run the runtime stopped at the recipe's
+ * `turns` is `out-of-turns`, which is a finding about the ticket.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -71,6 +73,11 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // filtered environment plus PreToolUse interception add up to, and it is what
   // carried the old loop's 73 runs.
   providesTier: "guarded",
+  /**
+   * Both. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns` in
+   * `argsFor`, which the binary applies itself and answers with a receipt.
+   */
+  enforces: ["turns", "wall"],
 };
 
 /**
@@ -98,10 +105,11 @@ export function sessionIdFor(runId: string): string {
  * printed alone. `subtype` is one of `success`, `error_during_execution`,
  * `error_max_turns`, `error_max_budget_usd`,
  * `error_max_structured_output_retries` — read out of the shipped bundle on
- * 2026-09-08 (0031 §2). **Nothing branches on it**, deliberately: the
- * classification is `neverStarted`'s three checkable facts, and the prose is
- * kept whole as evidence. It is carried because a receipt that dropped the
- * runtime's own word for how it ended would be a worse receipt.
+ * 2026-09-08 (0031 §2). **One member is branched on**, `error_max_turns`, and
+ * nothing else: the rest is classified by `neverStarted`'s three checkable
+ * facts, and the prose is kept whole as evidence. 0031 refused to classify on
+ * English prose; this is a member of a closed set the runtime prints, and it is
+ * the runtime's answer to the `--max-turns` this adapter passed it (`#89`).
  */
 interface ClaudeResult {
   /** Absent on the single object `--output-format json` prints; `"result"` in a stream. */
@@ -176,6 +184,21 @@ function argsFor(
     permissionMode,
     "--session-id",
     sessionIdFor(request.runId),
+    // The recipe's turn bound, applied by the binary (`#89`). For weeks this
+    // was carried on the request and passed nowhere, and `#84` ran 172 against
+    // a declared 150.
+    //
+    // **The flag is real and hidden.** 2.1.267 defines it with `.hideHelp()` —
+    // *"Maximum number of agentic turns in non-interactive mode … (only works
+    // with --print)"*, read out of the binary with `strings` on 2026-09-12 —
+    // so `claude --help` does not list it, and two earlier attempts took that
+    // absence as absence from the CLI. Delegated rather than counted off the
+    // stream: the binary counts turns the way its receipt's `num_turns` does,
+    // and it stops by *ending the session*, so the run still prints a receipt
+    // with its cost. A SIGTERM from here would record exactly the runs that
+    // overspent as costing nothing.
+    "--max-turns",
+    String(request.limits.turns),
     ...(request.model ? ["--model", request.model] : []),
     ...extraArgs,
   ];
@@ -415,7 +438,8 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           const costUsd = parsed?.total_cost_usd ?? null;
 
           // The last line of the log is how it ended, in the runtime's own
-          // words — `subtype` included, which nothing branches on. A log kept
+          // words — `subtype` included, which only `error_max_turns` is read
+          // out of (see below). A log kept
           // because the run did not land opens on what it was for and closes on
           // this.
           trace.note(
@@ -426,6 +450,29 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
                   `exit ${code}`
               : `no receipt on the stream · exit ${code}`,
           );
+
+          // The turn bound, reached. Before the clean-exit branch so that no
+          // combination of exit code and `is_error` can read it as a finish,
+          // and with the receipt's own turns and cost: this is the ending
+          // `#89` was filed for, and it is recorded like the wall's — a
+          // failure with a kind — rather than as a run that simply stopped.
+          if (parsed?.subtype === "error_max_turns") {
+            finish({
+              exitCode: code,
+              turns,
+              durationMs,
+              costUsd,
+              text: parsed.result ?? null,
+              failure: {
+                kind: "out-of-turns",
+                detail:
+                  `${turns} turns, and the recipe allows ${request.limits.turns} · ` +
+                  (costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`),
+              },
+              sessionId,
+            });
+            return;
+          }
 
           if (parsed && code === 0 && parsed.is_error !== true) {
             finish({

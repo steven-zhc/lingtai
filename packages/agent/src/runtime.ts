@@ -20,6 +20,17 @@
 import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
 import type { RunTrace } from "./run-log.ts";
 
+/**
+ * The bounds a recipe may put on a run, by name.
+ *
+ * A value rather than a union written out, so `lingtai doctor` can walk it: a
+ * third limit added to `runtime.limits` and not here is one doctor never asks
+ * about, which is `#89` again one field along.
+ */
+export const RUN_LIMITS = ["turns", "wall"] as const;
+
+export type RunLimit = (typeof RUN_LIMITS)[number];
+
 export interface RuntimeCapabilities {
   id: RuntimeId;
   /** The lifecycle hooks this runtime actually emits. */
@@ -30,6 +41,16 @@ export interface RuntimeCapabilities {
   canRewriteToolCall: boolean;
   /** The strongest containment this runtime provides on its own. */
   providesTier: Tier;
+  /**
+   * Which of `RUN_LIMITS` this adapter actually stops a run at (`#89`).
+   *
+   * Declared, because for weeks it was assumed: both numbers were in the
+   * recipe, typed onto `RunRequest` and carried into `RunStarted`, and only
+   * `wall` was read. `#84` ran 172 turns against a declared 150. This is where
+   * an adapter says which half it honours, answerable before a run rather than
+   * inferred from one that overspent.
+   */
+  enforces: readonly RunLimit[];
 }
 
 export interface RunRequest {

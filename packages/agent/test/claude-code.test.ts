@@ -29,6 +29,7 @@ import {
   CODEX_CAPABILITIES,
   CodexNotImplementedError,
   PROMPT_ELIDED,
+  RUN_LIMITS,
   TRACE_LINE_CHARS,
   createClaudeCodeRuntime,
   createCodexRuntime,
@@ -163,6 +164,12 @@ describe("capabilities", () => {
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "sandboxed")).toEqual(["filesystem-sandbox"]);
     expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "guarded")).toEqual([]);
   });
+
+  /** `#89`: a limit is declared applied only where the adapter applies it. */
+  it("says which declared limits it applies", () => {
+    expect([...CLAUDE_CODE_CAPABILITIES.enforces].sort()).toEqual([...RUN_LIMITS].sort());
+    expect(CODEX_CAPABILITIES.enforces).toEqual([]);
+  });
 });
 
 describe("sessionIdFor", () => {
@@ -286,6 +293,53 @@ describe("run", () => {
     expect(outcome.failure?.detail).toContain("400ms");
   });
 
+  /**
+   * `#89`: the turn bound, modelled on the wall's test above.
+   *
+   * The stand-in does what 2.1.267 does with `--max-turns` — read it off argv,
+   * stop the session after that many turns, and print an `error_max_turns`
+   * receipt — so what is under test is that the adapter *passes* the recipe's
+   * number and turns the runtime's answer into an outcome of its own kind.
+   * `error_max_turns` is `is_error: true` with exit 1, which is how it reached
+   * `crash` before this.
+   */
+  const honoursMaxTurns = () =>
+    fakeClaude(
+      [
+        'max=""',
+        'while [ $# -gt 0 ]; do [ "$1" = "--max-turns" ] && max="$2"; shift; done',
+        '[ -n "$max" ] || { echo "no --max-turns on argv" >&2; exit 64; }',
+        'i=0; while [ "$i" -lt "$max" ]; do i=$((i+1)); echo \'{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"again"}]}}\'; done',
+        'echo "{\\"type\\":\\"result\\",\\"subtype\\":\\"error_max_turns\\",\\"is_error\\":true,\\"num_turns\\":$max,\\"duration_ms\\":900,\\"total_cost_usd\\":0.37}"',
+        "exit 1",
+      ].join("\n"),
+    );
+
+  it("stops a run at the recipe's turns, and says it was the turns and not the time", async () => {
+    const outcome = await createClaudeCodeRuntime({ binary: await honoursMaxTurns() }).run(
+      request({ limits: { turns: 3, wallMs: 30_000 } }),
+    );
+
+    expect(outcome.failure?.kind).toBe("out-of-turns");
+    expect(outcome.failure?.detail).toBe("3 turns, and the recipe allows 3 · $0.37");
+    // The receipt survives, because the binary ended the session rather than
+    // being killed: the run that overspent is exactly the one whose cost must
+    // not be recorded as nothing.
+    expect(outcome.turns).toBe(3);
+    expect(outcome.costUsd).toBe(0.37);
+  });
+
+  it("passes the recipe's turns to the binary, where the log can see it", () => {
+    const { args } = createClaudeCodeRuntime().invocation!({
+      runId: "run-01JX",
+      cwd: root,
+      settingsPath: join(root, "settings.json"),
+      env: {},
+      limits: { turns: 150, wallMs: 3_600_000 },
+    });
+    expect(args[args.indexOf("--max-turns") + 1]).toBe("150");
+  });
+
   it("turns an abort into aborted", async () => {
     const binary = await fakeClaude("sleep 30");
     const controller = new AbortController();
@@ -393,11 +447,12 @@ describe("the stream, and the accounting that must not move", () => {
   /**
    * The five `subtype`s of the shipped bundle, 2026-09-08 (0031 §2).
    *
-   * Nothing branches on `subtype` — the classification is `neverStarted`'s
-   * three checkable facts — so what survives here is that each one still lands
-   * where it did, with its turns and its cost intact. `error_max_turns` is the
-   * one that matters most: a run that used its whole budget is a crash and
-   * emphatically not a run that never started.
+   * One `subtype` is branched on — `error_max_turns`, the runtime's answer to
+   * `--max-turns` (`#89`) — and the rest are classified by `neverStarted`'s
+   * three checkable facts, so what survives here is that each lands where it
+   * should with its turns and its cost intact. `error_max_turns` moved: it was
+   * a `crash`, beside a segfault, and it is emphatically not a run that never
+   * started.
    */
   const subtypes: readonly [
     string,
@@ -407,7 +462,7 @@ describe("the stream, and the accounting that must not move", () => {
   ][] = [
     ["success", { is_error: false, num_turns: 63, total_cost_usd: 5.42 }, 0, null],
     ["error_during_execution", { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, "crash"],
-    ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "crash"],
+    ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "out-of-turns"],
     ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "crash"],
     ["error_max_structured_output_retries", { is_error: true, num_turns: 3, total_cost_usd: 0.08 }, 1, "crash"],
     // Not a subtype: the shape 0031 measured, which carries no word of its own.

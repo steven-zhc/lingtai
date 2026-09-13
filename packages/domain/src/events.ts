@@ -357,6 +357,11 @@ export const RunFinished = z.object({
  * in the log, and the first re-worded message would turn the name into a lie.
  * The prose is kept whole in `detail`: evidence, not a verdict.
  *
+ * `out-of-turns` is `#89`: the runtime stopped the run at the recipe's
+ * `runtime.limits.turns`. It is not `timeout`, because *"it ran out of turns"*
+ * and *"it ran out of time"* are different findings about a ticket, and it is
+ * not `crash`, which is where `error_max_turns` used to land beside a segfault.
+ *
  * Additive to the enum. No stored event is rewritten and no version is bumped —
  * every payload a previous build wrote still parses against this.
  */
@@ -366,6 +371,7 @@ export const RUN_FAILURE_KINDS = [
   "no-commits",
   "aborted",
   "never-started",
+  "out-of-turns",
 ] as const;
 
 export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];

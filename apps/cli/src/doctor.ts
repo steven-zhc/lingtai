@@ -48,7 +48,7 @@ import {
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
 import { describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -1082,6 +1082,52 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
 }
 
 /**
+ * Per project: every limit its recipe declares, and whether the runtime applies it.
+ *
+ * `#89`, asked before a run instead of discovered after one. `turns: 150` was
+ * declared, threaded to the request, printed in `RunStarted` and read by
+ * nothing while `#84` ran 172 — and every one of those signals said the bound
+ * existed.
+ *
+ * **The runtime is the one that runs, not the one the recipe names.**
+ * `runtime.agent` is declarative and no dispatcher consults it: every run is
+ * `createClaudeCodeRuntime()`, so that is whose `enforces` is asked. Reading
+ * the recipe's field would answer for a runtime that is never started.
+ *
+ * Here rather than in the schema: whether a limit binds is a fact about the
+ * recipe *and* the adapter, which a field's parse cannot see. A `fail` is how
+ * the schema's acceptance stops being silent.
+ */
+export function limitsRow(
+  project: string,
+  recipe: Recipe,
+  capabilities: RuntimeCapabilities = createClaudeCodeRuntime().capabilities,
+): CheckResult {
+  const name = `runtime: ${project} limits`;
+  const declared: Record<(typeof RUN_LIMITS)[number], string> = {
+    turns: String(recipe.runtime.limits.turns),
+    wall: recipe.runtime.limits.wall,
+  };
+  const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
+  const detail = RUN_LIMITS.map(
+    (limit) =>
+      `${limit} ${declared[limit]} ← ${
+        capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : "not applied"
+      }`,
+  ).join(" · ");
+
+  return ignored.length === 0
+    ? { name, status: "ok", detail }
+    : {
+        name,
+        status: "fail",
+        detail:
+          `${detail} — ${capabilities.id} carries ${ignored.join(" and ")} and bounds nothing ` +
+          `with ${ignored.length === 1 ? "it" : "them"}, so the recipe declares a spend nothing will stop`,
+      };
+}
+
+/**
  * Per project: every name its recipe requires, and **which layer answered**.
  *
  * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)
@@ -1258,6 +1304,7 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
         });
       }
       results.push(extensionRow(project.project, resolved.recipe, agentEnv));
+      results.push(limitsRow(project.project, resolved.recipe));
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.

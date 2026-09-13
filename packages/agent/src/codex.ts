@@ -26,6 +26,9 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // `sandbox_mode: workspace-write` is a real filesystem boundary, which is more
   // than Claude Code provides on its own.
   providesTier: "sandboxed",
+  // Neither, because nothing here runs. A stub claiming a bound it does not
+  // apply would be `#89` written down on purpose.
+  enforces: [],
 };
 
 export class CodexNotImplementedError extends Error {

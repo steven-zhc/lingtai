@@ -152,6 +152,11 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   crash: "lingtai",
   aborted: "lingtai",
   "no-commits": "lingtai",
+  // The recipe calls a run that needs this many turns *"a ticket that was
+  // scoped wrong"*, which reads as the repository's — but `repository` is the
+  // owner that buys a repair agent, and spending a second agent to explain the
+  // first one's overspending is `#84` twice.
+  "out-of-turns": "lingtai",
 };
 
 /**

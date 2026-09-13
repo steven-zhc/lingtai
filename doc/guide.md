@@ -119,8 +119,9 @@ diff and the events are all that survive and neither says why.
 
 **`#89` rested on a fact no attempt established.** `--max-turns` is absent from
 `claude --help` and present in the binary, and two agents in a row concluded
-absence from the help text meant absence from the CLI
-(`packages/agent/test/claude-code.test.ts:358`). The ticket did not name the
+absence from the help text meant absence from the CLI (the flag is defined with
+`.hideHelp()`; `argsFor` in `packages/agent/src/claude-code.ts` now passes it).
+The ticket did not name the
 experiment that would settle it, so both attempts picked the same wrong one. **A
 ticket that turns on a fact about a dependency should say how to check it**, and
 if you cannot say how, that uncertainty is the item — file it as one, and let

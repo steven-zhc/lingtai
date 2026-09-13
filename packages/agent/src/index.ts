@@ -12,11 +12,13 @@
  * the worktree, not a library, with this package as the end that talks to it.
  */
 export {
+  RUN_LIMITS,
   meetsTier,
   missingForTier,
   neverStarted,
   type AuthStatus,
   type Invocable,
+  type RunLimit,
   type RunOutcome,
   type RunRequest,
   type Runtime,

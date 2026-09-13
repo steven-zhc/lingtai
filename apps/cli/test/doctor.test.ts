@@ -11,7 +11,8 @@ import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
-import { declaredExtensions, extensionRow, formatReport, runDoctor } from "../src/doctor.ts";
+import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
+import { declaredExtensions, extensionRow, formatReport, limitsRow, runDoctor } from "../src/doctor.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
 const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
@@ -256,6 +257,32 @@ subscribers:
 
     expect(row.status).toBe("ok");
     expect(row.detail).toContain("none asking for a variable");
+  });
+
+  /**
+   * `#89`'s last box: doctor says whether a declared limit is one the runtime
+   * applies. Asked of the runtime that runs — `createClaudeCodeRuntime()` —
+   * and not of `runtime.agent`, which nothing dispatches on.
+   */
+  it("says which declared limits the runtime that runs applies", async () => {
+    const row = limitsRow("demo", await recipeOf());
+
+    expect(row.name).toBe("runtime: demo limits");
+    expect(row.status).toBe("ok");
+    expect(row.detail).toBe("turns 300 ← applied by claude-code · wall 2h ← applied by claude-code");
+  });
+
+  it("is red when the runtime carries a declared limit and bounds nothing with it", async () => {
+    // The adapter as it was before `#89`: the wall read, the turns carried.
+    const row = limitsRow("demo", await recipeOf(), {
+      ...CLAUDE_CODE_CAPABILITIES,
+      enforces: ["wall"],
+    });
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("turns 300 ← not applied");
+    expect(row.detail).toContain("wall 2h ← applied by claude-code");
+    expect(row.detail).toContain("claude-code carries turns and bounds nothing with it");
   });
 });
 

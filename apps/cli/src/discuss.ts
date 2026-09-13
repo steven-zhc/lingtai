@@ -71,9 +71,10 @@ import { listAt, readAt, refSha } from "@lingtai/repo";
 export const WALL_MS = 5 * 60_000;
 
 /**
- * `turns` is on `RunRequest` and the Claude Code adapter does not pass it to
- * the binary — `#89` is the whole story of that flag. It is carried because the
- * type carries it, and it bounds nothing here.
+ * `turns` reaches the binary as `--max-turns` (`#89`), so a discussion round
+ * that has not answered in 40 turns ends as `out-of-turns`. Not a spend limit
+ * in 0033 §4's sense — the person is still the loop — but a round that reads
+ * forty times without answering has lost the question.
  */
 const LIMITS = { turns: 40, wallMs: WALL_MS };
 
