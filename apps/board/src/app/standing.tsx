@@ -92,7 +92,6 @@ export function Standing({
   outgoing,
   queued,
   unknown,
-  daemonUp = null,
 }: {
   standing: StandingView;
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
@@ -113,12 +112,6 @@ export function Standing({
    * is not one Lingtai is in a position to say.
    */
   unknown?: string | null;
-  /**
-   * Whether a daemon's beacon was beating when this rendered, and null when it
-   * could not be read. The discussion box needs it: a trace a dead daemon left
-   * behind opens exactly like a live one (see `traceSays`).
-   */
-  daemonUp?: boolean | null;
 }) {
   const held = describeHold(standing);
   const acting = project !== null && issue !== null;
@@ -349,7 +342,7 @@ export function Standing({
             about something that has stopped, but "what did attempt 1 actually
             change" is asked of a landed item too, and a box that appeared only
             on a blocked card would be one more thing to find out about. */}
-        <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} daemonUp={daemonUp} />
+        <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} />
       </div>
 
       {/* The moves, under both boxes rather than inside either: the design's own

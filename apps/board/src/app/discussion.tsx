@@ -128,22 +128,25 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
  * so the sentence claims neither — and the follower asks again (`asksAgain`), so
  * a second daemon's trace replaces this one as soon as it is opened.
  *
- * **And an open trace is not said to be work unless a daemon is beating.** A
- * daemon killed mid-answer leaves its file, and nothing removes it while the
+ * **And an open trace is not said to be work unless its writer is touching it.**
+ * A daemon killed mid-answer leaves its file, and nothing removes it while the
  * item is blocked: a follower opens it, reports `reading`, and tails a file
- * nobody writes. The file cannot tell the two apart, so the beacon does —
- * `daemonUp` is read when the page renders, and false means what is on screen
- * is what a daemon wrote before it stopped. Null, when the beacon could not be
- * read, keeps the ordinary sentence rather than accusing a daemon that may be
- * running.
+ * nobody writes. The daemon's beacon cannot tell the two apart — a
+ * `--no-conduct` daemon beats and answers nothing, and a page reads the beacon
+ * once, so a daemon killed under an open page is still up on it. The file's own
+ * mtime can: the daemon answering bumps it every `RUN_LOG_BEAT_MS`, and the route
+ * says, while the page is open, when it stops (`writing`). False means what is
+ * on screen is what a daemon wrote before it stopped. Null, before the route has
+ * said, keeps the ordinary sentence rather than accusing a daemon that may be
+ * writing.
  */
-export function traceSays(state: TailState, lines: number, daemonUp: boolean | null = null): string {
+export function traceSays(state: TailState, lines: number, writing: boolean | null = null): string {
   switch (state) {
     case "reading":
-      if (daemonUp === false) {
+      if (writing === false) {
         return (
-          "no daemon is running, so nothing is answering this now · what is here is what one wrote " +
-          "before it stopped. The question is answered when a daemon starts, and asking again would buy a second one"
+          "nothing is writing this trace, so nothing is answering this now · what is here is what a daemon wrote " +
+          "before it stopped. The question is answered when a conducting daemon starts, and asking again would buy a second one"
         );
       }
       return lines === 0
@@ -185,12 +188,12 @@ export function traceSays(state: TailState, lines: number, daemonUp: boolean | n
 export function Trace({
   lines,
   state,
-  daemonUp = null,
+  writing = null,
 }: {
   lines: readonly string[];
   state: TailState;
-  /** Whether a daemon was beating when the page rendered. See `traceSays`. */
-  daemonUp?: boolean | null;
+  /** Whether the file's writer is still touching it, as the route last said. See `traceSays`. */
+  writing?: boolean | null;
 }) {
   const tail = useRef<HTMLDivElement | null>(null);
 
@@ -204,7 +207,7 @@ export function Trace({
   return (
     <>
       <p className="chatwait" data-trace={state}>
-        {traceSays(state, lines.length, daemonUp)}
+        {traceSays(state, lines.length, writing)}
       </p>
       {lines.length > 0 ? (
         <div className="chattrace" ref={tail}>
@@ -229,8 +232,8 @@ export function Trace({
  *
  * The mechanism is 0034's and it is unchanged: the daemon writes the turn's
  * trace to a file named for the `chatId`, and this follows it over the route the
- * ledger's run logs already use. Nothing new is on the wire and nothing new is
- * in the log.
+ * ledger's run logs already use. Nothing new is in the log, and the one thing
+ * new on the wire is `writer` — whether the file is still being touched.
  *
  * **It is a trace and never the answer** (0034 §8). The answer is
  * `DiscussionAnswered` — with its cost, its `read` list and its proposal — and
@@ -243,24 +246,27 @@ export function Trace({
  * less often each time, for as long as the turn is on screen, because a
  * question asked with no daemon running is still going to be answered
  * (`againAfter`).
+ *
+ * **One per chat, on the oldest unanswered turn.** The file is the chat's and
+ * `answerOutstanding` answers a chat's turns one at a time, oldest first, so the
+ * trace on disk is always that turn's. A follow-up asked while the first is
+ * still being answered does not follow it — it would open the same file and
+ * print the first question's trace under the second, called live.
  */
-function Thinking({ chatId, daemonUp }: { chatId: string; daemonUp: boolean | null }) {
-  const { lines, state } = useLogTail(chatId, true, true);
-  return <Trace lines={lines} state={state} daemonUp={daemonUp} />;
+function Thinking({ chatId }: { chatId: string }) {
+  const { lines, state, writing } = useLogTail(chatId, true, true);
+  return <Trace lines={lines} state={state} writing={writing} />;
 }
 
 export function Discussion({
   taskId,
   attempt,
   discussions,
-  daemonUp = null,
 }: {
   taskId: string;
   /** The attempt a new question is about — the newest one, or null. */
   attempt: number | null;
   discussions: DiscussionView[];
-  /** Whether a daemon was beating when the page rendered. See `traceSays`. */
-  daemonUp?: boolean | null;
 }) {
   const [question, setQuestion] = useState("");
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -357,7 +363,7 @@ export function Discussion({
       >
       {discussions.map((d) => (
         <div key={d.chatId} className={d.held === null ? "chatlog" : "chatlog done"}>
-          {d.turns.map((t) => (
+          {d.turns.map((t, i) => (
             <div key={t.at} className="chatturn">
               <p className="chatq">
                 <span className="chatwho">{t.by}</span>
@@ -377,7 +383,15 @@ export function Discussion({
               ) : null}
 
               {t.answer === null ? (
-                <Thinking chatId={d.chatId} daemonUp={daemonUp} />
+                // Only the turn being answered follows the chat's trace; see
+                // `Thinking`. A later one waits its turn, and says so.
+                i === d.turns.findIndex((u) => u.answer === null) ? (
+                  <Thinking chatId={d.chatId} />
+                ) : (
+                  <p className="chatwait" data-trace="behind">
+                    asked after the question above · answered once that one is, and its trace appears here then
+                  </p>
+                )
               ) : (
                 <>
                   {t.answer.failure ? (

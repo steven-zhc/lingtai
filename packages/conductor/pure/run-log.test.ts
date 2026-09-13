@@ -20,12 +20,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openRunLog } from "@lingtai/agent";
 import {
+  RUN_LOG_BEAT_MS,
   RUN_LOG_END,
+  RUN_LOG_QUIET_MS,
   findRunLog,
   followRunLog,
   listRunLogs,
   runLogEnd,
   runLogPath,
+  runLogQuiet,
   type RunLogEnding,
 } from "../src/run-log.ts";
 
@@ -149,6 +152,53 @@ describe("following one", () => {
     // one of them was witnessed, which is the distinction worth keeping.
     expect(ended).toBe("removed");
     expect(lines.some((l) => l.includes("about to land"))).toBe(true);
+  });
+
+  /**
+   * A dead daemon's leftover, removed and replaced at the same path inside one
+   * poll — what `answerDiscussion` does at the start of a turn (#132). Asking
+   * only whether the path exists finds the new file, and the follower tailed the
+   * unlinked leftover for the whole of the new answer.
+   */
+  it("treats a new file at the same path as this one ending", async () => {
+    const path = runLogPath(home, "lingtai", "chat-replaced");
+    const dead = await openRunLog({ path });
+    dead.note("think", "what daemon A wrote before it was killed");
+    await dead.close("keep");
+
+    const seen: string[] = [];
+    let ended: RunLogEnding | null = null;
+    const follow = (async () => {
+      for await (const s of followRunLog({ path, pollMs: 200 })) {
+        if ("line" in s) seen.push(s.line);
+        else ended = s.ended;
+      }
+    })();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Well inside one poll, as a starting turn does it.
+    await rm(path, { force: true });
+    const live = await openRunLog({ path });
+    live.note("think", "what daemon B is writing now");
+
+    const timeout = new Promise<"hung">((r) => setTimeout(() => r("hung"), 2_000));
+    expect(await Promise.race([follow.then(() => "stopped"), timeout])).toBe("stopped");
+    expect(ended).toBe("removed");
+    expect(seen.some((l) => l.includes("daemon A"))).toBe(true);
+    // Asked again, the follower is handed B's trace and not A's.
+    const again = drain(path);
+    await new Promise((r) => setTimeout(r, 30));
+    await live.close("delete");
+    const { lines } = await again;
+    expect(lines.some((l) => l.includes("daemon B"))).toBe(true);
+    expect(lines.some((l) => l.includes("daemon A"))).toBe(false);
+  });
+
+  it("calls a file nobody has touched for three beats quiet, and one touched since not", () => {
+    const now = 1_000_000;
+    expect(runLogQuiet(now - RUN_LOG_BEAT_MS, now)).toBe(false);
+    expect(runLogQuiet(now - RUN_LOG_QUIET_MS, now)).toBe(false);
+    expect(runLogQuiet(now - RUN_LOG_QUIET_MS - 1, now)).toBe(true);
   });
 
   it("says landed when the last line does, before the file goes", async () => {

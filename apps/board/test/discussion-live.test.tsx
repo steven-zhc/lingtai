@@ -74,6 +74,24 @@ describe("the box while it is being answered", () => {
     expect(html).not.toContain('class="chattrace"');
   });
 
+  it("follows the chat's trace from one turn only — the one being answered", () => {
+    // A follow-up asked while the first question is still being answered. The
+    // file is the chat's and holds the first turn's trace, so a second follower
+    // would print it under the second question and call it live.
+    const followUp = {
+      ...waiting.turns[0]!,
+      question: "and what about attempt 1?",
+      at: "2026-09-10T10:00:30.000Z",
+    };
+    const html = render([{ ...waiting, turns: [waiting.turns[0]!, followUp] }]);
+    expect(html.split("data-trace=").length - 1).toBe(2);
+    expect(html.split('data-trace="off"').length - 1).toBe(1);
+    expect(html).toContain('data-trace="behind"');
+    // And in that order: the first question follows, the follow-up waits.
+    expect(html.indexOf('data-trace="off"')).toBeLessThan(html.indexOf("and what about attempt 1?"));
+    expect(html.indexOf('data-trace="behind"')).toBeGreaterThan(html.indexOf("and what about attempt 1?"));
+  });
+
   it("follows nothing for a turn that has been answered", () => {
     const answered: DiscussionView = {
       ...waiting,
@@ -160,17 +178,18 @@ describe("what a reader is handed for each state of the trace", () => {
     expect(html).toContain("doc/architecture.html");
   });
 
-  it("never says a trace is being answered when no daemon is beating", () => {
+  it("never says a trace is being answered when nothing is writing it", () => {
     // Daemon A wrote 40 lines and was killed before its `finally` removed the
-    // file; nothing restarted. The follower opens the leftover and reports
-    // `reading` — and the file cannot say nobody writes it, so the beacon does.
+    // file — or a `--no-conduct` daemon is beating and answers nothing. The
+    // follower opens the leftover and reports `reading`, and the route reports
+    // the file's writer has stopped touching it (`RUN_LOG_QUIET_MS`).
     const forty = Array.from({ length: 40 }, (_, i) => `12:00:${i}  think`);
-    const dead = renderToStaticMarkup(<Trace lines={forty} state="reading" daemonUp={false} />);
+    const dead = renderToStaticMarkup(<Trace lines={forty} state="reading" writing={false} />);
     expect(dead).not.toMatch(/answering ·|lines so far|has started on this/);
-    expect(dead).toContain("no daemon is running, so nothing is answering this now");
+    expect(dead).toContain("nothing is writing this trace, so nothing is answering this now");
     expect(dead).toContain('data-trace="reading"');
 
-    // A beating daemon, or a beacon nobody could read, is the ordinary sentence.
+    // A writer still touching it, or a route that has not said yet, is the ordinary sentence.
     expect(traceSays("reading", 40, true)).toBe("answering · 40 lines so far");
     expect(traceSays("reading", 40, null)).toBe("answering · 40 lines so far");
   });

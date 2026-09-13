@@ -33,9 +33,9 @@
  * long one turn may hang before the person is told it hung, which is a
  * different question and has to be answerable or the meter never updates.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createClaudeCodeRuntime, NO_RUN_LOG, openRunLog } from "@lingtai/agent";
+import { createClaudeCodeRuntime, NO_RUN_LOG, openRunLog, RUN_LOG_BEAT_MS } from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
 import {
   FILE_BYTES,
@@ -295,6 +295,14 @@ export async function answerDiscussion(
   const path = runLogPath(stateDir(), project, request.chatId);
   await rm(path, { force: true }).catch(() => {});
   const trace = await openRunLog({ path }).catch(() => NO_RUN_LOG);
+  // Still here, said on the file itself whether or not there is a line to write:
+  // an agent thinking for a minute writes nothing, and neither does a daemon
+  // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
+  const beat = setInterval(() => {
+    const at = new Date();
+    void utimes(path, at, at).catch(() => {});
+  }, RUN_LOG_BEAT_MS);
+  beat.unref?.();
 
   /** Both places: the daemon's own output, and the file the board follows. */
   const say = (line: string) => {
@@ -351,6 +359,7 @@ export async function answerDiscussion(
     // chat's stream and this was only ever the trace beside it (0034 §8), and
     // leaving it would hand the *next* question this one's output as the answer
     // being written for it.
+    clearInterval(beat);
     await trace.close("delete");
   }
 }

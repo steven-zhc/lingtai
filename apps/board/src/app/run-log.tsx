@@ -144,9 +144,14 @@ export function useLogTail(
   following: boolean,
   /** Whether a missing file is *not yet* rather than *never*. See `AGAIN_MS`. */
   awaited = false,
-): { lines: readonly string[]; state: TailState } {
+): { lines: readonly string[]; state: TailState; writing: boolean | null } {
   const [lines, setLines] = useState<readonly string[]>([]);
   const [state, setState] = useState<TailState>("off");
+  // Whether the route last saw the file being touched by a writer — null until
+  // it has said. `reading` is about the connection and this is about the other
+  // end of the file: a trace a killed daemon left behind opens exactly like one
+  // being written (`RUN_LOG_BEAT_MS`, #132).
+  const [writing, setWriting] = useState<boolean | null>(null);
   // Bumped to ask again for a file that has not been created yet, or that an
   // awaited follower saw end; nothing else restarts a stream, so a follow is one
   // connection per attempt at one.
@@ -176,8 +181,13 @@ export function useLogTail(
       // From byte zero, so what it had is replaced rather than appended to.
       if (awaited) setLines([]);
       setMisses(0);
+      setWriting(null);
       setState("reading");
     };
+
+    es.addEventListener("writer", (event) => {
+      setWriting((JSON.parse((event as MessageEvent<string>).data) as { writing: boolean }).writing);
+    });
 
     es.addEventListener("line", (event) => {
       const line = JSON.parse((event as MessageEvent<string>).data) as string;
@@ -237,7 +247,7 @@ export function useLogTail(
     return () => clearTimeout(timer);
   }, [following, awaited, state, again, misses]);
 
-  return { lines, state: reported(state, awaited, misses) };
+  return { lines, state: reported(state, awaited, misses), writing };
 }
 
 export function RunLog({

@@ -21,10 +21,13 @@ import { stateDir } from "@lingtai/env";
 
 export {
   RUN_LOG_END,
+  RUN_LOG_BEAT_MS,
   RUN_LOG_POLL_MS,
+  RUN_LOG_QUIET_MS,
   followRunLog,
   runLogEnd,
   runLogEnded,
+  runLogQuiet,
   type FollowRunLogOptions,
   type RunLogEnding,
   type RunLogFollowed,

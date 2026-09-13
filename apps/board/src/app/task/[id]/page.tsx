@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { inWords } from "@lingtai/conductor/queue";
-import { lastBeat, readStatus } from "@lingtai/daemon/control";
 import { loadTask, totalsFact, type RunView, type TicketView } from "@/lib/task";
 import { elapsed } from "@/lib/progress";
 import { Evidence } from "../../evidence.tsx";
@@ -345,14 +344,6 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   // anything that does not parse is an id that was never one.
   const ref = Number(task.ticket?.ref);
   const issueNumber = Number.isSafeInteger(ref) && ref > 0 ? ref : null;
-  // Whether anything could be answering a discussion right now. A trace a
-  // killed daemon left behind opens exactly like a live one, and only the
-  // beacon tells them apart (#132). No beacon at all is no daemon; a beacon that
-  // could not be read is not knowing, and says nothing either way.
-  const daemonUp = await readStatus().then(
-    (status) => (status === null ? false : lastBeat(status).up),
-    () => null,
-  );
 
   return (
     <main className="detail">
@@ -378,7 +369,6 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           standing={task.standing}
           taskId={task.taskId}
           discussions={task.discussions}
-          daemonUp={daemonUp}
           outgoing={task.outgoing}
           project={task.ticket?.project ?? null}
           // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`

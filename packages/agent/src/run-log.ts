@@ -307,6 +307,31 @@ export const openRunLogEffect = (
  */
 export const RUN_LOG_POLL_MS = 250;
 
+/**
+ * How often a writer that is still there says so, by touching the file.
+ *
+ * **A trace that nobody writes opens exactly like one somebody does** (#132).
+ * A daemon killed mid-answer leaves its file, and a follower reads it from byte
+ * zero and then waits — and an agent thinking for a minute writes nothing
+ * either. The file's *contents* may not say which (0034 §8), so its mtime does:
+ * the writer that is holding it bumps it on this beat whether or not it has a
+ * line to write, and a follower asks how old it is (`runLogQuiet`).
+ *
+ * Not the daemon's beacon, on purpose. A beacon beating says a process is up,
+ * not that it is writing *this* file — a `--no-conduct` daemon beats and answers
+ * nothing — and a page reads the beacon once per render, so a daemon that dies
+ * under an open page is still up on it.
+ */
+export const RUN_LOG_BEAT_MS = 5_000;
+
+/** Quiet past this, the writer has let go without saying so. Three missed beats. */
+export const RUN_LOG_QUIET_MS = RUN_LOG_BEAT_MS * 3;
+
+/** Whether a file last touched at `mtimeMs` has a writer holding it. See `RUN_LOG_BEAT_MS`. */
+export function runLogQuiet(mtimeMs: number, now: number = Date.now()): boolean {
+  return now - mtimeMs > RUN_LOG_QUIET_MS;
+}
+
 /** A line of the file, or the writer letting go of it. */
 export type RunLogFollowed = { readonly line: string } | { readonly ended: RunLogEnding };
 
@@ -354,6 +379,14 @@ export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerato
   let pending = "";
 
   try {
+    // Which file this handle is, so a *new* file at the same path is seen as
+    // this one ending. `answerDiscussion` removes a dead daemon's leftover and
+    // opens its own a few milliseconds later, well inside one poll: `stat` on
+    // the path then succeeds, and a follower that asked only whether the path
+    // exists tails the unlinked leftover for the whole of the new answer (#132).
+    // The inode cannot be reused while this handle holds it open.
+    const own = await handle.stat();
+
     for (;;) {
       if (options.signal?.aborted) return;
 
@@ -380,9 +413,9 @@ export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerato
       // deletes the file, and in that order the last line is never lost — the
       // handle above outlives the unlink, so the drain just above has already
       // taken everything the writer wrote.
-      try {
-        await stat(options.path);
-      } catch {
+      // Gone, or a different file where it was — both are this one ending.
+      const now = await stat(options.path).catch(() => null);
+      if (now === null || now.ino !== own.ino || now.dev !== own.dev) {
         yield { ended: "removed" };
         return;
       }

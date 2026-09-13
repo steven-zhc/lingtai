@@ -24,7 +24,8 @@
  * (§8); the ledger row this sits inside already carries the outcome, folded
  * from `events`. What the `end` frame reports is that the writer let go.
  */
-import { findRunLog, followRunLog } from "@lingtai/conductor/run-log";
+import { stat } from "node:fs/promises";
+import { findRunLog, followRunLog, RUN_LOG_POLL_MS, runLogQuiet } from "@lingtai/conductor/run-log";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,23 @@ export async function GET(
 
       send(`event: at\ndata: ${JSON.stringify({ project: found.project, path: found.path })}\n\n`);
 
+      // Whether anything is still writing the file, off its mtime, said when it
+      // changes (`RUN_LOG_BEAT_MS`). The contents cannot say it (0034 §8), and
+      // the page's own read of the beacon is a render old and blind to a
+      // daemon that answers nothing — so a trace a dead daemon left behind read
+      // as one being written for as long as the page stayed open (#132).
+      let writing: boolean | null = null;
+      const look = async () => {
+        const seen = await stat(found.path).catch(() => null);
+        if (seen === null) return;
+        const now = !runLogQuiet(seen.mtimeMs);
+        if (now === writing) return;
+        writing = now;
+        send(`event: writer\ndata: ${JSON.stringify({ writing })}\n\n`);
+      };
+      await look();
+      const looking = setInterval(() => void look(), RUN_LOG_POLL_MS * 4);
+
       try {
         for await (const seen of followRunLog({ path: found.path, signal: detach.signal })) {
           if ("line" in seen) {
@@ -75,6 +93,8 @@ export async function GET(
         }
       } catch (err) {
         send(`event: trouble\ndata: ${JSON.stringify({ message: String(err) })}\n\n`);
+      } finally {
+        clearInterval(looking);
       }
 
       open = false;
