@@ -200,6 +200,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
     return n > 0 ? `${gateAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : gateAt(d);
   },
+  GateNeverRan: (d) => `${gateAt(d)} — never ran: ${clip(d["detail"])}`,
   GateWaived: (d) => `${gateAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
   ApprovalRequested: (d) => `${gateAt(d)} — ${clip(need(d, "question"))}`,
   ApprovalGranted: (d) => `${gateAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,

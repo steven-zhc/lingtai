@@ -68,6 +68,7 @@ const RAN = [
   "GateStarted",
   "GatePassed",
   "GateFailed",
+  "GateNeverRan",
   "GateWaived",
   "ApprovalRequested",
   "ApprovalGranted",

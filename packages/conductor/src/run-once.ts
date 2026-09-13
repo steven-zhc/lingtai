@@ -91,6 +91,13 @@
  * and it is deliberate: per-item backoff answering an account-wide condition is
  * what eighty events in ninety-two seconds looked like.
  *
+ * **The agents inside a pass meet the same wall** (`#133`,
+ * [0041](../../../doc/decisions/0041-a-gate-that-never-ran.md)). A reviewer or
+ * a fixer that never started judged nothing, so it is not a refusal: the gate
+ * appends `GateNeverRan`, and the pass pushes, stands the conductor down and
+ * releases exactly as a run that never started does — no round, no hold, no
+ * lane, and no sentence about the diff.
+ *
  * **The refusals come first, deliberately.** Everything up to the claim
  * acquires nothing, so a run that stops at an unreadable recipe or a missing
  * environment value has provisioned no worktree to release — the lesson 0024
@@ -122,7 +129,7 @@ import {
   unfixedQuestion,
 } from "./fix.ts";
 import { armBranch, decideRestart, restartReason } from "./restart.ts";
-import { standDown } from "./never-started.ts";
+import { type NeverStarted, standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
@@ -650,17 +657,31 @@ export function runOnce(
      * keeps this from overwriting a pause a person made. A person's pause has
      * no expiry (0031 §5); replacing it with one that lifts itself would end a
      * hold they meant to keep.
+     *
+     * **The pause is the same at every depth and the sentence is not.** `what`
+     * carries which agent never started, because
+     * [0041](../../../doc/decisions/0041-a-gate-that-never-ran.md) §3 reuses
+     * this whole mechanism for the agents inside a pass — where *no turns taken,
+     * nothing spent* would be false about a pass whose implementer ran and was
+     * paid.
      */
-    const standDownConductor = (detail: string): Effect.Effect<void> =>
+    const standDownConductor = (what: NeverStarted, detail: string): Effect.Effect<void> =>
       Effect.promise(async () => {
+        const it =
+          what.of === "run"
+            ? "a run"
+            : what.of === "gate"
+              ? `the ${what.gate} gate's agent`
+              : `the fixing agent for ${what.action}`;
         const events = await store.read(CONTROL_STREAM);
         const control = reduceControl(events);
         if (control.paused) {
-          log(`a run never started; the conductor is already paused — ${control.reason ?? "no reason given"}`);
+          log(`${it} never started; the conductor is already paused — ${control.reason ?? "no reason given"}`);
           return;
         }
         const { until, reason } = standDown({
           detail,
+          what,
           backoffMs: parseDuration(recipe.source.backoff),
         });
         await store.append(CONTROL_STREAM, events.length, [
@@ -677,7 +698,7 @@ export function runOnce(
             }),
           },
         ]);
-        log(`a run never started — conductor paused until ${until.toISOString()}`);
+        log(`${it} never started — conductor paused until ${until.toISOString()}`);
       }).pipe(
         // A pause that would not append must not replace the reason the run
         // ended with the reason the pause failed: the run's own `RunFailed` is
@@ -1212,7 +1233,7 @@ export function runOnce(
               ]),
             );
             if (outcome.failure.kind === "never-started") {
-              yield* standDownConductor(outcome.failure.detail);
+              yield* standDownConductor({ of: "run" }, outcome.failure.detail);
             }
             /**
              * **Held, not released.** A release is a backoff and another claim
@@ -1418,8 +1439,8 @@ export function runOnce(
       let lease: string | null = worktree.remoteHead;
       /** The findings the next `proposed` run is asked about again (0038 §2). */
       let recheck: readonly GateFinding[] = [];
-      let pipeline: PipelineResult = { ok: true, failedAt: null, heldAt: null, results: [], skipped: [] };
-      let atMerge: PipelineResult = { ok: true, failedAt: null, heldAt: null, results: [], skipped: [] };
+      let pipeline: PipelineResult = { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results: [], skipped: [] };
+      let atMerge: PipelineResult = { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results: [], skipped: [] };
       let merged: Effect.Effect.Success<ReturnType<typeof repo.integrate>> | null = null;
 
       /**
@@ -1457,6 +1478,55 @@ export function runOnce(
         Effect.sync(() => new AbortController()),
         (controller) => Effect.sync(() => controller.abort()),
       );
+
+      /**
+       * An agent inside this pass never started, and this pass ends without a
+       * word about the diff
+       * ([0041](../../../doc/decisions/0041-a-gate-that-never-ran.md), `#133`).
+       *
+       * 0031 §3 one layer down. The implementer ran and was paid, so nothing
+       * about the *run* is `never-started` and the dispatch path above never
+       * sees this — but the reviewer, or the fixer a refusal bought, asked the
+       * same account and met the same wall. What that measured is the account,
+       * so the answer is the account's: the conductor stands down, and the item
+       * is **released** rather than blocked, so the queue brings it back when
+       * the limit lifts and nobody requeues anything.
+       *
+       * **Not a round, not a hold, not the lane.** A round would buy an agent
+       * from the account that just refused one; a hold would put *merge anyway?
+       * the review gate refused* to a person about a diff nothing read — under
+       * `--no-merge`, which this repository always passes — and the lane would
+       * record `gate-failed`. All three are sentences about the diff.
+       *
+       * **Pushed first**, with the lease the loop's own push uses: the next
+       * attempt's prompt names `agent/<n>` (`attempts.ts`), and a pass that
+       * stopped for the account should leave the work where it can be read.
+       */
+      const agentNeverStarted = (what: Exclude<NeverStarted, { of: "run" }>, detail: string) =>
+        Effect.gen(function* () {
+          const who =
+            what.of === "gate" ? `the ${what.gate} gate's agent` : `the agent fixing ${what.action}`;
+          runLog.note(what.of, `${who} never started — ${detail}`);
+          yield* gitInWorktree([
+            "push",
+            `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+            "origin",
+            `HEAD:refs/heads/${branch}`,
+          ]).pipe(failing("push"));
+          lease = head;
+          yield* standDownConductor(what, detail);
+          return yield* new Stopped({
+            stage: what.of,
+            detail: `${who} never started: ${detail}`,
+            // Not `the ${gate} gate refused it`, and not `nothing was spent`
+            // either — the implementer ran and its cost is on `RunFinished`.
+            // What is true of the diff is that nobody judged it.
+            release:
+              what.of === "gate"
+                ? `the ${what.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(detail)}`
+                : `the agent fixing ${what.action} never started, so nothing answered the refusal: ${said(detail)}`,
+          });
+        });
 
       /**
        * One round: decide, record, dispatch, record what came back.
@@ -1637,6 +1707,16 @@ export function runOnce(
               (fixed.failure ? ` · ${fixed.failure.kind}` : ""),
           );
 
+          if (fixed.failure?.kind === "never-started") {
+            // The account, not an objection and not a crash: see
+            // `agentNeverStarted`. A block here would ask a person about a
+            // refusal nothing has yet tried to answer.
+            return yield* agentNeverStarted(
+              { of: "fix", action: refusal.action, round: decision.round },
+              fixed.failure.detail,
+            );
+          }
+
           if (!committed) {
             // Nothing to run again: the point would be asked the same question
             // about the same commit and would answer it the same way, and paying
@@ -1718,6 +1798,15 @@ export function runOnce(
         pipeline = yield* judge(head, recheck);
         recheck = [];
         log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
+
+        // Before the refusal is read: a gate whose agent never started refused
+        // nothing, and must not reach `buyRound`, the hold or the lane.
+        if (pipeline.neverRanAt !== null) {
+          yield* agentNeverStarted(
+            { of: "gate", gate: `proposed:${pipeline.neverRanAt.gate}` },
+            pipeline.neverRanAt.detail,
+          );
+        }
 
         if (!pipeline.ok && pipeline.failedAt !== null) {
           // The refusal, by verdict rather than by position: the pipeline stops
@@ -1806,7 +1895,7 @@ export function runOnce(
         // reads it after. A `let` here would shadow the one the hold below asks
         // about — a hold that renders and does nothing, which is the exact shape
         // of #58.
-        atMerge = { ok: true, failedAt: null, heldAt: null, results: [], skipped: [] };
+        atMerge = { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results: [], skipped: [] };
         if (pipeline.ok) {
           atMerge = yield* Effect.promise(() =>
             runGatePipeline({
@@ -1828,6 +1917,13 @@ export function runOnce(
           );
           if (atMerge.results.length > 0) {
             log(`merge: ${atMerge.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
+          }
+          // The same ending at the other point that runs an `agent` action.
+          if (atMerge.neverRanAt !== null) {
+            yield* agentNeverStarted(
+              { of: "gate", gate: `merge:${atMerge.neverRanAt.gate}` },
+              atMerge.neverRanAt.detail,
+            );
           }
         }
 

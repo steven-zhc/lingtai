@@ -122,6 +122,26 @@ runtime:
   limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
 `;
 
+/**
+ * The same recipe with the cold reviewer this repository actually runs.
+ *
+ * The reviewer alone, and no `run:` action beside it: a command would spawn a
+ * subprocess in a worktree that does not exist, and the whole claim of this
+ * file is that it needs no world. What `#133` is about is the *second* agent in
+ * a pass, and this is the second agent.
+ */
+const REVIEWED = `
+version: 1
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+gates:
+  proposed:
+    - name: review
+      agent: look for races
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
 const issue: Issue = {
   number: 7,
   title: "a race in the importer",
@@ -243,6 +263,46 @@ const quotaRuntime: Runtime = {
     text: null,
     sessionId: "sess-quota",
   }),
+};
+
+/**
+ * The implementer works and is paid for it; the reviewer meets the wall.
+ *
+ * The shape `#133` is about, and the reason 0031's tests pass while it happens:
+ * the run itself never goes near `never-started`, because the run started, took
+ * turns and spent money. It is the *second* agent in the pass — the one the
+ * `agent` gate asks — that arrives at the account limit, and until `d4fbd1a`
+ * that agent had never once run.
+ *
+ * Told apart by the run id, exactly as the reviewer's own comment says it must
+ * be: `agent-gate.ts` runs under `${runId}:review:${name}` so that the session
+ * id derived from it cannot resume the implementer's.
+ */
+const reviewerAtTheWall: Runtime = {
+  ...runtime,
+  run: async (request) =>
+    request.runId.includes(":review:")
+      ? {
+          exitCode: 1,
+          turns: 0,
+          durationMs: 8_000,
+          costUsd: 0,
+          failure: {
+            kind: "never-started",
+            detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
+          },
+          text: null,
+          sessionId: "sess-review",
+        }
+      : {
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1234,
+          costUsd: 0.42,
+          failure: null,
+          text: "done",
+          sessionId: "sess-1",
+        },
 };
 
 /**
@@ -630,6 +690,187 @@ describe("runOnce, with no world to run in", () => {
     const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
     expect(item).toContain("WorkItemBlocked");
     expect(item).not.toContain("WorkItemReleased");
+  });
+
+  /**
+   * **The wall met by the agent *inside a gate*, which is the path 0031 did not
+   * have** (`#133`).
+   *
+   * 0031's tests pass today and this happened anyway: the run started, took
+   * three turns and spent $0.42, so nothing about it is `never-started`. The
+   * reviewer is a second agent asking the same account, and what came back was
+   * turned into a failed verdict — *a review gate refused it*, a sentence about
+   * this diff produced by a condition that has nothing to do with any diff.
+   *
+   * Four things are asserted because four things were wrong, and the fourth is
+   * the one a person would have had to undo by hand:
+   *
+   *   the verdict   no `GateFailed`, and no `GatePassed` either — a gate whose
+   *                 agent never started judged nothing, and both readings are
+   *                 claims nobody is entitled to
+   *   the conductor stood down, once, until the time the message named — not
+   *                 this item backing off while the next one meets the same wall
+   *   the item      released, so the queue brings it back on its own
+   *   the card      no block, and no approval question, under `--no-merge` —
+   *                 which is the flag this repository passes every single time
+   */
+  it("stands the conductor down when a gate's agent never starts, and blames no diff", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        // The flag self-hosting always passes. Without the classification this
+        // is the line that asks a person to merge "anyway", naming a gate that
+        // refused nothing.
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("gate");
+
+    // The run took turns and cost money, so its own ending is not 0031's — the
+    // whole reason the dispatch path never sees this.
+    const runId = result.runId!;
+    const run = (await store.read(runId)).map((e) => e.type);
+    expect(run).toContain("RunFinished");
+    expect(run).not.toContain("RunFailed");
+
+    // The point was reached and said so, in a type that is not a verdict.
+    expect(run).toContain("GateNeverRan");
+    expect(run).not.toContain("GateFailed");
+    expect(run).not.toContain("GatePassed");
+    const neverRan = (await store.read(runId)).find((e) => e.type === "GateNeverRan");
+    const gate = neverRan!.data as { gate: string; action: string; detail: string };
+    expect(gate).toMatchObject({ gate: "proposed", action: "review" });
+    // The runtime's own words, kept whole: evidence about the account, and the
+    // only place the reset time can be read back out of (0031 §4).
+    expect(gate.detail).toContain("You've hit your session limit");
+
+    // Released, not blocked: the queue brings it back with nobody requeueing it,
+    // and no question was put to a person about a diff nothing read.
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(item).toContain("WorkItemReleased");
+    expect(item).not.toContain("WorkItemBlocked");
+    expect(item).not.toContain("ApprovalRequested");
+    expect(did).not.toContain("integrate");
+
+    // And the card's own line says what happened rather than naming a refusal.
+    const released = (await store.read(`wi-${PROJECT}-7`)).find(
+      (e) => e.type === "WorkItemReleased",
+    );
+    const reason = (released!.data as { reason: string }).reason;
+    expect(reason).toContain("never ran");
+    expect(reason).toContain("nothing judged this diff");
+    expect(reason).not.toContain("refused");
+    // And not the *run*'s sentence either: this attempt did spend an agent, and
+    // `the run never started — nothing was spent` would be a claim about a run
+    // that took three turns and cost $0.42.
+    expect(reason).not.toContain("nothing was spent");
+
+    // The account-wide answer, given where 0031 gives it: once, on the control
+    // stream, until the time the message named. 2pm in Chicago is 19:00 UTC.
+    const control = await store.read("ctl-conductor");
+    const paused = control.filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+    const pause = paused[0]!.data as { by: string; reason: string; until: string };
+    expect(pause.by).toBe("lingtai");
+    expect(new Date(pause.until).getUTCHours()).toBe(19);
+    expect(pause.reason).toContain("You've hit your session limit");
+    // And the chip's sentence is about the gate, not about the run. This pass
+    // took three turns and cost $0.42, so 0031's opening would be false here —
+    // the same wrong sentence as the card's, one screen along (0041 §3).
+    expect(pause.reason).toContain("gate's agent never started");
+    expect(pause.reason).not.toContain("no turns taken, nothing spent");
+
+    // Pushed before it let go, so the next attempt's `git fetch origin agent/<n>`
+    // finds the work the implementer was paid for.
+    expect(did).toContain("git push HEAD:refs/heads/agent/7");
+    // And no round was bought from the account that just refused an agent.
+    expect(run).not.toContain("FixRequested");
+  });
+
+  /**
+   * **The third agent in a pass meets the same wall.**
+   *
+   * A refused review buys a fixer (0038), and the fixer asks the same account.
+   * Arriving as a crash, it used to end as a declined round — a block, asking a
+   * person about a refusal nothing had tried to answer, and needing a person to
+   * requeue it once the limit lifted. It is the account's ending, so it is
+   * answered as the gate's is (0041).
+   */
+  it("stands the conductor down when the fixing agent never starts, rather than blocking", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: {
+          ...refusingRuntime,
+          run: async (request) =>
+            request.runId.includes(":fix:")
+              ? {
+                  exitCode: 1,
+                  turns: 0,
+                  durationMs: 5_000,
+                  costUsd: 0,
+                  failure: {
+                    kind: "never-started",
+                    detail: "You've hit your session limit · resets 2pm (America/Chicago)",
+                  },
+                  text: null,
+                  sessionId: "sess-fix",
+                }
+              : refusingRuntime.run(request),
+        },
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("fix");
+
+    const run = (await store.read(result.runId!)).map((e) => e.type);
+    // The review did refuse, and a round was bought — both true, both kept.
+    expect(run).toContain("GateFailed");
+    expect(run).toContain("FixRequested");
+
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const types = item.map((e) => e.type);
+    expect(types).toContain("WorkItemReleased");
+    expect(types).not.toContain("WorkItemBlocked");
+    expect(types).not.toContain("ApprovalRequested");
+    expect(did).not.toContain("integrate");
+    const reason = (item.find((e) => e.type === "WorkItemReleased")!.data as { reason: string }).reason;
+    expect(reason).toContain("never started");
+
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+    const pause = paused[0]!.data as { reason: string };
+    expect(pause.reason).toContain("fix review");
+    expect(pause.reason).not.toContain("no turns taken, nothing spent");
   });
 
   /**
