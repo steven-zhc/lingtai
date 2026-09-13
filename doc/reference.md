@@ -16,7 +16,7 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 53 types
+## event — 55 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -37,7 +37,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions/0022-the-seams.md)), `RETIRED` in the same file |
 | discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
 | prompt (1) | `PromptEdited` |
-| project & queue (4) | `QueueChanged` `RunRequested` `ProjectConfigured` `Reconciled` |
+| project & queue (6) | `QueueChanged` `RunRequested` `ProjectConfigured` `ProjectRefused` `ProjectRecovered` `Reconciled` |
 | extension (1) | `PluginFailed` |
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload
@@ -48,6 +48,24 @@ A **retired** type is one the log holds and nothing appends again. The refusal i
 on the write side because the read side has no honest way to decline a row:
 retiring is two things, and only the second can be enforced — stop writing them,
 and keep reading them for ever.
+
+A **transition** type is appended when a state changes, never while it lasts.
+`ProjectRefused` and `ProjectRecovered` are the pair (`#148`). A conductor's
+pass that cannot look at a project — the catch in `conduct.ts`, a recipe that
+will not resolve or a client that will not build — appends `ProjectRefused` to
+`prj-{project}`, carrying the message, the `ref` the recipe was read from and
+the `codeSha` of the refusing process. A later pass that looks at the project
+without refusing appends `ProjectRecovered`. A pass whose refusal matches the
+one on record — same `ref`, same `codeSha`, same message with its digits taken
+out — appends nothing, so N sweeps against one broken recipe are one event. The
+decision is read off the project's own fold (`passTransition`,
+`packages/domain/src/project.ts`) and reads no clock
+([0027](decisions/0027-the-lease-is-deleted.md)). The same message from another
+`codeSha` is a new refusal: that commit is what tells *this recipe is broken*
+apart from *this process is too old for a recipe that is fine*. It is not
+`DispatchRefused`, which is about tiers and is appended after a claim that a
+refusing pass never reaches. A run that `runOnce` stops before its claim is not
+a `ProjectRefused` either.
 
 ## stream — 7 prefixes, unbounded instances
 
@@ -607,7 +625,7 @@ side is how `requeue` went missing for as long as it did (`#130`).
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 22 fixed, 5 per project, 3 deferred
+## doctor check — 23 fixed, 5 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
@@ -621,7 +639,7 @@ by four checks and two names.
 | connections (2) | `postgres: pooled connection` · `postgres: direct connection is session mode` |
 | schema (5) | `schema: tables` · `schema: optimistic concurrency` · `schema: append-only` · `schema: notify trigger` · `schema: payload column` |
 | projections (2) | `projections: lag` · `projections: shape` |
-| running system (5) | `daemon: liveness` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` · `subscribers: failures` |
+| running system (6) | `daemon: liveness` · `conductor: refusals on the log` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` · `subscribers: failures` |
 | the log itself (1) | `log: every type is readable` |
 | gates ran (2) | `gates: end ran on what landed` · `gates: every point that was planned ran` |
 | credentials (2) | `github: app credentials` · `runtime: signed in` |

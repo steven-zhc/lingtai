@@ -1096,6 +1096,54 @@ export const ProjectConfigured = z.object({
 });
 
 /**
+ * A conductor's pass could not look at this project, and said why — **on the
+ * transition, never while it lasts**.
+ *
+ * `#148`. A daemon started at `cc6e856` read a recipe from `main` that `be9fd26`
+ * had just given `env.refuseHosts`, and its frozen schema refused the key on
+ * every sweep for hours. The pass kept the other projects going, which is right,
+ * and wrote one console line per sweep, which was the whole of the record.
+ * `DispatchRefused` looks as if it covers this and does not: it is about tiers,
+ * and it is appended after a claim that a pass unable to read its recipe never
+ * reaches.
+ *
+ * It is `PassOutcome.refused` on the log — the catch in `conduct.ts`, and
+ * nothing else. A run that `runOnce` stops before its claim is not this.
+ *
+ * **`ref` and `codeSha` are what make it worth having.** The same message means
+ * *this repository's recipe is broken* when the process is current, and *this
+ * process is too old for a recipe that is fine* when it is not. Without the
+ * commit beside it the event records a symptom nobody can act on.
+ *
+ * Appended only when it differs from the refusal already on record — see
+ * `passTransition` — so a sweep on a loop does not write the same row every few
+ * seconds into a log that keeps it for ever.
+ */
+export const ProjectRefused = z.object({
+  project: z.string(),
+  /** The error, as the pass caught it. */
+  detail: z.string(),
+  /** The branch the recipe was read from. Null when the pass failed before it knew. */
+  ref: z.string().nullable(),
+  /** The commit the refusing process was loaded from. Null when it recorded none. */
+  codeSha: z.string().nullable(),
+});
+
+/**
+ * A pass looked at a project it had refused, and did not refuse it.
+ *
+ * The other half of `ProjectRefused`, and the reason neither needs a clock
+ * (0027): *it is refusing* is a refusal with no recovery after it, and *it was
+ * refusing and stopped* is one with. Without it a reader would have to guess from
+ * the age of the last refusal — the lease, back again.
+ */
+export const ProjectRecovered = z.object({
+  project: z.string(),
+  ref: z.string().nullable(),
+  codeSha: z.string().nullable(),
+});
+
+/**
  * What a restarted daemon found that the log did not predict, and what it did.
  *
  * **Recorded, not quietly repaired.** A system that silently tidies up after
@@ -1217,6 +1265,8 @@ export const EVENTS = {
   DiscussionHeld,
   PromptEdited,
   ProjectConfigured,
+  ProjectRefused,
+  ProjectRecovered,
   Reconciled,
   PluginFailed,
 } as const;

@@ -493,6 +493,9 @@ async function daemonCommand(flags: Record<string, string> = {}): Promise<number
       pass: async (reason) => {
         const outcome = await conductorPass({
           merge: !("no-merge" in flags),
+          // The commit read at startup, so a refusal on the log says which
+          // process refused (#148).
+          codeSha: code.sha,
           log: (line) => console.log(line),
         });
         // The run told GitHub as it went (0022), so there is nothing left

@@ -27,6 +27,8 @@ import {
 } from "@lingtai/conductor";
 import { Effect } from "effect";
 import { readControl } from "@lingtai/daemon";
+import { type ProjectState, passTransition, projectStream, reduceProject } from "@lingtai/domain";
+import { type EventStore, eventStore } from "@lingtai/event-store";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
@@ -41,6 +43,13 @@ export interface ConductOptions {
   promptPath?: string;
   /** How many items one pass may take. One, so completion drives the loop. */
   max?: number;
+  /**
+   * The commit this process was loaded from, read once at its start and never
+   * per pass — the checkout is exactly what moves under loaded modules. Carried
+   * on a `ProjectRefused`, so the log can tell a broken recipe from a process
+   * too old for a good one (#148).
+   */
+  codeSha?: string | null;
   log?: (line: string) => void;
 }
 
@@ -89,23 +98,28 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
   // by the next one — which the append itself triggers.
   const control = await readControl();
 
-  for (const project of await loadProjects()) {
-    const name = project.project;
-    if (!name || !project.owner) continue;
-    outcome.projects += 1;
-
-    try {
+  return conductProjects({
+    projects: await loadProjects(),
+    codeSha: options.codeSha ?? null,
+    outcome,
+    log,
+    work: async (project, where) => {
+      const name = project.project!;
       const client = await createGitHubClient({
         auth: githubApp(),
-        owner: project.owner,
+        owner: project.owner!,
         repo: name,
       });
 
       // `max: 0` means "look at the project and take nothing". Returned here
       // rather than through `runQueue({ max: 0 })` because a nominated issue
-      // would otherwise still jump the queue and run.
-      if (options.max === 0) continue;
-      const resolved = await currentRecipe(project, client);
+      // would otherwise still jump the queue and run. Nothing was read, so it
+      // says nothing about whether the project would be refused.
+      if (options.max === 0) return "looked-away";
+      // Asked here rather than inside `currentRecipe`, so a refusal can say
+      // which branch it was reading (#148).
+      where.ref = project.base ?? (await client.defaultBranch());
+      const resolved = await currentRecipe(project, client, where.ref);
 
       const common = {
         project,
@@ -176,13 +190,90 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
         );
         outcome.ran += ran.ran.length;
       }
+      return "looked";
+    },
+  });
+}
+
+/** How far a project's work got before it refused: the branch, once known. */
+export interface Where {
+  ref: string | null;
+}
+
+export interface ProjectsOptions {
+  projects: readonly ProjectState[];
+  /**
+   * One project's share of the pass. Throwing is refusing it. `"looked-away"`
+   * is returning before anything was read, which is neither a refusal nor a
+   * recovery. Sets `where.ref` once it knows the branch.
+   */
+  work: (project: ProjectState, where: Where) => Promise<"looked" | "looked-away">;
+  codeSha: string | null;
+  outcome: PassOutcome;
+  log: (line: string) => void;
+  store?: EventStore;
+}
+
+/**
+ * Every registered project, each in isolation — and a refusal's start and end
+ * on the project's stream.
+ *
+ * Split from `conductorPass` so the part that decides what reaches the log runs
+ * without a GitHub App: that record is the claim of `#148`, and a claim about
+ * the log is tested against the log.
+ */
+export async function conductProjects(options: ProjectsOptions): Promise<PassOutcome> {
+  const { outcome, log, store = eventStore } = options;
+
+  for (const project of options.projects) {
+    const name = project.project;
+    if (!name || !project.owner) continue;
+    outcome.projects += 1;
+    const where: Where = { ref: null };
+
+    try {
+      if ((await options.work(project, where)) === "looked") {
+        await record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log });
+      }
     } catch (err) {
       // One project's problem is not the pass's. A misconfigured repository
       // must not stop the others from being worked.
       outcome.refused.push({ project: name, detail: (err as Error).message });
       log(`${name}: ${(err as Error).message}`);
+      // **And on the log** (#148): this line was the whole record for hours
+      // while a daemon too old for its recipe refused every sweep. Appended on
+      // the transition only — `passTransition` compares with what the stream
+      // already holds, so the next identical sweep appends nothing.
+      await record(
+        project,
+        { refused: true, detail: (err as Error).message, ref: where.ref, codeSha: options.codeSha },
+        { store, log },
+      );
     }
   }
 
   return outcome;
+}
+
+/**
+ * Append what `passTransition` decides, if anything. Never throws: a record that
+ * could not be written must not become the refusal of every project after this
+ * one, and the next pass re-reads the stream and decides again.
+ */
+async function record(
+  project: ProjectState,
+  seen: Parameters<typeof passTransition>[1],
+  options: { store: EventStore; log: (line: string) => void },
+): Promise<void> {
+  const { store, log } = options;
+  const name = project.project!;
+  try {
+    // Re-read rather than trusting the state the pass began with: a run can
+    // last an hour, and what matters is what the stream holds now.
+    const current = reduceProject(await store.read(projectStream(name)));
+    const next = passTransition(current, seen);
+    if (next) await store.append(projectStream(name), current.version, [next]);
+  } catch (err) {
+    log(`${name}: could not record the pass on the log — ${(err as Error).message}`);
+  }
 }

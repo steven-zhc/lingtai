@@ -33,7 +33,7 @@ import {
 } from "@lingtai/conductor";
 import { createGitHubClient } from "@lingtai/github";
 import { type Recipe, baseDivergence } from "@lingtai/recipe";
-import { isEventType } from "@lingtai/domain";
+import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
   conductorLockHolder,
@@ -42,6 +42,7 @@ import {
   findOrphans,
   inFlight,
   lastBeat,
+  readCodeVersion,
   readControl,
   readStatus,
 } from "@lingtai/daemon";
@@ -704,6 +705,78 @@ async function daemonCurrency(): Promise<CheckResult> {
     status: "warn",
     detail: `${sentence}. Unbuilt removes the build, not the restart — restart the daemon to take them`,
   };
+}
+
+/**
+ * What a conductor's pass refused, **as the refusing process saw it** (#148).
+ *
+ * The `recipe:` and `env:` rows read `origin/<base>` with *this* checkout's code,
+ * and that is the wrong witness whenever the checkout is newer than the daemon.
+ * On 2026-09-12 a daemon started at `cc6e856` refused every sweep of `lingtai`
+ * over a key its frozen schema did not know, while a `doctor` run after a
+ * `git pull` resolved the same recipe cleanly. The two disagreed, and the
+ * healthy-looking one was the one a person read.
+ *
+ * So this resolves nothing. It reads each project's last `ProjectRefused` that
+ * no `ProjectRecovered` has followed, and sets its commit beside this
+ * checkout's, which is what turns the message into a diagnosis.
+ */
+async function passRefusals(): Promise<CheckResult> {
+  const name = "conductor: refusals on the log";
+  const projects = await loadProjects().catch(() => null);
+  if (projects === null) return { name, status: "skip", detail: "the project streams could not be read" };
+
+  const refusing = projects.filter((p) => p.project !== null && p.refused !== null);
+  if (refusing.length === 0) {
+    return { name, status: "ok", detail: "no project is refused by the last pass that looked at it" };
+  }
+
+  const status = await readStatus().catch(() => null);
+  const daemonUp = status !== null && lastBeat(status).up;
+  const here = (await readCodeVersion()).sha;
+  const read = refusing.map((p) => describeRefusal(p.project!, p.refused!, { daemonUp, here }));
+  return {
+    name,
+    status: read.some((r) => r.status === "fail") ? "fail" : "warn",
+    detail: read.map((r) => r.detail).join("\n         "),
+  };
+}
+
+/**
+ * One project's refusal, in words. Exported for the suite, which cannot arrange
+ * which daemon is up against a shared database.
+ *
+ * **A fail while a daemon is up**: the last pass that looked refused, and no
+ * pass since has looked without refusing, so nothing is being taken from the
+ * project. It does not claim the daemon up now is the process that refused — a
+ * `--no-conduct` daemon beats at the same commit and runs no pass — only what
+ * the log says. **A warn when none is**, since whatever refused is no longer
+ * beating, and the next pass records whether it still refuses.
+ */
+export function describeRefusal(
+  project: string,
+  r: RecordedRefusal,
+  now: { daemonUp: boolean; here: string | null },
+): { status: "fail" | "warn"; detail: string } {
+  const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "an unrecorded commit");
+  const head =
+    `${project}: refused since seq ${r.seq} (${r.at.toISOString()}) by a process at ${short(r.codeSha)}, ` +
+    `reading ${r.ref ?? "a branch it never reached"} — ${r.detail}.`;
+  // The sentence #148 was missing: whether the recipe rows in this report
+  // read with the refusing code or with newer code.
+  const witness =
+    r.codeSha && now.here && r.codeSha !== now.here
+      ? ` This checkout is at ${short(now.here)}, so the recipe rows here read with other code than the ` +
+        "process that refused: if they are ok, the recipe is fine and that process is too old for it — restart it"
+      : r.codeSha && r.codeSha === now.here
+        ? " This checkout is at the same commit, so the recipe rows here read with the code that refused"
+        : " Which code the recipe rows here read with, beside the refusing process's, cannot be said";
+  return now.daemonUp
+    ? { status: "fail", detail: `${head}${witness}` }
+    : {
+        status: "warn",
+        detail: `${head}${witness}. No daemon is up; the next pass records whether it still refuses`,
+      };
 }
 
 /**
@@ -1405,6 +1478,10 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     // Beside liveness, never folded into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.
     results.push(await daemonCurrency());
+    // What the conductor refused, from the log — not what this checkout would
+    // refuse, which the recipe rows answer, and which is a different question
+    // whenever the two are at different commits (#148).
+    results.push(await passRefusals());
     results.push(await conductorLock(direct));
     results.push(await readableTypes(direct));
     results.push(await orphans());

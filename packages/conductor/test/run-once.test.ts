@@ -100,6 +100,7 @@ const project: ProjectState = {
   base: "develop",
   configHash: "seeded",
   fromSha: "0".repeat(40),
+  refused: null,
   version: 1,
   lastSeq: null,
 };

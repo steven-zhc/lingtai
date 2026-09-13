@@ -12,7 +12,14 @@ import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
-import { declaredExtensions, extensionRow, formatReport, limitsRow, runDoctor } from "../src/doctor.ts";
+import {
+  declaredExtensions,
+  describeRefusal,
+  extensionRow,
+  formatReport,
+  limitsRow,
+  runDoctor,
+} from "../src/doctor.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
 const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
@@ -351,6 +358,50 @@ describe("lingtai doctor — reporting", () => {
     const report = await runDoctor(env({}));
     expect(formatReport(report)).toContain("FAILED");
     expect(report.results.every((r) => r.detail.length > 0)).toBe(true);
+  });
+});
+
+/**
+ * `#148`: a daemon at `cc6e856` refused every sweep of a recipe that a `doctor`
+ * run from a newer checkout resolved cleanly. What the log says is read beside
+ * which code this report's own recipe rows run.
+ */
+describe("lingtai doctor — refusals on the log", () => {
+  const OLD = "cc6e856".padEnd(40, "0");
+  const NEW = "be9fd26".padEnd(40, "0");
+  const refusal = {
+    project: "lingtai",
+    detail: 'env: Unrecognized key: "refuseHosts"',
+    ref: "main",
+    codeSha: OLD,
+    seq: 4242n,
+    at: new Date("2026-09-12T10:00:00.000Z"),
+  };
+
+  it("fails while a daemon is up, and says this checkout's recipe rows read with newer code", () => {
+    const read = describeRefusal("lingtai", refusal, { daemonUp: true, here: NEW });
+    expect(read.status).toBe("fail");
+    expect(read.detail).toContain("seq 4242");
+    expect(read.detail).toContain("cc6e856");
+    expect(read.detail).toContain("reading main");
+    expect(read.detail).toContain("refuseHosts");
+    expect(read.detail).toContain("This checkout is at be9fd26");
+    expect(read.detail).toContain("too old");
+  });
+
+  it("says the rows read with the refusing code when the commits agree", () => {
+    const read = describeRefusal("lingtai", refusal, { daemonUp: true, here: OLD });
+    expect(read.status).toBe("fail");
+    expect(read.detail).toContain("read with the code that refused");
+    expect(read.detail).not.toContain("too old");
+  });
+
+  it("warns, rather than fails, when no daemon is up", () => {
+    const read = describeRefusal("lingtai", { ...refusal, codeSha: null, ref: null }, { daemonUp: false, here: NEW });
+    expect(read.status).toBe("warn");
+    expect(read.detail).toContain("an unrecorded commit");
+    expect(read.detail).toContain("a branch it never reached");
+    expect(read.detail).toContain("No daemon is up");
   });
 });
 

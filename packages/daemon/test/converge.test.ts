@@ -30,6 +30,7 @@ const project: ProjectState = {
   base: "main",
   configHash: "seeded",
   fromSha: "0".repeat(40),
+  refused: null,
   version: 1,
   lastSeq: null,
 };
