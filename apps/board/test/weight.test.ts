@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { TaskCard } from "@lingtai/projector/task-view";
-import { LANDED_OPEN, issueUrl, spend, toCard, toColumns } from "../src/lib/board.ts";
+import { LANDED_OPEN, issueUrl, ledger, toCard, toColumns } from "../src/lib/board.ts";
 
 function task(over: Partial<TaskCard> = {}): TaskCard {
   return {
@@ -106,7 +106,7 @@ describe("what the board says it has cost", () => {
       toCard(task({ state: "running", issue: "4", costUsd: null })),
     ]);
 
-    const total = spend(columns);
+    const { total } = ledger(columns);
     expect(total.work).toBeCloseTo(6.15, 5);
     expect(total.cards).toBe(4);
   });
@@ -118,14 +118,14 @@ describe("what the board says it has cost", () => {
    */
   it("keeps repair out of the work's figure and still shows it", () => {
     const columns = toColumns([toCard(task({ costUsd: 1.0, repairCostUsd: 0.5 }))]);
-    const total = spend(columns);
+    const { total } = ledger(columns);
 
     expect(total.work).toBeCloseTo(1.0, 5);
     expect(total.repair).toBeCloseTo(0.5, 5);
   });
 
   it("says nothing spent rather than nothing at all on an empty board", () => {
-    expect(spend(toColumns([]))).toEqual({ work: 0, repair: 0, cards: 0 });
+    expect(ledger(toColumns([])).total).toEqual({ work: 0, repair: 0, cards: 0 });
   });
 });
 

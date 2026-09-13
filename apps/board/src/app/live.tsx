@@ -33,7 +33,7 @@
  * is the last seq, so a tab that has been asleep asks for the right place even
  * on a first connection.
  *
- * **The chip reports the projection, not the socket.** It used to report
+ * **The dot reports the projection, not the socket.** It used to report
  * whether this connection was open, which is precisely the thing that was never
  * in doubt on the morning it lied: socket open, chip green, board frozen for
  * the whole of a run (`#64`). Lag is the answer when it is zero. When it is
@@ -41,12 +41,19 @@
  * coming* — and since [0022] a `lingtai run` follows the log itself, so lag
  * without a daemon is ordinary during a run and an accusation after one.
  *
+ * **It is a dot, and it carries `#98`'s fact too.** Both of those are
+ * `the-bar.md`: a chip is not free, and two boxes for one question — *is the
+ * system doing what the code says?* — is two things to learn to read. The
+ * currency arrives as a prop because it is git's answer and belongs on a render
+ * rather than on the health tick; the fold that weighs the two is `bearing.ts`,
+ * and it keeps whichever is not the headline in the title.
+ *
  * **It answers whether you are current, never whether anything will move.**
- * Those came apart in `#77`: the projection was at the head, so this chip said
+ * Those came apart in `#77`: the projection was at the head, so this said
  * `current` — correctly — for four days in which the conductor was paused and
  * nothing was ever going to run. That fact has its own chip next door
- * (`paused.tsx`), because it is its own fact and folding it in here would make
- * one word carry two answers.
+ * (`paused.tsx`), because it is its own fact, it is absent when there is
+ * nothing to say, and folding it in would make one dot carry two answers.
  *
  * Several tabs each get their own stream, and all of them update. Nothing here
  * coordinates them, because nothing has to: each one is reading the same
@@ -54,6 +61,8 @@
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { bearing, type CodeNews } from "@/lib/bearing";
+import type { Health } from "@/lib/health";
 
 /**
  * How long to coalesce a burst before re-reading.
@@ -72,57 +81,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
  */
 const COALESCE_MS = 250;
 
-interface Health {
-  lag: number | null;
-  daemon: "up" | "stale" | "never";
-  sinceBeatMs: number | null;
-  error?: string;
-}
-
-/** What the chip says, and why. Ordered worst-first: the first true one wins. */
-function read(socket: "connecting" | "open" | "trouble", health: Health | null): {
-  label: string;
-  tone: "live" | "idle" | "warn";
-  title: string;
-} {
-  // The socket still matters — but as the reason the *numbers* are stale,
-  // not as the headline. A dead stream means nothing below can be trusted.
-  if (socket === "trouble") {
-    return { label: "offline", tone: "warn", title: "the event stream is down; nothing here is updating" };
-  }
-  if (!health) {
-    return { label: socket === "open" ? "…" : "connecting", tone: "idle", title: "asking" };
-  }
-  if (health.error) {
-    return { label: "unknown", tone: "warn", title: `could not read the projection: ${health.error}` };
-  }
-  if (health.lag === null) {
-    return { label: "no board yet", tone: "idle", title: "task_view has never been built — run lingtai daemon" };
-  }
-
-  const beat =
-    health.daemon === "up"
-      ? `daemon beating ${Math.round((health.sinceBeatMs ?? 0) / 1000)}s ago`
-      : health.daemon === "stale"
-        ? `no beat for ${Math.round((health.sinceBeatMs ?? 0) / 1000)}s`
-        : "no daemon has ever run";
-
-  if (health.lag === 0) return { label: "current", tone: "live", title: `task_view is at the head — ${beat}` };
-
-  // Behind, and whether that is temporary depends entirely on the beacon. A
-  // `lingtai run` holds a projector of its own, so this is only alarming when
-  // it persists.
-  if (health.daemon === "up") {
-    return { label: `behind ${health.lag}`, tone: "idle", title: `catching up — ${beat}` };
-  }
-  return {
-    label: `behind ${health.lag} · no daemon`,
-    tone: "warn",
-    title: `${health.lag} event(s) unfolded and ${beat} — start one with: lingtai daemon --no-conduct`,
-  };
-}
-
-export function Live() {
+export function Live({ code }: { code: CodeNews | null }) {
   const router = useRouter();
   const [socket, setSocket] = useState<"connecting" | "open" | "trouble">("connecting");
   const [health, setHealth] = useState<Health | null>(null);
@@ -226,10 +185,20 @@ export function Live() {
     };
   }, [schedule]);
 
-  const { label, tone, title } = read(socket, health);
+  const { label, tone, why, title } = bearing(socket, health, code);
   return (
-    <span className={`chip ${tone}`} title={title}>
-      {label}
-    </span>
+    <>
+      {/* `role="img"` and a label, because the dot is the whole statement in
+          the ordinary case and a dot has no text. What a sighted reader gets
+          from the colour, a screen reader gets from here. */}
+      <span className={`dot ${tone}`} role="img" aria-label={label} title={title} />
+      {/* The sentence and the action, and only when there is one. Silence is
+          what makes the dot worth glancing at. */}
+      {why ? (
+        <span className="why" title={title}>
+          {why}
+        </span>
+      ) : null}
+    </>
   );
 }

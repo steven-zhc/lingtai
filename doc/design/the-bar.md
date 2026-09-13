@@ -1,6 +1,6 @@
 # The board's bar, weighted
 
-**Status** drafted · 2026-09-10 · a picture at
+**Status** built · 2026-09-10 · `#134` · a picture at
 `claude.ai/code/artifact/f57ced9e-f1a4-4405-8d55-01e76ee7c562`
 
 Eleven objects, nine of them boxed, wrapping to a second line at 1440.
@@ -62,18 +62,46 @@ have been.
 argued against the four that are left, not against the empty space beside them —
 which is the argument none of the six tickets above was asked to make.
 
+It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx` — where
+the next chip would be added, and so where the argument has to be made.
+
 ## What #141 and #142 changed under this
 
-The row still has the shape this page objects to; two of its chips were renamed
-when [0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and
-the quotes above say the new names.
+Two of the chips were renamed when
+[0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and the
+quotes above say the new names: `$N repair` became `$N answering` — the column
+behind it is still `repair_costs` and holds every round a pass buys — and
+`<project>: repairs ×1` became `<project>: rounds ×2`, with `passCeiling`'s
+sentence as its title. Neither rename touched the argument.
 
-- `$N repair` → **`$N answering`**. The column behind it is still `repair_costs`
-  and now holds every round a pass buys, of which a repair is no longer one.
-- `<project>: repairs ×1` → **`<project>: rounds ×2`**, with `passCeiling`'s
-  sentence as its title — the same sentence `lingtai add`, `lingtai doctor` and
-  the drain say, so the four cannot disagree about one recipe.
+## What it looks like now
 
-**Neither rename touches the argument.** The count is the same, the weight is the
-same, and `chip sig` — amber, reserved for *a human is being waited on* — is
-still on the money chip, twenty lines below the comment that states the rule.
+```
+灵 Lingtai │ [all] lingtai nextloom-ai-admin        10 queued · 1 running · 45 landed  ●  [1 waiting on you]
+```
+
+One line at 1440, and one line with a third project: the filter grows a tab, and
+a tab is not a chip. Nothing waiting and nothing wrong is quieter still — the
+headline loses its box and its colour and stays the same words, the dot is green
+and says nothing, and the row is the reading and the dot.
+
+Where the five that left went:
+
+| | |
+|---|---|
+| `$488.52` · `$81.83 answering` | `/spend`, off the reading. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried |
+| `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen |
+| `current` + `daemon N behind` | one dot (`health.tsx`, folded by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
+
+`paused` and `draining` are still chips and still amber-free, because both are
+already absent when there is nothing to say — which is the property that makes a
+chip affordable at all.
+
+**The claim is about the bar, and only the bar.** A card still wears the accent
+where a card has earned it — the `waiting` lane's own heading, an answering
+round's `pill sig` (`#84`), an open question. Cards are read one at a time and on
+purpose; the bar is glanced at while you are doing something else, and it is
+that difference, not the palette, that makes a second amber cost something here
+and nothing there. `apps/board/test/bar.test.ts` asserts the scoped version:
+of everything that can render inside `.bar`, exactly one selector paints with
+`--signal`, and it is the headline's.

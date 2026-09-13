@@ -190,11 +190,18 @@ export interface BoardCard {
 /**
  * What one pass of a project may spend, as the board says so.
  *
- * On the bar rather than on a card, because it is a fact about the repository
- * and not about any one ticket — and shown whether it buys anything or not, the
- * way an unconfigured gate point is shown as `skipped` rather than omitted
- * (0025 §2). A default that is invisible when it is off is a default nobody can
- * audit.
+ * Not on a card, because it is a fact about the repository and not about any
+ * one ticket — and shown whether it buys anything or not, the way an
+ * unconfigured gate point is shown as `skipped` rather than omitted (0025 §2). A
+ * default that is invisible when it is off is a default nobody can audit.
+ *
+ * **On `/spend`, and no longer on the bar.** 0025 §2 asks that a repository be
+ * able to see what it spends without being asked, and it is right — but
+ * *visible* is not *permanently on screen*. It changes about once a quarter and
+ * cost a chip per project on a rail read at a glance
+ * ([the-bar.md](../../../../doc/design/the-bar.md)), so it sits beside the bill
+ * it explains instead: what answering refusals spent, and the standing
+ * permission that let it (#84).
  *
  * **`summary` is `passCeiling`'s sentence and not the board's own**
  * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
@@ -934,13 +941,45 @@ export interface Spend {
   cards: number;
 }
 
-export function spend(columns: readonly BoardColumn[]): Spend {
-  const cards = columns.flatMap((c) => c.cards);
-  return {
-    work: cards.reduce((n, c) => n + (c.costUsd ?? 0), 0),
-    repair: cards.reduce((n, c) => n + (c.repairCostUsd ?? 0), 0),
-    cards: cards.length,
-  };
+/**
+ * What the board's cards cost, per repository and in all — the `/spend` page.
+ *
+ * The bar carried the total and could not carry the split: a figure per project
+ * is a chip per project, on a rail that has to be read in a glance
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). A page can, and it is the
+ * breakdown the total was standing in for — *whose* money this is being spent
+ * is the first thing anybody asks after *how much*.
+ *
+ * A card's project rather than the register's list, for the reason `onBoard`
+ * is built from the cards: a card can outlive the project that made it, and a
+ * ledger that omits it is a ledger that does not add up.
+ *
+ * **One fold, and the total is the sum of the rows as printed.** Each row is
+ * rounded to the cent once, here, and `total` adds those cents — never a second
+ * pass over the cards. Summing the cards separately and rounding each side on
+ * its own prints a column that is a cent off its own footer, on the page whose
+ * whole claim is that the money adds up.
+ */
+export function ledger(columns: readonly BoardColumn[]): {
+  rows: (Spend & { project: string })[];
+  total: Spend;
+} {
+  const raw = new Map<string, Spend & { project: string }>();
+  for (const card of columns.flatMap((c) => c.cards)) {
+    const row = raw.get(card.project) ?? { project: card.project, work: 0, repair: 0, cards: 0 };
+    row.work += card.costUsd ?? 0;
+    row.repair += card.repairCostUsd ?? 0;
+    row.cards += 1;
+    raw.set(card.project, row);
+  }
+  const cents = (usd: number) => Math.round(usd * 100);
+  const rows = [...raw.values()].map((r) => ({ ...r, work: cents(r.work), repair: cents(r.repair) }));
+  const total = rows.reduce(
+    (t, r) => ({ work: t.work + r.work, repair: t.repair + r.repair, cards: t.cards + r.cards }),
+    { work: 0, repair: 0, cards: 0 },
+  );
+  const dollars = <T extends Spend>(r: T): T => ({ ...r, work: r.work / 100, repair: r.repair / 100 });
+  return { rows: rows.map(dollars), total: dollars(total) };
 }
 
 /**
