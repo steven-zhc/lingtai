@@ -59,6 +59,11 @@ run whose recipe asks for nothing.
 So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
+The one exception is at `proposed`, not `merge`: the `tamper` watch (#31) holds
+any diff touching the conductor, the store, the hook, the actions, the recipe,
+the domain, a `package.json`, a vitest config, or `.lingtai/config.yaml` itself —
+so an agent cannot weaken its own gates in one merge.
+
 The board follows a bare `lingtai run` live: **every process that appends holds
 a projector while it runs** (0022), so there is nothing to start in a second
 terminal and nothing to wait for at the end. The chip in the bar says whether
