@@ -581,6 +581,49 @@ describe("runOnce, with no world to run in", () => {
   });
 
   /**
+   * `#89`: a run stopped at its turns spent the most, and the log has to say so
+   * where spend is read — `RunFinished.costUsd` — and not only in the prose.
+   */
+  it("records the receipt of a run stopped at its turns, and still ends it as failed", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: {
+          ...runtime,
+          run: async () => ({
+            exitCode: 1,
+            turns: 150,
+            durationMs: 900_000,
+            costUsd: 24.1,
+            failure: { kind: "out-of-turns", detail: "150 turns, and the recipe allows 150 · $24.10" },
+            text: null,
+            sessionId: "sess-turns",
+          }),
+        },
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+    expect(result.ok).toBe(false);
+
+    const [, events] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const endings = events.filter((e) => e.type === "RunFinished" || e.type === "RunFailed");
+    expect(endings.map((e) => e.type)).toEqual(["RunFinished", "RunFailed"]);
+    expect(endings[0]!.data).toEqual({ exitCode: 1, turns: 150, durationMs: 900_000, costUsd: 24.1 });
+    expect((endings[1]!.data as { kind: string }).kind).toBe("out-of-turns");
+  });
+
+  /**
    * **"Every exit appends", as a test rather than as a comment.**
    *
    * It was a `catch (err)` whose own comment admitted what it was: *"the

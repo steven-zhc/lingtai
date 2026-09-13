@@ -21,7 +21,8 @@
  *   → integrate                             a point with actions always runs
  *
  * **Every exit appends.** A run that ends leaves either `RunFinished` or
- * `RunFailed`, and a work item that does not land is either released or blocked
+ * `RunFailed` — both, for a run stopped at its turns, whose receipt is its
+ * spend — and a work item that does not land is either released or blocked
  * with a question. The old loop could end in silence in at least seven places;
  * that is the thing being replaced.
  *
@@ -1165,8 +1166,32 @@ export function runOnce(
           if (outcome.failure) {
             runLog.note("run", `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`);
             // Never silence. Every ending has a kind.
+            //
+            // `out-of-turns` is the one failure that arrives with a receipt:
+            // the binary ended the session at `--max-turns` and printed its
+            // turns and cost (`#89`). Those go on the log as `RunFinished`
+            // first, because that is the only event the card, the task page
+            // and the board's totals read spend off — without it the runs that
+            // overspent would be counted as free. `RunFailed` follows, so the
+            // run still ends as failed with its kind.
+            const receipt =
+              outcome.failure.kind === "out-of-turns"
+                ? [
+                    {
+                      type: "RunFinished" as const,
+                      actor: "conductor" as const,
+                      data: parsePayload("RunFinished", {
+                        exitCode: outcome.exitCode ?? 1,
+                        turns: outcome.turns,
+                        durationMs: outcome.durationMs,
+                        costUsd: outcome.costUsd,
+                      }),
+                    },
+                  ]
+                : [];
             yield* Effect.promise(() =>
               store.append(runId, version, [
+                ...receipt,
                 {
                   type: "RunFailed",
                   actor: "conductor",
@@ -1198,7 +1223,8 @@ export function runOnce(
                * started took no turns and spent nothing (0031 §1); a crash
                * halfway through spent an agent. Neither appends `RunFinished`,
                * so neither card carries a cost pill — the sentence is the only
-               * place the difference can be said, and a card that cost nothing
+               * place the difference can be said (`out-of-turns` alone appends
+               * its receipt, above), and a card that cost nothing
                * must not read like one that bought an hour of agent.
                *
                * Clipped by `said`, and for its reason: a crash's detail is
