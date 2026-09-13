@@ -146,8 +146,15 @@ export interface SubscriberOptions {
   subject: (event: Envelope) => Promise<EventSubject | null>;
   /** Where the command runs. There is no worktree for an event, so this is the daemon's own. */
   cwd: string;
-  /** Every credential it gets — the names declared beside it, plus `runnableEnv`'s six (0037 §1). */
-  env: Record<string, string>;
+  /**
+   * Every credential it gets — the names declared beside it, plus `runnableEnv`'s six (0037 §1).
+   *
+   * A function when it is to be read per delivery, which is how the daemon
+   * gives it: asked only once `on:` and the project have matched, so a token
+   * put in the env file after startup reaches the next event without a
+   * restart. A rejection rejects `deliver`, and so is a `PluginFailed`.
+   */
+  env: Record<string, string> | (() => Promise<Record<string, string>>);
   board: string;
 }
 
@@ -179,6 +186,7 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
         workItem,
         board: options.board,
       };
+      const env = typeof options.env === "function" ? await options.env() : options.env;
 
       await new Promise<void>((resolve, reject) => {
         startCommand(
@@ -187,7 +195,7 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
             timeoutMs: SUBSCRIBER_COMMAND_TIMEOUT_MS,
             timeoutLabel: SUBSCRIBER_COMMAND_TIMEOUT,
             cwd: options.cwd,
-            env: options.env,
+            env,
             payload,
           },
           // Read here and acted on nowhere else. See the note on where the

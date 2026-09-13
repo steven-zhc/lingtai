@@ -205,14 +205,24 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
     if (env === null) continue;
 
     for (const spec of filter.recipe.subscribers) {
+      const project = filter.project;
       built.push({
         on: spec.on,
         subscriber: createSubscriber({
-          project: filter.project,
+          project,
           spec,
           subject: options.subject,
           cwd: options.cwd,
-          env: runnableEnv(extensionEnv(env.merged, spec.env).values),
+          // Read again per delivery, not kept from the read above. The recipe is
+          // what a running daemon holds until it restarts; the env file is not:
+          // `lingtai env set` is what a missing name's `PluginFailed` tells the
+          // operator to run, and a subscriber that went on spawning with the
+          // env it was built with would keep telling them to run it after they
+          // had. The read above stays, as the startup answer to *unread*.
+          env: async () => {
+            const now = await resolve({ project, required: [], allow: declared });
+            return runnableEnv(extensionEnv(now.merged, spec.env).values);
+          },
           board: options.board ?? BOARD_URL,
         }),
       });
@@ -291,7 +301,8 @@ export interface SubscriberSet {
  *
  * Only an *unread* project is asked. A project that was read keeps what it
  * declared until the daemon restarts, which is what the recipe's own note on
- * `subscribers:` promises.
+ * `subscribers:` promises. What it declared, not the values: each delivery
+ * reads the project's env file again, so `lingtai env set` needs no restart.
  */
 export async function createSubscriberSet(options: SubscriberSetOptions): Promise<SubscriberSet> {
   const log = options.log ?? (() => {});

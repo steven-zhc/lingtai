@@ -74,6 +74,10 @@ describe("this repository's tamper watch", () => {
     // Spawned rather than loaded, so the walk below never reaches it — and it
     // is the code a bot token is handed to.
     "packages/telegram/src/telegram.ts",
+    // Loaded by the CLI and Telegram by relative path, with no dependency
+    // declared on it, so the walk below cannot reach this one either — and it
+    // renders the text the token is sent with.
+    "packages/extension/src/index.ts",
     "packages/repo/src/integrate.ts",
     "apps/cli/src/lingtai.ts",
     "apps/board/src/app/actions.ts",

@@ -128,20 +128,20 @@ async function freePort(): Promise<number> {
  * The file holds `LINGTAI_DATABASE_URL` on purpose: the claim is that the
  * process cannot read it even when it is sitting right beside the token.
  */
-async function started(port: number, spec: Partial<SubscriberSpec> = {}) {
+const envLines = (port: number, token = true) =>
+  [
+    ...(token ? [`TELEGRAM_BOT_TOKEN=${TOKEN}`] : []),
+    "TELEGRAM_CHAT_ID=42",
+    `TELEGRAM_API_ROOT=http://127.0.0.1:${port}`,
+    "LINGTAI_DATABASE_URL=postgres://the-log",
+    "",
+  ].join("\n");
+
+async function started(port: number, spec: Partial<SubscriberSpec> = {}, token = true) {
   const home = await mkdtemp(join(tmpdir(), "lingtai-telegram-home-"));
   const file = projectEnvPath(PROJECT, home);
   await mkdir(join(home, "env"), { recursive: true });
-  await writeFile(
-    file,
-    [
-      `TELEGRAM_BOT_TOKEN=${TOKEN}`,
-      "TELEGRAM_CHAT_ID=42",
-      `TELEGRAM_API_ROOT=http://127.0.0.1:${port}`,
-      "LINGTAI_DATABASE_URL=postgres://the-log",
-      "",
-    ].join("\n"),
-  );
+  await writeFile(file, envLines(port, token));
   const declared = { ...shipped, env: [...shipped.env, "TELEGRAM_API_ROOT"], ...spec };
   const { built, unread } = await buildSubscribers({
     filters: [{ project: PROJECT, ok: true, recipe: { subscribers: [declared] } } as unknown as ProjectFilter],
@@ -152,6 +152,7 @@ async function started(port: number, spec: Partial<SubscriberSpec> = {}) {
   expect(unread).toEqual([]);
   loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: async () => {} });
   await loop.start();
+  return { file };
 }
 
 let issue = 0;
@@ -250,6 +251,32 @@ describe("the telegram subscriber this repository declares", () => {
         else process.env[name] = value;
       }
     }
+  });
+
+  /**
+   * The order an operator meets it in: the daemon is already running when they
+   * first read the `PluginFailed` telling them to run `lingtai env set`. The
+   * file is written behind the running subscriber's back, as that command
+   * writes it, and the next event has to be delivered with nothing restarted.
+   */
+  it("delivers with a token set after it was built, without a restart", async () => {
+    const api = await botApi();
+    const before = (await failures()).length;
+    const { file } = await started(api.port, {}, false);
+
+    const first = await aRun();
+    await failed(first.runId, "before the token");
+    const [missing] = await until(async () => {
+      const f = (await failures()).slice(before);
+      return f.length > 0 ? f : undefined;
+    });
+    expect(missing?.reason).toContain("TELEGRAM_BOT_TOKEN not set");
+
+    await writeFile(file, envLines(api.port));
+    const second = await aRun();
+    await failed(second.runId, "after the token");
+    await until(() => api.received.find((r) => r.text.includes("after the token")));
+    expect((await failures()).slice(before)).toHaveLength(1);
   });
 
   it("records an unreachable Telegram as PluginFailed, and delivers the next event once it is back", async () => {
