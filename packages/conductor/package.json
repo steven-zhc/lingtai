@@ -14,7 +14,9 @@
     "./labels": "./src/labels.ts",
     "./prompt": "./src/prompt.ts",
     "./queue": "./src/queue.ts",
-    "./run-log": "./src/run-log.ts"
+    "./run-log": "./src/run-log.ts",
+    "./backlog": "./src/backlog.ts",
+    "./ticket-store": "./src/ticket-store.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

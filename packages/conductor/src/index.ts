@@ -97,3 +97,17 @@ export {
 } from "./end-point.ts";
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
 export { tellGitHub, tellGitHubAbout, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";
+export {
+  acceptFinding,
+  declineFinding,
+  proposalFor,
+  type BacklogDecision,
+  type DecideOptions,
+} from "./backlog.ts";
+export {
+  githubTicketStore,
+  keyMarker,
+  type ProposedRef,
+  type ProposedTicket,
+  type TicketStore,
+} from "./ticket-store.ts";

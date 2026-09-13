@@ -32,8 +32,42 @@
  * which is exactly what those paths need and what a pair of statements would
  * not give them.
  */
-import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
+import {
+  backlogProjection,
+  createProjectionRunner,
+  type ProjectionRunner,
+  taskViewProjection,
+} from "@lingtai/projector";
 import { Context, Effect, Layer } from "effect";
+
+/**
+ * The backlog follows too (`#137`): a passing review's minors belong on it by
+ * the time the run that raised them ends.
+ *
+ * A second runner rather than a second projection inside the first, because
+ * each has its own checkpoint. Its failure is reported and never fatal, for
+ * the reason the board's is not: the log is intact either way.
+ */
+async function followBacklog(log: (line: string) => void): Promise<ProjectionRunner | null> {
+  const runner = createProjectionRunner({ projection: backlogProjection });
+  try {
+    await runner.start();
+    return runner;
+  } catch (err) {
+    log(`the backlog will not follow this run: ${(err as Error).message}`);
+    await runner.close().catch(() => {});
+    return null;
+  }
+}
+
+async function releaseBacklog(runner: ProjectionRunner | null, log: (line: string) => void): Promise<void> {
+  if (!runner) return;
+  if (runner.failure) {
+    log(`the backlog projection stopped during this run: ${String(runner.failure)}`);
+    log("the backlog is behind until it is rebuilt — lingtai projection rebuild finding_backlog");
+  }
+  await runner.close().catch(() => {});
+}
 
 /**
  * Runs `work` with the projections following the log, and releases them after.
@@ -59,6 +93,7 @@ export async function withProjector<T>(
     log(`the board will not follow this run: ${(err as Error).message}`);
     log("the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct");
   }
+  const backlog = await followBacklog(log);
 
   try {
     return await work();
@@ -71,6 +106,7 @@ export async function withProjector<T>(
       log("the board is behind until it is rebuilt — lingtai projection rebuild task_view");
     }
     await runner.close().catch(() => {});
+    await releaseBacklog(backlog, log);
   }
 }
 
@@ -105,15 +141,17 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
           log(`the board will not follow this run: ${(err as Error).message}`);
           log("the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct");
         }
-        return { runner, following };
+        const backlog = await followBacklog(log);
+        return { runner, following, backlog };
       }),
-      ({ runner, following }) =>
+      ({ runner, following, backlog }) =>
         Effect.promise(async () => {
           if (following && runner.failure) {
             log(`the projection stopped during this run: ${String(runner.failure)}`);
             log("the board is behind until it is rebuilt — lingtai projection rebuild task_view");
           }
           await runner.close().catch(() => {});
+          await releaseBacklog(backlog, log);
         }),
     ).pipe(
       Effect.map((held) => ({ following: held.following, failure: held.runner.failure })),

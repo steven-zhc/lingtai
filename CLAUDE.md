@@ -21,10 +21,12 @@ spirit: a decision that turns out wrong gets a superseding file, not an edit.
 Behavioural claims are settled by reading `events`, not by reasoning about the
 code. A finding that cites a seq number is worth more than one that argues.
 
-`task_view` is the one projection, and the way to correct it is
-`lingtai projection rebuild task_view` — replay, never a repair by hand. It is
-now a fold and nothing else: the outbox and the queue cache are gone (0022), so
-nothing writes to it but the projection.
+There are two projections, `task_view` (the board) and `finding_backlog` (the
+minors passing gates raised, #137), and the way to correct either is
+`lingtai projection rebuild <name>` — one rebuild per projection, since each has
+its own table and checkpoint; replay, never a repair by hand. Both are folds and
+nothing else: the outbox and the queue cache are gone (0022), so nothing writes
+to them but the projection.
 
 ## Opening an issue
 

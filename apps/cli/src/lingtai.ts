@@ -12,7 +12,7 @@
  */
 import { createProjectionRunner, projectionLag } from "@lingtai/projector";
 import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
-import { taskViewProjection } from "@lingtai/projector";
+import { backlogProjection, taskViewProjection } from "@lingtai/projector";
 import type { Tier } from "@lingtai/domain";
 import {
   clientsForProjects,
@@ -42,6 +42,7 @@ import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
+import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
 import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
@@ -53,6 +54,15 @@ import { status } from "./status.ts";
 import { waiveCommand } from "./waive.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
 import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
+
+/**
+ * Every projection this system runs, named here in the open.
+ *
+ * A second one exists now (`finding_backlog`, `#137`), and the comment in
+ * `projectionCommand` says where it has to be added: here, visibly, or it
+ * does not exist.
+ */
+const PROJECTIONS = [taskViewProjection, backlogProjection] as const;
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
@@ -86,7 +96,16 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 still waiting on. --reason is required and never
                                 defaulted; a gate that is not there is refused
                                 by listing the gates there are
-
+  lingtai backlog [project]         the minor findings passing gates raised, open
+    --all                       decided ones too, and what was decided
+  lingtai backlog accept <project> <key> --kind <kind>
+                                open one as an issue through the ticket store.
+                                One key: there is no accept-all
+    --unheld                    without agent:hold, so the next pass may take it
+                                Without --kind, opens the issue of an entry
+                                already accepted — safe to repeat, never a second
+  lingtai backlog decline <project> <key> --reason <why>
+                                recorded, so the next attempt does not ask again
   lingtai attach <runId>            follow a run's log — what it is doing, as it
                                 does it, from the beginning however late you
                                 attach. Reads a file and asks nothing of the
@@ -139,7 +158,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai help
   lingtai version
 
-Projections: ${taskViewProjection.name}
+Projections: ${PROJECTIONS.map((p) => p.name).join(", ")}
 `;
 
 async function doctor(): Promise<number> {
@@ -213,16 +232,15 @@ async function projectionCommand(args: string[]): Promise<number> {
       console.error("lingtai projection rebuild <name>");
       return 2;
     }
-    // Named, not looked up in a registry. There is one projection, and a list
-    // of one was a list whose only job was to let a projection be written and
-    // silently left out of it — no table, no checkpoint, no failing check
-    // ([0022](../../../doc/decisions/0022-the-seams.md)). A second one is added
-    // here, in the open, or it does not exist.
-    if (name !== taskViewProjection.name) {
-      console.error(`unknown projection "${name}" — known: ${taskViewProjection.name}`);
+    // Named, not discovered. A list whose only job was to let a projection be
+    // written and silently left out of it — no table, no checkpoint, no failing
+    // check — is what 0022 refused; `PROJECTIONS` is written out above, and a
+    // projection missing from it is missing from `--help` too.
+    const projection = PROJECTIONS.find((p) => p.name === name);
+    if (!projection) {
+      console.error(`unknown projection "${name}" — known: ${PROJECTIONS.map((p) => p.name).join(", ")}`);
       return 2;
     }
-    const projection = taskViewProjection;
     const runner = createProjectionRunner({ projection });
     try {
       // Drop the table, reset the checkpoint, replay. This is what makes a
@@ -295,7 +313,7 @@ async function daemonCommand(
   restart: { by: string; reason: string; examined: CodeVersion } | null = null,
 ): Promise<number> {
   const started = await startDaemon({
-    projections: [taskViewProjection],
+    projections: PROJECTIONS,
     log: (line) => console.log(line),
   });
 
@@ -429,7 +447,7 @@ async function daemonCommand(
     // Told what world it is repairing: which projections should be current,
     // which projects' claims are ours, and how to reach GitHub. Each check
     // no-ops without its own input rather than guessing at a global scan.
-    projections: [taskViewProjection.name],
+    projections: PROJECTIONS.map((p) => p.name),
     projects: registered,
     github: { projects: registered, clients: await clientsForProjects(registered) },
   }).catch((err: unknown) => {
@@ -843,6 +861,8 @@ async function main(argv: string[]): Promise<number> {
         ...("reject" in flags ? { reject: flags["reject"] ?? "no reason given" } : {}),
       });
     }
+    case "backlog":
+      return backlogCommand(rest);
     case "requeue": {
       const { positional, flags } = parseFlags(rest);
       const issue = Number(flags["issue"]);

@@ -475,6 +475,8 @@ const Finding = z.object({
   severity: z.enum(["blocker", "major", "minor"]),
 });
 
+export type Finding = z.infer<typeof Finding>;
+
 /**
  * A pass carries its findings too (`#135`).
  *
@@ -529,6 +531,74 @@ export const GateWaived = z.object({ ...gateBase, by: z.string(), reason: z.stri
 export const ApprovalRequested = z.object({ ...gateBase, question: z.string(), artifacts: z.array(z.string()) });
 export const ApprovalGranted = z.object({ ...gateBase, by: z.string(), note: z.string() });
 export const ApprovalRevoked = z.object({ ...gateBase, by: z.string(), reason: z.string() });
+
+// --------------------------------------------------------------- backlog ----
+
+/**
+ * A person accepted a minor finding
+ * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * §5, `#137`).
+ *
+ * **This is the decision, not the issue.** *Lingtai proposes; a person decides
+ * it exists* — and a person's decision is a fact the log can hold, where an
+ * issue is a fact only the repository can. So it is appended first, at version
+ * 0 of the finding's own stream, before the store is asked for anything: a
+ * decline or a second accept that races it loses at the append, and it is the
+ * only accept there will ever be for this finding.
+ *
+ * What the ticket will say is fixed here too (`kind`, `labels`), so that
+ * opening it again after a failure opens the same ticket and not whatever the
+ * retry happened to type.
+ *
+ * Followed by `FindingProposed` once the store has the ticket. Until then the
+ * entry is *accepted, not yet opened*, and opening it is safe to repeat: the
+ * store's `propose` is idempotent on the finding's key.
+ */
+export const FindingAccepted = z.object({
+  project: z.string(),
+  /** `findingKey` — stable across attempts of one ticket. */
+  key: z.string(),
+  by: z.string(),
+  kind: z.string(),
+  labels: z.array(z.string()),
+});
+
+/**
+ * The ticket store has the ticket an accepted finding asked for (`#137`).
+ *
+ * Appended after the store answered, never before, and only onto a stream whose
+ * last event is `FindingAccepted` — so there is one of these per finding, and
+ * the ref it records is *the* ticket. An opener that loses the append to
+ * another one with a different ref closes its own as a duplicate: the log
+ * decides which issue is the finding's, and nothing is left open that the log
+ * does not name.
+ *
+ * The finding itself is not repeated: it is on the `GatePassed` the backlog
+ * folded, and `key` is how the two are joined.
+ */
+export const FindingProposed = z.object({
+  project: z.string(),
+  key: z.string(),
+  by: z.string(),
+  /** The store's own identity for the ticket: `"212"` on GitHub. */
+  externalRef: z.string(),
+  url: z.string().nullable(),
+});
+
+/**
+ * A person declined a minor finding.
+ *
+ * Recorded because *a decision nobody can see is one that gets asked twice*:
+ * the next attempt's review will very likely say the same thing, and the
+ * backlog keys it to the same entry, which this has already closed. Only ever
+ * at version 0 — an accepted finding is not declined afterwards.
+ */
+export const FindingDeclined = z.object({
+  project: z.string(),
+  key: z.string(),
+  by: z.string(),
+  reason: z.string(),
+});
 
 // ----------------------------------------------------------- integration ----
 
@@ -1400,6 +1470,9 @@ export const EVENTS = {
   ApprovalRequested,
   ApprovalGranted,
   ApprovalRevoked,
+  FindingAccepted,
+  FindingProposed,
+  FindingDeclined,
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,

@@ -14,7 +14,12 @@ export const Actor = z
 export const StreamId = z
   .string()
   .regex(
-    /^(wi|run|int|prj|ctl|chat|ext)-[\w.-]+$/,
+    /^(wi|run|int|prj|ctl|chat|ext|bkl)-[\w.-]+$/,
+    // `bkl` is one minor finding's decision
+    // ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+    // §5, `#137`). Not the work item's stream: a person triages the backlog
+    // while a later attempt of the same ticket may be appending there, and a
+    // decision must not become a `ConcurrencyError` in the middle of that run.
     // `ctl` is the operator's own aggregate: pauses, resumes and hand-picked
     // runs. One stream for the whole installation — control is not per-project,
     // and a pause that only stopped one repository would be a surprise.
@@ -32,7 +37,7 @@ export const StreamId = z
     // event it failed on: the daemon follows the log while a run is appending
     // to that stream, so writing back to it would turn a notifier's bad day
     // into a `ConcurrencyError` in the middle of a run.
-    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion) or ext-… (extension)",
+    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension) or bkl-… (backlog)",
   );
 
 export interface Envelope<T = unknown> {

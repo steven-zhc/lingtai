@@ -218,6 +218,12 @@ function fakeClient(over: Partial<GitHubClient> & { recipe?: string } = {}): Git
     closeIssue: async () => {},
     setLabels: async () => {},
     updateBody: async () => {},
+    // Nothing a run does opens a ticket; only a person accepting a backlog
+    // entry does (#137).
+    createIssue: async () => {
+      throw new Error("a run never opens an issue");
+    },
+    listIssuesSince: async () => [issue],
     getIssue: async () => issue,
     ...rest,
   };

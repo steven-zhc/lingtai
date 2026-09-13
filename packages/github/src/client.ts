@@ -121,6 +121,16 @@ export interface GitHubClient {
   refSha(ref: string): Promise<string>;
 
   listOpenIssues(): Promise<Issue[]>;
+
+  /**
+   * Every issue, open or closed, updated at or after `since` — oldest first.
+   *
+   * The listing endpoint and not search: search is an index that lags the
+   * write by seconds or more, and the one caller (the ticket store's
+   * idempotent `propose`, `#137`) is asking whether an issue it may just have
+   * opened exists.
+   */
+  listIssuesSince(since: Date): Promise<Issue[]>;
   getIssue(number: number): Promise<Issue>;
 
   /**
@@ -156,7 +166,7 @@ export interface GitHubClient {
    * failure was state living in labels; the failure after it was state living
    * nowhere.
    */
-  closeIssue(issue: number): Promise<void>;
+  closeIssue(issue: number, reason?: "completed" | "not_planned"): Promise<void>;
 
   /**
    * Replaces the issue body.
@@ -174,6 +184,16 @@ export interface GitHubClient {
    * `tell.ts` takes the whole new body and does not compose it.
    */
   updateBody(issue: number, body: string): Promise<void>;
+
+  /**
+   * Opens an issue.
+   *
+   * The one write that creates a ticket rather than changing one, and it has
+   * exactly one caller: a person accepting a backlog entry (`#137`), through
+   * the conductor's `TicketStore`. Nothing decides on its own that an issue
+   * should exist — Lingtai proposes, a person decides.
+   */
+  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>;
 
   /**
    * The current installation token, refreshed if it is about to expire.
@@ -238,10 +258,10 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     });
   }
 
-  async function closeIssue(issue: number): Promise<void> {
+  async function closeIssue(issue: number, reason: "completed" | "not_planned" = "completed"): Promise<void> {
     await request<unknown>("PATCH", `/repos/${owner}/${repo}/issues/${issue}`, {
       state: "closed",
-      state_reason: "completed",
+      state_reason: reason,
     });
   }
 
@@ -372,6 +392,30 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
         // work item.
         const issues = raw.filter((r) => !("pull_request" in r));
         out.push(...issues.map(toIssue));
+        if (raw.length < 100) break;
+      }
+      return out;
+    },
+
+    async createIssue(input) {
+      return toIssue(
+        await request<Parameters<typeof toIssue>[0]>("POST", `/repos/${owner}/${repo}/issues`, {
+          title: input.title,
+          body: input.body,
+          labels: [...input.labels],
+        }),
+      );
+    },
+
+    async listIssuesSince(since) {
+      const out: Issue[] = [];
+      for (let page = 1; page <= 10; page++) {
+        const raw = await request<Parameters<typeof toIssue>[0][]>(
+          "GET",
+          `/repos/${owner}/${repo}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
+            `&sort=created&direction=asc&per_page=100&page=${page}`,
+        );
+        out.push(...raw.filter((r) => !("pull_request" in r)).map(toIssue));
         if (raw.length < 100) break;
       }
       return out;

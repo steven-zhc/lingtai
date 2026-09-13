@@ -52,7 +52,7 @@ import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
 import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
-import { describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
+import { backlogProjection, describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -257,8 +257,8 @@ async function schema(url: string): Promise<CheckResult[]> {
     return await withClient(url, async (c) => {
       const out: CheckResult[] = [];
 
-      // Two, since `#72` dropped `outbox`. The log and the one projection's
-      // checkpoint are the whole of the schema now, which is the shape 0022
+      // Two, since `#72` dropped `outbox`. The log and the projections'
+      // checkpoints are the whole of the schema now, which is the shape 0022
       // was arguing for: everything else is computed on demand.
       const tables = await c.query<{ table_name: string }>(
         `select table_name from information_schema.tables
@@ -378,8 +378,16 @@ async function projections(url: string): Promise<CheckResult> {
 async function projectionShapes(url: string): Promise<CheckResult> {
   const name = "projections: shape";
   try {
-    const shape = await projectionShape(taskViewProjection, url);
-    return { name, status: shape.drift.length === 0 ? "ok" : "fail", detail: describeShape(shape) };
+    // Every projection, not the first one: `finding_backlog` (#137) has a
+    // `create table if not exists` of its own, and the same #84 waiting in it.
+    const shapes = await Promise.all(
+      [taskViewProjection, backlogProjection].map((p) => projectionShape(p, url)),
+    );
+    return {
+      name,
+      status: shapes.every((s) => s.drift.length === 0) ? "ok" : "fail",
+      detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(" · "),
+    };
   } catch (err) {
     return { name, status: "fail", detail: (err as Error).message };
   }

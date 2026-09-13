@@ -278,6 +278,8 @@ function fakeClient(issues: Issue[], project = "esctest"): GitHubClient {
   comment: async () => { throw new Error("no writes in this test"); },
   setLabels: async () => { throw new Error("no writes in this test"); },
   updateBody: async () => { throw new Error("no writes in this test"); },
+  createIssue: async () => { throw new Error("no writes in this test"); },
+  listIssuesSince: async () => issues,
     closeIssue: async () => {},
     getIssue: async (n) => issues.find((i) => i.number === n) ?? issue({ number: n }),
   };

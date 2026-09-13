@@ -27,12 +27,14 @@
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
 import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
+import { acceptFinding, declineFinding } from "@lingtai/conductor/backlog";
+import { githubTicketStore } from "@lingtai/conductor/ticket-store";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
 import { editHash } from "@lingtai/conductor/prompt";
 import { CONTROL_STREAM, parsePayload, parseWorkItemStream, workItemStream } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
-import { loadProject } from "@lingtai/conductor/projects";
+import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
 import { requestRun, resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
 import { git } from "@lingtai/repo";
@@ -179,6 +181,67 @@ export async function waiveGate(input: {
     });
 
     revalidatePath("/");
+    return { ok: result.ok, detail: result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * Accept one backlog entry: the ticket store opens the issue (`#137`).
+ *
+ * The same `acceptFinding` `lingtai backlog accept` calls, for the reason the
+ * other decisions here share theirs. **One key per call** — there is no action
+ * that takes a list, so the board cannot grow an *accept all* without someone
+ * writing a loop here in the open.
+ */
+export async function acceptBacklogFinding(input: {
+  project: string;
+  key: string;
+  /** Absent when opening the issue of an entry already accepted: the log has the kind. */
+  kind?: string;
+  hold?: boolean;
+}): Promise<ActionResult> {
+  try {
+    const state = await project(input.project);
+    const client = await createGitHubClient({
+      auth: githubApp(),
+      owner: state.owner!,
+      repo: input.project,
+    });
+    // Read from the base branch, not trusted from the text box: a kind the
+    // recipe does not list is an issue the queue never sees.
+    const { recipe } = await currentRecipe(state, client);
+    const result = await acceptFinding({
+      project: input.project,
+      key: input.key,
+      by: actor(),
+      kind: input.kind,
+      kinds: recipe.source.kinds,
+      labels: input.hold === false ? [] : ["agent:hold"],
+      tickets: githubTicketStore(client),
+    });
+    revalidatePath("/backlog");
+    return { ok: result.ok, detail: result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/** Decline one backlog entry, with the reason the next attempt will not re-ask. */
+export async function declineBacklogFinding(input: {
+  project: string;
+  key: string;
+  reason: string;
+}): Promise<ActionResult> {
+  try {
+    const result = await declineFinding({
+      project: input.project,
+      key: input.key,
+      by: actor(),
+      reason: input.reason,
+    });
+    revalidatePath("/backlog");
     return { ok: result.ok, detail: result.detail };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };

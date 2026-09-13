@@ -29,6 +29,14 @@ export {
   type ProjectionShape,
 } from "./shape.ts";
 export {
+  BACKLOG_TABLE,
+  backlogProjection,
+  readBacklog,
+  type BacklogEntry,
+  type BacklogStatus,
+  type ReadBacklogOptions,
+} from "./backlog.ts";
+export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
   describeArm,
