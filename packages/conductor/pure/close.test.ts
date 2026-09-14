@@ -13,7 +13,7 @@ const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString();
 
 /** The shape the store hands a reducer, with only what these tests read. */
 const event = (n: number, type: string, data: object): Envelope =>
-  ({ seq: n, streamId: "wi-lingtai-32", type, data, at: at(n), version: n, actor: "human:steven" }) as Envelope;
+  ({ seq: n, streamId: "wi-lingtai-32", type, data, at: at(n), version: n, actor: "human:steven" }) as unknown as Envelope;
 
 const closed = event(2, "WorkItemClosed", { by: "human:steven", reason: "over-built for the need" });
 

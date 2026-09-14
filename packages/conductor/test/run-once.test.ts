@@ -129,6 +129,20 @@ runtime: {`,
  *
  * Lingtai's own recipe has had exactly this since the day it was self-hosted.
  */
+/**
+ * A person at `proposed`, which is the *other* held point — and the one nothing
+ * covered until `#154`.
+ *
+ * The build stays, so the hold is reached with a green gate and a real commit:
+ * the case a person is actually shown, rather than one where there is nothing to
+ * approve anyway.
+ */
+const HUMAN_PROPOSED_RECIPE = RECIPE.replace(
+  `    - { name: build, run: "test -f src/fix.ts", timeout: 2m }`,
+  `    - { name: build, run: "test -f src/fix.ts", timeout: 2m }
+    - { name: approval, human: "Merge this? It is Lingtai's own code." }`,
+);
+
 const HUMAN_MERGE_RECIPE = RECIPE.replace(
   "runtime: {",
   `  merge:
@@ -1386,6 +1400,46 @@ git add -A && git commit -q -m "fix the race"
    * ever held a run, which is exactly how the gap stayed hidden: the first
    * self-hosted run was held by hand, and the daemon does not pass it.
    */
+  /**
+   * The mirror of the test below, at the point it does not cover — and the one
+   * that was missing while four items lost their work (`#154`).
+   *
+   * `merge` is *after* the push in the loop, so a hold there always left the
+   * branch on the remote and the test below passed. `proposed` is before it, and
+   * the break sat one line above the push: the run ended, the worktree went with
+   * the pass, and the commit a person was being asked to approve existed in no
+   * repository. `lingtai approve` refused every one as `stale`.
+   *
+   * So the assertion is not *it held* — that already worked — but **what is on
+   * origin afterwards**.
+   */
+  it("holds at a human action at the proposed point, and leaves the branch on the remote", async () => {
+    created.add(workItemStream(PROJECT, 154));
+    const agent = await agentThat(`
+mkdir -p src && echo "export const held = 154;" > src/fix.ts
+git add -A && git commit -q -m "the work a person is asked about"
+`);
+
+    const result = await once({
+      ...options(agent),
+      issue: 154,
+      client: fakeClient({ recipe: HUMAN_PROPOSED_RECIPE, getIssue: async () => issue2(154) }),
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
+    expect(result.gate).toBe("proposed");
+
+    // The whole of the ticket: the sha the hold names is on origin, so the
+    // approval it is asking for can be acted on.
+    // Named rather than read off the result: the held result deliberately
+    // carries only what a person needs, and `agent/<issue>` is the convention
+    // the integrator, the card and `attempts.ts` all spell out for themselves.
+    const onOrigin = await g(["rev-parse", "refs/heads/agent/154"], originPath);
+    expect(onOrigin.stdout.trim()).toBe(result.headSha);
+  });
+
   it("holds at a human action at the merge point, with no --no-merge anywhere", async () => {
     created.add(workItemStream(PROJECT, 127));
     const agent = await agentThat(`

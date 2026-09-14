@@ -1872,10 +1872,21 @@ export function runOnce(
           // gone.
         }
 
-        if (pipeline.heldAt !== null) break;
-
         // The agent's branch has to exist on the remote for the integrator to
         // merge it; it works in a worktree, not on origin.
+        //
+        // **And for a held run just as much** (`#154`). The break used to sit on
+        // the line above this comment, so a run that held at `proposed` — a
+        // `human:` action, two agents disagreeing, a refusal no round was bought
+        // for — ended without ever pushing. The worktree went with the pass and
+        // the commit existed nowhere: `lingtai approve` refused every one of them
+        // as `stale`, the card offered *Approve* for a sha that was not on any
+        // remote, and `attempts.ts` told the next attempt to
+        // `git fetch origin <branch>` a branch that did not exist. Four items
+        // were lost that way before anybody looked — and the reason nothing
+        // caught it is that the *other* held point is after this line, so `#58`'s
+        // test proved the held path worked for `merge` and nothing covered
+        // `proposed`.
         //
         // **The lease is spelled out, and it has to be.** Bare
         // `--force-with-lease` reads a remote-tracking ref, and Lingtai's
@@ -1893,12 +1904,28 @@ export function runOnce(
         // true the first time and made false by that very push. The second
         // round's push was then rejected as `stale info` by its own predecessor.
         // The lease has to move with what this pass has put there.
-        yield* gitInWorktree([
+        const push = [
           "push",
           `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
           "origin",
           `HEAD:refs/heads/${branch}`,
-        ]).pipe(failing("push"));
+        ];
+
+        if (pipeline.heldAt !== null) {
+          // Tolerant, as the stand-down's push is and for the same reason: a
+          // hold is a decision about the work, and a push that failed must not
+          // turn it into a different ending. The person is still owed the
+          // question; they are told the branch is not there to answer it with.
+          const pushed = yield* Effect.either(gitInWorktree(push));
+          if (Either.isRight(pushed)) {
+            lease = head;
+          } else {
+            runLog.note("push", `${branch} was not pushed, and the hold stands — ${pushed.left.detail}`);
+          }
+          break;
+        }
+
+        yield* gitInWorktree(push).pipe(failing("push"));
         lease = head;
 
         // ---- 11. the `merge` point -------------------------------------------
