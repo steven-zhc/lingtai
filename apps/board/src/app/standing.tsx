@@ -225,6 +225,13 @@ export function Standing({
               whole second rank: it has no gate to quote (#113). */}
           {stopped !== null ? <p className="squestion">{stopped}</p> : null}
 
+          {/* Not a hold, so not in `holding`: the order above was not checked
+              against a chain for this repository, or for the issues it names,
+              and a place in line that does not say so reads as next (#131). */}
+          {queued?.dependenciesUnread ? (
+            <p className="refusal">{queued.dependenciesUnread}</p>
+          ) : null}
+
           {/* Never merely absent (#76). A recipe that will not parse and a
               GitHub behind a rate limit both leave the queue unanswered, and
               only the reason tells them apart — the same argument the Queued

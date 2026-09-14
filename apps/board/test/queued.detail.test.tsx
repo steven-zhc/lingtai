@@ -110,6 +110,7 @@ const QUEUED: QueuedView = {
   notOffered: null,
   runnableAt: null,
   paused: false,
+  dependenciesUnread: null,
   plan: null,
   problem: null,
 };

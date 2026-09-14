@@ -12,7 +12,14 @@ import pg from "pg";
 import { directDatabaseUrl } from "@lingtai/env";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { workItemStream } from "@lingtai/domain";
-import { considerIssue, kindOf, runnableNow } from "../src/index.ts";
+import {
+  considerIssue,
+  DEPENDENCIES_UNREAD,
+  dependenciesUnread,
+  kindOf,
+  passedOver,
+  runnableNow,
+} from "../src/index.ts";
 
 const recipe = {
   version: 1,
@@ -34,6 +41,11 @@ const recipe = {
  * colour. GitHub sends `{ name, color }` and `Issue` carries both (#85); a
  * fixture that made every case say so would put a colour in twenty-five
  * assertions that are about which *label* names a kind.
+ *
+ * `dependencies` defaults to *asked and clear* rather than to null. Null is a
+ * GitHub that does not report dependencies at all (#131) and would make every
+ * case here a degraded one; a repository that supports them and has no chain in
+ * it sends two zeroes, which is what the other assertions are about.
  */
 const issue = (
   over: Omit<Partial<Issue>, "labels"> & { number: number; labels?: (string | Label)[] },
@@ -42,6 +54,7 @@ const issue = (
   body: "",
   state: "open",
   url: `https://example.invalid/${over.number}`,
+  dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   ...over,
   labels: (over.labels ?? []).map((l) => (typeof l === "string" ? { name: l, color: null } : l)),
 });
@@ -128,6 +141,101 @@ describe("considerIssue", () => {
     expect(considerIssue(issue({ number: 7, labels: [] }), recipe).skip).toBe("no-kind");
     expect(considerIssue(issue({ number: 8, labels: ["bug"], state: "closed" }), recipe).skip).toBe(
       "closed",
+    );
+  });
+
+  /**
+   * The whole of #131 in one assertion. On 2026-09-10 six tickets were released
+   * together and `#123` — `tech-debt` — was taken ahead of the two `feature`
+   * tickets it depended on, because the sort is kind then number and knows
+   * nothing about a chain. The chain was written down in `#126`'s body, as a
+   * table for people, which the queue cannot read.
+   */
+  it("passes over an issue an open one still blocks", () => {
+    expect(
+      considerIssue(
+        issue({ number: 123, labels: ["bug"], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }),
+        recipe,
+      ).skip,
+    ).toBe("blocked-by");
+  });
+
+  /**
+   * Groundwork that has landed is groundwork that exists. Holding a ticket for
+   * a blocker GitHub has closed would hold it forever, and nothing would ever
+   * remove the hold — the label it replaces was at least removable by hand.
+   */
+  it("is not held by a blocker that has closed, nor by an empty list", () => {
+    expect(
+      considerIssue(
+        issue({ number: 124, labels: ["bug"], dependencies: { blockedBy: 0, totalBlockedBy: 2 } }),
+        recipe,
+      ).skip,
+    ).toBeNull();
+    expect(
+      considerIssue(
+        issue({ number: 125, labels: ["bug"], dependencies: { blockedBy: 0, totalBlockedBy: 0 } }),
+        recipe,
+      ).skip,
+    ).toBeNull();
+  });
+
+  /**
+   * Null is *GitHub said nothing*, not *nothing blocks it* — a plan that does
+   * not expose dependencies. It degrades to the behaviour before this existed
+   * rather than passing every ticket over; `runnableNow` is what says so.
+   */
+  it("takes an issue whose repository reports no dependencies at all", () => {
+    expect(considerIssue(issue({ number: 126, labels: ["bug"], dependencies: null }), recipe).skip).toBeNull();
+  });
+
+  /**
+   * A hold a person put on outranks a hold the chain puts on: `agent:hold` is
+   * somebody's decision and stays until they take it off, while a blocker
+   * clears itself. Saying the more permanent one is saying the one to act on.
+   */
+  it("names the excluded label rather than the blocker when an issue carries both", () => {
+    expect(
+      considerIssue(
+        issue({
+          number: 127,
+          labels: ["bug", "blocked"],
+          dependencies: { blockedBy: 1, totalBlockedBy: 1 },
+        }),
+        recipe,
+      ).skip,
+    ).toBe("excluded-label");
+  });
+});
+
+describe("what a pass says it did not take", () => {
+  /** `lingtai status` and the board's Queued column both print this line (#131). */
+  it("counts each reason by name, most first", () => {
+    expect(
+      passedOver([
+        { ref: 1, reason: "excluded-label" },
+        { ref: 2, reason: "no-kind" },
+        { ref: 3, reason: "excluded-label" },
+        { ref: 4, reason: "blocked-by" },
+      ]),
+    ).toBe("4 passed over — excluded-label 2, blocked-by 1, no-kind 1");
+    expect(passedOver([])).toBeNull();
+  });
+
+  /**
+   * Said about the issues it is true of. One issue GitHub sent no summary for
+   * is not a repository that reports no dependencies: saying *nothing is held
+   * by a blocker* beside a `blocked-by 1` for another issue on the same pass
+   * would be two claims that cannot both be true.
+   */
+  it("names the unsummarised issues when GitHub summarised the rest", () => {
+    expect(dependenciesUnread([], 3)).toBeNull();
+    expect(dependenciesUnread([4, 5], 2)).toBe(DEPENDENCIES_UNREAD);
+    expect(dependenciesUnread([7], 3)).toBe(
+      "GitHub sent no dependency summary for #7 — it is not held by a blocker",
+    );
+    expect(dependenciesUnread([7, 9], 3)).toBe(
+      "GitHub sent no dependency summary for #7, #9 — they are not held by a blocker",
     );
   });
 });
@@ -225,6 +333,74 @@ describe("runnableNow", () => {
       { ref: 103, reason: "excluded-label" },
       { ref: 104, reason: "no-kind" },
     ]);
+  });
+
+  /**
+   * The dependent ticket is passed over **by name**, and the ones it waits on
+   * are offered — which is the order #131 says the queue got wrong. It is one
+   * more reason in the list `lingtai status` and the board already count, so a
+   * ticket nothing will take is a number on a line rather than silence
+   * (0016 §4).
+   *
+   * It costs no request. `issue_dependencies_summary` is on the object the
+   * listing already fetched, exactly as the label colour is.
+   */
+  it("offers the groundwork and passes over the ticket that waits on it", async () => {
+    const PROJECT = newProject();
+    const issues = [
+      issue({ number: 121, labels: ["feature"] }),
+      issue({ number: 122, labels: ["feature"] }),
+      issue({ number: 123, labels: ["bug"], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }),
+    ];
+
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+
+    expect(result.runnable.map((r) => r.ref)).toEqual(["121", "122"]);
+    expect(result.skipped).toEqual([{ ref: 123, reason: "blocked-by" }]);
+    expect(result.dependenciesUnread).toBeNull();
+  });
+
+  /**
+   * Degraded, and *said*. A repository whose plan does not expose dependencies
+   * never produces a `blocked-by`, which is indistinguishable from a repository
+   * with no chains in it — the silence 0016 §4 refuses. The queue behaves
+   * exactly as it did before this existed and one line explains why.
+   */
+  it("says so once when GitHub reports no dependencies, and holds nothing", async () => {
+    const PROJECT = newProject();
+    const issues = [
+      issue({ number: 131, labels: ["bug"], dependencies: null }),
+      issue({ number: 132, labels: ["feature"], dependencies: null }),
+    ];
+
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+
+    expect(result.runnable.map((r) => r.ref)).toEqual(["131", "132"]);
+    expect(result.skipped).toEqual([]);
+    expect(result.dependenciesUnread).toBe(DEPENDENCIES_UNREAD);
+  });
+
+  /**
+   * One issue without a summary does not make the repository blind. The blocked
+   * one is still passed over, the unsummarised one is offered as it would have
+   * been before #131, and the sentence names it rather than claiming nothing is
+   * held.
+   */
+  it("holds what it can read and names what it could not", async () => {
+    const PROJECT = newProject();
+    const issues = [
+      issue({ number: 121, labels: ["feature"] }),
+      issue({ number: 122, labels: ["feature"], dependencies: null }),
+      issue({ number: 123, labels: ["bug"], dependencies: { blockedBy: 1, totalBlockedBy: 2 } }),
+    ];
+
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+
+    expect(result.runnable.map((r) => r.ref)).toEqual(["121", "122"]);
+    expect(result.skipped).toEqual([{ ref: 123, reason: "blocked-by" }]);
+    expect(result.dependenciesUnread).toBe(
+      "GitHub sent no dependency summary for #122 — it is not held by a blocker",
+    );
   });
 
   /**

@@ -6,6 +6,12 @@
  * owns it. Once a task is claimed the log is the authority and no label is
  * consulted for state again.
  *
+ * It reads one thing that is not a label: what GitHub says **blocks** the issue
+ * (#131). Same rule and same reason — a dependency is a fact the repository
+ * holds, natively and in both directions, so it is asked for rather than
+ * mirrored into a field of Lingtai's own, and it arrives on the issue the
+ * listing already fetched.
+ *
  * Since 0012 this appends nothing at all, and since 0022 it stores nothing
  * either: the runnable set is what GitHub currently says, minus what the log
  * says is claimed, computed at the moment somebody needs it. That inversion is
@@ -79,7 +85,27 @@ function normaliseLabel(label: string): string {
  * not list is `no-kind` — which is the honest reading, since the recipe is the
  * only thing that ever knew what a kind was.
  */
-export type SkipReason = "closed" | "no-kind" | "excluded-label" | "already-discovered";
+export type SkipReason =
+  | "closed"
+  | "no-kind"
+  | "excluded-label"
+  | "already-discovered"
+  /**
+   * Something this issue depends on is still open.
+   *
+   * The queue orders by kind and then by number and knows nothing about a
+   * chain, so on 2026-09-10 it took `#123` — `tech-debt` — ahead of the two
+   * `feature` tickets that had to land first, and an agent was dispatched
+   * against groundwork that did not exist (`#131`). The chain *was* written
+   * down, in `#126`'s body, as a table for people; the queue cannot read prose.
+   *
+   * A reason rather than a gate at `admit`, on two counts. The whole `admit`
+   * row is unimplemented (`#61`), so configuring it would render `resolved` and
+   * execute nothing — the shape of `#58`. And 0015 lets `admit` refuse but not
+   * reorder: a refused item is still first in line next pass, refused again,
+   * forever. `agent:hold` already works the way this does, one line above.
+   */
+  | "blocked-by";
 
 export interface Considered {
   issue: Issue;
@@ -114,6 +140,20 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
 
   if (kindOf(issue, recipe.source.kinds) === null) return { issue, skip: "no-kind" };
 
+  // Last, and deliberately the least permanent of the four. A ticket carrying
+  // `agent:hold` is one a person is holding and a ticket of no kind is one this
+  // recipe never takes; a blocked one is ordinary work whose turn has not come,
+  // and it comes back on its own.
+  //
+  // **Open, not total.** `blockedBy` counts the blockers GitHub still has open;
+  // a chain whose groundwork has landed has `totalBlockedBy` of two and
+  // `blockedBy` of zero, and holding it for history would hold it forever.
+  //
+  // Null is not zero. A repository whose GitHub said nothing about dependencies
+  // is one this cannot answer for, and it degrades to the behaviour before this
+  // existed rather than passing everything over — `runnableNow` is what says so.
+  if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: "blocked-by" };
+
   return { issue, skip: null };
 }
 
@@ -140,6 +180,74 @@ export interface Offered {
    * entry: no colour is what a renderer needs to hear to render none (#85).
    */
   kindColors: Record<string, string>;
+  /**
+   * Which issues were not checked for a blocker, in words — and null when every
+   * one was.
+   *
+   * **The degraded case has to say so.** GitHub sends dependencies with the
+   * issue, but a plan that does not expose them sends nothing, and `blocked-by`
+   * would then never appear — indistinguishable from a repository with no
+   * chains in it. That is the silence 0016 §4 refuses and the shape `#58` is.
+   *
+   * **Said about the issues it is true of**, not asserted of the repository on
+   * the strength of one. When GitHub sent no summary for any of them the
+   * sentence is about the repository; when it sent one for most and not for
+   * some, it names those, because *nothing is held by a blocker* beside a
+   * `blocked-by 1` on the same line is a contradiction the operator cannot
+   * resolve. Either way the unread ones are offered — today's behaviour — and
+   * never passed over for want of an answer.
+   *
+   * One phrase rather than a flag, for the reason `backingOff` is one: the CLI,
+   * the daemon's log and the board all say it, and the places an operator asks
+   * *why is this not moving* must not come to word it differently (`#100`).
+   */
+  dependenciesUnread: string | null;
+}
+
+/**
+ * What a repository whose GitHub reports no dependencies at all is told, once.
+ *
+ * It names the consequence rather than the endpoint, because the consequence is
+ * the thing to act on: nothing is being held, so a chain here is still ordered
+ * by kind and number and still needs `agent:hold` by hand.
+ */
+export const DEPENDENCIES_UNREAD =
+  "GitHub reported no issue dependencies for this repository — nothing is held by a blocker";
+
+/**
+ * The sentence for `Offered.dependenciesUnread`, from the issues GitHub sent no
+ * summary for. Null when there are none.
+ */
+export function dependenciesUnread(
+  unread: readonly number[],
+  listed: number,
+): string | null {
+  if (unread.length === 0) return null;
+  if (unread.length === listed) return DEPENDENCIES_UNREAD;
+  const refs = unread.map((n) => `#${n}`).join(", ");
+  return unread.length === 1
+    ? `GitHub sent no dependency summary for ${refs} — it is not held by a blocker`
+    : `GitHub sent no dependency summary for ${refs} — they are not held by a blocker`;
+}
+
+/**
+ * `12 passed over — excluded-label 9, no-kind 2, blocked-by 1`, or null when
+ * nothing was.
+ *
+ * Here rather than in the CLI because the board's Queued column says the same
+ * line (#131): a ticket nothing will take is a number on a line and not
+ * silence (0016 §4), and two places counting it must not word it differently.
+ * Most first, then by name, so the line does not reorder between passes.
+ */
+export function passedOver(skipped: Offered["skipped"]): string | null {
+  if (skipped.length === 0) return null;
+  const reasons = new Map<string, number>();
+  for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
+  const counted = [...reasons]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([reason, n]) => `${reason} ${n}`)
+    .join(", ");
+  return `${skipped.length} passed over — ${counted}`;
 }
 
 export interface RunnableNowOptions {
@@ -171,9 +279,13 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
     ? await Promise.all(options.only.map((n) => client.getIssue(n)))
     : await client.listOpenIssues();
 
-  const result: Offered = { runnable: [], skipped: [], kindColors: {} };
+  const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null };
+
+  const unread: number[] = [];
 
   for (const issue of issues) {
+    if (issue.dependencies === null) unread.push(issue.number);
+
     const matched = kindLabelOf(issue, recipe.source.kinds);
     // Before the skip, deliberately: the colour of `bug` is the same whether or
     // not this particular bug can be run, and a held ticket is often the only
@@ -195,5 +307,6 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
     });
   }
 
+  result.dependenciesUnread = dependenciesUnread(unread, issues.length);
   return result;
 }

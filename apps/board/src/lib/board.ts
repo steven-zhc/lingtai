@@ -33,7 +33,7 @@ import {
 import type { BlockDiagnosis, ProjectState } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
-import { runnableNow } from "@lingtai/conductor/discover";
+import { passedOver, runnableNow } from "@lingtai/conductor/discover";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/filter";
 import { projectFilter, type GatePlan, type ProjectFilter } from "@lingtai/conductor/filter";
@@ -288,6 +288,19 @@ export interface BoardColumn {
    * assumed the one failure it named.
    */
   problems?: QueueProblem[];
+  /**
+   * Only ever on Queued: what GitHub listed and the column is not showing, per
+   * project — `12 passed over — excluded-label 9, blocked-by 1` — and, when it
+   * applies, which issues were not checked for a blocker.
+   *
+   * Not a problem, because the queue *was* listed. Its own field so the column
+   * can say both without calling a held ticket a failure (#131): the reason a
+   * dependent ticket is not in the column is a number on a line rather than
+   * silence (0016 §4), and a repository whose GitHub will not report
+   * dependencies says so here, where the operator is looking, instead of
+   * rendering a queue that looks ordered and is not.
+   */
+  notes?: QueueProblem[];
 }
 
 /**
@@ -478,6 +491,8 @@ export async function queuedCards(
 ): Promise<{
   cards: BoardCard[];
   problems: QueueProblem[];
+  /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
+  notes: QueueProblem[];
   limits: PassLimitsView[];
   /** `source.backoff` per project, for the held cards `loadBoard` folds from the log. */
   backoffMs: Map<string, number>;
@@ -499,6 +514,7 @@ export async function queuedCards(
 }> {
   const cards: BoardCard[] = [];
   const problems: QueueProblem[] = [];
+  const notes: QueueProblem[] = [];
   // Gathered here rather than by a second pass over the projects: this loop
   // already resolves every recipe, and asking GitHub twice for a fact that
   // arrived with the first answer is how a render gets expensive.
@@ -548,6 +564,13 @@ export async function queuedCards(
     // queue could not be listed contributes none, and its cards render the
     // way every card did before #85 — the failure costs a dot, not a card.
     kindColors.set(filter.project, offered.kindColors);
+    // The same two sentences `lingtai status` prints, from the same functions,
+    // so the column and the terminal cannot count a held ticket differently.
+    const passed = passedOver(offered.skipped);
+    if (passed !== null) notes.push({ project: filter.project, reason: passed });
+    if (offered.dependenciesUnread !== null) {
+      notes.push({ project: filter.project, reason: offered.dependenciesUnread });
+    }
     for (const r of answer.runnable) {
       cards.push({
         taskId: r.taskId,
@@ -587,7 +610,7 @@ export async function queuedCards(
       });
     }
   }
-  return { cards, problems, limits, backoffMs, plans, kindColors, kindOrder };
+  return { cards, problems, notes, limits, backoffMs, plans, kindColors, kindOrder };
 }
 
 /**
@@ -671,7 +694,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))];
 
   return {
-    columns: toColumns(cards, queued.problems),
+    columns: toColumns(cards, queued.problems, queued.notes),
     limits: queued.limits,
     queueOrder: queued.kindOrder,
     // Unfiltered, deliberately. This is the list the filter is chosen *from*,
@@ -745,7 +768,11 @@ export function filterOptions(
  * rather than a fold of the log, and therefore the one that can fail to be
  * answered.
  */
-export function toColumns(cards: BoardCard[], problems: QueueProblem[] = []): BoardColumn[] {
+export function toColumns(
+  cards: BoardCard[],
+  problems: QueueProblem[] = [],
+  notes: QueueProblem[] = [],
+): BoardColumn[] {
   return COLUMNS.map((c) => {
     const mine = cards.filter((card) => card.column === c.id);
     return {
@@ -758,6 +785,7 @@ export function toColumns(cards: BoardCard[], problems: QueueProblem[] = []): Bo
       // can make true.
       cards: c.id === "landed" ? mine.sort(newestFirst) : mine,
       ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
+      ...(c.id === "queued" && notes.length > 0 ? { notes } : {}),
     };
   });
 }

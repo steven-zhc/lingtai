@@ -11,6 +11,7 @@ import {
   describeFilter,
   heldUntil,
   loadProjects,
+  passedOver,
   projectFilter,
   runnableNow,
   selectRunnable,
@@ -84,12 +85,7 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
         const found = await runnableNow({ client, recipe });
         offered = found.runnable;
         asked = true;
-        const reasons = new Map<string, number>();
-        for (const s of found.skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
-        const passed = [...reasons]
-          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-          .map(([reason, n]) => `${reason} ${n}`)
-          .join(", ");
+        const passed = passedOver(found.skipped);
         // **`eligible`, not `runnable`.** They are answers to different
         // questions and this line used the other line's word for its own,
         // which made "8 runnable / 0 runnable" read as a contradiction when
@@ -98,8 +94,13 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
         // below is about *state* — how many can be claimed right now.
         log(
           `  from GitHub: ${found.runnable.length} eligible` +
-            (found.skipped.length > 0 ? `, ${found.skipped.length} passed over — ${passed}` : ""),
+            (passed !== null ? `, ${passed}` : ""),
         );
+        // Once, beside the count it explains. A repository whose plan does not
+        // expose dependencies passes nothing over for one, and a `blocked-by`
+        // that is simply never printed reads as a repository with no chains in
+        // it (#131). The phrase is `discover.ts`'s, not this file's.
+        if (found.dependenciesUnread !== null) log(`  (${found.dependenciesUnread})`);
       } catch (err) {
         log(`  (GitHub unavailable: ${(err as Error).message} — the queue cannot be listed)`);
       }

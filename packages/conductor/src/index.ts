@@ -9,8 +9,11 @@ export {
 } from "./claim.ts";
 export {
   considerIssue,
+  DEPENDENCIES_UNREAD,
+  dependenciesUnread,
   kindLabelOf,
   kindOf,
+  passedOver,
   runnableNow,
   type Considered,
   type Offered,

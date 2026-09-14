@@ -814,6 +814,16 @@ export default async function Page({
                   <strong>{p.project}</strong>: the queue could not be listed — {p.reason}
                 </p>
               ))}
+              {/* What was listed and is not a card, in `lingtai status`'s own
+                  words (#131): a ticket held by an open blocker is a count
+                  here rather than an absence, and a repository whose GitHub
+                  will not report dependencies says so rather than showing an
+                  order it did not check. */}
+              {col.notes?.map((n) => (
+                <p key={`${n.project}:${n.reason}`} className="empty">
+                  <strong>{n.project}</strong>: {n.reason}
+                </p>
+              ))}
               {col.cards.length === 0 && !col.problems?.length ? (
                 <p className={`empty${col.id === "running" && control.paused ? " held" : ""}`}>
                   {emptyNote(col.id, control.paused, only)}

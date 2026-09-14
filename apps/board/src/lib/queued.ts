@@ -102,6 +102,9 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   "no-kind": "it carries no label this recipe takes",
   "excluded-label": "it carries a label this recipe excludes",
   "already-discovered": "the log already has it",
+  // Said as the thing that has to change, not as a state it is in: the ticket
+  // moves the moment the last blocker closes, with nothing to clear here (#131).
+  "blocked-by": "an issue it is blocked by is still open",
 };
 
 /**
@@ -146,6 +149,16 @@ export interface QueuedView {
    * two answers and the wrong one.
    */
   paused: boolean;
+  /**
+   * `runnableNow`'s sentence when some listed issues were not checked for a
+   * blocker, and null when every one was.
+   *
+   * Beside `holding` rather than inside it: nothing is holding the item, so
+   * *simply next* is still true — but it is true of an order nobody checked
+   * against a chain, and a page that said only *next* would be the reading
+   * #131 exists to remove.
+   */
+  dependenciesUnread: string | null;
   /** What pressing the button runs. Null when the recipe could not be read. */
   plan: PlanView | null;
   /** Why none of this could be answered, when it could not. */
@@ -206,6 +219,7 @@ function refused(problem: string, plan: PlanView | null, paused: boolean): Queue
     notOffered: null,
     runnableAt: null,
     paused,
+    dependenciesUnread: null,
     plan,
     problem,
   };
@@ -273,6 +287,7 @@ export async function queuedFor(input: {
           : "GitHub is not listing it among the open issues",
       runnableAt: until === null ? null : until.toISOString(),
       paused,
+      dependenciesUnread: offered.dependenciesUnread,
       plan,
       problem: null,
     };

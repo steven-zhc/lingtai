@@ -125,6 +125,8 @@ export function runQueue(
     const log = options.log ?? (() => {});
     const ran: RunOnceResult[] = [];
     const attempted = new Set<string>();
+    /** Whether this pass has already reported a GitHub that reports no dependencies. */
+    let saidDependenciesUnread = false;
 
     const finish = (stopped: StoppedBecause): ScheduleResult => {
       log(`stopped: ${stopped} — ${ran.length} run(s)`);
@@ -157,6 +159,15 @@ export function runQueue(
       const offered = yield* Effect.promise(() =>
         runnableNow({ client: options.client, recipe: options.recipe }),
       );
+      // Once, not once round the loop. It is a fact about the repository and
+      // the same sentence would be true of every ticket in the queue — the
+      // reason the `env` refusal above is reported per project rather than per
+      // item. Said at all because silence here is indistinguishable from a
+      // repository with no chains in it (#131).
+      if (offered.dependenciesUnread !== null && !saidDependenciesUnread) {
+        saidDependenciesUnread = true;
+        log(offered.dependenciesUnread);
+      }
       const queue = yield* Effect.promise(() =>
         selectRunnable({
           project: name,

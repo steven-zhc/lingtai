@@ -17,6 +17,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ProjectState } from "@lingtai/domain";
+import { DEPENDENCIES_UNREAD } from "@lingtai/conductor/discover";
 import type { GitHubClient } from "@lingtai/github";
 import { queuedCards, type ProjectQueue } from "../src/lib/board.ts";
 import { forgetRecipes, recipeAtHead } from "../src/lib/recipe.ts";
@@ -82,7 +83,7 @@ function listed(name: string, kinds: string[], refs: string[]): ProjectQueue {
   return {
     state: "listed",
     filter: resolvedFilter(name, kinds),
-    offered: { runnable: [], skipped: [], kindColors: {} },
+    offered: { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null },
     runnable: refs.map((ref) => ({
       taskId: `wi-${name}-${ref}`,
       issue: ref,
@@ -118,6 +119,38 @@ describe("the projects on a board", () => {
     // likely to take away.
     expect(result.kindOrder).toEqual(["bug", "feature"]);
     expect(result.limits.map((l) => l.project)).toEqual(["lingtai", "nextloom-ai-admin"]);
+  });
+
+  /**
+   * #131, on the surface the operator watches. A ticket held by an open blocker
+   * is not a card, so without this it is simply absent from Queued; and a
+   * repository whose GitHub reports no dependencies shows an order nobody
+   * checked against a chain. Both are listed, so neither is a problem — they
+   * are notes, in `lingtai status`'s own words.
+   */
+  it("say what they passed over, and which issues were not checked for a blocker", async () => {
+    const result = await queuedCards([project("lingtai")], async (p) => {
+      const answer = listed(p.project!, ["bug"], ["121"]);
+      return {
+        ...answer,
+        offered: {
+          runnable: [],
+          skipped: [
+            { ref: 123, reason: "blocked-by" },
+            { ref: 9, reason: "excluded-label" },
+            { ref: 10, reason: "excluded-label" },
+          ],
+          kindColors: {},
+          dependenciesUnread: DEPENDENCIES_UNREAD,
+        },
+      } as ProjectQueue;
+    });
+
+    expect(result.problems).toEqual([]);
+    expect(result.notes).toEqual([
+      { project: "lingtai", reason: "3 passed over — excluded-label 2, blocked-by 1" },
+      { project: "lingtai", reason: DEPENDENCIES_UNREAD },
+    ]);
   });
 
   it("name a project GitHub would not answer for, and keep its filter", async () => {
