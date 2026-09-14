@@ -3,10 +3,10 @@
  *
  * `waive` was a decision the board could take and the CLI could not (#129), and
  * the property that matters is not that the command exists — it is that the two
- * ways of taking the decision leave the same thing behind. So the last test
- * folds the item with the board's own `claimsOf`/`foldRun`/`standingOf`, sends
- * what `Decide` sends from that — `gates[0]` and `headSha` — through the call
- * `waiveGate` makes, and compares envelopes.
+ * ways of taking the decision leave the same thing behind. The board has had no
+ * Waive button since #150: its waiver is the one Approve appends over a live
+ * refusal, with the gates read off the run. So the last test compares the
+ * command's envelope with `waiversOver`, the function that builds Approve's.
  *
  * The rest are the cases an earlier attempt refused and should not have: a gate
  * a dead run left `running`, and a gate the run planned and never reported —
@@ -14,9 +14,9 @@
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { waive } from "@lingtai/conductor";
+import { waive, waiversOver } from "@lingtai/conductor";
 import { directDatabaseUrl } from "@lingtai/env";
-import { GATE_POINTS, parsePayload, projectStream, workItemStream } from "@lingtai/domain";
+import { GATE_POINTS, parsePayload, projectStream, reduceRun, workItemStream } from "@lingtai/domain";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -28,8 +28,8 @@ const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>([projectStream(PROJECT)]);
 const SHA = "a".repeat(40);
 /**
- * What the board's `waiveGate` records — its own `actor()`, called rather than
- * copied, so a board that started recording something else fails here.
+ * What the board records as who — its own `actor()`, called rather than copied,
+ * so a board that started recording something else fails here.
  */
 const ACTOR = actor();
 
@@ -373,32 +373,29 @@ describe("lingtai waive", () => {
     const fromBoard = await gatedRun(8);
     const reason = "the scan's service is down; I have read the diff";
 
-    // What the board's card would send, folded the way the board folds it:
-    // `Decide` gets `gates={standing.failed}` and `headSha={standing.headSha}`
-    // and calls `waiveGate({ gate: gates[0] ?? "build", onSha: headSha })`.
+    // The gate the board's card would name is no longer the card's to name:
+    // folded the way the board folds it, the refusing gate is `proposed:build`,
+    // and Approve reads the same answer off the run.
     const own = await store.read(fromBoard.workItemId);
     const runs = await Promise.all(
       claimsOf(own).map(async (c, i) => foldRun(c, i + 1, await store.read(c.runId))),
     );
     const standing = standingOf(own, runs);
-    const gate = standing.failed[0] ?? "build";
-    expect(gate).toBe("proposed:build");
+    expect(standing.failed).toEqual(["proposed:build"]);
 
-    expect((await said({ project: PROJECT, issue: 7, gate, reason, store })).code).toBe(0);
-    // `waiveGate`'s own call, argument for argument.
-    const board = await waive({
-      project: PROJECT,
-      issue: 8,
-      gate,
+    expect((await said({ project: PROJECT, issue: 7, gate: "proposed:build", reason, store })).code).toBe(0);
+    // What Approve appends over that refusal, from the function it appends.
+    const board = waiversOver({
+      run: reduceRun(await store.read(fromBoard.runId)),
+      runId: fromBoard.runId,
+      onSha: standing.headSha ?? "",
       by: actor(),
       reason,
-      onSha: standing.headSha ?? "",
-      store,
     });
-    expect(board.ok).toBe(true);
+    expect(board).toHaveLength(1);
 
     const cli = (await waived(fromCli.runId))[0]!;
-    const fromCard = (await waived(fromBoard.runId))[0]!;
+    const fromCard = board[0]!;
     expect(cli.type).toBe(fromCard.type);
     expect(cli.actor).toBe(fromCard.actor);
     // The run id is the one field that must differ — these are two items.

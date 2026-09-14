@@ -950,18 +950,49 @@ describe("the moves the column ends in", () => {
   });
 
   /**
-   * #84's rule, and the one place this ticket is read against the code rather
-   * than literally: Reject withdraws an approval, so it belongs exactly where
-   * there is one to withdraw. A card must never offer only a control that
-   * refuses — `reject()` accepts `awaiting-approval` and nothing else.
+   * #150: Approve and another attempt are peers. Reject is gone — it asked the
+   * same question again — and so is Waive, which recorded a sentence Approve
+   * never read; Approve asks for the reason itself where a gate still refuses.
    */
-  it("puts Reject beside Send wherever there is an approval to withdraw", () => {
-    const html = render({ ...HELD, awaitingSha: SHA }, OUTGOING);
+  it("puts Approve beside Send wherever there is an approval open, and no Reject or Waive", () => {
+    const html = render({ ...HELD, awaitingSha: SHA, failed: ["proposed:review"] }, OUTGOING);
 
     expect(html).toContain("Send attempt 3");
-    expect(html).toContain("Reject");
     expect(html).toContain("Approve");
     expect(html).toContain("Leave blocked");
+    expect(html).not.toContain("Reject");
+    expect(html).not.toContain("Waive");
+  });
+
+  /**
+   * The ticket's own card: two agents disagreed, and a person who agrees with
+   * the reviewer wants another attempt. Requeue was the *else* of Approve, so on
+   * a card with an approval open and no prompt to send, it was the one move
+   * missing.
+   */
+  it("offers Back to the queue beside Approve where there is no prompt to send", () => {
+    const html = render({ ...HELD, awaitingSha: SHA }, { ...OUTGOING, problem: "lingtai is not a registered project" });
+
+    expect(html).toContain("Approve");
+    expect(html).toContain("Back to the queue");
+    expect(moves(html).match(/btn pri/g)).toHaveLength(1);
+  });
+
+  it("gives the amber to another attempt when the diagnosis recommends against the diff", () => {
+    for (const action of ["requeue", "reject"] as const) {
+      const html = moves(
+        render(
+          {
+            ...HELD,
+            awaitingSha: SHA,
+            diagnosis: { what: "two agents disagreed", done: null, raw: null, recommendation: { action, why: "the reviewer is right" } },
+          },
+          OUTGOING,
+        ),
+      );
+      expect(html.match(/btn pri/g)).toHaveLength(1);
+      expect(html).toContain('class="btn">Approve');
+    }
   });
 
   /**

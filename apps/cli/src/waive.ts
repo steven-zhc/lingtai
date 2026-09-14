@@ -4,9 +4,9 @@
  *
  * **A waiver merges nothing.** It is a verdict: the card shows it, `lingtai
  * doctor`'s `landedWithoutGatePoints` counts it, and the next attempt is not
- * told the gate died. No merge path reads `GateWaived` — the board's button
- * included — so a blocked item stays blocked and a held run still needs
- * `lingtai approve`. The command says so after it appends, naming where the
+ * told the gate died. No merge path reads `GateWaived`, so a blocked item stays
+ * blocked and a held run still needs `lingtai approve` — which, over a live
+ * refusal, takes a `--note` and appends its own waivers (#150). The command says so after it appends, naming where the
  * item is, because an exit 0 that let a person think the item was on its way
  * would be a decision reported as taken that took nothing.
  *
@@ -16,15 +16,15 @@
  * — arrives while that person is already at a prompt looking at why the gate is
  * wrong, which is the one place the decision could not be taken.
  *
- * The same `waive()` the board's `waiveGate` calls, with the same actor and an
- * `onSha`, so there is no second write path and no CLI-shaped event:
- * `waive.test.ts` folds the item the way the board does, sends what its card
- * would send, and compares the two envelopes.
+ * The board has no Waive button any more (#150); its waivers are the ones
+ * `approve()` appends over a refusal, with the same actor and the same payload
+ * shape, so there is still no CLI-shaped event: `waive.test.ts` compares the
+ * two envelopes.
  *
  * **`--reason` is required and never defaulted.** *Humans need an escape hatch.
  * It is recorded, never silent* is the whole of `GateWaived`'s justification,
- * and a `--reason` that filled itself in — the way `--reject` defaults to "no
- * reason given" — would retire the event's only claim on being worth appending.
+ * and a `--reason` that filled itself in would retire the event's only claim on
+ * being worth appending.
  */
 import { loadProject, waive } from "@lingtai/conductor";
 import {

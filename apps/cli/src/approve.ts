@@ -5,6 +5,10 @@
  * feature: the only other way to finish a held run is to run it again without
  * the flag, which starts a new run with a new worktree and a new diff — so the
  * thing that merges is not the thing anyone looked at.
+ *
+ * There is no `--reject` (#150): it asked the same question again with a note
+ * on it. Agreeing with a refusal is `lingtai requeue`, and overruling one is
+ * this command with `--note`, which a live refusal requires.
  */
 import { approve as approveRun, loadProject } from "@lingtai/conductor";
 import { withProjector } from "./projector.ts";
@@ -17,8 +21,6 @@ export interface ApproveCommandOptions {
   issue: number;
   note?: string;
   by?: string;
-  /** Withdraws instead of granting. The item goes back to the gate. */
-  reject?: string;
 }
 
 export async function approveCommand(
@@ -48,21 +50,6 @@ export async function approveCommand(
   // a card off the lane the board exists for. So it follows the log while it
   // works, like every other host that appends — see `withProjector`.
   return withProjector(log, async () => {
-    if (options.reject !== undefined) {
-      const { reject } = await import("@lingtai/conductor");
-      const outcome = await reject({
-        project: options.project,
-        issue: options.issue,
-        base: project.base ?? (await client.defaultBranch()),
-        client,
-        by,
-        reason: options.reject,
-        log,
-      });
-      log(outcome.detail);
-      return outcome.ok ? 0 : 1;
-    }
-
     const result = await approveRun({
       project: options.project,
       issue: options.issue,
@@ -81,6 +68,9 @@ export async function approveCommand(
     return 0;
   }
   log(`did not merge (${result.reason}): ${result.detail}`);
+  if (result.reason === "unexplained") {
+    log(`lingtai approve ${options.project} --issue ${options.issue} --note <why>`);
+  }
   return 1;
   });
 }

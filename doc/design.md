@@ -100,7 +100,8 @@ A card must carry, to be workable without leaving:
   SQL behind a migration hold.
 - The agent's self-review answers, which today are buried in a PR body.
 - The run's receipt: cost, turns, wall time, guard trips, whether it compacted.
-- Approve · Reject with a reason · Waive with a reason. All three emit events.
+- Approve · Back to the queue. Both emit events; Approve over a gate that still
+  refuses requires a reason and records it as the waiver (`#150`).
   **A waiver is recorded, never silent.**
 
 ---

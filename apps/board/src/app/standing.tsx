@@ -7,7 +7,7 @@ import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import type { DiscussionView, StandingView } from "@/lib/task";
 import type { OutgoingView } from "@/lib/prompt";
 import { holding, place, type QueuedView } from "@/lib/queued";
-import { Decide, Requeue, RunNow, Send } from "./decide.tsx";
+import { againstApproving, Decide, Requeue, RunNow, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
 import { Plan } from "./plan.tsx";
@@ -357,10 +357,16 @@ export function Standing({
 
           Every move that can work, and no move that cannot. The card's reading
           (#84, #92): a question is open exactly when there is a sha it is about,
-          so Approve, Reject and Waive are offered there and nowhere — an item
-          whose approved merge hit a conflict has none of them. Send is offered
-          wherever there is a composed prompt to send, which is the case the
-          column exists for and the one that had no button at all (#111). */}
+          so Approve is offered there and nowhere — an item whose approved
+          merge hit a conflict has none. Send is offered wherever there is a
+          composed prompt to send, which is the case the column exists for and
+          the one that had no button at all (#111).
+
+          And another attempt on every one of them (#150): Send where there is a
+          prompt, Requeue where there is not, whether or not Approve is beside
+          it. There is no Reject, which asked the same question again, and no
+          Waive — Approve asks for the reason over a refusing gate and reads
+          which gates those are off the run. */}
       {acting && standing.state === "blocked" ? (
         <div className="smoves">
           {standing.awaitingSha !== null ? (
@@ -368,8 +374,7 @@ export function Standing({
               project={project}
               issue={issue}
               onSha={standing.awaitingSha}
-              headSha={standing.headSha ?? ""}
-              gates={standing.failed}
+              refusing={standing.failed.length}
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}
@@ -384,17 +389,16 @@ export function Standing({
               // and otherwise only when the recommendation points here.
               primary={
                 standing.awaitingSha === null ||
-                standing.diagnosis?.recommendation?.action === "requeue"
+                againstApproving(standing.diagnosis?.recommendation?.action)
               }
             />
           ) : null}
 
-          {/* The fallback, for the one case that has neither: no approval open
-              and no prompt anybody could compose. Putting it back in the queue
-              is then the only move there is, and it keeps asking why — the
-              reason Send does not is that Send's reason is the document, and
-              this has none. */}
-          {standing.awaitingSha === null && sendable === null ? (
+          {/* Another attempt where there is no prompt anybody could compose —
+              beside Approve or on its own. It keeps asking why; the reason Send
+              does not is that Send's reason is the document, and this has
+              none. */}
+          {sendable === null ? (
             <Requeue
               project={project}
               issue={issue}

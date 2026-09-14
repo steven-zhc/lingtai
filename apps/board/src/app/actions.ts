@@ -3,8 +3,13 @@
 /**
  * What a person can do from the board.
  *
- * Three of them decide a card — approve, reject, waive — and one decides the
- * whole installation: resume. They are the same shape, which is the point.
+ * Two of them decide a card — approve and requeue — and one decides the whole
+ * installation: resume. They are the same shape, which is the point.
+ *
+ * There were four on a card, and two left it where it was (#150): Reject asked
+ * the same question again, and Waive recorded a sentence Approve never read.
+ * A waiver is now what Approve appends over a live refusal, and agreeing with a
+ * refusal is Requeue, offered beside Approve rather than instead of it.
  *
  * This is the ticket the whole project is a bet on. The old review queue
  * reached 45 items growing at 14 a day against zero processed, and the reason
@@ -26,7 +31,7 @@
 // Subpaths, not the barrel. The root export pulls in `run-once`, which pulls
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
-import { approve, reject, requeue, waive } from "@lingtai/conductor/decide";
+import { approve, requeue } from "@lingtai/conductor/decide";
 import { acceptFinding, declineFinding } from "@lingtai/conductor/backlog";
 import { githubTicketStore } from "@lingtai/conductor/ticket-store";
 import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
@@ -82,6 +87,9 @@ export async function approveCard(input: {
       // card that is current agrees with `lingtai approve` rather than refusing
       // what the CLI accepts (#92).
       onSha: input.onSha,
+      // Required by `approve()` itself while a gate still refuses this sha, and
+      // recorded as the waiver of each refusing gate — which gates is read off
+      // the run, so nothing on this side can name one (#150).
       note: input.note,
       token: () => client.token(),
     });
@@ -89,54 +97,27 @@ export async function approveCard(input: {
     revalidatePath("/");
     return result.ok
       ? { ok: true, detail: `landed ${result.mergeCommit.slice(0, 7)}` }
-      : { ok: false, detail: `${result.reason}: ${result.detail}` };
-  } catch (err) {
-    return { ok: false, detail: (err as Error).message };
-  }
-}
-
-export async function rejectCard(input: {
-  project: string;
-  issue: number;
-  onSha: string;
-  reason: string;
-}): Promise<ActionResult> {
-  try {
-    if (!input.reason.trim()) return { ok: false, detail: "a rejection needs a reason" };
-    const state = await project(input.project);
-    const client = await createGitHubClient({
-      auth: githubApp(),
-      owner: state.owner!,
-      repo: input.project,
-    });
-
-    const result = await reject({
-      project: input.project,
-      issue: input.issue,
-      base: state.base ?? (await client.defaultBranch()),
-      client,
-      by: actor(),
-      onSha: input.onSha,
-      reason: input.reason,
-    });
-
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.detail };
+      : {
+          ok: false,
+          detail: `${result.reason}: ${result.detail}`,
+          ...(result.reason === "unexplained" ? { needsReason: true } : {}),
+        };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }
 }
 
 /**
- * Back to the queue, for a card that has nothing to approve.
+ * Back to the queue, from any blocked card.
  *
- * The fourth card action, and the one `#84` is about: an item whose approved
+ * `#84` added it for the card with nothing to approve: an item whose approved
  * merge failed is `blocked` with its run back at `gating`, so Approve refuses
- * every click. This is the move it actually has — the next attempt is cut from
- * a base that has since moved.
+ * every click. `#150` made it Approve's peer rather than its alternative: on a
+ * card where two agents disagreed, *I agree with the reviewer, run it again* is
+ * the move a person wants, and it was the one button missing.
  *
- * No `onSha`, and that is not an oversight. The other three agree to a specific
- * diff; this one throws the diff away and asks for another, which is a decision
+ * No `onSha`, and that is not an oversight. Approve agrees to a specific diff;
+ * this one throws the diff away and asks for another, which is a decision
  * about the *ticket*. A stale sha is the reason to do it, not a reason to
  * refuse.
  */
@@ -152,32 +133,6 @@ export async function requeueCard(input: {
       issue: input.issue,
       by: actor(),
       note: input.note,
-    });
-
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.detail };
-  } catch (err) {
-    return { ok: false, detail: (err as Error).message };
-  }
-}
-
-export async function waiveGate(input: {
-  project: string;
-  issue: number;
-  gate: string;
-  onSha: string;
-  reason: string;
-}): Promise<ActionResult> {
-  try {
-    const state = await project(input.project);
-    const result = await waive({
-      project: input.project,
-      issue: input.issue,
-      gate: input.gate,
-      by: actor(),
-      reason: input.reason,
-      // Checked server-side: the branch may have moved since the card rendered.
-      onSha: input.onSha,
     });
 
     revalidatePath("/");

@@ -31,4 +31,9 @@ export interface ActionResult {
   ok: boolean;
   /** Always said back. A refusal the operator cannot read is a lie by omission. */
   detail: string;
+  /**
+   * The refusal was for want of a reason, and the same click with one would be
+   * taken: Approve over a gate that still refuses (#150).
+   */
+  needsReason?: boolean;
 }

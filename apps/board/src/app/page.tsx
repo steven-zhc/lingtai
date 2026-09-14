@@ -355,12 +355,17 @@ function Card({
           Gates is waiting on a process, and offering to approve it would invite
           a decision nobody is being asked for.
 
-          And only where Approve can *work*. "Waiting, and there is a head sha"
+          Approve only where it can *work*. "Waiting, and there is a head sha"
           was also true of an item whose approved merge had hit a conflict: the
           approval consumed, the run back to `gating`, and every click refused
-          with `not-awaiting-approval` (#84). That card gets the move it
-          actually has — back to the queue, where the next attempt is cut from a
-          base that has since moved — rather than a control that cannot act.
+          with `not-awaiting-approval` (#84).
+
+          Requeue on every blocked card, beside Approve and not instead of it
+          (#150). It was the else of this condition, so it was missing exactly
+          on the card where two agents disagreed and a person agreeing with the
+          reviewer wanted another attempt. No Reject — it asked again — and no
+          Waive, whose gate list was a literal `["build"]` here: Approve reads
+          the refusing gates off the run and asks for the reason itself.
 
           `blocked` and not the column, for the same reason: the lane also holds
           a refused dispatch and a run that asked a question mid-flight, and
@@ -375,11 +380,11 @@ function Card({
           project={card.project}
           issue={Number(card.ref)}
           onSha={card.awaitingSha}
-          headSha={card.headSha ?? ""}
-          gates={card.gatesFailed > 0 ? ["build"] : []}
+          refusing={card.gatesFailed}
           recommended={card.diagnosis?.recommendation?.action ?? null}
         />
-      ) : card.blocked ? (
+      ) : null}
+      {card.blocked ? (
         <Requeue
           project={card.project}
           issue={Number(card.ref)}

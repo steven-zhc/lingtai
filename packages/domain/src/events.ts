@@ -152,6 +152,10 @@ export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string()
  * `reject` answer an `ApprovalRequested`, and `requeue` is what is left when
  * there is no diff to answer about. A recommendation the board cannot carry out
  * would be a sentence rather than a recommendation.
+ *
+ * `reject` stays readable and has no control of its own since #150: it asked
+ * the same question again. The board reads it as a recommendation against the
+ * diff, and promotes Back to the queue exactly as it does for `requeue`.
  */
 export const BlockRecommendation = z.object({
   action: z.enum(["approve", "reject", "requeue"]),

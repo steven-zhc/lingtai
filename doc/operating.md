@@ -919,8 +919,11 @@ reads.
 ### Decide, on the board
 
 Open <http://localhost:3200>. The card is in **Waiting on you** — title, state,
-cost, gate counts — and Approve, Reject and Waive are on it, because deciding is
-what the board is for.
+cost, gate counts — and Approve and Back to the queue are on it, because deciding
+is what the board is for. There is no Reject and no Waive (`#150`): Reject asked
+the same question again, and Waive recorded a sentence Approve never read.
+Approving over a gate that still refuses asks *why* first, and records the
+answer as the waiver of each refusing gate in the same append as the approval.
 
 Everything else is one click away. The card's title opens `/task/<id>`, which
 folds that task's event stream on demand: each gate's verdict with its evidence,
@@ -941,7 +944,7 @@ The same decisions from the terminal, if you prefer:
 
 ```bash
 pnpm lingtai approve nextloom-ai-admin --issue 120
-pnpm lingtai approve nextloom-ai-admin --issue 120 --reject "wrong approach"
+pnpm lingtai approve nextloom-ai-admin --issue 120 --note "the build's pg timeout is unrelated"
 pnpm lingtai requeue nextloom-ai-admin --issue 120 --note "the block was the harness, not the diff"
 pnpm lingtai waive nextloom-ai-admin --issue 120 \
   --gate proposed:build --reason "unrelated flake in the importer suite"
@@ -949,10 +952,15 @@ pnpm lingtai waive nextloom-ai-admin --issue 120 \
 
 `approve` merges **what the held run actually produced**, not a fresh attempt.
 If the branch moved since the run asked, it refuses and names both commits —
-you would otherwise be merging something you have not read. A rejection sends
-the item back to the gate, not back to the queue.
+you would otherwise be merging something you have not read. **Over a gate that
+still refuses the head — `failed` or `never-ran` — it refuses without a
+`--note`**, and with one it appends a `GateWaived` carrying that note for each
+refusing gate, read off the run, beside `ApprovalGranted`. There is no path that
+merges over a live refusal without a reason on the log. There is no `--reject`:
+if you agree with the refusal, `requeue` is the move.
 
-`requeue` is the move that is left when there is **no diff to approve**: an item
+`requeue` is the move for any blocked item, including one with a diff to
+approve that you would rather see attempted again: an item
 that blocked — an integration that conflicted, a gate that failed for a reason
 that was never about the change — goes back to the queue, and the next pass cuts
 a fresh branch from a base that has since moved. It refuses by naming the state
@@ -972,12 +980,11 @@ so can any gate the run planned and never reported, which is how a
 `landedWithoutGatePoints` failure in `lingtai doctor` is closed. A name that is
 neither is refused by listing the gates there are. `--reason` is required and is
 never filled in for you: *recorded, never silent* is the whole of what makes a
-waiver acceptable. It appends the same `GateWaived` the board's button does,
+waiver acceptable. It appends the same `GateWaived` Approve does over a refusal,
 bound to the head it listed the gates on, so a branch that moves in between is
 refused rather than waived unread.
 
-**A waiver merges nothing**, from here or from the board: no merge path reads
-`GateWaived`. It is a verdict on the record — the card shows it, `doctor`
+**A waiver on its own merges nothing**: no merge path reads `GateWaived`. It is a verdict on the record — the card shows it, `doctor`
 counts it, the next attempt is not told the gate died — and the item stays
 where it was. So the command ends by saying what the item is still waiting on:
 a held run is still `approve`'s to merge, and a blocked one is still blocked,

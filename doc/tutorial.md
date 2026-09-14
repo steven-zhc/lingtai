@@ -199,8 +199,12 @@ you decide:
 
 ```bash
 pnpm lingtai approve <repo> --issue 41
-pnpm lingtai approve <repo> --issue 41 --reject "wrong approach"
+pnpm lingtai approve <repo> --issue 41 --note "the failing check is unrelated"
+pnpm lingtai requeue <repo> --issue 41 --note "wrong approach — try again"
 ```
+
+`--note` is required when a gate still refuses the diff: it is recorded as the
+waiver of each refusing gate. Agreeing with a refusal is `requeue`.
 
 Approving on the board does the same thing — **as long as the daemon is running**,
 because the daemon is what performs the merge once the approval is in the log.

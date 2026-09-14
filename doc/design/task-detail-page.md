@@ -50,7 +50,7 @@ thing that will actually run:
 ┃ ┌ WILL BE SENT ─────────┐  ┌ DISCUSSION ───────────┐
 ┃ │ the prompt, editable  │  │ reads log and code    │
 ┃ └───────────────────────┘  └───────────────────────┘
-┃ [Send attempt 3]  [Reject]  [Leave blocked]
+┃ [Approve]  [Send attempt 3]  [Leave blocked]
 ```
 
 **A record**, organised the way the log already is:

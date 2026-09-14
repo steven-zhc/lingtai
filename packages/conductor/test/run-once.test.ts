@@ -34,7 +34,6 @@ import {
   PortsLive,
   appendEndActions,
   approve,
-  reject,
   renderPrompt,
   requeue,
   runOnce,
@@ -1651,26 +1650,104 @@ git add -A && git commit -q -m "fix the race"
       expect(outcome.detail).toContain(r.headSha.slice(0, 7));
     }, 180_000);
 
-    it("sends a rejection back to the gate rather than to the queue", async () => {
-      const r = await held(133, "133");
-      const outcome = await reject({
+    /**
+     * #150 — Approve absorbs the waiver.
+     *
+     * `approve()` read no verdict at all, so a merge over a red gate recorded
+     * nothing unless a person also pressed Waive first: the honest path cost
+     * two clicks and the silent one cost one. And the board's Waive named its
+     * own gate — `gates[0] ?? "build"`, or a literal `["build"]` — so a waived
+     * `review` was recorded as a waived `build`.
+     *
+     * Every refusal shape at once, so the waivers are pinned to exactly what
+     * the run reported: a `failed` review and a `never-ran` build on the head
+     * are waived, a `passed` lint is not, and a failure on a sha the branch has
+     * moved past is not a live refusal and is not either.
+     */
+    it("refuses to merge over a live refusal without a reason, and waives exactly the gates that refuse with one", async () => {
+      created.add(workItemStream(PROJECT, 135));
+      const r = await held(135, "135");
+      created.add(r.runId);
+      const before = (await g(["rev-parse", "develop"], originPath)).stdout;
+      const base = { runId: r.runId, onSha: r.headSha };
+
+      const run = await store.read(r.runId);
+      await store.append(r.runId, run.length, [
+        { type: "GateFailed", actor: "conductor", data: { ...base, gate: "proposed", action: "lint", onSha: "e".repeat(40), evidence: "an older head", findings: [] } },
+        { type: "GatePassed", actor: "conductor", data: { ...base, gate: "proposed", action: "lint", evidence: "clean", findings: [] } },
+        { type: "GateFailed", actor: "conductor", data: { ...base, gate: "proposed", action: "review", evidence: "wrong approach", findings: [] } },
+        { type: "GateNeverRan", actor: "conductor", data: { ...base, gate: "merge", action: "build", detail: "pg connection timeout" } },
+        { type: "GateFailed", actor: "conductor", data: { ...base, gate: "proposed", action: "scan", onSha: "f".repeat(40), evidence: "a head nobody is asking about", findings: [] } },
+      ]);
+
+      const client = fakeClient({ refSha: async () => r.headSha });
+      const common = {
         project: PROJECT,
-        issue: 133,
+        issue: 135,
         base: "develop",
-        client: fakeClient(),
+        client,
         by: "human:test",
-        reason: "wrong approach",
+        onSha: r.headSha,
         store,
+        home,
+        gitEnv: { ...process.env, ...authored },
+      };
+
+      // No reason, and a blank one: the same silence, refused the same way.
+      for (const note of [undefined, "   "]) {
+        const refused = await approve({ ...common, ...(note === undefined ? {} : { note }) });
+        expect(refused.ok).toBe(false);
+        if (refused.ok) return;
+        expect(refused.reason).toBe("unexplained");
+        expect(refused.detail).toContain("proposed:review");
+        expect(refused.detail).toContain("merge:build");
+        expect(refused.detail).not.toContain("lint");
+      }
+      const untouched = (await store.read(r.runId)).map((e) => e.type);
+      expect(untouched).not.toContain("GateWaived");
+      expect(untouched).not.toContain("ApprovalGranted");
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+
+      const reason = "the build's pg timeout is unrelated, and I have read the review";
+      const approved = await approve({ ...common, note: reason });
+      expect(approved.ok, JSON.stringify(approved)).toBe(true);
+
+      const after = await store.read(r.runId);
+      const waivers = after.filter((e) => e.type === "GateWaived");
+      const said = waivers.map((e) => e.data as { gate: string; action: string; by: string; reason: string; onSha: string });
+      expect(said.map((d) => `${d.gate}:${d.action}`).sort()).toEqual(["merge:build", "proposed:review"]);
+      for (const d of said) {
+        expect(d.by).toBe("human:test");
+        expect(d.reason).toBe(reason);
+        expect(d.onSha).toBe(r.headSha);
+      }
+      // One append: the waivers and the approval sit on consecutive versions,
+      // waivers first, so no reader can find an approval whose waivers are not
+      // yet on the log.
+      const granted = after.find((e) => e.type === "ApprovalGranted")!;
+      expect(waivers.map((e) => e.version)).toEqual([granted.version - 2, granted.version - 1]);
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).not.toBe(before);
+    }, 240_000);
+
+    it("approves with no reason where nothing refuses, and waives nothing", async () => {
+      created.add(workItemStream(PROJECT, 136));
+      const r = await held(136, "136");
+      created.add(r.runId);
+
+      const approved = await approve({
+        project: PROJECT,
+        issue: 136,
+        base: "develop",
+        client: fakeClient({ refSha: async () => r.headSha }),
+        by: "human:test",
+        store,
+        home,
+        gitEnv: { ...process.env, ...authored },
       });
 
-      expect(outcome.ok).toBe(true);
-      const events = (await store.read(r.runId)).map((e) => e.type);
-      expect(events).toContain("ApprovalRevoked");
-      // Still waiting on a person, not released for another run to claim and
-      // throw the question away.
-      const item = (await store.read(r.workItemId)).map((e) => e.type);
-      expect(item).not.toContain("WorkItemReleased");
-    }, 180_000);
+      expect(approved.ok, JSON.stringify(approved)).toBe(true);
+      expect((await store.read(r.runId)).map((e) => e.type)).not.toContain("GateWaived");
+    }, 240_000);
 
     /**
      * #92 — the board and `lingtai approve` gave two answers to one approval.

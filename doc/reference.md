@@ -675,9 +675,10 @@ Source: the switch in `apps/cli/src/lingtai.ts`.
 · `env` · `end` · `daemon` · `service` · `restart` · `pause` · `resume` ·
 `shutdown` · `now` · `projection` · `version`
 
-`approve` (with `--reject`), `requeue` and `waive` are the decisions a person
-can take from here, and they are all of the board's: `apps/board/src/app/actions.ts`
-imports the same four from `@lingtai/conductor/decide`. That the set was not
+`approve`, `requeue` and `waive` are the decisions a person can take from here.
+The board takes the first two, importing the same functions from
+`@lingtai/conductor/decide`; its waivers are the ones `approve` appends over a
+refusing gate, since the board's Waive and Reject went in `#150`. That the set was not
 countable from the CLI's side is how `requeue` (`#130`) and `waive` (`#129`)
 went missing — and the count here was two short again, `service` and `restart`
 having joined the switch without it moving.
