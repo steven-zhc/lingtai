@@ -500,7 +500,7 @@ const HELD_CLASS: Record<HoldLine["part"], string> = {
  * the rest of the line goes to the task page, so a landed item is still opened
  * from where it is listed.
  */
-function LandedRow({
+export function LandedRow({
   card,
   showProject,
   issue,
@@ -510,6 +510,14 @@ function LandedRow({
   issue: string | null;
 }) {
   const said = [
+    // First, and only when it is true: this column's heading says *Landed*, and
+    // a closed item did not land — it was ended by a person because nobody was
+    // going to do it (`#151`). The two share the column because both are over
+    // and Landed is already the archive, so the row is the only place the
+    // difference can be said. Without it the heading speaks for a row it is
+    // wrong about, which is the shape this repository keeps finding in itself:
+    // a claim that is true where it was written and false where it is read.
+    card.closed ? "closed" : null,
     card.kind,
     card.turns === null ? null : `${card.turns} turns`,
     card.costUsd === null ? null : `$${card.costUsd.toFixed(2)}`,

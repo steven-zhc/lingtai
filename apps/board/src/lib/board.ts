@@ -144,6 +144,15 @@ export interface BoardCard {
    */
   blocked: boolean;
   /**
+   * Whether this item reached its end by a person's decision rather than by
+   * landing (`#151`). It shares Landed's column because both are over and
+   * Landed is already the archive — but the two are not the same fact, and a
+   * row that does not say which is a column heading speaking for a row it is
+   * wrong about. `COLUMN_OF`'s comment promised the row would say; this is the
+   * field that lets it.
+   */
+  closed: boolean;
+  /**
    * Whether that question was asked before any run (`lingtai ask`, #147) — so
    * the move is an answer, not a review and not a requeue.
    */
@@ -405,6 +414,7 @@ export function toCard(
     taskId: t.taskId,
     project: t.project,
     column: COLUMN_OF[t.state],
+    closed: t.state === "closed",
     ref: t.issue,
     kind: t.kind,
     kindColor,
@@ -617,6 +627,12 @@ export async function queuedCards(
         // Nothing has run, so no approach has been abandoned.
         arm: null,
         blocked: false,
+        // Never, and by construction rather than by luck: these cards are the
+        // queue's own answer — what GitHub offers *minus* what the log says
+        // Lingtai is doing — and `selectRunnable` drops every row whose state
+        // is not `queued`, a closed one included. An item that reaches here has
+        // no closing on the log to carry.
+        closed: false,
         asked: false,
         wait: null,
         // Nothing has run, so nothing is held and nothing has been diagnosed.

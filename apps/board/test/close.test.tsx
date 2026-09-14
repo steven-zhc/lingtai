@@ -17,6 +17,9 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { Close } from "../src/app/decide.tsx";
+import { LandedRow } from "../src/app/page.tsx";
+import { toCard } from "../src/lib/board.ts";
+import type { TaskCard } from "@lingtai/projector/task-view";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -75,5 +78,82 @@ describe("the row of moves", () => {
     const standing = read("../src/app/standing.tsx");
     const runNow = standing.slice(standing.indexOf("<RunNow"));
     expect(runNow.slice(0, 600)).toContain("<Close");
+  });
+});
+
+/**
+ * The archive column holds two different endings, and says which (#151).
+ *
+ * `COLUMN_OF` puts `closed` in Landed's column on purpose — both are over, and
+ * Landed is already an archive of one-line rows rather than a lane of cards.
+ * What that costs is a heading that speaks for its rows: three items closed by
+ * hand rendered as `lingtai #156 · bug · 37 turns · $2.52 · 8m`, under a
+ * heading reading **Landed**, having landed nothing. The row is the only place
+ * the difference can be said, so it says it.
+ */
+describe("a closed item in the archive", () => {
+  // The same shape `bar.test.ts` builds, kept whole rather than cast: the two
+  // fields this test turns on — `state` and `updatedAt` — are the two a loose
+  // cast would have let through wrong, and one of them did.
+  const task = (over: Partial<TaskCard> = {}): TaskCard => ({
+    taskId: "wi-lingtai-136",
+    project: "lingtai",
+    issue: "136",
+    title: "A refused review buys a fixing agent",
+    kind: "feature",
+    state: "landed",
+    tier: "guarded",
+    runId: null,
+    turns: 67,
+    costUsd: 20.3,
+    gatesPassed: 0,
+    gatesFailed: 0,
+    gatesWaived: 0,
+    gatesApproved: 0,
+    baseSha: null,
+    headSha: null,
+    files: null,
+    insertions: null,
+    deletions: null,
+    note: null,
+    updatedAt: new Date("2026-09-14T04:27:22Z"),
+    closedAt: null,
+    attempts: 0,
+    lastAttemptAt: null,
+    awaitingSha: null,
+    awaitingApproval: false,
+    blocked: false,
+    needs: null,
+    diagnosis: null,
+    asked: false,
+    answer: null,
+    repairPending: false,
+    restarts: 0,
+    restartsOf: 0,
+    repairCostUsd: null,
+    ...over,
+  });
+
+  it("says so, where a landed one says nothing extra", () => {
+    const closed = renderToStaticMarkup(
+      <LandedRow card={toCard(task({ state: "closed" }))} showProject={false} issue={null} />,
+    );
+    const landed = renderToStaticMarkup(
+      <LandedRow card={toCard(task({ state: "landed" }))} showProject={false} issue={null} />,
+    );
+
+    expect(closed).toContain("closed");
+    // And the ordinary row is untouched: the word appears only where it is
+    // true, so it carries information rather than decorating every row.
+    expect(landed).not.toContain("closed");
+  });
+
+  it("shares the column, so nothing falls off the board", () => {
+    // `COLUMN_OF` is a `Record<TaskState, ColumnId>` for this reason (#59): a
+    // state with no column left a task drawn nowhere for the whole of its gate
+    // run. Closed is in Landed's column, and the row above is what pays for it.
+    expect(toCard(task({ state: "closed" })).column).toBe("landed");
+    expect(toCard(task({ state: "closed" })).closed).toBe(true);
+    expect(toCard(task({ state: "landed" })).closed).toBe(false);
   });
 });
