@@ -45,6 +45,29 @@ describe("vitest's own output", () => {
   });
 });
 
+describe("escapes vitest does not write", () => {
+  it("never takes the text after an OSC with no terminator", () => {
+    // A hyperlink cut off by a kill on timeout, or by a chunk boundary.
+    const text = plain("link \x1b]8;;http://x\nFAIL: Caused by: Error boom\nmore");
+    expect(text).not.toContain(ESC);
+    expect(text).toContain("FAIL: Caused by: Error boom\nmore");
+    expect(plain("link \x1b]8;;http://x")).toBe("link 8;;http://x");
+  });
+
+  it("ends an OSC at C1 ST, as a code point or as the byte decoded as UTF-8", () => {
+    expect(plain("\x1b]0;title\x9cFAIL Caused by: boom\n")).toBe("FAIL Caused by: boom\n");
+    const decoded = Buffer.from([0x1b, 0x5d, 0x30, 0x3b, 0x74, 0x9c, 0x46]).toString();
+    expect(plain(decoded)).toBe("F");
+    expect(plain("\x1b]8;;file:///x\x1b\\a\x1b]8;;\x07b")).toBe("ab");
+  });
+
+  it("takes the escapes that are not two bytes of CSI or OSC", () => {
+    expect(plain("a\x1b(B\x1b[mb")).toBe("ab"); // tput sgr0
+    expect(plain("x\x1b7progress\x1b8y")).toBe("xprogressy");
+    expect(plain("\x1b=\x1b>\x1bc\x1bMz")).toBe("z");
+  });
+});
+
 describe("the stored evidence", () => {
   /**
    * `GateFailed.data.evidence` is the record: the card renders it and

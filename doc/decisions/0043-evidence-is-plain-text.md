@@ -28,8 +28,10 @@ text the fix prompt quotes.
 ## Decision
 
 **Strip, at capture.** `tail()` in `packages/actions/src/command.ts`, which is
-the one place a command's output becomes evidence, removes CSI, OSC and the
-two-byte escapes before it counts lines or bytes.
+the one place a command's output becomes evidence, removes CSI, OSC and every
+other escape (`ESC ( B`, `ESC 7`) before it counts lines or bytes. An OSC with
+no terminator on its line loses only its `ESC ]`: stripping must never remove
+the text that follows it.
 
 - **Strip rather than render.** Rendering keeps the colour on the task page
   and does nothing for the fix prompt, `lingtai status`, or the budget. The

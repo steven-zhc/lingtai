@@ -104,9 +104,16 @@ export interface RunCommandOptions {
 
 /**
  * A terminal's control sequences: CSI (`ESC [ … final`, which is every colour),
- * OSC (`ESC ] … BEL` or `ESC ] … ESC \`, a hyperlink), and the two-byte rest.
+ * OSC (`ESC ] … BEL`, `ESC ] … ESC \` or `ESC ] … ST`, a hyperlink), and every
+ * other escape (`ESC ( B` from `tput sgr0`, `ESC 7`/`ESC 8` from progress).
+ *
+ * An OSC is taken whole only when its terminator is on the same line. One with
+ * none — cut off by a kill, or split across chunks — loses just its `ESC ]`
+ * and leaves its body showing, rather than swallowing the output after it. A
+ * lone C1 ST byte reaches here as U+FFFD, since the chunk is decoded as UTF-8.
  */
-const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])/g;
+const ESCAPES =
+  /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x00-\x1f\x9c�]*(?:\x07|\x1b\\|\x9c|�)|[ -/]*[0-~])/g;
 
 /**
  * The output as text, with the terminal's escape sequences taken out
