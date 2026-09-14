@@ -181,6 +181,12 @@ export async function requeueCard(input: {
  * `close()` refuses a `landed` item itself — there is nothing to close — and
  * refuses a blank reason, because this is the one decision nothing lifts: the
  * sentence written here is the last thing anybody will have about why.
+ *
+ * **A client, like `approveCard`'s, because the `end` point runs on a close**
+ * (0044). The button would otherwise append a terminal whose configured point
+ * silently did not run — and the card would go quiet on the board while the
+ * GitHub issue stayed open, which is half the thing a person clicking *Close*
+ * is asking for.
  */
 export async function closeCard(input: {
   project: string;
@@ -189,11 +195,21 @@ export async function closeCard(input: {
 }): Promise<ActionResult> {
   try {
     if (!input.reason.trim()) return { ok: false, detail: "a close needs a reason" };
+    if (!hasGitHubApp()) return { ok: false, detail: "no GitHub App configured" };
+    const state = await project(input.project);
+    const client = await createGitHubClient({
+      auth: githubApp(),
+      owner: state.owner!,
+      repo: input.project,
+    });
+
     const result = await close({
       project: input.project,
       issue: input.issue,
       by: actor(),
       reason: input.reason,
+      state,
+      client,
     });
 
     revalidatePath("/");

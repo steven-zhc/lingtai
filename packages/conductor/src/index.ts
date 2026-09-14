@@ -93,7 +93,7 @@ export {
 export { landedWithoutGatePoints, type UnrunGatePoint } from "./gate-audit.ts";
 export {
   appendEndActions,
-  landedWithoutEndActions,
+  endedWithoutEndActions,
   resolveEndActions,
   type TerminalOutcome,
   type UnresolvedEnd,

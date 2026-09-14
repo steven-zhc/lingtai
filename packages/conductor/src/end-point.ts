@@ -51,8 +51,16 @@ import pg from "pg";
  * `failed` is a run that ended without a diff worth merging and put the item
  * back in the queue; `blocked` is a question a person now holds, including the
  * hold that `--no-merge` and the human gate produce.
+ *
+ * `closed` is a person deciding the ticket is over (`#151`), and it is here
+ * rather than left out because leaving it out is a hole
+ * ([0044](../../../doc/decisions/0044-a-close-is-a-terminal-outcome.md)). `end`
+ * is defined as the point that fires on *every* terminal outcome; a fourth
+ * outcome that does not reach it makes that sentence false, and makes it false
+ * silently — which is the half of the responsibility 0016 §4 calls Lingtai's
+ * bug rather than the operator's. A recipe saying `when: any` means any.
  */
-export type TerminalOutcome = "landed" | "blocked" | "failed";
+export type TerminalOutcome = "landed" | "blocked" | "failed" | "closed";
 
 /**
  * The event the `end` point resolves to, or nothing.
@@ -140,11 +148,19 @@ export async function appendEndActions(
 
 // ------------------------------------------------------- what did not run ----
 
-/** A work item that landed with a plan at `end` and no record of it running. */
+/** A work item that ended with a plan at `end` and no record of it running. */
 export interface UnresolvedEnd {
   workItemId: string;
   project: string;
   issue: number;
+  /**
+   * Which ending it reached, so a replay resolves the point for the outcome
+   * that actually happened. It used to be unnecessary because only one ending
+   * was audited; replaying a closed item as `landed` would write a resolution
+   * naming an outcome the log does not contain, and `when: landed` actions
+   * would run on a ticket that landed nothing.
+   */
+  outcome: Extract<TerminalOutcome, "landed" | "closed">;
 }
 
 /**
@@ -167,7 +183,16 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
 }
 
 /**
- * Every item that landed whose `end` point was configured and did not run.
+ * Every item that ended whose `end` point was configured and did not run.
+ *
+ * **Two widenings, and both are the same hole.** It read `WorkItemLanded`
+ * alone, so a ticket a person closed was audited by nothing (0044); and it
+ * asked only whether *an* `EndActionsResolved` existed, where the resolver
+ * itself dedupes per outcome — so an item that resolved `end` while it was
+ * blocked, came back, and then landed looked settled to the audit and was not.
+ * The audit now asks the question the resolver answers: was this point resolved
+ * *for this outcome*. Expect it to name items it was silent about before; they
+ * were always there.
  *
  * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, computed from the log alone.** `GatesResolved` names all five
@@ -182,13 +207,17 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * Read by `lingtai doctor`, which reports it, and by `lingtai end replay`,
  * which repairs it by appending what should have been appended at the time.
  */
-export async function landedWithoutEndActions(url = databaseUrl()): Promise<UnresolvedEnd[]> {
+export async function endedWithoutEndActions(url = databaseUrl()): Promise<UnresolvedEnd[]> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
-    const r = await client.query<{ stream_id: string }>(
-      `with landed as (
-         select distinct stream_id from events where type = 'WorkItemLanded'
+    const r = await client.query<{ stream_id: string; outcome: string }>(
+      `with over as (
+         select distinct on (stream_id) stream_id,
+                case when type = 'WorkItemClosed' then 'closed' else 'landed' end as outcome
+         from events
+         where type in ('WorkItemLanded', 'WorkItemClosed')
+         order by stream_id, seq desc
        ),
        planned as (
          select distinct started.data->>'workItemId' as work_item
@@ -201,19 +230,21 @@ export async function landedWithoutEndActions(url = databaseUrl()): Promise<Unre
              where point->>'gate' = 'end' and jsonb_array_length(point->'actions') > 0
            )
        )
-       select landed.stream_id
-       from landed
-       join planned on planned.work_item = landed.stream_id
+       select over.stream_id, over.outcome
+       from over
+       join planned on planned.work_item = over.stream_id
        where not exists (
          select 1 from events resolved
-         where resolved.stream_id = landed.stream_id
+         where resolved.stream_id = over.stream_id
            and resolved.type = 'EndActionsResolved'
+           and resolved.data->>'outcome' = over.outcome
        )
-       order by landed.stream_id`,
+       order by over.stream_id`,
     );
     return r.rows.flatMap((row) => {
       const split = splitWorkItem(row.stream_id);
-      return split === null ? [] : [{ workItemId: row.stream_id, ...split }];
+      const outcome = row.outcome === "closed" ? "closed" : "landed";
+      return split === null ? [] : [{ workItemId: row.stream_id, outcome, ...split }];
     });
   } finally {
     await client.end();

@@ -124,17 +124,23 @@ export const GateAction = z.union([
    * `when` filters on the outcome, because `end` fires on *every* terminal
    * state. "Close it when it lands, label it when it is blocked" is then one
    * configuration rather than two mechanisms.
+   *
+   * `closed` is the fourth, and `any` includes it (0044): a ticket a person
+   * ended is a ticket whose issue this action is the right way to close. It is
+   * also the pairing that removes a manual step — `lingtai close` used to
+   * append a terminal and leave the GitHub issue open, so somebody still had
+   * to run `gh issue close` by hand afterwards.
    */
   z.object({
     name: z.string(),
     close: z.literal(true),
-    when: z.enum(["landed", "blocked", "failed", "any"]).default("landed"),
+    when: z.enum(["landed", "blocked", "failed", "closed", "any"]).default("landed"),
   }),
   /** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
   z.object({
     name: z.string(),
     labels: z.array(z.string()),
-    when: z.enum(["landed", "blocked", "failed", "any"]).default("any"),
+    when: z.enum(["landed", "blocked", "failed", "closed", "any"]).default("any"),
   }),
 ]);
 export type GateAction = z.infer<typeof GateAction>;

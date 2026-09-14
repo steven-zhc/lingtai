@@ -24,7 +24,7 @@
 import {
   appendEndActions,
   currentRecipe,
-  landedWithoutEndActions,
+  endedWithoutEndActions,
   loadProject,
 } from "@lingtai/conductor";
 import { tellGitHubAbout } from "@lingtai/conductor";
@@ -44,14 +44,14 @@ export async function endReplay(
   options: EndReplayOptions = {},
   log = console.log,
 ): Promise<number> {
-  const found = (await landedWithoutEndActions()).filter(
+  const found = (await endedWithoutEndActions()).filter(
     (f) =>
       (options.project === undefined || f.project === options.project) &&
       (options.issue === undefined || f.issue === options.issue),
   );
 
   if (found.length === 0) {
-    log("nothing to replay — every landed item with end actions has resolved them");
+    log("nothing to replay — every ended item with end actions has resolved them");
     return 0;
   }
   if (!hasGitHubApp()) {
@@ -85,12 +85,22 @@ export async function endReplay(
           clients.set(item.project, client);
         }
         const resolved = await currentRecipe(project, client);
-        const ended = await appendEndActions(eventStore, item.workItemId, resolved.recipe.gates.end, "landed");
+        // The outcome the item actually reached, not a constant. This read
+        // `"landed"` when landing was the only ending audited; a closed ticket
+        // replayed as landed would write a resolution naming an outcome its own
+        // log does not contain, and run every `when: landed` action on a ticket
+        // that landed nothing (0044).
+        const ended = await appendEndActions(
+          eventStore,
+          item.workItemId,
+          resolved.recipe.gates.end,
+          item.outcome,
+        );
         // Resolved and then carried out, in that order and in this process. The
         // outbox used to stand between them; there is nothing to wait for now.
         await tellGitHubAbout({ store: eventStore, github: client, workItemId: item.workItemId, appended: ended });
         replayed += 1;
-        log(`${item.project}#${item.issue}: end resolved from the recipe at ${resolved.ref}`);
+        log(`${item.project}#${item.issue}: end resolved for ${item.outcome} from the recipe at ${resolved.ref}`);
       } catch (err) {
         // Named and carried on. One unreadable recipe must not strand the other
         // items, and the log is intact either way.

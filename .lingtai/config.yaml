@@ -319,6 +319,20 @@ gates:
       when: landed
       close: true
 
+    # The other ending, and it is a separate action rather than `when: any`
+    # deliberately ([0044](../doc/decisions/0044-a-close-is-a-terminal-outcome.md)).
+    # `any` would also fire on `blocked` and `failed`, and closing the issue
+    # because a run could not finish is the opposite of what those mean — the
+    # ticket is still wanted, and a person is being asked about it.
+    #
+    # Without this, `lingtai close` ends the ticket on the log and leaves the
+    # GitHub issue open, so somebody still runs `gh issue close` by hand
+    # afterwards. That happened to #154 and #156 on 2026-09-14, which is how
+    # the gap was found.
+    - name: close the ticket a person ended
+      when: closed
+      close: true
+
 # Who is told what happened, and never waited for
 # ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §3).
 #

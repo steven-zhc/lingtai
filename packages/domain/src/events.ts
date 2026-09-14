@@ -503,7 +503,14 @@ export const GatesResolved = z.object({
  * changed, and would produce a different answer for the same history.
  */
 export const EndActionsResolved = z.object({
-  outcome: z.enum(["landed", "blocked", "failed"]),
+  /**
+   * The four endings. `closed` joined them with `#151` (0044): `end` is the
+   * point that fires on every terminal outcome, so a fourth outcome that this
+   * schema refused was a point that could not resolve for it — the refusal a
+   * test found rather than a reader, which is the argument for the enum being
+   * here at all.
+   */
+  outcome: z.enum(["landed", "blocked", "failed", "closed"]),
   actions: z.array(
     z.union([
       z.object({ name: z.string(), close: z.literal(true) }),

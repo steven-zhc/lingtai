@@ -25,7 +25,7 @@
 import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
   currentRecipe,
-  landedWithoutEndActions,
+  endedWithoutEndActions,
   landedWithoutGatePoints,
   loadProjects,
   passCeiling,
@@ -962,7 +962,7 @@ async function readableTypes(url: string): Promise<CheckResult> {
  */
 async function endPointRan(url: string): Promise<CheckResult> {
   const name = "gates: end ran on what landed";
-  const found = await landedWithoutEndActions(url).catch(() => null);
+  const found = await endedWithoutEndActions(url).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {

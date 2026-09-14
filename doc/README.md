@@ -121,6 +121,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0041](decisions/0041-a-gate-that-never-ran.md) | **A gate that never ran has judged nothing, and the same quota stops the conductor** | accepted; extends 0031 to the agent inside a gate |
 | [0042](decisions/0042-the-restart-is-a-command.md) | **The restart is a command, the checks come before the drain, and a start is an event** | accepted; completes 0030 |
 | [0043](decisions/0043-evidence-is-plain-text.md) | **A gate's evidence is plain text, stripped where it is captured** | accepted; closes #156 |
+| [0044](decisions/0044-a-close-is-a-terminal-outcome.md) | **A close is a terminal outcome, so `end` runs on it** | accepted; completes #151 |
 
 ## Experiments
 

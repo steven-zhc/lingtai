@@ -26,12 +26,35 @@
  * the findings and the spend of work done under an intent that is no longer the
  * intent into every prompt after it. Wanting the work again is a new ticket.
  *
- * **No GitHub call**, for the reason `requeue` gives: the event is the whole of
- * the decision. `labelsFor("closed")` is empty and `converge` writes the
- * difference, so the labels an earlier block left behind come off on their own.
+ * **And `end` runs, because `end` is the point that runs on every terminal
+ * outcome** ([0044](../../../doc/decisions/0044-a-close-is-a-terminal-outcome.md)).
+ * It did not, at first: this appended `WorkItemClosed` and stopped, so a recipe
+ * saying `when: any` did not fire on a close, and `lingtai close` left the
+ * GitHub issue open for somebody to close by hand afterwards — the manual step
+ * the whole point exists to remove. A fourth outcome that does not reach a
+ * point defined as firing on every outcome is 0016 §4's shape exactly: the
+ * point was configured, the log said so, and it silently did not run.
+ *
+ * So the resolution is folded into the same append as the outcome, as
+ * `approve` folds `landed` — one transaction, so a crash cannot leave a
+ * terminal with no record of what its point decided. `labelsFor("closed")` is
+ * empty and `converge` writes the difference, so the labels an earlier block
+ * left behind come off on their own; the recipe's own actions run after, and
+ * may overrule that.
+ *
+ * **An unreadable recipe refuses, and closes nothing.** Also `approve`'s rule,
+ * and for its reason: appending a terminal whose point could not be resolved is
+ * how the silence gets in. Read from the base branch, never from an agent's
+ * (0005).
  */
-import { parsePayload, reduceWorkItem, workItemStream } from "@lingtai/domain";
+import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
+import type { GitHubClient } from "@lingtai/github";
+import type { GateAction } from "@lingtai/recipe";
+import { resolveEndActions } from "./end-point.ts";
+import { labelsFor } from "./labels.ts";
+import { tellGitHubAbout } from "./tell.ts";
+import { currentRecipe } from "./projects.ts";
 
 export interface CloseOutcome {
   ok: boolean;
@@ -49,6 +72,21 @@ export async function close(options: {
    * is the last thing anybody will have.
    */
   reason: string;
+  /**
+   * The project as Lingtai has it onboarded, and a client on its repository.
+   *
+   * Both, or neither. Together they are what lets the `end` point run: the
+   * recipe is read from the base branch through the client, resolved against
+   * the `closed` outcome, and carried out on the same client afterwards.
+   *
+   * **Omitting them closes without resolving `end`**, and is for a caller that
+   * has no GitHub to reach — a test, or a project whose App is not configured.
+   * It is deliberately not the default: a terminal appended with a configured
+   * point left unresolved is the silence 0016 §4 calls Lingtai's bug, so the
+   * two commands a person actually uses both pass them.
+   */
+  state?: ProjectState;
+  client?: GitHubClient;
   store?: EventStore;
 }): Promise<CloseOutcome> {
   const store = options.store ?? eventStore;
@@ -58,7 +96,8 @@ export async function close(options: {
     return { ok: false, workItemId, detail: "a close needs a reason" };
   }
 
-  const item = reduceWorkItem(await store.read(workItemId));
+  const events = await store.read(workItemId);
+  const item = reduceWorkItem(events);
 
   if (item.lifecycle.status === "closed") {
     return { ok: false, workItemId, detail: `${workItemId} is already closed` };
@@ -69,6 +108,25 @@ export async function close(options: {
     return { ok: false, workItemId, detail: `${workItemId} landed — there is nothing to close` };
   }
 
+  // Before the close is recorded, so an unreadable recipe refuses rather than
+  // appending a terminal whose point silently could not run — `approve`'s rule
+  // and its reason (0005, 0044).
+  let end: readonly GateAction[] = [];
+  if (options.state && options.client) {
+    try {
+      end = (await currentRecipe(options.state, options.client)).recipe.gates.end;
+    } catch (err) {
+      return {
+        ok: false,
+        workItemId,
+        detail: `${(err as Error).message}. Nothing was closed.`,
+      };
+    }
+  }
+
+  // One transaction. The outcome and what its point resolved to cannot come
+  // apart, and the version check that guards the close guards both.
+  const ended = resolveEndActions(events, end, "closed");
   try {
     await store.append(workItemId, item.version, [
       {
@@ -76,6 +134,7 @@ export async function close(options: {
         actor: options.by,
         data: parsePayload("WorkItemClosed", { by: options.by, reason: options.reason }),
       },
+      ...ended,
     ]);
   } catch (err) {
     // Something moved between the read and the append — a pass claimed it, or a
@@ -84,6 +143,21 @@ export async function close(options: {
       return { ok: false, workItemId, detail: `${workItemId} changed while closing — read it again` };
     }
     throw err;
+  }
+
+  // Resolved, then done, in that order and never the reverse: the resolution is
+  // a fact and is already on the log; this is I/O that must not be able to undo
+  // it. `labelsFor("closed")` is empty, so what it writes is the removal of
+  // whatever an earlier state left on, and the recipe's own actions run after
+  // and may overrule it.
+  if (options.client) {
+    await tellGitHubAbout({
+      store,
+      github: options.client,
+      workItemId,
+      labels: labelsFor("closed"),
+      appended: ended,
+    });
   }
 
   return { ok: true, workItemId, detail: `closed by ${options.by} — the queue will not offer it again` };
