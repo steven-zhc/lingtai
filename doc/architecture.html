@@ -559,7 +559,7 @@
 
           <rect x="210" y="86" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
           <text x="298" y="103" text-anchor="middle" font-size="12.5" fill="currentColor">board</text>
-          <text x="298" y="118" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">approve · reject · waive</text>
+          <text x="298" y="118" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">approve · requeue</text>
 
           <rect x="210" y="142" width="176" height="40" fill="none" stroke="currentColor" opacity=".8"/>
           <text x="298" y="159" text-anchor="middle" font-size="12.5" fill="currentColor">CLI</text>
@@ -614,7 +614,7 @@
 
     <ul class="rules">
       <li><b>Only the conductor writes about work.</b> <span>Claims, gate verdicts, integrations, landings. Nothing else may.</span></li>
-      <li><b>The board writes too.</b> <span>Approve, reject and waive are appends. The board is not read-only — it is where a person's decision enters the log.</span></li>
+      <li><b>The board writes too.</b> <span>Approve and requeue are appends. The board is not read-only — it is where a person's decision enters the log.</span></li>
       <li><b>The agent writes through the hook.</b> <span>A thin binary on a unix socket; the conductor appends on its behalf, with the run id as the actor.</span></li>
       <li><b>Projections never write to the log.</b> <span>They read it and maintain their own table. A projection that appended would be a second author of history.</span></li>
       <li><b>There is one projection.</b> <span><code>task_view</code>. A list of one was a list whose only job was to let a projection be written and silently left out of it — no table, no checkpoint, no failing check. A second one is added in the open, by name, or it does not exist.</span></li>

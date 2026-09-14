@@ -1750,6 +1750,64 @@ git add -A && git commit -q -m "fix the race"
       expect((await store.read(r.runId)).map((e) => e.type)).not.toContain("GateWaived");
     }, 180_000);
 
+    /**
+     * #150: Requeue sits beside Approve, so a person can send a held diff back
+     * for a new run while a second tab still shows Approve. `WorkItemUnblocked`
+     * alone left the run `awaiting-approval`, and that tab merged the diff the
+     * person had sent back — onto an item that was queued, or already running.
+     */
+    it("merges nothing a person sent back to the queue, whether the approval arrives after the requeue or during it", async () => {
+      const approving = (issue: number, r: { headSha: string }, on: typeof store) => ({
+        project: PROJECT,
+        issue,
+        base: "develop",
+        client: fakeClient({ refSha: async () => r.headSha }),
+        by: "human:test",
+        onSha: r.headSha,
+        store: on,
+        home,
+        gitEnv: { ...process.env, ...authored },
+      });
+      const before = (await g(["rev-parse", "develop"], originPath)).stdout;
+
+      // After: the requeue, then the second tab's click.
+      created.add(workItemStream(PROJECT, 1502));
+      const after = await held(1502, "1502");
+      created.add(after.runId);
+      const back = await requeue({ project: PROJECT, issue: 1502, by: "human:test", note: "agree with review", store });
+      expect(back.ok).toBe(true);
+      const late = await approve(approving(1502, after, store));
+      expect(late.ok).toBe(false);
+      expect((await store.read(after.runId)).map((e) => e.type)).not.toContain("ApprovalGranted");
+      expect(reduceWorkItem(await store.read(after.workItemId)).lifecycle.status).toBe("backlog");
+
+      // During: approve has read the item and the run, and the requeue lands
+      // before its append.
+      created.add(workItemStream(PROJECT, 1503));
+      const during = await held(1503, "1503");
+      created.add(during.runId);
+      let interleaved = false;
+      const racing: typeof store = {
+        ...store,
+        read: async (streamId, fromVersion) => {
+          const events = await store.read(streamId, fromVersion);
+          if (streamId === during.runId && !interleaved) {
+            interleaved = true;
+            const sent = await requeue({ project: PROJECT, issue: 1503, by: "human:test", note: "agree with review", store });
+            expect(sent.ok).toBe(true);
+          }
+          return events;
+        },
+      };
+      const raced = await approve(approving(1503, during, racing));
+      expect(interleaved).toBe(true);
+      expect(raced.ok).toBe(false);
+      expect((await store.read(during.runId)).map((e) => e.type)).not.toContain("ApprovalGranted");
+      expect(reduceWorkItem(await store.read(during.workItemId)).lifecycle.status).toBe("backlog");
+
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+    }, 240_000);
+
     /** #150: Reject asked the same question again and ended nothing. It is gone. */
     it("has no reject to call", async () => {
       const conductor = await import("../src/index.ts");

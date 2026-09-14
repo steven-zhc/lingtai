@@ -20,7 +20,7 @@
 import { type GateAction, resolveRecipe } from "@lingtai/recipe";
 import { parsePayload, reduceRun, reduceWorkItem, type RunState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { type EventStore, eventStore } from "@lingtai/event-store";
+import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
 import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
@@ -118,6 +118,19 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
     };
   }
 
+  // **The item has to be holding this run, too** (#150). Requeue is offered
+  // beside Approve now, so a card left open in a second tab — or `lingtai
+  // approve` — can arrive after a person sent the ticket back for a new run.
+  // The run alone cannot say so; the item can.
+  if (item.lifecycle.status !== "blocked" || (item.lifecycle.runId !== null && item.lifecycle.runId !== runId)) {
+    return {
+      ok: false,
+      workItemId,
+      reason: "not-blocked",
+      detail: `${workItemId} is ${item.lifecycle.status}, not held on ${runId} — nothing was merged`,
+    };
+  }
+
   const { gate, onSha } = run.lifecycle;
   const branch = `agent/${options.issue}`;
 
@@ -196,30 +209,43 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
     };
   }
 
-  await store.append(runId, run.version, [
-    // One waiver per refusing gate, each under the name the run recorded it
-    // with, carrying the approval's own reason — before the approval, so the
-    // fold reads the refusal overruled and then the diff approved.
-    ...refusing.map((key) => ({
-      type: "GateWaived" as const,
-      actor: options.by,
-      data: parsePayload("GateWaived", { ...splitGate(key), runId, onSha, by: options.by, reason: note }),
-    })),
-    {
-      type: "ApprovalGranted",
-      // The approver *is* the actor. `by` is already `human:<id>`, which is the
-      // shape the envelope demands, and recording it in both places keeps the
-      // payload readable without the two ever disagreeing.
-      actor: options.by,
-      data: parsePayload("ApprovalGranted", {
-        ...splitGate(gate),
-        runId,
-        onSha,
-        by: options.by,
-        note,
-      }),
-    },
-  ]);
+  // At the version read above, so a requeue that closed this approval in the
+  // meantime (`requeue` appends to the run first) wins the race and nothing is
+  // merged.
+  try {
+    await store.append(runId, run.version, [
+      // One waiver per refusing gate, each under the name the run recorded it
+      // with, carrying the approval's own reason — before the approval, so the
+      // fold reads the refusal overruled and then the diff approved.
+      ...refusing.map((key) => ({
+        type: "GateWaived" as const,
+        actor: options.by,
+        data: parsePayload("GateWaived", { ...splitGate(key), runId, onSha, by: options.by, reason: note }),
+      })),
+      {
+        type: "ApprovalGranted",
+        // The approver *is* the actor. `by` is already `human:<id>`, which is the
+        // shape the envelope demands, and recording it in both places keeps the
+        // payload readable without the two ever disagreeing.
+        actor: options.by,
+        data: parsePayload("ApprovalGranted", {
+          ...splitGate(gate),
+          runId,
+          onSha,
+          by: options.by,
+          note,
+        }),
+      },
+    ]);
+  } catch (err) {
+    if (!(err instanceof ConcurrencyError)) throw err;
+    return {
+      ok: false,
+      workItemId,
+      reason: "stale",
+      detail: `${runId} moved while this was being approved. Nothing was merged — reload and read it again.`,
+    };
+  }
   if (refusing.length > 0) log(`waived ${refusing.join(", ")} on ${onSha.slice(0, 7)}: ${note}`);
   log(`approved ${onSha.slice(0, 7)} by ${options.by}`);
 
@@ -320,8 +346,7 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
 }
 
 /**
- * Putting a blocked item back in the queue: the move that is left when there is
- * no diff to approve.
+ * Putting a blocked item back in the queue, from any blocked card (#150).
  *
  * **A card must never offer only a control that refuses.** That is the `#84`
  * complaint stated as a rule: an item whose integration failed is `blocked`
@@ -365,6 +390,37 @@ export async function requeue(options: {
       workItemId,
       detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
     };
+  }
+
+  // **A run still asking is closed first, on its own stream** (#150). Requeue
+  // sits beside Approve now, and `WorkItemUnblocked` alone left the run
+  // `awaiting-approval` — so a second tab could still approve and merge the diff
+  // this person sent back. `RunFailed` at the run's version ends the question in
+  // the fold, and an `approve()` that read the run before this loses its append.
+  const blockedOn = item.lifecycle.runId;
+  if (blockedOn !== null) {
+    const run = reduceRun(await store.read(blockedOn));
+    if (run.lifecycle.status === "awaiting-approval") {
+      try {
+        await store.append(blockedOn, run.version, [
+          {
+            type: "RunFailed",
+            actor: options.by,
+            data: parsePayload("RunFailed", {
+              kind: "aborted",
+              detail: `sent back to the queue by ${options.by}: ${options.note}`,
+            }),
+          },
+        ]);
+      } catch (err) {
+        if (!(err instanceof ConcurrencyError)) throw err;
+        return {
+          ok: false,
+          workItemId,
+          detail: `${blockedOn} moved while this was being sent back — reload and read it again`,
+        };
+      }
+    }
   }
 
   await store.append(workItemId, item.version, [

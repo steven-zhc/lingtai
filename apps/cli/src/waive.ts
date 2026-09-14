@@ -4,8 +4,10 @@
  *
  * **A waiver merges nothing.** It is a verdict: the card shows it, `lingtai
  * doctor`'s `landedWithoutGatePoints` counts it, and the next attempt is not
- * told the gate died. No merge path reads `GateWaived`, so a blocked item stays
- * blocked and a held run still needs `lingtai approve`. The command says so
+ * told the gate died. Nothing merges because of one, so a blocked item stays
+ * blocked and a held run still needs `lingtai approve` — which does read it: a
+ * gate already waived on the head is not one `approve()` asks a reason for
+ * again, since this waiver carries its own (`refusingOn`). The command says so
  * after it appends, naming where the item is, because an exit 0 that let a
  * person think the item was on its way would be a decision reported as taken
  * that took nothing.

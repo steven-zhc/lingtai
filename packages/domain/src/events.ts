@@ -148,10 +148,13 @@ export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string()
  * What to do about a block, in the vocabulary of the controls that exist.
  *
  * **`approve` is a legitimate value, and most of the time it is the right one**
- * (#83). The three values are exactly the three moves a card has: `approve` and
- * `reject` answer an `ApprovalRequested`, and `requeue` is what is left when
- * there is no diff to answer about. A recommendation the board cannot carry out
- * would be a sentence rather than a recommendation.
+ * (#83). A card has two moves since #150: `approve` answers an
+ * `ApprovalRequested`, and `requeue` ends the wait with a new run, with or
+ * without a diff to answer about. `reject` stays in the enum because the log
+ * holds it, and has no button of its own: the board reads it as `requeue`
+ * (`primaryMove` in `apps/board/src/app/decide.tsx`), so a diagnosis that means
+ * *run it again* should say `requeue`. A recommendation the board cannot carry
+ * out would be a sentence rather than a recommendation.
  */
 export const BlockRecommendation = z.object({
   action: z.enum(["approve", "reject", "requeue"]),

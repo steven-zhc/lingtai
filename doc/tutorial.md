@@ -199,7 +199,7 @@ you decide:
 
 ```bash
 pnpm lingtai approve <repo> --issue 41
-pnpm lingtai approve <repo> --issue 41 --reject "wrong approach"
+pnpm lingtai requeue <repo> --issue 41 --note "wrong approach"
 ```
 
 Approving on the board does the same thing — **as long as the daemon is running**,
