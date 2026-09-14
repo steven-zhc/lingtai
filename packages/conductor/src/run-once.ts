@@ -1838,6 +1838,53 @@ export function runOnce(
           );
         }
 
+        // ---- the branch, on the remote -------------------------------------
+        //
+        // **Defined here, above every way out of this loop, because the last
+        // fix was one `if` and the class had two** (`#154`, then `#157`). The
+        // agent's branch has to exist on the remote for the integrator to merge
+        // it, and for a person to read what they are being asked to approve; it
+        // works in a worktree, not on origin, and 0039 throws the worktree away
+        // with the pass.
+        //
+        // `#154` moved the push above the *held* break and said in its own
+        // comment that this covered "a refusal no round was bought for". It did
+        // not. A refusal whose fixing agent declines leaves forty lines earlier
+        // — `bought.kind === "declined"` — and never reached the push at all.
+        // `#157` ran for twelve turns, wrote an ADR and two commits, was refused
+        // by `build`, declined a fix, and its worktree was collected with the
+        // only copy of the work in it. That is this repository's most-repeated
+        // shape, committed in the act of fixing it: one instance closed, the
+        // class left open, and a comment asserting otherwise.
+        //
+        // So the push is a value and a helper rather than a line at one exit,
+        // and every path that leaves this loop with commits calls one of them.
+        // Adding a third `if` would have been the third time.
+        const push = [
+          "push",
+          `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+          "origin",
+          `HEAD:refs/heads/${branch}`,
+        ];
+
+        /**
+         * The push a run makes on its way to a stop, which must not change the
+         * stop.
+         *
+         * Tolerant, as the stand-down's is: a hold and a declined refusal are
+         * both decisions about the work, and a push that failed must not turn
+         * either into a different ending. The person is still owed the question;
+         * they are told the branch is not there to answer it with.
+         */
+        const pushOnTheWayOut = Effect.gen(function* () {
+          const pushed = yield* Effect.either(gitInWorktree(push));
+          if (Either.isRight(pushed)) {
+            lease = head;
+          } else {
+            runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
+          }
+        });
+
         if (!pipeline.ok && pipeline.failedAt !== null) {
           // The refusal, by verdict rather than by position: the pipeline stops
           // at the first one, so it is also the last result — and asking for the
@@ -1865,6 +1912,9 @@ export function runOnce(
               why: bought.why,
               exhausted: bought.exhausted,
             };
+            // The work is going to a person, so the person has to be able to
+            // read it. This is the exit `#154`'s fix missed.
+            yield* pushOnTheWayOut;
             break;
           }
           // Nothing this loop could have bought for. The lane below records the
@@ -1872,59 +1922,14 @@ export function runOnce(
           // gone.
         }
 
-        // The agent's branch has to exist on the remote for the integrator to
-        // merge it; it works in a worktree, not on origin.
-        //
-        // **And for a held run just as much** (`#154`). The break used to sit on
-        // the line above this comment, so a run that held at `proposed` — a
-        // `human:` action, two agents disagreeing, a refusal no round was bought
-        // for — ended without ever pushing. The worktree went with the pass and
-        // the commit existed nowhere: `lingtai approve` refused every one of them
-        // as `stale`, the card offered *Approve* for a sha that was not on any
-        // remote, and `attempts.ts` told the next attempt to
-        // `git fetch origin <branch>` a branch that did not exist. Four items
-        // were lost that way before anybody looked — and the reason nothing
-        // caught it is that the *other* held point is after this line, so `#58`'s
-        // test proved the held path worked for `merge` and nothing covered
-        // `proposed`.
-        //
-        // **The lease is spelled out, and it has to be.** Bare
-        // `--force-with-lease` reads a remote-tracking ref, and Lingtai's
-        // mirror is bare with a `+refs/heads/*:refs/heads/*` refspec — there
-        // are no `refs/remotes/origin/*` for it to read, so git refuses with
-        // `stale info` the moment `agent/<n>` already exists on origin. That
-        // never showed while every run was an issue's first attempt, and a
-        // second attempt on the same branch is now the ordinary case.
-        // The value is what origin had **when we last looked**, which is the
-        // lease anyone would want: refuse if somebody else pushed since.
-        //
-        // *Last looked*, not *when the worktree was cut*, and `#142` is why that
-        // distinction became load-bearing. A pass pushes once per round now, and
-        // the snapshot taken at provisioning says "this branch does not exist" —
-        // true the first time and made false by that very push. The second
-        // round's push was then rejected as `stale info` by its own predecessor.
-        // The lease has to move with what this pass has put there.
-        const push = [
-          "push",
-          `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-          "origin",
-          `HEAD:refs/heads/${branch}`,
-        ];
-
         if (pipeline.heldAt !== null) {
-          // Tolerant, as the stand-down's push is and for the same reason: a
-          // hold is a decision about the work, and a push that failed must not
-          // turn it into a different ending. The person is still owed the
-          // question; they are told the branch is not there to answer it with.
-          const pushed = yield* Effect.either(gitInWorktree(push));
-          if (Either.isRight(pushed)) {
-            lease = head;
-          } else {
-            runLog.note("push", `${branch} was not pushed, and the hold stands — ${pushed.left.detail}`);
-          }
+          yield* pushOnTheWayOut;
           break;
         }
 
+        // Strict here, and only here: this run is going on to merge, and an
+        // integrator that cannot find the branch is a failure of the run rather
+        // than a stop somebody is owed an explanation for.
         yield* gitInWorktree(push).pipe(failing("push"));
         lease = head;
 

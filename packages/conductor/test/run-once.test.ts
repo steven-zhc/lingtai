@@ -1440,6 +1440,77 @@ git add -A && git commit -q -m "the work a person is asked about"
     expect(onOrigin.stdout.trim()).toBe(result.headSha);
   });
 
+  /**
+   * The exit the `#154` fix missed, and the one that cost `#157` its work.
+   *
+   * `#154` moved the push above the *held* break and its own comment claimed
+   * that covered "a refusal no round was bought for". A refusal whose fixing
+   * agent **declines** does not reach that line: it leaves forty lines earlier,
+   * at `bought.kind === "declined"`. The test above could not catch it, because
+   * a human hold and a declined refusal are two different exits from the same
+   * loop — which is this repository's own recurring shape, one instance fixed
+   * and the class left open, committed in the act of fixing it.
+   *
+   * It cost a real pass. `#157` ran twelve turns, wrote ADR 0045 and two
+   * commits, was refused by `build`, and its fixing agent declined — correctly,
+   * the failure was the network. The worktree was collected with the only copy
+   * of the work in it, and `agent/157` was never on the remote.
+   *
+   * The agent here commits the first time it is called and commits nothing the
+   * second, which is exactly a decline: the marker file is what tells the two
+   * invocations apart. As above, the assertion is not *it held* but **what is
+   * on origin afterwards**.
+   */
+  it("leaves the branch on the remote when a fix round declines", async () => {
+    created.add(workItemStream(PROJECT, 1157));
+    // The work invocation commits; the fix invocation sees its own output
+    // already there and commits nothing, which is the decline. The worktree is
+    // what distinguishes them — one worktree per pass (0039), so what round one
+    // wrote is what round two reads.
+    //
+    // **The file name is this test's own, and it has to be.** `src/fix.ts` is
+    // what the other suites here write, and earlier ones merge it into the
+    // base — so a worktree cut from that base already had it, and the *work*
+    // invocation declined before there was anything to fix. It passed when run
+    // alone and failed in the file, which is the only way that bug shows.
+    const agent = await agentThat(`
+if [ -f src/declined-1157.ts ]; then echo "I am not fixing this one, and I have committed nothing."; exit 0; fi
+mkdir -p src && echo "export const declined = 1157;" > src/declined-1157.ts
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm "the work a declined fix leaves behind"
+`);
+
+    const result = await once({
+      ...options(agent),
+      issue: 1157,
+      client: fakeClient({ recipe: REFUSING_RECIPE, getIssue: async () => issue2(1157) }),
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+    if (result.ok !== "held") return;
+    created.add(result.runId);
+
+    // The decline really happened — otherwise this would assert the push on a
+    // path that never declined, and would pass with the bug still in.
+    //
+    // A round was bought and its agent committed nothing. `FixApplied` is
+    // appended either way — `headSha: null` is the decline, and its absence
+    // would mean the fixer committed and this test is exercising the wrong
+    // exit. Not `FixDeclined`, either: that event records the *budget* refusing
+    // to buy a round, where `kind: "declined"` in the loop is the fixer
+    // refusing to commit. Two meanings, one word, and both cost a run to learn.
+    const run = await store.read(result.runId);
+    expect(run.some((e) => e.type === "FixRequested")).toBe(true);
+    const applied = run.filter((e) => e.type === "FixApplied");
+    expect(applied).toHaveLength(1);
+    expect((applied[0]!.data as { headSha: string | null }).headSha).toBeNull();
+
+    // The whole of the ticket: the work the agent did on its first turn is on
+    // origin, so a person can read what they are being asked about.
+    const onOrigin = await g(["rev-parse", "refs/heads/agent/1157"], originPath);
+    expect(onOrigin.stdout.trim()).toBe(result.headSha);
+  }, 240_000);
+
   it("holds at a human action at the merge point, with no --no-merge anywhere", async () => {
     created.add(workItemStream(PROJECT, 127));
     const agent = await agentThat(`
