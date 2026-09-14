@@ -21,7 +21,7 @@ import { inWords } from "@lingtai/conductor/queue";
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
 import { readControl } from "@lingtai/daemon/control";
-import { Decide, Requeue } from "./decide.tsx";
+import { Close, Decide, Requeue } from "./decide.tsx";
 import { Draining } from "./draining.tsx";
 import { Health } from "./health.tsx";
 import { Paused } from "./paused.tsx";
@@ -408,6 +408,22 @@ function Card({
             question={card.note}
             recommended={card.diagnosis?.recommendation?.action ?? null}
           />
+          {/* The third of the three, and the only one that ends the ticket
+              rather than the wait (`#151`). Approve takes the diff, Requeue
+              throws it away and asks for another, and both assume the work is
+              still wanted. Without this, a card you have decided against could
+              only be argued with. */}
+          <Close project={card.project} issue={Number(card.ref)} />
+        </div>
+      ) : null}
+
+      {/* And on a queued card, where it is the only move there is. The state
+          this was written for is the item nothing is asking about: five sat in
+          Queued that GitHub had closed hours earlier, because `gh issue close`
+          appends nothing and the fold went on calling them `backlog`. */}
+      {card.column === "queued" ? (
+        <div className="btnrow">
+          <Close project={card.project} issue={Number(card.ref)} />
         </div>
       ) : null}
     </article>

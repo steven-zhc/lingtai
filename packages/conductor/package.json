@@ -17,6 +17,7 @@
     "./queue": "./src/queue.ts",
     "./run-log": "./src/run-log.ts",
     "./backlog": "./src/backlog.ts",
+    "./close": "./src/close.ts",
     "./ticket-store": "./src/ticket-store.ts"
   },
   "scripts": {

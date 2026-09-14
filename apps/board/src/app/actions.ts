@@ -32,6 +32,7 @@
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
 import { approve, requeue } from "@lingtai/conductor/decide";
+import { close } from "@lingtai/conductor/close";
 import { answer } from "@lingtai/conductor/ask";
 import { acceptFinding, declineFinding } from "@lingtai/conductor/backlog";
 import { githubTicketStore } from "@lingtai/conductor/ticket-store";
@@ -158,6 +159,41 @@ export async function requeueCard(input: {
       issue: input.issue,
       by: actor(),
       note: input.note,
+    });
+
+    revalidatePath("/");
+    return { ok: result.ok, detail: result.detail };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
+/**
+ * The third move, and the only one that ends a ticket without work landing.
+ *
+ * **It appends; it does not delete** (`#151`). `gh issue close` by hand writes
+ * nothing to the log, so the fold went on calling the item `backlog` and the
+ * board went on offering it — five items sat in Queued that GitHub had closed
+ * hours earlier. This writes `WorkItemClosed`, and the queue passes over the
+ * item *because the log says it is over*, not because a label was scraped.
+ *
+ * **Never the primary move, and never offered on a card that landed.**
+ * `close()` refuses a `landed` item itself — there is nothing to close — and
+ * refuses a blank reason, because this is the one decision nothing lifts: the
+ * sentence written here is the last thing anybody will have about why.
+ */
+export async function closeCard(input: {
+  project: string;
+  issue: number;
+  reason: string;
+}): Promise<ActionResult> {
+  try {
+    if (!input.reason.trim()) return { ok: false, detail: "a close needs a reason" };
+    const result = await close({
+      project: input.project,
+      issue: input.issue,
+      by: actor(),
+      reason: input.reason,
     });
 
     revalidatePath("/");

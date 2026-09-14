@@ -7,7 +7,7 @@ import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import type { DiscussionView, StandingView } from "@/lib/task";
 import type { OutgoingView } from "@/lib/prompt";
 import { holding, place, type QueuedView } from "@/lib/queued";
-import { Decide, Requeue, RunNow, Send } from "./decide.tsx";
+import { Close, Decide, Requeue, RunNow, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
 import { Plan } from "./plan.tsx";
@@ -352,6 +352,13 @@ export function Standing({
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}
+
+          {/* The third move, beside whichever two are here (`#151`). Approve
+              and Send take what the run produced, Requeue asks for another, and
+              all three assume the ticket is still wanted. This is the one that
+              says it is not — and it is offered on every acting row, because
+              the moment you decide a ticket is over is whenever you read it. */}
+          <Close project={project} issue={issue} />
         </div>
       ) : null}
 
@@ -363,6 +370,10 @@ export function Standing({
       {acting && standing.state === "queued" && queued !== null ? (
         <div className="btnrow smoves" data-rank="moves">
           <RunNow project={project} issue={String(issue)} holding={stopped} />
+          {/* Beside it, the opposite move. A queued item has exactly two
+              things a person can say about it — *sooner* and *never* — and
+              until `#151` the page offered only the first. */}
+          <Close project={project} issue={issue} />
         </div>
       ) : null}
 

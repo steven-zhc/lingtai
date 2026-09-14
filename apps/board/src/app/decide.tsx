@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import { useState, useTransition } from "react";
-import { answerCard, approveCard, requeueCard, runNow, sendAttempt } from "./actions.ts";
+import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } from "./actions.ts";
 import type { ActionResult } from "@/lib/diff";
 
 /**
@@ -282,6 +282,98 @@ export function Requeue({
           }}
         >
           {pending ? "…" : withdrawing ? "Withdraw" : asked ? "Answer" : "Requeue"}
+        </button>
+        <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
+          Cancel
+        </button>
+      </div>
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The third move: the ticket is over, and nobody is going to do it (`#151`).
+ *
+ * **The one control that is deliberately two clicks.** Approve and Requeue open
+ * their reason box for the same purpose; this one opens it because nothing
+ * lifts a close. The sentence typed here is the whole of what a reader six
+ * months from now gets, so an empty box refuses rather than defaulting — a
+ * close with no why is indistinguishable from a misclick.
+ *
+ * **Never amber.** Brass on this board means a person is being waited on, and
+ * closing is a person deciding, not being asked. A diagnosis never recommends
+ * it either: an agent may report that work is impossible, and *the ticket is
+ * over* is still not its call to make.
+ *
+ * **Offered on a queued card too, not only a blocked one.** The state this was
+ * written for is the item nothing is asking about — five sat in Queued that
+ * GitHub had closed hours earlier, and the only move the board gave them was
+ * `Run now`. A ticket you have decided against is one you decide against while
+ * it is waiting, which is most of the time it exists.
+ */
+export function Close({
+  project,
+  issue,
+}: {
+  project: string;
+  issue: number;
+}) {
+  const [pending, setPending] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [, startTransition] = useTransition();
+
+  if (done) return <p className="decided">{done}</p>;
+
+  if (!asking) {
+    return (
+      <div className="decide">
+        <div className="btnrow">
+          <button className="btn" onClick={() => setAsking(true)}>
+            Close
+          </button>
+        </div>
+        {refusal ? <p className="refusal">{refusal}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="decide">
+      <label className="reason">
+        <span>Why close it? Nothing lifts this.</span>
+        <input
+          autoFocus
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="superseded by #143 — the design this describes is not the design"
+        />
+      </label>
+      <div className="btnrow">
+        <button
+          className="btn pri"
+          disabled={!reason.trim() || pending}
+          onClick={() => {
+            setPending(true);
+            setRefusal(null);
+            startTransition(async () => {
+              const result = await closeCard({ project, issue, reason });
+              setPending(false);
+              if (result.ok) {
+                setDone(result.detail);
+                return;
+              }
+              // The server's own sentence, for the same reason Requeue keeps
+              // it: "already closed" and "changed while closing" send an
+              // operator to two different places.
+              setRefusal(result.detail);
+            });
+          }}
+        >
+          {pending ? "…" : "Close it"}
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel
