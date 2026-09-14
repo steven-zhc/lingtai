@@ -233,7 +233,11 @@ describe("the telegram subscriber this repository declares", () => {
     try {
       const dir = await mkdtemp(join(tmpdir(), "lingtai-telegram-env-"));
       await started(await freePort(), {
-        run: `env > ${join(dir, "env.txt")}`,
+        // Renamed into place, never redirected there: the shell creates the
+        // target before `env` writes a byte, and `until` takes the empty file it
+        // can read in between as the answer — which failed agent/147's build on
+        // nothing agent/147 changed.
+        run: `env > ${join(dir, "env.part")} && mv ${join(dir, "env.part")} ${join(dir, "env.txt")}`,
         env: [...shipped.env, "TELEGRAM_API_ROOT", "TELEGRAM_DAEMON_ONLY"],
       });
       const run = await aRun();

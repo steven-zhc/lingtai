@@ -455,7 +455,7 @@ export async function requeue(options: {
 }
 
 async function requeueHolding(
-  options: { by: string; note: string },
+  options: { by: string; note: string; onQuestion?: "withdraw" | "refuse" },
   store: EventStore,
   workItemId: string,
 ): Promise<{ ok: boolean; workItemId: string; detail: string }> {
