@@ -4,27 +4,27 @@
  *
  * **A waiver merges nothing.** It is a verdict: the card shows it, `lingtai
  * doctor`'s `landedWithoutGatePoints` counts it, and the next attempt is not
- * told the gate died. No merge path reads `GateWaived` — the board's button
- * included — so a blocked item stays blocked and a held run still needs
- * `lingtai approve`. The command says so after it appends, naming where the
- * item is, because an exit 0 that let a person think the item was on its way
- * would be a decision reported as taken that took nothing.
+ * told the gate died. No merge path reads `GateWaived`, so a blocked item stays
+ * blocked and a held run still needs `lingtai approve`. The command says so
+ * after it appends, naming where the item is, because an exit 0 that let a
+ * person think the item was on its way would be a decision reported as taken
+ * that took nothing.
  *
- * The escape hatch existed and could only be reached from a browser on the
- * machine running the daemon (#129). The case it exists for — a flaky check, a
- * scan whose service is down, a failure a person has read and judged unrelated
- * — arrives while that person is already at a prompt looking at why the gate is
- * wrong, which is the one place the decision could not be taken.
+ * **To merge over a refusal, approve with `--note`** (#150): `approve()` waives
+ * every gate still refusing the head itself, in the same append as the
+ * approval, and refuses without a reason. The board has no Waive button any
+ * more for that reason. This command is what is left: a waiver that is only a
+ * verdict — a planned gate that never reported, for `landedWithoutGatePoints`.
  *
- * The same `waive()` the board's `waiveGate` calls, with the same actor and an
- * `onSha`, so there is no second write path and no CLI-shaped event:
- * `waive.test.ts` folds the item the way the board does, sends what its card
- * would send, and compares the two envelopes.
+ * The same `waive()`, with the same actor and an `onSha`, so there is no
+ * CLI-shaped event: `waive.test.ts` folds the item the way the board does and
+ * compares the envelope against a direct call. `waive()` refuses a gate the
+ * run never reported, whoever calls it.
  *
  * **`--reason` is required and never defaulted.** *Humans need an escape hatch.
  * It is recorded, never silent* is the whole of `GateWaived`'s justification,
- * and a `--reason` that filled itself in — the way `--reject` defaults to "no
- * reason given" — would retire the event's only claim on being worth appending.
+ * and a `--reason` that filled itself in would retire the event's only claim
+ * on being worth appending.
  */
 import { loadProject, waive } from "@lingtai/conductor";
 import {

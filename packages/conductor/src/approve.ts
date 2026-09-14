@@ -12,13 +12,13 @@
  * the branch has moved since, this refuses rather than merging something nobody
  * agreed to.
  *
- * This is a stopgap with a known shape. It is the CLI half of #21 — approve and
- * reject on the board — and when that lands the two must become one path rather
- * than two vocabularies for one idea. What is here is what makes `--no-merge`
+ * This is a stopgap with a known shape. It is the CLI half of #21 — approve on
+ * the board — and when that lands the two must become one path rather than two
+ * vocabularies for one idea. What is here is what makes `--no-merge`
  * mean something before then.
  */
 import { type GateAction, resolveRecipe } from "@lingtai/recipe";
-import { parsePayload, reduceRun, reduceWorkItem } from "@lingtai/domain";
+import { parsePayload, reduceRun, reduceWorkItem, type RunState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
@@ -42,6 +42,24 @@ function splitGate(key: string): { gate: string; action: string } {
   return { gate: key.slice(0, cut), action: key.slice(cut + 1) };
 }
 
+/**
+ * The gates still refusing the sha an approval is about, by `point:action`.
+ *
+ * **Read off the run, never named by a caller** (#150). The Waive button took a
+ * gate from the card, and the home board's card sent the literal `"build"` —
+ * so a waived `review` went on the log as a waived `build`. Nothing a person
+ * clicks names a gate any more; the run says which ones refused.
+ *
+ * `failed` and `never-ran` both: a gate whose agent never started did not pass
+ * either, and merging over it is merging past a point nobody judged. A verdict
+ * on any other sha is not about this diff and is left out, as `gatesOn` does.
+ */
+export function refusingOn(run: RunState, onSha: string): string[] {
+  return Object.values(run.gates)
+    .filter((g) => g.onSha === onSha && (g.verdict === "failed" || g.verdict === "never-ran"))
+    .map((g) => g.gate);
+}
+
 export interface ApproveOptions {
   project: string;
   issue: number;
@@ -60,9 +78,12 @@ export interface ApproveOptions {
    * on; the board always sends it.
    */
   onSha?: string;
+  /**
+   * Why. Optional only while every gate on the sha agrees: an approval over a
+   * gate that still refuses is a waiver of it, and is refused without one
+   * (#150). See `refusingOn`.
+   */
   note?: string;
-  /** Withdraws an approval instead of granting one. See `reject` below. */
-  revoke?: { reason: string };
   token?: TokenSource;
   home?: string;
   gitEnv?: NodeJS.ProcessEnv;
@@ -112,6 +133,24 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
     };
   }
 
+  // **Approve absorbs the waiver** (#150). Waiving was a second click that
+  // recorded a sentence and changed nothing about what this function then did,
+  // so the path that explained itself cost twice the one that did not. Now a
+  // refusal still standing on this sha is waived here, in the same append as
+  // the approval, and there is no way past it without saying why.
+  const refusing = refusingOn(run, onSha);
+  const note = options.note?.trim() ?? "";
+  if (refusing.length > 0 && !note) {
+    return {
+      ok: false,
+      workItemId,
+      reason: "reason-required",
+      detail:
+        `${refusing.join(", ")} still ${refusing.length === 1 ? "refuses" : "refuse"} ${onSha.slice(0, 7)}, ` +
+        `so approving waives ${refusing.length === 1 ? "it" : "them"} — say why. Nothing was merged.`,
+    };
+  }
+
   // The check that makes the approval mean anything. A verdict is about a diff,
   // and between the hold and now someone may have pushed to this branch —
   // including the agent, on a re-run. Merging then would land something no
@@ -158,6 +197,14 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   }
 
   await store.append(runId, run.version, [
+    // One waiver per refusing gate, each under the name the run recorded it
+    // with, carrying the approval's own reason — before the approval, so the
+    // fold reads the refusal overruled and then the diff approved.
+    ...refusing.map((key) => ({
+      type: "GateWaived" as const,
+      actor: options.by,
+      data: parsePayload("GateWaived", { ...splitGate(key), runId, onSha, by: options.by, reason: note }),
+    })),
     {
       type: "ApprovalGranted",
       // The approver *is* the actor. `by` is already `human:<id>`, which is the
@@ -169,10 +216,11 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
         runId,
         onSha,
         by: options.by,
-        note: options.note ?? "",
+        note,
       }),
     },
   ]);
+  if (refusing.length > 0) log(`waived ${refusing.join(", ")} on ${onSha.slice(0, 7)}: ${note}`);
   log(`approved ${onSha.slice(0, 7)} by ${options.by}`);
 
   const merged = await integrate({
@@ -272,49 +320,6 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
 }
 
 /**
- * Withdrawing an approval, or refusing to give one.
- *
- * The item goes **back to the gate**, not back to the queue. The question is
- * open again and the answer is still a person's; returning it to the queue
- * would let another run claim it and throw the question away.
- *
- * Nothing is merged and nothing is deleted. The branch stays where it is, and
- * the log carries both the request and the withdrawal — which is the whole
- * reason a rejection is an event rather than a label being removed.
- */
-export async function reject(
-  options: Omit<ApproveOptions, "revoke"> & { reason: string },
-): Promise<{ ok: boolean; workItemId: string; detail: string }> {
-  const store = options.store ?? eventStore;
-  const workItemId = workItemStream(options.project, options.issue);
-
-  const item = reduceWorkItem(await store.read(workItemId));
-  const runId = item.runs[item.runs.length - 1];
-  if (!runId) return { ok: false, workItemId, detail: `${workItemId} has never been run` };
-
-  const run = reduceRun(await store.read(runId));
-  if (run.lifecycle.status !== "awaiting-approval") {
-    return {
-      ok: false,
-      workItemId,
-      detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
-    };
-  }
-
-
-  const { gate, onSha } = run.lifecycle;
-  await store.append(runId, run.version, [
-    {
-      type: "ApprovalRevoked",
-      actor: options.by,
-      data: parsePayload("ApprovalRevoked", { ...splitGate(gate), runId, onSha, by: options.by, reason: options.reason }),
-    },
-  ]);
-
-  return { ok: true, workItemId, detail: `${gate} on ${onSha.slice(0, 7)} was withdrawn by ${options.by}` };
-}
-
-/**
  * Putting a blocked item back in the queue: the move that is left when there is
  * no diff to approve.
  *
@@ -408,8 +413,29 @@ export async function waive(options: {
   const runId = item.runs[item.runs.length - 1];
   if (!runId) return { ok: false, workItemId, detail: `${workItemId} has never been run` };
 
-  const run = reduceRun(await store.read(runId));
+  const events = await store.read(runId);
+  const run = reduceRun(events);
   if (!run.headSha) return { ok: false, workItemId, detail: `${runId} has produced no diff to waive` };
+
+  // **A waiver names a gate the run reported, or it is refused** (#150). The
+  // board's card once sent `"build"` for whatever had refused, so a waived
+  // `review` was recorded as a waived `build` — a verdict about a gate that
+  // never said anything. Reported means a verdict on any sha, or a place in the
+  // run's last `GatesResolved` plan: `lingtai waive` exists to close a planned
+  // gate that never reported, and `end` is left out because it has no verdict.
+  const plan = events.filter((e) => e.type === "GatesResolved").at(-1);
+  const planned = plan
+    ? parsePayload("GatesResolved", plan.data).points.flatMap((p) =>
+        p.gate === "end" ? [] : p.actions.map((a) => `${p.gate}:${a}`),
+      )
+    : [];
+  if (!run.gates[options.gate] && !planned.includes(options.gate)) {
+    return {
+      ok: false,
+      workItemId,
+      detail: `${runId} reported no gate named "${options.gate}" — a waiver can only name one it did`,
+    };
+  }
 
   // The sha the person was looking at, when they said so. If the branch has
   // moved since the card rendered, they are waiving something they have not

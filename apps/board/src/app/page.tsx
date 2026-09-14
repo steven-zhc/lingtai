@@ -369,22 +369,32 @@ function Card({
           `awaitingSha` and not `headSha`: a question is open exactly when there
           is a sha it is about, and that sha is the one the controls have to
           send. Sending what the run *produced* is what made the board refuse
-          approvals the CLI accepted (#92). */}
-      {card.blocked && card.awaitingSha ? (
-        <Decide
-          project={card.project}
-          issue={Number(card.ref)}
-          onSha={card.awaitingSha}
-          headSha={card.headSha ?? ""}
-          gates={card.gatesFailed > 0 ? ["build"] : []}
-          recommended={card.diagnosis?.recommendation?.action ?? null}
-        />
-      ) : card.blocked ? (
-        <Requeue
-          project={card.project}
-          issue={Number(card.ref)}
-          recommended={card.diagnosis?.recommendation?.action ?? null}
-        />
+          approvals the CLI accepted (#92).
+
+          **Requeue on every blocked card, beside Approve rather than instead
+          of it** (#150). It was the else of this test, so the card adjudicating
+          a disagreement — where *run it again* is the move — was the one card
+          without it. And no gate names: `approve()` reads which gates refuse
+          off the run, where this card once sent a literal `"build"` for a
+          refused `review`. `gatesFailed` only decides whether to ask why
+          before the click. */}
+      {card.blocked ? (
+        <div className="btnrow">
+          {card.awaitingSha ? (
+            <Decide
+              project={card.project}
+              issue={Number(card.ref)}
+              onSha={card.awaitingSha}
+              refusing={card.gatesFailed > 0}
+              recommended={card.diagnosis?.recommendation?.action ?? null}
+            />
+          ) : null}
+          <Requeue
+            project={card.project}
+            issue={Number(card.ref)}
+            recommended={card.diagnosis?.recommendation?.action ?? null}
+          />
+        </div>
       ) : null}
     </article>
   );

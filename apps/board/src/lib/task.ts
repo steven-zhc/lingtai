@@ -383,13 +383,16 @@ export interface StandingView {
   runId: string | null;
   /**
    * The sha an open question is about — what Approve must send, and null when
-   * there is nothing Approve could do. `Requeue` is the move that is left, the
-   * same reading the card makes (#84).
+   * there is nothing Approve could do (#84). Requeue is offered either way
+   * (#150).
    */
   awaitingSha: string | null;
   /** What that attempt produced, for a waiver, which is a verdict about the diff. */
   headSha: string | null;
-  /** The verdicts that refused, by `point:action` — what a waiver would name. */
+  /**
+   * The verdicts that refused, by `point:action`. Whether to ask for a reason
+   * before Approve; `approve()` reads the gates it waives off the run (#150).
+   */
   failed: string[];
   /**
    * The failed verdict whose evidence `diagnosis.raw` is, by `point:action` — and

@@ -70,7 +70,7 @@ export {
   type ScheduleResult,
   type StoppedBecause,
 } from "./schedule.ts";
-export { approve, reject, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
+export { approve, refusingOn, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
 export {
   diagnoseRefusal,
   whoseFailure,

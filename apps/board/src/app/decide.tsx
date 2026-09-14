@@ -14,77 +14,93 @@
  * was read. That has to be visible, not swallowed.
  */
 import { useState, useTransition } from "react";
-import { approveCard, rejectCard, requeueCard, runNow, sendAttempt, waiveGate } from "./actions.ts";
+import { approveCard, requeueCard, runNow, sendAttempt } from "./actions.ts";
 import type { ActionResult } from "@/lib/diff";
-
-type Pending = "approve" | "reject" | "waive" | null;
 
 /**
  * The recommended move, as `WorkItemBlocked.diagnosis.recommendation` named it.
  *
  * It decides which button is primary and nothing else. A recommendation is not
  * an action taken — the click is still a person's — but a card that recommends
- * approving and dresses Approve as the same weight as Reject is asking the
+ * approving and dresses Approve as the same weight as Requeue is asking the
  * question #83 says it should stop asking: *work out what to do.*
+ *
+ * `reject` is still a value the log can hold, and no button carries it any more
+ * (#150). What a person agreeing with a refusal wants is a new run, so it reads
+ * as `requeue` — see `primaryMove`.
  */
 export type Recommended = "approve" | "reject" | "requeue" | null;
 
+/**
+ * Which of the two moves wears the amber. Amber appears once per screen.
+ *
+ * Not exported: this is a client module, and a server component calling a
+ * function from one gets a reference rather than the function.
+ */
+function primaryMove(recommended: Recommended | undefined): "approve" | "requeue" {
+  return recommended === "reject" || recommended === "requeue" ? "requeue" : "approve";
+}
+
+/**
+ * Approve, and the reason it needs when a gate still refuses.
+ *
+ * **One button, and the waiver is inside it** (#150). There were three beside
+ * it: Reject appended `ApprovalRevoked` and the run asked again; Waive appended
+ * `GateWaived`, which `approve()` never read — so explaining an overruled
+ * refusal took two clicks and not explaining it took one. Now `approve()` reads
+ * the refusing gates off the run itself, waives each with this reason in the
+ * same append, and refuses without one. Nothing here names a gate.
+ */
 export function Decide({
   project,
   issue,
   onSha,
-  headSha,
-  gates,
+  refusing,
   recommended,
 }: {
   project: string;
   issue: number;
   /**
-   * The sha the run is *asking* about. Approve and reject answer that question,
-   * and `approve()` compares this against the run's own `onSha` — so sending
-   * what the run produced instead refused approvals `lingtai approve` accepted
-   * (#92).
+   * The sha the run is *asking* about. `approve()` compares this against the
+   * run's own `onSha` — so sending what the run produced instead refused
+   * approvals `lingtai approve` accepted (#92).
    */
   onSha: string;
   /**
-   * The sha the run *produced*. A waiver is a verdict about that diff and
-   * `waive()` compares against it, which is a different value the moment a
-   * branch is repaired and approval re-requested on a new head.
+   * Whether the card knows of a gate that refused, so the reason is asked for
+   * before the click rather than after a refusal. A hint, and only that: the
+   * server decides from the run, and if it asks for a reason the card did not
+   * expect to need, the field opens with its sentence.
    */
-  headSha: string;
-  /** Gate names that could be waived, so the reason can name one. */
-  gates: string[];
+  refusing: boolean;
   /**
-   * What the diagnosis recommends, when it recommends anything.
-   *
-   * Amber stays on the move that was recommended. Approve keeps it when nothing
-   * was recommended at all — which is every block written before #83, and is
-   * the behaviour those cards have always had.
+   * What the diagnosis recommends, when it recommends anything. Amber stays on
+   * Approve unless the recommendation is to run it again.
    */
   recommended?: Recommended;
 }) {
-  const [pending, setPending] = useState<Pending>(null);
+  const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const [asking, setAsking] = useState<"reject" | "waive" | null>(null);
-  const [reason, setReason] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
   const [, startTransition] = useTransition();
 
-  const run = (kind: Exclude<Pending, null>, action: () => Promise<ActionResult>) => {
+  const approve = (withNote: string) => {
     // Optimistic: the button reports the intent straight away.
-    setPending(kind);
+    setPending(true);
     setRefusal(null);
     startTransition(async () => {
-      const result = await action();
-      setPending(null);
+      const result: ActionResult = await approveCard({ project, issue, onSha, note: withNote });
+      setPending(false);
       if (result.ok) {
         setDone(result.detail);
-        setAsking(null);
-        setReason("");
         return;
       }
       // Reverted. The card goes back to undecided and the operator is told the
       // server's actual reason, because "it didn't work" sends them nowhere.
+      // A refusal for want of a reason opens the field it wants.
+      if (result.detail.startsWith("reason-required")) setAsking(true);
       setRefusal(result.detail);
     });
   };
@@ -92,35 +108,25 @@ export function Decide({
   if (done) return <p className="decided">{done}</p>;
 
   if (asking) {
-    const label = asking === "reject" ? "Reject" : "Waive";
     return (
       <div className="decide">
         <label className="reason">
-          {/* A waiver with no reason is a silent waiver by another name, so the
-              field is not optional and the button stays disabled without it. */}
-          <span>Why?</span>
+          {/* Approving over a refusal waives it, and a waiver with no reason is a
+              silent waiver by another name — so the button stays disabled
+              without one. */}
+          <span>Why merge over the refusal?</span>
           <input
             autoFocus
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder={asking === "waive" ? "unrelated flake in the importer suite" : "wrong approach"}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="unrelated flake in the importer suite"
           />
         </label>
         <div className="btnrow">
-          <button
-            className="btn pri"
-            disabled={!reason.trim() || pending !== null}
-            onClick={() =>
-              run(asking, () =>
-                asking === "reject"
-                  ? rejectCard({ project, issue, onSha, reason })
-                  : waiveGate({ project, issue, gate: gates[0] ?? "build", onSha: headSha, reason }),
-              )
-            }
-          >
-            {pending ? "…" : label}
+          <button className="btn pri" disabled={!note.trim() || pending} onClick={() => approve(note)}>
+            {pending ? "merging…" : "Approve"}
           </button>
-          <button className="btn" onClick={() => setAsking(null)} disabled={pending !== null}>
+          <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
             Cancel
           </button>
         </div>
@@ -133,24 +139,12 @@ export function Decide({
     <div className="decide">
       <div className="btnrow">
         <button
-          className={recommended === "reject" ? "btn" : "btn pri"}
-          disabled={pending !== null}
-          onClick={() => run("approve", () => approveCard({ project, issue, onSha }))}
+          className={primaryMove(recommended) === "approve" ? "btn pri" : "btn"}
+          disabled={pending}
+          onClick={() => (refusing ? setAsking(true) : approve(""))}
         >
-          {pending === "approve" ? "merging…" : "Approve"}
+          {pending ? "merging…" : "Approve"}
         </button>
-        <button
-          className={recommended === "reject" ? "btn pri" : "btn"}
-          disabled={pending !== null}
-          onClick={() => setAsking("reject")}
-        >
-          Reject
-        </button>
-        {gates.length > 0 ? (
-          <button className="btn" disabled={pending !== null} onClick={() => setAsking("waive")}>
-            Waive
-          </button>
-        ) : null}
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
@@ -158,7 +152,7 @@ export function Decide({
 }
 
 /**
- * The move that is left when there is no diff to approve.
+ * The move that ends a wait with a new run — on every blocked card (#150).
  *
  * A card in "Waiting on you" whose run is not actually asking anything —
  * because its approved merge hit a conflict, and the approval went with it —
@@ -176,6 +170,10 @@ export function Decide({
  * used to buy a whole new run for some of them; nothing does, so the button is
  * what answers the commonest failure in the system rather than the leftover it
  * was written as.
+ *
+ * **And it sits beside Approve, not in its place** (#150). It was the else of
+ * *is there an approval open*, so it was missing exactly where a person reading
+ * a disagreement agrees with the reviewer and wants the ticket run again.
  */
 export function Requeue({
   project,
@@ -185,10 +183,10 @@ export function Requeue({
   project: string;
   issue: number;
   /**
-   * `requeue` is the one value that means anything here — it is the only move
-   * this control has — and it promotes the button to primary. Without a
-   * recommendation the button stays as it was: the move is available, and
-   * nothing is telling you to take it.
+   * A recommendation to run it again — `requeue`, or a `reject` from before
+   * #150 — promotes the button to primary (`primaryMove`). Without one the
+   * button stays as it was: the move is available, and nothing is telling you
+   * to take it.
    */
   recommended?: Recommended;
 }) {
@@ -206,7 +204,7 @@ export function Requeue({
       <div className="decide">
         <div className="btnrow">
           <button
-            className={recommended === "requeue" ? "btn pri" : "btn"}
+            className={primaryMove(recommended) === "requeue" ? "btn pri" : "btn"}
             onClick={() => setAsking(true)}
           >
             Back to the queue
@@ -274,10 +272,7 @@ export function Requeue({
  * sentence with it — and then `WorkItemUnblocked`; `sendAttempt` keeps that
  * order, and why.
  *
- * **Beside it, the two moves that are not sending.** *Reject* is `Decide`'s and
- * stays there: it withdraws an approval, so it is offered exactly where there
- * is one to withdraw, which is the rule #84 cost four days to learn — a card
- * must never offer only a control that refuses. *Leave blocked* is here, and it
+ * **Beside it, the move that is not sending.** *Leave blocked* is here, and it
  * appends nothing on purpose: *I read it and I am not acting* is an answer, and
  * a row of two buttons that does not contain it is a row that makes walking
  * away the third option.

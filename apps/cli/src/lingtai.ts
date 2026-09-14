@@ -81,14 +81,16 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai approve <project> --issue <n>
                                 merge what a held run produced, if its head has
                                 not moved since the approval was asked for
-    --note <text>               recorded with the approval
-    --reject <why>              withdraw instead: back to the gate, not merged
+    --note <text>               recorded with the approval, and required when
+                                a gate still refuses the head: approving then
+                                waives each refusing gate, with this as why
   lingtai requeue <project> --issue <n> --note <why>
-                                the move that is left when there is no diff to
-                                approve: a blocked item goes back to the queue
-                                and the next pass cuts a fresh branch from a
-                                base that has since moved. --note is required —
-                                a person overruling a block is not anonymous
+                                end the wait with a new run instead: a blocked
+                                item goes back to the queue — held for approval
+                                or not — and the next pass cuts a fresh branch
+                                from a base that has since moved. --note is
+                                required — a person overruling a block is not
+                                anonymous
   lingtai waive <project> --issue <n> --gate <point:action> --reason <why>
                                 overrule a verdict on the record — a flaky check,
                                 a scan whose service is down. It merges nothing
@@ -854,12 +856,14 @@ async function main(argv: string[]): Promise<number> {
         console.error("lingtai approve <project> --issue <n> [--note <text>]");
         return 2;
       }
-      return approveCommand({
-        project: positional[0],
-        issue,
-        note: flags["note"],
-        ...("reject" in flags ? { reject: flags["reject"] ?? "no reason given" } : {}),
-      });
+      if ("reject" in flags) {
+        // Gone (#150): it appended `ApprovalRevoked` and put the run straight
+        // back into `awaiting-approval`, so the wait it seemed to end went on.
+        console.error("--reject is gone: it asked the same question again and ended nothing.");
+        console.error(`lingtai requeue ${positional[0]} --issue ${issue} --note <why> ends the wait with a new run`);
+        return 2;
+      }
+      return approveCommand({ project: positional[0], issue, note: flags["note"] });
     }
     case "backlog":
       return backlogCommand(rest);
@@ -883,7 +887,7 @@ async function main(argv: string[]): Promise<number> {
         console.error("lingtai waive <project> --issue <n> --gate <point:action> --reason <why>");
         return 2;
       }
-      // Not defaulted, unlike `--reject`'s "no reason given": *recorded, never
+      // Not defaulted: *recorded, never
       // silent* is the whole of `GateWaived`'s claim on existing. A missing and
       // an empty `--reason` both arrive as "" and are refused by the command.
       return waiveCommand({ project: positional[0], issue, gate, reason: flags["reason"] ?? "" });

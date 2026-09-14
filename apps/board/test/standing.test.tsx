@@ -950,18 +950,36 @@ describe("the moves the column ends in", () => {
   });
 
   /**
-   * #84's rule, and the one place this ticket is read against the code rather
-   * than literally: Reject withdraws an approval, so it belongs exactly where
-   * there is one to withdraw. A card must never offer only a control that
-   * refuses — `reject()` accepts `awaiting-approval` and nothing else.
+   * #150: two of the four buttons left the card where it was. Reject appended
+   * `ApprovalRevoked` and the run asked again; Waive appended `GateWaived` and
+   * nothing read it. Approve absorbs the waiver, and neither is offered —
+   * including on a card whose refusal is exactly what a waiver was for.
    */
-  it("puts Reject beside Send wherever there is an approval to withdraw", () => {
-    const html = render({ ...HELD, awaitingSha: SHA }, OUTGOING);
+  it("offers Approve beside Send, and no Reject or Waive, wherever there is an approval open", () => {
+    const html = render({ ...HELD, awaitingSha: SHA, failed: ["proposed:review"] }, OUTGOING);
 
     expect(html).toContain("Send attempt 3");
-    expect(html).toContain("Reject");
     expect(html).toContain("Approve");
     expect(html).toContain("Leave blocked");
+    expect(html).not.toContain("Reject");
+    expect(html).not.toContain("Waive");
+  });
+
+  /**
+   * #150: Requeue was the else of *is there an approval open*, so the card
+   * adjudicating a disagreement — where *I agree with the reviewer, run it
+   * again* is the move — was the one card without it. A peer of Approve now,
+   * and the amber is still spent once.
+   */
+  it("offers Back to the queue beside Approve on a card asking for approval", () => {
+    const html = render(
+      { ...HELD, awaitingSha: SHA },
+      { ...OUTGOING, problem: "lingtai is not a registered project" },
+    );
+
+    expect(html).toContain("Approve");
+    expect(html).toContain("Back to the queue");
+    expect(moves(html).match(/btn pri/g)).toHaveLength(1);
   });
 
   /**

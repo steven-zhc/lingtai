@@ -5,8 +5,10 @@
  * the property that matters is not that the command exists — it is that the two
  * ways of taking the decision leave the same thing behind. So the last test
  * folds the item with the board's own `claimsOf`/`foldRun`/`standingOf`, sends
- * what `Decide` sends from that — `gates[0]` and `headSha` — through the call
- * `waiveGate` makes, and compares envelopes.
+ * what the board's card sent from that — `failed[0]` and `headSha` — through a
+ * direct `waive()`, and compares envelopes. The board's Waive button is gone
+ * (#150); the board's waiver is now the one `approve()` appends, with the same
+ * actor and the same payload shape.
  *
  * The rest are the cases an earlier attempt refused and should not have: a gate
  * a dead run left `running`, and a gate the run planned and never reported —
@@ -28,7 +30,7 @@ const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>([projectStream(PROJECT)]);
 const SHA = "a".repeat(40);
 /**
- * What the board's `waiveGate` records — its own `actor()`, called rather than
+ * What the board records — its own `actor()`, called rather than
  * copied, so a board that started recording something else fails here.
  */
 const ACTOR = actor();
@@ -373,9 +375,8 @@ describe("lingtai waive", () => {
     const fromBoard = await gatedRun(8);
     const reason = "the scan's service is down; I have read the diff";
 
-    // What the board's card would send, folded the way the board folds it:
-    // `Decide` gets `gates={standing.failed}` and `headSha={standing.headSha}`
-    // and calls `waiveGate({ gate: gates[0] ?? "build", onSha: headSha })`.
+    // What the board's card used to send before #150, folded the way the board
+    // folds it: the first refused gate, on the head the run produced.
     const own = await store.read(fromBoard.workItemId);
     const runs = await Promise.all(
       claimsOf(own).map(async (c, i) => foldRun(c, i + 1, await store.read(c.runId))),
@@ -385,7 +386,7 @@ describe("lingtai waive", () => {
     expect(gate).toBe("proposed:build");
 
     expect((await said({ project: PROJECT, issue: 7, gate, reason, store })).code).toBe(0);
-    // `waiveGate`'s own call, argument for argument.
+    // The direct call, argument for argument.
     const board = await waive({
       project: PROJECT,
       issue: 8,

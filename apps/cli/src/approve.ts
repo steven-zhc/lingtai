@@ -17,8 +17,6 @@ export interface ApproveCommandOptions {
   issue: number;
   note?: string;
   by?: string;
-  /** Withdraws instead of granting. The item goes back to the gate. */
-  reject?: string;
 }
 
 export async function approveCommand(
@@ -48,21 +46,6 @@ export async function approveCommand(
   // a card off the lane the board exists for. So it follows the log while it
   // works, like every other host that appends — see `withProjector`.
   return withProjector(log, async () => {
-    if (options.reject !== undefined) {
-      const { reject } = await import("@lingtai/conductor");
-      const outcome = await reject({
-        project: options.project,
-        issue: options.issue,
-        base: project.base ?? (await client.defaultBranch()),
-        client,
-        by,
-        reason: options.reject,
-        log,
-      });
-      log(outcome.detail);
-      return outcome.ok ? 0 : 1;
-    }
-
     const result = await approveRun({
       project: options.project,
       issue: options.issue,

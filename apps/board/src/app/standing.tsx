@@ -357,10 +357,12 @@ export function Standing({
 
           Every move that can work, and no move that cannot. The card's reading
           (#84, #92): a question is open exactly when there is a sha it is about,
-          so Approve, Reject and Waive are offered there and nowhere — an item
-          whose approved merge hit a conflict has none of them. Send is offered
-          wherever there is a composed prompt to send, which is the case the
-          column exists for and the one that had no button at all (#111). */}
+          so Approve is offered there and nowhere — an item whose approved
+          merge hit a conflict has none. Send is offered wherever there is a
+          composed prompt to send, which is the case the column exists for and
+          the one that had no button at all (#111). Reject and Waive are gone
+          (#150): neither moved the card, and a waiver is what Approve records
+          when a gate still refuses. */}
       {acting && standing.state === "blocked" ? (
         <div className="smoves">
           {standing.awaitingSha !== null ? (
@@ -368,8 +370,7 @@ export function Standing({
               project={project}
               issue={issue}
               onSha={standing.awaitingSha}
-              headSha={standing.headSha ?? ""}
-              gates={standing.failed}
+              refusing={standing.failed.length > 0}
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}
@@ -384,17 +385,18 @@ export function Standing({
               // and otherwise only when the recommendation points here.
               primary={
                 standing.awaitingSha === null ||
-                standing.diagnosis?.recommendation?.action === "requeue"
+                standing.diagnosis?.recommendation?.action === "requeue" ||
+                standing.diagnosis?.recommendation?.action === "reject"
               }
             />
           ) : null}
 
-          {/* The fallback, for the one case that has neither: no approval open
-              and no prompt anybody could compose. Putting it back in the queue
-              is then the only move there is, and it keeps asking why — the
-              reason Send does not is that Send's reason is the document, and
-              this has none. */}
-          {standing.awaitingSha === null && sendable === null ? (
+          {/* Wherever there is no prompt to send, whether or not an approval is
+              open (#150): Send is this move with a document, and without one a
+              card asking for approval still needs *run it again* beside
+              Approve. It keeps asking why — the reason Send does not is that
+              Send's reason is the document, and this has none. */}
+          {sendable === null ? (
             <Requeue
               project={project}
               issue={issue}
