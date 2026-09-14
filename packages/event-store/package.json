@@ -16,8 +16,9 @@
     "db:status": "prisma migration status",
     "typecheck": "tsc --noEmit",
     "db:bootstrap": "node scripts/bootstrap.mjs",
-    "test": "vitest run",
-    "db:reset-test": "node scripts/reset-test-log.mjs"
+    "test": "vitest run -c vitest.pure.config.ts",
+    "db:reset-test": "node scripts/reset-test-log.mjs",
+    "test:db": "vitest run"
   },
   "dependencies": {
     "@lingtai/domain": "workspace:*",

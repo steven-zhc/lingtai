@@ -10,7 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run -c vitest.pure.config.ts",
+    "test:db": "vitest run"
   },
   "dependencies": {
     "@lingtai/conductor": "workspace:*",

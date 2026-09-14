@@ -18,7 +18,8 @@
     "db:init": "pnpm --filter @lingtai/event-store db:init",
     "db:bootstrap": "pnpm --filter @lingtai/event-store db:bootstrap",
     "db:migrate": "pnpm --filter @lingtai/event-store db:migrate",
-    "db:verify": "pnpm --filter @lingtai/event-store db:verify"
+    "db:verify": "pnpm --filter @lingtai/event-store db:verify",
+    "test:db": "pnpm -r --workspace-concurrency=1 --if-present test:db"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

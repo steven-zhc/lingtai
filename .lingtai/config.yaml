@@ -128,7 +128,12 @@ gates:
     # That is also why it could not be declared here if it wanted to be: an
     # extension may not name one of Lingtai's own.
     - name: build
-      run: pnpm typecheck && pnpm test
+      # **Both halves, written out.** `pnpm test` is the fast one since `#158` —
+      # the tests that need no Postgres — and `pnpm test:db` is the rest. Naming
+      # only the first would leave a gate that runs and does not check the thing
+      # it was built to check, which is the failure this repository calls its own
+      # bug. If a third half is ever added, it is named here or it does not run.
+      run: pnpm typecheck && pnpm test && pnpm test:db
       timeout: 20m
       env: []
 
