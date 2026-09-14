@@ -12,7 +12,8 @@ import { createProjectionRunner } from "@lingtai/projector";
 import { taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { answer, ask, heldUntil, inWords, selectRunnable } from "../src/index.ts";
+import { reduceWorkItem } from "@lingtai/domain";
+import { answer, ask, heldUntil, inWords, requeue, selectRunnable } from "../src/index.ts";
 
 /**
  * An hour, as `source.backoff` resolves to for a recipe that does not mention
@@ -112,7 +113,31 @@ describe("selectRunnable", () => {
     // A second question is refused rather than replacing the first unanswered.
     expect((await ask({ project, issue: 51, question: "and another?", by: "human:steven", store })).ok).toBe(false);
 
-    const answered = await answer({ project, issue: 51, answer: "the second", by: "human:steven", store });
+    // An answer to wording the item is no longer asking is refused, not kept
+    // against the question it now asks — nothing is appended.
+    const stale = await answer({
+      project,
+      issue: 51,
+      answer: "the second",
+      question: "refuse at the hook or at the claim?",
+      by: "human:steven",
+      store,
+    });
+    expect(stale.ok).toBe(false);
+    expect(stale.detail).toContain("different question");
+    // And Send's requeue refuses the question rather than withdrawing it.
+    const sent = await requeue({ project, issue: 51, by: "human:steven", note: "sent", onQuestion: "refuse", store });
+    expect(sent.ok).toBe(false);
+    expect(reduceWorkItem(await store.read(`wi-${project}-51`)).lifecycle.status).toBe("blocked");
+
+    const answered = await answer({
+      project,
+      issue: 51,
+      answer: "the second",
+      question: "which of the three designs?",
+      by: "human:steven",
+      store,
+    });
     expect(answered.ok).toBe(true);
     await build();
     // Never attempted, so the backoff holds nothing: runnable at once.

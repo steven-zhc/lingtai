@@ -180,6 +180,7 @@ export function Requeue({
   issue,
   recommended,
   asked = false,
+  question = null,
 }: {
   project: string;
   issue: number;
@@ -195,6 +196,12 @@ export function Requeue({
    * out of a mistaken question was an answer every later prompt would carry.
    */
   asked?: boolean;
+  /**
+   * The question on screen, whole, when `asked`. The answer is sent with it, so
+   * a question withdrawn and asked again since the page was read is refused
+   * rather than answered with words meant for the old one.
+   */
+  question?: string | null;
   /**
    * A recommendation to run it again — `requeue`, or a `reject` from before
    * #150 — promotes the button to primary (`primaryMove`). Without one the
@@ -261,7 +268,7 @@ export function Requeue({
             setRefusal(null);
             startTransition(async () => {
               const result = asked && !withdrawing
-                ? await answerCard({ project, issue, answer: note })
+                ? await answerCard({ project, issue, answer: note, question: question ?? "" })
                 : await requeueCard({ project, issue, note });
               setPending(false);
               if (result.ok) {

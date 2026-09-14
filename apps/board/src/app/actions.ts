@@ -114,6 +114,8 @@ export async function answerCard(input: {
   project: string;
   issue: number;
   answer: string;
+  /** The question the page showed, whole — `answer()` refuses if it has changed. */
+  question: string;
 }): Promise<ActionResult> {
   try {
     const result = await answer({
@@ -121,6 +123,7 @@ export async function answerCard(input: {
       issue: input.issue,
       by: actor(),
       answer: input.answer,
+      question: input.question,
     });
     revalidatePath("/");
     return { ok: result.ok, detail: result.detail };
@@ -487,6 +490,9 @@ export async function sendAttempt(input: {
       // — asking again would be asking somebody to restate their prompt in
       // prose.
       note: `sent as the next attempt by ${by}`,
+      // The check above is a read; a question asked since it is refused here
+      // rather than withdrawn.
+      onQuestion: "refuse",
     });
 
     revalidatePath(`/task/${input.taskId}`);

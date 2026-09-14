@@ -425,6 +425,13 @@ export async function requeue(options: {
   by: string;
   /** Why, on the record. A person overruling a block is not anonymous either. */
   note: string;
+  /**
+   * What to do with a question asked before any run: withdraw it (the default,
+   * `lingtai requeue` and the board's Withdraw), or refuse. The board's Send
+   * refuses — it checks first, but a `lingtai ask` landing between that check
+   * and this read would otherwise be withdrawn under a note about a document.
+   */
+  onQuestion?: "withdraw" | "refuse";
   store?: EventStore;
 }): Promise<{ ok: boolean; workItemId: string; detail: string }> {
   const store = options.store ?? eventStore;
@@ -471,6 +478,13 @@ async function requeueHolding(
   // `answer()`'s. Refusing here instead left a mistaken question no way out
   // but an answer every attempt would be told.
   const withdrawn = item.lifecycle.runId === null;
+  if (withdrawn && options.onQuestion === "refuse") {
+    return {
+      ok: false,
+      workItemId,
+      detail: `${workItemId} is asking a question before any run — answer it first`,
+    };
+  }
 
   await store.append(workItemId, item.version, [
     {

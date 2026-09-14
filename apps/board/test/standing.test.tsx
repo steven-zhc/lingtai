@@ -439,6 +439,7 @@ const HELD: StandingView = {
   runId: RUN_2,
   awaitingSha: null,
   asked: false,
+  askedQuestion: null,
   headSha: SHA,
   failed: [],
   saidBy: null,
@@ -1020,7 +1021,7 @@ describe("the moves the column ends in", () => {
    */
   it("offers Answer and Withdraw, and no Send, on a question asked before any run", () => {
     const html = render(
-      { ...HELD, asked: true, who: "waiting for your answer", attempt: null, attempts: 0, runId: null, deciding: null },
+      { ...HELD, asked: true, askedQuestion: "which design?", who: "waiting for your answer", attempt: null, attempts: 0, runId: null, deciding: null },
       { ...OUTGOING, attempt: 1 },
     );
 

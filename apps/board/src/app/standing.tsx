@@ -348,6 +348,7 @@ export function Standing({
               project={project}
               issue={issue}
               asked={standing.asked}
+              question={standing.askedQuestion}
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}

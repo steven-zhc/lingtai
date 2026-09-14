@@ -394,6 +394,11 @@ export interface StandingView {
    * the question to `requeue()`, which withdraws it.
    */
   asked: boolean;
+  /**
+   * That question whole, when `asked` — `question` above is clipped to a line,
+   * and Answer sends this so `answer()` can refuse one that has since changed.
+   */
+  askedQuestion: string | null;
   /** What that attempt produced, for a waiver, which is a verdict about the diff. */
   headSha: string | null;
   /**
@@ -608,6 +613,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     // open on its stream and no question anybody has been handed yet.
     awaitingSha: blocked ? (run?.awaitingSha ?? null) : null,
     asked: blocked && life.runId === null,
+    askedQuestion: blocked && life.runId === null ? life.question : null,
     headSha: run?.headSha ?? null,
     failed: run?.gates.filter((g) => g.state === "failed").map((g) => g.gate) ?? [],
     saidBy:

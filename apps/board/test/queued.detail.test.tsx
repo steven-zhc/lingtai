@@ -350,6 +350,7 @@ const NEVER_RUN: StandingView = {
   attempt: null,
   attempts: 0,
   asked: false,
+  askedQuestion: null,
   runId: null,
   awaitingSha: null,
   headSha: null,

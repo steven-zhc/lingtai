@@ -405,6 +405,7 @@ function Card({
             project={card.project}
             issue={Number(card.ref)}
             asked={card.asked}
+            question={card.note}
             recommended={card.diagnosis?.recommendation?.action ?? null}
           />
         </div>

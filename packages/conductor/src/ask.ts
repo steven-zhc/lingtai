@@ -109,6 +109,15 @@ export async function answer(options: {
   project: string;
   issue: number;
   answer: string;
+  /**
+   * The question the person was shown, and is answering — refused when the
+   * item is asking something else now. Without it, a question withdrawn and
+   * asked again under an open page takes the answer to the old wording, and
+   * every later attempt is told a pairing nobody made: the append is against
+   * the current version, so no ConcurrencyError catches it. The board always
+   * passes it; the CLI, which shows nothing first, passes none.
+   */
+  question?: string;
   by: string;
   store?: EventStore;
 }): Promise<AskOutcome> {
@@ -129,6 +138,13 @@ export async function answer(options: {
       ok: false,
       workItemId,
       detail: `${workItemId} is held by ${life.runId}, not asking before a run — lingtai approve or lingtai requeue`,
+    };
+  }
+  if (options.question !== undefined && options.question !== life.question) {
+    return {
+      ok: false,
+      workItemId,
+      detail: `${workItemId} is asking a different question now — "${life.question}" — read it again`,
     };
   }
 
