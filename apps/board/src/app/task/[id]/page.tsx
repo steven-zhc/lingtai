@@ -8,7 +8,7 @@ import { elapsed } from "@/lib/progress";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
-import { Latch } from "../../latch.tsx";
+import { Latch, Reveal } from "../../latch.tsx";
 import { RunLog } from "../../run-log.tsx";
 import { Coords, Standing } from "../../standing.tsx";
 
@@ -135,8 +135,10 @@ export function Attempt({
    *
    * Marked *and* open: the pointer carries one line and this attempt holds the
    * whole of it, so following the link has to land on something readable
-   * without a second click — and the link keeps working with no JavaScript
-   * because nothing has to be expanded first.
+   * without a second click. It is inside the record's attempts row, which is
+   * closed on load, so that row is opened for it by `Reveal` — on the click, on
+   * a hash change and on a load at the hash (#152). Without JavaScript that is
+   * left to the browser, and not every browser does it.
    */
   deciding: boolean;
   /**
@@ -506,6 +508,10 @@ export function TaskBody({ task }: { task: TaskDetail }) {
         {/* Rank 8: one muted line, each identifier once. */}
         <Coords standing={task.standing} taskId={task.taskId} queued={task.queued} />
       </div>
+
+      {/* Every `#attempt-N` on this page points into the record's closed
+          attempts row; this opens the row on the way there. See `openTo`. */}
+      <Reveal />
 
       <div className="detail-body">
         {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}

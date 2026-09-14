@@ -73,3 +73,71 @@ export function Latch({
     </details>
   );
 }
+
+/**
+ * The part of a `<details>` that `openTo` reads: where it is, and whether it is open.
+ * Structural, so the walk is testable without a document.
+ */
+export interface Disclosing {
+  open?: boolean;
+  parentElement: { closest(selector: "details"): Disclosing | null } | null;
+}
+
+/**
+ * Opens every `<details>` a fragment's target is inside, and says how many.
+ *
+ * **A pointer into a collapsed row has to land on something readable** (#152).
+ * The attempts row of the task page's record is closed on load, and `#attempt-N`
+ * — the bar's `from attempt N of M ↓` and rank 2's `in attempt N ↓` — is inside
+ * it. Some browsers open a closed ancestor on fragment navigation and some do
+ * not, and none does anything when the hash is already the one clicked, so it
+ * is not left to the browser.
+ */
+export function openTo(target: Disclosing): number {
+  let opened = 0;
+  for (let d = target.parentElement?.closest("details") ?? null; d; d = d.parentElement?.closest("details") ?? null) {
+    if (!d.open) {
+      d.open = true;
+      opened += 1;
+    }
+  }
+  return opened;
+}
+
+/**
+ * `openTo` for the page: on load, on every hash change, and on every click of a
+ * same-page link — the click because following a link to the hash already in
+ * the address bar fires no navigation and no `hashchange`. Renders nothing.
+ *
+ * Opening is a signal here as it is in `Latch`: a row a link opened is the
+ * reader's to close. Setting `open` on the element fires its `toggle`, so a
+ * `Latch` on the way up records the change as its own.
+ */
+export function Reveal() {
+  useEffect(() => {
+    const reveal = (hash: string, scroll: boolean) => {
+      if (!hash.startsWith("#") || hash.length < 2) return;
+      const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+      if (target === null) return;
+      // Scrolled only where the browser will not: a row that was closed when it
+      // navigated, or a link to the hash it is already at.
+      if (openTo(target) > 0 || scroll) target.scrollIntoView({ block: "start" });
+    };
+    const onHash = () => reveal(window.location.hash, false);
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || !(event.target instanceof Element)) return;
+      const href = event.target.closest("a")?.getAttribute("href") ?? "";
+      // Before the browser's own navigation, so the row is open by the time it
+      // looks for the target; and scrolled here when that navigation is none.
+      if (href.startsWith("#")) reveal(href, href === window.location.hash);
+    };
+    reveal(window.location.hash, false);
+    window.addEventListener("hashchange", onHash);
+    document.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      document.removeEventListener("click", onClick);
+    };
+  }, []);
+  return null;
+}

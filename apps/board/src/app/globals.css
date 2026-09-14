@@ -774,9 +774,9 @@ details[open] > summary::before { content: "▾"; }
 /* **The four ranks have four sizes, and they descend** (#132). The block used
    to run the other way: the further down you read the more specific it got
    while the type got smaller, so the sentence that mattered least was set
-   largest. `.diag` is the reason and takes the block's prose size; the move is
-   a step down from it; `.ssince` is a step down again, because a run id is a
-   coordinate and not an argument.
+   largest. `.diag` is the reason and takes the block's prose size; `.sowhat`,
+   rank 3's one sentence, is a step down from it. The coordinates are not in
+   the block at all: they are `.coords`, in the bar, at the bar's size (#152).
 
    These override the card's own `.diag`/`.needs`/`.did`/`.rec`, which are sized
    in `px` for a 22rem column. The words are shared (`describeHold`); the sizes

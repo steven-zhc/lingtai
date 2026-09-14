@@ -11,7 +11,7 @@ import { Decide, Requeue, RunNow, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
 import { Plan } from "./plan.tsx";
-import { RunLog } from "./run-log.tsx";
+import { FollowedLog } from "./run-log.tsx";
 
 /**
  * Why this task is not moving, above everything else.
@@ -221,8 +221,9 @@ export function Standing({
           {/* The run in flight, following (#152). The `RunLog` the attempt row
               had, moved and not changed — latched open, tailing, pinned to its
               last line — and told so by its class, which is the slot's size and
-              the teal the running state already wears. */}
-          {following !== null ? <RunLog runId={following} live className="alog slog" /> : null}
+              the teal the running state already wears. It stays, no longer
+              following, when the run ends under a reader: see `heldRun`. */}
+          <FollowedLog running={following} className="alog slog" />
 
           {/* The sentence a 404 was standing in for. Lingtai has nothing on this
               stream *and* could not ask GitHub, so what it knows is that it does

@@ -309,6 +309,37 @@ export function RunLog({
   );
 }
 
+/**
+ * The run rank 2 shows: the one running now, or the last one it showed.
+ *
+ * Kept rather than derived, because the page re-renders on every append and a
+ * run that ends stops being `running` in the very render that carries its
+ * refusal. Derived, the log would unmount under the person reading its last
+ * lines — its open state and its scroll gone with it, and the only other copy
+ * closed in the record — which is the close-under-the-reader `latch.tsx` exists
+ * to prevent (#152). A different run starting replaces it; nothing else does.
+ */
+export function heldRun(held: string | null, running: string | null): string | null {
+  return running ?? held;
+}
+
+/**
+ * Rank 2's `RunLog`, for an item that is running — and still there, no longer
+ * live, once it has stopped. See `heldRun`. A page loaded after the run ended
+ * starts with nothing held and shows nothing, because nobody was reading.
+ */
+export function FollowedLog({ running, className }: { running: string | null; className?: string }) {
+  const [held, setHeld] = useState(running);
+  useEffect(() => {
+    setHeld((was) => heldRun(was, running));
+  }, [running]);
+  const shown = heldRun(held, running);
+  if (shown === null) return null;
+  // Keyed by run, so a different run is a new follower rather than this one's
+  // open state and lines carried over to a file they were not about.
+  return <RunLog key={shown} runId={shown} live={running === shown} className={className} />;
+}
+
 /** What the right of the summary says, and it is about the file, never the run. */
 function say(state: TailState, count: number): string {
   if (state === "off") return "not reading";

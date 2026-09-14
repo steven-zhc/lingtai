@@ -16,6 +16,7 @@
  * browser to measure. What is asserted is the half the markup decides — the
  * moves come before anything that can grow.
  */
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
@@ -219,9 +220,46 @@ describe("a running task", () => {
   });
 
   it("wears no brass anywhere, because nobody is waiting on you", () => {
-    expect(page(running())).not.toMatch(BRASS);
-    // And the blocked page does, which is what makes the assertion above mean something.
-    expect(page(blocked())).toMatch(BRASS);
+    // An answered turn with everything in it the box paints amber on a blocked
+    // page: `cannot` lines, and a proposal whose primary button is brass.
+    const talk: DiscussionView = {
+      chatId: "chat-2",
+      attempt: 1,
+      waiting: false,
+      costUsd: 0.2,
+      held: null,
+      turns: [
+        {
+          question: "what would you change?",
+          by: "human:steven",
+          at: "2026-09-14T08:50:00.000Z",
+          reading: [],
+          answer: {
+            text: "The session id.",
+            failure: null,
+            cannot: ["run the reviewer"],
+            read: [],
+            costUsd: 0.2,
+            proposal: { kind: "prompt", text: "use a fresh session id" },
+          },
+        },
+      ],
+    };
+    const quiet = page({ ...running(), discussions: [talk] });
+    // Not vacuous: the turn rendered, with its cannot line and its buttons.
+    expect(quiet).toContain('class="chatcannot"');
+    expect(quiet).toContain("Use for the next run");
+    expect(quiet).toContain('class="chat quiet"');
+    expect(quiet).not.toMatch(BRASS);
+    // The cannot rule's amber is the stylesheet's, so the override is read there.
+    const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.chat\.quiet \.chatcannot\s*\{[^}]*border-left-color:\s*var\(--rule-2\)/);
+
+    // And the same turn on the blocked page is brass, which is what makes the
+    // assertions above mean something.
+    const loud = page({ ...blocked(), discussions: [talk] });
+    expect(loud).toMatch(BRASS);
+    expect(loud.replace(/btn pri/g, "")).toMatch(/class="chat"[^>]*>[\s\S]*chatcannot/);
   });
 });
 
