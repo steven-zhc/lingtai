@@ -309,7 +309,7 @@ export interface Deciding {
 }
 
 /** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
-export type StandingState = "queued" | "running" | "blocked" | "landed";
+export type StandingState = "queued" | "running" | "blocked" | "landed" | "closed";
 
 /**
  * Why this task is not moving — the answer the page never gave.

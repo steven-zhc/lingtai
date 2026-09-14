@@ -72,6 +72,7 @@ export {
 } from "./schedule.ts";
 export { approve, refusingOn, requeue, waive, type ApproveOptions, type ApproveResult } from "./approve.ts";
 export { answer, ask, type AskOutcome } from "./ask.ts";
+export { close, type CloseOutcome } from "./close.ts";
 export {
   diagnoseRefusal,
   whoseFailure,

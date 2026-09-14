@@ -134,6 +134,9 @@ export const LANE_OF: Record<TaskState, Lane> = {
   gates: "running",
   waiting: "waiting",
   landed: "landed",
+  // Closed shares Landed's lane, as it does on the board: both are over, and
+  // the public snapshot has no room for a lane that says so twice.
+  closed: "landed",
 };
 
 const LANES: { id: Lane; label: string }[] = [

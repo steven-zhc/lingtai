@@ -380,6 +380,13 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
   gates: "running",
   waiting: "waiting",
   landed: "landed",
+  // Closed shares Landed's column and not Queued's. Both are over, and Landed
+  // is already the archive — a list of one-line rows rather than a lane of
+  // cards. What must not happen is the state before this existed: an item
+  // nobody would ever claim, drawn where things that are going to be worked
+  // are. Whether *over* deserves a column of its own is a later call, and the
+  // row says which of the two it is.
+  closed: "landed",
 };
 
 /**

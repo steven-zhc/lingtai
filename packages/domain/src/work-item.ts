@@ -53,7 +53,13 @@ export type WorkItemLifecycle =
       /** What happened, what was done, what is recommended. Null when undiagnosed. */
       diagnosis: BlockDiagnosis | null;
     }
-  | { status: "landed"; mergeCommit: string; base: string };
+  | { status: "landed"; mergeCommit: string; base: string }
+  /**
+   * Nobody is going to do this (#151). A terminal like `landed`, and like it
+   * nothing lifts it — reopening the issue starts no work, and the answer to
+   * wanting it again is a new ticket.
+   */
+  | { status: "closed"; by: string; reason: string };
 
 export type WorkItemStatus = WorkItemLifecycle["status"];
 
@@ -194,8 +200,39 @@ export const emptyWorkItem: WorkItemState = {
   lastSeq: null,
 };
 
+/**
+ * The events that move the lifecycle, as a set rather than as knowledge spread
+ * across the switch below — because `closed` has to absorb exactly these and
+ * nothing else, and a list you can read is the only way that stays true when a
+ * seventh transition is added.
+ */
+const LIFECYCLE_EVENTS = new Set([
+  "WorkItemClaimed",
+  "WorkItemReleased",
+  "WorkItemBlocked",
+  "WorkItemUnblocked",
+  "WorkItemLanded",
+  "WorkItemClosed",
+]);
+
 export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemState {
   const at = { version: event.version, lastSeq: event.seq };
+
+  /**
+   * **`closed` is absorbing** (#151). Nothing lifts it: not an unblock, which
+   * the board's Requeue and `lingtai answer` both append, and not a claim.
+   *
+   * Written here rather than as a guard in each case, because the property is
+   * about the *state* and not about any one event — and a case that forgot it
+   * would resurrect a ticket silently, handing the next attempt the findings and
+   * the spend of work done under an intent that is no longer the intent.
+   *
+   * The facts that outlive a transition — title, labels, links — still apply, so
+   * a closed item's card does not go stale; only its lifecycle is settled.
+   */
+  if (state.lifecycle.status === "closed" && LIFECYCLE_EVENTS.has(event.type)) {
+    return { ...state, ...at };
+  }
 
   switch (event.type) {
     case "WorkItemDiscovered": {
@@ -334,6 +371,11 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
         (l) => l.relation === d.relation && l.otherRef === d.otherRef,
       );
       return { ...state, ...at, links: already ? state.links : [...state.links, d] };
+    }
+
+    case "WorkItemClosed": {
+      const d = event.data as PayloadOf<"WorkItemClosed">;
+      return { ...state, ...at, lifecycle: { status: "closed", by: d.by, reason: d.reason } };
     }
 
     case "WorkItemLanded": {

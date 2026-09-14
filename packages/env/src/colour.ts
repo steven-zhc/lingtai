@@ -131,6 +131,11 @@ export function stateInk(state: string): (text: string) => string {
     // `--signal`: the board's `a-sig`, and the only state that is a person.
     case "waiting":
       return paint.signal;
+    // Deliberately plain, and written down rather than left to the default
+    // below: `closed` is over and unremarkable, and the one thing it must not
+    // do is compete for the eye with the states that still want something.
+    case "closed":
+      return plain;
     default:
       return plain;
   }

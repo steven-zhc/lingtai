@@ -395,6 +395,26 @@ export const taskViewProjection: Projection = {
           break;
         }
 
+        case "WorkItemClosed": {
+          const d = event.data as PayloadOf<"WorkItemClosed">;
+          await set(ctx, event.streamId, seq, at, {
+            state: "closed",
+            // The reason, where `landed` puts the merge commit: it is the whole
+            // of what happened, and the only thing anybody will have later.
+            note: d.reason,
+            closed_at: at,
+            awaiting_sha: null,
+            blocked: false,
+            asked: false,
+            // Closing answers whatever was being held, for `landed`'s reason: a
+            // diagnosis that outlived the decision reports a failure on work
+            // nobody is going to do.
+            needs: null,
+            diagnosis: null,
+          });
+          break;
+        }
+
         case "WorkItemLanded": {
           const d = event.data as PayloadOf<"WorkItemLanded">;
           await set(ctx, event.streamId, seq, at, {

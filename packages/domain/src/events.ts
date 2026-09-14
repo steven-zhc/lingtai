@@ -262,6 +262,29 @@ export const WorkItemLinked = z.object({
 
 export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string() });
 
+/**
+ * A person decided nobody is going to do this — the second terminal, and the
+ * first one that is not an outcome of work (#151).
+ *
+ * Before it, a lifecycle had two ends: `landed`, and `blocked` forever. Closing
+ * a ticket was `gh issue close` by hand, which appends nothing, so the fold went
+ * on saying `backlog` and the board went on offering the card as *Queued* — an
+ * item nobody would ever claim, sitting where things that are going to be worked
+ * sit. `wi-lingtai-32` sat there for two days.
+ *
+ * **Appended, not deleted.** Every event before it stays where it was and a
+ * replay reaches the same place; what changes is that the item now has an end,
+ * so the queue passes over it *because the log says it is over* rather than
+ * because GitHub stopped offering it — which is the offer side, and an accident.
+ *
+ * **Nothing lifts it.** Reopening the issue does not un-close the item: a work
+ * item's stream is the story of one ticket, and grafting a second onto it would
+ * carry the attempt count, the findings and the spend of work done under an
+ * intent that is no longer the intent, into every prompt after it. If the work
+ * is wanted again, open a new ticket.
+ */
+export const WorkItemClosed = z.object({ by: z.string(), reason: z.string() });
+
 /** Capability matching refused the dispatch. Never silently downgrade a tier. */
 export const DispatchRefused = z.object({
   requiredTier: Tier,
@@ -1484,6 +1507,7 @@ export const EVENTS = {
   WorkItemUnblocked,
   WorkItemLinked,
   WorkItemLanded,
+  WorkItemClosed,
   DispatchRefused,
   RunStarted,
   RunPrompted,

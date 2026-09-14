@@ -119,7 +119,7 @@ describe("what a paint does", () => {
 
 describe("a state wears the colour of its lane on the board", () => {
   /** `LABEL_STATES`, in `packages/domain/src/streams.ts`. */
-  const LABEL_STATES = ["queued", "running", "gates", "waiting", "landed"];
+  const LABEL_STATES = ["queued", "running", "gates", "waiting", "landed", "closed"];
 
   it("still knows every state the domain has", () => {
     const declared = readFileSync(resolve(root, "packages/domain/src/streams.ts"), "utf8");

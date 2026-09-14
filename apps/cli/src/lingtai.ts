@@ -43,6 +43,7 @@ import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "./add.ts";
 import { approveCommand } from "./approve.ts";
 import { answerCommand, askCommand } from "./ask.ts";
+import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
 import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
@@ -109,6 +110,11 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 already accepted — safe to repeat, never a second
   lingtai backlog decline <project> <key> --reason <why>
                                 recorded, so the next attempt does not ask again
+  lingtai close <project> --issue <n> "<reason>"
+                                a ticket nobody is going to do, ended: the queue
+                                stops offering it because the log says it is
+                                over. Nothing lifts a close — if the work is
+                                wanted again, open a new ticket
   lingtai ask <project> --issue <n> "<question>"
                                 hold a ticket on a decision before any run
                                 claims it: nothing is spent, the queue passes
@@ -918,6 +924,18 @@ async function main(argv: string[]): Promise<number> {
       const text = positional.slice(1).join(" ");
       const options = { project: positional[0], issue, text };
       return command === "ask" ? askCommand(options) : answerCommand(options);
+    }
+    case "close": {
+      const { positional, flags } = parseFlags(rest);
+      const issue = Number(flags["issue"]);
+      if (!positional[0] || !Number.isInteger(issue)) {
+        console.error(`lingtai close <project> --issue <n> "<reason>"`);
+        return 2;
+      }
+      // Everything after the project is the reason, as `ask` takes its question:
+      // an unquoted sentence still arrives whole, and blank is refused by the
+      // command rather than defaulted here.
+      return closeCommand({ project: positional[0], issue, reason: positional.slice(1).join(" ") });
     }
     case "attach": {
       const runId = parseFlags(rest).positional[0];
