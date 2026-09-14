@@ -27,6 +27,42 @@ import { labelsFor } from "./labels.ts";
 import { diagnoseRefusal } from "./attribution.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
+import { directDatabaseUrl } from "@lingtai/env";
+import pg from "pg";
+
+/**
+ * One decision about a work item at a time: `approve` and `requeue` hold this
+ * for as long as they act (#150).
+ *
+ * **The log cannot serialise them on its own.** An approval appends to the run
+ * and then merges, for seconds, before it appends to the item; a requeue
+ * appends to the item. Requeue sits beside Approve now, so a requeue landing
+ * after the approval's append and before its merge put the item back in the
+ * queue while the diff it sent back went on to land — onto an item a new run
+ * had already claimed. No version check spans two streams and a push.
+ *
+ * A session-level advisory lock, the same as the merge lane's and the daemon's:
+ * whoever arrives second is refused and told why, rather than waiting, and a
+ * process that dies holding it releases it with its connection — so a merge
+ * interrupted by a crash does not leave the card with a requeue that refuses
+ * for ever, which is the dead end #84 is about.
+ */
+async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
+  const key = `decide:${workItemId}`;
+  const client = new pg.Client({ connectionString: directDatabaseUrl(), application_name: "lingtai-decide" });
+  await client.connect();
+  try {
+    const got = await client.query<{ ok: boolean }>("select pg_try_advisory_lock(hashtext($1)::bigint) as ok", [key]);
+    if (got.rows[0]?.ok !== true) return busy();
+    try {
+      return await act();
+    } finally {
+      await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});
+    }
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
 
 /**
  * `proposed:build` → the point and the action.
@@ -96,9 +132,24 @@ export type ApproveResult =
   | { ok: false; workItemId: string; reason: string; detail: string };
 
 export async function approve(options: ApproveOptions): Promise<ApproveResult> {
+  const workItemId = workItemStream(options.project, options.issue);
+  // Held through the merge and the append that ends it, so a requeue cannot
+  // put the item back in the queue while this is landing it. See `deciding`.
+  return deciding<ApproveResult>(
+    workItemId,
+    () => ({
+      ok: false,
+      workItemId,
+      reason: "busy",
+      detail: `${workItemId} is being decided by someone else right now. Nothing was merged — reload and read it again.`,
+    }),
+    () => approveHolding(options, workItemId),
+  );
+}
+
+async function approveHolding(options: ApproveOptions, workItemId: string): Promise<ApproveResult> {
   const store = options.store ?? eventStore;
   const log = options.log ?? (() => {});
-  const workItemId = workItemStream(options.project, options.issue);
 
   const item = reduceWorkItem(await store.read(workItemId));
   const runId = item.runs[item.runs.length - 1];
@@ -209,9 +260,8 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
     };
   }
 
-  // At the version read above, so a requeue that closed this approval in the
-  // meantime (`requeue` appends to the run first) wins the race and nothing is
-  // merged.
+  // At the version read above, so a run that moved since it was read — a
+  // second approval, a re-request on a new head — is not approved unread.
   try {
     await store.append(runId, run.version, [
       // One waiver per refusing gate, each under the name the run recorded it
@@ -380,6 +430,28 @@ export async function requeue(options: {
   const store = options.store ?? eventStore;
   const workItemId = workItemStream(options.project, options.issue);
 
+  // **Never while an approval is acting on the item** (#150). Requeue sits
+  // beside Approve now, and an approval that has appended and is still merging
+  // leaves the item `blocked` for seconds; unblocking it then let the diff land
+  // on an item a new run had claimed. The run is left as it is: an approval
+  // that arrives after this reads the item, which is no longer holding it. See
+  // `deciding`.
+  return deciding(
+    workItemId,
+    () => ({
+      ok: false,
+      workItemId,
+      detail: `${workItemId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
+    }),
+    () => requeueHolding(options, store, workItemId),
+  );
+}
+
+async function requeueHolding(
+  options: { by: string; note: string },
+  store: EventStore,
+  workItemId: string,
+): Promise<{ ok: boolean; workItemId: string; detail: string }> {
   const events = await store.read(workItemId);
   const item = reduceWorkItem(events);
   if (item.lifecycle.status !== "blocked") {
@@ -390,37 +462,6 @@ export async function requeue(options: {
       workItemId,
       detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
     };
-  }
-
-  // **A run still asking is closed first, on its own stream** (#150). Requeue
-  // sits beside Approve now, and `WorkItemUnblocked` alone left the run
-  // `awaiting-approval` — so a second tab could still approve and merge the diff
-  // this person sent back. `RunFailed` at the run's version ends the question in
-  // the fold, and an `approve()` that read the run before this loses its append.
-  const blockedOn = item.lifecycle.runId;
-  if (blockedOn !== null) {
-    const run = reduceRun(await store.read(blockedOn));
-    if (run.lifecycle.status === "awaiting-approval") {
-      try {
-        await store.append(blockedOn, run.version, [
-          {
-            type: "RunFailed",
-            actor: options.by,
-            data: parsePayload("RunFailed", {
-              kind: "aborted",
-              detail: `sent back to the queue by ${options.by}: ${options.note}`,
-            }),
-          },
-        ]);
-      } catch (err) {
-        if (!(err instanceof ConcurrencyError)) throw err;
-        return {
-          ok: false,
-          workItemId,
-          detail: `${blockedOn} moved while this was being sent back — reload and read it again`,
-        };
-      }
-    }
   }
 
   await store.append(workItemId, item.version, [

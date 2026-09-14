@@ -958,8 +958,9 @@ gone — it asked the same question again and ended nothing; to disagree with th
 diff, `requeue` it.
 
 `requeue` ends a wait with **a new run**, whether or not there is a diff to
-approve (`#150`): an item held for approval — whose open approval it closes
-first, so nothing can still merge the diff you sent back — or one
+approve (`#150`): an item held for approval — after which an approval of the
+diff you sent back is refused, and while one is still merging the requeue is
+refused instead — or one
 that blocked — an integration that conflicted, a gate that failed for a reason
 that was never about the change — goes back to the queue, and the next pass cuts
 a fresh branch from a base that has since moved. It refuses by naming the state

@@ -1755,8 +1755,14 @@ git add -A && git commit -q -m "fix the race"
      * for a new run while a second tab still shows Approve. `WorkItemUnblocked`
      * alone left the run `awaiting-approval`, and that tab merged the diff the
      * person had sent back — onto an item that was queued, or already running.
+     *
+     * And the other order: an approval that has appended is `gating` and still
+     * merging for seconds, with the item `blocked`. A requeue then put the item
+     * back in the queue and the diff landed anyway. Whichever decision starts
+     * first finishes, and the second is refused having appended nothing — least
+     * of all a `RunFailed`, which every reader takes for a run that failed.
      */
-    it("merges nothing a person sent back to the queue, whether the approval arrives after the requeue or during it", async () => {
+    it("merges nothing a person sent back to the queue, and sends nothing back that an approval is merging", async () => {
       const approving = (issue: number, r: { headSha: string }, on: typeof store) => ({
         project: PROJECT,
         issue,
@@ -1780,32 +1786,56 @@ git add -A && git commit -q -m "fix the race"
       expect(late.ok).toBe(false);
       expect((await store.read(after.runId)).map((e) => e.type)).not.toContain("ApprovalGranted");
       expect(reduceWorkItem(await store.read(after.workItemId)).lifecycle.status).toBe("backlog");
+      // The run is left as it was: sending a diff back is not a run failing.
+      expect((await store.read(after.runId)).map((e) => e.type)).not.toContain("RunFailed");
 
-      // During: approve has read the item and the run, and the requeue lands
-      // before its append.
+      // During a requeue: the approval arrives while the requeue is reading the
+      // item, before it has appended.
+      created.add(workItemStream(PROJECT, 1504));
+      const sending = await held(1504, "1504");
+      created.add(sending.runId);
+      let clicked: Awaited<ReturnType<typeof approve>> | null = null;
+      const requeuing: typeof store = {
+        ...store,
+        read: async (streamId, fromVersion) => {
+          if (streamId === sending.workItemId && clicked === null) {
+            clicked = await approve(approving(1504, sending, store));
+          }
+          return store.read(streamId, fromVersion);
+        },
+      };
+      const sentBack = await requeue({ project: PROJECT, issue: 1504, by: "human:test", note: "agree with review", store: requeuing });
+      expect(sentBack.ok).toBe(true);
+      expect(clicked!.ok).toBe(false);
+      expect((await store.read(sending.runId)).map((e) => e.type)).not.toContain("ApprovalGranted");
+      expect(reduceWorkItem(await store.read(sending.workItemId)).lifecycle.status).toBe("backlog");
+
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+
+      // During an approval: `ApprovalGranted` is on the run and the merge has
+      // not happened, which is the moment the requeue used to find the item
+      // `blocked` and the run `gating`, and put it back in the queue.
       created.add(workItemStream(PROJECT, 1503));
       const during = await held(1503, "1503");
       created.add(during.runId);
-      let interleaved = false;
+      let sent: Awaited<ReturnType<typeof requeue>> | null = null;
       const racing: typeof store = {
         ...store,
-        read: async (streamId, fromVersion) => {
-          const events = await store.read(streamId, fromVersion);
-          if (streamId === during.runId && !interleaved) {
-            interleaved = true;
-            const sent = await requeue({ project: PROJECT, issue: 1503, by: "human:test", note: "agree with review", store });
-            expect(sent.ok).toBe(true);
+        append: async (streamId, expected, events) => {
+          const appended = await store.append(streamId, expected, events);
+          if (streamId === during.runId && events.some((e) => e.type === "ApprovalGranted")) {
+            sent = await requeue({ project: PROJECT, issue: 1503, by: "human:test", note: "agree with review", store });
           }
-          return events;
+          return appended;
         },
       };
       const raced = await approve(approving(1503, during, racing));
-      expect(interleaved).toBe(true);
-      expect(raced.ok).toBe(false);
-      expect((await store.read(during.runId)).map((e) => e.type)).not.toContain("ApprovalGranted");
-      expect(reduceWorkItem(await store.read(during.workItemId)).lifecycle.status).toBe("backlog");
-
-      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+      expect(sent!.ok).toBe(false);
+      expect(raced.ok, JSON.stringify(raced)).toBe(true);
+      const item = await store.read(during.workItemId);
+      expect(item.map((e) => e.type)).not.toContain("WorkItemUnblocked");
+      expect(reduceWorkItem(item).lifecycle.status).toBe("landed");
+      expect((await store.read(during.runId)).map((e) => e.type)).not.toContain("RunFailed");
     }, 240_000);
 
     /** #150: Reject asked the same question again and ended nothing. It is gone. */

@@ -11,10 +11,13 @@
  * the button calls.
  *
  * So this is deliberately the same function and not a second path:
- * `requeue()` appends `WorkItemUnblocked` and nothing else, whichever side
- * asked. No GitHub client, because there is no GitHub call to make — the
- * event is the whole of the decision and `reconcile` converges the label an
- * earlier block left behind.
+ * `requeue()` appends `WorkItemUnblocked` to the item's stream and nothing
+ * else, to no other stream, whichever side asked — a run it sends back is left
+ * as it was, and nothing it does reads as a run failing. It refuses, appending
+ * nothing, while an approval of the same item is still merging (#150). No
+ * GitHub client, because there is no GitHub call to make — the event is the
+ * whole of the decision and `reconcile` converges the label an earlier block
+ * left behind.
  */
 import { loadProject, requeue } from "@lingtai/conductor";
 import { withProjector } from "./projector.ts";
