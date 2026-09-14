@@ -223,6 +223,18 @@ export const WorkItemBlocked = z.object({
 export const WorkItemUnblocked = z.object({ by: z.string(), note: z.string() });
 
 /**
+ * An approval of `runId` on `onSha` is about to merge this item (#150).
+ *
+ * `ApprovalGranted` is on the run's stream and `WorkItemUnblocked` on the
+ * item's, so the two writes had nothing to conflict on: a requeue that read the
+ * run before the approval could still append after `approve()` had checked the
+ * item, and both succeeded. `approve()` appends this at the version it checked
+ * the item at, before it integrates, so one of the two appends loses. It moves
+ * no lifecycle; the outcome that follows — landed or blocked — does.
+ */
+export const WorkItemApproved = z.object({ runId: z.string(), onSha: z.string(), by: z.string() });
+
+/**
  * How "merged is not correct" becomes queryable. #134 and #136 were bugs filed
  * against code that #58 had already merged, and nothing connected them.
  */
@@ -1453,6 +1465,7 @@ export const EVENTS = {
   WorkItemReleased,
   WorkItemBlocked,
   WorkItemUnblocked,
+  WorkItemApproved,
   WorkItemLinked,
   WorkItemLanded,
   DispatchRefused,

@@ -152,6 +152,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     return said.filter((s) => s !== null).join(" ");
   },
   WorkItemUnblocked: (d) => `${need(d, "by")}: ${clip(d["note"])}`,
+  WorkItemApproved: (d) => `${need(d, "by")} approved ${sha(d, "onSha")}, merging`,
   WorkItemLinked: (d) => `${need(d, "relation")} ${need(d, "otherRef")}`,
   WorkItemLanded: (d) => `merged as ${sha(d, "mergeCommit")}`,
   DispatchRefused: (d) =>

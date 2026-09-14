@@ -33,7 +33,7 @@ import {
   type WorkItemState,
 } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { type EventStore, eventStore } from "@lingtai/event-store";
+import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
 import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
@@ -151,14 +151,18 @@ function heldOn(item: WorkItemState, runId: string): boolean {
 const MERGING_FOR_MS = 15 * 60_000;
 
 /**
- * An `ApprovalGranted` newer than the item's block, recent enough to still be
+ * An `ApprovalGranted` on the run, or the `WorkItemApproved` that follows it on
+ * the item, newer than the item's block and recent enough to still be
  * merging — or null. `approve()` appends the approval before it integrates and
  * the outcome (`WorkItemLanded`, or a new `WorkItemBlocked` for `#84`'s failed
  * merge) after, so between the two the item is still `blocked` and a requeue
  * would put a ticket that is about to land back in the queue.
  */
 function mergingApproval(item: readonly Envelope[], run: readonly Envelope[], now: Date): Envelope | null {
-  const granted = run.findLast((e) => e.type === "ApprovalGranted");
+  const granted = [...run, ...item]
+    .filter((e) => e.type === "ApprovalGranted" || e.type === "WorkItemApproved")
+    .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
+    .at(-1);
   if (!granted) return null;
   const block = item.findLast((e) => e.type === "WorkItemBlocked");
   if (block && block.seq > granted.seq) return null;
@@ -307,18 +311,38 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
 
   // Once more, now that the approval is on the log: a requeue that landed
   // between the read above and the append is seen here, before anything is
-  // merged. From this point `requeue` sees the approval and refuses instead
-  // (`mergingApproval`).
-  const still = reduceWorkItem(await store.read(workItemId));
-  if (!heldOn(still, runId)) {
-    return {
-      ok: false,
-      workItemId,
-      reason: "requeued",
-      detail:
-        `${workItemId} was sent back for another attempt while ${onSha.slice(0, 7)} was being ` +
-        `approved. The approval is on the log; nothing was merged.`,
-    };
+  // merged. Reading is not enough on its own — a requeue that read the run
+  // before the approval can still append after this read — so the item is
+  // written at the version it was checked at (`WorkItemApproved`), and
+  // `requeue`'s own append at that version is the one that loses.
+  for (;;) {
+    const still = reduceWorkItem(await store.read(workItemId));
+    if (!heldOn(still, runId)) {
+      return {
+        ok: false,
+        workItemId,
+        reason: "requeued",
+        detail:
+          `${workItemId} was sent back for another attempt while ${onSha.slice(0, 7)} was being ` +
+          `approved. The approval is on the log; nothing was merged.`,
+      };
+    }
+    // Claimed on this run, the conductor's own `WorkItemBlocked` is still to
+    // come, and `requeue` refuses anything that is not blocked.
+    if (still.lifecycle.status !== "blocked") break;
+    try {
+      await store.append(workItemId, still.version, [
+        {
+          type: "WorkItemApproved",
+          actor: options.by,
+          data: parsePayload("WorkItemApproved", { runId, onSha, by: options.by }),
+        },
+      ]);
+      break;
+    } catch (err) {
+      // The item moved under the check: read it again and decide on that.
+      if (!(err instanceof ConcurrencyError)) throw err;
+    }
   }
 
   const merged = await integrate({
@@ -482,13 +506,32 @@ export async function requeue(options: {
     };
   }
 
-  await store.append(workItemId, item.version, [
-    {
-      type: "WorkItemUnblocked",
-      actor: options.by,
-      data: parsePayload("WorkItemUnblocked", { by: options.by, note: options.note }),
-    },
-  ]);
+  // At the version both reads above were decided on. An approval that came in
+  // after the run was read has appended `WorkItemApproved` at that version
+  // before merging, so this is the append that loses, not the one that is
+  // told it worked while the diff lands.
+  try {
+    await store.append(workItemId, item.version, [
+      {
+        type: "WorkItemUnblocked",
+        actor: options.by,
+        data: parsePayload("WorkItemUnblocked", { by: options.by, note: options.note }),
+      },
+    ]);
+  } catch (err) {
+    if (!(err instanceof ConcurrencyError)) throw err;
+    const now = await store.read(workItemId);
+    const approved = runId ? mergingApproval(now, await store.read(runId), new Date()) : null;
+    return {
+      ok: false,
+      workItemId,
+      detail: approved
+        ? `${workItemId} was approved by ${approved.actor} at ${approved.at.toISOString()} while it was ` +
+          `being requeued, and is merging. Nothing was requeued.`
+        : `${workItemId} moved while it was being requeued (it is ${reduceWorkItem(now).lifecycle.status}). ` +
+          `Nothing was requeued — read the card again.`,
+    };
+  }
 
   return { ok: true, workItemId, detail: `back in the queue, by ${options.by}` };
 }

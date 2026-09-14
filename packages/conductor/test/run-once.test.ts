@@ -1812,6 +1812,105 @@ git add -A && git commit -q -m "fix the race"
     }, 240_000);
 
     /**
+     * The two checks read different streams, so the orders above are not the
+     * only ones. Here `requeue()` has read the item and the run — no approval
+     * yet — and the whole of `approve()` runs before its append. Nothing but a
+     * shared write can see that, and the requeue must be the append that loses.
+     */
+    it("refuses a requeue that read the run before an approval merged in between", async () => {
+      created.add(workItemStream(PROJECT, 140));
+      const r = await held(140, "140");
+      created.add(r.runId);
+
+      let approved: Awaited<ReturnType<typeof approve>> | null = null;
+      const racing: EventStore = {
+        ...store,
+        async read(streamId, fromVersion) {
+          const events = await store.read(streamId, fromVersion);
+          if (streamId !== r.runId || approved) return events;
+          approved = await approve({
+            project: PROJECT,
+            issue: 140,
+            base: "develop",
+            client: fakeClient({ refSha: async () => r.headSha }),
+            by: "human:b",
+            onSha: r.headSha,
+            store,
+            home,
+            gitEnv: { ...process.env, ...authored },
+          });
+          return events;
+        },
+      };
+
+      const back = await requeue({ project: PROJECT, issue: 140, by: "human:a", note: "the reviewer is right", store: racing });
+
+      expect(approved, "approve ran inside requeue's window").not.toBeNull();
+      expect(approved!.ok, JSON.stringify(approved)).toBe(true);
+      expect(back.ok, back.detail).toBe(false);
+      expect(back.detail).toContain("merging");
+      const item = (await store.read(r.workItemId)).map((e) => e.type);
+      expect(item).not.toContain("WorkItemUnblocked");
+      expect(item).toContain("WorkItemLanded");
+    }, 240_000);
+
+    /**
+     * The finding's own interleaving: `requeue()` read the run before the
+     * approval and appends after `approve()` has re-read the item and found it
+     * still blocked. The approval must not merge.
+     */
+    it("does not merge when a requeue that read the run first appends after approve checked the item", async () => {
+      created.add(workItemStream(PROJECT, 141));
+      const r = await held(141, "141");
+      created.add(r.runId);
+      const before = (await g(["rev-parse", "develop"], originPath)).stdout;
+      const staleRun = await store.read(r.runId);
+
+      let itemReads = 0;
+      let back: Awaited<ReturnType<typeof requeue>> | null = null;
+      const racing: EventStore = {
+        ...store,
+        async read(streamId, fromVersion) {
+          const events = await store.read(streamId, fromVersion);
+          // `approve()`'s second read of the item is the check after its append.
+          if (streamId === r.workItemId && ++itemReads === 2 && !back) {
+            back = await requeue({
+              project: PROJECT,
+              issue: 141,
+              by: "human:a",
+              note: "the reviewer is right",
+              // As it read the run a moment before the approval was appended.
+              store: { ...store, read: async (id, from) => (id === r.runId ? staleRun : store.read(id, from)) },
+            });
+          }
+          return events;
+        },
+      };
+
+      const approved = await approve({
+        project: PROJECT,
+        issue: 141,
+        base: "develop",
+        client: fakeClient({ refSha: async () => r.headSha }),
+        by: "human:b",
+        onSha: r.headSha,
+        store: racing,
+        home,
+        gitEnv: { ...process.env, ...authored },
+      });
+
+      expect(back, "requeue ran inside approve's window").not.toBeNull();
+      expect(back!.ok, back!.detail).toBe(true);
+      expect(approved.ok).toBe(false);
+      if (approved.ok) return;
+      expect(approved.reason).toBe("requeued");
+      const item = (await store.read(r.workItemId)).map((e) => e.type);
+      expect(item).not.toContain("WorkItemLanded");
+      expect(item).not.toContain("WorkItemApproved");
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+    }, 240_000);
+
+    /**
      * #92 — the board and `lingtai approve` gave two answers to one approval.
      *
      * The card sent `task_view.head_sha`, which is what the run *produced*. A
