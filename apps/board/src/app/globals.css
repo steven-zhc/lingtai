@@ -449,7 +449,11 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    button is the end of that sentence. */
 
 .decide { display: grid; gap: 6px; }
-.btnrow { display: flex; gap: 5px; flex-wrap: wrap; }
+/* Every row of moves, and the only rule that makes one: the task page's
+   `.smoves` is this class plus its own spacing. `flex-start` because a move that
+   opens a form grows, and a stretched row made the button beside it a panel the
+   height of that form (#155) — #152 had fixed one row and not the class. */
+.btnrow { display: flex; gap: 5px; flex-wrap: wrap; align-items: flex-start; }
 .btn {
   font: 600 10.5px/1.4 var(--sans);
   padding: 3px 8px;
@@ -478,6 +482,11 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   border-radius: 2px;
   background: var(--surface);
   color: var(--ink);
+  /* Its own width, not the button row's: sized by `.decide`'s column it was
+     143px, and the waiver it asks for read *unrelated flake in the im…* (#155).
+     `max-width` lets a narrow card still shrink it. */
+  width: 38ch;
+  max-width: 100%;
 }
 
 /* Not styled as an error: the work landed, and this says so. */
@@ -919,11 +928,9 @@ details[open] > summary::before { content: "▾"; }
 /* The moves, above both boxes (#152). One row whatever the item has: Approve where
    there is an approval open, Send where there is a prompt to send, Back to the
    queue where there is not, and each control brings its own `.decide` — so they read as one row
-   rather than as three stacked decisions. */
+   rather than as three stacked decisions. A `.btnrow`, which is where the row
+   itself is ruled (#155); this is only the page's spacing. */
 .smoves {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
   gap: 0.5rem 0.75rem;
   margin: 0.2rem 0;
 }

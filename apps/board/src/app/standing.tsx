@@ -311,7 +311,7 @@ export function Standing({
           (#150): neither moved the card, and a waiver is what Approve records
           when a gate still refuses. */}
       {acting && standing.state === "blocked" ? (
-        <div className="smoves" data-rank="moves">
+        <div className="btnrow smoves" data-rank="moves">
           {standing.awaitingSha !== null ? (
             <Decide
               project={project}
@@ -361,7 +361,7 @@ export function Standing({
           belongs on. It jumps the backoff, and says so when there is one to
           jump (0028 §3). */}
       {acting && standing.state === "queued" && queued !== null ? (
-        <div className="smoves" data-rank="moves">
+        <div className="btnrow smoves" data-rank="moves">
           <RunNow project={project} issue={String(issue)} holding={stopped} />
         </div>
       ) : null}

@@ -930,7 +930,7 @@ const OUTGOING: OutgoingView = {
 };
 
 /** Just the row of moves: the Ask button inside the discussion is amber too. */
-const moves = (html: string) => html.slice(html.indexOf('class="smoves"'), html.indexOf('class="spair"'));
+const moves = (html: string) => html.slice(html.indexOf('class="btnrow smoves"'), html.indexOf('class="spair"'));
 
 const render = (standing: StandingView, outgoing: OutgoingView | null) =>
   renderToStaticMarkup(
@@ -1052,7 +1052,7 @@ describe("the moves the column ends in", () => {
 
     expect(html).toContain('class="spair"');
     expect(html.indexOf("will be sent")).toBeLessThan(html.indexOf("discussion"));
-    expect(html.indexOf('class="smoves"')).toBeLessThan(html.indexOf('class="spair"'));
+    expect(html.indexOf('class="btnrow smoves"')).toBeLessThan(html.indexOf('class="spair"'));
   });
 });
 
