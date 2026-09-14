@@ -96,7 +96,7 @@ function fakeGitHub(hooks: { beforeCreate?: () => Promise<void>; afterCreate?: (
       const issue: Issue = {
         number: 212 + issues.length, title: input.title, body: input.body,
         labels: input.labels.map((name) => ({ name, color: null })), state: "open",
-        url: `https://example/${212 + issues.length}`,
+        url: `https://example/${212 + issues.length}`, dependencies: null,
       };
       issues.push(issue);
       const after = afterCreate;

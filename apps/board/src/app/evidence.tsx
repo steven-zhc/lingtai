@@ -20,6 +20,7 @@
  * grammar bundle into a local operator console, and the value of that against
  * its weight has not been argued for. Said plainly rather than quietly skipped.
  */
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { loadDiff } from "./actions.ts";
 import type { DiffFile } from "@/lib/diff";
@@ -129,6 +130,16 @@ export function Evidence({
             </span>
           </summary>
           {g.findings.length > 0 ? <Findings findings={g.findings} /> : null}
+          {/* The way into the backlog (#137), and here rather than on the bar:
+              a minor is a batch a person works when they choose to, which is
+              neither question the bar answers (the-bar.md). So it is offered
+              where a minor is read — on a gate that passed with one. */}
+          {g.state === "passed" && g.findings.some((f) => f.severity === "minor") ? (
+            <p className="note">
+              A passing gate's minors wait in the <Link href="/backlog">backlog</Link>, to be opened as an issue or
+              declined.
+            </p>
+          ) : null}
           {/* The log tail for a build, the matched files for a `watch` hold, the
               question for a human gate. Whatever the gate had to say. */}
           {g.evidence ? <pre className="gevidence">{g.evidence}</pre> : null}
