@@ -53,7 +53,6 @@ import { requeueCommand } from "./requeue.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { status } from "./status.ts";
-import { waiveCommand } from "./waive.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
 import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
 
@@ -93,13 +92,6 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 from a base that has since moved. --note is
                                 required — a person overruling a block is not
                                 anonymous
-  lingtai waive <project> --issue <n> --gate <point:action> --reason <why>
-                                overrule a verdict on the record — a flaky check,
-                                a scan whose service is down. It merges nothing
-                                and moves no card: it says what the item is
-                                still waiting on. --reason is required and never
-                                defaulted; a gate that is not there is refused
-                                by listing the gates there are
   lingtai backlog [project]         the minor findings passing gates raised, open
     --all                       decided ones too, and what was decided
   lingtai backlog accept <project> <key> --kind <kind>
@@ -893,19 +885,6 @@ async function main(argv: string[]): Promise<number> {
       // same silence as leaving the flag off — so both arrive as "" and the
       // command refuses them identically. Not defaulted here or there.
       return requeueCommand({ project: positional[0], issue, note: flags["note"] ?? "" });
-    }
-    case "waive": {
-      const { positional, flags } = parseFlags(rest);
-      const issue = Number(flags["issue"]);
-      const gate = flags["gate"];
-      if (!positional[0] || !Number.isInteger(issue) || !gate) {
-        console.error("lingtai waive <project> --issue <n> --gate <point:action> --reason <why>");
-        return 2;
-      }
-      // Not defaulted: *recorded, never
-      // silent* is the whole of `GateWaived`'s claim on existing. A missing and
-      // an empty `--reason` both arrive as "" and are refused by the command.
-      return waiveCommand({ project: positional[0], issue, gate, reason: flags["reason"] ?? "" });
     }
     case "ask":
     case "answer": {

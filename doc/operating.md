@@ -945,9 +945,16 @@ The same decisions from the terminal, if you prefer:
 pnpm lingtai approve nextloom-ai-admin --issue 120
 pnpm lingtai approve nextloom-ai-admin --issue 120 --note "the review finding is out of scope"
 pnpm lingtai requeue nextloom-ai-admin --issue 120 --note "the block was the harness, not the diff"
-pnpm lingtai waive nextloom-ai-admin --issue 120 \
-  --gate proposed:build --reason "unrelated flake in the importer suite"
+pnpm lingtai close nextloom-ai-admin --issue 120 "superseded — the design this describes is not the design"
 ```
+
+**There is no `lingtai waive`, and that is the same decision `#150` made on the
+board.** A waiver is not a move of its own: it is what approving over a refusal
+*is*, and `--note` is the reason it carries. Two verbs for one act let a person
+waive a gate and then wonder why the item had not moved — a decision reported as
+taken that took nothing. `#129` added the command when the board had a Waive
+button and the terminal did not; `#150` removed the button, and this removes the
+verb that outlived it. `waive()` itself is still there, called by `approve`.
 
 `approve` merges **what the held run actually produced**, not a fresh attempt.
 If the branch moved since the run asked, it refuses and names both commits —
