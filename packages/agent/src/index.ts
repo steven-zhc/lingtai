@@ -83,6 +83,7 @@ export {
   runLogEnded,
   runLogLine,
   runLogQuiet,
+  taggedTrace,
   type FollowRunLogOptions,
   type OpenRunLogOptions,
   type RunLog,

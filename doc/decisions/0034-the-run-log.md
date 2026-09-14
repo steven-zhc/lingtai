@@ -152,3 +152,39 @@ file's contents, the design is wrong.
 - Changing `--output-format` to `stream-json` is **not** decided here. It
   rewrites the parse path that produces `RunFinished`'s turns and cost — the
   accounting — and `#89` is recent evidence for how exacting that path is.
+
+## Since — every agent in a pass writes here (#153, 2026-09-14)
+
+§3 was written when the implementer was the only agent a pass had. The cold
+reviewer at `proposed` came after it, and the fixer with 0039, and neither wrote
+anything: a review that took eighteen minutes left eighteen minutes of nothing
+between the implementer's receipt and `fix round 1`. This records who writes
+to a run's log now. It adds writers; the file, its path, its cap and §4's
+keep-or-delete are unchanged, so `lingtai attach` and the board's tail show the
+new lines with no change of their own.
+
+**The agents that write here are the implementer, the fixer, and any gate's.**
+
+- **The implementer**, as §3 says: the hook socket's calls with their verdicts,
+  and its prose off the stream.
+- **A gate's agent**, under `<point>:<action>` — `proposed:review`, never
+  `agent`. `runGatePipeline` hands the action the run's log already tagged, so
+  the reviewer's prose, its tool calls and its receipt land in the one file, in
+  order, under the gate they belong to.
+- **The fixer**, under `fix:<round>`.
+
+**Every gate writes its start and its end**, whatever its kind: the point and
+action, the kind, the commit and the round on the way in, the verdict and how
+long it took on the way out. A `run` or a `watch` writes only those two lines —
+there is no agent to follow and nothing pretends there is. For an `agent`
+action the receipt between them says what it cost, so a gate that hangs is
+legible as *started, and nothing since* before it finishes.
+
+**The reviewer and the fixer have no hook**, so their tool calls are taken off
+the stream (`RunRequest.traceTools`) through the same `observedCall` the socket
+uses, redaction included. The implementer's are still the socket's alone:
+written twice, the file would say they happened twice.
+
+**A tag can never write the end.** The tagged writer puts the adapter's own
+label into the detail, so `RUN_LOG_END` — the one label a reader acts on (§8) —
+stays the conductor's to write.

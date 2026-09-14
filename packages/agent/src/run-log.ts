@@ -148,7 +148,30 @@ export function runLogLine(at: Date, label: string, detail: string): string {
   const mm = String(at.getMinutes()).padStart(2, "0");
   const ss = String(at.getSeconds()).padStart(2, "0");
   const flat = detail.replace(/\s*\r?\n\s*/g, " ⏎ ").trimEnd();
-  return `${hh}:${mm}:${ss}  ${label.padEnd(LABEL_WIDTH)}${flat}\n`;
+  // A label as wide as the column still gets a space after it: a gate's
+  // `proposed:review` is twice the width, and run into its detail it would read
+  // as one word (#153).
+  const column = label.length >= LABEL_WIDTH ? `${label} ` : label.padEnd(LABEL_WIDTH);
+  return `${hh}:${mm}:${ss}  ${column}${flat}\n`;
+}
+
+/**
+ * The same log, with every line it is handed filed under one tag.
+ *
+ * **For an agent that is not the implementer** (#153). The reviewer at a gate and
+ * the agent a refusal bought run inside the pass, cost the pass, and are read by
+ * the person following the pass — so they write to the pass's one file rather
+ * than a second one, and the tag is what tells their lines apart from the
+ * implementer's: `proposed:review  Read  src/x.ts`, not `Read  src/x.ts`.
+ *
+ * The adapter's own label moves into the detail, so nothing it writes can land
+ * in the label column — and `RUN_LOG_END`, the one label a reader acts on, can
+ * therefore never be written by an agent's trace, whatever the adapter labels.
+ */
+export function taggedTrace(log: RunTrace, tag: string): RunTrace {
+  return {
+    note: (label, detail = "") => log.note(tag, detail === "" ? label : `${label.padEnd(6)}  ${detail}`),
+  };
 }
 
 /**

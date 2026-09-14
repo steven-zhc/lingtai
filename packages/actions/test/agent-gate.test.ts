@@ -298,6 +298,45 @@ describe("the gate", () => {
     expect(runtime.seen[0]?.runId).toContain("review");
   });
 
+  /**
+   * The reviewer is eighteen minutes a person used to wait on in the dark
+   * (#153). It writes into the run's own log, under its gate, with its tool
+   * calls — which no hook reports for it — between the pipeline's start and end.
+   */
+  it("hands its agent the run's log, tagged with the point and the action", async () => {
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+    runtime.run = async (request) => {
+      runtime.seen.push(request);
+      request.log?.note("Read", "src/x.ts");
+      request.log?.note("receipt", "success · 7 turns · $0.42 · exit 0");
+      return outcome({ text: '{"findings":[]}' });
+    };
+    const gate = createAgentGate(
+      { name: "review", prompt: "" },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => "diff --git a/x b/x\n+1",
+        settingsPath: "/tmp/settings.json",
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    );
+    const lines: string[] = [];
+    const log = { note: (label: string, detail = "") => void lines.push(`${label} | ${detail}`) };
+
+    await runGatePipeline({ point: "proposed", gates: [gate], context: { ...context, log }, emit: () => {} });
+
+    expect(runtime.seen[0]?.traceTools).toBe(true);
+    expect(lines).toEqual([
+      "proposed:review | started · agent on aaaaaaa",
+      expect.stringMatching(/^proposed:review \| review  run-abc:review:review · \d+ bytes of diff$/),
+      "proposed:review | Read    src/x.ts",
+      "proposed:review | receipt  success · 7 turns · $0.42 · exit 0",
+      expect.stringMatching(/^proposed:review \| passed · after \d+s$/),
+    ]);
+    expect(lines.some((l) => l.startsWith("agent"))).toBe(false);
+  });
+
   it("passes with no findings", async () => {
     const result = await gateWith(outcome({ text: '{"findings":[]}' })).run(context);
 

@@ -24,6 +24,7 @@ import {
   runLogEnd,
   runLogEnded,
   runLogLine,
+  taggedTrace,
 } from "../src/index.ts";
 
 let home: string;
@@ -123,5 +124,32 @@ describe("a run's log file", () => {
     expect(runLogLine(new Date(2026, 8, 9, 14, 22, 31), "Edit", "packages/agent/src/x.ts")).toBe(
       "14:22:31  Edit    packages/agent/src/x.ts\n",
     );
+  });
+
+  it("keeps a space after a label wider than the column", () => {
+    expect(runLogLine(new Date(2026, 8, 9, 14, 22, 31), "proposed:review", "started")).toBe(
+      "14:22:31  proposed:review started\n",
+    );
+  });
+
+  /**
+   * A gate's agent writes to the run's own log under its gate (#153), and the
+   * adapter's label goes into the detail — so nothing an agent's trace writes
+   * can reach the label column a reader stops on.
+   */
+  it("files every line under its tag, and cannot write the end", () => {
+    const lines: [string, string][] = [];
+    const tagged = taggedTrace({ note: (label, detail = "") => void lines.push([label, detail]) }, "proposed:review");
+
+    tagged.note("Read", "src/x.ts");
+    tagged.note(RUN_LOG_END, "landed — not really");
+    tagged.note("hook");
+
+    expect(lines).toEqual([
+      ["proposed:review", "Read    src/x.ts"],
+      ["proposed:review", "end     landed — not really"],
+      ["proposed:review", "hook"],
+    ]);
+    expect(runLogEnded(runLogLine(new Date(), ...lines[1]!))).toBeNull();
   });
 });

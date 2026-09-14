@@ -97,11 +97,22 @@ export interface RunRequest {
    * than `RunLog` because closing it carries the keep-or-delete decision, which
    * is the conductor's and is not knowable here.
    *
-   * Absent for a run with no log — a review agent at a gate. A discussion turn
-   * has one since `#132`: its trace is named for the chat and lives for one
-   * turn (`answerDiscussion`), so the board can show the answer being written.
+   * A gate's agent and a fixer write here too since `#153`, through
+   * `taggedTrace`, so their lines carry who wrote them. A discussion turn has
+   * one since `#132`: its trace is named for the chat and lives for one turn
+   * (`answerDiscussion`), so the board can show the answer being written.
    */
   log?: RunTrace;
+  /**
+   * Whether the agent's tool calls are this adapter's to trace.
+   *
+   * Off by default, because for the implementer the hook socket writes every
+   * call with the verdict it got, and the stream writing it again would make
+   * the file say it happened twice. **An agent run under unhooked settings — a
+   * reviewer at a gate, a fixer — has no socket to write them**, so without
+   * this its whole run would be prose and silence (#153).
+   */
+  traceTools?: boolean;
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
   env: Record<string, string>;
   limits: { turns: number; wallMs: number };

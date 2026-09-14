@@ -23,6 +23,7 @@
  * `close` and `labels` are the other two kinds. They are effects rather than
  * verdicts, they only run at `end`, and they never reach this interface.
  */
+import { taggedTrace, type RunTrace } from "@lingtai/agent/run-log";
 import type { GatePoint, PayloadOf } from "@lingtai/domain";
 
 /**
@@ -102,6 +103,21 @@ export interface GateContext {
    * to be told what the reviewer said.
    */
   recheck?: readonly GateFinding[];
+  /**
+   * Which fix round this pipeline is judging — 0 before any fix was bought.
+   * Only said on the run log, so a slow re-review reads as *round 2*.
+   */
+  round?: number;
+  /**
+   * The run's log ([0034](../../../doc/decisions/0034-the-run-log.md), #153).
+   *
+   * `runGatePipeline` writes each action's start and end here under
+   * `<point>:<action>`, and hands the action this same log **already tagged**,
+   * so an `agent` action passes it to its runtime and every line its agent
+   * writes is filed under the gate it belongs to. A `run` or `watch` action has
+   * no agent and writes nothing further. Absent, nothing is written.
+   */
+  log?: RunTrace;
   signal?: AbortSignal;
 }
 
@@ -188,9 +204,23 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
     await emit({ type: "GateRequested", data: base });
     await emit({ type: "GateStarted", data: base });
 
+    /**
+     * The start and the end on the run's log, for every kind (#153).
+     *
+     * A review is eighteen minutes and a build four and a half, and the file a
+     * person was following said nothing for either. The line's own time is
+     * *since when*; the round is which question this is. An `agent` action is
+     * handed the log tagged as this gate, so what its agent does lands between
+     * these two lines; any other kind has no agent and writes nothing between.
+     */
+    const tag = `${point}:${gate.name}`;
+    const round = context.round ? ` · round ${context.round}` : "";
+    const started = Date.now();
+    context.log?.note(tag, `started · ${gate.kind} on ${context.onSha.slice(0, 7)}${round}`);
+
     let result: GateResult;
     try {
-      result = await gate.run(context);
+      result = await gate.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context);
     } catch (err) {
       // A gate that throws is a gate that failed. The alternative is an
       // exception escaping the pipeline and a run ending with no verdict at all.
@@ -200,6 +230,7 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
         findings: [],
       };
     }
+    context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`);
 
     results.push({
       gate: gate.name,
@@ -269,4 +300,10 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
   }
 
   return { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results, skipped: [] };
+}
+
+/** `4m27s`, `12s` — how long an action took, as the run log says it. */
+function elapsed(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
 }

@@ -120,6 +120,27 @@ describe("the pipeline", () => {
     return { events, emit: (e: GateEvent) => void events.push(e) };
   }
 
+  /**
+   * A gate with no agent writes its start and its end to the run's log and
+   * nothing between (#153): a four-minute build is no longer four dark minutes,
+   * and nothing pretends there is an agent to follow.
+   */
+  it("writes each action's start and end to the run's log, tagged with the point", async () => {
+    const lines: [string, string][] = [];
+    const log = { note: (label: string, detail = "") => void lines.push([label, detail]) };
+    await runGatePipeline({
+      point: "proposed",
+      gates: [processGate({ name: "build", run: "echo compiling; exit 0" })],
+      context: { ...context, onSha: "abcdef0123", round: 2, log },
+      emit: () => {},
+    });
+
+    expect(lines).toEqual([
+      ["proposed:build", "started · run on abcdef0 · round 2"],
+      ["proposed:build", expect.stringMatching(/^passed · after \d+s · round 2$/)],
+    ]);
+  });
+
   it("puts onSha on every verdict", async () => {
     const { events, emit } = collector();
     await runGatePipeline({

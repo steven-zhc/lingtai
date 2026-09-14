@@ -48,6 +48,7 @@ import type {
   Spawned,
 } from "./runtime.ts";
 import { neverStarted } from "./runtime.ts";
+import { observedCall } from "./hook-socket.ts";
 import { NO_RUN_LOG } from "./run-log.ts";
 
 export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
@@ -314,8 +315,8 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
     async run(request: RunRequest): Promise<RunOutcome> {
       const sessionId = sessionIdFor(request.runId);
       const started = Date.now();
-      // A run with no log — a gate agent, or `discuss` — writes to the one that
-      // is not there, so there is no `?.` on the hot path (0034 §1).
+      // A run with no log writes to the one that is not there, so there is no
+      // `?.` on the hot path (0034 §1).
       const trace = request.log ?? NO_RUN_LOG;
 
       const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode);
@@ -363,7 +364,9 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         // the agent said. What is left when the process dies mid-line is
         // dropped: it is the partial-stream case, and a fragment is not a fact.
         const stream = lineReader((line) => {
-          for (const [label, detail] of traceOf(line)) trace.note(label, detail);
+          for (const [label, detail] of traceOf(line, { tools: request.traceTools === true })) {
+            trace.note(label, detail);
+          }
         });
         const errors = lineReader((line) => trace.note("stderr", line));
 
@@ -631,15 +634,32 @@ function clip(text: string): string {
  * object at the end of a killed run — is kept as `stdout` rather than dropped.
  * It is the only place it would have survived, and it is what a person opens
  * this file for when nothing else explains the ending.
+ *
+ * **`tools` is for an agent no hook is watching** (#153). A reviewer or a fixer
+ * runs under unhooked settings, so nothing else writes its calls, and they are
+ * taken from the stream instead — in the hook's own shape, from the same
+ * `observedCall`, so a redacted command stays redacted. There is no verdict on
+ * the line because there was no decision.
  */
-export function traceOf(line: string): readonly (readonly [string, string])[] {
+export function traceOf(
+  line: string,
+  options: { tools?: boolean } = {},
+): readonly (readonly [string, string])[] {
   const t = line.trim();
   if (!t) return [];
   if (!t.startsWith("{")) return [["stdout", clip(t)]];
 
   let event: {
     type?: string;
-    message?: { content?: readonly { type?: string; text?: string; thinking?: string }[] };
+    message?: {
+      content?: readonly {
+        type?: string;
+        text?: string;
+        thinking?: string;
+        name?: string;
+        input?: Record<string, unknown>;
+      }[];
+    };
   };
   try {
     event = JSON.parse(t) as typeof event;
@@ -654,6 +674,10 @@ export function traceOf(line: string): readonly (readonly [string, string])[] {
     // Its reasoning, which is often the only account of why it did the thing
     // the tool trace shows it doing.
     if (block.type === "thinking" && block.thinking?.trim()) said.push(["think", clip(block.thinking)]);
+    if (options.tools && block.type === "tool_use" && block.name) {
+      const call = observedCall({ tool: block.name, input: block.input ?? {} });
+      said.push([call.tool, call.target.replace(/\s*\r?\n\s*/g, " ")]);
+    }
   }
   return said;
 }

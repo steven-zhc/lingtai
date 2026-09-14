@@ -615,6 +615,28 @@ describe("the agent's output in the run log", () => {
   });
 
   /**
+   * An agent no hook is watching — a reviewer, a fixer — has its tool calls
+   * written off the stream instead (#153), or its run is prose and silence.
+   */
+  it("writes the tool calls too, when no hook is there to", async () => {
+    const trace = recordingTrace();
+    const binary = await fakeStream(stream());
+    await createClaudeCodeRuntime({ binary }).run(request({ log: trace, traceTools: true }));
+
+    expect(trace.lines).toContain("Read\tpackages/agent/src/claude-code.ts");
+    expect(trace.lines.join("\n")).not.toContain("four hundred lines");
+    expect(
+      traceOf(
+        JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "tool_use", name: "Bash", input: { command: "pnpm typecheck\n&& pnpm test" } }] },
+        }),
+        { tools: true },
+      ),
+    ).toEqual([["Bash", "pnpm typecheck && pnpm test"]]);
+  });
+
+  /**
    * One file, one writer, one order.
    *
    * The conductor's hook trace and the agent's prose are the two halves of

@@ -327,22 +327,32 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
 
       const issue = await deps.issue();
       const recheck = context.recheck ?? [];
+      // **Not** `context.runId`. The session id is derived from it, so reusing
+      // it would resume the implementer's session and make this a warm review
+      // wearing a cold review's name.
+      //
+      // A re-review gets an id of its own for the same reason *again*: a
+      // second review that resumed the first one would be a reviewer asked
+      // whether it still agrees with itself, which is the warm-review failure
+      // experiment 001 measured, one level up (0038 §2).
+      const reviewId =
+        recheck.length === 0
+          ? `${context.runId}:review:${spec.name}`
+          : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}`;
+      context.log?.note(
+        "review",
+        `${reviewId} · ${diff.length} bytes of diff` +
+          (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? "" : "s"}` : ""),
+      );
       const outcome = await deps.runtime.run({
-        // **Not** `context.runId`. The session id is derived from it, so reusing
-        // it would resume the implementer's session and make this a warm review
-        // wearing a cold review's name.
-        //
-        // A re-review gets an id of its own for the same reason *again*: a
-        // second review that resumed the first one would be a reviewer asked
-        // whether it still agrees with itself, which is the warm-review failure
-        // experiment 001 measured, one level up (0038 §2).
-        runId:
-          recheck.length === 0
-            ? `${context.runId}:review:${spec.name}`
-            : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}`,
+        runId: reviewId,
         cwd: context.cwd,
         prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck),
         settingsPath: deps.settingsPath,
+        // Already tagged `<point>:<action>` by the pipeline (#153). The reviewer
+        // runs without the hook, so its tool calls are the stream's to write.
+        log: context.log,
+        traceTools: true,
         env: context.env,
         limits: deps.limits,
         signal: context.signal,

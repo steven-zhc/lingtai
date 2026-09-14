@@ -113,7 +113,14 @@ import {
   runGatePipeline,
 } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
-import { NO_RUN_LOG, type RunLog, type Runtime, missingForTier, writeUnhookedSettingsEffect } from "@lingtai/agent";
+import {
+  NO_RUN_LOG,
+  type RunLog,
+  type Runtime,
+  missingForTier,
+  taggedTrace,
+  writeUnhookedSettingsEffect,
+} from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { diagnoseRefusal } from "./attribution.ts";
@@ -914,7 +921,7 @@ export function runOnce(
       // with one thing added — the scenarios the last refusal was made of,
       // which the reviewer is asked about by name (0038 §2).
       const gates = gatesFromRecipe(recipe.gates.proposed, gateDeps);
-      const judge = (onSha: string, recheck: readonly GateFinding[]) =>
+      const judge = (onSha: string, recheck: readonly GateFinding[], round: number) =>
         Effect.promise(() =>
           runGatePipeline({
             point: "proposed",
@@ -925,6 +932,10 @@ export function runOnce(
               cwd: worktree.path,
               env: runnableEnv(env.values),
               recheck,
+              round,
+              // The run's own log, so a review is not eighteen dark minutes
+              // (#153). The pipeline tags it per action.
+              log: runLog,
             },
             emit: async (event) => {
               const at = (await store.read(runId)).length;
@@ -996,6 +1007,7 @@ export function runOnce(
                 onSha: worktree.baseSha,
                 cwd: worktree.path,
                 env: runnableEnv(env.values),
+                log: runLog,
               },
               emit: async (event) => {
                 const at = (await store.read(runId)).length;
@@ -1673,6 +1685,10 @@ export function runOnce(
                   diffBytes: recipe.runtime.budget.diff,
                 }),
                 settingsPath: fixSettings,
+                // The run's log, filed under the round (#153). Unhooked like the
+                // reviewer, so its tool calls come off the stream.
+                log: taggedTrace(runLog, `fix:${decision.round}`),
+                traceTools: true,
                 env: runnableEnv(env.values),
                 limits: {
                   turns: recipe.runtime.limits.turns,
@@ -1807,7 +1823,7 @@ export function runOnce(
         // round: the same actions, in the same order, with one thing added — the
         // scenarios the last refusal was made of, which the reviewer is asked
         // about by name (0038 §2).
-        pipeline = yield* judge(head, recheck);
+        pipeline = yield* judge(head, recheck, rounds);
         recheck = [];
         log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
 
@@ -1918,6 +1934,8 @@ export function runOnce(
                 onSha: head,
                 cwd: worktree.path,
                 env: runnableEnv(env.values),
+                round: rounds,
+                log: runLog,
               },
               emit: async (event) => {
                 const at = (await store.read(runId)).length;
