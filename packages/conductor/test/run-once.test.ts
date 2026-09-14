@@ -1730,13 +1730,13 @@ git add -A && git commit -q -m "fix the race"
     }, 240_000);
 
     it("approves with no reason where nothing refuses, and waives nothing", async () => {
-      created.add(workItemStream(PROJECT, 136));
-      const r = await held(136, "136");
+      created.add(workItemStream(PROJECT, 133));
+      const r = await held(133, "133");
       created.add(r.runId);
 
       const approved = await approve({
         project: PROJECT,
-        issue: 136,
+        issue: 133,
         base: "develop",
         client: fakeClient({ refSha: async () => r.headSha }),
         by: "human:test",
