@@ -86,8 +86,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 is recorded as the waiver of each refusing gate.
                                 Agreeing with a refusal is requeue
   lingtai requeue <project> --issue <n> --note <why>
-                                the move that is left when there is no diff to
-                                approve: a blocked item goes back to the queue
+                                another attempt, for any blocked item — with or
+                                without a diff to approve, and the move when you
+                                agree with a refusal: it goes back to the queue
                                 and the next pass cuts a fresh branch from a
                                 base that has since moved. --note is required —
                                 a person overruling a block is not anonymous
@@ -854,6 +855,16 @@ async function main(argv: string[]): Promise<number> {
       const issue = Number(flags["issue"]);
       if (!positional[0] || !Number.isInteger(issue)) {
         console.error("lingtai approve <project> --issue <n> [--note <text>]");
+        return 2;
+      }
+      // Refused by name, not ignored (#150). `parseFlags` takes any flag, so a
+      // `--reject` nothing read ran a plain approve: the diff a person meant to
+      // refuse landed, with an approval on the log they never gave.
+      if ("reject" in flags) {
+        console.error(
+          `lingtai approve has no --reject; nothing was approved. To send the item back for another attempt:\n` +
+            `  lingtai requeue ${positional[0]} --issue ${issue} --note <why>`,
+        );
         return 2;
       }
       return approveCommand({

@@ -23,7 +23,15 @@
  * still folds; nothing appends it.
  */
 import { type GateAction, resolveRecipe } from "@lingtai/recipe";
-import { parsePayload, reduceRun, reduceWorkItem, type GateState, type RunState } from "@lingtai/domain";
+import {
+  type Envelope,
+  parsePayload,
+  reduceRun,
+  reduceWorkItem,
+  type GateState,
+  type RunState,
+  type WorkItemState,
+} from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
@@ -122,6 +130,41 @@ export function waiversOver(input: { run: RunState; runId: string; onSha: string
   }));
 }
 
+/**
+ * Whether the item is still waiting on this run — blocked, or claimed on it
+ * between a hold's `ApprovalRequested` and its `WorkItemBlocked`. Anything else
+ * is an item somebody sent back, and its run's question is no longer asked.
+ */
+function heldOn(item: WorkItemState, runId: string): boolean {
+  return (
+    item.lifecycle.status === "blocked" ||
+    (item.lifecycle.status === "claimed" && item.lifecycle.runId === runId)
+  );
+}
+
+/**
+ * How long an approval with no outcome yet is taken to be merging. An
+ * integration is a fetch, a merge and a push; a process that died holding one
+ * leaves the same events behind, and past this it is no longer taken as
+ * a reason to refuse the requeue that rescues it.
+ */
+const MERGING_FOR_MS = 15 * 60_000;
+
+/**
+ * An `ApprovalGranted` newer than the item's block, recent enough to still be
+ * merging — or null. `approve()` appends the approval before it integrates and
+ * the outcome (`WorkItemLanded`, or a new `WorkItemBlocked` for `#84`'s failed
+ * merge) after, so between the two the item is still `blocked` and a requeue
+ * would put a ticket that is about to land back in the queue.
+ */
+function mergingApproval(item: readonly Envelope[], run: readonly Envelope[], now: Date): Envelope | null {
+  const granted = run.findLast((e) => e.type === "ApprovalGranted");
+  if (!granted) return null;
+  const block = item.findLast((e) => e.type === "WorkItemBlocked");
+  if (block && block.seq > granted.seq) return null;
+  return now.getTime() - granted.at.getTime() < MERGING_FOR_MS ? granted : null;
+}
+
 export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   const store = options.store ?? eventStore;
   const log = options.log ?? (() => {});
@@ -142,6 +185,22 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
       workItemId,
       reason: "not-awaiting-approval",
       detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
+    };
+  }
+
+  // **The run asking is not enough: the item has to still be held on it**
+  // (#150). `requeue` is offered beside Approve and appends only
+  // `WorkItemUnblocked`, which leaves this run `awaiting-approval` on the same
+  // sha — so a second tab, or `lingtai approve`, would merge the diff a person
+  // had just sent back, and land an item the queue was about to claim.
+  if (!heldOn(item, runId)) {
+    return {
+      ok: false,
+      workItemId,
+      reason: "requeued",
+      detail:
+        `${workItemId} is ${item.lifecycle.status}, not held on ${runId}: it was sent back for ` +
+        `another attempt after this approval was asked for. Nothing was merged.`,
     };
   }
 
@@ -246,6 +305,22 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   for (const g of refusing) log(`waived ${g.gate} on ${onSha.slice(0, 7)} by ${options.by}: ${note}`);
   log(`approved ${onSha.slice(0, 7)} by ${options.by}`);
 
+  // Once more, now that the approval is on the log: a requeue that landed
+  // between the read above and the append is seen here, before anything is
+  // merged. From this point `requeue` sees the approval and refuses instead
+  // (`mergingApproval`).
+  const still = reduceWorkItem(await store.read(workItemId));
+  if (!heldOn(still, runId)) {
+    return {
+      ok: false,
+      workItemId,
+      reason: "requeued",
+      detail:
+        `${workItemId} was sent back for another attempt while ${onSha.slice(0, 7)} was being ` +
+        `approved. The approval is on the log; nothing was merged.`,
+    };
+  }
+
   const merged = await integrate({
     project: options.project,
     owner: options.client.owner,
@@ -344,8 +419,9 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
 }
 
 /**
- * Putting a blocked item back in the queue: the move that is left when there is
- * no diff to approve.
+ * Putting a blocked item back in the queue, for another attempt from a fresh
+ * branch — whether or not there is a diff to approve. Since `#150` it is also
+ * the move for a person who agrees with a refusal on a card that has one.
  *
  * **A card must never offer only a control that refuses.** That is the `#84`
  * complaint stated as a rule: an item whose integration failed is `blocked`
@@ -388,6 +464,21 @@ export async function requeue(options: {
       ok: false,
       workItemId,
       detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
+    };
+  }
+
+  // An approval taken on this card and still merging (#150). Requeue sits
+  // beside Approve now, so both can be pressed on one card; `approve()` checks
+  // the item before it integrates, and this is the other half.
+  const runId = item.runs[item.runs.length - 1];
+  const merging = runId ? mergingApproval(events, await store.read(runId), new Date()) : null;
+  if (merging) {
+    return {
+      ok: false,
+      workItemId,
+      detail:
+        `${workItemId} was approved by ${merging.actor} at ${merging.at.toISOString()} and is ` +
+        `merging. Nothing was requeued — read the card again once it has landed or blocked.`,
     };
   }
 

@@ -1750,6 +1750,68 @@ git add -A && git commit -q -m "fix the race"
     }, 240_000);
 
     /**
+     * #150 — Requeue sits beside Approve, so one card can be sent back and
+     * approved. `requeue()` appends only `WorkItemUnblocked` and leaves the run
+     * `awaiting-approval` on the same sha, so an approval from a second tab
+     * merged the diff that had just been thrown away.
+     */
+    it("refuses to approve an item that was sent back to the queue after the approval was asked for", async () => {
+      created.add(workItemStream(PROJECT, 138));
+      const r = await held(138, "138");
+      created.add(r.runId);
+      const before = (await g(["rev-parse", "develop"], originPath)).stdout;
+
+      const back = await requeue({ project: PROJECT, issue: 138, by: "human:a", note: "the reviewer is right", store });
+      expect(back.ok, back.detail).toBe(true);
+
+      const approved = await approve({
+        project: PROJECT,
+        issue: 138,
+        base: "develop",
+        client: fakeClient({ refSha: async () => r.headSha }),
+        by: "human:b",
+        onSha: r.headSha,
+        note: "merging anyway",
+        store,
+        home,
+        gitEnv: { ...process.env, ...authored },
+      });
+
+      expect(approved.ok).toBe(false);
+      if (approved.ok) return;
+      expect(approved.reason).toBe("requeued");
+      expect((await store.read(r.runId)).map((e) => e.type)).not.toContain("ApprovalGranted");
+      expect((await store.read(r.workItemId)).map((e) => e.type)).not.toContain("WorkItemLanded");
+      expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before);
+    }, 240_000);
+
+    /**
+     * The other order: the approval is on the log and the merge has not
+     * reported yet, so the item is still `blocked`. A requeue then would put a
+     * ticket that is about to land back in the queue.
+     */
+    it("refuses to requeue while an approval granted on the card is still merging", async () => {
+      created.add(workItemStream(PROJECT, 139));
+      const r = await held(139, "139");
+      created.add(r.runId);
+
+      // Where `approve()` is between its append and `integrate`'s outcome.
+      const run = await store.read(r.runId);
+      await store.append(r.runId, run.length, [
+        {
+          type: "ApprovalGranted",
+          actor: "human:b",
+          data: { gate: "merge", action: "human:approve", runId: r.runId, onSha: r.headSha, by: "human:b", note: "" },
+        },
+      ]);
+
+      const back = await requeue({ project: PROJECT, issue: 139, by: "human:a", note: "run it again", store });
+      expect(back.ok).toBe(false);
+      expect(back.detail).toContain("merging");
+      expect(reduceWorkItem(await store.read(r.workItemId)).lifecycle.status).toBe("blocked");
+    }, 240_000);
+
+    /**
      * #92 — the board and `lingtai approve` gave two answers to one approval.
      *
      * The card sent `task_view.head_sha`, which is what the run *produced*. A

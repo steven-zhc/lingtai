@@ -245,9 +245,10 @@ gates:
     # their `package.json`s rather than trusting this list to keep up.
     #
     # `apps/board` is on it because a hold is only as sound as the approval that
-    # lifts it. The board is where a person approves, rejects or waives a held
-    # card, and it appends that decision itself with `@lingtai/conductor/decide`
-    # — so a board that recorded `approve` for a Reject, or for nobody, would
+    # lifts it. The board is where a person approves a held card — with the
+    # waivers `approve()` appends over a refusing gate — or sends it back to the
+    # queue, and it appends that decision itself with `@lingtai/conductor/decide`
+    # — so a board that recorded `approve` for a requeue, or for nobody, would
     # turn the second merge's hold into an approval no person gave. The test
     # counts every workspace that depends on `@lingtai/conductor` as a root, so
     # the next thing that decides is held too.

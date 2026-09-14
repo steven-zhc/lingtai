@@ -148,14 +148,16 @@ export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string()
  * What to do about a block, in the vocabulary of the controls that exist.
  *
  * **`approve` is a legitimate value, and most of the time it is the right one**
- * (#83). The three values are exactly the three moves a card has: `approve` and
- * `reject` answer an `ApprovalRequested`, and `requeue` is what is left when
- * there is no diff to answer about. A recommendation the board cannot carry out
- * would be a sentence rather than a recommendation.
+ * (#83). A card has two moves since #150, Approve and Back to the queue, and
+ * these values name them: `approve` merges the diff an `ApprovalRequested` is
+ * about, and `requeue` sends the item back for another attempt, with or without
+ * a diff to answer about. A recommendation the board cannot carry out would be
+ * a sentence rather than a recommendation.
  *
- * `reject` stays readable and has no control of its own since #150: it asked
- * the same question again. The board reads it as a recommendation against the
- * diff, and promotes Back to the queue exactly as it does for `requeue`.
+ * `reject` is not a move. There is no Reject control, because it asked the same
+ * question again; the value stays in the enum only so the blocks that carry it
+ * still parse, and the board reads it as `requeue` — a recommendation against
+ * the diff, promoting Back to the queue. Nothing should recommend it now.
  */
 export const BlockRecommendation = z.object({
   action: z.enum(["approve", "reject", "requeue"]),

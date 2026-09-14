@@ -892,10 +892,10 @@ details[open] > summary::before { content: "▾"; }
    that holds it. */
 .spair > .plan { overflow-y: auto; }
 
-/* The moves, under both boxes. One row whatever the item has: Approve, Reject
-   and Waive where there is an approval open, Send where there is a prompt to
-   send, and each control brings its own `.decide` — so they read as one row
-   rather than as three stacked decisions. */
+/* The moves, under both boxes. One row whatever the item has: Approve where
+   there is an approval open, Send where there is a prompt to send and Back to
+   the queue where there is not, and each control brings its own `.decide` — so
+   they read as one row rather than as stacked decisions. */
 .smoves {
   display: flex;
   flex-wrap: wrap;
