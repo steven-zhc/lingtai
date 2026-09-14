@@ -102,9 +102,31 @@ export interface RunCommandOptions {
   resultPath?: string;
 }
 
-/** The last N lines, capped — a build log can be megabytes. */
+/**
+ * A terminal's control sequences: CSI (`ESC [ … final`, which is every colour),
+ * OSC (`ESC ] … BEL` or `ESC ] … ESC \`, a hyperlink), and the two-byte rest.
+ */
+const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])/g;
+
+/**
+ * The output as text, with the terminal's escape sequences taken out
+ * ([0043](../../../doc/decisions/0043-evidence-is-plain-text.md), #156).
+ *
+ * A gate's stdout is a pipe, and colour arrives anyway: `pnpm` sets
+ * `FORCE_COLOR` for what it runs, so `pnpm test` hands vitest's red
+ * `Caused by` to the card as `[31m[1mCaused by: Error[22m: …`. Stripped here,
+ * at capture, rather than rendered on the page, because the evidence is not
+ * only read on the page — the fix prompt quotes it and `budget.evidence` is
+ * counted in it, and a fifth of that window was going to bytes nobody can read.
+ */
+export function plain(text: string): string {
+  return text.replace(ESCAPES, "");
+}
+
+/** The last N lines, capped — a build log can be megabytes. Plain text, so the
+ *  budget is spent on words rather than colour codes. */
 export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTES): string {
-  const trimmed = text.trimEnd();
+  const trimmed = plain(text).trimEnd();
   if (!trimmed) return "";
   const kept = trimmed.split("\n").slice(-lines).join("\n");
   return kept.length <= bytes ? kept : `…${kept.slice(-bytes)}`;
