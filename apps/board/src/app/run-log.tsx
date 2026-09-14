@@ -35,7 +35,7 @@
  * ticket leaves this outside it rather than have the board invent a second one
  * for the same facts.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLatch } from "./latch.tsx";
 
 /**
@@ -324,20 +324,49 @@ export function heldRun(held: string | null, running: string | null): string | n
 }
 
 /**
+ * Whether a held log goes under rank 2's other lines rather than above them.
+ *
+ * **Under, once its run has ended** (#152). The render that ends the run is the
+ * one that carries the refusal, and the refusal is the page's answer from then
+ * on: a finished log above it put the quote, the one sentence and the moves
+ * below the first screen for the very person who was watching the item.
+ */
+export function logBelow(shown: string | null, running: string | null): boolean {
+  return shown !== null && shown !== running;
+}
+
+/**
  * Rank 2's `RunLog`, for an item that is running — and still there, no longer
  * live, once it has stopped. See `heldRun`. A page loaded after the run ended
  * starts with nothing held and shows nothing, because nobody was reading.
+ *
+ * `children` are rank 2's other lines. The log is above them while it follows
+ * and under them, shorter, once it has ended (`logBelow`); both are keyed, so
+ * the move is a reorder and not a remount, and the reader keeps its lines.
  */
-export function FollowedLog({ running, className }: { running: string | null; className?: string }) {
+export function FollowedLog({
+  running,
+  className = "alog",
+  children,
+}: {
+  running: string | null;
+  className?: string;
+  children?: ReactNode;
+}) {
   const [held, setHeld] = useState(running);
   useEffect(() => {
     setHeld((was) => heldRun(was, running));
   }, [running]);
   const shown = heldRun(held, running);
-  if (shown === null) return null;
+  const below = logBelow(shown, running);
   // Keyed by run, so a different run is a new follower rather than this one's
   // open state and lines carried over to a file they were not about.
-  return <RunLog key={shown} runId={shown} live={running === shown} className={className} />;
+  const log =
+    shown === null ? null : (
+      <RunLog key={shown} runId={shown} live={running === shown} className={below ? `${className} ended` : className} />
+    );
+  const rest = <Fragment key="rest">{children}</Fragment>;
+  return <>{below ? [rest, log] : [log, rest]}</>;
 }
 
 /** What the right of the summary says, and it is about the file, never the run. */

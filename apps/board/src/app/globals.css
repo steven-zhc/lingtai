@@ -831,6 +831,9 @@ details[open] > summary::before { content: "▾"; }
 }
 .slog > summary { font-size: 0.75rem; }
 .slog .alogbody { height: 14rem; margin-top: 0.3rem; }
+/* Its run ended under a reader: under the refusal, and short, so the quote,
+   the sentence and the moves are still on the first screen (#152). */
+.slog.ended .alogbody { height: auto; max-height: 5rem; }
 
 /* One deciding line at rank 2, in two cases. A block that has no diagnosis at
    all — every block written before #83 — keeps its `in attempt N ↓`, because

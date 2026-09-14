@@ -222,8 +222,10 @@ export function Standing({
               had, moved and not changed — latched open, tailing, pinned to its
               last line — and told so by its class, which is the slot's size and
               the teal the running state already wears. It stays, no longer
-              following, when the run ends under a reader: see `heldRun`. */}
-          <FollowedLog running={following} className="alog slog" />
+              following, when the run ends under a reader: see `heldRun` — and
+              goes under the lines below, which are its children so that it
+              can, because the refusal is the answer then (`logBelow`). */}
+          <FollowedLog running={following} className="alog slog">
 
           {/* The sentence a 404 was standing in for. Lingtai has nothing on this
               stream *and* could not ask GitHub, so what it knows is that it does
@@ -275,6 +277,7 @@ export function Standing({
             deciding={standing.deciding}
             attempt={standing.attempt}
           />
+          </FollowedLog>
         </div>
 
         {/* ---- rank 3: so what ---------------------------------------------- */}

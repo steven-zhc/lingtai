@@ -266,8 +266,35 @@ describe("a running task", () => {
 describe("the record", () => {
   /** Always the same four, in the same order, whatever the state (#152). */
   it("is four collapsed rows in a fixed order, the same four in every state", () => {
-    const landed = running();
-    const queuedTask: TaskDetail = { ...task([], []), taskId: ITEM };
+    const run = foldRun(claim, 1, [
+      e(RUN, "RunStarted", { baseSha: BASE }),
+      e(RUN, "RunProposedCompletion", { headSha: HEAD }),
+      e(RUN, "GatePassed", { gate: "proposed", action: "review", onSha: HEAD }),
+      e(RUN, "RunFinished", { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
+    ]);
+    const landed = task(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN }, "2026-09-14T04:00:00Z"),
+        e(ITEM, "WorkItemLanded", { mergeCommit: HEAD, base: "main" }, "2026-09-14T04:30:00Z"),
+      ],
+      [run],
+    );
+    const queuedTask = task([], [], {
+      queued: {
+        position: 2,
+        inLine: 5,
+        notOffered: null,
+        runnableAt: null,
+        paused: false,
+        dependenciesUnread: null,
+        plan: null,
+        problem: null,
+      },
+    });
+    // Not vacuous: each is the state its name says.
+    expect(landed.standing.state).toBe("landed");
+    expect(queuedTask.standing.state).toBe("queued");
+    expect(page(queuedTask)).toContain("offered by GitHub");
     for (const t of [blocked(), running(), landed, queuedTask]) {
       const html = page(t);
       const rows = [...html.matchAll(/<details class="rrow" id="record-([a-z]+)"( open="")?/g)];

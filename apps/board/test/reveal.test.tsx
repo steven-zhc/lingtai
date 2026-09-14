@@ -13,10 +13,11 @@
  * There is no document in this suite, so each is asserted at the seam it has:
  * the walk over a structural `<details>`, and the choice of run as a function.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { openTo, type Disclosing } from "../src/app/latch.tsx";
-import { FollowedLog, heldRun } from "../src/app/run-log.tsx";
+import { fragmentId, openTo, type Disclosing } from "../src/app/latch.tsx";
+import { FollowedLog, heldRun, logBelow } from "../src/app/run-log.tsx";
 
 /** A chain of elements, innermost first; `details` marks which are disclosures. */
 function chain(...kinds: ("details" | "div")[]): { target: Disclosing; nodes: Disclosing[] } {
@@ -51,6 +52,14 @@ describe("following a pointer into the record", () => {
     expect([nodes[1]!.open, nodes[2]!.open, nodes[4]!.open]).toEqual([true, true, true]);
     expect(openTo(target)).toBe(0);
   });
+
+  it("takes a fragment with a malformed escape as written, rather than throwing", () => {
+    expect(fragmentId("#attempt-2")).toBe("attempt-2");
+    expect(fragmentId("#a%20b")).toBe("a b");
+    expect(() => fragmentId("#100%")).not.toThrow();
+    expect(fragmentId("#100%")).toBe("100%");
+    expect(fragmentId("#%E0")).toBe("%E0");
+  });
 });
 
 describe("rank 2's log, when its run ends", () => {
@@ -72,5 +81,26 @@ describe("rank 2's log, when its run ends", () => {
     expect(renderToStaticMarkup(<FollowedLog running={RUN} className="alog slog" />)).toContain(
       '<details class="alog slog" open=""',
     );
+  });
+
+  /**
+   * The render that ends the run carries the refusal, and a finished log above
+   * it pushed the quote, the sentence and the moves off the first screen.
+   */
+  it("goes under rank 2's other lines once its run has ended, and stays above them while it runs", () => {
+    expect(logBelow(RUN, null)).toBe(true);
+    expect(logBelow(RUN, RUN)).toBe(false);
+    expect(logBelow(null, null)).toBe(false);
+    const html = renderToStaticMarkup(
+      <FollowedLog running={RUN} className="alog slog">
+        <p className="sreason">refused</p>
+      </FollowedLog>,
+    );
+    expect(html.indexOf('class="alog slog"')).toBeLessThan(html.indexOf('class="sreason"'));
+  });
+
+  it("marks an ended log for the shorter frame, under the refusal", () => {
+    const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.slog\.ended \.alogbody\s*\{[^}]*height:\s*auto/);
   });
 });

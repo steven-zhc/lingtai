@@ -105,6 +105,21 @@ export function openTo(target: Disclosing): number {
 }
 
 /**
+ * The element id a `#fragment` names. A malformed escape — `#100%`, a link cut
+ * off mid-escape — is taken as written rather than thrown: an effect that
+ * throws takes the whole task page to the error boundary, and an unknown
+ * fragment has only ever done nothing.
+ */
+export function fragmentId(hash: string): string {
+  const raw = hash.slice(1);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * `openTo` for the page: on load, on every hash change, and on every click of a
  * same-page link — the click because following a link to the hash already in
  * the address bar fires no navigation and no `hashchange`. Renders nothing.
@@ -117,7 +132,7 @@ export function Reveal() {
   useEffect(() => {
     const reveal = (hash: string, scroll: boolean) => {
       if (!hash.startsWith("#") || hash.length < 2) return;
-      const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+      const target = document.getElementById(fragmentId(hash));
       if (target === null) return;
       // Scrolled only where the browser will not: a row that was closed when it
       // navigated, or a link to the hash it is already at.
