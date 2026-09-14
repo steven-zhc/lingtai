@@ -736,19 +736,22 @@ details[open] > summary::before { content: "▾"; }
 }
 .standing.onyou .sread .sstate { color: var(--signal); }
 
-.ssince {
-  display: flex;
+/* Rank 8: every identifier the page has, once, as one muted line in the bar
+   (#152). It was the block's own last line, and the attempt row printed the
+   same run id again as a full uuid. The bar's own size and grey; the dots are
+   drawn rather than typed so the markup holds the facts and nothing else. */
+.coords {
+  display: inline-flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--muted);
+  align-items: baseline;
+  gap: 0 0.55rem;
+  min-width: 0;
 }
-/* The coordinate, and it is also the way down (#132): one line rather than a
-   fact and an `in attempt N ↓` beside it saying the same number again. `.sptr`
-   supplies the colour and the arrow's affordance; this supplies the type. */
-.ssince .sfrom { font-family: var(--mono); }
+.coords > * + *::before { content: "·"; margin-right: 0.55rem; color: var(--rule-2); }
+/* The coordinate, and it is also the way down (#132). `.sptr` supplies the
+   colour and the arrow's affordance; this takes back its push to the right,
+   which is for a line of its own and not for a place in this one. */
+.coords .sfrom { font-family: var(--mono); margin-left: 0; }
 
 /* The one neutral divider the design allows, and the extent of the block's
    argument: above it the state, below it what is being asked. */
@@ -779,9 +782,14 @@ details[open] > summary::before { content: "▾"; }
    in `px` for a 22rem column. The words are shared (`describeHold`); the sizes
    are not, and never were. */
 .sbody .diag { max-width: 62rem; font-size: 0.95rem; line-height: 1.55; }
-.sbody .needs { font-size: 0.8rem; }
-.sbody .did,
-.sbody .rec { max-width: 62rem; font-size: 0.8rem; line-height: 1.55; }
+/* Rank 2's own grid, so what refused and the diagnosis' sentence keep the gap
+   they had when they were children of `.sbody`. */
+.swhy { display: grid; gap: 0.35rem; }
+
+/* Rank 3: one sentence, and a step down from the reason (#152). Ink and not
+   brass — the rule at the left says who is waited on, and a sentence in amber
+   would be a second say. It was `.needs`, `.did` and `.rec` in a row. */
+.sowhat { margin: 0.2rem 0 0; max-width: 62rem; font-size: 0.85rem; line-height: 1.5; color: var(--ink); }
 
 /* What refused, in its own words, at the second rank and open on load.
    A `<details>` so a reader who has read it can put it away — and open,
@@ -808,8 +816,21 @@ details[open] > summary::before { content: "▾"; }
   border-radius: 2px;
   white-space: pre;
   overflow: auto;
-  max-height: 18rem;
+  max-height: 14rem;
 }
+
+/* Rank 2 while the item runs: its live log, in the refusal's slot and at its
+   size, under the teal the running state already wears (#152). Only the frame
+   is here — what the log does is `run-log.tsx`'s and did not change. A fixed
+   height rather than a bound, because a log that starts empty and grows would
+   otherwise move the sentence and the moves under it with every line. */
+.slog {
+  margin: 0.15rem 0 0;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--accent);
+}
+.slog > summary { font-size: 0.75rem; }
+.slog .alogbody { height: 14rem; margin-top: 0.3rem; }
 
 /* One deciding line at rank 2, in two cases. A block that has no diagnosis at
    all — every block written before #83 — keeps its `in attempt N ↓`, because
@@ -844,7 +865,7 @@ details[open] > summary::before { content: "▾"; }
 .sptr { margin-left: auto; font-family: var(--mono); color: var(--accent-ink); text-decoration: none; }
 .sptr:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* --- the two boxes, and the moves under them ------------------------------
+/* --- the two boxes, and the moves above them (#152) -----------------------
    Side by side above ~64rem, stacked below it. The outgoing prompt is first in
    the DOM and first on the line, so reading order, use order and tab order are
    one order — nothing here is reordered by CSS (#111).
@@ -892,7 +913,7 @@ details[open] > summary::before { content: "▾"; }
    that holds it. */
 .spair > .plan { overflow-y: auto; }
 
-/* The moves, under both boxes. One row whatever the item has: Approve where
+/* The moves, above both boxes (#152). One row whatever the item has: Approve where
    there is an approval open, Send where there is a prompt to send, Back to the
    queue where there is not, and each control brings its own `.decide` — so they read as one row
    rather than as three stacked decisions. */
@@ -901,7 +922,7 @@ details[open] > summary::before { content: "▾"; }
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.5rem 0.75rem;
-  margin-top: 0.2rem;
+  margin: 0.2rem 0;
 }
 
 /* --- what will be sent ----------------------------------------------------
@@ -1061,7 +1082,7 @@ details[open] > summary::before { content: "▾"; }
 /* A column, in three parts that do not move: the meter, the conversation, and
    the box you type in. The conversation is the only one that grows, and it
    grows into a scroller rather than into the page — the input box and the
-   moves under it stay where they were when you started typing (#132). */
+   moves above it stay where they were when you started typing (#132, #152). */
 .chat {
   display: flex;
   flex-direction: column;
@@ -1109,13 +1130,40 @@ details[open] > summary::before { content: "▾"; }
 .chatlog.done { opacity: 0.72; }
 .chatturn { display: grid; gap: 0.3rem; }
 
-.chatq { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--ink); }
+.chatq { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--ink); white-space: pre-wrap; }
+/* **Turns, not a transcript** (#152): a bubble each, and who said it on top.
+   The person's to the right on the teal wash, the assistant's to the left on
+   the surface — the two sides are the two authors, so a reader scanning up
+   the pane can tell whose line is whose before reading it. */
+.bubble {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 92%;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+}
+.bubble.asked { justify-self: end; background: var(--accent-soft); }
+.bubble.answer { justify-self: start; background: var(--surface); border: 1px solid var(--rule); }
 .chatwho {
-  margin-right: 0.45rem;
+  margin: 0;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   color: var(--muted);
 }
+/* The answer grows under this, and only while a writer is touching the trace
+   (`Trace`). A block rather than a bar so it reads at 0.68rem; it blinks, and
+   stops when somebody has asked for less motion — the colour still says it. */
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: caret-blink 1s steps(1) infinite;
+}
+@keyframes caret-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
 
 /* Lingtai's own sentence about what was readable, above the answer. Muted but
    never hidden: an attempt that left no branch is the fact that killed #89's
@@ -1166,6 +1214,9 @@ details[open] > summary::before { content: "▾"; }
   border-left: 2px solid var(--signal);
 }
 .chatcannot li::before { content: "cannot: "; color: var(--muted); font-family: var(--mono); }
+/* No brass while the machine works (#152): nobody is waiting on you, so the
+   box's one amber rule goes neutral with its buttons. */
+.chat.quiet .chatcannot { border-left-color: var(--rule-2); }
 
 .chatmeta {
   display: flex;
@@ -1220,7 +1271,57 @@ details[open] > summary::before { content: "▾"; }
   resize: vertical;
 }
 
-/* The ticket, at the top. What was asked, above what was done — a page you
+/* --- the record -----------------------------------------------------------
+   Rank 7 (#152). Everything the first screen does not need, as four collapsed
+   rows — findings, files, attempts, prompt — always those, in that order, so
+   the shape is learned once. One frame and hairlines, the ledger's rule: rows
+   of one table rather than four cards. */
+.record {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+.rrow + .rrow { border-top: 1px solid var(--rule); }
+.rrow { scroll-margin-top: 1rem; }
+.rrow > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding: 0.55rem 0.85rem;
+  font-family: var(--mono);
+}
+.rname {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+/* The row's one fact, at the right. A ticket title is the longest of them and
+   is clipped here rather than wrapping the row into two. */
+.rfact {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.rbody { display: grid; gap: 0.6rem; padding: 0 0.85rem 0.85rem; }
+.rpart { display: grid; gap: 0.3rem; }
+/* `attempt 2` over an attempt's share of a row, and `history` over the log. */
+.rof {
+  margin: 0.3rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+/* What the diagnosis said past rank 3's one sentence. Muted: it is record. */
+.rhow { margin: 0; max-width: 82ch; font-size: 0.8rem; line-height: 1.55; color: var(--ink-2); }
+
+/* The ticket, in the prompt row. What was asked, above what was done — a page you
    decide on has to carry the request and not only the response (#87). */
 .tref { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }
 .ttitle { margin: 0 0 0.7rem; font-size: 1.05rem; font-weight: 600; line-height: 1.35; color: var(--ink); }

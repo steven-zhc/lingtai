@@ -5,8 +5,9 @@
  *
  * The other half of `#110`, and it sits inside the ledger row (`#102`) because
  * that is where the attempt is: a log belongs to a run, and a run is an
- * attempt. In that row's order it comes second — what the agent was told, then
- * **what it did**, then what it changed and how it was judged.
+ * attempt. **Except while the item is running** (#152): then what the run is
+ * doing is the whole of the page's answer, and the same log is rank 2 of the
+ * task page, where a refusal would be on a blocked one.
  *
  * **Off until asked, which is the whole of the design here.** Nothing tails
  * anything on a page load: the `<details>` is closed, and the connection is
@@ -253,6 +254,7 @@ export function useLogTail(
 export function RunLog({
   runId,
   live = false,
+  className = "alog",
 }: {
   runId: string;
   /**
@@ -262,6 +264,12 @@ export function RunLog({
    * this component, which knows about a file and never about a run (0034 §8).
    */
   live?: boolean;
+  /**
+   * Where it sits, and nothing about what it does. The attempt row's `alog`,
+   * or the task page's rank 2 for an item that is running (#152) — the same
+   * follower in a different slot.
+   */
+  className?: string;
 }) {
   // Open is latched rather than a bare attribute because it is now two things:
   // a running attempt starts open, and a reader can close it. `useState(live)`
@@ -279,7 +287,7 @@ export function RunLog({
 
   return (
     <details
-      className="alog"
+      className={className}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >

@@ -49,7 +49,7 @@ const finished = () =>
   ]);
 
 const render = (run: ReturnType<typeof running>) =>
-  renderToStaticMarkup(<Attempt run={run} alone={false} project="lingtai" deciding={false} />);
+  renderToStaticMarkup(<Attempt run={run} alone={false} deciding={false} />);
 
 describe("the attempt in flight", () => {
   it("is open, and its log is open and following", () => {
@@ -59,6 +59,17 @@ describe("the attempt in flight", () => {
     // the log carries `open` because `RunLog` was told this run is live.
     expect(html).toContain('<details class="attempt" id="attempt-2" open=""');
     expect(html).toContain('<details class="alog" open=""');
+  });
+
+  /**
+   * The same run, on a page whose item is running: its log is rank 2 there
+   * (#152), so the row says where it went instead of opening a second follower
+   * on the same file.
+   */
+  it("points up to the page's own log when the item is running on it", () => {
+    const html = renderToStaticMarkup(<Attempt run={running()} alone={false} deciding={false} followed />);
+    expect(html).not.toContain('class="alog"');
+    expect(html).toContain("being followed at the top of this page");
   });
 
   it("leaves every finished attempt closed, and reading nothing", () => {

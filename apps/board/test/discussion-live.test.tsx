@@ -107,6 +107,56 @@ describe("the box while it is being answered", () => {
   });
 });
 
+/**
+ * **Turns, not a transcript** (#152): *"a discussion is attended and the person
+ * is the loop"* (0033 §4), and a loop with no feedback is a person asking twice.
+ */
+describe("the conversation, as turns", () => {
+  const answered: DiscussionView = {
+    ...waiting,
+    waiting: false,
+    turns: [
+      {
+        ...waiting.turns[0]!,
+        answer: { text: "it did", failure: null, cannot: [], read: [], costUsd: 0.1, proposal: null },
+      },
+    ],
+  };
+
+  it("gives every turn two bubbles, each with its author", () => {
+    const html = render([answered]);
+    expect(html.split('class="bubble asked"').length - 1).toBe(1);
+    expect(html.split('class="bubble answer"').length - 1).toBe(1);
+    expect(html.split('class="chatwho"').length - 1).toBe(2);
+    expect(html.indexOf("human:steven")).toBeLessThan(html.indexOf("why did attempt 2"));
+    expect(html.indexOf("assistant")).toBeLessThan(html.indexOf("it did"));
+  });
+
+  it("puts the turn still being answered in the assistant's bubble, where its answer will be", () => {
+    const html = render([waiting]);
+    const bubble = html.indexOf('class="bubble answer"');
+    expect(bubble).toBeGreaterThan(-1);
+    expect(html.indexOf('data-trace="off"')).toBeGreaterThan(bubble);
+  });
+
+  it("grows the answer under a caret while something is writing it, and only then", () => {
+    expect(renderToStaticMarkup(<Trace lines={["12:00:01  think"]} state="reading" />)).toContain('class="caret"');
+    expect(renderToStaticMarkup(<Trace lines={[]} state="reading" writing={true} />)).toContain('class="caret"');
+    // A leftover nobody is writing, and a trace that ended, are not a cursor.
+    expect(renderToStaticMarkup(<Trace lines={["x"]} state="reading" writing={false} />)).not.toContain("caret");
+    expect(renderToStaticMarkup(<Trace lines={["x"]} state="removed" />)).not.toContain("caret");
+    expect(renderToStaticMarkup(<Trace lines={[]} state="queued" />)).not.toContain("caret");
+  });
+
+  it("wears no brass when the item is running", () => {
+    const quiet = renderToStaticMarkup(
+      <Discussion taskId="wi-lingtai-89" attempt={2} discussions={[answered]} quiet />,
+    );
+    expect(quiet).not.toContain("btn pri");
+    expect(render([answered])).toContain("btn pri");
+  });
+});
+
 describe("asking again for a trace that is not there yet", () => {
   it("backs off rather than stopping", () => {
     expect(againAfter(0)).toBe(1_500);

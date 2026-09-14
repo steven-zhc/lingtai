@@ -18,7 +18,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
 import { foldRun, standingOf, type Claim, type StandingView } from "../src/lib/task.ts";
 import type { OutgoingView } from "../src/lib/prompt.ts";
-import { Standing } from "../src/app/standing.tsx";
+import { Coords, Standing, soWhat } from "../src/app/standing.tsx";
 
 let seq = 0n;
 
@@ -454,7 +454,10 @@ describe("the block, rendered", () => {
     const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
 
     expect(html).toContain("blocked");
-    expect(html).toContain("from attempt 2 of 2");
+    // The coordinate is the bar's now (#152), and still says which attempt.
+    expect(renderToStaticMarkup(<Coords standing={HELD} taskId="wi-lingtai-112" queued={null} />)).toContain(
+      "from attempt 2 of 2",
+    );
     expect(html).toContain("conflict: agent/112 does not merge into develop");
     // The move that is left when there is no diff to approve (#84).
     expect(html).toContain("Back to the queue");
@@ -494,9 +497,13 @@ describe("the block, rendered", () => {
       />,
     );
 
-    expect(html).toContain("a failure needs acknowledging");
+    // Rank 3, as the one sentence it now is (#152): who is needed and what the
+    // diagnosis recommends. What was done is the record's, not the block's.
+    expect(html).toContain(
+      "a failure needs acknowledging — recommends requeue, because develop has moved; a fresh branch should merge",
+    );
+    expect(html).not.toContain("a repair for conflict produced this diff");
     expect(html).toContain("the branch does not merge into develop");
-    expect(html).toContain("recommends requeue");
     // Rank 2: the refusal in its own words, and open — the evidence was on this
     // page the whole time, three ranks down behind a disclosure, and the block
     // whose job is to say why a task stopped had a gate's name to say it with.
@@ -828,9 +835,10 @@ describe("the block, rendered", () => {
       />,
     );
     // What a reader sees, with the markup taken out: an id in a `title` is a
-    // tooltip on the one place it is printed, not a second printing of it.
-    const read = html.slice(0, html.indexOf('class="spair"')).replace(/<[^>]*>/g, " ");
-    expect(read.split(RUN_2.slice(0, 12)).length - 1).toBe(1);
+    // tooltip on the one place it is printed, not a second printing of it. The
+    // block prints none — they are the bar's, and the attempt row's (#152).
+    const read = html.replace(/<[^>]*>/g, " ");
+    expect(read.split(RUN_2.slice(0, 12)).length - 1).toBe(0);
   });
 
   it("points at the attempt rather than reprinting it", () => {
@@ -920,7 +928,7 @@ const OUTGOING: OutgoingView = {
 };
 
 /** Just the row of moves: the Ask button inside the discussion is amber too. */
-const moves = (html: string) => html.slice(html.indexOf('class="smoves"'));
+const moves = (html: string) => html.slice(html.indexOf('class="smoves"'), html.indexOf('class="spair"'));
 
 const render = (standing: StandingView, outgoing: OutgoingView | null) =>
   renderToStaticMarkup(
@@ -1015,12 +1023,91 @@ describe("the moves the column ends in", () => {
    * #111 §3. The viewport is 1440 and the column was a single stack: DOM order
    * is reading order is tab order, so the prompt is first in the markup and the
    * CSS reorders nothing.
+   *
+   * **And the moves are above the pair** (#152). Under it, a discussion that
+   * grew pushed the button you were deciding with off the screen; above it,
+   * nothing that grows comes before them in the page.
    */
-  it("puts the prompt and the discussion in one pair, the prompt first", () => {
+  it("puts the prompt and the discussion in one pair, the prompt first, under the moves", () => {
     const html = render(HELD, OUTGOING);
 
     expect(html).toContain('class="spair"');
     expect(html.indexOf("will be sent")).toBeLessThan(html.indexOf("discussion"));
-    expect(html.indexOf('class="spair"')).toBeLessThan(html.indexOf('class="smoves"'));
+    expect(html.indexOf('class="smoves"')).toBeLessThan(html.indexOf('class="spair"'));
+  });
+});
+
+// -------------------------------------------------------------- rank 3 ----
+
+/**
+ * **Rank 3 is one sentence** (#152). It was `describeHold`'s lines printed in a
+ * row — *your judgement is needed*, the rounds and the decline (#142), the
+ * recommendation with the restart refusal (0040) in its why — four tickets'
+ * sentences and nobody's one. `soWhat` returns a string, and the block renders
+ * that string in one element; these pin both halves.
+ */
+describe("what the refusal means for the decision", () => {
+  const LONG_WHY = [
+    "`review` is a check that stayed red rather than a judgement, and for one of those the work is still there.",
+    "",
+    "**Why:** starting over would throw away a branch whose remedy is mechanical (0039 §2). And no second approach.",
+  ].join("\n");
+
+  const diagnosed = (recommendation: { action: "approve" | "requeue" | "reject"; why: string } | null) => ({
+    ...HELD,
+    needs: "judgement" as const,
+    failed: ["proposed:review"],
+    saidBy: "proposed:review",
+    diagnosis: {
+      what: "`review` still refuses agent/147 at a4e9df9.",
+      done: "2 round(s) of fix-and-recheck ran, and the action refused what they produced.\n\nNo further agent was bought.",
+      raw: "the reviewer did not finish (crash)",
+      recommendation,
+    },
+  });
+
+  it("is one sentence on one line, whatever the diagnosis carries", () => {
+    const cases: StandingView[] = [
+      HELD,
+      diagnosed(null),
+      diagnosed({ action: "requeue", why: LONG_WHY }),
+      diagnosed({ action: "approve", why: "x".repeat(900) }),
+      diagnosed({ action: "reject", why: "" }),
+      { ...HELD, state: "running", onYou: false, who: "an agent is working", question: null },
+      { ...HELD, state: "queued", onYou: false, who: "waiting for a conductor to take it", question: null },
+    ];
+    for (const standing of cases) {
+      const said = soWhat(standing);
+      expect(said).not.toBe("");
+      expect(said).not.toContain("\n");
+      // One sentence: no full stop followed by another sentence inside it.
+      expect(said).not.toMatch(/[.!?]\s+\S/);
+      expect(said.length).toBeLessThanOrEqual(240);
+    }
+    expect(soWhat(diagnosed({ action: "requeue", why: LONG_WHY }))).toBe(
+      "your judgement is needed — recommends requeue, because `review` is a check that stayed red rather than a judgement, and for one of those the work is still there",
+    );
+  });
+
+  it("renders in one element, and no line of `describeHold` beside it", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        standing={diagnosed({ action: "requeue", why: LONG_WHY })}
+        project="lingtai"
+        issue={147}
+        taskId="wi-lingtai-147"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+    expect(html.split('data-rank="so-what"').length - 1).toBe(1);
+    // The four sentences it replaces are not in the block at all.
+    expect(html).not.toMatch(/class="(needs|did|rec)"/);
+    expect(html).not.toContain("fix-and-recheck");
+    expect(html).not.toContain("And no second approach");
+    // Between rank 3 and the moves there is nothing but the end of the body.
+    const after = html.slice(html.indexOf('data-rank="so-what"'), html.indexOf('data-rank="moves"'));
+    expect(after.match(/<p\b/g) ?? []).toHaveLength(0);
   });
 });

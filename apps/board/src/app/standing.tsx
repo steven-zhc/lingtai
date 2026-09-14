@@ -11,6 +11,7 @@ import { Decide, Requeue, RunNow, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
 import { Plan } from "./plan.tsx";
+import { RunLog } from "./run-log.tsx";
 
 /**
  * Why this task is not moving, above everything else.
@@ -36,12 +37,26 @@ import { Plan } from "./plan.tsx";
  * lines are simply absent. That degradation is #83's own requirement, not a
  * courtesy.
  *
- * **Four ranks: state · reason · move · coordinates** (#132). The block used to
- * run the other way — six lines in three sizes and three greys, the further
- * down you read the more specific it got while the type got smaller, and
- * `run-5cb24ac5` in two of them. So the state is the readout, *why it stopped*
- * is second and quoted from whatever refused, *what to do* is third, and every
- * identifier is fourth and appears once.
+ * **The ranks: state · why · so what · moves · pair** (#132, #152). The block
+ * used to run the other way — six lines in three sizes and three greys, the
+ * further down you read the more specific it got while the type got smaller,
+ * and `run-5cb24ac5` in two of them. So the state is the readout, *why it
+ * stopped* is second and quoted from whatever refused, *what that means for the
+ * decision* is third, the moves are fourth and the pair is fifth. Every
+ * identifier is in the bar (`Coords`), once.
+ *
+ * **Rank 3 is one sentence, and `soWhat` is the only thing that fills it**
+ * (#152). It was a paragraph assembled from four tickets — the round count,
+ * the decline (#142), the restart refusal (0040) — each sentence true when it
+ * was added and nobody holding the whole, so the reader composed the answer out
+ * of them. What those sentences said is in the record's attempts row.
+ *
+ * **The state chooses what fills rank 2** (#152). For a blocked item it is the
+ * refusal. For a running item *what it is doing* is the whole answer, so rank 2
+ * is that run's live log — same slot, same size, teal. It used to be filed as
+ * an attachment on an attempt row, so the one state it answers had to already
+ * know it was there: *"if it is running I can never find where to attach to the
+ * agent log."*
  *
  * **The reason is the gate's own words, and the pointer is what stayed a
  * pointer.** Design §2 said the evidence is a pointer and not a copy, and the
@@ -55,7 +70,7 @@ import { Plan } from "./plan.tsx";
  *
  * **It ends in the thing that will actually run** (design §4). A recommendation
  * is the system's sentence about what it intends; the prompt is what runs, so
- * it is shown here — before the buttons that send it, and editable. That is
+ * it is shown here — beside the discussion, under the buttons that send it, and editable. That is
  * what turns approval from *yes / no* into *yes, but*, which is the answer a
  * person usually has and until `#104` could not give — and until `#111` could
  * not act on, because the box was editable and nothing sent it.
@@ -67,10 +82,12 @@ import { Plan } from "./plan.tsx";
  * decides, and *"why is this stuck"* is a question asked at the moment of
  * deciding rather than at the bottom of the page (0033).
  *
- * **Those two sit side by side above ~64rem**, the prompt first, and the moves
- * under both. One stack left a third of a 1440 viewport empty and put the
- * discussion below the fold of the thing it is a conversation about; DOM order
- * is reading order is tab order, so nothing is reordered by CSS.
+ * **Those two sit side by side above ~64rem**, the prompt first, and **the
+ * moves above both** (#152). One stack left a third of a 1440 viewport empty
+ * and put the discussion below the fold of the thing it is a conversation
+ * about; under the pair, a pane that grew pushed the button you were deciding
+ * with off the screen, and above it nothing the pair does can move them. DOM
+ * order is reading order is tab order, so nothing is reordered by CSS.
  *
  * **No frame.** One rule states the block's extent, and it is amber only when a
  * person is the thing being waited on, because that is the only thing amber
@@ -132,12 +149,12 @@ export function Standing({
   // still your move. `live` only ever paints when nothing is on you.
   const mark = standing.onYou ? " onyou" : standing.state === "running" ? " live" : "";
 
-  // **The four ranks** (#132). `describeHold` decides the words; this decides
-  // which rank each of them is. *What happened* is the reason and reads second;
-  // everything else it returns — what is needed, what was already done, what is
-  // recommended — is about the move and reads third.
+  // `describeHold` decides the words. *What happened* is the reason and reads
+  // second; what is needed and what is recommended are `soWhat`'s one sentence,
+  // and what was already done is the record's (#152).
   const what = held.find((line) => line.part === "what") ?? null;
-  const move = held.filter((line) => line.part !== "what");
+  // The run whose log is rank 2, when the item is running. See the doc above.
+  const following = standing.state === "running" ? standing.runId : null;
 
   /**
    * The refusal in the words of whatever refused, and who said them.
@@ -179,7 +196,7 @@ export function Standing({
       {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
-      <p className="sread">
+      <p className="sread" data-rank="state">
         <span className="sstate">{standing.state}</span>
         {/* The age, where there is one. Null is a ticket nothing in the log has
             ever moved, and the render clock is not an answer for it — the card
@@ -195,17 +212,17 @@ export function Standing({
         {inLine !== null ? <span className="sage">{inLine}</span> : null}
       </p>
 
-      {/* The reason and the move, under one neutral rule. Nothing here is
-          amber: the rule at the left already says a person is being waited on,
-          and a second amber would dilute it. */}
-      {question !== null ||
-      held.length > 0 ||
-      standing.deciding !== null ||
-      stopped !== null ||
-      unknown ||
-      queued?.problem ? (
-        <div className="sbody">
-          {/* ---- rank 2: why it stopped ------------------------------------ */}
+      {/* The reason and what it means, under one neutral rule. Always drawn:
+          rank 3 has a sentence in every state, so there is no block with
+          nothing under the readout. */}
+      <div className="sbody">
+        {/* ---- rank 2: why it stopped, or what it is doing ------------------ */}
+        <div className="swhy" data-rank="why">
+          {/* The run in flight, following (#152). The `RunLog` the attempt row
+              had, moved and not changed — latched open, tailing, pinned to its
+              last line — and told so by its class, which is the slot's size and
+              the teal the running state already wears. */}
+          {following !== null ? <RunLog runId={following} live className="alog slog" /> : null}
 
           {/* The sentence a 404 was standing in for. Lingtai has nothing on this
               stream *and* could not ask GitHub, so what it knows is that it does
@@ -257,103 +274,24 @@ export function Standing({
             deciding={standing.deciding}
             attempt={standing.attempt}
           />
-
-          {/* ---- rank 3: what to do about it ------------------------------- */}
-
-          {/* What is needed, what was already done, and what is recommended.
-              The weights are the card's: what was already done is muted, and
-              the recommendation carries the signal the primary button is the
-              end of. */}
-          {move.map((line) => (
-            <p key={line.part} className={HELD_CLASS[line.part]}>
-              {line.text}
-            </p>
-          ))}
-
         </div>
-      ) : null}
 
-      {/* ---- rank 4: where to look ---------------------------------------- */}
+        {/* ---- rank 3: so what ---------------------------------------------- */}
 
-      {/* Every identifier the block has, and each of them once. This used to be
-          the second line, in a size that made *waiting on you* and *since 07:46
-          UTC* read as the answer — the answer is above it now, and a run id is
-          a coordinate (#132). */}
-      <p className="ssince">
-        <span>
-          {/* Said in as many words. An item with no attempts is not a stalled
-              one, and the absence of a run is exactly what the page could not
-              show before it could be opened at all. */}
-          {standing.attempts === 0 ? "never run · " : ""}
-          {standing.who}
-          {standing.since !== null
-            ? ` · since ${standing.since.slice(0, 10)} ${standing.since.slice(11, 16)} UTC`
-            : ""}
-          {/* Whose fact this is. `queued` is the one state that is not in the
-              log, so a page that stated it without saying where it came from
-              would be claiming a fold it did not make (0012). */}
-          {queued !== null && queued.problem === null && queued.notOffered === null
-            ? " · offered by GitHub"
-            : ""}
-        </span>
-        {/* Which attempt produced it, and the way down to the whole of it —
-            that attempt's gate points, its findings and its diff. `of N`
-            because the number alone reads as the whole story on an item that
-            has had three (#102).
-
-            **The coordinate is the pointer.** This used to be a fact here and a
-            second `in attempt N ↓` beside it, which on the ordinary block was
-            the same attempt number printed twice — the duplication #132 is
-            about. A coordinate you can follow is one line; rank 2 names an
-            attempt only where it is a *different* one, which is the only case
-            where saying so tells a reader anything. */}
-        {standing.attempt !== null ? (
-          <a
-            className="sfrom sptr"
-            href={`#attempt-${standing.attempt}`}
-            title={standing.runId ?? undefined}
-          >
-            from attempt {standing.attempt} of {standing.attempts}
-            {standing.runId ? ` · ${standing.runId.slice(0, 12)}` : ""} ↓
-          </a>
-        ) : null}
-      </p>
-
-      {/* Side by side above ~64rem, and stacked below it. The outgoing prompt
-          first in the DOM and first on the line, so reading order, use order
-          and tab order are one order — the column was a single stack wasting a
-          third of a 1440 viewport (#111). The two boxes are the two objects the
-          layout notes allow a frame around, which is why these two are the pair
-          and nothing else joins them. */}
-      <div className="spair">
-        {/* The document that will actually run, above the buttons that send it.
-            Only where there is a next attempt to be handed one — a run in
-            flight has already been given its prompt (`loadTask`). */}
-        {outgoing !== null ? (
-          <Outgoing
-            taskId={taskId}
-            outgoing={outgoing}
-            // The editor offers Send only where the row below it does. A
-            // sentence typed and not staged is otherwise lost to the click that
-            // was meant to send it.
-            sendable={acting && standing.state === "blocked" && sendable !== null}
-          />
-        ) : null}
-
-        {/* What the button does, beside the document it sends. Only on a queued
-            item: every other state is describing a run that has already been
-            given its plan, and its verdicts are in its own attempt. */}
-        {queued !== null ? <Plan plan={queued.plan} /> : null}
-
-        {/* Offered whatever the state, deliberately. The commonest question is
-            about something that has stopped, but "what did attempt 1 actually
-            change" is asked of a landed item too, and a box that appeared only
-            on a blocked card would be one more thing to find out about. */}
-        <Discussion taskId={taskId} attempt={standing.attempt} discussions={discussions} />
+        {/* One sentence in one element. `soWhat` returns a string, so there is
+            no path by which a second paragraph lands here; a sentence a later
+            ticket wants on this page goes to rank 2 or to the record, and the
+            snapshots in `task-page.test.tsx` make it say which (#152). */}
+        <p className="sowhat" data-rank="so-what">
+          {soWhat(standing)}
+        </p>
       </div>
 
-      {/* The moves, under both boxes rather than inside either: the design's own
-          row, and the end of the one sentence this column is.
+      {/* ---- rank 4: the moves ---------------------------------------------- */}
+
+      {/* Above both boxes rather than under them (#152). Under them, a
+          discussion that grew pushed the button you were deciding with off the
+          screen; above them, nothing that grows is before it.
 
           Every move that can work, and no move that cannot. The card's reading
           (#84, #92): a question is open exactly when there is a sha it is about,
@@ -364,7 +302,7 @@ export function Standing({
           (#150): neither moved the card, and a waiver is what Approve records
           when a gate still refuses. */}
       {acting && standing.state === "blocked" ? (
-        <div className="smoves">
+        <div className="smoves" data-rank="moves">
           {standing.awaitingSha !== null ? (
             <Decide
               project={project}
@@ -412,11 +350,151 @@ export function Standing({
           belongs on. It jumps the backoff, and says so when there is one to
           jump (0028 §3). */}
       {acting && standing.state === "queued" && queued !== null ? (
-        <div className="smoves">
+        <div className="smoves" data-rank="moves">
           <RunNow project={project} issue={String(issue)} holding={stopped} />
         </div>
       ) : null}
+
+      {/* ---- rank 5: the pair ----------------------------------------------- */}
+
+      {/* Side by side above ~64rem, and stacked below it. The outgoing prompt
+          first in the DOM and first on the line, so reading order, use order
+          and tab order are one order — the column was a single stack wasting a
+          third of a 1440 viewport (#111). The two boxes are the two objects the
+          layout notes allow a frame around, which is why these two are the pair
+          and nothing else joins them. */}
+      <div className="spair" data-rank="pair">
+        {/* The document that will actually run, beside the discussion and under
+            the buttons that send it. Only where there is a next attempt to be
+            handed one — a run in flight has already been given its prompt
+            (`loadTask`). */}
+        {outgoing !== null ? (
+          <Outgoing
+            taskId={taskId}
+            outgoing={outgoing}
+            // The editor offers Send only where the row above it does. A
+            // sentence typed and not staged is otherwise lost to the click that
+            // was meant to send it.
+            sendable={acting && standing.state === "blocked" && sendable !== null}
+          />
+        ) : null}
+
+        {/* What the button does, beside the document it sends. Only on a queued
+            item: every other state is describing a run that has already been
+            given its plan, and its verdicts are in its own attempt. */}
+        {queued !== null ? <Plan plan={queued.plan} /> : null}
+
+        {/* Offered whatever the state, deliberately. The commonest question is
+            about something that has stopped, but "what did attempt 1 actually
+            change" is asked of a landed item too, and a box that appeared only
+            on a blocked card would be one more thing to find out about.
+
+            `quiet` while it runs: nobody is waiting on you while the machine
+            works, so nothing in the box wears the brass either (#152). */}
+        <Discussion
+          taskId={taskId}
+          attempt={standing.attempt}
+          discussions={discussions}
+          quiet={standing.state === "running"}
+        />
+      </div>
     </section>
+  );
+}
+
+/**
+ * Rank 3: what the quote means for the decision, in one sentence.
+ *
+ * **A string, so it cannot be a paragraph** (#152). What it replaces was
+ * `describeHold`'s lines printed one after another — *your judgement is
+ * needed*, then the fix rounds and the decline (#142), then the recommendation
+ * with the restart refusal (0040) inside its why — which were four tickets'
+ * sentences and nobody's one. So: who is needed, and the move the diagnosis
+ * recommends with the first clause of its reason, and it stops. What was done,
+ * and the rest of the why, are in the record's attempts row.
+ *
+ * The needs wording is `describeHold`'s, so this page, the card and `lingtai
+ * status` still say the same thing about the same hold. A state with nothing
+ * needed of anybody says who is being waited on instead, which is the fact a
+ * running or a queued item's reader came for.
+ */
+export function soWhat(standing: StandingView): string {
+  const needed =
+    standing.needs === null
+      ? null
+      : (describeHold({ needs: standing.needs, diagnosis: null })[0]?.text ?? null);
+  const head = needed ?? standing.who;
+  const rec = standing.diagnosis?.recommendation ?? null;
+  if (rec === null) return head;
+  const why = firstClause(rec.why);
+  return why === "" ? `${head} — recommends ${rec.action}` : `${head} — recommends ${rec.action}, because ${why}`;
+}
+
+/** How long rank 3's reason may run before it is clipped. The whole is in the record. */
+const CLAUSE_MAX = 160;
+
+/**
+ * The first sentence of a recommendation's why, flattened to one line.
+ *
+ * Whitespace and newlines collapse, the first sentence end is the end, and a
+ * sentence that is still a paragraph by length is clipped — the same trade
+ * `oneLine` makes for the question, for the same reason.
+ */
+function firstClause(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const end = flat.search(/[.!?](\s|$)/);
+  let clause = (end === -1 ? flat : flat.slice(0, end)).replace(/[\s.;:,—-]+$/, "");
+  // `Develop has moved` reads as a new sentence after *because*; `CONFLICT`
+  // and `PR` are words that stay as written.
+  if (/^[A-Z][a-z]/.test(clause)) clause = clause[0]!.toLowerCase() + clause.slice(1);
+  return clause.length > CLAUSE_MAX ? `${clause.slice(0, CLAUSE_MAX - 1)}…` : clause;
+}
+
+/**
+ * Rank 8: every identifier the page has, each once, as one muted line in the
+ * bar (#152).
+ *
+ * This was the block's own fourth rank, and the attempt row printed the same
+ * run id again as a full uuid — `run-52feebd1` twice on one page. So the bar
+ * says which item and which attempt, and the run id is that link's title; the
+ * attempt row is where the id, the shas and the branch are printed, once.
+ */
+export function Coords({
+  standing,
+  taskId,
+  queued,
+}: {
+  standing: StandingView;
+  taskId: string;
+  queued: QueuedView | null;
+}) {
+  return (
+    <span className="coords" data-rank="coords">
+      <span className="mono">{taskId}</span>
+      {/* Said in as many words. An item with no attempts is not a stalled one,
+          and the absence of a run is exactly what the page could not show
+          before it could be opened at all. */}
+      {standing.attempts === 0 ? <span>never run</span> : null}
+      {standing.since !== null ? (
+        <span>
+          since {standing.since.slice(0, 10)} {standing.since.slice(11, 16)} UTC
+        </span>
+      ) : null}
+      {/* Whose fact this is. `queued` is the one state that is not in the log,
+          so a page that stated it without saying where it came from would be
+          claiming a fold it did not make (0012). */}
+      {queued !== null && queued.problem === null && queued.notOffered === null ? (
+        <span>offered by GitHub</span>
+      ) : null}
+      {/* The coordinate is the pointer: which attempt produced this state, and
+          the way down to it. `of N` because the number alone reads as the whole
+          story on an item that has had three (#102). */}
+      {standing.attempt !== null ? (
+        <a className="sfrom sptr" href={`#attempt-${standing.attempt}`} title={standing.runId ?? undefined}>
+          from attempt {standing.attempt} of {standing.attempts} ↓
+        </a>
+      ) : null}
+    </span>
   );
 }
 

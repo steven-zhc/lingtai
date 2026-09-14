@@ -23,7 +23,7 @@ import type { GatePlan } from "@lingtai/conductor/filter";
 import { exists, type StandingView, type TicketView } from "../src/lib/task.ts";
 import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from "../src/lib/queued.ts";
 import { Plan } from "../src/app/plan.tsx";
-import { Standing } from "../src/app/standing.tsx";
+import { Coords, Standing } from "../src/app/standing.tsx";
 
 let seq = 0n;
 
@@ -357,18 +357,23 @@ const NEVER_RUN: StandingView = {
   deciding: null,
 };
 
+// The block and the bar's coordinates, which is where *never run* and *offered
+// by GitHub* went when every identifier moved up there (#152).
 const render = (standing: StandingView, queued: QueuedView | null, unknown: string | null = null) =>
   renderToStaticMarkup(
-    <Standing
-      standing={standing}
-      project="lingtai"
-      issue={112}
-      taskId="wi-lingtai-112"
-      discussions={[]}
-      outgoing={null}
-      queued={queued}
-      unknown={unknown}
-    />,
+    <>
+      <Coords standing={standing} taskId="wi-lingtai-112" queued={queued} />
+      <Standing
+        standing={standing}
+        project="lingtai"
+        issue={112}
+        taskId="wi-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={queued}
+        unknown={unknown}
+      />
+    </>,
   );
 
 describe("the block, for a ticket that has never run", () => {

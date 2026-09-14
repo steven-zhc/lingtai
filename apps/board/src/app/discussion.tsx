@@ -38,10 +38,14 @@
  * below follows the chat's own log while the answer is being written; see it
  * for what that trace is and is not.
  *
- * **The box has one height.** The moves sit under it and under the outgoing
+ * **The box has one height.** The moves sat under it and under the outgoing
  * prompt beside it, so a conversation that grew with its content pushed the
  * button you were deciding with off the screen. The conversation scrolls in
- * `.chatscroll`, the input box is under it, and neither moves (#132).
+ * `.chatscroll`, the input box is under it, and neither moves (#132) — and the
+ * moves are above the pair now, so nothing in here is before them (#152).
+ *
+ * **Turns, not a transcript** (#152): a bubble each, with who said it, pinned
+ * to the newest line, and an answer being written grows under a caret.
  *
  * The optimistic state is `decide.tsx`'s and so is the trap: a result shown
  * that did not happen is worse than no result, so every action reverts on
@@ -199,10 +203,17 @@ export function Trace({
 
   // Pinned to the bottom of its own scroller, which is where the newest line
   // is. The box's height is `.chat`'s and does not grow with this — a pane that
-  // grew with its content would push the moves under it off the screen.
+  // grew with its content would have pushed the moves off the screen when they
+  // sat under it, and still pushes the input box.
   useEffect(() => {
     tail.current?.scrollTo({ top: tail.current.scrollHeight });
   }, [lines]);
+
+  // **The answer grows under a caret** (#152), and only while something could
+  // be writing it: a trace nobody is touching (`writing === false`) or one that
+  // has ended is not a cursor, and a blinking one there would say *answering*
+  // over a sentence that says it is not.
+  const caret = state === "reading" && writing !== false;
 
   return (
     <>
@@ -212,8 +223,13 @@ export function Trace({
       {lines.length > 0 ? (
         <div className="chattrace" ref={tail}>
           {/* Never markdown and never a paragraph: it is a log (design §6). */}
-          <pre className="hdoctext">{lines.join("\n")}</pre>
+          <pre className="hdoctext">
+            {lines.join("\n")}
+            {caret ? <span className="caret" aria-hidden="true" /> : null}
+          </pre>
         </div>
+      ) : caret ? (
+        <span className="caret" aria-hidden="true" />
       ) : null}
     </>
   );
@@ -262,12 +278,21 @@ export function Discussion({
   taskId,
   attempt,
   discussions,
+  quiet = false,
 }: {
   taskId: string;
   /** The attempt a new question is about — the newest one, or null. */
   attempt: number | null;
   discussions: DiscussionView[];
+  /**
+   * No brass in the box. Brass is *a person is being waited on*, and while an
+   * item is running nobody is, so on that page Ask and a proposal's buttons are
+   * ordinary buttons (#152). They still work; nothing is asking you to press
+   * them.
+   */
+  quiet?: boolean;
 }) {
+  const pri = quiet ? "btn" : "btn pri";
   const [question, setQuestion] = useState("");
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -339,7 +364,7 @@ export function Discussion({
   };
 
   return (
-    <div className="chat">
+    <div className={quiet ? "chat quiet" : "chat"}>
       <p className="chathead">
         <span className="chatname">discussion</span>
         {/* Live without a poller: every append re-renders the board
@@ -351,7 +376,7 @@ export function Discussion({
 
       {/* The conversation, in its own scroller. The box has one height and this
           is the part of it that grows, so a long exchange scrolls here instead
-          of moving the input box under it and the moves under that (#132). */}
+          of moving the input box under it (#132). */}
       <div
         className="chatscroll"
         ref={conversation}
@@ -365,15 +390,20 @@ export function Discussion({
         <div key={d.chatId} className={d.held === null ? "chatlog" : "chatlog done"}>
           {d.turns.map((t, i) => (
             <div key={t.at} className="chatturn">
-              <p className="chatq">
-                <span className="chatwho">{t.by}</span>
-                {t.question}
-              </p>
+              {/* **Turns, not a transcript** (#152): who said it, and a bubble
+                  each. The question is the person's and the answer is the
+                  assistant's, and a reader scanning up the pane reads the
+                  authors before the words. */}
+              <div className="bubble asked">
+                <p className="chatwho">{t.by}</p>
+                <p className="chatq">{t.question}</p>
+              </div>
 
               {/* Lingtai's sentence, not the assistant's, and shown before the
-                  answer for that reason. An attempt that left no branch is a
-                  fact about what was read; leaving it to the answer to mention
-                  is exactly what killed #89's repair. */}
+                  answer for that reason — between the two bubbles, in neither.
+                  An attempt that left no branch is a fact about what was read;
+                  leaving it to the answer to mention is exactly what killed
+                  #89's repair. */}
               {t.reading.length > 0 ? (
                 <ul className="chatreading">
                   {t.reading.map((line) => (
@@ -382,6 +412,8 @@ export function Discussion({
                 </ul>
               ) : null}
 
+              <div className="bubble answer">
+              <p className="chatwho">assistant</p>
               {t.answer === null ? (
                 // Only the turn being answered follows the chat's trace; see
                 // `Thinking`. A later one waits its turn, and says so.
@@ -436,7 +468,7 @@ export function Discussion({
                       <p className="chatproptext">{t.answer.proposal.text}</p>
                       <div className="btnrow">
                         <button
-                          className={t.answer.proposal.kind === "prompt" ? "btn pri" : "btn"}
+                          className={t.answer.proposal.kind === "prompt" ? pri : "btn"}
                           disabled={busy}
                           onClick={() =>
                             run(() =>
@@ -452,7 +484,7 @@ export function Discussion({
                           Use for the next run
                         </button>
                         <button
-                          className={t.answer.proposal.kind === "ticket" ? "btn pri" : "btn"}
+                          className={t.answer.proposal.kind === "ticket" ? pri : "btn"}
                           disabled={busy}
                           onClick={() =>
                             run(() =>
@@ -472,6 +504,7 @@ export function Discussion({
                   ) : null}
                 </>
               )}
+              </div>
             </div>
           ))}
 
@@ -491,7 +524,7 @@ export function Discussion({
         />
         <div className="btnrow">
           <button
-            className="btn pri"
+            className={pri}
             disabled={busy || !question.trim()}
             onClick={() =>
               run(() =>

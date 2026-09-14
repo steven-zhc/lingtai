@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a blocked task > is arranged as the four questions, then the record 1`] = `
+"coords: wi-lingtai-147 since 2026-09-14 04:27 UTC from attempt 1 of 1 ↓
+state: blocked 4h 33m
+why: \`review\` still refuses agent/147 at a4e9df9. This is a check that failed and stayed failed, not a judgement. proposed / review 1 line the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.
+so-what: your judgement is needed — recommends requeue, because \`review\` is a check that stayed red rather than a judgement, and for one of those the work is still there
+moves: Send attempt 2 Leave blocked
+pair: will be sent attempt 2 only 74 bytes ticket@1924 #147 — the reviewer crashes on a reused session id The reviewer crashed. Edit discussion this conversation $0.12 · 2 messages · no limit human:steven did the reviewer run at all? assistant No — it crashed on start. read no files $0.12 human:steven so is requeue safe? assistant waiting for the daemon to answer Ask
+record: findings · files · attempts · prompt"
+`;
+
+exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
+"coords: wi-lingtai-147 since 2026-09-14 08:40 UTC from attempt 1 of 1 ↓
+state: running 20m
+why: run log not reading
+so-what: an agent is working
+pair: discussion reads the log, the ticket and the code — it cannot run anything Ask
+record: findings · files · attempts · prompt"
+`;
