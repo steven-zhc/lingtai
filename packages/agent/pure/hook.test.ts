@@ -7,16 +7,15 @@
  * Both are measured here rather than asserted — the binary is built with bun and
  * spawned as a process, which is exactly how a runtime invokes it.
  */
-import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import type { EventStore } from "@lingtai/event-store/store";
+import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   createHookServer,
   type HookServer,
@@ -36,7 +35,6 @@ const hookSource = resolve(here, "../../hook/src/lingtai-hook.ts");
 let root: string;
 let binary: string;
 let server: HookServer;
-let client: Db;
 let store: EventStore;
 let runId: string;
 const lifecycle: string[] = [];
@@ -79,8 +77,7 @@ beforeAll(async () => {
   // dependencies is what doc/decisions/0002 specified and what gets measured.
   await exec("bun", ["build", "--compile", "--outfile", binary, hookSource]);
 
-  client = createDb();
-  store = createEventStore(client);
+  store = createMemoryEventStore();
   runId = `run-esctest-${crypto.randomUUID().slice(0, 8)}`;
 
   server = createHookServer({
@@ -91,21 +88,6 @@ beforeAll(async () => {
   await server.listen();
   server.register(runId, 0, "ticket@3");
 }, 180_000);
-
-afterAll(async () => {
-  await server.close();
-  await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = $1", [runId]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-  await rm(root, { recursive: true, force: true });
-});
 
 const env = () => ({ LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: runId });
 

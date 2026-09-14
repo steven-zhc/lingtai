@@ -14,14 +14,19 @@
  * a dead run left `running`, and a gate the run planned and never reported —
  * the one waiver `gate-audit.ts` names as what closes `landedWithoutGatePoints`.
  *
- * Real events, throwaway project, as every database-touching test here does.
+ * **Real events, in memory** (`#157`). This suite never asserted anything about
+ * Postgres: it appended events and read them back, and the database was being
+ * used as a recorder. `createMemoryEventStore` is that recorder, held to the
+ * same contract as the real store (`event-store/test/contract.ts`), so what is
+ * exercised here is unchanged and none of it crosses a network. It also stops
+ * these events reaching a projector that happens to be running — the reason
+ * this file used to delete from `task_view` on the way out.
  */
 import { waive } from "@lingtai/conductor";
-import { directDatabaseUrl } from "@lingtai/env";
 import { GATE_POINTS, parsePayload, projectStream, workItemStream } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { EventStore } from "@lingtai/event-store/store";
+import { createMemoryEventStore } from "@lingtai/event-store/memory";
+import { beforeAll, describe, expect, it } from "vitest";
 import { actor } from "../../board/src/lib/actor.ts";
 import { claimsOf, foldRun, standingOf } from "../../board/src/lib/task.ts";
 import { waiveCommand } from "../src/waive.ts";
@@ -35,12 +40,10 @@ const SHA = "a".repeat(40);
  */
 const ACTOR = actor();
 
-let client: Db;
 let store: EventStore;
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = createMemoryEventStore();
   await store.append(projectStream(PROJECT), 0, [
     {
       type: "ProjectConfigured",
@@ -56,19 +59,6 @@ beforeAll(async () => {
   ]);
 });
 
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1::text[])", [[...created]]);
-    await c.query("delete from task_view where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 const gateEvent = (type: "GateRequested" | "GateStarted" | "GateFailed", runId: string) => ({
   type,

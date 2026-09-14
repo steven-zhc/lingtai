@@ -28,7 +28,11 @@
 import type { Envelope } from "@lingtai/domain";
 import pg from "pg";
 import { directDatabaseUrl } from "./env.ts";
-import { type EventStore, eventStore } from "./event-store.ts";
+// The factory and the client, rather than the singleton the barrel now holds
+// (`#157`): importing `index.ts` from here would be a cycle. This module is
+// `LISTEN`/`NOTIFY`, so a client at import is what it is for.
+import { createEventStore, type EventStore } from "./event-store.ts";
+import { db } from "./db.ts";
 
 /** The channel `sql/notify.sql`'s trigger writes to. */
 export const CHANNEL = "lingtai";
@@ -158,7 +162,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 export function subscribe(options: SubscribeOptions): Subscription {
-  const store = options.store ?? eventStore;
+  const store = options.store ?? createEventStore(db);
   const url = options.url ?? directDatabaseUrl();
   const batchSize = options.batchSize ?? 500;
   const baseMs = options.backoff?.baseMs ?? 100;

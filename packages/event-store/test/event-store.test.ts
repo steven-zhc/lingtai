@@ -24,6 +24,7 @@ import {
 } from "../src/index.ts";
 import { isEventType, parsePayload } from "@lingtai/domain";
 import { cleanupStreams, discovered, streamId } from "./support.ts";
+import { describeEventStoreContract } from "./contract.ts";
 
 /** Every SQLSTATE in an error's `cause` chain. */
 function sqlStates(err: unknown): string[] {
@@ -55,6 +56,23 @@ afterAll(async () => {
   await b.close();
   await cleanupStreams();
 });
+
+/**
+ * The contract, against Postgres — the half that makes the in-memory store
+ * trustworthy (`#157`).
+ *
+ * This run is what says the `UNIQUE (stream_id, version)` index really exists
+ * and really raises, that a conflicting batch really rolls back, and that `seq`
+ * really increases across streams. `pure/memory.test.ts` runs these same
+ * assertions against the fake, where none of that is a database doing the work.
+ * Neither file is the authority alone; the pair is, and a divergence is a
+ * failing test rather than a surprise in production.
+ *
+ * The suites below stay as they are. They assert what is *only* true of
+ * Postgres — retired types on stored rows, upcasting, two clients racing — and
+ * a fake has nothing to say about any of it.
+ */
+describeEventStoreContract("postgres", () => store, () => streamId("wi-contract"));
 
 describe("append and read", () => {
   it("round-trips a batch and reads it back in version order", async () => {

@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./test-support": "./test/support.ts"
+    "./test-support": "./test/support.ts",
+    "./memory": "./test/memory.ts",
+    "./store": "./src/event-store.ts"
   },
   "scripts": {
     "contract:emit": "prisma contract emit",

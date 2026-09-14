@@ -24,7 +24,15 @@ import {
   parsePayload,
   parseStoredPayload,
 } from "@lingtai/domain";
-import { type Db, db } from "./db.ts";
+// **Type-only, and that is the point** (`#157`). This module held
+// `createEventStore(db)` as well, so importing *anything* from it — the
+// `EventStore` interface, `ConcurrencyError` — constructed the process-wide
+// client as a side effect of the import, and `createDb()` reads `databaseUrl()`
+// eagerly. A test that never touches a database still had to be given one, and
+// that, rather than anything in the test bodies, is what put 29 files in the
+// half that needs one. The singleton now lives in `index.ts`, one import closer
+// to the callers that actually want it.
+import type { Db } from "./db.ts";
 import type { CodecTypes } from "./prisma/contract.d.ts";
 import { parseTimestamptz } from "./timestamptz.ts";
 
@@ -311,6 +319,3 @@ export function createEventStore(client: Db): EventStore {
     },
   };
 }
-
-/** Bound to the process-wide client. */
-export const eventStore = createEventStore(db);

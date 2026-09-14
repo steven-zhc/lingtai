@@ -7,10 +7,9 @@
  */
 import type { Recipe } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { directDatabaseUrl } from "@lingtai/env";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import type { EventStore } from "@lingtai/event-store/store";
+import { createMemoryEventStore } from "@lingtai/event-store/memory";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { workItemStream } from "@lingtai/domain";
 import {
   considerIssue,
@@ -285,27 +284,10 @@ function fakeClient(issues: Issue[], project = "esctest"): GitHubClient {
   };
 }
 
-let client: Db;
 let store: EventStore;
 
 beforeAll(() => {
-  client = createDb();
-  store = createEventStore(client);
-});
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1::text[])", [[...created]]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.query("delete from queue where project = any($1::text[])", [[...projects]]);
-    await c.query("delete from checkpoints where name = 'queue'");
-    await c.end();
-  }
+  store = createMemoryEventStore();
 });
 
 function track(streams: string[]): void {

@@ -7,16 +7,14 @@
  * time the summary printed it was not. Counting what the process did printed
  * `0 landed` over a merge and exited 1 on the count.
  */
-import { directDatabaseUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { EventStore } from "@lingtai/event-store/store";
+import { createMemoryEventStore } from "@lingtai/event-store/memory";
+import { beforeAll, describe, expect, it } from "vitest";
 import { tallyPass } from "../src/index.ts";
 import type { RunOnceResult } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 const wi = (n: number) => {
@@ -74,8 +72,7 @@ const failed = (n: number, stage: string): RunOnceResult => ({
 });
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = createMemoryEventStore();
 
   // 1 — held at the merge gate, then approved and merged while the pass ran on.
   await store.append(wi(1), 0, [discovered(1), claimed(1), blocked(1, "merge?"), landed]);
@@ -88,19 +85,6 @@ beforeAll(async () => {
   // 5 — the run failed and the item went back into the queue.
   await store.append(wi(5), 0, [discovered(5), claimed(5), released(5)]);
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const id of created) await c.query("delete from events where stream_id = $1", [id]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("tallyPass", () => {
   it("counts an item that landed after the run that held it", async () => {
