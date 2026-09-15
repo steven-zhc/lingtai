@@ -140,20 +140,29 @@ class Splicer {
 
   private map(node: YAMLMap, value: Record<string, unknown>): void {
     const pairs = node.items as Pair<Node, Node | null>[];
-    for (const pair of pairs) {
+    pairs.forEach((pair, i) => {
       const key = pair.key;
       const name = isScalar(key) ? String(key.value) : undefined;
-      if (name === undefined) continue;
+      if (name === undefined) return;
       const keyStart = key.range![0];
       if (!(name in value)) {
-        this.edits.push({ from: this.lineStart(keyStart), to: this.lineEnd(this.end(pair)), text: "" });
-        continue;
+        // A field goes with the comment lines directly above it, as a list item does: they are about it.
+        const bound = i === 0 ? 0 : this.lineEnd(this.end(pairs[i - 1]!));
+        let from = this.commentsAbove(this.lineStart(keyStart), bound);
+        const to = this.lineEnd(this.end(pair));
+        // A blank line on both sides of what went would leave two; take the one above.
+        const blankAfter = to === this.text.length || this.text[to] === "\n";
+        if (from > bound && blankAfter && this.text.slice(this.lineStart(from - 1), from).trim() === "") {
+          from = this.lineStart(from - 1);
+        }
+        this.edits.push({ from, to, text: "" });
+        return;
       }
       this.reconcile(pair.value, value[name], {
         inlineFrom: this.text.indexOf(":", key.range![1]) + 1,
         indent: this.column(keyStart),
       });
-    }
+    });
     const had = new Set(pairs.map((p) => (isScalar(p.key) ? String(p.key.value) : "")));
     const added = Object.fromEntries(Object.entries(value).filter(([k]) => !had.has(k)));
     if (Object.keys(added).length > 0) {
@@ -165,23 +174,28 @@ class Splicer {
 
   private seq(node: YAMLSeq, value: unknown[]): void {
     const items = node.items as Node[];
-    const itemSite = (item: Node): Site => {
-      const dash = this.text.lastIndexOf("-", item.range![0]);
-      return { inlineFrom: dash + 1, indent: this.column(dash) };
-    };
-    // Which unchanged item each wanted value is, if any — so a move is a move,
-    // and never an edit in place that leaves every comment above the wrong item.
+    // Which old item each wanted value is, if any — so a move is a move, and
+    // never an edit in place that leaves every comment above the wrong item.
+    // An unchanged item is itself; a changed one is the item with its `name`,
+    // or a nameless mapping at the same position. A changed label or anything
+    // else is a different item: the old one goes, with its comments, and the
+    // new one is added — never the old item's comments over something else.
     const olds = items.map((item) => item.toJS(this.doc));
     const used = new Set<number>();
-    const match = value.map((wanted) => {
-      const k = olds.findIndex((old, j) => !used.has(j) && isDeepStrictEqual(old, wanted));
+    const claim = (test: (old: unknown, j: number) => boolean): number => {
+      const k = olds.findIndex((old, j) => !used.has(j) && test(old, j));
       if (k !== -1) used.add(k);
       return k;
+    };
+    const match = value.map((wanted) => claim((old) => isDeepStrictEqual(old, wanted)));
+    value.forEach((wanted, i) => {
+      if (match[i] !== -1 || !isPlainObject(wanted)) return;
+      const name = wanted["name"];
+      match[i] =
+        typeof name === "string"
+          ? claim((old) => isPlainObject(old) && old["name"] === name)
+          : claim((old, j) => j === i && isPlainObject(old) && old["name"] === undefined);
     });
-    if (items.length === value.length && match.every((k, i) => k === i || k === -1)) {
-      items.forEach((item, i) => this.reconcile(item, value[i], itemSite(item)));
-      return;
-    }
     const dashColumn = this.column(this.text.lastIndexOf("-", items[0]!.range![0]));
     const kept = match.filter((k) => k !== -1);
     if (kept.some((k, i) => i > 0 && k < kept[i - 1]!)) return this.reorder(items, value, match, dashColumn);
@@ -189,22 +203,17 @@ class Splicer {
     // Items still wanted keep their own lines, and the comments above them.
     let next = 0;
     let after = this.chunkStart(items, 0);
-    for (const wanted of value) {
-      let found = -1;
-      for (let k = next; k < items.length; k++) {
-        if (isDeepStrictEqual(items[k]!.toJS(this.doc), wanted)) {
-          found = k;
-          break;
-        }
-      }
+    value.forEach((wanted, i) => {
+      const found = match[i]!;
       if (found === -1) {
         this.edits.push({ from: after, to: after, text: this.block([wanted], dashColumn) });
-        continue;
+        return;
       }
       for (let k = next; k < found; k++) this.remove(items, k);
+      this.reconcile(items[found], wanted, this.itemSite(items[found]!));
       after = this.lineEnd(items[found]!.range![1]);
       next = found + 1;
-    }
+    });
     for (let k = next; k < items.length; k++) this.remove(items, k);
   }
 
@@ -213,15 +222,27 @@ class Splicer {
     const starts = items.map((_, k) => this.chunkStart(items, k));
     const ends = items.map((item) => this.lineEnd(item.range![1]));
     const chunk = (text: string): string => (text.endsWith("\n") ? text : `${text}\n`);
+    // A moved item that also changed is changed inside its own chunk, so its comments move with it.
+    const carried = (k: number, wanted: unknown): string => {
+      const inner: Edit[] = [];
+      new Splicer(this.text, this.doc, inner).reconcile(items[k], wanted, this.itemSite(items[k]!));
+      const shifted = inner.map((e) => ({ ...e, from: e.from - starts[k]!, to: e.to - starts[k]! }));
+      return apply(this.text.slice(starts[k], ends[k]), shifted);
+    };
     let text = "";
     value.forEach((wanted, i) => {
       const k = match[i]!;
-      text += k === -1 ? this.block([wanted], dashColumn) : chunk(this.text.slice(starts[k], ends[k]));
+      text += k === -1 ? this.block([wanted], dashColumn) : chunk(carried(k, wanted));
       if (i < value.length - 1 && i < items.length - 1) text += this.text.slice(ends[i], starts[i + 1]);
     });
     const to = ends[ends.length - 1]!;
     if (!this.text.slice(0, to).endsWith("\n")) text = text.replace(/\n$/, "");
     this.edits.push({ from: starts[0]!, to, text });
+  }
+
+  private itemSite(item: Node): Site {
+    const dash = this.text.lastIndexOf("-", item.range![0]);
+    return { inlineFrom: dash + 1, indent: this.column(dash) };
   }
 
   /** An item goes with the comment lines directly above it: they are about it. */
@@ -236,7 +257,11 @@ class Splicer {
     if (this.text.slice(line, dash).trim() !== "") {
       throw new Error("the recipe has a list item that does not start its own line, which cannot be moved in place");
     }
-    const bound = k === 0 ? 0 : this.lineEnd(items[k - 1]!.range![1]);
+    return this.commentsAbove(line, k === 0 ? 0 : this.lineEnd(items[k - 1]!.range![1]));
+  }
+
+  /** The start of the first comment line directly above `line` (blank lines between allowed), back no further than `bound`. */
+  private commentsAbove(line: number, bound: number): number {
     let start = line;
     let at = line;
     while (at > bound) {

@@ -161,6 +161,41 @@ describe("editRecipe, on this repository's own recipe", () => {
     expect(out.indexOf("**Both halves, written out.**")).toBeGreaterThan(out.indexOf("- name: build"));
   });
 
+  it("moves reordered gates that also changed with their comments, rather than rewriting each position", () => {
+    const own = parse(OWN) as { gates: { proposed: Record<string, unknown>[] } };
+    const [build, review] = own.gates.proposed;
+    const out = editRecipe(OWN, [
+      { path: ["gates", "proposed"], value: [{ ...review, timeout: "5m" }, { ...build, timeout: "30m" }] },
+    ]);
+    expect(commentCount(out)).toBe(commentCount(OWN));
+    expect(out.indexOf("It is second deliberately")).toBeLessThan(out.indexOf("- name: review"));
+    expect(out.indexOf("- name: review")).toBeLessThan(out.indexOf("Nothing, and the suite still runs"));
+    expect(out.indexOf("Nothing, and the suite still runs")).toBeLessThan(out.indexOf("- name: build"));
+    expect(out.indexOf("**Both halves, written out.**")).toBeGreaterThan(out.indexOf("- name: build"));
+    expect(out).toMatch(/    - name: build\n      # \*\*Both halves[^]*?      run: [^\n]*\n      timeout: 30m\n/);
+    expect((parse(out) as typeof own).gates.proposed.map((g) => [g["name"], g["timeout"]])).toEqual([
+      ["review", "5m"],
+      ["build", "30m"],
+    ]);
+  });
+
+  it("moves a changed gate past an unchanged one with the comments above and inside it", () => {
+    const own = parse(OWN) as { gates: { proposed: Record<string, unknown>[] } };
+    const [build, review] = own.gates.proposed;
+    const out = editRecipe(OWN, [{ path: ["gates", "proposed"], value: [review, { ...build, timeout: "30m" }] }]);
+    expect(commentCount(out)).toBe(commentCount(OWN));
+    expect(out.indexOf("- name: review")).toBeLessThan(out.indexOf("Nothing, and the suite still runs"));
+    expect(out).toMatch(/# extension may not name one of Lingtai's own\.\n    - name: build\n      # \*\*Both halves/);
+    expect(out).toContain("      timeout: 30m\n");
+  });
+
+  it("renames a label as a removal and an addition, never the old label's comment over the new one", () => {
+    const labels = (parse(OWN) as { source: { exclude: string[] } }).source.exclude;
+    const out = editRecipe(OWN, [{ path: ["source", "exclude"], value: labels.map((l) => (l === "epic" ? "epic2" : l)) }]);
+    expect(out).not.toMatch(/# An epic is a table of contents[^]*?- epic2/);
+    expect(out).toContain("    - agent:wip\n    - epic2\n");
+  });
+
   it("moves a rotated label with the comment above it", () => {
     const before = chunks(OWN, ["source", "exclude"]);
     const labels = (parse(OWN) as { source: { exclude: string[] } }).source.exclude;
@@ -199,9 +234,14 @@ describe("editRecipe, on this repository's own recipe", () => {
     expect(() => editRecipe(OWN, [{ path: ["gates", "merg"], value: [] }])).toThrow();
   });
 
-  it("removes a field, and leaves the comment above it for a person to read", () => {
+  it("removes a field together with the comment that explains it, as a list item goes", () => {
     const out = editRecipe(OWN, [{ path: ["source", "backoff"], value: undefined }]);
-    expect(changed(OWN, out)).toEqual({ removed: ["  backoff: 1h"], added: [] });
+    const diff = changed(OWN, out);
+    expect(diff.added).toEqual([]);
+    expect(diff.removed.filter((l) => l !== "" && !/^\s*#/.test(l))).toEqual(["  backoff: 1h"]);
+    expect(commentCount(OWN) - commentCount(out)).toBe(8);
+    expect(out).not.toContain("How long a failed attempt keeps its own ticket out of the queue");
+    expect(out).toContain("    - epic\n\nenv:\n");
   });
 });
 
