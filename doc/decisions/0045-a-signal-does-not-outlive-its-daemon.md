@@ -137,7 +137,8 @@ putting it back would be the latch this closes. So a supervised restart:
 - waits until the lock is free **or** a start is recorded after its request,
   whichever comes first;
 - does not check the commit and worktree again — the daemon reads the disk when
-  it starts, whatever the restart says;
+  it starts, whatever the restart says — but does refuse on a drain somebody
+  else asked for during the wait, which the supervisor's start refuses too (§5);
 - runs `service start`, which no longer refuses on a standing request at all
   (§6);
 - waits for the start to be recorded and exits non-zero on one that is not its
@@ -172,6 +173,18 @@ not have refuses and nothing overrides it; a dirty worktree refuses and
 all of them before anything stops (`restart.test.ts`, *what a restart refuses*).
 A drain somebody else asked for still refuses, and is now ended by a start as
 well as by `resume`. §7 — the withdrawal — and the lapse in §8 are superseded.
+
+Under a supervisor that refusal cannot be the restart's alone, because the
+respawn comes before the restart can look (§4). So it is the start's too: a
+start with no terminal and no restart in its process, reading a request **with
+no handoff, by somebody other than the restart's person**, standing over a
+restart's handoff, takes no work and records nothing (`overruledHandoff`,
+`StartHeld`). The request goes on standing in every fold, the supervisor's
+copies each read it and exit, and the restart refuses after its wait with the
+same sentence a terminal one prints; `lingtai resume` lifts it. That is a
+latch, and deliberately a narrow one — a plain `lingtai shutdown` under a
+supervisor with no restart in flight is still the restart, with nothing to
+lift.
 
 ## The machinery, piece by piece
 

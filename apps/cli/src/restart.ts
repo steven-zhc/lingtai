@@ -606,6 +606,22 @@ export async function prepareRestart(
     // above, or this has already refused — and that is said as a refusal rather
     // than asserted.
     if (request === null) return { ok: false, code: 1 };
+    // The one refusal that is still a refusal here: a drain somebody else asked
+    // for during the wait. The supervisor's daemon reads it over this restart's
+    // handoff and takes no work (`overruledHandoff`), so `service start` would
+    // start nothing and this would wait out its ninety seconds to say so.
+    const standing = (await readControl().catch(() => null))?.shutdown ?? null;
+    if (standing !== null && standing.by !== by) {
+      sayRefusal("the wait is over and a drain somebody else asked for stands — not handing the start to the supervisor:", [
+        {
+          line:
+            `${standing.by} asked for a shutdown while this waited — ${standing.reason}. The supervisor's daemon reads ` +
+            `it and takes no work. lingtai resume lifts it, and the supervisor's next start takes work`,
+          waiver: null,
+        },
+      ], log);
+      return { ok: false, code: 1 };
+    }
     return { ok: true, by, reason: args.reason, handedOff: request, examined: { sha: identity.sha, dirty: identity.dirty } };
   }
 

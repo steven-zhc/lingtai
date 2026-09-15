@@ -23,7 +23,10 @@ import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import {
   controlWatermark,
   handOffStanding,
+  overruledHandoff,
   pauseConductor,
+  resumeConductor,
+  StartHeld,
   readControl,
   recordStart,
   recordStartLate,
@@ -555,6 +558,65 @@ describe("handing off a drain that was taken over", () => {
       standing: { by: "human:ops" },
     });
     expect((await store.read("ctl-conductor")).length).toBe(4);
+  });
+});
+
+/**
+ * The finding against 0045 §5: a drain somebody else asked for during a
+ * supervised restart's wait refused in a terminal and not under launchd. The
+ * respawn recorded `daemon`, which ended ops's request in the fold, and took
+ * work during the database move ops had asked it to stop for.
+ */
+describe("a drain somebody else asked for over a supervised restart", () => {
+  const code = { sha: "2926f2d", dirty: false };
+  const daemon = () => ({ by: "daemon", reason: null, handoff: null });
+
+  it("holds the supervisor's start, records nothing, and leaves ops's request standing", async () => {
+    const store = createMemoryEventStore();
+    await recordStart(daemon, code, store);
+    // steven's `lingtai restart` under launchd, then ops's `lingtai shutdown` during its drain.
+    const asked = await requestShutdownUnlessStanding("human:steven", "restarting: picking up #88", null, store, false, code);
+    const request = asked.asked ? asked.version : 0;
+    await requestShutdown("human:ops", "moving the database", null, store);
+
+    // KeepAlive respawns the moment the old daemon exits.
+    await expect(recordStart(daemon, code, store, true)).rejects.toBeInstanceOf(StartHeld);
+    await expect(recordStart(daemon, code, store, true)).rejects.toMatchObject({
+      request: { by: "human:ops", reason: "moving the database" },
+      restartBy: "human:steven",
+    });
+    expect(await startAfter(request, store)).toBeNull();
+    expect((await readControl(store)).shutdown?.by).toBe("human:ops");
+    // Nor does a late record, which would end the request just as well.
+    expect(await recordStartLate(daemon, code, 3, store, true)).toBeNull();
+    expect((await store.read("ctl-conductor")).length).toBe(3);
+  });
+
+  it("lets the supervisor's start take work once the request is resumed, and a typed start at once", async () => {
+    const store = createMemoryEventStore();
+    await requestShutdownUnlessStanding("human:steven", "restarting", null, store, false, code);
+    await requestShutdown("human:ops", "moving the database", null, store);
+    // Not a supervisor's start: a person at a terminal, or a restart in this process.
+    expect(overruledHandoff(await store.read("ctl-conductor"))).not.toBeNull();
+    await expect(recordStart(daemon, code, store, false)).resolves.toBe(3);
+
+    const again = createMemoryEventStore();
+    await requestShutdownUnlessStanding("human:steven", "restarting", null, again, false, code);
+    await requestShutdown("human:ops", "moving the database", null, again);
+    await resumeConductor("human:ops", again);
+    await expect(recordStart(daemon, code, again, true)).resolves.toBe(4);
+  });
+
+  it("does not hold a start over a plain shutdown, nor over the restart's own person's", async () => {
+    const plain = createMemoryEventStore();
+    await recordStart(daemon, code, plain);
+    await requestShutdown("human:ops", "for the day", null, plain);
+    await expect(recordStart(daemon, code, plain, true)).resolves.toBe(3);
+
+    const own = createMemoryEventStore();
+    await requestShutdownUnlessStanding("human:steven", "restarting", null, own, false, code);
+    await requestShutdown("human:steven", "actually, deploying", null, own);
+    expect(overruledHandoff(await own.read("ctl-conductor"))).toBeNull();
   });
 });
 

@@ -68,6 +68,7 @@ import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-st
 import {
   CONTROL_STREAM,
   type ControlState,
+  type Envelope,
   type Handoff,
   type ShutdownRequest,
   parsePayload,
@@ -312,13 +313,75 @@ export interface StartedBy {
  * it). It used to be decided off the loop's first read instead, because a
  * restart's withdrawal could land between two reads at startup; nothing is
  * withdrawn now.
+ *
+ * **`supervised` is a start the supervisor made**, and such a start is refused —
+ * `StartHeld`, nothing appended — while somebody else's drain stands over a
+ * restart's handoff (`overruledHandoff`). Decided on the same read as the rest,
+ * so a drain that lands before the append is read again and holds it.
  */
 export async function recordStart(
   attribute: (before: ControlState) => StartedBy,
   code: CodeVersion,
   store: EventStore = eventStore,
+  supervised = false,
 ): Promise<number> {
-  return (await appendStart(attribute, code, store, null)) as number;
+  return (await appendStart(attribute, code, store, null, supervised)) as number;
+}
+
+/** A supervisor's start that must take no work, and the request that says so. */
+export class StartHeld extends Error {
+  readonly request: ShutdownRequest;
+  /** Who asked for the restart that handed the start over. */
+  readonly restartBy: string;
+  constructor(request: ShutdownRequest, restartBy: string) {
+    super(`a shutdown asked by ${request.by} — ${request.reason} — stands over the restart ${restartBy} handed to the supervisor`);
+    this.request = request;
+    this.restartBy = restartBy;
+  }
+}
+
+/**
+ * The drain somebody else asked for over a supervised restart's handoff, while
+ * it stands — or null.
+ *
+ * In a terminal a restart checks again after its wait, and refuses to start
+ * over a drain a second person asked for meanwhile (0042, 0045 §5). Under a
+ * supervisor the start is not the restart's to withhold: the respawn comes the
+ * moment the drained daemon exits, before the restart can look. So the refusal
+ * has to be the start's own. A start reads nothing said before it (0045), but
+ * this request was not said to a daemon that has gone — it was said to the
+ * restart in flight, whose start the supervisor is making, and a person who
+ * asked this system to stop during a restart did not ask for the restart to
+ * finish over them.
+ *
+ * Narrow on purpose: only a request **with no handoff, by somebody other than
+ * the restart's person**, landing on a standing handoff, and only until a start,
+ * a resume, or a newer handoff. A plain `lingtai shutdown` under a supervisor
+ * with no restart in flight is still the restart it always was.
+ */
+export function overruledHandoff(events: readonly Envelope[]): { request: ShutdownRequest; restartBy: string } | null {
+  let handedBy: string | null = null;
+  let overruled: string | null = null;
+  for (const e of events) {
+    const d = (e.data ?? {}) as Record<string, unknown>;
+    if (e.type === "ConductorShutdownRequested") {
+      const by = typeof d["by"] === "string" ? d["by"] : "";
+      if (d["handoff"] && typeof d["handoff"] === "object") {
+        handedBy = by;
+        overruled = null;
+      } else if (handedBy !== null && by !== handedBy) {
+        overruled = handedBy;
+        handedBy = null;
+      } else {
+        handedBy = null;
+      }
+    } else if (e.type === "ConductorStarted" || e.type === "ConductorResumed") {
+      handedBy = null;
+      overruled = null;
+    }
+  }
+  const standing = reduceControl(events).shutdown;
+  return overruled !== null && standing !== null ? { request: standing, restartBy: overruled } : null;
 }
 
 /**
@@ -338,8 +401,10 @@ export async function recordStartLate(
   code: CodeVersion,
   since: number,
   store: EventStore = eventStore,
+  /** As `recordStart`'s. A late record over an overruled handoff would end that drain in the fold, so none is made. */
+  supervised = false,
 ): Promise<number | null> {
-  return appendStart(attribute, code, store, since);
+  return appendStart(attribute, code, store, since, supervised);
 }
 
 async function appendStart(
@@ -347,6 +412,7 @@ async function appendStart(
   code: CodeVersion,
   store: EventStore,
   unlessToldSince: number | null,
+  supervised: boolean,
 ): Promise<number | null> {
   // Retried on a lost version race: something landing between the read and the
   // append is a reason to read and decide again, not a start with no record.
@@ -354,6 +420,11 @@ async function appendStart(
     const events = await store.read(CONTROL_STREAM);
     if (unlessToldSince !== null && reduceControl(events.filter((e) => e.version > unlessToldSince)).shutdown !== null) {
       return null;
+    }
+    const held = supervised ? overruledHandoff(events) : null;
+    if (held !== null) {
+      if (unlessToldSince !== null) return null;
+      throw new StartHeld(held.request, held.restartBy);
     }
     const { by, reason, handoff } = attribute(reduceControl(events));
     try {

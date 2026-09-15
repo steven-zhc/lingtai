@@ -44,6 +44,8 @@ export {
   requestShutdownUnlessStanding,
   recordStartLate,
   handOffStanding,
+  overruledHandoff,
+  StartHeld,
   type Asking,
   type HandingOff,
   resumeConductor,

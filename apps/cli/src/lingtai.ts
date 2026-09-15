@@ -34,6 +34,7 @@ import {
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
+  StartHeld,
   type CodeVersion,
   type ControlState,
   type ShutdownRequest,
@@ -444,14 +445,35 @@ async function daemonCommand(
     return a;
   };
   let recorded = false;
+  // Nobody's hand, so the supervisor's (`attributeStart`'s `daemon`) — the start
+  // a restart's handoff is addressed to, and the one `StartHeld` can refuse.
+  const supervised = restart === null && !process.stdin.isTTY;
   try {
     // The stream as it stood after the lock, before the record — the watermark
     // if the record below cannot be made.
     mark = await controlWatermark();
-    mark = await recordStart(attribute, code);
+    mark = await recordStart(attribute, code, undefined, supervised);
     recorded = true;
     if (note) console.log(paint.signal(note));
   } catch (err) {
+    if (err instanceof StartHeld) {
+      // Somebody asked this system to stop while a restart was handing its start
+      // to the supervisor. In a terminal that restart would refuse to start; here
+      // the start is this process, so this is where it refuses — no record, so
+      // the request goes on standing on the board, and no work. The supervisor
+      // brings this back on its throttle, and each copy reads the same request.
+      console.log(
+        paint.held(
+          `not taking work: ${err.request.by} asked for a shutdown — ${err.request.reason} — while the restart ` +
+            `${err.restartBy} handed to the supervisor was draining. Nothing is recorded as a start. lingtai resume ` +
+            `lifts it, and the supervisor's next start takes work; lingtai service stop stops the respawns.`,
+        ),
+      );
+      await beacon.stop("stopping");
+      started.daemon.stop();
+      await started.daemon.stopped;
+      return 0;
+    }
     // Reported and not fatal, as it always was: a daemon that will not run for
     // want of a record of itself is an outage over a log entry. Nor does it
     // obey a request made before it: that was aimed at the daemon that held the
@@ -460,13 +482,26 @@ async function daemonCommand(
     // as it was after the lock, and records its start later (`recordLate`), so
     // the fold stops showing that request standing.
     console.log(paint.fail(`the start could not be recorded: ${(err as Error).message} — trying again each pass`));
-    mark ??= await controlWatermark();
+    // The watermark itself may be what failed, on the same connection. Asked
+    // again until it answers, and said each time: a daemon with no watermark
+    // cannot tell a signal to it from one to the daemon before, and throwing
+    // here would exit holding nothing after a line promising it would go on.
+    while (mark === null) {
+      try {
+        mark = await controlWatermark();
+      } catch (again) {
+        console.log(
+          paint.fail(`where the control stream is could not be read: ${(again as Error).message} — asking again in ${HEARTBEAT_MS / 1000}s`),
+        );
+        await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_MS));
+      }
+    }
   }
   const since = mark;
   /** The record `recordStart` could not make, tried again off the reads the daemon acts on. */
   const recordLate = async (): Promise<void> => {
     if (recorded) return;
-    const at = await recordStartLate(attribute, code, since).catch(() => undefined);
+    const at = await recordStartLate(attribute, code, since, undefined, supervised).catch(() => undefined);
     if (at === undefined) return;
     // Null is a shutdown asked of this daemon, which it is about to obey; a
     // record now would show that request ended. Nothing more to record.
