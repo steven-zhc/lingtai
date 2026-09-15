@@ -92,7 +92,14 @@ It moved from the loop's first read to straight after the lock and the commit.
 It had been deferred to that read (`startRecorder`) because a restart's
 withdrawal could land between a startup read and the loop's; nothing is
 withdrawn now. A start whose record fails is reported and conducts anyway, as
-before, and takes the stream's length as its watermark instead.
+before, and takes the stream's length — read after the lock, before the record
+was attempted — as its watermark instead: it reads past what was said before it
+exactly as a recorded start does, so a restart whose record fails does not
+drain straight back out on its own request. The fold has no start to end that
+request at, so the daemon tries the record again on each read it acts on
+(`recordStartLate`), and only while nothing said to it since its watermark
+stands — a late start over a request it is obeying would show that request
+ended.
 
 There is no longer a start that is not recorded. *A start into a standing drain
 is not recorded* existed because such a start read the request and exited, and
@@ -131,15 +138,23 @@ putting it back would be the latch this closes. So a supervised restart:
   whichever comes first;
 - does not check the commit and worktree again — the daemon reads the disk when
   it starts, whatever the restart says;
-- runs `service start` with its own request not counted as a reason to refuse,
-  since that request was aimed at the daemon that has drained; anybody else's
-  still refuses;
+- runs `service start`, which no longer refuses on a standing request at all
+  (§6);
 - waits for the start to be recorded and exits non-zero on one that is not its
   handoff, as itself, on the commit it examined. That comparison is what the
   second check has become.
 
 In a terminal nothing changes: the restart starts the daemon itself, so the
 check after the wait still refuses.
+
+### 6. `lingtai service` starts over a standing request
+
+`service start`, `restart` and `install` refused while a request stood, saying a
+daemon started then would read it and exit until `lingtai resume`. That stopped
+being true at `37013f4`, and after §1 and §2 the start is exactly what the
+operator asked for — so they start, and say whose request stands and that the
+start ends it. `service restart`'s advice for waiting on the pass is `lingtai
+restart` or `lingtai shutdown`, with nothing to lift afterwards.
 
 ### 5. What stands
 
@@ -170,7 +185,7 @@ well as by `resume`. §7 — the withdrawal — and the lapse in §8 are superse
 | `attributeStart` | **kept; the handoff branch kept; `record: false` deleted** | The branch is 0042 §8's rule and still true. A start into a standing drain cannot happen (§2). |
 | `startRecorder` | **deleted** | It deferred the record to the loop's read because a withdrawal could land between two reads. `recordStart` decides and appends at one read. |
 | `recordStart` | **kept; takes the attribution, appends at its read, returns the watermark** | §2. |
-| `controlWatermark` | **kept, as the fallback** | For a start whose record failed. |
+| `controlWatermark` | **kept, as the fallback** | For a start whose record failed: the stream's length after the lock, and `recordStartLate` records the start once it can (§2). |
 | `startAfter` — waiting for the start to be recorded | **kept, and used earlier** | The respawn waits for nothing, so the record is the only way a supervised restart can *say* whether it started anything — and it now also ends the drain's wait (§4). |
 | `requestShutdownUnlessStanding` | **kept; carries the handoff** | Appending over somebody else's drain would still hide it. |
 | the check after the wait | **kept in a terminal; a report under a supervisor** | §4. |
@@ -192,11 +207,6 @@ well as by `resume`. §7 — the withdrawal — and the lapse in §8 are superse
 
 ## What this does not decide
 
-- **`lingtai service`'s own refusals.** `service start`, `restart` and `install`
-  still refuse while a request stands, and their text still says a daemon
-  started then reads it and exits until `lingtai resume`. That has not been
-  true since `37013f4`; §1 narrows it to the window before any start, but the
-  refusal and its advice are that command's to rewrite.
 - **Whether the whole-stream readers scope a pause** as the daemon does (§1).
 - **Whether a daemon should notice its own code is stale**, which 0030 and 0042
   both left open, and this does too.

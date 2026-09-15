@@ -42,6 +42,7 @@ export {
   requestRun,
   requestShutdown,
   requestShutdownUnlessStanding,
+  recordStartLate,
   handOffStanding,
   type Asking,
   type HandingOff,

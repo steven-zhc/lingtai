@@ -23,8 +23,10 @@ import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import {
   controlWatermark,
   handOffStanding,
+  pauseConductor,
   readControl,
   recordStart,
+  recordStartLate,
   requestShutdown,
   requestShutdownUnlessStanding,
   startAfter,
@@ -436,27 +438,49 @@ describe("one command to stop and one to start", () => {
   });
 
   /**
-   * Daemon A is told to stop at v2; daemon B wins the lock and its record fails.
-   * Nothing ended v2 in the fold, so the board, doctor and a waiting restart all
-   * see it standing. From the stream's length B would conduct under it and never
-   * hear it; from the last recorded start, B reads what they read.
+   * The acceptance criterion of the second finding against 0045: A recorded its
+   * start at v1 and steven's restart asked it to drain at v2. A exited, the
+   * restart won the lock, and its `recordStart` threw. From the last recorded
+   * start it read v2 — its own request — drained a daemon holding nothing, and
+   * exited 0 with nothing running. From the stream after the lock it reads
+   * nothing, and conducts.
    */
-  it("falls back to the last recorded start when the start could not be recorded, so it agrees with the fold", async () => {
+  it("reads past what was said before it when its start could not be recorded, rather than draining on it", async () => {
+    const store = createMemoryEventStore();
+    await recordStart(daemon, code, store);
+    await requestShutdownUnlessStanding("human:steven", "restarting: picking up #88", null, store);
+
+    const since = await controlWatermark(store);
+    expect(since).toBe(2);
+    expect((await readControl(store, since)).shutdown).toBeNull();
+
+    // And a request asked of it afterwards still reaches it.
+    await requestShutdown("human:ops", "now", null, store);
+    expect((await readControl(store, since)).shutdown?.by).toBe("human:ops");
+  });
+
+  it("records that start later, so the fold stops showing the drained daemon's request", async () => {
     const store = createMemoryEventStore();
     await recordStart(daemon, code, store);
     await requestShutdown("human:steven", "deploying", null, store);
-
     const since = await controlWatermark(store);
-    expect(since).toBe(1);
-    expect((await readControl(store)).shutdown?.version).toBe(2);
-    expect((await readControl(store, since)).shutdown?.version).toBe(2);
+    // A pause made to this daemon before the record lands is still its own.
+    await pauseConductor("human:ops", "flaky", store);
+
+    expect(await recordStartLate(daemon, code, since, store)).toBe(4);
+    expect((await readControl(store)).shutdown).toBeNull();
+    expect((await readControl(store, since)).paused).toBe(true);
   });
 
-  it("and to the whole stream when no start was ever recorded", async () => {
+  it("records nothing late over a shutdown asked of this daemon, which it is obeying", async () => {
     const store = createMemoryEventStore();
-    await requestShutdown("human:steven", "before", null, store);
+    await requestShutdown("human:steven", "for the day", null, store);
+    const since = await controlWatermark(store);
+    await requestShutdown("human:ops", "moving the database", null, store);
 
-    expect(await controlWatermark(store)).toBe(0);
+    expect(await recordStartLate(daemon, code, since, store)).toBeNull();
+    expect((await readControl(store)).shutdown?.by).toBe("human:ops");
+    expect((await store.read("ctl-conductor")).length).toBe(2);
   });
 });
 
@@ -495,6 +519,27 @@ describe("handing off a drain that was taken over", () => {
 
     await handOffStanding("human:steven", version, "restarting: picking up #88", code, store);
     expect((await readControl(store)).handoff).toMatchObject({ sha: "2926f2d", reason: "restarting: picking up #88", version: 2 });
+  });
+
+  /**
+   * The finding against the handoff fix: the plan read no request, so nothing
+   * was adopted, and steven's own `lingtai shutdown` landed before the restart's
+   * ask. `requestShutdownUnlessStanding` returns it as standing — and it carries
+   * no handoff, so it has to be handed off as an adopted one is.
+   */
+  it("hands off a request of the same person's that landed between the plan and the ask", async () => {
+    const store = createMemoryEventStore();
+    await recordStart(() => ({ by: "daemon", reason: null, handoff: null }), code, store);
+    await requestShutdown("human:steven", "deploying", null, store);
+
+    const asked = await requestShutdownUnlessStanding("human:steven", "restarting: picking up #88", null, store, false, code);
+    expect(asked).toMatchObject({ asked: false, standing: { by: "human:steven", version: 2 } });
+    expect((await readControl(store)).handoff).toBeNull();
+
+    const handed = await handOffStanding("human:steven", 2, "restarting: picking up #88", code, store);
+    expect(handed).toEqual({ asked: true, version: 3 });
+    await recordStart(answer, code, store);
+    expect(await startAfter(3, store)).toMatchObject({ by: "human:steven", handoff: 3 });
   });
 
   it("appends nothing once a start has ended the request, nor over a newer one", async () => {

@@ -111,22 +111,21 @@ export async function readControl(store: EventStore = eventStore, since = 0): Pr
 }
 
 /**
- * The watermark for a daemon whose start could not be recorded: the version of
- * the last `ConductorStarted` on the stream, or 0.
+ * The watermark for a daemon whose start could not be recorded: the length of
+ * the control stream, read after the lock and before the record was attempted.
  *
- * A daemon that recorded its start takes `recordStart`'s version, which is the
- * boundary between "somebody told the daemon before me" and "somebody is
- * telling me" with the start on it. Without that record nothing ends a request
- * made before this daemon, and the whole-stream fold — the board, `lingtai
- * doctor`, `service start`, a restart's wait — goes on showing it standing. Not
- * the stream's length, then: a daemon reading past a request the fold still
- * holds standing would conduct under a drain every other reader reports, and a
- * restart waiting on that request would wait for ever. From the last start, it
- * reads exactly what the fold says stands, and obeys it.
+ * A daemon that recorded its start takes `recordStart`'s version instead, which
+ * is the same boundary with the start on it. Without the record, the fold goes
+ * on showing a request made before this daemon as standing — but that request
+ * was aimed at the daemon that held the lock before, and obeying it would be
+ * the latch `#159` removed: a restart whose record failed drains straight back
+ * out on its own request, and a supervisor's respawn does so every thirty
+ * seconds. So this daemon reads past it, as a recorded one does, and keeps
+ * trying to record its start (`recordStartLate`) so every other reader comes
+ * to agree.
  */
 export async function controlWatermark(store: EventStore = eventStore): Promise<number> {
-  const events = await store.read(CONTROL_STREAM);
-  return events.findLast((e) => e.type === "ConductorStarted")?.version ?? 0;
+  return (await store.read(CONTROL_STREAM)).length;
 }
 
 /** Appends one event and returns the version it landed at. */
@@ -319,10 +318,43 @@ export async function recordStart(
   code: CodeVersion,
   store: EventStore = eventStore,
 ): Promise<number> {
+  return (await appendStart(attribute, code, store, null)) as number;
+}
+
+/**
+ * The record of a start that `recordStart` could not make when the daemon
+ * began, made later — **only while nothing said to this daemon since `since`
+ * stands**, or null and nothing appended.
+ *
+ * The fold ends a request at a start, so a late record landing after a request
+ * made to this daemon would show that request ended while the daemon obeys it.
+ * A request before `since` is the daemon before's, which this daemon already
+ * reads past, and the record is what makes the board, `lingtai doctor` and a
+ * restart waiting on `startAfter` say so too. The daemon's watermark does not
+ * move: a pause made between `since` and the record is still this daemon's.
+ */
+export async function recordStartLate(
+  attribute: (before: ControlState) => StartedBy,
+  code: CodeVersion,
+  since: number,
+  store: EventStore = eventStore,
+): Promise<number | null> {
+  return appendStart(attribute, code, store, since);
+}
+
+async function appendStart(
+  attribute: (before: ControlState) => StartedBy,
+  code: CodeVersion,
+  store: EventStore,
+  unlessToldSince: number | null,
+): Promise<number | null> {
   // Retried on a lost version race: something landing between the read and the
   // append is a reason to read and decide again, not a start with no record.
   for (let attempt = 0; ; attempt++) {
     const events = await store.read(CONTROL_STREAM);
+    if (unlessToldSince !== null && reduceControl(events.filter((e) => e.version > unlessToldSince)).shutdown !== null) {
+      return null;
+    }
     const { by, reason, handoff } = attribute(reduceControl(events));
     try {
       return await append(

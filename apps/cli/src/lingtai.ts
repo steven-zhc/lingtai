@@ -26,6 +26,7 @@ import {
   readControl,
   readStatus,
   recordStart,
+  recordStartLate,
   reconcile,
   requestRun,
   requestShutdown,
@@ -34,6 +35,7 @@ import {
   startBeacon,
   startDaemon,
   type CodeVersion,
+  type ControlState,
   type ShutdownRequest,
 } from "@lingtai/daemon";
 import { parseDuration } from "@lingtai/recipe";
@@ -303,10 +305,6 @@ function serviceOptions(): ServiceOptions {
     // a second one could fail where this succeeded.
     liveness: async () => (await daemonLiveness(() => readStatus())).detail,
     shutdown: async () => (await readControl()).shutdown,
-    pause: async () => {
-      const c = await readControl();
-      return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
-    },
   };
 }
 
@@ -432,31 +430,49 @@ async function daemonCommand(
   // withdrawn. The record is appended at the version of the read that decided
   // who it is, so nothing can land between the stream a start reads past and
   // the start itself.
-  let since: number;
+  let mark: number | null = null;
   let note: string | null = null;
+  const attribute = (before: ControlState) => {
+    const a = attributeStart({
+      restart,
+      handoff: before.handoff,
+      code,
+      tty: Boolean(process.stdin.isTTY),
+      user: process.env["USER"] ?? "operator",
+    });
+    note = a.note;
+    return a;
+  };
+  let recorded = false;
   try {
-    since = await recordStart((before) => {
-      const a = attributeStart({
-        restart,
-        handoff: before.handoff,
-        code,
-        tty: Boolean(process.stdin.isTTY),
-        user: process.env["USER"] ?? "operator",
-      });
-      note = a.note;
-      return a;
-    }, code);
+    // The stream as it stood after the lock, before the record — the watermark
+    // if the record below cannot be made.
+    mark = await controlWatermark();
+    mark = await recordStart(attribute, code);
+    recorded = true;
     if (note) console.log(paint.signal(note));
   } catch (err) {
     // Reported and not fatal, as it always was: a daemon that will not run for
-    // want of a record of itself is an outage over a log entry. But nothing then
-    // ends a request made before this daemon, so the watermark is the last start
-    // that was recorded (`controlWatermark`): this daemon obeys what the board,
-    // doctor and a waiting restart all still see standing, rather than conduct
-    // under a drain only it cannot read.
-    console.log(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
-    since = await controlWatermark();
+    // want of a record of itself is an outage over a log entry. Nor does it
+    // obey a request made before it: that was aimed at the daemon that held the
+    // lock before, and a restart whose record failed would otherwise drain
+    // straight back out on its own request (0045 §2). It reads past the stream
+    // as it was after the lock, and records its start later (`recordLate`), so
+    // the fold stops showing that request standing.
+    console.log(paint.fail(`the start could not be recorded: ${(err as Error).message} — trying again each pass`));
+    mark ??= await controlWatermark();
   }
+  const since = mark;
+  /** The record `recordStart` could not make, tried again off the reads the daemon acts on. */
+  const recordLate = async (): Promise<void> => {
+    if (recorded) return;
+    const at = await recordStartLate(attribute, code, since).catch(() => undefined);
+    if (at === undefined) return;
+    // Null is a shutdown asked of this daemon, which it is about to obey; a
+    // record now would show that request ended. Nothing more to record.
+    recorded = true;
+    if (at !== null) console.log(paint.muted(`the start is recorded now, at v${at}`));
+  };
 
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
@@ -658,6 +674,7 @@ async function daemonCommand(
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
+        await recordLate();
         const control = await readControl(undefined, since);
         asked = control.shutdown;
         // No remedy in the sentence any more. It used to say "lingtai resume
@@ -736,6 +753,7 @@ async function daemonCommand(
       // From this daemon's start, as the loop reads (0045). It folded the whole
       // stream, so a `--no-conduct` daemon still obeyed a request made to the
       // daemon before it — the latch `#159` removed everywhere else.
+      await recordLate();
       const control = await readControl(undefined, since).catch(() => null);
       const standing = control?.shutdown ?? null;
       if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs);
@@ -777,8 +795,11 @@ async function daemonCommand(
  * operator's controls.
  *
  * They append and return. The daemon is listening, so a pause takes effect at
- * its next opportunity; if it is down, the command is waiting when it comes
- * back rather than being a race somebody has to handle.
+ * its next opportunity. **They are addressed to the daemon running when they
+ * are made** (`#159`, 0045): a daemon reads the stream from its own start, and
+ * a start ends a shutdown in the fold, so a `pause` or `shutdown` made while no
+ * daemon is up is not waiting for the next one — that one starts and takes
+ * work.
  *
  * `shutdown` is the same shape for the same reasons, and for one more that is
  * not an implementation detail: a signal cannot carry it
@@ -1069,23 +1090,9 @@ async function main(argv: string[]): Promise<number> {
       const prepared = await prepareRestart(parsed.args, console.log, kept.kept);
       if (!prepared.ok) return prepared.code;
       if (prepared.handedOff !== null) {
-        const handedOff = prepared.handedOff;
         return startSupervised(
-          { by: prepared.by, handedOff, examined: prepared.examined },
-          {
-            // `service start` refuses while a request stands, and this restart's
-            // own does until a start ends it (0045). That one was aimed at the
-            // daemon that has drained, so it is not a reason to refuse the start
-            // it asked for; anybody else's still is.
-            start: () =>
-              serviceCommand(["start"], {
-                ...serviceOptions(),
-                shutdown: async () => {
-                  const standing = (await readControl()).shutdown;
-                  return standing?.version === handedOff ? null : standing;
-                },
-              }),
-          },
+          { by: prepared.by, handedOff: prepared.handedOff, examined: prepared.examined },
+          { start: () => serviceCommand(["start"], serviceOptions()) },
         );
       }
       const flags: Record<string, string> = {

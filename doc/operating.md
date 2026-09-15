@@ -806,24 +806,13 @@ yours (above). By hand, it is `lingtai shutdown
 aimed at the daemon running when it was made and no other (0045), so the copy
 the supervisor brings back once that daemon has exited takes work on the new
 code — the shutdown is the restart, with nothing to lift. `service start`,
-`service restart`, and `service install` over a job the supervisor does not
-have, still refuse and exit 1 without starting anything while a shutdown request
-stands — which is now only until the next start — and their advice still names
-`lingtai resume`; 0045 leaves that command's refusals to it.
-(`install` still writes the file, and after `resume` it is `service start` that
-loads it.)
+`service restart`, and `service install` start while a shutdown request stands,
+and say whose it is: the daemon they start reads nothing said before it, and its
+start ends the request (0045 §6).
 
-**`resume` lifts a pause as well as the shutdown** — it is one event, and both
-are cleared by it. If you had paused on purpose, `resume` alone lets the next
-daemon take the work you were holding. To keep the pause, take the supervisor
-out of the way first so nothing starts between the two commands: once the daemon
-has exited, `service stop`, `resume`, `pause "why"` again, `service start`. The
-refusal above names the pause and prints that order when one is in force.
-**Not for a pause that lifts itself** — the conductor's own, after a run that
-never started, carries a time (0031 §3) and `lingtai pause` cannot: pausing
-again would hold past that time until somebody resumed by hand. Wait out its
-time instead, then `resume`, which by then lifts only the shutdown. The refusal
-says which kind it found.
+**A pause is left alone by all of this.** No `resume` is needed after a
+shutdown, so none lifts a pause somebody set on purpose; a pause is about the
+daemon that is running, and `lingtai resume` is still what lifts it.
 
 #### Under a dedicated unprivileged user (Linux)
 
