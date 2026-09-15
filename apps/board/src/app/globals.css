@@ -766,6 +766,13 @@ details[open] > summary::before { content: "▾"; }
    argument: above it the state, below it what is being asked. */
 .sbody {
   display: grid;
+  /* `minmax(0, 1fr)` and not the default `auto`, for `.spair`'s reason one
+     level up: an `auto` track's minimum is its content's, so a single long line
+     anywhere under this block sizes the track and the whole page scrolls
+     sideways with it. Measured at 1425px: `scrollWidth` was 7754. This grid did
+     not blow up on its own — `.swhy` below it did — and it is capped here
+     because it is the same shape and would be next. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.35rem;
   margin-top: 0.15rem;
   padding-top: 0.6rem;
@@ -792,8 +799,18 @@ details[open] > summary::before { content: "▾"; }
    are not, and never were. */
 .sbody .diag { max-width: 62rem; font-size: 0.95rem; line-height: 1.55; }
 /* Rank 2's own grid, so what refused and the diagnosis' sentence keep the gap
-   they had when they were children of `.sbody`. */
-.swhy { display: grid; gap: 0.35rem; }
+   they had when they were children of `.sbody`.
+
+   **The track is capped, and that is what makes `.sraw` below scroll.** This
+   grid held `details.sreason`, which holds the `pre` a gate refused in. The
+   `pre` declares `overflow: auto` and a `max-height`, and says so in its own
+   comment — and none of it ran: an `auto` column track takes its minimum from
+   its content, so the track was sized to the longest line in the quote before
+   the `pre` was ever given a width to overflow. A refusal 35 lines wide made
+   the page 7754px against a 1425px window, and the moves you came to make were
+   off the right edge. `.spair` was written against exactly this and states the
+   reason; rank 2's own grid was not. */
+.swhy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
 
 /* Rank 3: one sentence, and a step down from the reason (#152). Ink and not
    brass — the rule at the left says who is waited on, and a sentence in amber
