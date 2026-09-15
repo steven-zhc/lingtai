@@ -10,6 +10,55 @@ and [the one that was chosen](https://claude.ai/code/artifact/9a68272d-9362-4ed5
 one** — that is a decision, not an omission, and a ticket that adds a
 translation layer is a ticket that was not asked for.
 
+## One team, one conductor, one recipe
+
+The code assumes this everywhere and **no document says it**, which is how a
+well-meaning person ends up running a second Lingtai against a repository the
+team's is already working:
+
+- `filter.ts` never reads `lingtai:working`. The queue is *what GitHub offers*
+  minus *what my own `task_view` says* — a second installation has no idea the
+  first one is working `#123`.
+- `lock.ts` takes `pg_try_advisory_lock`, **scoped to one database**. `#93` stops
+  two conductors on one log. It does nothing across two installations.
+
+So both would claim, both would cut `agent/123`, and both would push to it.
+`--force-with-lease` makes the second push fail, which makes the collision
+*loud* rather than preventing it — after both have spent an agent.
+
+**The topology is: one Lingtai per team, many people watching it.** That also
+settles the question this design started from — *does each person get their own
+recipe?* No, and the reason is the same as `AGENTS.md`: the conventions live with
+the code, are reviewed like code, and everyone who clones gets them. Per-person
+recipes would make *why did this merge* unanswerable — the log records who
+approved, but not under whose rules.
+
+What legitimately varies per person is already outside the recipe: the secrets
+in `~/.lingtai/env/<project>.env`, per machine, at 0600. Nothing else.
+
+This deserves its own ADR, and the wizard's words follow from it: it onboards a
+repository into **the team's** Lingtai, not *mine*.
+
+## Where an onboarded project actually lives
+
+There is no projects table. A project is two lines of SQL and a fold:
+
+```sql
+select distinct stream_id from events where stream_id like 'prj-%'
+```
+```ts
+streams.map((s) => store.read(s).then(reduceProject)).filter(isRegistered)
+```
+
+Today that is **two rows in `events`** — `prj-lingtai` and
+`prj-nextloom-ai-admin`, one `ProjectConfigured` each. `lingtai add` appends
+that event and nothing else.
+
+`isRegistered` is `project !== null && configHash !== null`, and `configHash`
+only exists once a recipe has been read. **So "this repository has a recipe" is
+already the line between registered and not** — the pending state needs no new
+concept, only a first event on the stream.
+
 ## The constraint that decides the shape
 
 ADR [0005](../decisions/0005-config-in-target-repo.md) puts the recipe in the
@@ -20,17 +69,12 @@ managed repository, and `lingtai add` says so in its own first paragraph:
 
 So a wizard that ends by saving a recipe **into Lingtai** would be building the
 second source of truth 0005 exists to prevent. Its output is a file that has to
-land in **somebody else's repository**, and the honest ways to put it there are:
+land in the repository, and it gets there as a **pull request**.
 
-| | |
-|---|---|
-| Show the YAML, they paste it | Works everywhere, and leaves them alone with a file nobody has taught them to read |
-| Commit to the base branch | The App can. It is also the one thing this system never does without asking |
-| **Open a pull request** | **Decided.** Reviewable, revertible, and how everything else here lands |
-
-A pull request also answers a question the wizard cannot: *is this recipe right
-for this repository?* Nobody knows until somebody who works there reads it, and
-a PR is where that reading already happens.
+**Not for review — there is one operator.** For the thing a PR is when nobody
+else reads it: *a diff you read before it lands*, rather than a file that
+appeared. That argument is weak for a new recipe and strong for an edited one,
+which is most of what this page will do after the first week.
 
 ## The second constraint: permissions before writing
 
@@ -41,102 +85,196 @@ recorded, and its reason is a day that was lost:
 > repository itself produced a day of 403s on CI, and nothing anywhere said
 > "wrong scope".
 
-The wizard inherits that rule and gets to do it better: a page can name *which*
-permission is missing and link to the screen that grants it, where a command can
-only print a sentence.
+The wizard inherits it and gets to do it better: a page can name *which*
+permission is missing and link to the screen that grants it.
+
+It also inherits the rule's spirit — **nothing is written anywhere until the last
+action**. No labels are created, no branch is cut. Abandon the wizard halfway and
+there is nothing to clean up. (Labels need no creating anyway: GitHub creates one
+the first time it is applied, so a recipe may name `agent:hold` before that label
+exists. Naming a label nobody has used yet is harmless, not dead configuration —
+this repository's own `exclude` names two.)
+
+## Onboard, or adjust
+
+**Step one reads the base branch.** If `.lingtai/config.yaml` is already there,
+the wizard loads it and becomes an **update flow** — the same page, the same two
+speeds, with the fast lane filled from the file instead of from a scan.
+
+**The update must be surgical, and this is the one place the implementation can
+be wrong in a way nobody notices.** `yaml@2.9.0` is already a dependency and its
+`parseDocument` + `setIn` preserve comments through an edit — verified. The naive
+implementation, parse to an object and re-emit, **silently destroys 74 of this
+repository's 503 recipe lines**, and those comments are the reason anyone dares
+change the file. A ticket that says "update the recipe" without saying *how* is a
+ticket that will be done the wrong way.
 
 ## The design: two speeds
 
 **Most of onboarding is Lingtai reading the repository back to you**, and it
 should go past in seconds. Two of the answers will still be in force months from
-now. So the page runs at two speeds, and **the speed is the signal** — no colour
+now. The page runs at two speeds, and **the speed is the signal** — no colour
 legend to learn first.
 
 Three states, and a line moves one way through them:
 
 | | |
 |---|---|
-| **fast row** | Read from the repository and already filled in. Never becomes a question. Always carries `change`. |
-| **decision** | Opens as a question in words, with its consequence written out. Two answers, each labelled with what it does. |
+| **fast row** | Filled in already. Never becomes a question. Always carries `change`. |
+| **decision** | Opens as a question in words, with its consequence written out. |
 | **settled** | An answered decision, **collapsed back to one line**. |
 
-**The collapse is the mechanism.** Without it the page grows forever and a
-scrolling wizard is worse than a stepper. With it, the page at any moment is a
-short list of settled facts plus one open question — which is why it reads as
-simple while remaining entirely configurable: every settled line still says
-`change`.
+**The collapse is the mechanism.** Without it a scrolling wizard grows forever
+and is worse than a stepper. With it the page is always a short list of settled
+facts plus one open question — simple to read, and still entirely configurable,
+because every settled line says `change`.
 
-### What is fast
+### Fast
 
-Asked of nobody; shown as filled-in:
-
-| field | read from |
+| row | filled from |
 |---|---|
 | `repo.base` | GitHub's default branch |
 | `repo.submodules` | is there a `.gitmodules` |
 | `source.kinds` | the labels the repository actually has |
-| `gates.proposed` | `package.json` scripts, `Makefile`, `Cargo.toml`, `go.mod`, `pyproject.toml` |
+| `source.exclude` | a recommended set. The labels need not exist yet |
+| `gates.proposed` | **every script found, with the guesses ticked** |
 | `env.required` | the names in `.env.example`, never the values |
+| `runtime.agent` | `claude-code` or `codex` — `lingtai doctor` already detects which is signed in |
 | `gates.end` | close the issue when it lands |
 
-### What is slow
+**`gates.proposed` shows all of them, not just the guess.** This repository is
+the counter-example to naive detection: its real build is `pnpm typecheck && pnpm
+test && pnpm test:db`, and a detector that reads `scripts.test` produces `pnpm
+test` — **silently dropping the database half that `#158` split out**. Listing
+every script turns that failure into an unticked box you can see.
 
-| field | the question, in words |
+Both managed repositories are monorepos, so this is the normal case, not the edge.
+
+### Slow
+
+| | the question, in words |
 |---|---|
 | `gates.merge` | *Does a person approve the merge?* |
-| `runtime.limits` | *What may one ticket spend before it comes back to you?* |
+| `runtime.limits` | four dials, and the sentence underneath them |
 
 **Two, and an agent review at `proposed` was the third candidate.** It costs
 money, which is the usual reason to slow down — but it is **reversible and cheap
-to be wrong about**, so it rides in the fast lane with a default. That is the
-criterion, and it is the one thing this design can get wrong:
+to be wrong about**, so it rides fast with a default. That is the criterion, and
+it is the one thing this design can get wrong:
 
 > A fast row must be something a person can get wrong and fix in a minute.
 > A slow one must be something they cannot.
 
-### Neither number is shown as a number
+**`limits` is four dials, not three presets** — `turns`, `wall`, `rounds`,
+`restarts` ([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md):
+rounds bound depth, restarts bound breadth). Underneath them, recomputed as they
+move, is **`passCeiling`'s own sentence** — the same function `lingtai status`
+and `lingtai add` print:
 
-`limits` is not four fields. It is a sentence with the total in it —
+> *up to 4 agent runs — the work, then 3 rounds back to the agent carrying what
+> refused it. 1h and 150 turns each … so at most 2 passes, 8 agent runs and 8h
+> before it is yours*
 
-> *a ticket may spend up to 4 agent runs, 8 hours and about $18 before it comes
-> back to you*
+Settable and consequential at once, in the product's own words rather than
+invented copy. Defaults: `turns 300 · wall 2h · rounds 2 · restarts 0`.
 
-— with three presets behind it. The same rule governs `merge`: the choice is
-written as what happens, not as `merge: []`. Both places are where being wrong is
-expensive **and silent**, and a number does not say what it costs.
+**No money, anywhere.** A new repository has no cost history, so a dollar figure
+would be fabricated — and there is no money field in the recipe to set. Runs and
+hours are exact; those are what is shown.
 
-`merge: []` in particular is this repository's own configuration, and it
-surprised its own operator. A page that prints it in words is worth having.
+### The one place a default flips
+
+If the scan finds **no checks at all** — no test, no typecheck, nothing for
+`gates.proposed` — then with `merge: []` the whole chain is *an agent writes
+code, nothing checks it, it lands in the base branch, nobody read it*. Many
+repositories have no tests, so this is not hypothetical.
+
+**That is the only case the wizard argues with.** The merge question's default
+flips to *a person approves*, and the last screen says it plainly:
+
+> Nothing checks a diff before it merges. Every ticket goes from an agent
+> straight into `develop`.
 
 ### The colours are the board's, unchanged
 
 Teal is what Lingtai worked out. **Brass is where a person is being waited on,
-and nothing else wears brass** — on this page or any other (0035 §3).
+and nothing else wears brass** — here or anywhere (0035 §3).
+
+## The last screen is the queue, not a warning
+
+`selectRunnable` is *what GitHub offers* minus *what `task_view` says*. A
+repository that has never run has no `task_view` rows, so the first pass is
+**exactly computable** from the kinds and exclude just chosen. The last screen is
+therefore `lingtai status` for a project that does not exist yet:
+
+```
+The next pass will take these, in this order
+  1  #412  bug      Search box drops the last keystroke
+  2  #398  bug      Importer times out over 2MB
+  …  9 more
+12 runnable · 18 passed over — excluded-label 14, no-kind 4
+
+[ Hold all 12 ]
+```
+
+Onboarding takes work immediately — that is the decision, and this screen is what
+stands between it and thirty tickets. *Walk away and wake up to thirty merged
+PRs* becomes *you saw the list before you pressed the button.*
+
+**`Hold all` is offered and never taken automatically.** It is thirty API writes
+and thirty timeline entries in the repository; that is the operator's to spend.
+
+Before any of it: **the generated recipe is parsed with the system's own
+`Recipe.parse`**. A PR that merges and then fails `lingtai add` would leave a bad
+file on the base branch. `source.kinds` has `.min(1)`, so the page must also stop
+you unticking the last kind rather than letting the parse catch it at the end.
+
+## Pending, and a button
+
+The wizard ends at the pull request. Then:
+
+```
+wizard finishes   → ProjectOnboardingStarted { slug, base, by }   ← the stream's first event
+board shows       → a card: pending, with Recheck
+Recheck           → read the recipe from the base branch
+  found           → the existing lingtai add path: ProjectConfigured, and it is live
+  not found       → unchanged, and it says .lingtai/config.yaml is not there yet
+```
+
+**No watcher, and that is deliberate.** The board is a page and cannot follow a PR
+for hours; the daemon does not know repositories it has not onboarded. *Watch the
+PR* was scope invented in the first draft and is removed rather than built.
+
+The daemon cannot touch a pending project either, and not because we guarded it:
+`loadProjects()` has filtered on `isRegistered` since before this existed.
+
+**The board must survive a pending card.** Its Queued column asks GitHub on
+render, and a pending project has no recipe — `currentRecipe` throws. One card
+that is not ready must not redden the page.
 
 ## What it does not do
 
-- **It does not run `lingtai add`.** The recipe is read from the base branch, so
-  the PR has to merge first. The last screen says so and offers to watch the PR.
-- **It does not edit an existing recipe.** A managed repository has a recipe with
-  somebody's reasons in its comments, and regenerating it would throw those away
-  silently. Editing is a different shape and a later ticket.
-- **It never takes a secret.** `env.required` names variables; the values go
-  through `lingtai env set`, which reads them from stdin unechoed. The page shows
-  the names and that command. Nothing is typed into a web page.
-- **It generates the comments too.** This repository's own
-  `.lingtai/config.yaml` is more comment than configuration, and those comments
-  are why anybody dares change it later. A generated file with none is a file
-  nobody will edit — so the sentences the wizard showed are written into the YAML
-  it opens the PR with.
+- **It does not run `lingtai add` for you.** The recipe is read from the base
+  branch, so the PR merges first. `Recheck` is the second half.
+- **It never takes a secret.** `env.required` names variables; values go through
+  `lingtai env set`, which reads them from stdin unechoed. Nothing is typed into
+  a web page.
+- **It does not show `runtime.tier`.** That concept is configured in the agent
+  itself, or in `AGENTS.md`. It is still in the recipe schema
+  (`recipe.ts:476`) and whether that field should exist at all is a separate
+  question, not this page's.
+- **It generates the comments.** A recipe with none is a file nobody edits, so
+  the sentences the wizard showed are written into the YAML it proposes.
 
-## Open, for the tickets to settle
+## Out of scope, named so nobody builds it by accident
 
-- **Detection depth.** Reading `package.json` is one API call. Inferring targets
-  from a `Makefile` is guesswork with a nice UI on top. Proposal: detect what is
-  unambiguous, and where it is not, show the file and let the person pick a line.
-- **The first screen has nothing to show.** Before a repository is connected the
-  live recipe is empty, and that is the screen that has to be convincing.
-  Proposal: it shows *what we found in your repository* rather than the file.
-- **Who is it for the second time?** Somebody onboarding their fifth repository
-  wants six clicks, not six questions. *Start from another project's recipe* may
-  be worth more than any of this, and is cheaper. Separate ticket.
+- **Authentication.** Today `actor()` is `human:${process.env.USER}` — whatever
+  the OS says, unverifiable, meaningless across machines. Real identity is a
+  separate epic; its cheapest shape is GitHub OAuth on the board, with authority
+  delegated to the repository (*can you push here? then you can approve here*),
+  and it needs no event change: `human:<id>` stays, the `<id>` becomes true. The
+  real cost is not OAuth — it is that a board reachable from a network holds the
+  App key and can merge code.
+- **Editing another project's recipe from this project's board.** One page, one
+  repository.
+- **A second language.**
