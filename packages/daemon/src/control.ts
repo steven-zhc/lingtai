@@ -7,8 +7,11 @@
  * **Control goes through the log.** Pausing is a decision somebody made, and
  * `ApprovalGranted` is already that shape — "who stopped the conductor at four
  * o'clock" should not need a different mechanism than "who approved this
- * merge". It also means a command issued while the daemon is down is waiting
- * when it comes back, which is the behaviour you want rather than a race.
+ * merge". A `lingtai now` issued while the daemon is down is waiting when it
+ * comes back. **A pause and a shutdown are not**: each is aimed at the daemon
+ * running when it is made, and the next start ends it
+ * ([0045](../../../doc/decisions/0045-a-request-ends-at-the-next-start.md) §1)
+ * — so one issued while the daemon is down or restarting holds nothing.
  *
  * **Liveness does not.** A heartbeat every few seconds, forever, fails the
  * log's admission test — *is this worth remembering later* — and would bury

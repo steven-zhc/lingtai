@@ -69,6 +69,26 @@ describe("the work loop", () => {
     }
   });
 
+  /**
+   * `start` resolves after the first pass, which can be an hour. The daemon says
+   * `up` off this, so a supervised restart judging its start by `up` is judging
+   * a loop that is following the log, not one whose `headSeq` could still throw.
+   */
+  it("says it is listening once it follows the log, before the startup pass", async () => {
+    const said: string[] = [];
+    const loop = createWorkLoop({
+      onListening: () => void said.push("listening"),
+      pass: async (reason) => void said.push(reason),
+    });
+
+    await loop.start();
+    try {
+      expect(said).toEqual(["listening", "startup"]);
+    } finally {
+      await loop.stop();
+    }
+  });
+
   it("wakes on a completion event and not on anything else", async () => {
     const reasons: string[] = [];
     const loop = createWorkLoop({ pass: async (r) => void reasons.push(r) });

@@ -47,12 +47,14 @@
  * A start ends a request now, so what is left of 0042's sequence is what was
  * never about control state: the checks, before and after the wait.
  *
- * **Under a supervisor the check after the wait is a comparison, not a
- * refusal.** launchd's `KeepAlive` and systemd's `Restart=always` start the next
- * daemon the moment the drained one exits, and nothing holds that start back —
- * holding it back is the latch `#159` removed. So the supervised restart waits
- * for a start to be recorded, and exits 0 only when it is this restart's, on the
- * commit that was checked; anything else it names, and exits non-zero.
+ * **Under a supervisor the check after the wait is the respawn's.** launchd's
+ * `KeepAlive` and systemd's `Restart=always` start the next daemon the moment the
+ * drained one exits, without waiting for this command. So the daemon that ends
+ * a restart's handoff runs the check on itself, and takes nothing from a commit
+ * the remote does not have or a worktree the restart did not waive
+ * (`attributeStart`). The supervised restart waits for a start to be recorded,
+ * and exits 0 only when it is this restart's, on the commit that was checked;
+ * anything else it names, and exits non-zero.
  *
  * ## One flag per refusal
  *
@@ -578,10 +580,33 @@ export async function prepareRestart(
   }
 
   if (supervised) {
-    // No second check to refuse on: the supervisor's start does not wait for
-    // this command, and reads the disk for itself. What the check became is the
-    // comparison `startSupervised` makes against what the start recorded.
+    // The supervisor's start does not wait for this command and reads the disk
+    // for itself, so the refusal after the wait is the respawn's to make, on
+    // itself (`attributeStart`): off the handoff, a commit these checks would
+    // refuse takes nothing. It is asked here as well, only so this command says
+    // it now rather than timing out on a start that will never be recorded —
+    // and only while nothing has started, since a start already recorded froze
+    // the code it was on and what the disk says after is not its.
     if (request === null) throw new Error("a supervised restart always asks a drain before it waits");
+    if ((await startAfter(request).catch(() => null)) === null) {
+      const now = await codeIdentity();
+      const moved = now.sha !== identity.sha || now.dirty !== identity.dirty;
+      const refused = identityRefusals(now).filter((r) => !(r.what === "dirty" && identity.dirty));
+      if (moved && refused.length > 0) {
+        sayRefusal(
+          `the wait is over and the checkout is ${describeIdentity(now)}, which these checks refuse — the supervisor's start refuses it too, and takes nothing:`,
+          refused.map((r) => ({ line: r.line, waiver: null })),
+          log,
+        );
+        log(
+          paint.muted(
+            `every start it makes refuses the same until the checkout is back to what can be started. ` +
+              `pnpm lingtai service stop keeps it down meanwhile, and lingtai restart checks again.`,
+          ),
+        );
+        return { ok: false, code: 1 };
+      }
+    }
     return { ok: true, by, reason: args.reason, supervised: true, request, examined: { sha: identity.sha, dirty: identity.dirty } };
   }
 
@@ -764,23 +789,27 @@ export function formatFailures(
  *   person asked for, which `planRestart` adopts rather than refuses.
  * - **a supervisor's start answers a restart's handoff** (0042 §8), which rides
  *   on the request it ends, and takes its `by` and `reason` only when it is
- *   running the commit that restart examined. On a different commit it is
- *   recorded as `daemon`, says why, and still names the request, so the restart
- *   that is waiting on it can say so.
+ *   running the commit that restart examined. On a different commit that the
+ *   restart's checks would refuse — not on the remote, or dirty — **it declines**,
+ *   which is the check after the wait run where it can still refuse. On one they
+ *   would pass it is recorded as `daemon`, says why, and still names the
+ *   request, so the restart that is waiting on it can say so.
  * - a start typed at a terminal is the typist's, whatever stands — it is not the
  *   supervisor's start, and must not be recorded as the restart's.
  * - otherwise `daemon`, since stdin that is not a terminal is launchd, systemd,
  *   a script or `nohup`, and none of those is a person's hand.
  *
- * **Only the restart in this process ever declines.** There used to be a start
- * that was not recorded — one into a standing drain, which read it and exited,
- * every thirty seconds under a supervisor. A start reads nothing said before it
- * now, so it has nothing to exit on.
+ * **Only a restart's start ever declines** — the one in this process, or the
+ * supervisor's that its handoff names. There used to be a start that was not
+ * recorded because a drain stood, whoever's; a start reads nothing said before
+ * it now, so a drain alone is nothing to exit on.
  */
 export function attributeStart(input: {
   restart: { by: string; reason: string; request: number | null } | null;
   control: Pick<ControlState, "shutdown">;
   code: Pick<CodeVersion, "sha" | "dirty">;
+  /** The checkout as `lingtai restart`'s checks read it — whether `code` is pushed, and against what. */
+  identity: Identity;
   tty: boolean;
   user: string;
 }): StartDecision {
@@ -816,6 +845,24 @@ export function attributeStart(input: {
   }
   if (handoff.sha === code.sha && handoff.dirty === code.dirty) {
     return { record: true, by: handoff.by, reason: handoff.reason, handoff: handoff.version, note: null };
+  }
+  // **The check after the wait, where the start is.** The restart cannot run it
+  // as a refusal under a supervisor — the respawn does not wait for it — so the
+  // respawn runs it on itself: a commit the remote does not have, or one that
+  // could not be checked, refuses, and so does a dirty worktree unless the
+  // restart's own was (its `--dirty`). A checkout that moved on to pushed, clean
+  // code — a merge landing during the drain — is not refused; it is `daemon`,
+  // below, and the restart names it.
+  const refused = identityRefusals(input.identity).filter((r) => !(r.what === "dirty" && handoff.dirty));
+  if (refused.length > 0) {
+    return {
+      record: false,
+      why:
+        `a restart by ${handoff.by} checked ${describeIdentity(handoff)}, and the checkout is now ` +
+        `${describeIdentity(input.identity)}, which its checks refuse — ${refused.map((r) => r.line).join("; ")}. ` +
+        `Every start the supervisor makes refuses the same until the checkout is back to what can be started; ` +
+        `pnpm lingtai service stop keeps it down meanwhile`,
+    };
   }
   const why =
     `a restart by ${handoff.by} checked ${describeIdentity(handoff)} and handed the start to the supervisor, ` +

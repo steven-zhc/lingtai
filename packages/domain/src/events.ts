@@ -904,8 +904,12 @@ export const PassRestarted = z.object({
  * should not need a different mechanism than "who approved this merge"
  * ([0013](../../../doc/decisions/0013-daemon-hosts-the-work.md)).
  *
- * It also means a command issued while the daemon is restarting is *waiting*
- * when it comes back, rather than being a race somebody has to handle.
+ * **It is aimed at the daemon running when it is made, and ends at the next
+ * start** ([0045](../../../doc/decisions/0045-a-request-ends-at-the-next-start.md)
+ * §1). A pause issued while the daemon is down or restarting is **not** waiting
+ * when it comes back: that start ends it, in the daemon's read and in every
+ * fold — and under launchd or systemd the start comes by itself. To hold a
+ * supervised daemon through something, `lingtai service stop` keeps it down.
  *
  * Liveness deliberately does **not** go here. A heartbeat every few seconds
  * fails the log's admission test — is this worth remembering later — and would
@@ -942,7 +946,8 @@ export const ConductorResumed = z.object({ by: z.string() });
  * agent at the same instant, and `kill <pid>` reaches the daemon alone and
  * orphans it. Neither can mean *finish what you are holding*. An append can,
  * and it lands the way a pause does — at the daemon's next opportunity, with no
- * restart, and waiting in the stream when the daemon is down.
+ * restart. Like a pause it is **not** waiting when a daemon that is down comes
+ * back: the next start ends it (`0045` §1).
  *
  * `timeoutMs` is null by default and that is a decision rather than an
  * omission (0030 §6): a drain that gives up after some minutes recreates the

@@ -392,7 +392,8 @@ describe("whose start it is", () => {
     handoff: { sha: "2926f2d", dirty: false },
   };
   const plain: ShutdownRequest = { ...handed, reason: "stopping for the day", handoff: null };
-  const base = { restart: null, control: { shutdown: null }, code, tty: false, user: "ops" };
+  const pushed = (sha: string, dirty = false) => ({ sha, dirty, base: "origin/main", pushed: true, unknown: null });
+  const base = { restart: null, control: { shutdown: null }, code, identity: pushed("2926f2d"), tty: false, user: "ops" };
 
   /**
    * There used to be a start that was not recorded: one into a standing drain,
@@ -419,9 +420,38 @@ describe("whose start it is", () => {
   });
 
   it("does not, on another commit — it is `daemon`, says why, and still names the request", () => {
-    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, control: { shutdown: handed } });
+    // A merge landed in the checkout during the drain: pushed, clean, and not
+    // what was checked.
+    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, identity: pushed("582a0f8"), control: { shutdown: handed } });
     expect(a).toMatchObject({ record: true, by: "daemon", handoff: 4 });
     expect(a.record && a.reason).toContain("582a0f8");
+  });
+
+  /**
+   * The finding against the third round. Under launchd a restart at 2926f2d
+   * asks its drain with the handoff; during the fifty-minute pass somebody
+   * amends, so HEAD is 582a0f8 and the remote does not have it. The respawn
+   * must not conduct from it — the check after the wait, run where the start is.
+   */
+  it("declines a supervisor's start on a commit the remote does not have, which the restart's check would refuse", () => {
+    const amended = { sha: "582a0f8", dirty: false, base: "origin/main", pushed: false, unknown: null };
+    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, identity: amended, control: { shutdown: handed } });
+    expect(a.record).toBe(false);
+    expect(!a.record && a.why).toContain("582a0f8");
+    expect(!a.record && a.why).toContain("service stop");
+  });
+
+  it("declines one on a dirty worktree the restart did not waive, and not one it did", () => {
+    const dirty = { code: { sha: "2926f2d", dirty: true }, identity: pushed("2926f2d", true) };
+    expect(attributeStart({ ...base, ...dirty, control: { shutdown: handed } }).record).toBe(false);
+    const waived: ShutdownRequest = { ...handed, handoff: { sha: "2926f2d", dirty: true } };
+    expect(attributeStart({ ...base, ...dirty, control: { shutdown: waived } })).toMatchObject({ record: true, by: "human:steven" });
+  });
+
+  it("declines nothing where there is no handoff, whatever the checkout — only a restart's checks refuse", () => {
+    const amended = { sha: "582a0f8", dirty: true, base: "origin/main", pushed: false, unknown: null };
+    expect(attributeStart({ ...base, identity: amended, control: { shutdown: plain } })).toMatchObject({ record: true, by: "daemon" });
+    expect(attributeStart({ ...base, identity: amended, tty: true, control: { shutdown: handed } })).toMatchObject({ record: true });
   });
 
   it("does not give a typed start the restart's name", () => {

@@ -16,6 +16,7 @@ import { backlogProjection, taskViewProjection } from "@lingtai/projector";
 import type { Tier } from "@lingtai/domain";
 import {
   clientsForProjects,
+  codeIdentity,
   createStatusTable,
   createWorkLoop,
   describeInFlight,
@@ -30,6 +31,7 @@ import {
   requestShutdown,
   resumeConductor,
   HEARTBEAT_MS,
+  STALE_AFTER_MS,
   startBeacon,
   startDaemon,
   type CodeVersion,
@@ -417,12 +419,16 @@ async function daemonCommand(
   // on — and a start with no record would have no watermark to hear from.
   let since: number;
   try {
+    // What a restart's checks would say about this checkout, for a supervisor's
+    // start off a restart's handoff to run on itself (`attributeStart`).
+    const identity = await codeIdentity();
     const recorded = await recordStart(
       (control) =>
         attributeStart({
           restart,
           control,
           code,
+          identity,
           tty: Boolean(process.stdin.isTTY),
           user: process.env["USER"] ?? "operator",
         }),
@@ -500,9 +506,11 @@ async function daemonCommand(
     return [];
   });
   if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`));
-  // The slow half is done. The timer has been running throughout it; this is
-  // the word changing, not the beating starting.
-  void beacon.say("up");
+  // The slow half is done, but the word does not change here. `up` is what a
+  // supervised restart judges its start by (`startSupervised`), so it is said
+  // once the loop is following the log — below — and not while the subscribers
+  // and `headSeq` could still throw and leave a process beating `up` with no
+  // work loop in it.
 
   /**
    * How a daemon that takes no work hears a shutdown. Unset while it takes work,
@@ -656,6 +664,8 @@ async function daemonCommand(
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.
       discuss: (event) => onDiscussionRequested(event, (line) => console.log(line)),
+      // Following the log, and only now `up` — see where the reconcile ends.
+      onListening: () => void beacon.say("up"),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
       paused: async () => (await readControl(undefined, since)).paused,
@@ -717,7 +727,22 @@ async function daemonCommand(
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`));
-    await loop.start();
+    try {
+      await loop.start();
+    } catch (err) {
+      // `headSeq` or the subscription, before the loop ever followed the log.
+      // Thrown out of here, the projectors and the beacon's timer held the
+      // process open with the lock and no work loop — nothing noticed, and
+      // `KeepAlive` never replaces a process that has not exited. So it stops,
+      // saying `stopping` rather than `up`, and the supervisor's next copy
+      // records a start of its own.
+      console.log(paint.fail(`the work loop could not start — ${(err as Error).message}. Nothing was taken, and this daemon has stopped.`));
+      await loop.stop().catch(() => {});
+      await beacon.stop("stopping");
+      started.daemon.stop();
+      await started.daemon.stopped;
+      return 1;
+    }
     // A question asked while nothing was listening is waiting in the stream,
     // exactly as a pause is (0013). After `start`, so the subscription is
     // already up and a question that arrives during this one is not missed.
@@ -747,6 +772,7 @@ async function daemonCommand(
       if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs);
     };
     listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS);
+    void beacon.say("up");
     await hearShutdown();
   }
 
@@ -781,8 +807,10 @@ async function daemonCommand(
  * operator's controls.
  *
  * They append and return. The daemon is listening, so a pause takes effect at
- * its next opportunity; if it is down, the command is waiting when it comes
- * back rather than being a race somebody has to handle.
+ * its next opportunity. If it is down, a `now` is waiting when it comes back —
+ * **a pause and a shutdown are not**: each is aimed at the daemon running when
+ * it is made, and the next start ends it (`0045` §1). So `pause` says so when no
+ * daemon is up to hear it.
  *
  * `shutdown` is the same shape for the same reasons, and for one more that is
  * not an implementation detail: a signal cannot carry it
@@ -821,6 +849,21 @@ async function controlCommand(
     }
     await pauseConductor(by, reason);
     console.log(paint.held(`paused by ${by} — ${reason}`));
+    // The pause is the running daemon's, and the next start ends it (`0045`).
+    // With no daemon up to hear it, that start is the next thing to happen to it
+    // — by itself, under a supervisor — so this is the moment to say so.
+    const beat = await readStatus().catch(() => null);
+    if (!beat || beat.state === "stopping" || Date.now() - beat.lastSeenAt.getTime() > STALE_AFTER_MS) {
+      const kept = keeper();
+      console.log(
+        paint.signal(
+          "no daemon is up to hear it, and the next start ends a pause made before it" +
+            ("kept" in kept && kept.kept
+              ? ` — ${kept.path} makes that start by itself. pnpm lingtai service stop is what holds it down.`
+              : " — a lingtai run obeys it, and a daemon started after it does not."),
+        ),
+      );
+    }
     return 0;
   }
 

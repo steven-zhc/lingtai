@@ -245,6 +245,14 @@ export interface WorkLoopOptions {
    * what a test wants and what a machine with a reachable webhook can afford.
    */
   sweepMs?: number;
+  /**
+   * Called once `start` is following the log, before the first pass.
+   *
+   * `start` resolves only after that pass, which can be an hour; this is the
+   * moment the loop is actually running. The daemon says `up` here and not
+   * before, so a start whose `headSeq` threw never said it (`0045` §4).
+   */
+  onListening?: () => void;
   /** Defaults to `COMPLETION_EVENTS`. */
   triggers?: readonly string[];
   /** Session-mode connection for the subscription. */
@@ -523,6 +531,8 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         },
         onError: (error, phase) => log(`subscription ${phase}: ${String(error)}`),
       });
+
+      options.onListening?.();
 
       // The cold start. Nothing is in flight, so nothing will tell us to begin.
       await pump("startup");

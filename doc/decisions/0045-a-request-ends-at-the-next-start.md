@@ -146,8 +146,17 @@ So a supervised `restart`:
 
 - asks its drain with the handoff, even when nothing is conducting;
 - waits until the lock is free **or** a start is recorded after its request;
-- does **not** check the commit and worktree again as a refusal — the respawn
-  does not wait for this command, and reads the disk for itself;
+- does not check the commit and worktree again *in this process* as a refusal
+  — the respawn does not wait for this command, and reads the disk for itself —
+  so **the respawn runs that check on itself**: a start that ends a request
+  carrying a handoff, on a commit other than the one checked, takes nothing
+  when the restart's checks would refuse it — not on the remote, not
+  establishable, or dirty where the restart's was not. Every copy the supervisor
+  brings back declines the same until the checkout is fixed or `service stop`,
+  which is the refusal 0042 promised, kept where it can still refuse. A checkout
+  that moved on to pushed, clean code — a merge during the drain — starts as
+  `daemon`. The restart says the same when it sees it after the wait, rather
+  than timing out;
 - runs `service start` only if no start is recorded yet;
 - waits up to 90 seconds for the record and exits 0 only for a start that names
   its request, as its person, on the commit it examined. **That comparison is
@@ -197,7 +206,7 @@ withdrawal, the lapse and the refusal after the wait under a supervisor are.
 | `ConductorShutdownWithdrawn` | **appended by nothing; schema and fold kept** | The log has them, and replay must read them as it did. It no longer makes a handoff. |
 | `ControlState.handoff`, `Handoff` | **deleted** | The handoff is a field of the request it rides on (§3). |
 | `HANDOFF_LAPSES_MS` | **deleted** | A clock from the request would expire during the drain (§3). |
-| `attributeStart` | **kept, handoff branch kept**; *start into a standing drain is not recorded* **deleted**; declines only for a terminal restart over another request | §2, §4. |
+| `attributeStart` | **kept, handoff branch kept**; *start into a standing drain is not recorded* **deleted**; declines only for a terminal restart over another request, or a supervisor's start off a handoff on a commit the restart's checks refuse | §2, §4. |
 | `startRecorder` | **deleted** | It deferred the record to the loop's read because a withdrawal could land between two reads. `recordStart` decides and appends at one. |
 | `controlWatermark` | **deleted** | The record is the watermark (§2). |
 | `recordStart` | **kept; decides at its read, returns the version, and is fatal to miss** | §2. |

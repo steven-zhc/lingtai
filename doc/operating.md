@@ -693,8 +693,11 @@ carrying a **handoff** — the commit it checked — and waits as above, until t
 lock is free or a start is recorded: the supervisor starts the next daemon the
 moment the old one exits, without waiting for the restart. If nothing has
 started yet it runs `service start`, and it waits up to 90 seconds for the start
-to be recorded. There is no second check to refuse on, because the supervisor's
-start does not wait for one; what replaces it is a comparison. The supervised
+to be recorded. The supervisor's start does not wait for a second check, so it
+runs that check on itself: on a commit other than the one checked, it takes
+nothing if that commit is not on the remote or the worktree is dirty (unless the
+restart's was, with `--dirty`), and every copy the supervisor brings back does
+the same until the checkout is fixed or `service stop`. The supervised
 daemon takes the restart's name off the request its start ends only if it is
 running the commit that was checked; on any other commit it is recorded as
 `daemon` and says why, and the restart exits non-zero naming what did start — as
