@@ -11,8 +11,18 @@
  * `runQueue` the daemon's pass does, so it holds the same advisory lock, and a
  * second one is turned away rather than racing for the same ticket. See
  * `conductor-lock.ts`.
+ *
+ * **And it reads the pause, which the lock does not carry** (#166). The lock is
+ * about concurrency — one conductor at a time — and a pause is about consent:
+ * `lingtai pause "migrating the database"` with no daemon up left the lock free,
+ * and a `lingtai run` from a cron entry took it and dispatched an agent against
+ * the database being moved. A paused system means no conductor takes work,
+ * whichever one it is. See `heedThePause` below for why this read is not scoped
+ * the way the daemon's is.
  */
 import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from "@lingtai/conductor";
+import { readControl } from "@lingtai/daemon";
+import type { EventStore } from "@lingtai/event-store";
 import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
@@ -46,7 +56,18 @@ export interface RunOptions {
    * the operator's daemon; nothing else should set it.
    */
   lockKey?: string;
+  /** The log the pause is read from. The suite passes a memory store; nothing else should set it. */
+  store?: EventStore;
 }
+
+/**
+ * What `lingtai run` does under a standing pause, as `lingtai pause` and
+ * `lingtai doctor` say it. One sentence in one place, and
+ * `pure/run-pause.test.ts` holds it against what `run` actually does — `#159`'s
+ * second attempt printed a sentence about this command that was false.
+ */
+export const RUN_UNDER_A_PAUSE =
+  "a lingtai run started while it stands takes no work, daemon or none — lingtai resume lifts it";
 
 /**
  * A refusal, in the error channel rather than as a `return 1` and a log line.
@@ -65,10 +86,47 @@ class Refused extends Data.TaggedError("Refused")<{ readonly detail: string }> {
 
 const refuse = (detail: string) => new Refused({ detail });
 
+/** Somebody paused the conductor, and this command is a conductor. */
+class Paused extends Data.TaggedError("Paused")<{
+  readonly by: string | null;
+  readonly reason: string | null;
+  readonly until: Date | null;
+}> {}
+
+/**
+ * **Before the lock, and before anything else.** A pause is a person's decision
+ * that nothing takes work, so a paused `lingtai run` has no business taking the
+ * lock either — and "why did nothing run" is answered by the pause rather than
+ * by whoever happened to hold the lock at the time.
+ *
+ * **The whole stream, not scoped by `since`** as the daemon's read is (`#159`).
+ * The daemon scopes its signals to the process they were aimed at, because a
+ * daemon lives for days and the next one should not inherit the last one's
+ * pause. This command's life starts now: scoped to its own start, it would see
+ * no pause ever, which is exactly the state this ticket found. What stands is
+ * what `lingtai doctor` and the board report, and that is what it obeys.
+ *
+ * Read once, as the daemon's pass reads it once. A pause issued while this
+ * command is already working is not heard by it; the next `lingtai run` is.
+ */
+const heedThePause = (store: EventStore | undefined) =>
+  Effect.tryPromise({
+    try: () => readControl(store),
+    // Not "not paused": a pause that could not be read is not consent.
+    catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
+  }).pipe(
+    Effect.flatMap((control) =>
+      control.paused
+        ? Effect.fail(new Paused({ by: control.by, reason: control.reason, until: control.until }))
+        : Effect.void,
+    ),
+  );
+
 export async function run(options: RunOptions, log = console.log): Promise<number> {
   const program = Effect.gen(function* () {
     /**
-     * **First, before anything is read and long before anything is claimed.**
+     * **First, before anything is read and long before anything is claimed** —
+     * the pause aside, which is asked before this scope is entered at all.
      *
      * `lingtai run` is a conductor — it takes the queue through the same
      * `runQueue` the daemon's pass does — and there was nothing stopping two of
@@ -230,8 +288,21 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
   return Effect.runPromise(
-    program.pipe(
-      Effect.provide(ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey })),
+    heedThePause(options.store).pipe(
+      Effect.zipRight(
+        program.pipe(Effect.provide(ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey }))),
+      ),
+      // Exit 0, as for the lock below: nothing went wrong, a person decided
+      // this. Who and why, because a pause nobody remembers is the one this
+      // line is for.
+      Effect.catchTag("Paused", (p) =>
+        Effect.sync(() => {
+          const lifts = p.until ? ` until ${p.until.toISOString()}` : "";
+          log(`paused by ${p.by ?? "somebody"}${lifts} — ${p.reason ?? "no reason given"}`);
+          log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`);
+          return 0;
+        }),
+      ),
       Effect.catchTag("Refused", (r) =>
         Effect.sync(() => {
           log(r.detail);

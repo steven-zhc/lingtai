@@ -51,7 +51,7 @@ import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
-import { run as runOnceCommand } from "./run.ts";
+import { RUN_UNDER_A_PAUSE, run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { status } from "./status.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
@@ -149,7 +149,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 manager? run lingtai daemon in the foreground
   lingtai pause <why>               stop the running daemon taking new tickets; a
                                 run in flight finishes. About the daemon that is
-                                running, and gone when it is
+                                running, and gone when it is — but not for
+                                lingtai run, which takes nothing while a pause
+                                stands, daemon or none
   lingtai resume                    take tickets again
   lingtai shutdown [why]            stop the daemon, letting the ticket in flight
                                 finish first — the pass, so the gates and the
@@ -812,6 +814,9 @@ async function controlCommand(
     }
     await pauseConductor(by, reason);
     console.log(paint.held(`paused by ${by} — ${reason}`));
+    // What is true about the other conductor, and the sentence `run` itself
+    // prints when it refuses (#166). `#159` printed one here that was not.
+    console.log(`${RUN_UNDER_A_PAUSE}.`);
     return 0;
   }
 
