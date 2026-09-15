@@ -1,5 +1,6 @@
 export * from "./recipe.ts";
 export * from "./presets.ts";
+export * from "./propose.ts";
 export * from "./resolve.ts";
 export {
   BadWatchPatternError,

@@ -2182,6 +2182,41 @@ git add -A && git commit -q -m "fix"
       // which is why it is not called `empty`.
       expect(outcome.stopped).toBe("exhausted");
     }, 300_000);
+
+    /**
+     * #166, as it was found: a whole-queue run, a pause issued while its first
+     * ticket's agent is working, and a second ticket runnable behind it. The
+     * ticket in hand finishes; the second is not taken.
+     */
+    it("takes no other ticket once a pause stands, the one in hand finished", async () => {
+      await projectionReady();
+      const agent = await agentThat(`
+mkdir -p src && echo "export const p = $RANDOM;" > src/fix.ts
+git add -A && git commit -q -m "fix"
+`);
+
+      // Clear before the first ticket; paused by the time it has finished.
+      let asked = 0;
+      const outcome = await queue({
+        project: schedProject,
+        client: offering([147, 148]),
+        runtime: createClaudeCodeRuntime({ binary: agent }),
+        hookBinary,
+        prompt: "fix the race",
+        recipe: SCHED_RECIPE,
+        merge: false,
+        home,
+        store,
+        remote: originPath,
+        gitEnv: { ...process.env, ...authored },
+        paused: async () => (asked++ === 0 ? null : "paused by human:ops — migrating the database"),
+      });
+
+      expect(outcome.ran).toHaveLength(1);
+      expect(outcome.attempted).toHaveLength(1);
+      expect(outcome.stopped).toBe("paused");
+      expect(asked).toBe(2);
+    }, 300_000);
   });
 
   /**

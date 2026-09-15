@@ -58,6 +58,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import pg from "pg";
+import { RUN_UNDER_A_PAUSE } from "./run.ts";
 
 /**
  * `warn` is not a weak `fail`. It means **nothing is wrong and you should know
@@ -601,14 +602,18 @@ export interface DoctorReport {
  */
 export async function daemonLiveness(
   read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
+  /** The control fold. Doctor's own swallows a failure; the suite passes a memory store's. */
+  readPause: () => Promise<Awaited<ReturnType<typeof readControl>> | null> = () => readControl().catch(() => null),
 ): Promise<CheckResult> {
   const status = await read();
   // Read before the early return. A pause is in force whether or not a daemon
   // has ever run, and it is exactly the thing somebody will forget they set —
   // reporting liveness without it would be the same silence this check exists
   // to break.
-  const control = await readControl().catch(() => null);
-  const paused = control?.paused ? `, paused by ${control.by} (${control.reason})` : "";
+  const control = await readPause();
+  // With what it means for `lingtai run`, which obeys it daemon or none (#166):
+  // "why did nothing run" and "why did something run" answered in one row.
+  const paused = control?.paused ? `, paused by ${control.by} (${control.reason}) — ${RUN_UNDER_A_PAUSE}` : "";
   // A third fact beside those two, and independent of both (0030): being
   // current, being paused and being on the way out are three answers, and a
   // daemon that is draining is up, unpaused and going to stop anyway.

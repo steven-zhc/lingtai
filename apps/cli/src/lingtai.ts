@@ -20,7 +20,6 @@ import {
   createWorkLoop,
   describeInFlight,
   inFlight,
-  pauseConductor,
   readCodeVersion,
   controlWatermark,
   readControl,
@@ -51,6 +50,7 @@ import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
+import { pauseCommand } from "./pause.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { status } from "./status.ts";
@@ -149,7 +149,11 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 manager? run lingtai daemon in the foreground
   lingtai pause <why>               stop the running daemon taking new tickets; a
                                 run in flight finishes. About the daemon that is
-                                running, and gone when it is
+                                running, and gone when it is — but not for
+                                lingtai run, which takes no ticket while a
+                                pause stands, daemon or none: one already
+                                working finishes the ticket in hand and takes
+                                no other
   lingtai resume                    take tickets again
   lingtai shutdown [why]            stop the daemon, letting the ticket in flight
                                 finish first — the pass, so the gates and the
@@ -810,8 +814,7 @@ async function controlCommand(
       console.error("lingtai pause <why>  — a pause needs a reason");
       return 2;
     }
-    await pauseConductor(by, reason);
-    console.log(paint.held(`paused by ${by} — ${reason}`));
+    await pauseCommand(by, reason);
     return 0;
   }
 

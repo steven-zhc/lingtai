@@ -75,6 +75,16 @@ export interface ScheduleOptions {
   remote?: string;
   /** Aborts between items. A run already in flight finishes. */
   signal?: AbortSignal;
+  /**
+   * Asked before each item, and a sentence back stops the pass there — logged,
+   * and the run in flight, if there was one, has already finished. Null takes
+   * the next one.
+   *
+   * Asked every time round rather than once, which is the whole of it: a pass
+   * that works the queue lives as long as the queue does, and a pause issued
+   * while its first ticket runs has to stop it taking the second (#166).
+   */
+  paused?: () => Promise<string | null>;
   log?: (line: string) => void;
 }
 
@@ -85,6 +95,8 @@ export type StoppedBecause =
   | "max"
   /** The caller asked. A run in flight was allowed to finish. */
   | "aborted"
+  /** `paused` said why before the next item was taken. */
+  | "paused"
   /**
    * Everything still in the queue has already been attempted in this pass.
    * Distinct from `empty` because the queue is *not* empty and saying so
@@ -146,6 +158,14 @@ export function runQueue(
 
     for (;;) {
       if (options.signal?.aborted) return finish("aborted");
+      if (options.paused) {
+        const asked = options.paused;
+        const why = yield* Effect.promise(() => asked());
+        if (why !== null) {
+          log(why);
+          return finish("paused");
+        }
+      }
       if (options.max !== undefined && ran.length >= options.max) return finish("max");
 
       // Asked, every time round the loop. GitHub says what it is offering and
