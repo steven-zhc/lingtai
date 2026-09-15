@@ -305,3 +305,67 @@ describe("withdrawing a drain", () => {
     expect(held.map((e) => e.type)).toEqual(["ConductorShutdownRequested", "RunRequested", "ConductorStarted"]);
   });
 });
+
+/**
+ * A signal is aimed at one daemon, and does not outlive it (`#159`).
+ *
+ * The complaint was that stopping the daemon took two commands to undo:
+ * `lingtai shutdown` appended a request that stood until withdrawn, so the
+ * *next* daemon read it and stopped too, and `lingtai resume` — a command about
+ * taking work — became the way to make a process stay up. The log carries the
+ * evidence: `ConductorShutdownRequested` at v59, `ConductorResumed` at v61,
+ * `ConductorStarted` at v62, all within the same minute one morning.
+ *
+ * The fix is one parameter. A conductor reads the control stream from where it
+ * was when it started, so what was said before it began is not addressed to it.
+ * That makes the two axes independent, which is the whole of the design:
+ * `start` and `shutdown` are about the process, `pause` and `resume` about the
+ * process that is running.
+ */
+describe("a signal belongs to the daemon it was sent to", () => {
+  const shutdown = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "stopping for the day" } };
+  const pause = { type: "ConductorPaused", data: { by: "human:steven", reason: "thinking" } };
+
+  it("is obeyed by the daemon that was running when it was sent", async () => {
+    // Watermark 0: nothing had been said before this one started.
+    const state = await readControl(storeOf([shutdown]), 0);
+
+    expect(state.shutdown).not.toBeNull();
+    expect(state.shutdown?.reason).toBe("stopping for the day");
+  });
+
+  it("is invisible to the daemon that started after it", async () => {
+    // The request is at version 1; this daemon started with the stream one
+    // event long, so the request belongs to its predecessor.
+    const state = await readControl(storeOf([shutdown]), 1);
+
+    expect(state.shutdown).toBeNull();
+  });
+
+  it("does not carry a pause across a restart either", async () => {
+    // The same rule, and the one that made `restart` useless against a pause:
+    // it withdraws its own request by version and deliberately never resumes,
+    // so a pause survived every restart and only `resume` lifted it.
+    const state = await readControl(storeOf([pause]), 1);
+
+    expect(state.paused).toBe(false);
+  });
+
+  it("still reaches a daemon told to stop after it started", async () => {
+    // The half that must keep working: one event was there when it started,
+    // and the request came after.
+    const state = await readControl(storeOf([pause, shutdown]), 1);
+
+    expect(state.shutdown?.reason).toBe("stopping for the day");
+    // And the pause from before is still not this daemon's.
+    expect(state.paused).toBe(false);
+  });
+
+  it("folds the whole stream for a reader that passes nothing", async () => {
+    // The board, `doctor` and `status` ask *what is standing now*, not *what am
+    // I being told*, so they keep the unscoped read.
+    const state = await readControl(storeOf([shutdown]));
+
+    expect(state.shutdown).not.toBeNull();
+  });
+});

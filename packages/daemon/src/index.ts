@@ -33,6 +33,7 @@ export {
   inFlight,
   lastBeat,
   pauseConductor,
+  controlWatermark,
   readControl,
   readStatus,
   recordStart,

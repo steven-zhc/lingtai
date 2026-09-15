@@ -87,9 +87,35 @@ export {
   type ShutdownRequest,
 } from "@lingtai/domain";
 
-/** Folds the control stream. Cheap: it is a handful of events, not a history. */
-export async function readControl(store: EventStore = eventStore): Promise<ControlState> {
-  return reduceControl(await store.read(CONTROL_STREAM));
+/**
+ * Folds the control stream. Cheap: it is a handful of events, not a history.
+ *
+ * **`since` is what scopes a signal to one daemon** (`#159`). A conductor reads
+ * the stream from where it was when the conductor started, so a pause or a
+ * shutdown appended before it began is not its to obey. Without that, a
+ * `lingtai shutdown` outlived the process it was aimed at and stopped the next
+ * one too — and `lingtai resume`, a command about *taking work*, became the way
+ * to make a process stay up. The two axes are now separate: the process is
+ * started and stopped by `start`/`shutdown`, and `pause`/`resume` say what the
+ * process that is running should do.
+ *
+ * Every other caller — the board, `doctor`, `status` — passes nothing and folds
+ * the whole stream, because they are answering *what is standing now* rather
+ * than *what am I being told*.
+ */
+export async function readControl(store: EventStore = eventStore, since = 0): Promise<ControlState> {
+  const events = await store.read(CONTROL_STREAM);
+  return reduceControl(since <= 0 ? events : events.filter((e) => e.version > since));
+}
+
+/**
+ * Where the control stream is now — the watermark a starting daemon keeps.
+ *
+ * Read once, before the loop, and never again: it is the boundary between
+ * "somebody told the daemon before me" and "somebody is telling me".
+ */
+export async function controlWatermark(store: EventStore = eventStore): Promise<number> {
+  return (await store.read(CONTROL_STREAM)).length;
 }
 
 /** Appends one event and returns the version it landed at. */

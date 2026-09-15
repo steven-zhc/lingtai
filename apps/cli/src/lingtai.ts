@@ -22,6 +22,7 @@ import {
   inFlight,
   pauseConductor,
   readCodeVersion,
+  controlWatermark,
   readControl,
   readStatus,
   recordStart,
@@ -133,21 +134,30 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai env unset <project> KEY   remove one
   lingtai end replay [project]      resolve the end point for items that landed
     --issue <n>                 without it, and deliver what it resolves to
-  lingtai daemon                    hold the projections current and take work.
-                                Unchecked: lingtai restart is the checked start
+  lingtai start                     hold the projections current and take work.
+                                Reads no standing signal: a pause or a shutdown
+                                aimed at an earlier daemon was not aimed at this
+                                one, so nothing has to be lifted first. If
+                                another daemon holds the lock this starts
+                                nothing and says so. Unchecked — lingtai restart
+                                is the checked start
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
   lingtai service install|start|stop|restart|status|uninstall
                                 keep lingtai daemon running: a LaunchAgent on
                                 macOS, a systemd user unit on Linux. No service
                                 manager? run lingtai daemon in the foreground
-  lingtai pause <why>               stop taking new work; a run in flight finishes
-  lingtai resume                    take work again, and lift a shutdown nobody
-                                acted on
-  lingtai shutdown [why]            finish the pass in flight, then stop
-    --timeout <duration>        give up waiting after this and exit anyway,
-                                leaving the agent running. No default: a drain
-                                that gives up is the orphan this prevents
+  lingtai pause <why>               stop the running daemon taking new tickets; a
+                                run in flight finishes. About the daemon that is
+                                running, and gone when it is
+  lingtai resume                    take tickets again
+  lingtai shutdown [why]            stop the daemon. It does not outlive the one
+                                it was sent to, so the next lingtai start needs
+                                nothing lifted
+    --safe                      let the ticket in flight finish first. Waits as
+                                long as runtime.limits.wall
+    --timeout <duration>        with --safe: give up waiting after this and exit
+                                anyway, leaving the agent running
   lingtai restart [why]             drain, wait for the pass, and start one daemon
                                 here — or through lingtai service, when a
                                 supervisor keeps it. Refuses a commit that is not on the
@@ -592,6 +602,13 @@ async function daemonCommand(
     started.daemon.stop();
   };
 
+  // **Where the control stream was when this daemon started** (`#159`). Every
+  // signal it obeys is read from here, so a pause or a shutdown appended before
+  // it began belongs to the daemon before it and not to this one. That is what
+  // makes `lingtai start` need nothing lifted first: there is no such thing as
+  // a signal standing over a process that did not exist when it was sent.
+  const since = await controlWatermark();
+
   if (!("no-conduct" in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere
     // here (`#123`). This block used to construct `macNotifier()` by name,
@@ -624,11 +641,11 @@ async function daemonCommand(
       discuss: (event) => onDiscussionRequested(event, (line) => console.log(line)),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
-      paused: async () => (await readControl()).paused,
+      paused: async () => (await readControl(undefined, since)).paused,
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
-        const control = await readControl();
+        const control = await readControl(undefined, since);
         asked = control.shutdown;
         // The start is recorded off this read and no other, before the first
         // pass it permits — see `startRecorder`.
@@ -636,7 +653,13 @@ async function daemonCommand(
         // The remedy in the sentence, because this is also what a daemon
         // started *after* an unwithdrawn request prints on its way straight
         // back out — and at that point it is the only thing worth knowing.
-        return asked ? `asked by ${asked.by} — ${asked.reason} (lingtai resume lifts it)` : null;
+        // No remedy in the sentence any more. It used to say "lingtai resume
+        // lifts it", because this was also what a daemon started *after* an
+        // unwithdrawn request printed on its way straight back out. That start
+        // cannot happen now: `since` makes an older request invisible, so
+        // reaching here means somebody asked *this* daemon to stop, and they
+        // know they did.
+        return asked ? `asked by ${asked.by} — ${asked.reason}` : null;
       },
       // The loop has stopped taking work. What it cannot do is exit the
       // process, so the host does — after the drain `stop()` performs.
@@ -957,6 +980,11 @@ async function main(argv: string[]): Promise<number> {
         ...(issue === undefined ? {} : { issue }),
       });
     }
+    case "start":
+    // **`daemon` still answers, and that is not indecision** (`#159`). An
+    // installed LaunchAgent or systemd unit has `lingtai daemon` written into
+    // its plist, and renaming a command must not stop a supervisor that is
+    // already on disk. `start` is the name; this is the one it used to have.
     case "daemon":
       return daemonCommand(parseFlags(rest).flags);
     case "service":
