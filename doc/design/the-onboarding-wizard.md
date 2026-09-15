@@ -195,10 +195,41 @@ flips to *a person approves*, and the last screen says it plainly:
 > Nothing checks a diff before it merges. Every ticket goes from an agent
 > straight into `develop`.
 
-### The colours are the board's, unchanged
+### The palette: ink blue, brass, and a dot ground
 
-Teal is what Lingtai worked out. **Brass is where a person is being waited on,
-and nothing else wears brass** — here or anywhere (0035 §3).
+[Drawn here](https://claude.ai/code/artifact/97669fb4-ff16-454f-9ffd-406a54257c3b).
+Five families were compared before this one; the losing ones are in
+[the skins](https://claude.ai/code/artifact/421972a0-d344-47ef-9520-518f5d944221),
+[the paper family](https://claude.ai/code/artifact/5fea273c-19f1-4375-aecc-fd3113f92f67)
+and [the cool three](https://claude.ai/code/artifact/66bdeff9-c286-4e36-8a4c-d88b81750607).
+
+```
+#123A8C   ink blue      structure — what Lingtai worked out
+#B0741A   brass         where a person is being waited on
+#0E1420   ink           #616B7C muted   #DCE1E8 rule
+rgba(18,58,140,.17)     the dot ground, 18px
+```
+
+**Two colours, two meanings, and the second one is the board's already.** The
+board's `--signal: #9c5a08` means *a person is waited on*; the brass above is it.
+That is continuity rather than invention, and it leaves `pass`, `fail` and `held`
+free for the board — which a single-accent palette would not have.
+
+**The dots are tinted with the accent**, not grey: a neutral dot on a blue page
+reads as dirt, a blue one reads as paper belonging to this palette. Panels are
+opaque, so the grid is always a ground and never a texture behind text.
+
+**And the dots are the one mark on the page that means nothing.** Everything else
+carries something — blue is structure, brass is a person waiting, a tick is
+read-not-asked, a red word is a script found and not picked. What the dots buy is
+that a white panel has somewhere to sit, so the fast lane reads as one object
+rather than as a bordered list. **Keep them, and delete them the first time they
+make anything harder to read** rather than defending them.
+
+A green accent was tried and rejected: the board's `--pass` is green, and the
+page's own sentence — *"a **green** ticket goes straight into `develop`"* — would
+use green to mean *passed* in words and *waiting* in paint, three centimetres
+apart.
 
 ## The last screen is the queue, not a warning
 

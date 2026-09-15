@@ -122,6 +122,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0042](decisions/0042-the-restart-is-a-command.md) | **The restart is a command, the checks come before the drain, and a start is an event** | accepted; completes 0030 |
 | [0043](decisions/0043-evidence-is-plain-text.md) | **A gate's evidence is plain text, stripped where it is captured** | accepted; closes #156 |
 | [0044](decisions/0044-a-close-is-a-terminal-outcome.md) | **A close is a terminal outcome, so `end` runs on it** | accepted; completes #151 |
+| [0045](decisions/0045-one-team-one-conductor.md) | **One team, one conductor, one recipe** | accepted; records what `#93` assumed |
 
 ## Experiments
 
