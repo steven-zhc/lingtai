@@ -177,9 +177,9 @@ class Splicer {
     // Which old item each wanted value is, if any — so a move is a move, and
     // never an edit in place that leaves every comment above the wrong item.
     // An unchanged item is itself; a changed one is the item with its `name`,
-    // or a nameless mapping at the same position. A changed label or anything
-    // else is a different item: the old one goes, with its comments, and the
-    // new one is added — never the old item's comments over something else.
+    // or a nameless mapping at the same position. A label that moved is found
+    // by its text, so its comment moves with it rather than staying over
+    // whatever now sits in its old place.
     const olds = items.map((item) => item.toJS(this.doc));
     const used = new Set<number>();
     const claim = (test: (old: unknown, j: number) => boolean): number => {
@@ -199,6 +199,30 @@ class Splicer {
     const dashColumn = this.column(this.text.lastIndexOf("-", items[0]!.range![0]));
     const kept = match.filter((k) => k !== -1);
     if (kept.some((k, i) => i > 0 && k < kept[i - 1]!)) return this.reorder(items, value, match, dashColumn);
+
+    // A renamed gate or a renamed label is still the item in its place, and the
+    // comments a person wrote above and inside it stay: between two items that
+    // stayed, what was there and what is wanted there pair up in order, a
+    // mapping with a mapping and a scalar with a scalar. Only what is left over
+    // is a removal or an addition.
+    let before = -1;
+    let waiting: number[] = [];
+    const pairUpTo = (bound: number): void => {
+      const free = olds.flatMap((_, j) => (j > before && j < bound && !used.has(j) ? [j] : []));
+      waiting.forEach((i, n) => {
+        const j = free[n];
+        if (j === undefined || !sameKind(olds[j], value[i])) return;
+        match[i] = j;
+        used.add(j);
+      });
+      waiting = [];
+    };
+    match.forEach((k, i) => {
+      if (k === -1) return void waiting.push(i);
+      pairUpTo(k);
+      before = k;
+    });
+    pairUpTo(olds.length);
 
     // Items still wanted keep their own lines, and the comments above them.
     let next = 0;
@@ -392,6 +416,11 @@ function findPair(map: YAMLMap, key: string): Pair | undefined {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Both mappings, or both scalars: one can be edited into the other where it stands. */
+function sameKind(a: unknown, b: unknown): boolean {
+  return (isPlainObject(a) && isPlainObject(b)) || (!isObjectLike(a) && !isObjectLike(b));
 }
 
 function isObjectLike(value: unknown): boolean {
