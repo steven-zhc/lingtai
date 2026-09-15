@@ -279,6 +279,32 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
     const byIndex = () => editRecipe(OWN, [{ path: ["gates", "proposed", 1], value: lint }]);
     expect(byIndex).toThrow(CommentWouldBeLostError);
     expect(byIndex).toThrow(/gates\.proposed\.1 carries a comment \("The cold reviewer/);
+    expect(byIndex).not.toThrow(/by their own paths/);
+
+    // The same swap made field by field is the same different gate.
+    const byFields = () =>
+      editRecipe(OWN, [
+        { path: ["gates", "proposed", 1, "name"], value: "lint" },
+        { path: ["gates", "proposed", 1, "agent"], value: undefined },
+        { path: ["gates", "proposed", 1, "run"], value: "pnpm lint" },
+      ]);
+    expect(byFields).toThrow(CommentWouldBeLostError);
+    expect(byFields).toThrow(/gates\.proposed\.1 carries a comment \("The cold reviewer/);
+    // Keeping the name does not make a run gate the reviewer.
+    expect(() =>
+      editRecipe(OWN, [
+        { path: ["gates", "proposed", 1, "agent"], value: undefined },
+        { path: ["gates", "proposed", 1, "run"], value: "pnpm lint" },
+      ]),
+    ).toThrow(CommentWouldBeLostError);
+
+    // What the refusal says to do: the reviewer goes with its paragraph, and lint arrives bare.
+    const out = editRecipe(OWN, [
+      { path: ["gates", "proposed", 1], value: undefined },
+      { path: ["gates", "proposed", 1], value: lint },
+    ]);
+    expect(out).not.toContain("The cold reviewer");
+    expect(out).toMatch(/      env: \[\]\n    - name: lint\n      run: pnpm lint\n/);
   });
 
   it("puts a different gate in place of an uncommented one bare, and the comment above the list stays where it was", () => {

@@ -39,6 +39,7 @@ import {
   type Node,
   type Pair,
   type YAMLMap,
+  type YAMLSeq,
 } from "yaml";
 import { isDeepStrictEqual } from "node:util";
 import { Recipe } from "./recipe.ts";
@@ -120,11 +121,19 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
 
   const before = doc.toString(RENDER);
   const firsts = firstLines(doc);
+  const commented = commentedItems(doc);
   for (const { path, value } of changes) {
     if (value === undefined) doc.deleteIn(path);
     else if (doc.hasIn(path)) replace(doc, path, value);
     else doc.setIn(path, value);
   }
+  // Field by field is the same swap as a whole item set at an index, so it is judged on the item it leaves.
+  eachItem(doc.contents, [], (item, path) => {
+    const was = commented.get(item);
+    if (was && isDifferentItem(was.value, item.toJSON())) {
+      throw new CommentWouldBeLostError(path, was.comment, `remove ${path.join(".")} with its comment and add the new item`);
+    }
+  });
   // A blank line above an item is space between items, and a new first item has nothing above it.
   for (const [collection, first] of firstLines(doc)) {
     if (first !== firsts.get(collection) && first.spaceBefore) first.spaceBefore = false;
@@ -225,6 +234,45 @@ function firstLines(doc: Document): Map<unknown, Node> {
   return firsts;
 }
 
+/** Every list item that is a mapping or a list and carries a comment of its own, with the value it had. */
+function commentedItems(doc: Document): Map<Node, { value: unknown; comment: string }> {
+  const items = new Map<Node, { value: unknown; comment: string }>();
+  eachItem(doc.contents, [], (item) => {
+    const first = item.items[0];
+    const key = isPair(first) ? first.key : undefined;
+    const comment = item.commentBefore || item.comment || (isNode(key) ? key.commentBefore : undefined);
+    if (comment) items.set(item, { value: item.toJSON(), comment });
+  });
+  return items;
+}
+
+function eachItem(node: unknown, path: (string | number)[], fn: (item: YAMLMap | YAMLSeq, path: (string | number)[]) => void): void {
+  if (isMap(node)) for (const pair of node.items) eachItem(pair.value, [...path, keyOf(pair)], fn);
+  if (isSeq(node)) {
+    node.items.forEach((item, i) => {
+      if (isMap(item) || isSeq(item)) fn(item, [...path, i]);
+      eachItem(item, [...path, i], fn);
+    });
+  }
+}
+
+/**
+ * Whether an item edited in place is no longer the item its comment is about:
+ * nothing it had is left, or one of its fields was traded for another — a
+ * gate's `agent` for a `run` — which a rename or a changed timeout never is.
+ */
+function isDifferentItem(was: unknown, now: unknown): boolean {
+  if (isDeepStrictEqual(was, now)) return false;
+  if (isPlainObject(was) && isPlainObject(now)) {
+    const kept = Object.keys(was).filter((k) => Object.hasOwn(now, k) && isDeepStrictEqual(was[k], now[k]));
+    const removed = Object.keys(was).some((k) => !Object.hasOwn(now, k));
+    const added = Object.keys(now).some((k) => !Object.hasOwn(was, k));
+    return kept.length === 0 || (removed && added);
+  }
+  if (Array.isArray(was) && Array.isArray(now)) return !was.some((v) => now.some((w) => isDeepStrictEqual(v, w)));
+  return true;
+}
+
 /** Set the node at an existing `path` to `value`, keeping every node that is still the same value. */
 function replace(doc: Document, path: readonly (string | number)[], value: unknown): void {
   const parentPath = path.slice(0, -1);
@@ -234,7 +282,7 @@ function replace(doc: Document, path: readonly (string | number)[], value: unkno
   // A list item is known by its value, not its position: a different mapping or
   // list at its index is a different item, and is held to the whole-list rule.
   if (isSeq(parent) && isCollection(old) && isObjectLike(value) && !isDeepStrictEqual(toJS(old), value)) {
-    refuseIfCommented(old, path, true, "set the fields inside it by their own paths, or remove it with its comment and add the new item");
+    refuseIfCommented(old, path, true, `remove ${path.join(".")} with its comment and add the new item`);
     doc.setIn(path, doc.createNode(value));
     return;
   }
