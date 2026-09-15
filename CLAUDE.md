@@ -49,9 +49,11 @@ the pass after the last blocker closes, with no hold to remove.
 
 Setting one, and **the id is not the issue number**:
 
-    # #164 is blocked by #161 — `issue_id` is the blocker's numeric `.id`
+    # #164 is blocked by #161 — `issue_id` is the blocker's numeric `.id`,
+    # and `-F` rather than `-f`: `-f` sends a string and the API answers
+    # `Invalid property /issue_id: "5467364530" is not of type integer`.
     gh api repos/steven-zhc/lingtai/issues/164/dependencies/blocked_by \
-      -f issue_id=$(gh api repos/steven-zhc/lingtai/issues/161 --jq .id)
+      -F issue_id=$(gh api repos/steven-zhc/lingtai/issues/161 --jq .id)
 
     gh api repos/steven-zhc/lingtai/issues/164/dependencies/blocked_by \
       --jq '.[] | "#\(.number)  \(.title)"'          # read it back
