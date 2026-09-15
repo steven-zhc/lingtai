@@ -47,6 +47,27 @@ The queue passes over anything with an open blocker and counts it as
 `blocked-by`; a closed one holds nothing, and the ticket comes back on its own
 the pass after the last blocker closes, with no hold to remove.
 
+Setting one, and **the id is not the issue number**:
+
+    # #164 is blocked by #161 — `issue_id` is the blocker's numeric `.id`
+    gh api repos/steven-zhc/lingtai/issues/164/dependencies/blocked_by \
+      -f issue_id=$(gh api repos/steven-zhc/lingtai/issues/161 --jq .id)
+
+    gh api repos/steven-zhc/lingtai/issues/164/dependencies/blocked_by \
+      --jq '.[] | "#\(.number)  \(.title)"'          # read it back
+
+An issue carries three identifiers and only one of them works here: `number`
+(161), `id` (5466453198), and `node_id` (`I_kwDO…`, GraphQL's). The endpoint
+wants `id`, and a `number` in that field either 404s or silently names a
+different repository's issue.
+
+`blockedBy` counts **open** blockers, not total (`discover.ts:155`,
+`client.ts:323`) — so a chain whose groundwork has landed reads
+`total_blocked_by: 2, blocked_by: 0` and runs. It arrives on the issue listing
+the pass already fetches, so asking costs no extra request. **Null is not
+zero**: a GitHub that says nothing about dependencies degrades to the behaviour
+from before this existed rather than passing everything over.
+
 The body becomes the agent's prompt, so it is written to be worked from rather
 than filed. House style, as in #52, #55, #58:
 
@@ -69,11 +90,27 @@ run whose recipe asks for nothing.
 So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
-The one exception is at `proposed`, not `merge`: the `tamper` watch (#31) holds
-any diff touching a workspace package the conductor or the CLI loads, the board
-(which appends a person's approval), a `package.json`, the lockfile, the workspace file, a `tsconfig`, a vitest config,
-or `.lingtai/config.yaml` itself — including a file moved out of one of those —
-so an agent cannot weaken its own gates in one merge.
+**There is no exception, and `tamper` is not one.** What stands between an agent
+and `main` here is `proposed` — the build and the cold reviewer — and neither is
+a person. `merge: []` means nothing holds at the merge point; `proposed` holds
+nothing for a *person* either.
+
+`tamper` (#31) is built, tested, and **deliberately not wired in this
+repository**. It watches a workspace package the conductor or the CLI loads, the
+board, a `package.json`, the lockfile, the workspace file, a `tsconfig`, a
+vitest config, or `.lingtai/config.yaml` itself — so that an agent cannot weaken
+its own gates in one merge. Within one night of being switched on it held six
+consecutive items at `proposed` with `build=passed review=passed`: every ticket
+in this queue is about Lingtai's own machinery, so nearly every diff touches a
+watched path and self-hosting became supervised-by-default. This repository is
+choosing machine time over review time while it learns what the loop does
+unattended.
+
+The block that turns it back on is [doc/tamper-watch.md](doc/tamper-watch.md),
+and `packages/actions/test/tamper-watch.test.ts` reads the list *from that file*
+— because the recipe does not carry it — so the list stays correct while it is
+off. **A managed repository that is not Lingtai should almost certainly have it
+on**: there a watched path is rare, and a hold means something.
 
 The board follows a bare `lingtai run` live: **every process that appends holds
 a projector while it runs** (0022), so there is nothing to start in a second

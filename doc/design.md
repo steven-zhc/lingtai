@@ -83,7 +83,7 @@ open GitHub to act, nothing has changed.
 |---|---|
 | Queued | discovered, prioritised, runnable |
 | Running | one in flight, with turn count, cost, guard trips, files touched |
-| Gates | build, tamper, review — each with its verdict |
+| Gates | whatever the recipe declares at each point — each with its verdict. Here that is build and review; `tamper` is available and off ([tamper-watch.md](tamper-watch.md)) |
 | **Waiting on you** | the bottleneck, so it gets its own column and inline actions |
 | Landed | merged, each carrying any regression later filed against it |
 

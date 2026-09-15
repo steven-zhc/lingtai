@@ -303,15 +303,16 @@ gates:
   # approved unread-in-substance, which is an approval that has stopped meaning
   # anything.
   #
-  # **What is now between an agent and `main` is `proposed`** — the build, the
-  # cold reviewer, and `tamper`. Only the last is a person, and only for a diff
-  # that touches the machinery judging it.
+  # **What is between an agent and `main` is `proposed`** — the build and the
+  # cold reviewer. Neither is a person.
   #
-  # `tamper` is `#31`'s `watch:` list, the narrowing this comment used to hold
-  # in reserve, and it is tried against the objection rather than around it: a
-  # path list has to be kept correct, and the first thing it would miss is the
-  # file that defines it — so it watches that file, and a test reads the list
-  # from this file rather than from a copy.
+  # This comment used to end "…and `tamper`. Only the last is a person", which
+  # stopped being true the moment the block above turned `tamper` off, and the
+  # two halves of this file then disagreed for as long as nobody read both. The
+  # `watch:` list lives in `doc/tamper-watch.md` and
+  # `packages/actions/test/tamper-watch.test.ts` reads it from there, so the
+  # list stays correct while it is not wired — but a list that is correct and
+  # not wired holds nothing.
   merge: []
 
   end:
