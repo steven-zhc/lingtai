@@ -1,4 +1,5 @@
 export * from "./recipe.ts";
+export * from "./emit.ts";
 export * from "./presets.ts";
 export * from "./propose.ts";
 export * from "./resolve.ts";
