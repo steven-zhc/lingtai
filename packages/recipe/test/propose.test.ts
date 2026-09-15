@@ -28,7 +28,7 @@ function fakeClient(slug: string, fixture: Fixture): RepositoryReader & { calls:
       if (path === root) return { default_branch: base } as T;
       if (path.startsWith(`${root}/labels?`)) {
         const page = Number(new URL(path, "https://x").searchParams.get("page"));
-        return (page === 1 ? (fixture.labels ?? []).map((name) => ({ name })) : []) as T;
+        return (fixture.labels ?? []).slice((page - 1) * 100, page * 100).map((name) => ({ name })) as T;
       }
       if (path === `${root}/git/trees/${base}?recursive=1`) {
         return { tree: Object.keys(fixture.files).map((p) => ({ path: p, type: "blob" })), truncated: false } as T;
@@ -50,7 +50,7 @@ describe("proposeRecipe", () => {
   it("fills every fast row from the repository, and the recipe passes Recipe.parse", async () => {
     const client = fakeClient("acme/app", {
       base: "develop",
-      labels: ["Bug", "feature", "documentation"],
+      labels: ["Bug", "feature", "tech-debt"],
       files: {
         ".gitmodules": "[submodule \"vendor\"]\n",
         "package-lock.json": "{}",
@@ -64,7 +64,7 @@ describe("proposeRecipe", () => {
     expect(Recipe.parse(recipe)).toEqual(recipe);
     expect(recipe.repo).toEqual({ base: "develop", submodules: true });
     // The repository's own spelling, in the proposal's order.
-    expect(recipe.source.kinds).toEqual(["Bug", "feature"]);
+    expect(recipe.source.kinds).toEqual(["Bug", "feature", "tech-debt"]);
     expect(recipe.source.exclude).toContain("agent:hold");
     expect(recipe.gates.proposed).toEqual([{ name: "build", run: "npm run test", timeout: "20m", env: [] }]);
     expect(recipe.gates.end).toEqual([{ name: "close the ticket", when: "landed", close: true }]);
@@ -138,6 +138,87 @@ describe("proposeRecipe", () => {
     expect(refusals).toHaveLength(1);
     expect(refusals[0]).toContain("apps/api");
     expect(refusals[0]).toContain("`test:db`");
+  });
+
+  it("picks no root check another picked one already runs, and none that needs a browser", async () => {
+    const client = fakeClient("acme/e2e", {
+      labels: ["bug"],
+      files: {
+        "pnpm-lock.yaml": "",
+        "package.json": pkg({
+          test: "pnpm test:unit && pnpm test:e2e",
+          "test:unit": "vitest run",
+          "test:e2e": "playwright test",
+        }),
+      },
+    });
+
+    const { recipe, found, refusals } = await proposeRecipe("acme/e2e", client, { signedIn: ["claude-code"] });
+
+    expect(recipe.gates.proposed).toEqual([{ name: "build", run: "pnpm test:unit", timeout: "20m", env: [] }]);
+    expect(found.scripts.map((s) => [s.name, s.guessed])).toEqual([
+      ["test", false],
+      ["test:unit", true],
+      ["test:e2e", false],
+    ]);
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toContain("`test`, `test:e2e`");
+    expect(refusals[0]).toContain("browser");
+  });
+
+  it("a root check that runs another by name is picked alone", async () => {
+    const client = fakeClient("acme/chain", {
+      labels: ["bug"],
+      files: {
+        "package-lock.json": "{}",
+        "package.json": pkg({ test: "npm run test:unit && npm run test:db", "test:unit": "vitest", "test:db": "vitest -c db" }),
+      },
+    });
+    const { recipe, refusals } = await proposeRecipe("acme/chain", client, { signedIn: ["claude-code"] });
+    expect(recipe.gates.proposed).toEqual([{ name: "build", run: "npm run test", timeout: "20m", env: [] }]);
+    expect(refusals).toEqual([]);
+  });
+
+  it("a partial label match names the missing kinds and the labels that might mean them", async () => {
+    const client = fakeClient("acme/defaults", {
+      labels: ["bug", "documentation", "duplicate", "enhancement", "question", "agent:hold"],
+      files: {},
+    });
+    const { recipe, refusals } = await proposeRecipe("acme/defaults", client, { signedIn: ["claude-code"] });
+    expect(recipe.source.kinds).toEqual(["bug"]);
+    const labels = refusals.find((r) => r.includes("label"));
+    expect(labels).toContain("`feature` or `tech-debt`");
+    expect(labels).toContain("`enhancement`");
+    expect(labels).not.toContain("agent:hold");
+  });
+
+  it("says when the label listing was cut off", async () => {
+    const labels = [...Array.from({ length: 1000 }, (_, i) => `l${i}`), "bug", "feature", "tech-debt"];
+    const client = fakeClient("acme/many", { labels, files: {} });
+    const { recipe, refusals } = await proposeRecipe("acme/many", client, { signedIn: ["claude-code"] });
+    expect(recipe.source.kinds).toEqual(["bug", "feature", "tech-debt"]);
+    expect(refusals.some((r) => r.includes("only the first 1000"))).toBe(true);
+    expect(refusals.some((r) => r.includes("labels read is"))).toBe(true);
+  });
+
+  it("never proposes a LINGTAI_ name as required, and refuses them by name", async () => {
+    const client = fakeClient("steven-zhc/lingtai", {
+      labels: ["bug", "feature", "tech-debt"],
+      files: {
+        ".env.example": [
+          "LINGTAI_DATABASE_URL=postgresql://user:password@host:6543/postgres",
+          "LINGTAI_TEST_DATABASE_URL=postgresql://postgres:password@db.ref.supabase.co:5432/postgres",
+          "LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=~/.ssh/key.pem",
+          "APP_PORT=3000",
+        ].join("\n"),
+      },
+    });
+    const { recipe, refusals } = await proposeRecipe("steven-zhc/lingtai", client, { signedIn: ["claude-code"] });
+    expect(recipe.env.required).toEqual(["APP_PORT"]);
+    const own = refusals.find((r) => r.includes("Lingtai's own"));
+    expect(own).toContain("`LINGTAI_DATABASE_URL`");
+    expect(own).toContain("`LINGTAI_TEST_DATABASE_URL`");
+    expect(own).toContain("`LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH`");
   });
 
   it("guesses nothing when only the packages have checks, and says so", async () => {

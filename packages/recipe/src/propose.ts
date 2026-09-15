@@ -15,6 +15,7 @@
  * belongs to the repository (0005), which is why this proposes and never saves.
  */
 import type { RuntimeId } from "@lingtai/domain";
+import { PREFIX } from "@lingtai/env";
 import { Recipe } from "./recipe.ts";
 
 /**
@@ -93,6 +94,20 @@ export const PROPOSED_EXCLUDE = [
 const CHECK = /^(typecheck|type-check|check-types|tsc|lint|test|test:[\w:.-]+|check|verify)$/;
 const NOT_A_CHECK = /(watch|:ui$|:dev$|coverage)/;
 
+/**
+ * A check that needs a browser or a running app — a worktree has neither, so
+ * picking it fails every ticket. Found, not picked, and refused by name.
+ */
+const NEEDS_A_WORLD = /(e2e|playwright|cypress|puppeteer|selenium|webdriver)/i;
+
+/** Whether `command` runs the root script `name` by name (`pnpm test:unit`, `npm run test:unit`). */
+function invokes(command: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[\\s;&|(])(?:pnpm|yarn|bun|npm)\\s+(?:run(?:-script)?\\s+)?${escaped}(?=$|[\\s;&|)])`).test(
+    command,
+  );
+}
+
 /** In the order a gate should run them: cheapest refusal first. */
 function checkRank(name: string): number {
   if (/^(typecheck|type-check|check-types|tsc)$/.test(name)) return 0;
@@ -120,10 +135,17 @@ export async function proposeRecipe(
   const { default_branch: base } = await get<{ default_branch: string }>("");
 
   const labels: string[] = [];
+  let labelsCut = false;
   for (let page = 1; page <= LABEL_PAGES; page++) {
     const batch = await get<{ name: string }[]>(`/labels?per_page=100&page=${page}`);
     labels.push(...batch.map((l) => l.name));
     if (batch.length < 100) break;
+    if (page === LABEL_PAGES) labelsCut = true;
+  }
+  if (labelsCut) {
+    refusals.push(
+      `only the first ${LABEL_PAGES * 100} of the repository's labels were read, so a label meaning work may have been missed`,
+    );
   }
 
   // One listing of every path at the base, so a monorepo's nested files are
@@ -160,11 +182,24 @@ export async function proposeRecipe(
     const label = labels.find((l) => l.toLowerCase() === kind);
     return label === undefined ? [] : [label];
   });
+  const labelsRead = labelsCut ? `labels read` : `labels`;
   if (kinds.length === 0) {
     refusals.push(
-      `none of this repository's labels is ${PROPOSED_KINDS.join(", ")}, so no issue is work yet — ` +
+      `none of this repository's ${labelsRead} is ${PROPOSED_KINDS.join(", ")}, so no issue is work yet — ` +
         `the proposal names all three, and which of the repository's own labels mean work is a question for a person`,
     );
+  } else if (kinds.length < PROPOSED_KINDS.length) {
+    // A partial match is not an answer: `enhancement` beside `bug` is GitHub's
+    // default set, and it would silently never be work.
+    const missing = PROPOSED_KINDS.filter((k) => !kinds.some((l) => l.toLowerCase() === k));
+    const held = new Set<string>(PROPOSED_EXCLUDE);
+    const others = labels.filter((l) => !kinds.includes(l) && !held.has(l.toLowerCase()));
+    if (others.length > 0) {
+      refusals.push(
+        `this repository has no ${missing.map((k) => `\`${k}\``).join(" or ")} label, and its other ${labelsRead} ` +
+          `(${others.map((l) => `\`${l}\``).join(", ")}) are not kinds — whether any of them means work is a question for a person`,
+      );
+    }
   }
 
   // --- gates.proposed -------------------------------------------------------
@@ -203,7 +238,26 @@ export async function proposeRecipe(
   const nestedChecks = scripts.filter((s) => s.dir !== "" && isCheck(s));
 
   if (rootChecks.length > 0) {
-    for (const s of rootChecks) s.guessed = true;
+    // A check needs a browser or an app if it says so, or runs a root script that does.
+    const rootScripts = scripts.filter((s) => s.dir === "");
+    const needsAWorld = (s: FoundScript, seen = new Set<string>()): boolean => {
+      if (seen.has(s.name)) return false;
+      seen.add(s.name);
+      if (NEEDS_A_WORLD.test(s.name) || NEEDS_A_WORLD.test(s.command)) return true;
+      return rootScripts.some((o) => o !== s && invokes(s.command, o.name) && needsAWorld(o, seen));
+    };
+    const worldly = rootChecks.filter((s) => needsAWorld(s));
+    if (worldly.length > 0) {
+      refusals.push(
+        `the root's ${worldly.map((s) => `\`${s.name}\``).join(", ")} look like they need a browser or a running app — ` +
+          `listed and not picked, because a worktree has neither and the build would fail every ticket`,
+      );
+    }
+    const candidates = rootChecks.filter((s) => !worldly.includes(s));
+    // One a picked check already runs by name would run twice.
+    for (const s of candidates) {
+      s.guessed = !candidates.some((o) => o !== s && invokes(o.command, s.name));
+    }
     // The `test:db` case: a half a package runs that no root script names is a
     // half the root's gate silently drops.
     const rootNames = new Set(rootChecks.map((s) => s.name));
@@ -240,7 +294,18 @@ export async function proposeRecipe(
     const text = await read(path);
     if (text !== null) envExamples.push({ path, names: envNames(text) });
   }
-  const required = [...new Set(envExamples.flatMap((e) => e.names))];
+  // A `LINGTAI_` name is Lingtai's own (#63) — its log, its App's credentials —
+  // and proposing one as something the agent needs is how the agent gets handed
+  // it. Which of them, if any, a run does need is a person's call.
+  const declared = [...new Set(envExamples.flatMap((e) => e.names))];
+  const required = declared.filter((n) => !n.startsWith(PREFIX));
+  const own = declared.filter((n) => n.startsWith(PREFIX));
+  if (own.length > 0) {
+    refusals.push(
+      `.env.example declares ${own.map((n) => `\`${n}\``).join(", ")}, which begin \`${PREFIX}\` and are Lingtai's own — ` +
+        `left out of env.required, and whether a run needs any of them (a test database, never the log) is a question for a person`,
+    );
+  }
   const exampleDirs = [...new Set(envExamples.map((e) => e.path.slice(0, -".env.example".length)))];
   if (exampleDirs.length > 1) {
     refusals.push(
