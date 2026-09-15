@@ -160,6 +160,24 @@ and never a record: what happened is `lingtai status` and the board, off
 The board's Queued column asks GitHub on render; every other column is the
 fold.
 
+The suite is in two halves since #158. `pnpm test` is the tests that need no
+database — 87 files, under 30s, not one connection — and `pnpm test:db` is the
+ones that do. The recipe's `build` runs both. What is left in the second half
+asserts Postgres itself: the projections, the advisory locks, `LISTEN`/`NOTIFY`,
+two clients racing. A test that only *records* events gets
+`createMemoryEventStore()` from `@lingtai/event-store/memory`, which is held to
+the same contract as the real store — `packages/event-store/test/contract.ts`
+runs against both, so a divergence is a failing test rather than a surprise.
+
+**Neither test connection string may go through a pooler** (#157). Both pointed
+at `aws-0-us-east-1.pooler.supabase.com` for months and the suite failed often
+enough that a red gate meant nothing — `30 passed → 10 failed → 31 passed` on
+one commit inside an hour, every failure a dropped connection and not an
+assertion. On the direct host, `db.<project-ref>.supabase.co:5432`, the same
+suite runs ten times in a row green at 480–502s. The dashboard offers the
+pooler first, which is how this happens; `.env.example` says it at the line
+where it matters.
+
 The suite appends real events and refuses to run without
 `LINGTAI_TEST_DATABASE_URL`. `LINGTAI_DATABASE_URL` is this system's own log,
 and an agent is never given it. **Every name Lingtai reads for itself begins
