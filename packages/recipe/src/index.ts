@@ -9,3 +9,4 @@ export {
   TAMPER_WATCH,
   type Watcher,
 } from "./watch.ts";
+export * from "./emit.ts";
