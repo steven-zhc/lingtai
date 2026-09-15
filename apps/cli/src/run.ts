@@ -16,9 +16,13 @@
  * about concurrency — one conductor at a time — and a pause is about consent:
  * `lingtai pause "migrating the database"` with no daemon up left the lock free,
  * and a `lingtai run` from a cron entry took it and dispatched an agent against
- * the database being moved. A paused system means no conductor takes work,
- * whichever one it is. See `heedThePause` below for why this read is not scoped
- * the way the daemon's is.
+ * the database being moved. A pause standing on the log stops this command,
+ * daemon or none — before the lock, and again before every ticket after the
+ * first. That is this command's rule and not every conductor's: a daemon obeys
+ * only the pauses appended after it started (`since`, #159), so a daemon
+ * started over a standing pause takes work a `lingtai run` beside it would not.
+ * See `heedThePause` below for why this read is not scoped the way the daemon's
+ * is.
  */
 import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from "@lingtai/conductor";
 import { readControl } from "@lingtai/daemon";
@@ -67,7 +71,7 @@ export interface RunOptions {
  * second attempt printed a sentence about this command that was false.
  */
 export const RUN_UNDER_A_PAUSE =
-  "a lingtai run started while it stands takes no work, daemon or none — lingtai resume lifts it";
+  "lingtai run takes no ticket while it stands, daemon or none — one already working finishes the ticket in hand and takes no other; lingtai resume lifts it";
 
 /**
  * A refusal, in the error channel rather than as a `return 1` and a log line.
@@ -106,8 +110,9 @@ class Paused extends Data.TaggedError("Paused")<{
  * no pause ever, which is exactly the state this ticket found. What stands is
  * what `lingtai doctor` and the board report, and that is what it obeys.
  *
- * Read once, as the daemon's pass reads it once. A pause issued while this
- * command is already working is not heard by it; the next `lingtai run` is.
+ * Not only once. A queue run lives as long as the queue does, so `runQueue`
+ * asks `stillPaused` before each ticket after this — the ticket in hand
+ * finishes, and the next is not taken.
  */
 const heedThePause = (store: EventStore | undefined) =>
   Effect.tryPromise({
@@ -121,6 +126,24 @@ const heedThePause = (store: EventStore | undefined) =>
         : Effect.void,
     ),
   );
+
+/** Who paused it and why, in the one form both refusals print. */
+const saidPaused = (p: { by: string | null; reason: string | null; until: Date | null }) =>
+  `paused by ${p.by ?? "somebody"}${p.until ? ` until ${p.until.toISOString()}` : ""} — ${p.reason ?? "no reason given"}`;
+
+/**
+ * The same read, between tickets — for `runQueue`, which stops on a sentence.
+ * The same rule as above, too: a pause that could not be read is not consent,
+ * so it stops the pass rather than taking the next ticket unasked.
+ */
+const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
+  try {
+    const control = await readControl(store);
+    return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null;
+  } catch (err) {
+    return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`;
+  }
+};
 
 export async function run(options: RunOptions, log = console.log): Promise<number> {
   const program = Effect.gen(function* () {
@@ -237,6 +260,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
           // an exclusion, must not need a projection rebuild.
           recipe: resolved.recipe,
           ...(options.max === undefined ? {} : { max: options.max }),
+          paused: stillPaused(options.store),
         });
 
         // Read back, not counted up. An item this pass held and somebody approved
@@ -297,8 +321,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       // line is for.
       Effect.catchTag("Paused", (p) =>
         Effect.sync(() => {
-          const lifts = p.until ? ` until ${p.until.toISOString()}` : "";
-          log(`paused by ${p.by ?? "somebody"}${lifts} — ${p.reason ?? "no reason given"}`);
+          log(saidPaused(p));
           log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`);
           return 0;
         }),
