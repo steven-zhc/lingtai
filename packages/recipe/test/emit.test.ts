@@ -243,6 +243,14 @@ describe("editRecipe, on this repository's own recipe", () => {
     expect(editRecipe(both, [change])).toBe(editRecipe(OWN, [change]).replace(/\n/g, "\r\n").replace(/\r\n$/, ""));
   });
 
+  // `proposed` holds the commented-out `tamper` block, and the rendering drops
+  // a blank line inside it — so the removed region cannot be put onto the file.
+  it("names the change and what to do when a changed line has no line in the file to land on", () => {
+    const remove = () => editRecipe(OWN, [{ path: ["gates", "proposed"], value: undefined }]);
+    expect(remove).toThrow(/^the change to gates\.proposed could not be carried onto the file exactly/);
+    expect(remove).toThrow(/try again, or make this change by hand$/);
+  });
+
   it("refuses an edit that would not be a recipe, rather than writing it", () => {
     expect(() => editRecipe(OWN, [{ path: ["source", "kinds"], value: [] }])).toThrow();
     expect(() => editRecipe(OWN, [{ path: ["gates", "merg"], value: [] }])).toThrow();
@@ -335,6 +343,33 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
     );
     const out = editRecipe(OWN, [{ path: ["gates", "proposed", 0, "timeout"], value: "30m" }]);
     expect(gitDiff(OWN, out)).toEqual({ removed: ["      timeout: 20m"], added: ["      timeout: 30m"] });
+  });
+
+  // The reviewer gate above has two fields, so swapping it is also swapping
+  // everything it had. `build` has four, and two of them can be set anew while
+  // `timeout` and `env` still match — which says nothing about whether the
+  // paragraph above it is still true.
+  it("refuses a gate swapped field by field even when the fields it did not name still match", () => {
+    const byFields = () =>
+      editRecipe(OWN, [
+        { path: ["gates", "proposed", 0, "name"], value: "lint" },
+        { path: ["gates", "proposed", 0, "run"], value: "pnpm lint" },
+      ]);
+    expect(byFields).toThrow(CommentWouldBeLostError);
+    expect(byFields).toThrow(/gates\.proposed\.0 carries a comment \("`env: \[\]` is written out/);
+    // The claim the refusal makes good on: the same swap set whole is refused too.
+    expect(() =>
+      editRecipe(OWN, [{ path: ["gates", "proposed", 0], value: { ...BUILD, name: "lint", run: "pnpm lint" } }]),
+    ).toThrow(CommentWouldBeLostError);
+
+    // One field is still a rename or a new timeout, and goes through.
+    for (const change of [
+      { path: ["gates", "proposed", 0, "name"], value: "lint" },
+      { path: ["gates", "proposed", 0, "run"], value: "pnpm lint" },
+      { path: ["gates", "proposed", 0, "env"], value: ["CI"] },
+    ]) {
+      expect(() => editRecipe(OWN, [change]), JSON.stringify(change.path)).not.toThrow();
+    }
   });
 
   it("refuses a commented key dropped from a whole mapping, and removes it by path", () => {

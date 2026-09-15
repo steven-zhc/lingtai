@@ -142,12 +142,15 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
   const after = doc.toString(RENDER);
   if (after === before) return existing;
 
-  const out = carry(existing, before, after);
+  // Both ways of failing to carry the change name it, because the person named
+  // a path and not a line, and a sentence about renderings is not theirs.
+  const named = changes.map((c) => c.path.join(".")).join(", ");
+  const out = carry(existing, before, after, named);
   // The check that makes the splice safe to trust: the file written must be the
   // edited tree, comments and all, and not merely parse to the same recipe.
   if (read(out).toString(RENDER) !== after) {
     throw new Error(
-      `the change to ${changes.map((c) => c.path.join(".")).join(", ")} could not be carried onto the file exactly, ` +
+      `the change to ${named} could not be carried onto the file exactly, ` +
         "and writing the document out whole would reformat what a person wrote",
     );
   }
@@ -258,16 +261,22 @@ function eachItem(node: unknown, path: (string | number)[], fn: (item: YAMLMap |
 
 /**
  * Whether an item edited in place is no longer the item its comment is about:
- * nothing it had is left, or one of its fields was traded for another — a
- * gate's `agent` for a `run` — which a rename or a changed timeout never is.
+ * nothing it had is left, or more than one of its fields moved.
+ *
+ * **One field is a rename or a new timeout; two is the item being replaced a
+ * field at a time.** Counting is what the fields that stayed cannot tell us —
+ * `{name, run, timeout, env}` with `name` and `run` both set anew is a
+ * different gate, and its `timeout: 20m` and `env: []` matching say nothing
+ * about it. A removal and an addition — a gate's `agent` traded for a `run` —
+ * are two moves and refuse by the same count.
  */
 function isDifferentItem(was: unknown, now: unknown): boolean {
   if (isDeepStrictEqual(was, now)) return false;
   if (isPlainObject(was) && isPlainObject(now)) {
     const kept = Object.keys(was).filter((k) => Object.hasOwn(now, k) && isDeepStrictEqual(was[k], now[k]));
-    const removed = Object.keys(was).some((k) => !Object.hasOwn(now, k));
-    const added = Object.keys(now).some((k) => !Object.hasOwn(was, k));
-    return kept.length === 0 || (removed && added);
+    const fields = new Set([...Object.keys(was), ...Object.keys(now)]);
+    const moved = [...fields].filter((k) => !Object.hasOwn(was, k) || !Object.hasOwn(now, k) || !isDeepStrictEqual(was[k], now[k]));
+    return kept.length === 0 || moved.length > 1;
   }
   if (Array.isArray(was) && Array.isArray(now)) return !was.some((v) => now.some((w) => isDeepStrictEqual(v, w)));
   return true;
@@ -384,7 +393,7 @@ function moveComments(from: unknown, to: unknown): void {
  * same file with the renderer's differences — which lines those are is found by
  * aligning them, and a changed line has to land on a line the alignment is sure of.
  */
-function carry(existing: string, before: string, after: string): string {
+function carry(existing: string, before: string, after: string, named: string): string {
   // A rendering always ends in a newline and never has a "\r": the file is
   // compared without its own, and a line carried onto it is given them.
   const cr = existing.includes("\r\n") ? "\r" : "";
@@ -400,7 +409,7 @@ function carry(existing: string, before: string, after: string): string {
   let b = 0;
   let a = 0;
   for (const [nb, na] of [...pairs, [B.length, A.length] as const]) {
-    if (nb > b || na > a) hunks.push(onto(toE, B.length, E, b, nb, A.slice(a, na).map((line) => line + cr)));
+    if (nb > b || na > a) hunks.push(onto(toE, B.length, E, b, nb, A.slice(a, na).map((line) => line + cr), named));
     b = nb + 1;
     a = na + 1;
   }
@@ -417,9 +426,26 @@ function carry(existing: string, before: string, after: string): string {
 }
 
 /** Where rendered lines `B[from, to)` stand in the file, as a range of its lines. */
-function onto(toE: Map<number, number>, rendered: number, existing: readonly string[], from: number, to: number, lines: string[]) {
+function onto(
+  toE: Map<number, number>,
+  rendered: number,
+  existing: readonly string[],
+  from: number,
+  to: number,
+  lines: string[],
+  named: string,
+) {
   const length = existing.length;
-  const unsure = () => new Error("a changed line sits where the file and its rendering disagree");
+  // The path is what the person gave and the only thing they can act on: the
+  // lines this change moves are ones `yaml` writes differently from the file —
+  // a blank line it drops, a commented-out block it re-indents — so there is
+  // no line under them to carry them onto.
+  const unsure = () =>
+    new Error(
+      `the change to ${named} could not be carried onto the file exactly: it moves lines the file and ` +
+        "`yaml`'s rendering of it disagree about, most often a commented-out block. Write those lines the way " +
+        "`yaml` renders them and try again, or make this change by hand",
+    );
   if (to > from) {
     const start = toE.get(from);
     if (start === undefined) throw unsure();
