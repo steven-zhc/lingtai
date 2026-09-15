@@ -106,6 +106,16 @@ export interface PointView {
  * the card, and opening GitHub (#87). A detail page is where somebody decides,
  * and deciding needs the request and not only the response.
  *
+ * **Loading it was never the hard half, and for a while this comment was the
+ * only place that still claimed otherwise.** #152 arranged the page into a
+ * standing and a record, and all of this went into the record's last row —
+ * closed, at the foot of the page, labelled `prompt` after the document that
+ * comes second inside it. Measured on `wi-lingtai-159`: the GitHub link sat at
+ * y=1103 of an 1126px page and the title rendered nowhere, on a screen whose
+ * first control is *Approve*. `title` and `url` now also go to `Standing` as
+ * its `subject`, one line under the state; the row is `ticket` and keeps the
+ * body. The fields below did not change — where they are read did.
+ *
  * Two sources, in this order. The **log** carries the title and the kind as
  * they were when Lingtai took responsibility, which is true whether or not
  * GitHub answers now. **GitHub** carries the body, the labels and the URL,

@@ -102,6 +102,7 @@ import { FollowedLog } from "./run-log.tsx";
  */
 export function Standing({
   standing,
+  subject,
   project,
   issue,
   taskId,
@@ -111,6 +112,24 @@ export function Standing({
   unknown,
 }: {
   standing: StandingView;
+  /**
+   * What was asked, in one line, under the state and above the reason.
+   *
+   * **The page is a decision, and this names what is being decided about.**
+   * #87 put the title, the body and the URL on this page for that reason and
+   * its comment in `task.ts` still says so; #152 then arranged the page into a
+   * standing and a record, and the ticket went into the record's last row under
+   * the label `prompt` — closed, at the bottom, named after the document that
+   * comes second inside it. So a page that opens on *Approve / Send attempt 3 /
+   * Leave blocked / Close* identified the thing it was asking about as
+   * `wi-lingtai-159` and nothing else, and arriving from a link meant reading
+   * four rows to find out what it was. The fix keeps `BLOCKED` at rank 1 —
+   * somebody who already knows the ticket opened this to find out why it
+   * stopped (#132) — and gives the subject the line under it.
+   *
+   * Null when the id is not a work item: there is no ticket to name.
+   */
+  subject: { ref: string; title: string | null; url: string | null } | null;
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
   project: string | null;
   issue: number | null;
@@ -221,6 +240,27 @@ export function Standing({
           rank 3 has a sentence in every state, so there is no block with
           nothing under the readout. */}
       <div className="sbody">
+        {/* ---- what was asked, in one line (see `subject`) ------------------
+            The number is the way out to GitHub, which is where the ticket is
+            edited and where a reader goes to argue with it; the title is the
+            sentence. When GitHub could not be asked the title is null and the
+            number still stands on its own, because *which ticket this is* is a
+            fact the log holds and does not need GitHub to answer. */}
+        {subject !== null ? (
+          <p className="ssubject" data-rank="subject">
+            {subject.url !== null ? (
+              <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
+                #{subject.ref} ↗
+              </a>
+            ) : (
+              <span className="sref">#{subject.ref}</span>
+            )}
+            <span className="stitle">
+              {subject.title ?? "GitHub did not answer, so the title is not on this page"}
+            </span>
+          </p>
+        ) : null}
+
         {/* ---- rank 2: why it stopped, or what it is doing ------------------ */}
         <div className="swhy" data-rank="why">
           {/* The run in flight, following (#152). The `RunLog` the attempt row

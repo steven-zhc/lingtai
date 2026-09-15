@@ -778,6 +778,40 @@ details[open] > summary::before { content: "▾"; }
   padding-top: 0.6rem;
   border-top: 1px solid var(--rule);
 }
+/* What was asked, under the state and above the reason.
+
+   Ink and at the block's prose size, because it is the only line on the first
+   screen that says which ticket this is — `.sread` above it says the state and
+   the bar says the stream id. The number is a link and carries the page's one
+   link colour; the title is a sentence and takes the measure. Not amber, and
+   not display-sized: rank 1 is still the state (#132), and this names its
+   subject rather than competing with it. */
+.ssubject {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.6rem;
+  margin: 0;
+  /* Same reason as `.sbody` itself: a title with no spaces cannot be allowed to
+     size the track. */
+  min-width: 0;
+}
+.sref {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--accent-ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
+.stitle {
+  max-width: 62rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 /* One line, and ink: it is the sentence somebody has to answer. Not amber — the
    rule at the left is already saying who is being waited on.
 

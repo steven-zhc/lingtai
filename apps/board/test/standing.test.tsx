@@ -453,7 +453,7 @@ describe("the block, rendered", () => {
    * those have to keep rendering.
    */
   it("degrades to the state, the age, the question and the move when nothing is diagnosed", () => {
-    const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
+    const html = renderToStaticMarkup(<Standing subject={null} standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
 
     expect(html).toContain("blocked");
     // The coordinate is the bar's now (#152), and still says which attempt.
@@ -480,6 +480,7 @@ describe("the block, rendered", () => {
   it("quotes what refused, and drops the question the diagnosis supersedes", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{
           ...HELD,
           needs: "acknowledgement",
@@ -553,6 +554,7 @@ describe("the block, rendered", () => {
 
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={standing}
         project="lingtai"
         issue={112}
@@ -637,6 +639,7 @@ describe("the block, rendered", () => {
 
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={standing}
         project="lingtai"
         issue={112}
@@ -682,6 +685,7 @@ describe("the block, rendered", () => {
 
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={standing}
         project="lingtai"
         issue={112}
@@ -699,6 +703,7 @@ describe("the block, rendered", () => {
   it("states the absence where the refusal is known and no line of it is", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{
           ...HELD,
           failed: ["proposed:review"],
@@ -723,6 +728,7 @@ describe("the block, rendered", () => {
   it("states an absence where a gate refused and recorded nothing", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{
           ...HELD,
           failed: ["proposed:review"],
@@ -745,6 +751,7 @@ describe("the block, rendered", () => {
   it("leaves no second rank at all when every gate passed", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{
           ...HELD,
           failed: [],
@@ -785,6 +792,7 @@ describe("the block, rendered", () => {
   it("does not print an earlier attempt's refusal as this hold's reason", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{
           ...HELD,
           failed: [],
@@ -818,6 +826,7 @@ describe("the block, rendered", () => {
   it("prints no identifier twice", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{
           ...HELD,
           failed: ["proposed:review"],
@@ -844,7 +853,7 @@ describe("the block, rendered", () => {
   });
 
   it("points at the attempt rather than reprinting it", () => {
-    const html = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
+    const html = renderToStaticMarkup(<Standing subject={null} standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
     expect(html).toContain('href="#attempt-1"');
     expect(html).toContain("in attempt 1");
   });
@@ -855,11 +864,12 @@ describe("the block, rendered", () => {
    * kind of item — and the block itself is drawn for all of them.
    */
   it("spends its amber only when a person is the thing being waited on", () => {
-    const on = renderToStaticMarkup(<Standing standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
+    const on = renderToStaticMarkup(<Standing subject={null} standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
     expect(on).toContain('class="standing onyou"');
 
     const off = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{ ...HELD, state: "running", onYou: false, who: "an agent is working", question: null }}
         project="lingtai"
         issue={112}
@@ -880,7 +890,7 @@ describe("the block, rendered", () => {
   });
 
   it("states the state with no move at all when the id is not a work item", () => {
-    const html = renderToStaticMarkup(<Standing standing={HELD} project={null} issue={null} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
+    const html = renderToStaticMarkup(<Standing subject={null} standing={HELD} project={null} issue={null} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
     expect(html).toContain("blocked");
     expect(html).not.toContain("Back to the queue");
   });
@@ -894,6 +904,7 @@ describe("the block, rendered", () => {
   it("never renders a log as prose", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={{ ...HELD, question: "gate-failed: build exited 2\nScope: 15 of 16 workspace projects" }}
         project="lingtai"
         issue={112}
@@ -935,6 +946,7 @@ const moves = (html: string) => html.slice(html.indexOf('class="btnrow smoves"')
 const render = (standing: StandingView, outgoing: OutgoingView | null) =>
   renderToStaticMarkup(
     <Standing
+      subject={null}
       standing={standing}
       project="lingtai"
       issue={112}
@@ -1111,6 +1123,7 @@ describe("what the refusal means for the decision", () => {
   it("renders in one element, and no line of `describeHold` beside it", () => {
     const html = renderToStaticMarkup(
       <Standing
+        subject={null}
         standing={diagnosed({ action: "requeue", why: LONG_WHY })}
         project="lingtai"
         issue={147}
@@ -1128,5 +1141,94 @@ describe("what the refusal means for the decision", () => {
     // Between rank 3 and the moves there is nothing but the end of the body.
     const after = html.slice(html.indexOf('data-rank="so-what"'), html.indexOf('data-rank="moves"'));
     expect(after.match(/<p\b/g) ?? []).toHaveLength(0);
+  });
+});
+
+/**
+ * **What is being decided about, on the screen the decision is made on.**
+ *
+ * #87 put the title, the body and the URL on this page and its comment in
+ * `task.ts` still says the page "had no reference to a title, a body or a URL".
+ * That was true when it was written. #152 then arranged the page into a
+ * standing and a record, and the ticket went into the record's last row — a
+ * closed `<details>` at the foot of the page, labelled `prompt` after the
+ * document that comes second inside it. Measured on `wi-lingtai-159`: the
+ * GitHub link rendered at y=1103 of an 1126px page, and the title's `innerText`
+ * came back empty because a closed `<details>` renders none of it. The page
+ * opened on *Approve / Send attempt 3 / Leave blocked / Close* and named the
+ * thing it was asking about `wi-lingtai-159`.
+ *
+ * So these assert the subject is in the standing block, not that it exists
+ * somewhere in the markup — which was already true and was not the point.
+ */
+describe("the subject, at the top", () => {
+  it("names the ticket and links out to it, above the reason it stopped", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{
+          ref: "159",
+          title: "Stopping the daemon should not make starting it a two-command job",
+          url: "https://github.com/steven-zhc/lingtai/issues/159",
+        }}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="wi-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+
+    expect(html).toContain("Stopping the daemon should not make starting it a two-command job");
+    expect(html).toContain('href="https://github.com/steven-zhc/lingtai/issues/159"');
+    // Above rank 2. A subject under the refusal is a subject you find after
+    // you have already read what you could not identify.
+    expect(html.indexOf('data-rank="subject"')).toBeGreaterThan(-1);
+    expect(html.indexOf('data-rank="subject"')).toBeLessThan(html.indexOf('data-rank="why"'));
+  });
+
+  /**
+   * The title and the URL are GitHub's; the ref is the log's (`task.ts`'s two
+   * sources, in that order). A GitHub that will not answer costs the page its
+   * sentence and not its identity — the same distinction #113 drew between *it
+   * does not exist* and *I could not ask*.
+   */
+  it("still says which ticket this is when GitHub could not be asked", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: "159", title: null, url: null }}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="wi-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+
+    expect(html).toContain("#159");
+    expect(html).toContain("GitHub did not answer");
+    // No link, rather than a link that goes nowhere.
+    expect(html).not.toMatch(/<a[^>]*class="sref"/);
+  });
+
+  /** An id that is not `wi-<p>-<n>` has no ticket, and the line is simply absent. */
+  it("draws no subject line where there is no ticket", () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={HELD}
+        project={null}
+        issue={null}
+        taskId="not-a-work-item"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    );
+
+    expect(html).not.toContain('data-rank="subject"');
   });
 });

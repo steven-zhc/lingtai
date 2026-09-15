@@ -301,6 +301,10 @@ describe("the record", () => {
       expect(rows.map((r) => r[1])).toEqual([...RECORD_ROWS]);
       expect(rows.every((r) => r[2] === undefined)).toBe(true);
     }
-    expect([...RECORD_ROWS]).toEqual(["findings", "files", "attempts", "prompt"]);
+    // `ticket`, and it was `prompt`: the row opens with the ticket and only
+    // then the document each attempt was handed, so it was labelled by the
+    // second thing in it — and the one place holding *what was asked*
+    // announced itself as the agent's input.
+    expect([...RECORD_ROWS]).toEqual(["findings", "files", "attempts", "ticket"]);
   });
 });

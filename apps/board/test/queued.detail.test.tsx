@@ -366,6 +366,7 @@ const render = (standing: StandingView, queued: QueuedView | null, unknown: stri
     <>
       <Coords standing={standing} taskId="wi-lingtai-112" queued={queued} />
       <Standing
+        subject={null}
         standing={standing}
         project="lingtai"
         issue={112}

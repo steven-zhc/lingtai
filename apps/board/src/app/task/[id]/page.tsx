@@ -282,7 +282,16 @@ export function Attempt({
  * this order, whatever the state** (#152): a record is consulted rather than
  * read, and a shape that is the same every time is learned once.
  */
-export const RECORD_ROWS = ["findings", "files", "attempts", "prompt"] as const;
+/**
+ * The record's rows, in order.
+ *
+ * **`ticket` and not `prompt`.** The row opens with the ticket — its title, its
+ * labels, its link and its body — and only then the document each attempt was
+ * handed. It was labelled by the second of those two, so the one place on the
+ * page holding *what was asked* announced itself as the agent's input, and
+ * #87's work sat behind a word that did not name it.
+ */
+export const RECORD_ROWS = ["findings", "files", "attempts", "ticket"] as const;
 
 /** One row of the record: a name, its one fact, and closed until asked. */
 function Row({
@@ -454,7 +463,7 @@ export function Record({ task }: { task: TaskDetail }) {
         ))}
       </Row>
 
-      <Row name="prompt" fact={task.ticket?.title ?? null}>
+      <Row name="ticket" fact={task.ticket?.title ?? null}>
         {/* What was asked, then what each attempt was handed for it. */}
         {task.ticket ? (
           <Ticket ticket={task.ticket} />
@@ -517,6 +526,14 @@ export function TaskBody({ task }: { task: TaskDetail }) {
         {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
         <Standing
           standing={task.standing}
+          // What is being decided about, named where the decision is. The log
+          // carries the ref and the title; GitHub carries the URL, and a null
+          // one is a page that still says which ticket this is.
+          subject={
+            task.ticket
+              ? { ref: task.ticket.ref, title: task.ticket.title, url: task.ticket.url }
+              : null
+          }
           taskId={task.taskId}
           discussions={task.discussions}
           outgoing={task.outgoing}
