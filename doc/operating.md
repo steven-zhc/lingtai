@@ -233,12 +233,12 @@ In `.env.local` at the repository root:
 
 ```bash
 LINGTAI_GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY_PATH=~/.lingtai-app.pem
+LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=~/.lingtai-app.pem
 ```
 
 `~` is expanded, and a relative path is relative to *this repository's root* —
 not to whichever directory you ran the command from. Where only a single-line
-value can be carried, `GITHUB_APP_PRIVATE_KEY` takes the PEM itself with `\n`
+value can be carried, `LINGTAI_GITHUB_APP_PRIVATE_KEY` takes the PEM itself with `\n`
 escapes instead.
 
 No installation id is needed. It is looked up per repository, which is what
