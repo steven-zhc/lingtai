@@ -169,14 +169,26 @@ class Splicer {
       const dash = this.text.lastIndexOf("-", item.range![0]);
       return { inlineFrom: dash + 1, indent: this.column(dash) };
     };
-    if (items.length === value.length) {
+    // Which unchanged item each wanted value is, if any — so a move is a move,
+    // and never an edit in place that leaves every comment above the wrong item.
+    const olds = items.map((item) => item.toJS(this.doc));
+    const used = new Set<number>();
+    const match = value.map((wanted) => {
+      const k = olds.findIndex((old, j) => !used.has(j) && isDeepStrictEqual(old, wanted));
+      if (k !== -1) used.add(k);
+      return k;
+    });
+    if (items.length === value.length && match.every((k, i) => k === i || k === -1)) {
       items.forEach((item, i) => this.reconcile(item, value[i], itemSite(item)));
       return;
     }
+    const dashColumn = this.column(this.text.lastIndexOf("-", items[0]!.range![0]));
+    const kept = match.filter((k) => k !== -1);
+    if (kept.some((k, i) => i > 0 && k < kept[i - 1]!)) return this.reorder(items, value, match, dashColumn);
+
     // Items still wanted keep their own lines, and the comments above them.
     let next = 0;
-    let after = this.lineStart(items[0]!.range![0]);
-    const dashColumn = this.column(this.text.lastIndexOf("-", items[0]!.range![0]));
+    let after = this.chunkStart(items, 0);
     for (const wanted of value) {
       let found = -1;
       for (let k = next; k < items.length; k++) {
@@ -189,16 +201,52 @@ class Splicer {
         this.edits.push({ from: after, to: after, text: this.block([wanted], dashColumn) });
         continue;
       }
-      for (let k = next; k < found; k++) this.remove(items[k]!);
+      for (let k = next; k < found; k++) this.remove(items, k);
       after = this.lineEnd(items[found]!.range![1]);
       next = found + 1;
     }
-    for (let k = next; k < items.length; k++) this.remove(items[k]!);
+    for (let k = next; k < items.length; k++) this.remove(items, k);
   }
 
-  private remove(item: Node): void {
-    const dash = this.text.lastIndexOf("-", item.range![0]);
-    this.edits.push({ from: this.lineStart(dash), to: this.lineEnd(item.range![1]), text: "" });
+  /** The items in their new order, each carried with the comment lines above it; the gaps between them stay. */
+  private reorder(items: Node[], value: unknown[], match: number[], dashColumn: number): void {
+    const starts = items.map((_, k) => this.chunkStart(items, k));
+    const ends = items.map((item) => this.lineEnd(item.range![1]));
+    const chunk = (text: string): string => (text.endsWith("\n") ? text : `${text}\n`);
+    let text = "";
+    value.forEach((wanted, i) => {
+      const k = match[i]!;
+      text += k === -1 ? this.block([wanted], dashColumn) : chunk(this.text.slice(starts[k], ends[k]));
+      if (i < value.length - 1 && i < items.length - 1) text += this.text.slice(ends[i], starts[i + 1]);
+    });
+    const to = ends[ends.length - 1]!;
+    if (!this.text.slice(0, to).endsWith("\n")) text = text.replace(/\n$/, "");
+    this.edits.push({ from: starts[0]!, to, text });
+  }
+
+  /** An item goes with the comment lines directly above it: they are about it. */
+  private remove(items: Node[], k: number): void {
+    this.edits.push({ from: this.chunkStart(items, k), to: this.lineEnd(items[k]!.range![1]), text: "" });
+  }
+
+  /** The start of item `k`'s line, or of the first comment above it, back no further than the item before. */
+  private chunkStart(items: Node[], k: number): number {
+    const dash = this.text.lastIndexOf("-", items[k]!.range![0]);
+    const line = this.lineStart(dash);
+    if (this.text.slice(line, dash).trim() !== "") {
+      throw new Error("the recipe has a list item that does not start its own line, which cannot be moved in place");
+    }
+    const bound = k === 0 ? 0 : this.lineEnd(items[k - 1]!.range![1]);
+    let start = line;
+    let at = line;
+    while (at > bound) {
+      const prev = this.lineStart(at - 1);
+      const content = this.text.slice(prev, at);
+      if (/^\s*#/.test(content)) start = prev;
+      else if (!/^\s*$/.test(content)) break;
+      at = prev;
+    }
+    return start;
   }
 
   /** The whole value, re-rendered in the place the old one occupied. */
@@ -212,12 +260,25 @@ class Splicer {
       // A scalar or a flow collection: `key: <here> # comment` keeps its comment.
       // A block scalar's range runs to the end of its last line; the others stop at the value.
       const endsLine = this.text[range[1] - 1] === "\n";
-      if (inline) {
-        const text = indentAfterFirst(this.fragment(value, old, "flow"), site.indent).replace(/\n$/, "");
+      const frag = this.fragment(value, old, "flow");
+      if (inline && /^[|>]/.test(frag)) {
+        // A block scalar's body must sit deeper than its key: where the old body sat, or two past the key.
+        const body = this.blockBodyColumn(range) ?? site.indent + 2;
+        const nl = frag.indexOf("\n");
+        const header = frag.slice(0, nl).replace(/\d/, String(body - site.indent));
+        const text = `${header}\n${indentAll(frag.slice(nl + 1), body)}`.replace(/\n$/, "");
+        this.edits.push({ from: range[0], to: range[1], text: endsLine ? `${text}\n` : text });
+      } else if (inline) {
+        const text = indentAfterFirst(frag, site.indent).replace(/\n$/, "");
         this.edits.push({ from: range[0], to: range[1], text: endsLine ? `${text}\n` : text });
       } else {
-        const text = "\n" + indentAll(this.fragment(value, old, "block"), site.indent + 2).replace(/\n$/, "");
-        this.edits.push({ from: this.valueFrom(site, range[0]), to: range[1], text: endsLine ? `${text}\n` : text });
+        // `key: [] # comment` keeps its comment on the key's line, not on the last line of the new block.
+        const eol = this.text.indexOf("\n", range[1]);
+        const rest = this.text.slice(range[1], eol === -1 ? this.text.length : eol);
+        const trailing = !endsLine && /^\s*#/.test(rest) ? rest : "";
+        const text = trailing + "\n" + indentAll(this.fragment(value, old, "block"), site.indent + 2).replace(/\n$/, "");
+        const to = range[1] + trailing.length;
+        this.edits.push({ from: this.valueFrom(site, range[0]), to, text: endsLine ? `${text}\n` : text });
       }
       return;
     }
@@ -248,6 +309,13 @@ class Splicer {
       }
     }
     return frag.toString(RENDER);
+  }
+
+  /** The column of a block scalar's first non-blank body line, if it has one. */
+  private blockBodyColumn(range: readonly number[]): number | undefined {
+    const body = this.text.slice(this.lineEnd(range[0]!), range[1]);
+    const line = body.split("\n").find((l) => l.trim() !== "");
+    return line === undefined ? undefined : line.length - line.trimStart().length;
   }
 
   /** `key: value` pairs or `- item`s, as block lines at `column`. */

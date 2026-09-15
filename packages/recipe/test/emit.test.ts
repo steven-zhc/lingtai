@@ -136,7 +136,62 @@ describe("editRecipe, on this repository's own recipe", () => {
   it("keeps a comment on a block field being replaced, above and inside it", () => {
     const annotated = OWN.replace("  merge: []\n", "  # holds nothing\n  merge: [] # nobody holds it\n  # after merge\n");
     const out = editRecipe(annotated, [{ path: ["gates", "merge"], value: [{ name: "a person", human: "Merge?" }] }]);
-    expect(out).toContain("  # holds nothing\n  merge:\n    - name: a person\n      human: Merge? # nobody holds it\n  # after merge\n");
+    expect(out).toContain("  # holds nothing\n  merge: # nobody holds it\n    - name: a person\n      human: Merge?\n  # after merge\n");
+  });
+
+  /** Each item's text with the comment lines directly above it, in file order. */
+  function chunks(text: string, path: string[]): string[] {
+    const seq = parseDocument(text).getIn(path, true) as { items: Node[] };
+    return seq.items.map((item) => {
+      const lines = text.slice(0, text.lastIndexOf("\n", item.range![0] - 1) + 1).split("\n").slice(0, -1);
+      const above: string[] = [];
+      while (lines.length > 0 && /^\s*#/.test(lines[lines.length - 1]!)) above.unshift(lines.pop()!);
+      const end = text.indexOf("\n", item.range![1] - 1);
+      return [...above, text.slice(text.lastIndexOf("\n", item.range![0] - 1) + 1, end)].join("\n");
+    });
+  }
+
+  it("moves a reordered gate with its comments, rather than rewriting each position in place", () => {
+    const before = chunks(OWN, ["gates", "proposed"]);
+    const own = parse(OWN) as { gates: { proposed: unknown[] } };
+    const out = editRecipe(OWN, [{ path: ["gates", "proposed"], value: [own.gates.proposed[1], own.gates.proposed[0]] }]);
+    expect(chunks(out, ["gates", "proposed"])).toEqual([before[1], before[0]]);
+    expect(commentCount(out)).toBe(commentCount(OWN));
+    expect(out.indexOf("It is second deliberately")).toBeLessThan(out.indexOf("- name: review"));
+    expect(out.indexOf("**Both halves, written out.**")).toBeGreaterThan(out.indexOf("- name: build"));
+  });
+
+  it("moves a rotated label with the comment above it", () => {
+    const before = chunks(OWN, ["source", "exclude"]);
+    const labels = (parse(OWN) as { source: { exclude: string[] } }).source.exclude;
+    const rotated = [labels[labels.length - 1]!, ...labels.slice(0, -1)];
+    const out = editRecipe(OWN, [{ path: ["source", "exclude"], value: rotated }]);
+    expect(chunks(out, ["source", "exclude"])).toEqual([before[before.length - 1], ...before.slice(0, -1)]);
+    expect(commentCount(out)).toBe(commentCount(OWN));
+    expect(out).toMatch(/# An epic is a table of contents[^]*?\n {4}- epic\n {4}- blocked\n/);
+  });
+
+  it("removes a label together with the comment that explains it", () => {
+    const out = editRecipe(OWN, [
+      {
+        path: ["source", "exclude"],
+        value: ["blocked", "in-progress", "agent:hold", "agent:blocked", "agent:review", "agent:wip"],
+      },
+    ]);
+    const diff = changed(OWN, out);
+    expect(diff.added).toEqual([]);
+    expect(diff.removed[0]).toBe("    # An epic is a table of contents, not work. `#126` was claimed on");
+    expect(diff.removed[diff.removed.length - 1]).toBe("    - epic");
+    expect(diff.removed.slice(0, -1).every((l) => /^\s*#/.test(l))).toBe(true);
+  });
+
+  it("rewrites a block-scalar prompt in place, deeper than its key", () => {
+    const multi = editRecipe(OWN, [{ path: ["gates", "proposed", 1, "agent"], value: "line one\nline two\n" }]);
+    expect(multi).toContain("    - name: review\n      agent: |\n        line one\n        line two\n");
+    expect((parse(multi) as { gates: { proposed: { agent: string }[] } }).gates.proposed[1]!.agent).toBe("line one\nline two\n");
+    const single = editRecipe(OWN, [{ path: ["gates", "proposed", 1, "agent"], value: "one line" }]);
+    expect((parse(single) as { gates: { proposed: { agent: string }[] } }).gates.proposed[1]!.agent).toBe("one line");
+    expect(commentCount(single)).toBe(commentCount(OWN));
   });
 
   it("refuses an edit that would not be a recipe, rather than writing it", () => {
