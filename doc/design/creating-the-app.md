@@ -81,33 +81,47 @@ reaching config. It has two honest answers and the ticket must pick one:
 repository keeps finding — and the page would be claiming a state only one of
 two processes is in.
 
-## Where the flow lives
+## Where the flow lives: the board
 
-The question is not cosmetic: **it decides which process writes a secret.**
+**This document first recommended the CLI, and the argument was wrong.** It is
+recorded here rather than deleted, because the mistake is the useful part.
 
-| | CLI — `lingtai app create` | Board — a page and a route |
-|---|---|---|
-| serves the auto-submitting form | a temporary local server, as the reference implementations do | a route it already has the shape for (`api/webhook/route.ts`) |
-| receives the PEM | the CLI, which **already writes secrets** — `lingtai env set` writes `~/.lingtai/env/<project>.env` at `0600` | the board, which **has never written a secret to disk** |
-| available before anything is set up | yes | yes — the board reads the log, which is Postgres and independent of GitHub |
-| matches the wizard's shape | no — it is a terminal step in front of a page | yes |
+The argument was: the private key is the only long-lived secret in the system,
+every other credential expires in an hour, and giving an HTTP handler the power
+to write it is a power the board would keep. It reads well. It does not survive
+looking at what the board can already do:
 
-**Recommend the CLI, and let the board link to it.** The reason is not
-convenience:
+| `apps/board/src/app/actions.ts` | |
+|---|---|
+| `approveCard` | releases a hold at the merge point — the next pass merges into `main` |
+| `editPrompt` | rewrites the whole document an agent is handed |
+| `sendAttempt` | dispatches it |
+| `runNow` | starts a pass |
 
-> The private key is the **only long-lived secret in the whole system**. Every
-> other credential Lingtai holds is an installation token that expires in an
-> hour, and the elaborate care in `packages/repo/src/git.ts:45` — the token goes
-> through `GIT_CONFIG_*` and not argv, not `.git/config` — exists because that
-> token is worth protecting for one hour.
+**Those four compose into "merge arbitrary code into `main`."** Anyone who can
+reach the board can already have an agent write and land anything — including
+code that reads the private key and sends it elsewhere. Writing a key file is
+**strictly less power than the board already holds**, so withholding it protects
+nothing and costs the wizard its first screen.
 
-Giving an HTTP handler the power to write that key is a larger change than it
-looks, and it is a power the board would keep afterwards. The CLI already has
-it, already has the `0600` habit, and is already where `.env.example:77` points
-(`~/.ssh/lingtai-agent.private-key.pem` — outside the repository, deliberately).
+The browser settles what is left. The manifest flow **requires** a browser —
+step 2 is a person clicking on GitHub's own page:
 
-The board's part is then a screen that says *no App is configured* — which it
-can already tell from `hasGitHubApp()` — and prints the one command.
+```
+board:  page → GitHub → page                                       2 hops
+CLI:    terminal → open a browser → GitHub → 127.0.0.1 → terminal → board   5
+```
+
+Starting in a terminal takes someone out of the browser and puts them back.
+
+**So: a board route, and the board writes the key.** What survives from the
+rejected argument is not the location but the care — see [the secret, once it
+arrives](#the-secret-once-it-arrives). The `0600` habit and the path convention
+are `apps/cli/src/env.ts`'s and `.env.example:77`'s, and the board should reuse
+them rather than invent a second place for the same file.
+
+`hasGitHubApp()` (`packages/env/src/index.ts:309`) is what the page reads to
+decide whether to offer creation at all — the board already calls it twice.
 
 ## The manifest, field by field
 
