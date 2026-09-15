@@ -760,7 +760,8 @@ export function formatFailures(
  * - `lingtai restart` in this process knows who ran it. **It records nothing
  *   over a drain somebody asked for after its checks** — the one moment the
  *   check after the wait cannot see, between reading the stream and winning the
- *   lock. Its own request is fine: the start ends it.
+ *   lock. Its own request is fine: the start ends it — and so is one the same
+ *   person asked for, which `planRestart` adopts rather than refuses.
  * - **a supervisor's start answers a restart's handoff** (0042 §8), which rides
  *   on the request it ends, and takes its `by` and `reason` only when it is
  *   running the commit that restart examined. On a different commit it is
@@ -787,7 +788,10 @@ export function attributeStart(input: {
   const standing = control.shutdown;
 
   if (restart) {
-    if (standing !== null && standing.version !== restart.request) {
+    // The same person's is adopted, as `planRestart` adopts it: the check after
+    // the wait would have taken it over, and a restart run again would too, so
+    // declining over it leaves the system down for nothing.
+    if (standing !== null && standing.version !== restart.request && standing.by !== restart.by) {
       return {
         record: false,
         why:

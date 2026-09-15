@@ -457,6 +457,19 @@ describe("whose start it is", () => {
       expect(!a.record && a.why).toContain("human:ops");
     }
   });
+
+  /**
+   * `lingtai restart` asks v4 and waits; the same person's `shutdown --force`
+   * lands as v5. The check after the wait adopts it, and so must the start —
+   * declining left the system down and told the operator to `resume`.
+   */
+  it("records a restart in this process over a newer drain the same person asked for, as planRestart adopts it", () => {
+    const mine: ShutdownRequest = { ...plain, reason: "stuck", force: true, version: 5 };
+    expect(attributeStart({ ...base, restart: { by: "human:steven", reason: "x", request: 4 }, control: { shutdown: mine } })).toMatchObject({
+      record: true,
+      by: "human:steven",
+    });
+  });
 });
 
 describe("a start the supervisor makes", () => {

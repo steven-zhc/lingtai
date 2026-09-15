@@ -277,16 +277,21 @@ export interface RecordedStart {
 }
 
 /**
- * The first `ConductorStarted` after `version` on `ctl-conductor`, or null.
+ * The latest `ConductorStarted` after `version` on `ctl-conductor`, or null.
  *
  * What `lingtai restart` waits on when a supervisor makes the start: not the
  * beacon, which says a daemon is up and not which start put it there, but the
  * record the new daemon appends — so the restart can say whose start it was and
  * from what commit, or that the one that happened was not the one it handed off.
  * `version` is the restart's own request, which that start ends.
+ *
+ * **The latest, not the first.** Starts take the lock one at a time, so a later
+ * start means the earlier daemon is gone: a respawn that recorded the restart's
+ * start and then died in its reconcile is followed by one recorded as `daemon`,
+ * and that one is what is conducting.
  */
 export async function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
-  const found = (await store.read(CONTROL_STREAM)).find((e) => e.type === "ConductorStarted" && e.version > version);
+  const found = (await store.read(CONTROL_STREAM)).findLast((e) => e.type === "ConductorStarted" && e.version > version);
   if (!found) return null;
   const d = (found.data ?? {}) as Record<string, unknown>;
   return {

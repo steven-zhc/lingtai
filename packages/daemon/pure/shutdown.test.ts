@@ -304,6 +304,20 @@ describe("recording a start", () => {
     );
     expect(await startAfter(1, store)).toMatchObject({ by: "human:steven", handoff: 1, sha: "2926f2d" });
   });
+
+  /**
+   * The respawn records the restart's start and dies in its reconcile; the
+   * supervisor's next copy finds no request and records `daemon`. That second
+   * one holds the lock, so it is the start a restart reports on.
+   */
+  it("answers with the latest start after a request, which is the one conducting", async () => {
+    const { store } = recording([
+      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null, handoff: code } },
+    ]);
+    await recordStart((control) => ({ record: true, by: "human:steven", reason: "r", handoff: control.shutdown!.version, note: null }), code, store);
+    await recordStart(daemon, code, store);
+    expect(await startAfter(1, store)).toMatchObject({ by: "daemon", handoff: null });
+  });
 });
 
 /**
