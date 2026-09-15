@@ -958,6 +958,26 @@ export const ConductorShutdownRequested = z.object({
   by: z.string(),
   reason: z.string(),
   timeoutMs: z.number().int().positive().nullable(),
+  /**
+   * Stop without letting the ticket in flight finish (`#159`).
+   *
+   * **Safe is the default, and the flag is the loud one.** A drain is what
+   * anybody wants nine times in ten — the pass, not the agent, so the gates and
+   * the merge lane run too — and a command whose ordinary form throws away work
+   * in progress is a command people learn to fear. `--force` is for the tenth:
+   * a pass that is going nowhere, a machine that has to stop now.
+   *
+   * What it does is exactly what `--timeout` already did when it tripped, and
+   * what a second Ctrl+C does: stop taking work, leave the agent running, exit.
+   * The orphan is deliberate and is already somebody's job — the next
+   * conductor's `reconcile` kills it and releases the claim, guarded on the host
+   * and the process's own argv. So this adds a way to ask for that state, not
+   * the state itself.
+   *
+   * Defaulted rather than required, so every request written before this reads
+   * as the drain it was.
+   */
+  force: z.boolean().default(false),
 });
 
 /**

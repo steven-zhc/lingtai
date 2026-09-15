@@ -369,3 +369,55 @@ describe("a signal belongs to the daemon it was sent to", () => {
     expect(state.shutdown).not.toBeNull();
   });
 });
+
+/**
+ * Safe by default, forced by name (`#159`).
+ *
+ * A drain is what anybody wants nine times in ten — the *pass*, so the gates
+ * and the merge lane run too — and a command whose ordinary form throws away a
+ * run in progress is one people stop reaching for while anything is happening,
+ * which is exactly when a restart is wanted. So the flag carries the dangerous
+ * meaning and the bare command carries the safe one.
+ *
+ * What `--force` asks for is not a new state: it is where `--timeout` already
+ * went when it tripped, and where a second Ctrl+C goes. The agent is left
+ * running and the next conductor's `reconcile` kills it and releases the claim.
+ */
+describe("a shutdown is safe unless it says otherwise", () => {
+  const asked = (data: object) => ({ type: "ConductorShutdownRequested", data });
+
+  it("is a drain when nothing said force", async () => {
+    const state = await readControl(storeOf([asked({ by: "human:steven", reason: "stopping" })]));
+
+    expect(state.shutdown?.force).toBe(false);
+  });
+
+  it("is forced when it said so", async () => {
+    const state = await readControl(storeOf([asked({ by: "human:steven", reason: "wedged", force: true })]));
+
+    expect(state.shutdown?.force).toBe(true);
+  });
+
+  it("reads a request written before the flag existed as the drain it was", async () => {
+    // Every request on the log before `#159` is a drain, and the field is
+    // absent rather than false on all of them. Absent has to mean drain, or
+    // replaying this system's own history would turn old shutdowns into kills.
+    const state = await readControl(storeOf([asked({ by: "human:steven", reason: "stopping for the day" })]));
+
+    expect(state.shutdown).not.toBeNull();
+    expect(state.shutdown?.force).toBe(false);
+  });
+
+  it("keeps force with the request the withdrawal does not lift", async () => {
+    // A restart withdraws its own by version; somebody else's forced request
+    // stands, and stands as forced.
+    const state = await readControl(
+      storeOf([
+        asked({ by: "human:ops", reason: "wedged", force: true }),
+        { type: "ConductorShutdownWithdrawn", data: { by: "human:steven", version: 99 } },
+      ]),
+    );
+
+    expect(state.shutdown?.force).toBe(true);
+  });
+});

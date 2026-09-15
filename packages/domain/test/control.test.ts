@@ -218,7 +218,7 @@ describe("withdrawing one shutdown request", () => {
       NOW,
     );
 
-    expect(state.shutdown).toEqual({ by: "human:ops", reason: "the database is being moved", timeoutMs: null, version: 2 });
+    expect(state.shutdown).toEqual({ by: "human:ops", reason: "the database is being moved", timeoutMs: null, force: false, version: 2 });
   });
 });
 

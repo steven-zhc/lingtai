@@ -37,6 +37,8 @@ export interface ShutdownRequest {
    * names a request by this, so withdrawing one can never lift a newer one.
    */
   version: number;
+  /** Stop without draining the pass in flight (`#159`). */
+  force: boolean;
 }
 
 /**
@@ -179,6 +181,9 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
           by: str("by") ?? "",
           reason: str("reason") ?? "",
           timeoutMs: typeof timeout === "number" ? timeout : null,
+          // Absent on every request written before `#159`, and those were all
+          // drains — so the absence reads as `false` rather than as unknown.
+          force: d["force"] === true,
           version: e.version,
         };
         // A drain asked after a handoff is a newer decision than it.

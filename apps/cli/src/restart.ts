@@ -106,9 +106,17 @@ export interface RestartArgs {
   despiteDoctor: boolean;
   noConduct: boolean;
   noMerge: boolean;
+  /**
+   * Stop without letting the pass in flight finish (`#159`).
+   *
+   * Safe is the default here as it is for `shutdown`: a restart that threw away
+   * a run every time would be a command nobody reaches for while anything is
+   * happening, which is exactly when a restart is wanted.
+   */
+  force: boolean;
 }
 
-const BOOLEAN_FLAGS = ["dirty", "despite-doctor", "no-conduct", "no-merge"] as const;
+const BOOLEAN_FLAGS = ["dirty", "despite-doctor", "no-conduct", "no-merge", "force"] as const;
 const VALUE_FLAGS = ["timeout", "reason"] as const;
 
 /**
@@ -174,6 +182,7 @@ export function parseRestartArgs(
       despiteDoctor: seen.has("despite-doctor"),
       noConduct: seen.has("no-conduct"),
       noMerge: seen.has("no-merge"),
+      force: seen.has("force"),
     },
   };
 }
@@ -450,7 +459,7 @@ export async function prepareRestart(
       // request, but one may have landed since, and the fold keeps only the
       // newest — so appending over it would make this restart's later
       // withdrawal lift somebody else's drain with no event withdrawing it.
-      const asked = await requestShutdownUnlessStanding(by, `restarting: ${args.reason}`, args.timeoutMs);
+      const asked = await requestShutdownUnlessStanding(by, `restarting: ${args.reason}`, args.timeoutMs, undefined, args.force);
       if (!asked.asked && asked.standing.by !== by) {
         sayRefusal("not restarting:", [
           {

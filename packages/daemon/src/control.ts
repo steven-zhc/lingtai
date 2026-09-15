@@ -161,10 +161,12 @@ export async function requestShutdown(
   reason: string,
   timeoutMs: number | null = null,
   store: EventStore = eventStore,
+  /** Stop without draining the pass in flight. Defaulted, because safe is the default (`#159`). */
+  force = false,
 ): Promise<number> {
   // The version is what names the request, so a caller that means to withdraw
   // it later — `lingtai restart` — can withdraw that one and no other.
-  return append("ConductorShutdownRequested", { by, reason, timeoutMs }, store);
+  return append("ConductorShutdownRequested", { by, reason, timeoutMs, force }, store);
 }
 
 /** What `requestShutdownUnlessStanding` found, and so what it did. */
@@ -192,13 +194,15 @@ export async function requestShutdownUnlessStanding(
   reason: string,
   timeoutMs: number | null = null,
   store: EventStore = eventStore,
+  /** As `requestShutdown`. A restart passes its own. */
+  force = false,
 ): Promise<Asking> {
   for (let attempt = 0; ; attempt++) {
     const events = await store.read(CONTROL_STREAM);
     const standing = reduceControl(events).shutdown;
     if (standing !== null) return { asked: false, standing };
     try {
-      const version = await append("ConductorShutdownRequested", { by, reason, timeoutMs }, store, events.length);
+      const version = await append("ConductorShutdownRequested", { by, reason, timeoutMs, force }, store, events.length);
       return { asked: true, version };
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;

@@ -151,13 +151,16 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 run in flight finishes. About the daemon that is
                                 running, and gone when it is
   lingtai resume                    take tickets again
-  lingtai shutdown [why]            stop the daemon. It does not outlive the one
-                                it was sent to, so the next lingtai start needs
-                                nothing lifted
-    --safe                      let the ticket in flight finish first. Waits as
-                                long as runtime.limits.wall
-    --timeout <duration>        with --safe: give up waiting after this and exit
-                                anyway, leaving the agent running
+  lingtai shutdown [why]            stop the daemon, letting the ticket in flight
+                                finish first — the pass, so the gates and the
+                                merge lane run too. It does not outlive the
+                                daemon it was sent to, so the next lingtai start
+                                needs nothing lifted
+    --force                     do not wait. The agent is left running and the
+                                next conductor kills it and releases the claim
+    --timeout <duration>        give up waiting after this and exit anyway,
+                                leaving the agent running. Not with --force,
+                                which does not wait at all
   lingtai restart [why]             drain, wait for the pass, and start one daemon
                                 here — or through lingtai service, when a
                                 supervisor keeps it. Refuses a commit that is not on the
@@ -169,8 +172,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 the next restart picks it up
     --dirty                     start from a dirty worktree, having read why not
     --despite-doctor            start in spite of failed doctor checks
-    --timeout <duration>        as for lingtai shutdown
-    --no-conduct, --no-merge    as for lingtai daemon; refused under a supervisor
+    --force, --timeout          as for lingtai shutdown — they are that
+                                shutdown's, and the start is unaffected
+    --no-conduct, --no-merge    as for lingtai start; refused under a supervisor
   lingtai now <project> --issue <n> ask for one ahead of the queue
   lingtai projection lag            how far each projection is behind the log
   lingtai projection rebuild <name> drop the table, reset the checkpoint, replay
@@ -663,7 +667,13 @@ async function daemonCommand(
       },
       // The loop has stopped taking work. What it cannot do is exit the
       // process, so the host does — after the drain `stop()` performs.
-      onShutdown: (why) => void drain(why, asked?.timeoutMs ?? null),
+      // `--force` takes the other exit. `stopNow` is not new: it is where
+      // `--timeout` already went when it tripped, so forcing asks for a state
+      // the system already knows how to be in rather than inventing one.
+      onShutdown: (why) =>
+        asked?.force === true
+          ? stopNow(`${why} — forced, so the pass is not finished. The agent is left running for the next conductor to kill.`)
+          : void drain(why, asked?.timeoutMs ?? null),
 
       pass: async (reason) => {
         await declared.retry();
@@ -780,6 +790,15 @@ async function controlCommand(
   verb: "pause" | "resume" | "shutdown" | "now",
   args: string[],
 ): Promise<number> {
+  // **`--help` is a question, never an instruction.** `lingtai shutdown --help`
+  // took `--help` as the reason and stopped the daemon — asking what a command
+  // does by doing it, on the one command whose cost is a running system. Caught
+  // by typing it.
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(USAGE);
+    return 0;
+  }
+
   const { positional, flags } = parseFlags(args);
   const by = `human:${process.env["USER"] ?? "operator"}`;
 
@@ -823,8 +842,24 @@ async function controlCommand(
       }
     }
 
-    await requestShutdown(by, reason, timeoutMs);
+    // Safe is the default and `--force` is the loud one (`#159`). A command
+    // whose ordinary form throws away a pass in flight is one people learn to
+    // fear; this way the dangerous thing has to be asked for by name.
+    const force = "force" in flags;
+    if (force && "timeout" in flags) {
+      console.error("--timeout is about waiting for the pass, and --force does not wait. Use one.");
+      return 2;
+    }
+
+    await requestShutdown(by, reason, timeoutMs, undefined, force);
     console.log(paint.held(`shutdown asked by ${by} — ${reason}`));
+
+    if (force) {
+      // What `--timeout` has always done when it tripped, and what a second
+      // Ctrl+C does. The orphan is the point, and it already has an owner.
+      console.log("--force: it stops without finishing the pass. The agent is left running, and the next conductor kills it and releases the claim.");
+      return 0;
+    }
 
     // Said up front, because the alternative is a command that has returned
     // and a daemon that looks hung (0030 §6). What is being waited for is the

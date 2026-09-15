@@ -333,6 +333,7 @@ describe("the command line", () => {
         despiteDoctor: false,
         noConduct: false,
         noMerge: true,
+        force: false,
       },
     });
   });
@@ -343,7 +344,10 @@ describe("the command line", () => {
   });
 
   it("refuses a flag it does not have, --anyway included, rather than keeping it silently", () => {
-    for (const argv of [["--anyway"], ["--force"], ["--timeout"], ["--timeout", "soon"]]) {
+    // `--force` has left this list: it is a flag now (`#159`), the one that
+    // says do not wait for the pass. What stays is a flag that was removed on
+    // purpose and a value flag given nothing usable.
+    for (const argv of [["--anyway"], ["--nonsense"], ["--timeout"], ["--timeout", "soon"]]) {
       expect(parseRestartArgs(argv).ok, argv.join(" ")).toBe(false);
     }
   });
