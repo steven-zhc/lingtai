@@ -4,11 +4,28 @@ import { z } from "zod";
  * What wraps every event. The store fills `seq` and `at`; everything else is
  * supplied by whoever appends.
  */
+/**
+ * Who appended it.
+ *
+ * `daemon` is a supervisor's start — launchd's `KeepAlive`, a systemd unit, a
+ * `nohup` — and it is here because `ConductorStarted` has always *said* it was
+ * (`by`'s own docstring: "a daemon whose stdin is not a terminal … is recorded
+ * as `daemon`, because the log saying a person started what launchd started by
+ * itself is the unattributable 23:06 again"). It was not in this pattern, so
+ * every one of those starts failed to append and said so into a log nobody was
+ * reading — the documented design refused by the validator, which is *true
+ * where it was written and false where it is read*.
+ *
+ * The cost was exactly what 0042 exists to prevent: *who restarted it at 23:06*
+ * is unanswerable for supervised starts, which are the ones nobody witnessed.
+ * Not `conductor`: that is the process appending about its own work, and a
+ * supervisor starting it is a different fact about a different actor.
+ */
 export const Actor = z
   .string()
   .regex(
-    /^(conductor|github|agent:[\w-]+|human:[\w.@-]+)$/,
-    "actor must be conductor, github, agent:<runId> or human:<id>",
+    /^(conductor|daemon|github|agent:[\w-]+|human:[\w.@-]+)$/,
+    "actor must be conductor, daemon, github, agent:<runId> or human:<id>",
   );
 
 export const StreamId = z

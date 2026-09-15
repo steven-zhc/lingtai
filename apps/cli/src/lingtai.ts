@@ -687,7 +687,16 @@ async function daemonCommand(
         );
       },
     });
-    const control = await readControl();
+    // **Scoped, like the loop's** (`#159`). It used to fold the whole stream,
+    // so a daemon that had just started announced a pause from before it
+    // existed and then took work anyway — the report and the loop disagreeing
+    // about the same question, which is worse than either answer.
+    //
+    // A pause this daemon *will* obey is one somebody made after it started,
+    // and that is the only one worth printing here. `lingtai status` keeps the
+    // unscoped read, because it answers *what is standing* rather than *what
+    // will this process do*.
+    const control = await readControl(undefined, since);
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`));
@@ -823,7 +832,11 @@ async function controlCommand(
     const held = await inFlight().catch(() => []);
     console.log(
       timeoutMs === null
-        ? `the daemon finishes the pass in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}. lingtai resume lifts it.`
+        // No "lingtai resume lifts it" any more (`#159`). It was true when the
+        // request outlived the daemon it was aimed at; the next `lingtai start`
+        // now needs nothing lifted, so saying otherwise would send a person to
+        // a command that has nothing to do.
+        ? `the daemon finishes the pass in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
         : `the daemon finishes the pass in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`,
     );
     return 0;

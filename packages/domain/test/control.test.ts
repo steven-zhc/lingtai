@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Envelope } from "../src/envelope.ts";
+import { Actor } from "../src/envelope.ts";
 import { HANDOFF_LAPSES_MS, reduceControl } from "../src/control.ts";
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
@@ -270,5 +271,39 @@ describe("a restart's handoff to the supervisor", () => {
     expect(reduceControl(log([asked, stale]), NOW).handoff).toBeNull();
     const itself = { ...handed, data: { ...handed.data, handoff: null } };
     expect(reduceControl(log([asked, itself]), NOW).handoff).toBeNull();
+  });
+});
+
+/**
+ * Who may append, and the one that could not (`#159`).
+ *
+ * `ConductorStarted.by` has always documented `daemon` as what a supervisor's
+ * start is recorded as — launchd's `KeepAlive`, a systemd unit, a `nohup` —
+ * "because the log saying a person started what launchd started by itself is
+ * the unattributable 23:06 again". `Actor` did not admit it, so every one of
+ * those appends failed and printed its ZodError into a log nobody reads. The
+ * documented design, refused by the validator.
+ *
+ * What it cost is what 0042 exists to prevent: *who restarted it at 23:06* was
+ * unanswerable for exactly the starts nobody witnessed. This is the assertion
+ * that stops it going quiet again.
+ */
+describe("who may append", () => {
+  it("accepts a supervisor's start", () => {
+    expect(Actor.safeParse("daemon").success).toBe(true);
+  });
+
+  it("accepts the other four", () => {
+    for (const who of ["conductor", "github", "agent:run-1a2b", "human:steven"]) {
+      expect(Actor.safeParse(who).success, who).toBe(true);
+    }
+  });
+
+  it("still refuses a name that is none of them", () => {
+    // The point of the pattern: an actor is a closed set, so a typo is a
+    // refusal rather than a new kind of appender nobody decided on.
+    for (const who of ["", "launchd", "human:", "agent:", "Daemon"]) {
+      expect(Actor.safeParse(who).success, who).toBe(false);
+    }
   });
 });
