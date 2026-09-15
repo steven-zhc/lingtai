@@ -126,8 +126,11 @@ process holds its code for hours, and `582a0f8` was rebased out of existence
 twenty minutes after a daemon started from it. A dirty worktree is named in the
 same refusal (`--dirty`), `lingtai doctor` has to pass (`--despite-doctor`,
 except for a failure whose own remedy is the restart), and a drain somebody else
-asked for is theirs to lift. The commit and worktree are checked again after
-the wait. Nothing is withdrawn between the drain and the start (0045): a daemon
+asked for is theirs to lift. In a terminal the commit and worktree are checked
+again after the wait; under `lingtai service` they are not — the supervisor's
+respawn starts whatever is on disk the moment the old daemon exits, so a pull
+during the drain is not refused, and the restart only exits non-zero afterwards
+when the commit that started is not the one it checked. Nothing is withdrawn between the drain and the start (0045): a daemon
 reads the control stream from its own start, so a restart is `shutdown` and then
 `start` in control state. Where `lingtai service` keeps the daemon, the start is
 the supervisor's: the restart's request carries a handoff naming the checked

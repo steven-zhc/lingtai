@@ -71,6 +71,7 @@ import {
   readControl,
   readStatus,
   requestShutdownUnlessStanding,
+  handOffStanding,
   startAfter,
   type CodeVersion,
   type Handoff,
@@ -446,6 +447,34 @@ export async function prepareRestart(
           : `a shutdown you asked for is already standing (${plan.adopted.reason}) — waiting on that one rather than asking twice.`,
       ),
     );
+  }
+
+  if (supervised && plan.adopted) {
+    // The request taken over is the one the supervisor's start reads its handoff
+    // off, and it carries none — a plain `lingtai shutdown` — or an earlier
+    // invocation's, with that one's commit and reason. Left alone, the start is
+    // recorded as `daemon` and this exits non-zero on a restart a person typed.
+    // So it is asked again with what this invocation checked, while it is still
+    // the one standing.
+    const handed = await handOffStanding(by, plan.adopted.version, `restarting: ${args.reason}`, {
+      sha: identity.sha,
+      dirty: identity.dirty,
+    });
+    if (!handed.asked) {
+      sayRefusal("not restarting:", [
+        {
+          line:
+            handed.standing === null
+              ? `a daemon started after the shutdown you asked for, before this could hand the start to the supervisor — ` +
+                `it is taking work and was not started by this command. lingtai doctor says what is conducting`
+              : `a shutdown asked by ${handed.standing.by} — ${handed.standing.reason} — landed while this was checking. ` +
+                `Nothing was asked to stop by this command and nothing was stopped. lingtai resume lifts it, and then this will start`,
+          waiver: null,
+        },
+      ], log);
+      return { ok: false, code: 1 };
+    }
+    request = handed.version;
   }
 
   if (plan.go === "drain" || plan.go === "wait" || (supervised && request === null)) {

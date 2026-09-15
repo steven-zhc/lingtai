@@ -22,6 +22,7 @@ import { killWorker } from "../src/reconcile.ts";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import {
   controlWatermark,
+  handOffStanding,
   readControl,
   recordStart,
   requestShutdown,
@@ -434,11 +435,81 @@ describe("one command to stop and one to start", () => {
     expect((await readControl(store)).shutdown?.by).toBe("human:ops");
   });
 
-  it("falls back to the stream's length when the start could not be recorded", async () => {
+  /**
+   * Daemon A is told to stop at v2; daemon B wins the lock and its record fails.
+   * Nothing ended v2 in the fold, so the board, doctor and a waiting restart all
+   * see it standing. From the stream's length B would conduct under it and never
+   * hear it; from the last recorded start, B reads what they read.
+   */
+  it("falls back to the last recorded start when the start could not be recorded, so it agrees with the fold", async () => {
+    const store = createMemoryEventStore();
+    await recordStart(daemon, code, store);
+    await requestShutdown("human:steven", "deploying", null, store);
+
+    const since = await controlWatermark(store);
+    expect(since).toBe(1);
+    expect((await readControl(store)).shutdown?.version).toBe(2);
+    expect((await readControl(store, since)).shutdown?.version).toBe(2);
+  });
+
+  it("and to the whole stream when no start was ever recorded", async () => {
     const store = createMemoryEventStore();
     await requestShutdown("human:steven", "before", null, store);
 
-    expect((await readControl(store, await controlWatermark(store))).shutdown).toBeNull();
+    expect(await controlWatermark(store)).toBe(0);
+  });
+});
+
+/**
+ * A supervised restart that takes over a drain the same person already asked
+ * for — a plain `lingtai shutdown`, or an earlier restart left by Ctrl+C. The
+ * supervisor's start reads its handoff off the newest request before it, so
+ * the restart's has to be that request.
+ */
+describe("handing off a drain that was taken over", () => {
+  const code = { sha: "2926f2d", dirty: false };
+  const answer = (before: { handoff: { by: string; reason: string; sha: string | null; dirty: boolean; version: number } | null }) =>
+    before.handoff !== null && before.handoff.sha === code.sha
+      ? { by: before.handoff.by, reason: before.handoff.reason, handoff: before.handoff.version }
+      : { by: "daemon", reason: null, handoff: before.handoff?.version ?? null };
+
+  it("puts this restart's handoff on the request, so the supervisor's start is recorded as the restart", async () => {
+    const store = createMemoryEventStore();
+    await recordStart(() => ({ by: "daemon", reason: null, handoff: null }), code, store);
+    const plain = await requestShutdown("human:steven", "deploying", 600_000, store, true);
+
+    const handed = await handOffStanding("human:steven", plain, "restarting: picking up #88", code, store);
+    expect(handed).toEqual({ asked: true, version: 3 });
+    const standing = (await readControl(store)).shutdown;
+    expect(standing).toMatchObject({ version: 3, timeoutMs: 600_000, force: true });
+
+    // The drain ends and KeepAlive respawns it.
+    await recordStart(answer, code, store);
+    expect(await startAfter(3, store)).toMatchObject({ by: "human:steven", reason: "restarting: picking up #88", handoff: 3 });
+  });
+
+  it("replaces an earlier invocation's handoff with the commit this one checked", async () => {
+    const store = createMemoryEventStore();
+    const earlier = await requestShutdownUnlessStanding("human:steven", "restarting: old", null, store, false, { sha: "582a0f8", dirty: false });
+    const version = earlier.asked ? earlier.version : 0;
+
+    await handOffStanding("human:steven", version, "restarting: picking up #88", code, store);
+    expect((await readControl(store)).handoff).toMatchObject({ sha: "2926f2d", reason: "restarting: picking up #88", version: 2 });
+  });
+
+  it("appends nothing once a start has ended the request, nor over a newer one", async () => {
+    const store = createMemoryEventStore();
+    const plain = await requestShutdown("human:steven", "deploying", null, store);
+    await recordStart(() => ({ by: "daemon", reason: null, handoff: null }), code, store);
+    expect(await handOffStanding("human:steven", plain, "restarting", code, store)).toEqual({ asked: false, standing: null });
+
+    const mine = await requestShutdown("human:steven", "again", null, store);
+    await requestShutdown("human:ops", "moving the database", null, store);
+    expect(await handOffStanding("human:steven", mine, "restarting", code, store)).toMatchObject({
+      asked: false,
+      standing: { by: "human:ops" },
+    });
+    expect((await store.read("ctl-conductor")).length).toBe(4);
   });
 });
 

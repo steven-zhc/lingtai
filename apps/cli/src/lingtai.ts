@@ -322,9 +322,8 @@ function serviceOptions(): ServiceOptions {
  * ignore errors. `lingtai restart` is the one caller that wanted a daemon and
  * is entitled to be told it did not get one — it passes `restart`, and losing
  * the lock exits **non-zero**, because it is not known to be a success: the
- * holder may be a `lingtai run` that exits when its one pass ends, or a launchd
- * copy that read the drain before it was withdrawn and is draining back out.
- * Either leaves no daemon, so the line says what is known and where to look.
+ * holder may be a `lingtai run` that exits when its one pass ends, which leaves
+ * no daemon, so the line says what is known and where to look.
  *
  * **The one place a daemon is started**, and that is deliberate: the beacon, the
  * reconcile, the `ConductorStarted` append and the drain handlers are one
@@ -450,8 +449,11 @@ async function daemonCommand(
     if (note) console.log(paint.signal(note));
   } catch (err) {
     // Reported and not fatal, as it always was: a daemon that will not run for
-    // want of a record of itself is an outage over a log entry. The watermark
-    // is then the stream's length, read on its own.
+    // want of a record of itself is an outage over a log entry. But nothing then
+    // ends a request made before this daemon, so the watermark is the last start
+    // that was recorded (`controlWatermark`): this daemon obeys what the board,
+    // doctor and a waiting restart all still see standing, rather than conduct
+    // under a drain only it cannot read.
     console.log(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
     since = await controlWatermark();
   }

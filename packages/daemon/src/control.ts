@@ -111,15 +111,22 @@ export async function readControl(store: EventStore = eventStore, since = 0): Pr
 }
 
 /**
- * Where the control stream is now — the watermark a starting daemon keeps.
+ * The watermark for a daemon whose start could not be recorded: the version of
+ * the last `ConductorStarted` on the stream, or 0.
  *
- * Read once, before the loop, and never again: it is the boundary between
- * "somebody told the daemon before me" and "somebody is telling me". A daemon
- * that recorded its start takes `recordStart`'s version instead, which is the
- * same boundary with the start on it; this is for one whose record failed.
+ * A daemon that recorded its start takes `recordStart`'s version, which is the
+ * boundary between "somebody told the daemon before me" and "somebody is
+ * telling me" with the start on it. Without that record nothing ends a request
+ * made before this daemon, and the whole-stream fold — the board, `lingtai
+ * doctor`, `service start`, a restart's wait — goes on showing it standing. Not
+ * the stream's length, then: a daemon reading past a request the fold still
+ * holds standing would conduct under a drain every other reader reports, and a
+ * restart waiting on that request would wait for ever. From the last start, it
+ * reads exactly what the fold says stands, and obeys it.
  */
 export async function controlWatermark(store: EventStore = eventStore): Promise<number> {
-  return (await store.read(CONTROL_STREAM)).length;
+  const events = await store.read(CONTROL_STREAM);
+  return events.findLast((e) => e.type === "ConductorStarted")?.version ?? 0;
 }
 
 /** Appends one event and returns the version it landed at. */
@@ -219,6 +226,54 @@ export async function requestShutdownUnlessStanding(
         events.length,
       );
       return { asked: true, version };
+    } catch (err) {
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+    }
+  }
+}
+
+/** What `handOffStanding` found, and so what it did. */
+export type HandingOff =
+  /** The request named was still standing, and this one replaces it — at `version`. */
+  | { asked: true; version: number }
+  /** It was not: a start ended it (`null`), or a newer request stands. Nothing was appended. */
+  | { asked: false; standing: ShutdownRequest | null };
+
+/**
+ * Put a supervised restart's handoff on a drain the same person already asked
+ * for, which the restart takes over rather than asks for twice.
+ *
+ * The request taken over carries no handoff — a plain `lingtai shutdown` — or an
+ * earlier restart's, with that invocation's commit and reason. The supervisor's
+ * start reads the handoff off the newest request before it (0045 §3), so this
+ * restart's has to be that request: it is asked again, with this restart's
+ * reason and the commit its checks examined, and with the timeout and `force`
+ * the daemon is already draining on.
+ *
+ * **Only while the request at `version` is the one standing**, at the version of
+ * that read. A start that already ended it is a daemon that took work, and a
+ * request appended now would be aimed at that daemon; a newer request is
+ * somebody's, and would be hidden.
+ */
+export async function handOffStanding(
+  by: string,
+  version: number,
+  reason: string,
+  handoff: Pick<Handoff, "sha" | "dirty">,
+  store: EventStore = eventStore,
+): Promise<HandingOff> {
+  for (let attempt = 0; ; attempt++) {
+    const events = await store.read(CONTROL_STREAM);
+    const standing = reduceControl(events).shutdown;
+    if (standing === null || standing.version !== version) return { asked: false, standing };
+    try {
+      const at = await append(
+        "ConductorShutdownRequested",
+        { by, reason, timeoutMs: standing.timeoutMs, force: standing.force, handoff },
+        store,
+        events.length,
+      );
+      return { asked: true, version: at };
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
     }
