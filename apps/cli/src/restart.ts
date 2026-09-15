@@ -827,12 +827,40 @@ export function attributeStart(input: {
 const HANDOFF_WAIT_MS = 90_000;
 
 /**
- * Wait for the supervisor's start to be recorded, asking for one if none has.
+ * Whether the daemon a start recorded got past its startup and is beating.
+ *
+ * The record lands before the beacon and the reconcile (`0045` §2), so a start
+ * being recorded says nothing about whether that process lived to conduct. The
+ * beacon says `up` once the reconcile is over, and names the pid; a daemon that
+ * died on the way never says it, and the supervisor's next copy records a start
+ * of its own.
+ */
+async function startIsUp(start: RecordedStart): Promise<boolean> {
+  const status = await readStatus();
+  if (!status) return false;
+  const pid = Number(start.worker.slice(start.worker.lastIndexOf(":") + 1));
+  return (
+    status.pid === pid &&
+    (status.state === "up" || status.state === "draining") &&
+    Date.now() - status.lastSeenAt.getTime() <= STALE_AFTER_MS
+  );
+}
+
+/**
+ * Wait for the supervisor's start to be recorded, asking for one if none has,
+ * and for the daemon that recorded it to come up.
  *
  * The record and not the beacon: a beacon says a daemon is beating, and not
  * which start put it there or from what commit — which is the whole of what
  * the restart has to report. Exits 0 only for a start that answered this
  * restart's request, as this person, on the commit that was checked.
+ *
+ * **And the beacon as well, before the verdict.** The record comes before the
+ * reconcile, so the first start recorded may be a respawn that dies in it — and
+ * the one `KeepAlive` brings back thirty seconds later finds no request and is
+ * `daemon`'s. So the verdict waits for the recorded start's own pid to say `up`,
+ * then reads the records again: a later start means the one it saw is gone,
+ * and the later one is what is judged.
  *
  * `service start` is asked only when nothing has been recorded yet. The
  * respawn usually gets there first, and then asking is a no-op at best; when it
@@ -844,6 +872,8 @@ export async function startSupervised(
   how: {
     start: () => Promise<number>;
     recorded?: (after: number) => Promise<RecordedStart | null>;
+    /** Whether the daemon a start recorded is up past its startup. Replaceable so a test need not own a database. */
+    up?: (start: RecordedStart) => Promise<boolean>;
     waitMs?: number;
     pollMs?: number;
     log?: (line: string) => void;
@@ -851,6 +881,7 @@ export async function startSupervised(
 ): Promise<number> {
   const log = how.log ?? console.log;
   const recorded = how.recorded ?? ((after: number) => startAfter(after));
+  const up = how.up ?? startIsUp;
   const waitMs = how.waitMs ?? HANDOFF_WAIT_MS;
   const pollMs = how.pollMs ?? POLL_MS;
 
@@ -866,48 +897,62 @@ export async function startSupervised(
       );
       return 1;
     }
-    log(paint.held(`waiting for the supervisor's daemon to record its start — up to ${waitMs / 1000}s. It is waiting, not hung.`));
+  }
+  log(paint.held(`waiting for the supervisor's daemon to record its start and come up — up to ${waitMs / 1000}s. It is waiting, not hung.`));
 
-    const began = Date.now();
-    let interrupted = false;
-    const onSignal = (): void => {
-      interrupted = true;
-    };
-    process.on("SIGINT", onSignal);
-    try {
-      while (start === null) {
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-        start = await recorded(prepared.request).catch(() => null);
-        if (start !== null) break;
-        if (interrupted) {
-          log(paint.held("stopped waiting. The start was asked of the supervisor — lingtai doctor says whether a daemon is up."));
-          return 130;
+  const began = Date.now();
+  let interrupted = false;
+  const onSignal = (): void => {
+    interrupted = true;
+  };
+  process.on("SIGINT", onSignal);
+  let settled: RecordedStart;
+  try {
+    for (;;) {
+      if (start !== null && (await up(start).catch(() => false))) {
+        // Up — and still the latest start? One recorded since means this one
+        // is gone and that one holds the lock, so that one is judged instead.
+        const again = await recorded(prepared.request).catch(() => null);
+        if (again !== null && again.worker === start.worker && again.at.getTime() === start.at.getTime()) {
+          settled = again;
+          break;
         }
-        if (Date.now() - began > waitMs) {
-          log(
-            paint.held(
-              `no start was recorded in ${waitMs / 1000}s — lingtai service status says what the supervisor did, ` +
-                "and lingtai doctor whether a daemon is up.",
-            ),
-          );
-          return 1;
-        }
+        start = again;
+        continue;
       }
-    } finally {
-      process.off("SIGINT", onSignal);
+      if (interrupted) {
+        log(paint.held("stopped waiting. The start was asked of the supervisor — lingtai doctor says whether a daemon is up."));
+        return 130;
+      }
+      if (Date.now() - began > waitMs) {
+        log(
+          paint.held(
+            start === null
+              ? `no start was recorded in ${waitMs / 1000}s — lingtai service status says what the supervisor did, ` +
+                  "and lingtai doctor whether a daemon is up."
+              : `${start.by} recorded a start as ${start.worker}, and it was not up in ${waitMs / 1000}s — it may have ` +
+                  "died starting. lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up.",
+          ),
+        );
+        return 1;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+      start = (await recorded(prepared.request).catch(() => null)) ?? start;
     }
+  } finally {
+    process.off("SIGINT", onSignal);
   }
 
-  const mine = start.handoff === prepared.request && start.by === prepared.by;
-  const same = start.sha === prepared.examined.sha && start.dirty === prepared.examined.dirty;
+  const mine = settled.handoff === prepared.request && settled.by === prepared.by;
+  const same = settled.sha === prepared.examined.sha && settled.dirty === prepared.examined.dirty;
   if (mine && same) {
-    log(paint.pass(`started ${describeIdentity(start)} as ${start.worker}, recorded as ${start.by}'s restart`));
+    log(paint.pass(`started ${describeIdentity(settled)} as ${settled.worker}, recorded as ${settled.by}'s restart`));
     return 0;
   }
   log(
     paint.fail(
-      `a daemon started, and not as this restart: ${start.by} started ${describeIdentity(start)} as ` +
-        `${start.worker}${start.reason ? ` — ${start.reason}` : ""}. It is running; lingtai doctor says what it is.`,
+      `a daemon started, and not as this restart: ${settled.by} started ${describeIdentity(settled)} as ` +
+        `${settled.worker}${settled.reason ? ` — ${settled.reason}` : ""}. It is running; lingtai doctor says what it is.`,
     ),
   );
   return 1;

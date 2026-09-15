@@ -210,13 +210,20 @@ describe("a start and the requests before it", () => {
     expect(state.shutdown).toMatchObject({ by: "human:ops", version: 2 });
   });
 
-  it("leaves a pause exactly as it was, which is the other axis", () => {
-    const state = reduceControl(
-      log([{ type: "ConductorPaused", data: { by: "human:ops", reason: "the importer is flaky", until: null } }, started]),
-      NOW,
-    );
-    expect(state.paused).toBe(true);
-    expect(state.by).toBe("human:ops");
+  /**
+   * `pause "maintenance"`, then a restart: the new daemon reads from its start
+   * and takes work. A fold that kept the pause said *paused* over it everywhere
+   * else — and the quota stand-down, seeing `paused`, appended none of its own,
+   * so the daemon went on claiming against an exhausted account.
+   */
+  it("ends a pause made before it too, as the daemon that started reads it", () => {
+    const pause = { type: "ConductorPaused", data: { by: "human:steven", reason: "maintenance", until: null } };
+    expect(reduceControl(log([pause, started]), NOW)).toMatchObject({ paused: false, by: null, reason: null, until: null });
+  });
+
+  it("does not end a pause made after it — that one is the running daemon's", () => {
+    const pause = { type: "ConductorPaused", data: { by: "lingtai", reason: "account limit", until: "2099-01-01T00:00:00.000Z" } };
+    expect(reduceControl(log([started, pause]), NOW)).toMatchObject({ paused: true, by: "lingtai" });
   });
 
   /**

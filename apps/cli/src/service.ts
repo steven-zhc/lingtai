@@ -572,15 +572,11 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // which reads nothing said before it (`0045`). A pause is what holds the
       // running daemon to its pass without a successor taking the next one.
       //
-      // And the resume after it is part of the advice, not a courtesy. The next
-      // daemon does not hear that pause, but the whole-stream readers do — the
-      // board, `doctor`, `status`, and the quota stand-down, which sees
-      // `paused` and appends no pause of its own — so left standing it says
-      // *paused* over a daemon taking work, and keeps it taking work on an
-      // exhausted account.
+      // No resume after it: the next start ends that pause for the daemon and
+      // for every whole-stream reader alike (`0045` §1).
       log(
         verb === "stop"
-          ? 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai pause "why"` first, stop once `pnpm lingtai status` shows nothing running, then `pnpm lingtai resume` — the next start does not hear that pause, and left standing it tells every other reader the conductor is paused'
+          ? 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai pause "why"` first, and stop once `pnpm lingtai status` shows nothing running — the next start ends that pause'
           : 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai restart "why"` instead, which also checks the commit it starts',
       );
       if (platform === "systemd") return run(["systemctl", "--user", verb, SYSTEMD_UNIT]) ? 0 : 1;

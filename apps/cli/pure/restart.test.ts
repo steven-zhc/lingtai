@@ -482,6 +482,7 @@ describe("a start the supervisor makes", () => {
     const code = await startSupervised(prepared, {
       start: async () => 0,
       recorded: async () => (++polls < 3 ? null : start),
+      up: async () => true,
       pollMs: 1,
       log: (l) => lines.push(l),
     });
@@ -495,6 +496,7 @@ describe("a start the supervisor makes", () => {
     const code = await startSupervised(prepared, {
       start: async () => ((asked = true), 0),
       recorded: async () => start,
+      up: async () => true,
       log: () => {},
     });
     expect(code).toBe(0);
@@ -506,11 +508,49 @@ describe("a start the supervisor makes", () => {
     const code = await startSupervised(prepared, {
       start: async () => 0,
       recorded: async () => ({ ...start, by: "daemon", sha: "582a0f8" }),
+      up: async () => true,
       pollMs: 1,
       log: (l) => lines.push(l),
     });
     expect(code).toBe(1);
     expect(lines.join("\n")).toContain("582a0f8");
+  });
+
+  /**
+   * The record comes before the reconcile. The respawn records this restart's
+   * start and dies in its reconcile; `KeepAlive` brings back a copy that finds no
+   * request and records `daemon`. That copy is what conducts, so it is judged.
+   */
+  it("does not succeed on a recorded start that died before it came up, and judges the one that replaced it", async () => {
+    const lines: string[] = [];
+    const respawn = { ...start, by: "daemon", reason: null, handoff: null, worker: "h:10", at: new Date(start.at.getTime() + 30_000) };
+    let polls = 0;
+    const code = await startSupervised(prepared, {
+      start: async () => 0,
+      // v11 is the only start for a few polls, then v12 is recorded after it.
+      recorded: async () => (++polls < 4 ? start : respawn),
+      // v11 never says up; v12 does.
+      up: async (s) => s.worker === "h:10",
+      pollMs: 1,
+      log: (l) => lines.push(l),
+    });
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toContain("h:10");
+    expect(lines.join("\n")).not.toContain("human:steven's restart");
+  });
+
+  it("does not succeed on a recorded start that never comes up", async () => {
+    const lines: string[] = [];
+    const code = await startSupervised(prepared, {
+      start: async () => 0,
+      recorded: async () => start,
+      up: async () => false,
+      waitMs: 5,
+      pollMs: 1,
+      log: (l) => lines.push(l),
+    });
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toContain("not up");
   });
 
   it("fails, and says where to look, when nothing is recorded in time", async () => {

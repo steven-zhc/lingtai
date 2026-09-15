@@ -72,9 +72,13 @@ reader that folds the whole stream, so the board and the daemon cannot disagree
 about whether a drain stands. **Nothing is appended to take a request back**:
 the start is the fact that ends it.
 
-A pause is not touched. `pause` and `resume` are about the daemon that is
-running, and whether the whole-stream readers should scope a pause as the daemon
-does is not this decision.
+**A pause ends there too.** The daemon reads from its own start, so a pause
+made before it was already not its to obey; a fold that kept it said *paused*
+over a daemon taking work — on the board, in `lingtai doctor` and `lingtai
+status` — and the quota stand-down (0031 §3), folding the whole stream, saw
+`paused` and appended no pause of its own, so the daemon went on claiming
+against an exhausted account. A `lingtai run` with no daemon between it and the
+pause is still held by it.
 
 `ConductorResumed` still lifts a request. Nothing needs it to.
 
@@ -216,7 +220,6 @@ withdrawal, the lapse and the refusal after the wait under a supervisor are.
 
 ## What this does not decide
 
-- **Whether the whole-stream readers scope a pause** as the daemon does.
 - **Whether a supervised daemon should be stoppable through the control stream
   at all**, rather than through the supervisor. Today it is not (§4), and the
   commands say so.

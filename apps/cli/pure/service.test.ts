@@ -258,9 +258,9 @@ describe("starting, whatever was said to the daemon before", () => {
   });
 
   /**
-   * And a resume after the stop: the next start does not hear that pause, and
-   * every whole-stream reader — the board, `doctor`, the quota stand-down —
-   * would go on saying *paused* over a daemon taking work.
+   * And no resume after the stop: the next start ends that pause, for the
+   * daemon and for every whole-stream reader — the board, `doctor`, the quota
+   * stand-down — alike.
    */
   it("stop names a pause, not a shutdown, as the way to wait for the pass — a shutdown here is a restart", async () => {
     const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
@@ -269,7 +269,8 @@ describe("starting, whatever was said to the daemon before", () => {
     expect(await go("stop")).toBe(0);
     const text = out.join("\n");
     expect(text).toContain('`pnpm lingtai pause "why"` first');
-    expect(text).toMatch(/pause "why"` first.*then `pnpm lingtai resume`/);
+    expect(text).toContain("the next start ends that pause");
+    expect(text).not.toContain("lingtai resume");
     expect(text).not.toContain("lingtai shutdown");
   });
 });

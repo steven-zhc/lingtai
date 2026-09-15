@@ -174,9 +174,17 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
         // stands. Nothing is appended to take a request back; the start is the
         // fact that ends it.
         //
-        // A pause is not touched. `pause` and `resume` are about the daemon
-        // that is running, and that axis is not what this decides.
+        // **And every pause**, for the same reason. The daemon reads from its
+        // own start, so a pause made before it is not its to obey — and a fold
+        // that kept one said *paused* over a daemon taking work, on the board,
+        // in `doctor` and `status`, and to the quota stand-down, which saw
+        // `paused` and appended no pause of its own while the daemon went on
+        // claiming against an exhausted account.
         state.shutdown = null;
+        state.paused = false;
+        state.by = null;
+        state.reason = null;
+        state.until = null;
         break;
       case "ConductorResumed":
         state.paused = false;

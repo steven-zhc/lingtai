@@ -668,7 +668,7 @@ reads as hung; checks the commit and the worktree **again**, because a drain can
 take an hour and those are what the start freezes — and refuses a drain
 somebody else asked for meanwhile; and starts a daemon in that terminal, unless a
 supervisor keeps one (below). Nothing is withdrawn first: the start ends the
-restart's own request, and a pause is untouched. A drain somebody asks for in
+restart's own request, and any pause made before it. A drain somebody asks for in
 the moment between that check and the start is not started over either — the
 start records nothing, takes nothing, and exits 1. **What makes it never two
 daemons is the lock, not the order of operations** — and losing the lock is not
