@@ -659,15 +659,15 @@ still printed.
 
 Then it waits, saying what is still finishing and repeating itself so it never
 reads as hung; checks the commit and the worktree **again**, because a drain can
-take an hour and those are what the start freezes; withdraws the request it
-made — `ConductorShutdownWithdrawn`, naming that request, so a pause and a drain
-somebody asked for meanwhile are both left exactly as they are — and starts a
-daemon in that terminal, unless a supervisor keeps one (below). **What makes
+take an hour and those are what the start freezes; and starts a daemon in that
+terminal, unless a supervisor keeps one (below). Nothing is withdrawn in between
+(0045): a daemon reads the control stream from its own start, so the request the
+restart made is not addressed to the daemon it starts, and a start ends it for
+every other reader too. **What makes
 it never two daemons is the lock, not the order of operations** — and losing the
 lock is not a daemon running. If anything takes it first, the restart starts
 nothing and exits non-zero: the winner may be a `lingtai run` that exits when its
-pass ends, or a copy something else started that read the drain before it was
-withdrawn and drains straight back out, and either leaves no daemon. `lingtai
+pass ends, and leaves no daemon. `lingtai
 doctor` says whether one is up; if none is, run `lingtai restart` again. Ctrl+C
 during the wait leaves the drain standing.
 
@@ -682,15 +682,16 @@ would be a second conductor beside the one it keeps, and the supervised one
 would come back the moment the terminal closed. So `restart` asks first whether
 a supervisor keeps it — refusing, before anything stops, a supervisor it could
 not ask or a unit written from another checkout, since it would check this
-commit and start that one's. It asks the drain even when nothing is conducting,
-waits as above, and withdraws with a **handoff**: who, why, and the commit it
-checked. Then `service start`, and it waits up to 90 seconds for the start to
-be recorded. The supervised daemon that starts next takes the restart's name
-off the handoff only if it is running the commit that was checked, and only
-within five minutes of the withdrawal — a start after that is nobody's restart,
-whoever typed it; on any other commit
-it is recorded as `daemon` and says why, and the restart exits non-zero naming
-what did start. `--no-conduct` and `--no-merge` are refused there, because the
+commit and start that one's. It asks the drain even when nothing is conducting, and
+the request carries a **handoff**: who, why, and the commit it checked. The
+supervisor's respawn waits for nothing once the old daemon exits, so the wait
+ends at a free lock or a recorded start, whichever is first; the commit is not
+checked a second time, because nothing could hold that start back — instead the
+restart compares what started with what it checked. Then `service start`, and
+it waits up to 90 seconds for the start to be recorded. The supervised daemon
+that starts next takes the restart's name off the handoff only if it is running
+the commit that was checked; on any other commit it is recorded as `daemon` and
+says why, and the restart exits non-zero naming what did start. `--no-conduct` and `--no-merge` are refused there, because the
 unit decides how the supervisor starts it. A file left after `service stop` is
 not a keeper — nothing starts from it — so that restart runs in the terminal.
 
@@ -698,10 +699,10 @@ A start is now in the log as well as in the beacon — `ConductorStarted`, with
 who, why and the commit. `by` is `human:<you>` for a restart, for the
 supervisor's start that answered your restart's handoff, or for a `lingtai
 daemon` typed at a terminal, and `daemon` for one launchd or systemd started by
-itself — so *who restarted it at 23:06* is a question the log answers. A start
-into a standing drain is not recorded: it takes nothing and exits, and a
-supervisor repeats it every thirty seconds until the drain is lifted. A beacon
-is one mutable row the next start overwrites, and it never could.
+itself — so *who restarted it at 23:06* is a question the log answers. Every
+start that wins the lock is recorded, and the record is where the daemon starts
+reading the control stream from. A beacon is one mutable row the next start
+overwrites, and it never could.
 
 Ctrl+C is the same drain and says what it is doing: the first one names what is
 finishing and what a second one costs, and the second stops immediately. Both
@@ -799,16 +800,16 @@ uses the new unit. `service restart` is what applies it now — on macOS
 it does on Ctrl+C, but launchd and systemd wait seconds, not a pass, before they
 SIGKILL, which leaves the agent for the next conductor to kill. To wait for the
 pass in flight, use `lingtai restart "why"` instead of `service restart`: it
-drains, withdraws only its own request — a pause stays — and has the supervisor
-start the daemon, recorded as yours (above). By hand, it is `lingtai shutdown
-"why"` *instead of* `service restart`, not before it. A shutdown request outlives the process, so under a supervisor every copy
-it brings back reads it and exits again until `lingtai resume` lifts it — which
-makes the shutdown the restart: once `service status` says the daemon it was
-aimed at has exited, `lingtai resume`, and the supervisor's next start takes
-work on the new code. `service start`, `service restart`, and `service install`
-over a job the supervisor does not have, refuse and exit 1 without starting
-anything while a shutdown request stands, because the daemon they started
-would exit at once and keep doing so behind a command that had said 0.
+drains — a pause stays — and has the supervisor start the daemon, recorded as
+yours (above). By hand, it is `lingtai shutdown
+"why"` *instead of* `service restart`, not before it. A shutdown request is
+aimed at the daemon running when it was made and no other (0045), so the copy
+the supervisor brings back once that daemon has exited takes work on the new
+code — the shutdown is the restart, with nothing to lift. `service start`,
+`service restart`, and `service install` over a job the supervisor does not
+have, still refuse and exit 1 without starting anything while a shutdown request
+stands — which is now only until the next start — and their advice still names
+`lingtai resume`; 0045 leaves that command's refusals to it.
 (`install` still writes the file, and after `resume` it is `service start` that
 loads it.)
 

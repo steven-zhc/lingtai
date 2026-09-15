@@ -978,6 +978,23 @@ export const ConductorShutdownRequested = z.object({
    * as the drain it was.
    */
   force: z.boolean().default(false),
+  /**
+   * The code a restart's checks examined, when the start after this drain is a
+   * supervisor's to make — or null, for every other request.
+   *
+   * The daemon launchd or systemd starts cannot know who typed the restart, so
+   * it reads this off the stream as it stood before its own start and, if it is
+   * running that commit, records the restart's `by` and `reason` on its
+   * `ConductorStarted` rather than `daemon` (0042 §8). It rode on
+   * `ConductorShutdownWithdrawn` until
+   * [0045](../../../doc/decisions/0045-a-signal-does-not-outlive-its-daemon.md),
+   * which deleted the withdrawal: a request no longer outlives its daemon, so
+   * the request itself is the only event a restart appends.
+   */
+  handoff: z
+    .object({ sha: z.string().nullable(), dirty: z.boolean() })
+    .nullable()
+    .default(null),
 });
 
 /**
@@ -997,10 +1014,12 @@ export const ConductorShutdownRequested = z.object({
  * overwritten, and [0042](../../../doc/decisions/0042-the-restart-is-a-command.md)
  * is what keeps the commit it names pushed.
  *
- * It does **not** withdraw a standing `ConductorShutdownRequested`. Starting and
- * being told to stop are independent facts — a daemon started while a request
- * stands reads it and stops again, deliberately. `ConductorShutdownWithdrawn`
- * is the withdrawal, and it names the request it lifts.
+ * **It ends every request made before it** (0045). A daemon reads the control
+ * stream from its own start, so a request that came before one was aimed at a
+ * process that has gone; the fold says so rather than folding it as standing
+ * until somebody appends something to take it back. The daemon appends this at
+ * the version it read, so nothing lands between the stream it starts from and
+ * the start.
  */
 export const ConductorStarted = z.object({
   /**
@@ -1031,15 +1050,16 @@ export const ConductorStarted = z.object({
    */
   worker: z.string(),
   /**
-   * The `ConductorShutdownWithdrawn` this start answers, by its version on
-   * `ctl-conductor`, or null.
+   * The restart's `ConductorShutdownRequested` this start answers, by its
+   * version on `ctl-conductor`, or null. On a start written before 0045 it names
+   * a `ConductorShutdownWithdrawn`, which is where the handoff rode then.
    *
    * Set only where a supervisor made the start a `lingtai restart` asked for:
-   * the restart drains, withdraws with a handoff naming who, why and the commit
-   * its checks examined, and asks launchd or systemd to start the daemon — so
-   * the process that appends this is not the one somebody typed. It takes `by`
-   * and `reason` from that handoff, and only when the commit it read is the one
-   * that was examined (0042 §8).
+   * the restart asks for its drain with a handoff naming the commit its checks
+   * examined, and launchd or systemd starts the daemon — so the process that
+   * appends this is not the one somebody typed. It takes `by` and `reason` from
+   * that request, and only when the commit it read is the one that was examined
+   * (0042 §8).
    */
   handoff: z.number().int().positive().nullable().default(null),
 });
@@ -1047,33 +1067,25 @@ export const ConductorStarted = z.object({
 /**
  * One shutdown request lifted — the one named, and nothing else.
  *
- * `ConductorResumed` lifts a request too, and it lifts a pause with it, which
- * is right for `lingtai resume` and wrong for `lingtai restart`: a restart has
- * to withdraw the drain *it* asked for, so the daemon it starts does not read
- * the request and stop again, and a pause somebody else made is none of its
- * business. The first attempt at this resumed and then re-appended the pause —
- * two appends, so an append landing between them destroyed a person's pause —
- * and resumed whatever request stood, so a drain a second person asked for
- * during the wait was lifted too.
+ * **Nothing appends this any more**
+ * ([0045](../../../doc/decisions/0045-a-signal-does-not-outlive-its-daemon.md)).
+ * `lingtai restart` withdrew its own drain with it so that the daemon it was
+ * about to start would not read the request and stop again; since `#159` a
+ * daemon reads nothing said before it started, so there was nothing left to
+ * withdraw. The schema stays because the log keeps every one written before,
+ * and a log that no longer parses its own history is not append-only.
  *
  * `version` is that request's position on `ctl-conductor`. The fold lifts the
- * standing request only when it is at that version, so a withdrawal that lost a
- * race to a newer request is a no-op in the log rather than an overruling of it.
+ * standing request only when it is at that version.
  */
 export const ConductorShutdownWithdrawn = z.object({
   by: z.string(),
   version: z.number().int().positive(),
   reason: z.string(),
   /**
-   * The code a restart's checks examined, when the start is the supervisor's to
-   * make rather than this process's — or null, when the restart starts the
-   * daemon itself.
-   *
-   * The next conductor to start reads it off the fold and, if it is running
-   * that commit, records the restart's `by` and `reason` on its
-   * `ConductorStarted` rather than `daemon`. Without it, a restart under
-   * launchd would put *daemon started 65b7439* in the log and nobody's name —
-   * 23:06 again, by a longer route (0042 §8).
+   * The code a restart's checks examined, when the start was the supervisor's
+   * to make. Written before 0045 only; the fold no longer reads it, and
+   * `ConductorShutdownRequested.handoff` carries it now.
    */
   handoff: z
     .object({ sha: z.string().nullable(), dirty: z.boolean() })

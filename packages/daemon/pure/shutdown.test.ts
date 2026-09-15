@@ -19,7 +19,15 @@ import { ConcurrencyError, type EventStore } from "@lingtai/event-store";
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { afterEach, describe, expect, it } from "vitest";
 import { killWorker } from "../src/reconcile.ts";
-import { readControl, recordStart, requestShutdownUnlessStanding, withdrawShutdown } from "../src/control.ts";
+import { createMemoryEventStore } from "@lingtai/event-store/memory";
+import {
+  controlWatermark,
+  readControl,
+  recordStart,
+  requestShutdown,
+  requestShutdownUnlessStanding,
+  startAfter,
+} from "../src/control.ts";
 
 /** Just enough of a store to fold. `readControl` reads one stream and nothing else. */
 function storeOf(events: { type: string; data: unknown }[]): EventStore {
@@ -172,15 +180,15 @@ describe("the process a dead claim names", () => {
 });
 
 /**
- * `lingtai restart` has to lift the drain it asked for — the request stands in
- * the stream for ever, so the daemon it is about to start would read it and
- * stop again — and nothing else (0042).
+ * The two appends a restart still makes, one each side of the drain: its
+ * request, and the start the daemon records (0042, 0045). The withdrawal
+ * between them is gone, and its tests with it.
  *
  * Against a store that enforces expected versions the way Postgres does,
- * because the defect this replaces was a race: a resume and a re-pause as two
- * appends, with a person's pause lost to whatever landed between them.
+ * because both are decided off a read and must not land over what that read
+ * did not see.
  */
-describe("withdrawing a drain", () => {
+describe("asking for a drain, and recording a start", () => {
   /** A store that keeps what it is given and refuses a stale expected version. */
   function recording(initial: { type: string; data: unknown }[] = []): {
     store: EventStore;
@@ -212,62 +220,10 @@ describe("withdrawing a drain", () => {
 
   const restarting = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
 
-  it("lifts the request it names, with one append", async () => {
-    const { store, appended } = recording([restarting]);
-
-    const lifted = await withdrawShutdown("human:steven", 1, "restarted", null, store);
-
-    expect(lifted.withdrew).toBe(true);
-    expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownWithdrawn"]);
-    expect((await readControl(store)).shutdown).toBeNull();
-  });
-
-  it("appends nothing when there was nothing to withdraw", async () => {
-    const { store, appended } = recording([]);
-
-    expect(await withdrawShutdown("human:steven", 1, "restarted", null, store)).toEqual({ withdrew: false, standing: null });
-    expect(appended).toEqual([]);
-  });
-
   /**
-   * Restarting a paused conductor must not start it taking work. Nothing is
-   * appended about the pause at all, so there is nothing to lose a race with.
-   */
-  it("leaves a pause alone, even when a control append lands in the middle", async () => {
-    const { store, held, appended, before } = recording([
-      { type: "ConductorPaused", data: { by: "human:ops", reason: "the importer is flaky today", until: null } },
-      { ...restarting },
-    ]);
-    before.next = () => held.push({ type: "RunRequested", data: { project: "lingtai", issue: "88", by: "human:ops" } });
-
-    const lifted = await withdrawShutdown("human:steven", 2, "restarted", null, store);
-
-    expect(lifted.withdrew).toBe(true);
-    expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownWithdrawn"]);
-    const after = await readControl(store);
-    expect(after.shutdown).toBeNull();
-    expect(after.paused).toBe(true);
-    expect(after.by).toBe("human:ops");
-  });
-
-  /** The one refusal a restart may not waive: a drain somebody else asked for. */
-  it("leaves standing a drain a second person asked for, even one that raced the withdrawal", async () => {
-    const { store, held, appended, before } = recording([restarting]);
-    before.next = () =>
-      held.push({ type: "ConductorShutdownRequested", data: { by: "human:ops", reason: "moving the database", timeoutMs: null } });
-
-    const lifted = await withdrawShutdown("human:steven", 1, "restarted", null, store);
-
-    expect(lifted.withdrew).toBe(false);
-    expect(appended).toEqual([]);
-    expect((await readControl(store)).shutdown?.by).toBe("human:ops");
-  });
-
-  /**
-   * The race on the other side: the restart read no request, and a second
-   * person's landed before the restart's append. Appended over it, the fold
-   * would show only the restart's — and withdrawing that by version would lift
-   * ops's with no event withdrawing it.
+   * The restart read no request, and a second person's landed before the
+   * restart's append. Appended over it, the fold would show only the restart's,
+   * and the restart would be waiting on ops's drain as though it were its own.
    */
   it("never asks over a request that landed after the read that decided to ask", async () => {
     const { store, held, appended, before } = recording([]);
@@ -278,7 +234,6 @@ describe("withdrawing a drain", () => {
 
     expect(asked).toMatchObject({ asked: false, standing: { by: "human:ops", version: 1 } });
     expect(appended).toEqual([]);
-    // And so the restart has nothing of its own to withdraw, and ops's stands.
     expect((await readControl(store)).shutdown?.by).toBe("human:ops");
   });
 
@@ -287,7 +242,20 @@ describe("withdrawing a drain", () => {
 
     expect(await requestShutdownUnlessStanding("human:steven", "restarting", 300_000, store)).toEqual({ asked: true, version: 2 });
     expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownRequested"]);
-    expect(await withdrawShutdown("human:steven", 2, "restarted", null, store)).toMatchObject({ withdrew: true });
+  });
+
+  it("carries a supervised restart's handoff on the request itself", async () => {
+    const { store } = recording([]);
+
+    await requestShutdownUnlessStanding("human:steven", "restarting", null, store, false, { sha: "2926f2d", dirty: false });
+
+    expect((await readControl(store)).handoff).toEqual({
+      by: "human:steven",
+      reason: "restarting",
+      sha: "2926f2d",
+      dirty: false,
+      version: 1,
+    });
   });
 
   /**
@@ -299,10 +267,40 @@ describe("withdrawing a drain", () => {
     const { store, held, appended, before } = recording([restarting]);
     before.next = () => held.push({ type: "RunRequested", data: { project: "lingtai", issue: "88", by: "human:ops" } });
 
-    await recordStart("human:steven", "restarted", { sha: "2926f2d", dirty: false }, store, 2);
+    const since = await recordStart(() => ({ by: "human:steven", reason: "restarted", handoff: null }), { sha: "2926f2d", dirty: false }, store);
 
     expect(appended.map((e) => e.type)).toEqual(["ConductorStarted"]);
     expect(held.map((e) => e.type)).toEqual(["ConductorShutdownRequested", "RunRequested", "ConductorStarted"]);
+    // The version it landed at is the watermark, so the request that raced it
+    // is before this daemon, not a signal to it.
+    expect(since).toBe(3);
+  });
+
+  /**
+   * Who a start is, decided again on the read the append lands after — never
+   * off a read that something has since moved past. A drain asked with a
+   * handoff between the two is what that read would otherwise miss.
+   */
+  it("decides who it is again when the stream moved under it", async () => {
+    const { store, held, before } = recording([]);
+    before.next = () =>
+      held.push({
+        type: "ConductorShutdownRequested",
+        data: { by: "human:steven", reason: "restarting", timeoutMs: null, handoff: { sha: "2926f2d", dirty: false } },
+      });
+    const seen: (number | null)[] = [];
+
+    await recordStart(
+      (control) => {
+        seen.push(control.handoff?.version ?? null);
+        return { by: "daemon", reason: null, handoff: control.handoff?.version ?? null };
+      },
+      { sha: "2926f2d", dirty: false },
+      store,
+    );
+
+    expect(seen).toEqual([null, 1]);
+    expect(held.at(-1)).toMatchObject({ type: "ConductorStarted", data: { handoff: 1 } });
   });
 });
 
@@ -371,6 +369,80 @@ describe("a signal belongs to the daemon it was sent to", () => {
 });
 
 /**
+ * **Stopping and starting are one command each** (`#159`) — the complaint.
+ *
+ * `lingtai shutdown`, then `lingtai start`, and nothing typed between them.
+ * Before `37013f4` the second daemon read the first one's request and stopped
+ * too, and `lingtai resume` was the command in the middle; before 0045 a
+ * restart appended a withdrawal in the same place, for the same reason. This
+ * is the sequence against a store held to the real one's contract, with what
+ * each command appends and nothing else.
+ */
+describe("one command to stop and one to start", () => {
+  const code = { sha: "2926f2d", dirty: false };
+  const daemon = () => ({ by: "daemon", reason: null, handoff: null });
+
+  it("stops the daemon that is running, and the next start takes work", async () => {
+    const store = createMemoryEventStore();
+
+    // `lingtai start`: the daemon records itself, and that is its watermark.
+    const first = await recordStart(daemon, code, store);
+    // `lingtai shutdown "for the day"` — aimed at that daemon, which obeys it.
+    await requestShutdown("human:steven", "for the day", null, store);
+    expect((await readControl(store, first)).shutdown?.reason).toBe("for the day");
+
+    // `lingtai start` again, and only that.
+    const second = await recordStart(daemon, code, store);
+    const told = await readControl(store, second);
+    expect(told.shutdown).toBeNull();
+    expect(told.paused).toBe(false);
+
+    // And every reader that folds the whole stream agrees with the daemon.
+    expect((await readControl(store)).shutdown).toBeNull();
+
+    // Three commands, three events — nothing withdrawn and nothing resumed.
+    const types = (await store.read("ctl-conductor")).map((e) => e.type);
+    expect(types).toEqual(["ConductorStarted", "ConductorShutdownRequested", "ConductorStarted"]);
+  });
+
+  it("is a restart in control state: its request, then the start, and nothing between", async () => {
+    const store = createMemoryEventStore();
+    await recordStart(daemon, code, store);
+
+    // A supervised restart's drain carries the handoff; the supervisor's start
+    // reads it off the stream before itself and answers it.
+    const asked = await requestShutdownUnlessStanding("human:steven", "restarting: picking up #88", null, store, false, code);
+    expect(asked.asked).toBe(true);
+    const request = asked.asked ? asked.version : 0;
+    await recordStart((before) => ({ by: before.handoff?.by ?? "daemon", reason: before.handoff?.reason ?? null, handoff: before.handoff?.version ?? null }), code, store);
+
+    expect(await startAfter(request, store)).toMatchObject({ by: "human:steven", handoff: request });
+    expect((await readControl(store)).shutdown).toBeNull();
+    expect((await store.read("ctl-conductor")).map((e) => e.type)).toEqual([
+      "ConductorStarted",
+      "ConductorShutdownRequested",
+      "ConductorStarted",
+    ]);
+  });
+
+  it("still reaches a daemon told to stop in the moment after it recorded its start", async () => {
+    const store = createMemoryEventStore();
+    const since = await recordStart(daemon, code, store);
+    await requestShutdown("human:ops", "now", null, store);
+
+    expect((await readControl(store, since)).shutdown?.by).toBe("human:ops");
+    expect((await readControl(store)).shutdown?.by).toBe("human:ops");
+  });
+
+  it("falls back to the stream's length when the start could not be recorded", async () => {
+    const store = createMemoryEventStore();
+    await requestShutdown("human:steven", "before", null, store);
+
+    expect((await readControl(store, await controlWatermark(store))).shutdown).toBeNull();
+  });
+});
+
+/**
  * Safe by default, forced by name (`#159`).
  *
  * A drain is what anybody wants nine times in ten — the *pass*, so the gates
@@ -408,9 +480,9 @@ describe("a shutdown is safe unless it says otherwise", () => {
     expect(state.shutdown?.force).toBe(false);
   });
 
-  it("keeps force with the request the withdrawal does not lift", async () => {
-    // A restart withdraws its own by version; somebody else's forced request
-    // stands, and stands as forced.
+  it("keeps force with the request a withdrawal already in the log does not lift", async () => {
+    // A restart withdrew its own by version before 0045; somebody else's forced
+    // request stood, and stood as forced — and replay still says so.
     const state = await readControl(
       storeOf([
         asked({ by: "human:ops", reason: "wedged", force: true }),

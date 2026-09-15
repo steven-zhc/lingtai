@@ -47,7 +47,7 @@ import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
+import { attributeStart, parseRestartArgs, prepareRestart, startSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -345,17 +345,14 @@ async function daemonCommand(
     if (restart) {
       // The drain finished and something else won the race for the lock. This
       // cannot say what that something is going to do: a `lingtai run` in a
-      // terminal takes the same lock and exits when its one pass ends, and a
-      // launchd copy spawned before the withdrawal reads the request still
-      // standing and drains straight back out. Saying "it is running" would be
-      // a guess that tells the operator to do nothing — so it says only what is
-      // known, and where the answer is.
+      // terminal takes the same lock and exits when its one pass ends. Saying
+      // "it is running" would be a guess that tells the operator to do nothing —
+      // so it says only what is known, and where the answer is.
       console.log(
         paint.held(
           `the lock was taken first${holder}, and this started nothing. Whether a daemon is conducting ` +
-            `afterwards is not something this process can know — a lingtai run exits when its pass ends, and a ` +
-            `daemon that read the drain before it was withdrawn exits too. lingtai doctor says whether one is up; ` +
-            `if none is, lingtai restart again waits for the lock and starts one.`,
+            `afterwards is not something this process can know — a lingtai run exits when its pass ends. ` +
+            `lingtai doctor says whether one is up; if none is, lingtai restart again waits for the lock and starts one.`,
         ),
       );
       return 1;
@@ -428,19 +425,36 @@ async function daemonCommand(
   // `attributeStart`'s to decide: `lingtai restart` here, a restart that handed
   // its start to launchd or systemd (0042 §8), a terminal, or nobody's.
   //
-  // **Not decided here.** A read taken now and a shutdown noticed after the
-  // reconcile are two reads, and a restart's withdrawal can land between them —
-  // a start that saw the drain, recorded nothing, and then took work. So this
-  // is handed the one read that decides whether work is taken: the loop's
-  // shutdown check, or the `--no-conduct` listener's (`startRecorder`).
-  const noteStart = startRecorder({
-    restart,
-    code,
-    tty: Boolean(process.stdin.isTTY),
-    user: process.env["USER"] ?? "operator",
-    record: (a) => recordStart(a.by, a.reason, code, undefined, a.handoff),
-    log: (line) => console.log(line),
-  });
+  // **And where the control stream was when this daemon started** (`#159`,
+  // 0045), which is the same append. Every signal this daemon obeys is read
+  // from after its own `ConductorStarted`, so a pause or a shutdown made before
+  // it began belongs to the daemon before it — which is what makes `lingtai
+  // start` need nothing lifted first, and `lingtai restart` need nothing
+  // withdrawn. The record is appended at the version of the read that decided
+  // who it is, so nothing can land between the stream a start reads past and
+  // the start itself.
+  let since: number;
+  let note: string | null = null;
+  try {
+    since = await recordStart((before) => {
+      const a = attributeStart({
+        restart,
+        handoff: before.handoff,
+        code,
+        tty: Boolean(process.stdin.isTTY),
+        user: process.env["USER"] ?? "operator",
+      });
+      note = a.note;
+      return a;
+    }, code);
+    if (note) console.log(paint.signal(note));
+  } catch (err) {
+    // Reported and not fatal, as it always was: a daemon that will not run for
+    // want of a record of itself is an outage over a log entry. The watermark
+    // is then the stream's length, read on its own.
+    console.log(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
+    since = await controlWatermark();
+  }
 
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
@@ -606,13 +620,6 @@ async function daemonCommand(
     started.daemon.stop();
   };
 
-  // **Where the control stream was when this daemon started** (`#159`). Every
-  // signal it obeys is read from here, so a pause or a shutdown appended before
-  // it began belongs to the daemon before it and not to this one. That is what
-  // makes `lingtai start` need nothing lifted first: there is no such thing as
-  // a signal standing over a process that did not exist when it was sent.
-  const since = await controlWatermark();
-
   if (!("no-conduct" in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere
     // here (`#123`). This block used to construct `macNotifier()` by name,
@@ -651,12 +658,6 @@ async function daemonCommand(
       shutdown: async () => {
         const control = await readControl(undefined, since);
         asked = control.shutdown;
-        // The start is recorded off this read and no other, before the first
-        // pass it permits — see `startRecorder`.
-        await noteStart(control);
-        // The remedy in the sentence, because this is also what a daemon
-        // started *after* an unwithdrawn request prints on its way straight
-        // back out — and at that point it is the only thing worth knowing.
         // No remedy in the sentence any more. It used to say "lingtai resume
         // lifts it", because this was also what a daemon started *after* an
         // unwithdrawn request printed on its way straight back out. That start
@@ -730,14 +731,16 @@ async function daemonCommand(
     // the honest shape of "finish what you are holding" for a daemon holding
     // nothing.
     const hearShutdown = async (): Promise<void> => {
-      const control = await readControl().catch(() => null);
-      if (control) await noteStart(control);
+      // From this daemon's start, as the loop reads (0045). It folded the whole
+      // stream, so a `--no-conduct` daemon still obeyed a request made to the
+      // daemon before it — the latch `#159` removed everywhere else.
+      const control = await readControl(undefined, since).catch(() => null);
       const standing = control?.shutdown ?? null;
       if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs);
     };
     listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS);
-    // Asked once before waiting for the timer, so a daemon started after an
-    // unwithdrawn request goes straight back out — as a conducting one does.
+    // Asked once before waiting for the timer, so a request that landed during
+    // the startup above is heard now rather than a beat later.
     await hearShutdown();
   }
 
@@ -1064,9 +1067,23 @@ async function main(argv: string[]): Promise<number> {
       const prepared = await prepareRestart(parsed.args, console.log, kept.kept);
       if (!prepared.ok) return prepared.code;
       if (prepared.handedOff !== null) {
+        const handedOff = prepared.handedOff;
         return startSupervised(
-          { by: prepared.by, handedOff: prepared.handedOff, examined: prepared.examined },
-          { start: () => serviceCommand(["start"], serviceOptions()) },
+          { by: prepared.by, handedOff, examined: prepared.examined },
+          {
+            // `service start` refuses while a request stands, and this restart's
+            // own does until a start ends it (0045). That one was aimed at the
+            // daemon that has drained, so it is not a reason to refuse the start
+            // it asked for; anybody else's still is.
+            start: () =>
+              serviceCommand(["start"], {
+                ...serviceOptions(),
+                shutdown: async () => {
+                  const standing = (await readControl()).shutdown;
+                  return standing?.version === handedOff ? null : standing;
+                },
+              }),
+          },
         );
       }
       const flags: Record<string, string> = {

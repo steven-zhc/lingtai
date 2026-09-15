@@ -127,9 +127,11 @@ twenty minutes after a daemon started from it. A dirty worktree is named in the
 same refusal (`--dirty`), `lingtai doctor` has to pass (`--despite-doctor`,
 except for a failure whose own remedy is the restart), and a drain somebody else
 asked for is theirs to lift. The commit and worktree are checked again after
-the wait. Where `lingtai service` keeps the daemon, the start is the
-supervisor's: the restart withdraws its drain with a handoff naming who, why
-and the checked commit, runs `service start`, and waits for the start to be
+the wait. Nothing is withdrawn between the drain and the start (0045): a daemon
+reads the control stream from its own start, so a restart is `shutdown` and then
+`start` in control state. Where `lingtai service` keeps the daemon, the start is
+the supervisor's: the restart's request carries a handoff naming the checked
+commit, and the restart runs `service start` and waits for the start to be
 recorded — a terminal daemon beside a supervised one would be two conductors
 taking turns. Every start that takes work appends `ConductorStarted` with who,
 why and the commit, so *who restarted it at 23:06* is a question the log

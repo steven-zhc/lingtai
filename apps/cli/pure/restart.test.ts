@@ -12,14 +12,12 @@
  * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)).
  */
 import type { Identity, ShutdownRequest } from "@lingtai/daemon";
-import { type Envelope, reduceControl } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import { describeRefusal } from "../src/doctor.ts";
 import {
   attributeStart,
   gatingFailures,
   parseRestartArgs,
-  startRecorder,
   startSupervised,
   planRestart,
   waitForTheLock,
@@ -361,112 +359,40 @@ describe("the command line", () => {
  */
 describe("whose start it is", () => {
   const code = { sha: "2926f2d", dirty: false };
-  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
-  const base = { restart: null, control: { shutdown: null, handoff: null }, code, tty: false, user: "ops" };
-
-  it("records nothing for a start into a standing drain, which a supervisor repeats every thirty seconds", () => {
-    const shutdown = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
-    expect(attributeStart({ ...base, control: { shutdown, handoff: null } })).toMatchObject({ record: false });
-  });
+  const handoff = { by: "human:steven", reason: "restarting: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
+  const base = { restart: null, handoff: null, code, tty: false, user: "ops" };
 
   it("names nobody for a start with no terminal and no handoff, and the typist for one at a terminal", () => {
-    expect(attributeStart(base)).toMatchObject({ record: true, by: "daemon", handoff: null });
-    expect(attributeStart({ ...base, tty: true })).toMatchObject({ record: true, by: "human:ops", handoff: null });
+    expect(attributeStart(base)).toMatchObject({ by: "daemon", handoff: null });
+    expect(attributeStart({ ...base, tty: true })).toMatchObject({ by: "human:ops", handoff: null });
+  });
+
+  it("gives a restart in this process its own name, whatever stood before", () => {
+    expect(attributeStart({ ...base, restart: { by: "human:steven", reason: "picking up #88" }, handoff })).toEqual({
+      by: "human:steven",
+      reason: "picking up #88",
+      handoff: null,
+      note: null,
+    });
   });
 
   it("gives a supervisor's start the restart's name, when it runs the commit that restart checked", () => {
-    expect(attributeStart({ ...base, control: { shutdown: null, handoff } })).toEqual({
-      record: true,
+    expect(attributeStart({ ...base, handoff })).toEqual({
       by: "human:steven",
-      reason: "restarted: picking up #88",
+      reason: "restarting: picking up #88",
       handoff: 4,
       note: null,
     });
   });
 
   it("does not, on another commit — it is `daemon`, says why, and still answers the handoff", () => {
-    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, control: { shutdown: null, handoff } });
-    expect(a).toMatchObject({ record: true, by: "daemon", handoff: 4 });
-    expect(a.record && a.reason).toContain("582a0f8");
-  });
-
-  it("does not give a start the restart's name once the handoff has lapsed, even on the checked commit", () => {
-    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
-    const envelopes = [
-      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
-      {
-        type: "ConductorShutdownWithdrawn",
-        data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
-      },
-    ].map((e, i) => ({ seq: BigInt(i + 1), streamId: "ctl-conductor", version: i + 1, schemaVer: 1, actor: "human:steven", causation: null, at: withdrawnAt, ...e }) as Envelope);
-    const nextDay = reduceControl(envelopes, new Date("2026-09-14T10:00:00Z"));
-    expect(attributeStart({ ...base, control: nextDay })).toMatchObject({ record: true, by: "daemon", reason: null, handoff: null });
+    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, handoff });
+    expect(a).toMatchObject({ by: "daemon", handoff: 4 });
+    expect(a.reason).toContain("582a0f8");
   });
 
   it("does not give a typed start the restart's name", () => {
-    expect(attributeStart({ ...base, tty: true, control: { shutdown: null, handoff } })).toMatchObject({
-      by: "human:ops",
-      handoff: null,
-    });
-  });
-});
-
-/**
- * The finding against the third fix: the start was attributed off a read at
- * startup and the drain noticed off a later one, so a launchd respawn that saw
- * the restart's drain first and its withdrawal second recorded nothing and took
- * work. The recorder is handed the read that decides, and only that one counts.
- */
-describe("the read a start is recorded from", () => {
-  const code = { sha: "2926f2d", dirty: false };
-  const drain = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
-  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
-
-  it("records the handoff off the read that takes work, however many reads a drain stood for before it", async () => {
-    const recorded: unknown[] = [];
-    const note = startRecorder({
-      restart: null,
-      code,
-      tty: false,
-      user: "steven",
-      record: async (a) => void recorded.push(a),
-      log: () => {},
-    });
-
-    // The respawn's startup no longer reads the stream for this. The loop's
-    // first check, after the reconcile, reads the withdrawal and takes work —
-    // and that read is the one recorded, with the restart's name.
-    await note({ shutdown: null, handoff });
-    expect(recorded).toEqual([{ record: true, by: "human:steven", reason: "restarted: picking up #88", handoff: 4, note: null }]);
-
-    // Once: every later pass asks again, and records nothing more.
-    await note({ shutdown: null, handoff: null });
-    expect(recorded).toHaveLength(1);
-  });
-
-  it("records nothing off a read that finds the drain, which is the read the daemon exits on", async () => {
-    const recorded: unknown[] = [];
-    const lines: string[] = [];
-    const note = startRecorder({ restart: null, code, tty: false, user: "s", record: async (a) => void recorded.push(a), log: (l) => lines.push(l) });
-    await note({ shutdown: drain, handoff: null });
-    expect(recorded).toEqual([]);
-    expect(lines.join("\n")).toContain("not recorded as a start");
-  });
-
-  it("says a record that failed, and does not throw into the loop that would then take no work", async () => {
-    const lines: string[] = [];
-    const note = startRecorder({
-      restart: null,
-      code,
-      tty: false,
-      user: "s",
-      record: async () => {
-        throw new Error("version race, five times");
-      },
-      log: (l) => lines.push(l),
-    });
-    await expect(note({ shutdown: null, handoff: null })).resolves.toBeUndefined();
-    expect(lines.join("\n")).toContain("version race");
+    expect(attributeStart({ ...base, tty: true, handoff })).toMatchObject({ by: "human:ops", handoff: null });
   });
 });
 

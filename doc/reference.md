@@ -32,7 +32,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
 | fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
 | restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
-| control (5) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` `ConductorShutdownWithdrawn` |
+| control (5) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` `ConductorShutdownWithdrawn` (appended by nothing since 0045; kept so the log parses) |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions/0022-the-seams.md)), `RETIRED` in the same file |
 | discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |

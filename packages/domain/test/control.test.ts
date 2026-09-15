@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import type { Envelope } from "../src/envelope.ts";
 import { Actor } from "../src/envelope.ts";
-import { HANDOFF_LAPSES_MS, reduceControl } from "../src/control.ts";
+import { reduceControl } from "../src/control.ts";
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
@@ -181,12 +181,11 @@ describe("the discussions somebody asked for", () => {
 });
 
 /**
- * `lingtai restart` lifts the drain it asked for and nothing else (0042). The
- * first attempt at that resumed — which lifts a pause and *any* request — and
- * then re-appended the pause, so a person's pause and a second person's drain
- * were both one race away from being overruled by a command about neither.
+ * A withdrawal is history now (0045): nothing appends one, and the log keeps
+ * every one written before. Replay has to read them as it always did, so this is
+ * what they meant, asserted — not a behaviour anything relies on going forward.
  */
-describe("withdrawing one shutdown request", () => {
+describe("a withdrawal already in the log", () => {
   const asked = (by: string, reason: string) => ({
     type: "ConductorShutdownRequested",
     data: { by, reason, timeoutMs: null },
@@ -205,7 +204,6 @@ describe("withdrawing one shutdown request", () => {
     expect(state.shutdown).toBeNull();
     expect(state.paused).toBe(true);
     expect(state.by).toBe("human:ops");
-    expect(state.reason).toBe("the importer is flaky");
   });
 
   it("does not lift a newer request somebody else made", () => {
@@ -223,54 +221,83 @@ describe("withdrawing one shutdown request", () => {
 });
 
 /**
+ * A request does not outlive the daemon it was aimed at (0045).
+ *
+ * The daemon already reads the stream from its own start (`#159`); this is the
+ * same fact for every reader that folds the whole stream — the board's chip,
+ * `lingtai doctor`, `service start`'s refusal, and a restart deciding whether
+ * somebody else's drain stands. Without it they would go on reporting a drain
+ * that the daemon it was aimed at had already performed.
+ */
+describe("a start ends what was said before it", () => {
+  const asked = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "stopping for the day", timeoutMs: null } };
+  const started = { type: "ConductorStarted", data: { by: "human:steven", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: null } };
+
+  it("ends a standing request, with nothing appended to take it back", () => {
+    expect(reduceControl(log([asked]), NOW).shutdown).not.toBeNull();
+    expect(reduceControl(log([asked, started]), NOW).shutdown).toBeNull();
+  });
+
+  it("leaves a request made after it standing — that one is the running daemon's", () => {
+    expect(reduceControl(log([asked, started, asked]), NOW).shutdown?.version).toBe(3);
+  });
+
+  it("leaves a pause alone, which is a different axis and not this decision", () => {
+    const pause = { type: "ConductorPaused", data: { by: "human:ops", reason: "x", until: null } };
+    expect(reduceControl(log([pause, started]), NOW).paused).toBe(true);
+  });
+});
+
+/**
  * A restart under launchd or systemd hands its start to the supervisor, and the
  * handoff is how the daemon the supervisor starts knows whose restart it is
- * (0042 §8). What matters is when it must **not** be there to be claimed.
+ * (0042 §8). It rides on the restart's own request since 0045, which deleted
+ * the withdrawal it used to ride on.
  */
 describe("a restart's handoff to the supervisor", () => {
-  const asked = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
-  const handed = {
-    type: "ConductorShutdownWithdrawn",
-    data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
+  const handing = {
+    type: "ConductorShutdownRequested",
+    data: { by: "human:steven", reason: "restarting: picking up #88", timeoutMs: null, handoff: { sha: "2926f2d", dirty: false } },
   };
 
-  it("stands after the withdrawal that carries it, naming who, why, the commit and its own version", () => {
-    expect(reduceControl(log([asked, handed]), NOW).handoff).toEqual({
+  it("stands on the request that carries it, naming who, why, the commit and the request's version", () => {
+    expect(reduceControl(log([handing]), NOW).handoff).toEqual({
       by: "human:steven",
-      reason: "restarted: picking up #88",
+      reason: "restarting: picking up #88",
       sha: "2926f2d",
       dirty: false,
-      version: 2,
+      version: 1,
     });
   });
 
-  it("is ended by the next start, whoever made it, so one the supervisor never acted on is not claimed days later", () => {
+  it("is ended by the next start, whoever made it", () => {
     const started = { type: "ConductorStarted", data: { by: "human:ops", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: null } };
-    expect(reduceControl(log([asked, handed, started]), NOW).handoff).toBeNull();
+    expect(reduceControl(log([handing, started]), NOW).handoff).toBeNull();
   });
 
   /**
-   * The supervisor refused `service start`, so nothing started and nothing
-   * ended the handoff. A start the next day — somebody else's `service start`
-   * after `reset-failed`, on the same commit — must not be the restart's.
+   * The lapse is gone, and this is why it had to be: the handoff is on a request
+   * appended *before* the drain, and a drain takes up to an hour. Five minutes
+   * from the request would have expired during the very drain it waits on.
    */
-  it("lapses when nothing started in time, so a start the next day is nobody's restart", () => {
-    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
-    const events = log([asked, handed]).map((ev, i) => (i === 1 ? { ...ev, at: withdrawnAt } : ev));
-    expect(reduceControl(events, new Date(withdrawnAt.getTime() + 60_000)).handoff).not.toBeNull();
-    expect(reduceControl(events, new Date(withdrawnAt.getTime() + HANDOFF_LAPSES_MS + 1))).toMatchObject({ handoff: null });
-    expect(reduceControl(events, new Date("2026-09-14T09:00:00Z")).handoff).toBeNull();
+  it("does not lapse on the clock, since the drain it waits for can take an hour", () => {
+    const events = log([handing]).map((ev) => ({ ...ev, at: new Date("2026-09-13T23:06:00Z") }));
+    expect(reduceControl(events, new Date("2026-09-14T00:10:00Z")).handoff).not.toBeNull();
   });
 
-  it("is superseded by a newer drain", () => {
-    expect(reduceControl(log([asked, handed, asked]), NOW).handoff).toBeNull();
+  it("is superseded by a newer drain, and is not set by a request that carries none", () => {
+    const plain = { type: "ConductorShutdownRequested", data: { by: "human:ops", reason: "moving", timeoutMs: null } };
+    expect(reduceControl(log([handing, plain]), NOW).handoff).toBeNull();
+    expect(reduceControl(log([plain]), NOW).handoff).toBeNull();
   });
 
-  it("is not set by a withdrawal that lifted nothing, nor by one that starts the daemon itself", () => {
-    const stale = { ...handed, data: { ...handed.data, version: 7 } };
-    expect(reduceControl(log([asked, stale]), NOW).handoff).toBeNull();
-    const itself = { ...handed, data: { ...handed.data, handoff: null } };
-    expect(reduceControl(log([asked, itself]), NOW).handoff).toBeNull();
+  it("is not set by a withdrawal already in the log", () => {
+    const old = {
+      type: "ConductorShutdownWithdrawn",
+      data: { by: "human:steven", version: 1, reason: "restarted", handoff: { sha: "2926f2d", dirty: false } },
+    };
+    const asked = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
+    expect(reduceControl(log([asked, old]), NOW).handoff).toBeNull();
   });
 });
 

@@ -33,8 +33,8 @@ export interface ShutdownRequest {
    * Where the request sits on `ctl-conductor`, which is what names it.
    *
    * A request carries no id of its own and does not need one: the stream is
-   * the installation's, and a position on it is unique. `ConductorShutdownWithdrawn`
-   * names a request by this, so withdrawing one can never lift a newer one.
+   * the installation's, and a position on it is unique. `ConductorStarted.handoff`
+   * names a restart's request by this.
    */
   version: number;
   /** Stop without draining the pass in flight (`#159`). */
@@ -46,30 +46,19 @@ export interface ShutdownRequest {
  *
  * `lingtai restart` under launchd or systemd cannot start the daemon itself —
  * that would be a second conductor in a terminal beside the supervised one — so
- * it withdraws its drain with this and asks the supervisor. The daemon the
- * supervisor starts reads it here, and records the restart's `by` and `reason`
- * when the commit it is running is `sha` (0042 §8).
+ * it asks for its drain with this on the request, and the supervisor's next
+ * start reads it off the stream as it was before that start, and records the
+ * restart's `by` and `reason` when the commit it is running is `sha` (0042 §8,
+ * [0045](../../../doc/decisions/0045-a-signal-does-not-outlive-its-daemon.md)).
  */
 export interface Handoff {
   by: string;
   reason: string;
   sha: string | null;
   dirty: boolean;
-  /** The withdrawal's own version, which `ConductorStarted.handoff` names. */
+  /** The request's own version, which `ConductorStarted.handoff` names. */
   version: number;
 }
-
-/**
- * How long a handoff waits for the supervisor's start before it is nobody's.
- *
- * A start the next minute is the restart's; a start the next day is not, even on
- * the same commit — a supervisor that refused `service start` leaves the
- * handoff standing, and `service start` typed by somebody else after
- * `reset-failed` would otherwise be recorded as the restart's person and reason.
- * Past the restart's own wait for the start, with room for the supervisor's
- * throttle, and no longer.
- */
-export const HANDOFF_LAPSES_MS = 5 * 60_000;
 
 export interface ControlState {
   paused: boolean;
@@ -100,10 +89,10 @@ export interface ControlState {
   /**
    * The restart a supervisor's start is to answer, or null.
    *
-   * **The next start takes it or clears it**, whoever makes it, and it lapses
-   * `HANDOFF_LAPSES_MS` after the withdrawal whether or not anything started. A
-   * handoff the supervisor never acted on must not be claimed days later by a
-   * daemon it has nothing to do with, and a newer drain supersedes it.
+   * **The next start takes it or clears it**, whoever makes it, and a newer
+   * drain supersedes it. There is no lapse any more (0045): the handoff rides
+   * on the request, which is appended before an hour's drain, so a clock started
+   * there would run out during the drain it was waiting for.
    */
   handoff: Handoff | null;
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
@@ -156,8 +145,6 @@ export const emptyControl: ControlState = {
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
   const state: ControlState = { ...emptyControl, requested: [], discussions: [] };
-  /** When the standing handoff was made, so the fold can say it lapsed. */
-  let handoffAt: Date | null = null;
 
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>;
@@ -186,34 +173,43 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
           force: d["force"] === true,
           version: e.version,
         };
-        // A drain asked after a handoff is a newer decision than it.
-        state.handoff = null;
-        break;
-      }
-      case "ConductorShutdownWithdrawn": {
-        // The request named, or nothing. A withdrawal that lost a race to a
-        // newer request must leave that request standing — it is somebody
-        // else's, and lifting it is the one thing a restart may not do (0042).
-        // A pause is untouched either way, which is the whole difference
-        // between this and `ConductorResumed`.
-        if (state.shutdown === null || state.shutdown.version !== d["version"]) break;
-        state.shutdown = null;
+        // A restart's request carries its start to the supervisor; any other
+        // request is a newer decision than a handoff that stood before it.
         const h = d["handoff"] as { sha?: unknown; dirty?: unknown } | null | undefined;
-        if (h && typeof h === "object") {
-          state.handoff = {
-            by: str("by") ?? "",
-            reason: str("reason") ?? "",
-            sha: typeof h.sha === "string" ? h.sha : null,
-            dirty: h.dirty === true,
-            version: e.version,
-          };
-          handoffAt = e.at;
-        }
+        state.handoff =
+          h && typeof h === "object"
+            ? {
+                by: str("by") ?? "",
+                reason: str("reason") ?? "",
+                sha: typeof h.sha === "string" ? h.sha : null,
+                dirty: h.dirty === true,
+                version: e.version,
+              }
+            : null;
         break;
       }
+      case "ConductorShutdownWithdrawn":
+        // Nothing appends this since 0045 — a request no longer outlives the
+        // daemon it was aimed at, so there is nothing for a restart to take
+        // back. It is folded as it always was because the log still carries
+        // every one written before, and replay has to read them the same way.
+        if (state.shutdown !== null && state.shutdown.version === d["version"]) state.shutdown = null;
+        break;
       case "ConductorStarted":
-        // Any start ends a handoff — the one that answered it, or one that did
-        // not and so says it will not be answered (see `handoff` above).
+        // **A start ends whatever was said to the daemon before it** (0045).
+        // A request is aimed at the process running when it was made; the
+        // daemon reads the stream from its own start, so a request before one
+        // is not addressed to anything still running, and folding it as
+        // standing would be the board and `service start` disagreeing with the
+        // daemon about the same fact. Nothing is appended to take it back —
+        // the start is a fact in its own right, and this is what it means.
+        //
+        // Race-free because the daemon records its start *at* its watermark
+        // (`recordStart`): nothing can land between the read it starts from
+        // and this event, so a request after it is one the daemon also reads.
+        state.shutdown = null;
+        // And any handoff — the start that answered it, or one that did not and
+        // so says it will not be answered.
         state.handoff = null;
         break;
       case "ConductorResumed":
@@ -221,10 +217,10 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
         state.by = null;
         state.reason = null;
         state.until = null;
-        // Resume withdraws any shutdown, and it must: `ConductorShutdownWithdrawn`
-        // lifts only the one request it names, and a person typing `lingtai
-        // resume` means all of it. The request is in the stream for ever, so a
-        // daemon started after it would find it waiting and stop again, and again.
+        // Resume lifts a standing shutdown too, as it always has, for a reader
+        // folding the whole stream. It is no longer how a daemon is made to stay
+        // up (0045): a start reads nothing said before it, so there is no
+        // request left over for a resume to be needed against.
         state.shutdown = null;
         break;
       case "RunRequested":
@@ -258,13 +254,6 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
     state.by = null;
     state.reason = null;
     state.until = null;
-  }
-
-  // The handoff that nothing answered, lapsing — the same shape as the pause
-  // above, and for the same reason nothing is appended. Any start after this is
-  // not recorded as the restart's.
-  if (handoffAt !== null && now.getTime() - handoffAt.getTime() > HANDOFF_LAPSES_MS) {
-    state.handoff = null;
   }
 
   return state;
