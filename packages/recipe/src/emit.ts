@@ -69,11 +69,11 @@ export class CommentWouldBeLostError extends Error {
   readonly path: readonly (string | number)[];
   readonly comment: string;
 
-  constructor(path: readonly (string | number)[], comment: string) {
+  constructor(path: readonly (string | number)[], comment: string, remedy?: string) {
     const at = path.join(".");
     super(
       `${at} carries a comment ("${comment.split("\n")[0]!.trim()}") and this change would remove it without naming it: ` +
-        `set ${at} itself to change it where it stands, or remove ${at} to drop it and its comment`,
+        (remedy ?? `set ${at} itself to change it where it stands, or remove ${at} to drop it and its comment`),
     );
     this.name = "CommentWouldBeLostError";
     this.path = path;
@@ -231,6 +231,13 @@ function replace(doc: Document, path: readonly (string | number)[], value: unkno
   const key = path[path.length - 1]!;
   const parent = parentPath.length === 0 ? doc.contents : doc.getIn(parentPath, true);
   const old = isCollection(parent) ? (parent.get(key, true) as unknown) : undefined;
+  // A list item is known by its value, not its position: a different mapping or
+  // list at its index is a different item, and is held to the whole-list rule.
+  if (isSeq(parent) && isCollection(old) && isObjectLike(value) && !isDeepStrictEqual(toJS(old), value)) {
+    refuseIfCommented(old, path, true, "set the fields inside it by their own paths, or remove it with its comment and add the new item");
+    doc.setIn(path, doc.createNode(value));
+    return;
+  }
   const next = reconcile(doc, path, old, value);
   if (next === old) return;
   if (isNode(old) && isNode(next)) {
@@ -297,7 +304,7 @@ function reconcile(doc: Document, path: readonly (string | number)[], old: unkno
 }
 
 /** Refuse to drop `node` if it, or anything inside it, carries a comment. */
-function refuseIfCommented(node: unknown, path: readonly (string | number)[], self = true): void {
+function refuseIfCommented(node: unknown, path: readonly (string | number)[], self = true, remedy?: string): void {
   const found = (n: unknown): string | undefined => {
     if (isPair(n)) return (n.key as Node | null)?.commentBefore ?? (n.key as Node | null)?.comment ?? found(n.value);
     if (!isNode(n)) return undefined;
@@ -313,7 +320,7 @@ function refuseIfCommented(node: unknown, path: readonly (string | number)[], se
     return comment || undefined;
   };
   const comment = found(node);
-  if (comment) throw new CommentWouldBeLostError(path, comment);
+  if (comment) throw new CommentWouldBeLostError(path, comment, remedy);
 }
 
 function moveComments(from: unknown, to: unknown): void {
@@ -330,7 +337,12 @@ function moveComments(from: unknown, to: unknown): void {
  * aligning them, and a changed line has to land on a line the alignment is sure of.
  */
 function carry(existing: string, before: string, after: string): string {
-  const E = existing.split("\n");
+  // A rendering always ends in a newline and never has a "\r": the file is
+  // compared without its own, and a line carried onto it is given them.
+  const cr = existing.includes("\r\n") ? "\r" : "";
+  const open = !existing.endsWith("\n");
+  const file = (open ? `${existing}${cr}\n` : existing).split("\n");
+  const E = file.map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
   const B = before.split("\n");
   const A = after.split("\n");
   const toE = new Map(align(B, E).map(([b, e]) => [b, e]));
@@ -340,7 +352,7 @@ function carry(existing: string, before: string, after: string): string {
   let b = 0;
   let a = 0;
   for (const [nb, na] of [...pairs, [B.length, A.length] as const]) {
-    if (nb > b || na > a) hunks.push(onto(toE, B.length, E, b, nb, A.slice(a, na)));
+    if (nb > b || na > a) hunks.push(onto(toE, B.length, E, b, nb, A.slice(a, na).map((line) => line + cr)));
     b = nb + 1;
     a = na + 1;
   }
@@ -349,10 +361,11 @@ function carry(existing: string, before: string, after: string): string {
   let cursor = 0;
   for (const hunk of hunks) {
     if (hunk.from < cursor) throw new Error("two changes to the recipe overlap in the file");
-    out = out.concat(E.slice(cursor, hunk.from), hunk.lines);
+    out = out.concat(file.slice(cursor, hunk.from), hunk.lines);
     cursor = hunk.to;
   }
-  return out.concat(E.slice(cursor)).join("\n");
+  const text = out.concat(file.slice(cursor)).join("\n");
+  return open ? text.slice(0, -`${cr}\n`.length) : text;
 }
 
 /** Where rendered lines `B[from, to)` stand in the file, as a range of its lines. */

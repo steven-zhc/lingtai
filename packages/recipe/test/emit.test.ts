@@ -225,6 +225,24 @@ describe("editRecipe, on this repository's own recipe", () => {
     expect(out).toMatch(/# extension may not name one of Lingtai's own\.\n    - name: build\n/);
   });
 
+  it("keeps a file's CRLF line endings, on a changed line and on a new one", () => {
+    const crlf = OWN.replace(/\n/g, "\r\n");
+    for (const change of [
+      { path: ["runtime", "limits", "turns"], value: 200 },
+      { path: ["runtime", "tier"], value: "guarded" },
+    ]) {
+      expect(editRecipe(crlf, [change])).toBe(editRecipe(OWN, [change]).replace(/\n/g, "\r\n"));
+    }
+  });
+
+  it("adds a key to the last block of a file with no final newline, and adds none", () => {
+    const change = { path: ["runtime", "tier"], value: "guarded" };
+    const nonl = OWN.replace(/\n$/, "");
+    expect(editRecipe(nonl, [change])).toBe(editRecipe(OWN, [change]).replace(/\n$/, ""));
+    const both = OWN.replace(/\n/g, "\r\n").replace(/\r\n$/, "");
+    expect(editRecipe(both, [change])).toBe(editRecipe(OWN, [change]).replace(/\n/g, "\r\n").replace(/\r\n$/, ""));
+  });
+
   it("refuses an edit that would not be a recipe, rather than writing it", () => {
     expect(() => editRecipe(OWN, [{ path: ["source", "kinds"], value: [] }])).toThrow();
     expect(() => editRecipe(OWN, [{ path: ["gates", "merg"], value: [] }])).toThrow();
@@ -258,6 +276,9 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
     expect(() => editRecipe(OWN, [{ path: ["gates", "proposed"], value: [BUILD, lint] }])).toThrow(
       /gates\.proposed\.1 carries a comment/,
     );
+    const byIndex = () => editRecipe(OWN, [{ path: ["gates", "proposed", 1], value: lint }]);
+    expect(byIndex).toThrow(CommentWouldBeLostError);
+    expect(byIndex).toThrow(/gates\.proposed\.1 carries a comment \("The cold reviewer/);
   });
 
   it("puts a different gate in place of an uncommented one bare, and the comment above the list stays where it was", () => {
