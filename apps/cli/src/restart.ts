@@ -30,14 +30,29 @@
  *      daemon compares what it actually read against what was examined here, so
  *      the commit on `ConductorStarted` is one a refusal looked at and the one
  *      that is running.
- *   4. **the withdrawal** of this command's own request, by its version, and of
- *      nothing else — not a pause, not a drain somebody else asked for.
- *   5. **the start**, which is `lingtai daemon` in this process — or, where
+ *   4. **the start**, which is `lingtai start` in this process — or, where
  *      `lingtai service` keeps the daemon, the supervisor's, handed the checked
- *      commit and this person's name through the withdrawal (0042 §8). What makes it
- *      *never two* is the advisory lock (#93) and not any sequencing here: if
+ *      commit and this person's name on the drain itself (0042 §8). What makes
+ *      it *never two* is the advisory lock (#93) and not any sequencing here: if
  *      anything got there first, this starts nothing and exits non-zero, since
  *      what won may leave no daemon (0042 §6).
+ *
+ * ## It is `shutdown` and then `start`, in what it appends
+ *
+ * A `ConductorShutdownRequested` and a `ConductorStarted`, and nothing between
+ * them that another event has to undo
+ * ([0045](../../../doc/decisions/0045-a-request-ends-at-the-next-start.md)).
+ * There used to be a withdrawal of the request before the start, because a
+ * request outlived its daemon and the new one would have read it and stopped.
+ * A start ends a request now, so what is left of 0042's sequence is what was
+ * never about control state: the checks, before and after the wait.
+ *
+ * **Under a supervisor the check after the wait is a comparison, not a
+ * refusal.** launchd's `KeepAlive` and systemd's `Restart=always` start the next
+ * daemon the moment the drained one exits, and nothing holds that start back —
+ * holding it back is the latch `#159` removed. So the supervised restart waits
+ * for a start to be recorded, and exits 0 only when it is this restart's, on the
+ * commit that was checked; anything else it names, and exits non-zero.
  *
  * ## One flag per refusal
  *
@@ -65,13 +80,12 @@ import {
   readStatus,
   requestShutdownUnlessStanding,
   startAfter,
-  withdrawShutdown,
-  HANDOFF_LAPSES_MS,
   type CodeVersion,
   type ControlState,
   type Identity,
   type RecordedStart,
   type ShutdownRequest,
+  type StartDecision,
 } from "@lingtai/daemon";
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
@@ -237,7 +251,7 @@ export type Plan =
        * A drain this same person already asked for, taken over rather than asked
        * for twice. What makes the recovery the interrupt message prints true:
        * Ctrl+C leaves the request standing, and the next `lingtai restart` by
-       * the same hand waits on it and withdraws it.
+       * the same hand waits on it and starts.
        */
       adopted: ShutdownRequest | null;
     };
@@ -316,25 +330,32 @@ export function planRestart(before: Before, waivers: Waivers): Plan {
 
 /** What the entry point needs to start a daemon, which is where a daemon is started. */
 export type Prepared =
-  | {
+  | ({
       ok: true;
       by: string;
       reason: string;
       /**
-       * The version of the withdrawal that handed the start to a supervisor, or
-       * null when this process is to start the daemon itself.
-       */
-      handedOff: number | null;
-      /**
-       * The commit and worktree the last check examined. The daemon compares
-       * what it actually reads against this and starts nothing on a difference.
+       * The commit and worktree the checks examined. A daemon started here
+       * compares what it actually reads against this and starts nothing on a
+       * difference; a supervised restart compares the start that was recorded.
        */
       examined: CodeVersion;
-    }
+    } & (
+      | {
+          supervised: false;
+          /** This restart's drain, which its start ends — or null, when nothing was asked. */
+          request: number | null;
+        }
+      | {
+          /** The start is launchd's or systemd's (0042 §8), and ends this request. */
+          supervised: true;
+          request: number;
+        }
+    ))
   | { ok: false; code: number };
 
 /**
- * Everything up to the start. The start itself is `lingtai daemon`, unchanged.
+ * Everything up to the start. The start itself is `lingtai start`, unchanged.
  *
  * Split there rather than calling the daemon from here because there must be
  * exactly one piece of code that starts a daemon: a second one would be a second
@@ -346,8 +367,8 @@ export async function prepareRestart(
   log: (line: string) => void = console.log,
   /**
    * A supervisor keeps the daemon, so the start is its to make (0042 §8). The
-   * drain is asked even when nothing is conducting — the withdrawal is what
-   * carries the handoff, and there is no withdrawal without a request.
+   * drain is asked even when nothing is conducting — the request is what
+   * carries the handoff, and what the supervisor's start is recognised by.
    */
   supervised = false,
 ): Promise<Prepared> {
@@ -436,10 +457,24 @@ export async function prepareRestart(
     log(
       paint.held(
         plan.go === "start"
-          ? `a shutdown you asked for is still standing (${plan.adopted.reason}) and nothing is conducting — it is withdrawn before the start.`
+          ? `a shutdown you asked for is still standing (${plan.adopted.reason}) and nothing is conducting — the start ends it.`
           : `a shutdown you asked for is already standing (${plan.adopted.reason}) — waiting on that one rather than asking twice.`,
       ),
     );
+    // The handoff rides on the request, and this one was asked before these
+    // checks — by a `lingtai shutdown`, or a restart that checked other code.
+    // The supervisor's start is recorded off that request, so say now what the
+    // comparison at the end will say, rather than only failing there.
+    const handoff = plan.adopted.handoff;
+    if (supervised && (handoff === null || handoff.sha !== identity.sha || handoff.dirty !== identity.dirty)) {
+      log(
+        paint.signal(
+          handoff === null
+            ? "that request carries no restart's commit, so the supervisor's start will be recorded as daemon and not as this restart."
+            : `that request's restart checked ${describeIdentity(handoff)}, not ${describeIdentity(identity)}, so the start will not be recorded as this restart.`,
+        ),
+      );
+    }
   }
 
   if (plan.go === "drain" || plan.go === "wait" || (supervised && request === null)) {
@@ -457,9 +492,17 @@ export async function prepareRestart(
     if (request === null) {
       // The decision and the append are one write: the plan read no standing
       // request, but one may have landed since, and the fold keeps only the
-      // newest — so appending over it would make this restart's later
-      // withdrawal lift somebody else's drain with no event withdrawing it.
-      const asked = await requestShutdownUnlessStanding(by, `restarting: ${args.reason}`, args.timeoutMs, undefined, args.force);
+      // newest — so appending over it would hide somebody else's drain behind
+      // this restart's, and the start would then end both without anybody
+      // having read theirs.
+      const asked = await requestShutdownUnlessStanding(
+        by,
+        `restarting: ${args.reason}`,
+        args.timeoutMs,
+        undefined,
+        args.force,
+        supervised ? { sha: identity.sha, dirty: identity.dirty } : null,
+      );
       if (!asked.asked && asked.standing.by !== by) {
         sayRefusal("not restarting:", [
           {
@@ -504,24 +547,42 @@ export async function prepareRestart(
     // timeout. A `lingtai run` reads no request, and a request this command did
     // not make has the timeout it was asked with — so that one, either way.
     const giveUpMs = drainTimeoutMs;
+    const mine = request;
     const waited = await waitForTheLock(
       plan.go === "drain" ? "draining" : "waiting",
       giveUpMs === null ? null : giveUpMs + RELEASE_GRACE_MS,
       log,
+      // Under a supervisor the lock may never be seen free: the respawn can take
+      // it between two polls. A start recorded after this request is the end of
+      // the wait as surely as a free lock is.
+      supervised && mine !== null ? { started: async () => (await startAfter(mine).catch(() => null)) !== null } : {},
     );
 
-    if (waited !== "free") {
+    if (waited !== "free" && waited !== "started") {
       const stopped = waited === "interrupted" ? "stopped waiting" : "the lock is still held after the timeout";
       log(
-        request !== null
-          ? paint.held(
-              `${stopped}. The shutdown asked by ${by} is still standing — the daemon finishes its pass and exits, ` +
-                `and nothing was started. lingtai restart picks that request up again and starts; lingtai resume lifts it.`,
-            )
-          : paint.held(`${stopped}. Nothing was asked to stop and nothing was started.`),
+        request === null
+          ? paint.held(`${stopped}. Nothing was asked to stop and nothing was started.`)
+          : supervised
+            ? paint.held(
+                `${stopped}. The shutdown asked by ${by} is still standing — the daemon finishes its pass and exits, and ` +
+                  `the supervisor starts the next one by itself. lingtai doctor says whether one is up.`,
+              )
+            : paint.held(
+                `${stopped}. The shutdown asked by ${by} is still standing — the daemon finishes its pass and exits, ` +
+                  `and nothing was started. lingtai restart picks that request up again and starts.`,
+              ),
       );
       return { ok: false, code: waited === "interrupted" ? 130 : 1 };
     }
+  }
+
+  if (supervised) {
+    // No second check to refuse on: the supervisor's start does not wait for
+    // this command, and reads the disk for itself. What the check became is the
+    // comparison `startSupervised` makes against what the start recorded.
+    if (request === null) throw new Error("a supervised restart always asks a drain before it waits");
+    return { ok: true, by, reason: args.reason, supervised: true, request, examined: { sha: identity.sha, dirty: identity.dirty } };
   }
 
   // Again, now. A drain can take an hour, and the commit and the worktree are
@@ -529,6 +590,10 @@ export async function prepareRestart(
   // not the ones a daemon reads if somebody committed, pulled or edited in the
   // meantime. The doctor is not asked twice: it was about the system, which a
   // drain does not change, and a daemon being down is not a failure it has.
+  //
+  // The standing request is asked again too. This restart's own is fine — the
+  // start ends it — and anybody else's that landed during the wait refuses, as
+  // it would have before the drain.
   const now = await codeIdentity();
   const after = planRestart(
     {
@@ -545,55 +610,12 @@ export async function prepareRestart(
   if (after.go === "refuse") {
     sayRefusal(`the wait is over and something that passed before it no longer does — not starting ${describeIdentity(now)}:`, after.because, log);
     if (request !== null) {
-      log(paint.muted("your shutdown request is still standing, so nothing else starts here either. lingtai restart picks it up again."));
+      log(paint.muted("your shutdown request is still standing, and the next start ends it. lingtai restart picks it up again."));
     }
     return { ok: false, code: 1 };
   }
 
-  // Before the start and after the drain, in that order: a daemon started while
-  // the request stands reads it and stops again. One append, naming the request
-  // by its version — never a resume, which would lift a pause, and never a
-  // withdrawal of whatever happens to be standing, which could be somebody
-  // else's.
-  let handedOff: number | null = null;
-  if (request !== null) {
-    const lifted = await withdrawShutdown(
-      by,
-      request,
-      `restarted: ${args.reason}`,
-      supervised ? { sha: now.sha, dirty: now.dirty } : null,
-    );
-    if (!lifted.withdrew && lifted.standing !== null) {
-      sayRefusal("not starting:", [
-        {
-          line:
-            `while this was waiting, ${lifted.standing.by} asked for a shutdown — ${lifted.standing.reason}. ` +
-            `It is left standing. lingtai resume lifts it, and then lingtai restart will start`,
-          waiver: null,
-        },
-      ], log);
-      return { ok: false, code: 1 };
-    }
-    if (lifted.withdrew) {
-      log(paint.muted(`withdrew the drain — ${lifted.request.reason}`));
-      if (supervised) handedOff = lifted.version;
-    }
-  }
-  if (supervised && handedOff === null) {
-    // `resume` lifted it during the wait, so there is nothing to carry the
-    // handoff. Starting through the supervisor anyway would record nobody.
-    sayRefusal("not starting:", [
-      {
-        line:
-          "the drain this was waiting on was lifted by somebody else, so there is no withdrawal to hand the start " +
-          "to the supervisor with. Nothing was started. lingtai restart asks again",
-        waiver: null,
-      },
-    ], log);
-    return { ok: false, code: 1 };
-  }
-
-  return { ok: true, by, reason: args.reason, handedOff, examined: { sha: now.sha, dirty: now.dirty } };
+  return { ok: true, by, reason: args.reason, supervised: false, request, examined: { sha: now.sha, dirty: now.dirty } };
 }
 
 function describeIdentity(id: Pick<Identity, "sha" | "dirty">): string {
@@ -631,9 +653,14 @@ export async function waitForTheLock(
   doing: "draining" | "waiting",
   giveUpAfterMs: number | null,
   log: (line: string) => void,
-  /** How the lock is asked about, and how often. Replaceable so a test need not own a database. */
-  how: { ask?: () => Promise<string | null>; pollMs?: number } = {},
-): Promise<"free" | "interrupted" | "gave-up"> {
+  /**
+   * How the lock is asked about, and how often. Replaceable so a test need not
+   * own a database. `started` ends the wait too, when a start it was waiting
+   * for has been recorded — which under a supervisor can happen with the lock
+   * never once seen free.
+   */
+  how: { ask?: () => Promise<string | null>; pollMs?: number; started?: () => Promise<boolean> } = {},
+): Promise<"free" | "started" | "interrupted" | "gave-up"> {
   const ask = how.ask ?? (() => conductorLockHolder());
   const pollMs = how.pollMs ?? POLL_MS;
   const began = Date.now();
@@ -653,9 +680,8 @@ export async function waitForTheLock(
     for (;;) {
       // Only an answer of "nobody" is free. A query that failed — a network
       // blip, a pooler restart — says nothing about the lock, and reading it as
-      // empty would withdraw the drain while the old daemon is still in its
-      // pass: it would read no request when the pass ends and carry on from the
-      // stale commit, and the start here would lose the lock to it.
+      // empty would go on to the start while the old daemon is still in its
+      // pass: the start here would lose the lock to it, and exit saying so.
       const answer = await ask().then(
         (holder) => ({ ok: true as const, holder }),
         (err: unknown) => ({ ok: false as const, message: (err as Error).message }),
@@ -663,6 +689,7 @@ export async function waitForTheLock(
       if (answer.ok) {
         failing = false;
         if (answer.holder === null) return "free";
+        if (how.started && (await how.started())) return "started";
       } else if (!failing) {
         failing = true;
         log(paint.signal(`could not ask who holds the lock — ${answer.message}. Still ${doing}; it is asked again.`));
@@ -723,47 +750,56 @@ export function formatFailures(
 
 // ------------------------------------------------------ the supervised start --
 
-/** Whose start a daemon's `ConductorStarted` records, or that it records none. */
-export type Attribution =
-  | { record: false; why: string }
-  | { record: true; by: string; reason: string | null; handoff: number | null; note: string | null };
-
 /**
  * Who a start is recorded as, from what the daemon can know about itself.
  *
  * Pure, for the reason `planRestart` is. The daemon reads its commit once, and
- * hands this the control read it acts on (`startRecorder`), and this decides:
+ * `recordStart` hands this the fold of the stream its start is about to land
+ * on — so `control.shutdown` is the request this start ends, if one stands:
  *
- * - **a start into a standing drain is not recorded.** It reads the request and
- *   exits without taking anything — and under launchd or systemd it is started
- *   again every thirty seconds until the request is lifted, so recording it
- *   would put a hundred `ConductorStarted` in the log for one drain.
- * - `lingtai restart` in this process knows who ran it.
- * - **a supervisor's start answers a restart's handoff** (0042 §8), and takes
- *   its `by` and `reason` only when it is running the commit that restart
- *   examined. On a different commit it is recorded as `daemon`, says why, and
- *   still names the handoff, so the restart that is waiting on it can say so.
- * - a start typed at a terminal is the typist's, and ends any handoff — it is
- *   not the supervisor's start, and must not be recorded as the restart's.
+ * - `lingtai restart` in this process knows who ran it. **It records nothing
+ *   over a drain somebody asked for after its checks** — the one moment the
+ *   check after the wait cannot see, between reading the stream and winning the
+ *   lock. Its own request is fine: the start ends it.
+ * - **a supervisor's start answers a restart's handoff** (0042 §8), which rides
+ *   on the request it ends, and takes its `by` and `reason` only when it is
+ *   running the commit that restart examined. On a different commit it is
+ *   recorded as `daemon`, says why, and still names the request, so the restart
+ *   that is waiting on it can say so.
+ * - a start typed at a terminal is the typist's, whatever stands — it is not the
+ *   supervisor's start, and must not be recorded as the restart's.
  * - otherwise `daemon`, since stdin that is not a terminal is launchd, systemd,
  *   a script or `nohup`, and none of those is a person's hand.
+ *
+ * **Only the restart in this process ever declines.** There used to be a start
+ * that was not recorded — one into a standing drain, which read it and exited,
+ * every thirty seconds under a supervisor. A start reads nothing said before it
+ * now, so it has nothing to exit on.
  */
 export function attributeStart(input: {
-  restart: { by: string; reason: string } | null;
-  control: Pick<ControlState, "shutdown" | "handoff"> | null;
+  restart: { by: string; reason: string; request: number | null } | null;
+  control: Pick<ControlState, "shutdown">;
   code: Pick<CodeVersion, "sha" | "dirty">;
   tty: boolean;
   user: string;
-}): Attribution {
+}): StartDecision {
   const { restart, control, code, tty } = input;
-  const standing = control?.shutdown ?? null;
-  if (standing !== null) {
-    return { record: false, why: `a shutdown asked by ${standing.by} stands, so this start takes nothing and exits` };
+  const standing = control.shutdown;
+
+  if (restart) {
+    if (standing !== null && standing.version !== restart.request) {
+      return {
+        record: false,
+        why:
+          `a shutdown asked by ${standing.by} — ${standing.reason} — landed after this restart's checks, so nothing ` +
+          `started. lingtai restart refuses over it until lingtai resume lifts it; lingtai start starts over it`,
+      };
+    }
+    return { record: true, by: restart.by, reason: restart.reason, handoff: null, note: null };
   }
-  if (restart) return { record: true, by: restart.by, reason: restart.reason, handoff: null, note: null };
 
   const person = `human:${input.user}`;
-  const handoff = control?.handoff ?? null;
+  const handoff = standing?.handoff ? { ...standing.handoff, by: standing.by, reason: standing.reason, version: standing.version } : null;
   if (handoff === null) return { record: true, by: tty ? person : "daemon", reason: null, handoff: null, note: null };
   if (tty) {
     return {
@@ -783,63 +819,24 @@ export function attributeStart(input: {
   return { record: true, by: "daemon", reason: why, handoff: handoff.version, note: why };
 }
 
-/**
- * Record a start once, off **the control read on which the daemon decides to
- * take work** — never off an earlier one.
- *
- * The daemon used to attribute its start from a read taken at startup and
- * notice a shutdown only later, when the work loop's first pass read the stream
- * again after the filters and the reconcile. A launchd respawn that read a
- * restart's drain the first time and its withdrawal the second recorded nothing
- * and took work: a conductor nobody could attribute, and a restart timing out on
- * a start that had happened. One read now decides both, so a start that reads a
- * standing drain exits on that read, and a start that takes work has recorded
- * itself — with the handoff that read carries — before its first pass.
- *
- * Called with every read the daemon acts on and does anything only on the
- * first. Never throws: a start that could not be recorded is said, and the
- * daemon still conducts.
- */
-export function startRecorder(input: {
-  restart: { by: string; reason: string } | null;
-  code: CodeVersion;
-  tty: boolean;
-  user: string;
-  record: (a: Extract<Attribution, { record: true }>) => Promise<void>;
-  log: (line: string) => void;
-}): (control: Pick<ControlState, "shutdown" | "handoff">) => Promise<void> {
-  let decided = false;
-  return async (control) => {
-    if (decided) return;
-    decided = true;
-    const attribution = attributeStart({ restart: input.restart, control, code: input.code, tty: input.tty, user: input.user });
-    if (!attribution.record) {
-      input.log(paint.muted(`not recorded as a start: ${attribution.why}`));
-      return;
-    }
-    if (attribution.note) input.log(paint.signal(attribution.note));
-    await input.record(attribution).catch((err: unknown) => {
-      input.log(paint.fail(`the start could not be recorded: ${(err as Error).message}`));
-    });
-  };
-}
-
 /** How long a restart waits for the supervisor's start: past two of its thirty-second throttles. */
 const HANDOFF_WAIT_MS = 90_000;
 
-/** How long after the withdrawal a start is still recorded as the restart's, in words. */
-const LAPSES = `${HANDOFF_LAPSES_MS / 60_000} minutes of the withdrawal`;
-
 /**
- * Ask the supervisor to start, then wait for the start to be recorded.
+ * Wait for the supervisor's start to be recorded, asking for one if none has.
  *
  * The record and not the beacon: a beacon says a daemon is beating, and not
  * which start put it there or from what commit — which is the whole of what
  * the restart has to report. Exits 0 only for a start that answered this
- * handoff, as this person, on the commit that was checked.
+ * restart's request, as this person, on the commit that was checked.
+ *
+ * `service start` is asked only when nothing has been recorded yet. The
+ * respawn usually gets there first, and then asking is a no-op at best; when it
+ * has not — a unit waiting out `RestartSec`, a job launchd is throttling — it is
+ * what makes the start now rather than in thirty seconds.
  */
 export async function startSupervised(
-  prepared: { by: string; handedOff: number; examined: Pick<CodeVersion, "sha" | "dirty"> },
+  prepared: { by: string; request: number; examined: Pick<CodeVersion, "sha" | "dirty"> },
   how: {
     start: () => Promise<number>;
     recorded?: (after: number) => Promise<RecordedStart | null>;
@@ -853,58 +850,61 @@ export async function startSupervised(
   const waitMs = how.waitMs ?? HANDOFF_WAIT_MS;
   const pollMs = how.pollMs ?? POLL_MS;
 
-  const code = await how.start();
-  if (code !== 0) {
-    log(
-      paint.fail(
-        "the supervisor refused the start, above. The drain is withdrawn, so its own next start takes work — " +
-          `recorded as your restart only within ${LAPSES}, and as nobody's after. lingtai service status says whether it did.`,
-      ),
-    );
-    return 1;
-  }
-  log(paint.held(`waiting for the supervisor's daemon to record its start — up to ${waitMs / 1000}s. It is waiting, not hung.`));
-
-  const began = Date.now();
-  let interrupted = false;
-  const onSignal = (): void => {
-    interrupted = true;
-  };
-  process.on("SIGINT", onSignal);
-  try {
-    for (;;) {
-      const start = await recorded(prepared.handedOff).catch(() => null);
-      if (start !== null) {
-        const mine = start.handoff === prepared.handedOff && start.by === prepared.by;
-        const same = start.sha === prepared.examined.sha && start.dirty === prepared.examined.dirty;
-        if (mine && same) {
-          log(paint.pass(`started ${describeIdentity(start)} as ${start.worker}, recorded as ${start.by}'s restart`));
-          return 0;
-        }
-        log(
-          paint.fail(
-            `a daemon started, and not the one this handed off: ${start.by} started ${describeIdentity(start)} as ` +
-              `${start.worker}${start.reason ? ` — ${start.reason}` : ""}. It is running; lingtai doctor says what it is.`,
-          ),
-        );
-        return 1;
-      }
-      if (interrupted) {
-        log(paint.held(`stopped waiting. The start was asked of the supervisor, and the handoff stands for its next start within ${LAPSES}.`));
-        return 130;
-      }
-      if (Date.now() - began > waitMs) {
-        log(
-          paint.held(
-            `no start was recorded in ${waitMs / 1000}s. The handoff stands for the supervisor's next start within ${LAPSES} — ` +
-              "lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up.",
-          ),
-        );
-        return 1;
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
+  let start = await recorded(prepared.request).catch(() => null);
+  if (start === null) {
+    const code = await how.start();
+    if (code !== 0) {
+      log(
+        paint.fail(
+          "the supervisor refused the start, above. Nothing holds its next start back — lingtai service status says " +
+            "whether it made one, and lingtai doctor whether a daemon is up.",
+        ),
+      );
+      return 1;
     }
-  } finally {
-    process.off("SIGINT", onSignal);
+    log(paint.held(`waiting for the supervisor's daemon to record its start — up to ${waitMs / 1000}s. It is waiting, not hung.`));
+
+    const began = Date.now();
+    let interrupted = false;
+    const onSignal = (): void => {
+      interrupted = true;
+    };
+    process.on("SIGINT", onSignal);
+    try {
+      while (start === null) {
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+        start = await recorded(prepared.request).catch(() => null);
+        if (start !== null) break;
+        if (interrupted) {
+          log(paint.held("stopped waiting. The start was asked of the supervisor — lingtai doctor says whether a daemon is up."));
+          return 130;
+        }
+        if (Date.now() - began > waitMs) {
+          log(
+            paint.held(
+              `no start was recorded in ${waitMs / 1000}s — lingtai service status says what the supervisor did, ` +
+                "and lingtai doctor whether a daemon is up.",
+            ),
+          );
+          return 1;
+        }
+      }
+    } finally {
+      process.off("SIGINT", onSignal);
+    }
   }
+
+  const mine = start.handoff === prepared.request && start.by === prepared.by;
+  const same = start.sha === prepared.examined.sha && start.dirty === prepared.examined.dirty;
+  if (mine && same) {
+    log(paint.pass(`started ${describeIdentity(start)} as ${start.worker}, recorded as ${start.by}'s restart`));
+    return 0;
+  }
+  log(
+    paint.fail(
+      `a daemon started, and not as this restart: ${start.by} started ${describeIdentity(start)} as ` +
+        `${start.worker}${start.reason ? ` — ${start.reason}` : ""}. It is running; lingtai doctor says what it is.`,
+    ),
+  );
+  return 1;
 }

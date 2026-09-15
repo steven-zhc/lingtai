@@ -978,6 +978,19 @@ export const ConductorShutdownRequested = z.object({
    * as the drain it was.
    */
   force: z.boolean().default(false),
+  /**
+   * The code a `lingtai restart` checked, when launchd or systemd is to make the
+   * start after this drain — or null.
+   *
+   * The daemon the supervisor starts reads it off the request its start ends,
+   * and records the restart's `by` and `reason` when it is running that commit.
+   * It used to ride on `ConductorShutdownWithdrawn`; nothing withdraws a request
+   * now, so it rides on the request (`0045` §3).
+   */
+  handoff: z
+    .object({ sha: z.string().nullable(), dirty: z.boolean() })
+    .nullable()
+    .default(null),
 });
 
 /**
@@ -997,10 +1010,12 @@ export const ConductorShutdownRequested = z.object({
  * overwritten, and [0042](../../../doc/decisions/0042-the-restart-is-a-command.md)
  * is what keeps the commit it names pushed.
  *
- * It does **not** withdraw a standing `ConductorShutdownRequested`. Starting and
- * being told to stop are independent facts — a daemon started while a request
- * stands reads it and stops again, deliberately. `ConductorShutdownWithdrawn`
- * is the withdrawal, and it names the request it lifts.
+ * **It ends every `ConductorShutdownRequested` made before it**, in the fold
+ * and with nothing appended (`0045` §1). A request is aimed at the daemon that
+ * was running when it was made; a conductor reads the stream from its own
+ * start, so it never sees an older one, and every whole-stream reader says the
+ * same. Before `#159` a request outlived its daemon and stopped the next one,
+ * and `ConductorShutdownWithdrawn` existed to undo that.
  */
 export const ConductorStarted = z.object({
   /**
@@ -1031,21 +1046,29 @@ export const ConductorStarted = z.object({
    */
   worker: z.string(),
   /**
-   * The `ConductorShutdownWithdrawn` this start answers, by its version on
-   * `ctl-conductor`, or null.
+   * The restart's `ConductorShutdownRequested` this start answers, by its
+   * version on `ctl-conductor`, or null.
    *
    * Set only where a supervisor made the start a `lingtai restart` asked for:
-   * the restart drains, withdraws with a handoff naming who, why and the commit
-   * its checks examined, and asks launchd or systemd to start the daemon — so
-   * the process that appends this is not the one somebody typed. It takes `by`
-   * and `reason` from that handoff, and only when the commit it read is the one
-   * that was examined (0042 §8).
+   * the restart drains with a handoff naming the commit its checks examined,
+   * and launchd or systemd starts the daemon — so the process that appends this
+   * is not the one somebody typed. It takes `by` and `reason` from that request,
+   * and only when the commit it read is the one that was examined (0042 §8).
+   *
+   * On a start recorded before `0045` this names a `ConductorShutdownWithdrawn`
+   * instead, which is where the handoff rode then.
    */
   handoff: z.number().int().positive().nullable().default(null),
 });
 
 /**
  * One shutdown request lifted — the one named, and nothing else.
+ *
+ * **Appended by nothing since [0045](../../../doc/decisions/0045-a-request-ends-at-the-next-start.md).**
+ * It existed because a request outlived the daemon it was aimed at, so a
+ * restart had to take its own back before starting. A start ends a request
+ * now, so the schema stays only so that the log that has these still parses
+ * and replays as it did. What follows is why it was built as it was.
  *
  * `ConductorResumed` lifts a request too, and it lifts a pause with it, which
  * is right for `lingtai resume` and wrong for `lingtai restart`: a restart has

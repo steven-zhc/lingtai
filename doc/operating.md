@@ -622,8 +622,13 @@ rather than leaving it looking hung. There is no default timeout, deliberately:
 `--timeout 20m` exists for somebody who has decided to accept what it does when
 it trips, which is stop taking work, **leave the agent running** and exit.
 
-`lingtai resume` lifts a shutdown nobody acted on, as it lifts a pause. Without
-that the request would stop every daemon started after it.
+**A shutdown ends at the next start**
+([0045](decisions/0045-a-request-ends-at-the-next-start.md)). It is aimed at the
+daemon running when it is asked, so `lingtai start` afterwards needs nothing
+lifted, and the board stops saying *stopping* the moment a daemon starts. Under
+`lingtai service` that start comes by itself — launchd and systemd bring the
+daemon back when it exits — so **there a shutdown is a restart**, and
+`pnpm lingtai service stop` is what keeps it down; the command says so.
 
 **Starting again is `lingtai restart`**, which is the drain above and then one
 daemon — in that terminal, or by the supervisor that keeps it
@@ -649,8 +654,9 @@ system that is down and a person reading about why it may not come back up:
   refused by a process at a commit older than this checkout (#148) — is printed
   and does not refuse, since this is the command it asks for.
 - **a shutdown somebody else asked for**, because it is another person's
-  decision. `lingtai resume` lifts it. One you asked for yourself — a `shutdown`,
-  or a `restart` you Ctrl+C'd — is picked up and waited on, not refused.
+  decision. `lingtai resume` lifts it, and so does any start. One you asked for
+  yourself — a `shutdown`, or a `restart` you Ctrl+C'd — is picked up and waited
+  on, not refused.
 
 One flag per refusal, so overriding one never overrides the rest: `--dirty` for
 the worktree and `--despite-doctor` for the doctor. Nothing overrides an
@@ -659,17 +665,17 @@ still printed.
 
 Then it waits, saying what is still finishing and repeating itself so it never
 reads as hung; checks the commit and the worktree **again**, because a drain can
-take an hour and those are what the start freezes; withdraws the request it
-made — `ConductorShutdownWithdrawn`, naming that request, so a pause and a drain
-somebody asked for meanwhile are both left exactly as they are — and starts a
-daemon in that terminal, unless a supervisor keeps one (below). **What makes
-it never two daemons is the lock, not the order of operations** — and losing the
-lock is not a daemon running. If anything takes it first, the restart starts
-nothing and exits non-zero: the winner may be a `lingtai run` that exits when its
-pass ends, or a copy something else started that read the drain before it was
-withdrawn and drains straight back out, and either leaves no daemon. `lingtai
-doctor` says whether one is up; if none is, run `lingtai restart` again. Ctrl+C
-during the wait leaves the drain standing.
+take an hour and those are what the start freezes — and refuses a drain
+somebody else asked for meanwhile; and starts a daemon in that terminal, unless a
+supervisor keeps one (below). Nothing is withdrawn first: the start ends the
+restart's own request, and a pause is untouched. A drain somebody asks for in
+the moment between that check and the start is not started over either — the
+start records nothing, takes nothing, and exits 1. **What makes it never two
+daemons is the lock, not the order of operations** — and losing the lock is not
+a daemon running. If anything takes it first, the restart starts nothing and
+exits non-zero: the winner may be a `lingtai run` that exits when its pass ends.
+`lingtai doctor` says whether one is up; if none is, run `lingtai restart`
+again. Ctrl+C during the wait leaves the drain standing.
 
 The lock held with no fresh beacon is drained too, not just waited on: it is a
 `lingtai run`, which finishes its pass regardless, or a daemon whose beacon
@@ -683,14 +689,17 @@ would come back the moment the terminal closed. So `restart` asks first whether
 a supervisor keeps it — refusing, before anything stops, a supervisor it could
 not ask or a unit written from another checkout, since it would check this
 commit and start that one's. It asks the drain even when nothing is conducting,
-waits as above, and withdraws with a **handoff**: who, why, and the commit it
-checked. Then `service start`, and it waits up to 90 seconds for the start to
-be recorded. The supervised daemon that starts next takes the restart's name
-off the handoff only if it is running the commit that was checked, and only
-within five minutes of the withdrawal — a start after that is nobody's restart,
-whoever typed it; on any other commit
-it is recorded as `daemon` and says why, and the restart exits non-zero naming
-what did start. `--no-conduct` and `--no-merge` are refused there, because the
+carrying a **handoff** — the commit it checked — and waits as above, until the
+lock is free or a start is recorded: the supervisor starts the next daemon the
+moment the old one exits, without waiting for the restart. If nothing has
+started yet it runs `service start`, and it waits up to 90 seconds for the start
+to be recorded. There is no second check to refuse on, because the supervisor's
+start does not wait for one; what replaces it is a comparison. The supervised
+daemon takes the restart's name off the request its start ends only if it is
+running the commit that was checked; on any other commit it is recorded as
+`daemon` and says why, and the restart exits non-zero naming what did start — as
+it does for a start typed at a terminal, or one after somebody else's drain hid
+the handoff. `--no-conduct` and `--no-merge` are refused there, because the
 unit decides how the supervisor starts it. A file left after `service stop` is
 not a keeper — nothing starts from it — so that restart runs in the terminal.
 
@@ -698,10 +707,10 @@ A start is now in the log as well as in the beacon — `ConductorStarted`, with
 who, why and the commit. `by` is `human:<you>` for a restart, for the
 supervisor's start that answered your restart's handoff, or for a `lingtai
 daemon` typed at a terminal, and `daemon` for one launchd or systemd started by
-itself — so *who restarted it at 23:06* is a question the log answers. A start
-into a standing drain is not recorded: it takes nothing and exits, and a
-supervisor repeats it every thirty seconds until the drain is lifted. A beacon
-is one mutable row the next start overwrites, and it never could.
+itself — so *who restarted it at 23:06* is a question the log answers. It is
+appended before the daemon takes anything, and a daemon that cannot append it
+takes nothing and exits. A beacon is one mutable row the next start overwrites,
+and it never could.
 
 Ctrl+C is the same drain and says what it is doing: the first one names what is
 finishing and what a second one costs, and the second stops immediately. Both
@@ -714,8 +723,9 @@ the next conductor kills the process its claim names before releasing the
 ticket, guarded on the host and on the process's own command line, and reports
 rather than kills anything that fails either guard.
 
-Control goes through the log, so a pause issued while the daemon is down is
-waiting when it comes back.
+Control goes through the log, so a `lingtai now` issued while the daemon is down
+is waiting when it comes back. A pause and a shutdown are not: each is aimed at
+the daemon running when it is asked.
 
 It also comments on the ticket when something is waiting on you and sets an
 `lingtai:*` label as a task moves. Both go **directly, as the run goes**, and

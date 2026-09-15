@@ -24,7 +24,6 @@ export {
 } from "./work-loop.ts";
 export {
   CONTROL_STREAM,
-  HANDOFF_LAPSES_MS,
   HEARTBEAT_MS,
   STALE_AFTER_MS,
   beat,
@@ -33,13 +32,13 @@ export {
   inFlight,
   lastBeat,
   pauseConductor,
-  controlWatermark,
   readControl,
   readStatus,
   recordStart,
+  type RecordedAt,
+  type StartDecision,
   startAfter,
   type RecordedStart,
-  type Handoff,
   requestRun,
   requestShutdown,
   requestShutdownUnlessStanding,
@@ -49,11 +48,9 @@ export {
   type Beacon,
   type BeaconOptions,
   type Beating,
-  withdrawShutdown,
   type BeatOptions,
   type ControlState,
   type DaemonStatus,
-  type Withdrawal,
   type ShutdownRequest,
 } from "./control.ts";
 export {

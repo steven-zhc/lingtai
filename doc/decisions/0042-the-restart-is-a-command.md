@@ -3,6 +3,11 @@
 **Status** accepted · 2026-09-13 · completes
 [0030](0030-shutting-down-safely.md), which decided the stop and left the start
 
+> **Superseded in part by [0045](0045-a-request-ends-at-the-next-start.md).**
+> §7 — the withdrawal — and, in §8, the handoff riding on it, its five-minute
+> lapse and the refusal after the wait under a supervisor. The checks, their
+> order and `ConductorStarted` stand.
+
 ## Context
 
 0030 made stopping safe. `lingtai shutdown "why"` appends, returns, and the

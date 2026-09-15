@@ -3,6 +3,11 @@
 **Status** accepted · 2026-09-08 · extends
 [0027](0027-the-lease-is-deleted.md) §3 with what recovery does about a process
 
+> **Superseded in part by [0045](0045-a-request-ends-at-the-next-start.md).**
+> §2's *a daemon that is down finds the command waiting* no longer holds: a
+> request is aimed at the daemon running when it is made, and ends at the next
+> start. Everything else here stands, the drain as the default included.
+
 ## Context
 
 There are two ways to stop the daemon and neither is safe.

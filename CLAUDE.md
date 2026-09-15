@@ -127,13 +127,18 @@ twenty minutes after a daemon started from it. A dirty worktree is named in the
 same refusal (`--dirty`), `lingtai doctor` has to pass (`--despite-doctor`,
 except for a failure whose own remedy is the restart), and a drain somebody else
 asked for is theirs to lift. The commit and worktree are checked again after
-the wait. Where `lingtai service` keeps the daemon, the start is the
-supervisor's: the restart withdraws its drain with a handoff naming who, why
-and the checked commit, runs `service start`, and waits for the start to be
-recorded — a terminal daemon beside a supervised one would be two conductors
-taking turns. Every start that takes work appends `ConductorStarted` with who,
-why and the commit, so *who restarted it at 23:06* is a question the log
-answers. What makes it never two daemons is still the lock, not the ordering:
+the wait. What it appends is exactly `shutdown`'s request and `start`'s
+`ConductorStarted`, and nothing between them (0045): **a request ends at the
+next start**, so there is nothing to withdraw. Where `lingtai service` keeps
+the daemon, the start is the supervisor's: the request carries the checked
+commit as a handoff, the restart waits for a start to be recorded — asking
+`service start` only if none is — and exits 0 only for one that is its own, on
+that commit — a terminal daemon beside a supervised one would be two conductors
+taking turns. The same rule makes **any `lingtai shutdown` under a supervisor a
+restart**; `service stop` is what keeps it down. Every start appends
+`ConductorStarted` with who, why and the commit before it takes anything, and
+one that cannot takes nothing, so *who restarted it at 23:06* is a question the
+log answers. What makes it never two daemons is still the lock, not the ordering:
 if something else takes it first the restart starts nothing and exits non-zero,
 and `lingtai doctor` says whether a daemon is up.
 

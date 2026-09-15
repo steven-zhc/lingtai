@@ -60,8 +60,6 @@ function command(
   extra: {
     env?: NodeJS.ProcessEnv;
     liveness?: () => Promise<string>;
-    shutdown?: () => Promise<{ by: string; reason: string } | null>;
-    pause?: () => Promise<{ by: string | null; reason: string | null; until?: Date | null } | null>;
     /** `"default"` leaves `root` unset, so the command resolves it as it would for real. */
     root?: string | "default";
     uid?: number;
@@ -72,8 +70,6 @@ function command(
   const go = (verb: string) =>
     serviceCommand([verb], {
       liveness: extra.liveness ?? (async () => "last seen 3000s ago (pid 41) — not running"),
-      shutdown: extra.shutdown ?? (async () => null),
-      pause: extra.pause ?? (async () => null),
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
       ...(extra.root === "default" ? {} : { root: extra.root ?? home }),
@@ -153,7 +149,6 @@ describe("no service manager", () => {
     const err: string[] = [];
     const code = await serviceCommand(["status"], {
       liveness: async () => "",
-      shutdown: async () => null,
       platform: "linux",
       env: { HOME: home },
       which: (bin) => (bin === "node" ? NODE : null),
@@ -224,39 +219,11 @@ describe("restart on macOS", () => {
     expect(s.calls.join("\n")).not.toContain("kickstart");
   });
 
-  it("starts nothing while a shutdown request stands, which the daemon it started would read and exit on", async () => {
-    // `lingtai shutdown "pick up #NN"`, then `service restart`: the request is
-    // still on the control stream, so every copy KeepAlive brings back exits.
-    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
-    const { go, out, err } = command("darwin", s.exec, {
-      shutdown: async () => ({ by: "steven", reason: "pick up #NN" }),
-    });
-    await launchdFile();
-    expect(await go("restart")).toBe(1);
-    expect(s.calls).toEqual([]);
-    const said = err.join("\n");
-    expect(said).toContain("a shutdown request stands — asked by steven (pick up #NN)");
-    expect(said).toContain("pnpm lingtai resume");
-    expect(out.join("\n")).not.toContain("shutdown \"why\"` first");
-  });
-
-  it("restarts when whether a shutdown stands could not be read, and says what that would mean", async () => {
-    let prints = 0;
-    const s = supervisor([
-      ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
-    ]);
-    const { go, out } = command("darwin", s.exec, {
-      shutdown: async () => {
-        throw new Error("connect ECONNREFUSED");
-      },
-    });
-    await launchdFile();
-    expect(await go("restart")).toBe(0);
-    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
-    expect(out.join("\n")).toContain("could not read whether a shutdown request stands — connect ECONNREFUSED");
-  });
-
-  it("offers shutdown instead of restart, then resume, never shutdown before it", async () => {
+  /**
+   * `shutdown` is not what it offers: under a supervisor a shutdown is itself
+   * a restart, with no check of the commit it starts (`0045`). `restart` is.
+   */
+  it("offers lingtai restart instead, which waits for the pass and checks the commit", async () => {
     let prints = 0;
     const s = supervisor([
       ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
@@ -265,92 +232,39 @@ describe("restart on macOS", () => {
     await launchdFile();
     expect(await go("restart")).toBe(0);
     const text = out.join("\n");
-    expect(text).toContain('`pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited');
-    expect(text).not.toContain("first");
+    expect(text).toContain('`pnpm lingtai restart "why"` instead');
+    expect(text).not.toContain("lingtai resume");
   });
 });
 
-describe("while a shutdown request stands", () => {
-  const STANDS = async () => ({ by: "steven", reason: "pick up #NN" });
-
-  it("install on macOS writes the file and loads nothing, after `service uninstall` unloaded the job", async () => {
-    // `shutdown "pick up #NN"`, then the old habit: uninstall && install.
-    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
-    const { go, err } = command("darwin", s.exec, { shutdown: STANDS });
-    expect(await go("install")).toBe(1);
-    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
-    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(true);
-    const said = err.join("\n");
-    expect(said).toContain("a shutdown request stands — asked by steven (pick up #NN)");
-    expect(said).toContain("pnpm lingtai resume,\nthen pnpm lingtai service start");
-  });
-
-  it("install on Linux enables the unit and starts nothing", async () => {
-    const s = supervisor([["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }]]);
-    const { go, err } = command("linux", s.exec, { shutdown: STANDS });
-    expect(await go("install")).toBe(1);
-    expect(s.calls).not.toContain("systemctl --user start lingtai.service");
-    expect(err.join("\n")).toContain("nothing was started");
-  });
-
-  it("install over a job already loaded is not refused, since it starts nothing", async () => {
-    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
-    let asked = false;
-    const { go } = command("darwin", s.exec, { shutdown: async () => ((asked = true), { by: "steven", reason: "x" }) });
-    expect(await go("install")).toBe(0);
-    expect(asked).toBe(false);
-  });
-
-  it("names a pause in force, which resume would lift, and gives the order that keeps it", async () => {
-    // `pause "the importer is flaky today"`, later `shutdown`, then the recipe's
-    // `resume` would clear both — and the next start would take the held queue.
-    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
-    const { go, err } = command("darwin", s.exec, {
-      shutdown: STANDS,
-      pause: async () => ({ by: "steven", reason: "the importer is flaky today" }),
-    });
-    await launchdFile();
-    expect(await go("restart")).toBe(1);
-    expect(s.calls).toEqual([]);
-    const said = err.join("\n");
-    expect(said).toContain("A pause is in force too — steven (the importer is flaky today) — and pnpm lingtai resume lifts it");
-    expect(said).toContain(
-      'pnpm lingtai service stop, pnpm lingtai resume, pnpm lingtai pause "the importer is flaky today", pnpm lingtai service start.',
-    );
-    expect(said).not.toContain("the supervisor's next start takes work");
-  });
-
-  it("never advises pausing again over a pause that lifts itself, which would then never lift", async () => {
-    // A run never started on an account limit and the conductor paused until
-    // 23:00; then `shutdown "pick up #NN"` and `service restart`. `lingtai
-    // pause` carries no time, so the advice cannot be to set it again.
-    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
-    const until = new Date("2026-09-13T23:00:00.000Z");
-    const { go, err } = command("darwin", s.exec, {
-      shutdown: STANDS,
-      pause: async () => ({ by: "conductor", reason: "account limit", until }),
-    });
-    await launchdFile();
-    expect(await go("restart")).toBe(1);
-    expect(s.calls).toEqual([]);
-    const said = err.join("\n");
-    expect(said).toContain(`A pause is in force too — conductor (account limit) — until ${until.toISOString()}, when it lifts by itself`);
-    expect(said).toContain(`After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited`);
-    expect(said).not.toContain("pnpm lingtai pause");
-    expect(said).not.toContain("pnpm lingtai service stop");
-  });
-});
-
-describe("start on Linux", () => {
-  it("starts nothing while a shutdown request stands", async () => {
+/**
+ * **Nothing here refuses over a standing shutdown request** (`0045`). Every verb
+ * that starts used to, because a request outlived the daemon it was aimed at: a
+ * daemon started while one stood read it and exited, and `KeepAlive` started it
+ * again every thirty seconds until `lingtai resume`. A start reads nothing said
+ * before it now and ends the request for every other reader, so there is no
+ * such state to refuse over — and the options that read the control stream for
+ * it are gone, which is what these assert by not being able to pass one.
+ */
+describe("starting, whatever was said to the daemon before", () => {
+  it("starts on Linux", async () => {
     const s = supervisor([]);
-    const { go, err } = command("linux", s.exec, { shutdown: async () => ({ by: "steven", reason: "pick up #NN" }) });
+    const { go } = command("linux", s.exec);
     const { writeFile, mkdir } = await import("node:fs/promises");
     await mkdir(join(home, ".config/systemd/user"), { recursive: true });
     await writeFile(join(home, ".config/systemd/user/lingtai.service"), "");
-    expect(await go("start")).toBe(1);
-    expect(s.calls).toEqual([]);
-    expect(err.join("\n")).toContain("pnpm lingtai resume");
+    expect(await go("start")).toBe(0);
+    expect(s.calls).toEqual(["systemctl --user start lingtai.service"]);
+  });
+
+  it("stop names a pause, not a shutdown, as the way to wait for the pass — a shutdown here is a restart", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, out } = command("darwin", s.exec);
+    await launchdFile();
+    expect(await go("stop")).toBe(0);
+    const text = out.join("\n");
+    expect(text).toContain('`pnpm lingtai pause "why"` first');
+    expect(text).not.toContain("lingtai shutdown");
   });
 });
 

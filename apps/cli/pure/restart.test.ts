@@ -12,14 +12,12 @@
  * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)).
  */
 import type { Identity, ShutdownRequest } from "@lingtai/daemon";
-import { type Envelope, reduceControl } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import { describeRefusal } from "../src/doctor.ts";
 import {
   attributeStart,
   gatingFailures,
   parseRestartArgs,
-  startRecorder,
   startSupervised,
   planRestart,
   waitForTheLock,
@@ -232,7 +230,14 @@ describe("a doctor failure whose remedy is the restart", () => {
 });
 
 describe("a drain that is already standing", () => {
-  const asked: ShutdownRequest = { by: "human:ops", reason: "the importer is flaky", timeoutMs: null, version: 7 };
+  const asked: ShutdownRequest = {
+    by: "human:ops",
+    reason: "the importer is flaky",
+    timeoutMs: null,
+    version: 7,
+    force: false,
+    handoff: null,
+  };
 
   /**
    * Somebody has asked this system to stop. Restarting over that is this command
@@ -306,6 +311,20 @@ describe("waiting for the lock", () => {
     expect(lines.join("\n")).toContain("ECONNREFUSED");
   });
 
+  /**
+   * Under a supervisor the respawn can take the lock between two polls, so a
+   * wait for it to be free never ends. A recorded start ends it too.
+   */
+  it("ends on a recorded start, when the lock is never seen free", async () => {
+    let polls = 0;
+    const waited = await waitForTheLock("draining", null, () => {}, {
+      ask: async () => (polls < 2 ? "lingtai daemon pid 5123" : "lingtai daemon pid 5200"),
+      started: async () => ++polls >= 3,
+      pollMs: 1,
+    });
+    expect(waited).toBe("started");
+  });
+
   it("gives up on its timeout rather than calling a lock it cannot read free", async () => {
     const waited = await waitForTheLock("draining", 5, () => {}, {
       ask: async () => {
@@ -358,15 +377,30 @@ describe("the command line", () => {
  * nobody can name; the failure to avoid on the way is a start the log names
  * *wrongly* — a person for launchd's respawn, or a restart for a daemon running
  * a commit that restart never checked.
+ *
+ * `control` is the fold of the stream the start lands on, so `shutdown` is the
+ * request this start ends — and a supervised restart's handoff rides on it.
  */
 describe("whose start it is", () => {
   const code = { sha: "2926f2d", dirty: false };
-  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
-  const base = { restart: null, control: { shutdown: null, handoff: null }, code, tty: false, user: "ops" };
+  const handed: ShutdownRequest = {
+    by: "human:steven",
+    reason: "restarting: picking up #88",
+    timeoutMs: null,
+    version: 4,
+    force: false,
+    handoff: { sha: "2926f2d", dirty: false },
+  };
+  const plain: ShutdownRequest = { ...handed, reason: "stopping for the day", handoff: null };
+  const base = { restart: null, control: { shutdown: null }, code, tty: false, user: "ops" };
 
-  it("records nothing for a start into a standing drain, which a supervisor repeats every thirty seconds", () => {
-    const shutdown = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
-    expect(attributeStart({ ...base, control: { shutdown, handoff: null } })).toMatchObject({ record: false });
+  /**
+   * There used to be a start that was not recorded: one into a standing drain,
+   * which read it and exited, every thirty seconds under a supervisor. A start
+   * reads nothing said before it now (`0045`), so it starts and is recorded.
+   */
+  it("records a start into a standing drain, which that start ends", () => {
+    expect(attributeStart({ ...base, control: { shutdown: plain } })).toMatchObject({ record: true, by: "daemon", handoff: null });
   });
 
   it("names nobody for a start with no terminal and no handoff, and the typist for one at a terminal", () => {
@@ -375,106 +409,61 @@ describe("whose start it is", () => {
   });
 
   it("gives a supervisor's start the restart's name, when it runs the commit that restart checked", () => {
-    expect(attributeStart({ ...base, control: { shutdown: null, handoff } })).toEqual({
+    expect(attributeStart({ ...base, control: { shutdown: handed } })).toEqual({
       record: true,
       by: "human:steven",
-      reason: "restarted: picking up #88",
+      reason: "restarting: picking up #88",
       handoff: 4,
       note: null,
     });
   });
 
-  it("does not, on another commit — it is `daemon`, says why, and still answers the handoff", () => {
-    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, control: { shutdown: null, handoff } });
+  it("does not, on another commit — it is `daemon`, says why, and still names the request", () => {
+    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, control: { shutdown: handed } });
     expect(a).toMatchObject({ record: true, by: "daemon", handoff: 4 });
     expect(a.record && a.reason).toContain("582a0f8");
   });
 
-  it("does not give a start the restart's name once the handoff has lapsed, even on the checked commit", () => {
-    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
-    const envelopes = [
-      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
-      {
-        type: "ConductorShutdownWithdrawn",
-        data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
-      },
-    ].map((e, i) => ({ seq: BigInt(i + 1), streamId: "ctl-conductor", version: i + 1, schemaVer: 1, actor: "human:steven", causation: null, at: withdrawnAt, ...e }) as Envelope);
-    const nextDay = reduceControl(envelopes, new Date("2026-09-14T10:00:00Z"));
-    expect(attributeStart({ ...base, control: nextDay })).toMatchObject({ record: true, by: "daemon", reason: null, handoff: null });
-  });
-
   it("does not give a typed start the restart's name", () => {
-    expect(attributeStart({ ...base, tty: true, control: { shutdown: null, handoff } })).toMatchObject({
+    expect(attributeStart({ ...base, tty: true, control: { shutdown: handed } })).toMatchObject({
       by: "human:ops",
       handoff: null,
     });
   });
-});
 
-/**
- * The finding against the third fix: the start was attributed off a read at
- * startup and the drain noticed off a later one, so a launchd respawn that saw
- * the restart's drain first and its withdrawal second recorded nothing and took
- * work. The recorder is handed the read that decides, and only that one counts.
- */
-describe("the read a start is recorded from", () => {
-  const code = { sha: "2926f2d", dirty: false };
-  const drain = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
-  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
-
-  it("records the handoff off the read that takes work, however many reads a drain stood for before it", async () => {
-    const recorded: unknown[] = [];
-    const note = startRecorder({
-      restart: null,
-      code,
-      tty: false,
-      user: "steven",
-      record: async (a) => void recorded.push(a),
-      log: () => {},
+  it("gives a restart in this process its own name, over the drain it asked for", () => {
+    const restart = { by: "human:steven", reason: "picking up #88", request: 4 };
+    expect(attributeStart({ ...base, restart, control: { shutdown: plain } })).toEqual({
+      record: true,
+      by: "human:steven",
+      reason: "picking up #88",
+      handoff: null,
+      note: null,
     });
-
-    // The respawn's startup no longer reads the stream for this. The loop's
-    // first check, after the reconcile, reads the withdrawal and takes work —
-    // and that read is the one recorded, with the restart's name.
-    await note({ shutdown: null, handoff });
-    expect(recorded).toEqual([{ record: true, by: "human:steven", reason: "restarted: picking up #88", handoff: 4, note: null }]);
-
-    // Once: every later pass asks again, and records nothing more.
-    await note({ shutdown: null, handoff: null });
-    expect(recorded).toHaveLength(1);
+    expect(attributeStart({ ...base, restart, control: { shutdown: null } })).toMatchObject({ record: true, by: "human:steven" });
   });
 
-  it("records nothing off a read that finds the drain, which is the read the daemon exits on", async () => {
-    const recorded: unknown[] = [];
-    const lines: string[] = [];
-    const note = startRecorder({ restart: null, code, tty: false, user: "s", record: async (a) => void recorded.push(a), log: (l) => lines.push(l) });
-    await note({ shutdown: drain, handoff: null });
-    expect(recorded).toEqual([]);
-    expect(lines.join("\n")).toContain("not recorded as a start");
-  });
-
-  it("says a record that failed, and does not throw into the loop that would then take no work", async () => {
-    const lines: string[] = [];
-    const note = startRecorder({
-      restart: null,
-      code,
-      tty: false,
-      user: "s",
-      record: async () => {
-        throw new Error("version race, five times");
-      },
-      log: (l) => lines.push(l),
-    });
-    await expect(note({ shutdown: null, handoff: null })).resolves.toBeUndefined();
-    expect(lines.join("\n")).toContain("version race");
+  /**
+   * The check after the wait reads the stream, and then the lock is won; a
+   * drain somebody asks for between the two would be ended by the start without
+   * anybody reading it. The restart is the one start that declines, because it
+   * is the one whose checks promised not to start over somebody else's drain.
+   */
+  it("records nothing for a restart in this process over a drain it did not ask for", () => {
+    const ops: ShutdownRequest = { ...plain, by: "human:ops", reason: "moving the database", version: 5 };
+    for (const request of [4, null]) {
+      const a = attributeStart({ ...base, restart: { by: "human:steven", reason: "x", request }, control: { shutdown: ops } });
+      expect(a.record).toBe(false);
+      expect(!a.record && a.why).toContain("human:ops");
+    }
   });
 });
 
 describe("a start the supervisor makes", () => {
-  const prepared = { by: "human:steven", handedOff: 4, examined: { sha: "2926f2d", dirty: false } };
-  const start = { by: "human:steven", reason: "restarted", sha: "2926f2d", dirty: false, worker: "h:9", handoff: 4, at: new Date() };
+  const prepared = { by: "human:steven", request: 4, examined: { sha: "2926f2d", dirty: false } };
+  const start = { by: "human:steven", reason: "restarting", sha: "2926f2d", dirty: false, worker: "h:9", handoff: 4, at: new Date() };
 
-  it("succeeds on the recorded start that answered this handoff, and says so", async () => {
+  it("succeeds on the recorded start that answered this restart's request, and says so", async () => {
     const lines: string[] = [];
     let polls = 0;
     const code = await startSupervised(prepared, {
@@ -485,6 +474,18 @@ describe("a start the supervisor makes", () => {
     });
     expect(code).toBe(0);
     expect(lines.join("\n")).toContain("human:steven's restart");
+  });
+
+  /** The respawn does not wait for this command, and usually gets there first. */
+  it("asks the supervisor for nothing when the start is already recorded", async () => {
+    let asked = false;
+    const code = await startSupervised(prepared, {
+      start: async () => ((asked = true), 0),
+      recorded: async () => start,
+      log: () => {},
+    });
+    expect(code).toBe(0);
+    expect(asked).toBe(false);
   });
 
   it("fails on a start that was not this one's, naming what did start", async () => {
@@ -505,16 +506,17 @@ describe("a start the supervisor makes", () => {
   });
 
   it("does not wait on a supervisor that refused the start", async () => {
-    let asked = false;
+    let asked = 0;
     const code = await startSupervised(prepared, {
       start: async () => 1,
       recorded: async () => {
-        asked = true;
+        asked += 1;
         return null;
       },
       log: () => {},
     });
     expect(code).toBe(1);
-    expect(asked).toBe(false);
+    // Once, before asking the supervisor, and never after it refused.
+    expect(asked).toBe(1);
   });
 });
