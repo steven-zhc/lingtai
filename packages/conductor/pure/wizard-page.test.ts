@@ -22,6 +22,7 @@ import {
   openDecision,
   settledDecisions,
   updateState,
+  wholeGates,
   wizardReducer,
 } from "../src/wizard-page.ts";
 
@@ -94,6 +95,24 @@ describe("source.kinds", () => {
     expect(play(one, { type: "kind", label: "bug" }).draft.kinds).toEqual(["bug"]);
   });
 
+  it("widens by a kind the recipe does not list, in update and in onboarding", async () => {
+    const { recipe } = await resolveRecipe(
+      async () =>
+        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
+      "main",
+    );
+    const update = play(updateState({ slug: "acme/shop", recipe }), { type: "kind", label: "feature" });
+    expect(update.kindOptions).toEqual(["bug", "feature"]);
+    expect(update.draft.kinds).toEqual(["bug", "feature"]);
+    expect(changesFrom(recipe, applyDraft(recipe, update))).toEqual([
+      { path: ["source", "kinds"], value: ["bug", "feature"] },
+    ]);
+
+    const onboard = play(fresh(), { type: "kind", label: "chore" });
+    expect(onboard.kindOptions).toContain("chore");
+    expect(onboard.draft.kinds).toEqual(["bug", "feature", "chore"]);
+  });
+
   it("cannot reach the end empty, however the state arrived", () => {
     const empty = fresh();
     empty.draft.kinds = [];
@@ -120,6 +139,16 @@ describe("the one default that flips", () => {
         "So the default here is that a person approves.",
     );
     expect(applyDraft(scanned([]), state).gates.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+  });
+
+  it("argues from what is ticked, not from what the scan found", () => {
+    const nested = fresh(scanned([]));
+    expect(nested.draft.checks.some((c) => c.ticked)).toBe(false);
+    expect(mergeArgument(play(nested, { type: "check", id: "pnpm test" }))).toBeNull();
+
+    const found = fresh();
+    const none = play(found, { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
+    expect(mergeArgument(none)).toContain("Nothing checks a diff before it merges.");
   });
 
   it("writes the consequence out whichever way it is answered", () => {
@@ -181,6 +210,21 @@ describe("the fast lane", () => {
     const recipe = Recipe.parse(applyDraft(scanned(), state));
     expect(recipe.source.exclude).toEqual(["agent:hold", "epic", "question"]);
     expect(recipe.gates.end).toEqual([]);
+  });
+});
+
+describe("wholeGates", () => {
+  it("makes every change under gates one change to the block, and leaves the rest", () => {
+    const after = scanned();
+    const changes = [
+      { path: ["gates", "end"], value: [] },
+      { path: ["runtime", "limits", "turns"], value: 200 },
+    ];
+    expect(wholeGates(changes, after)).toEqual([
+      { path: ["runtime", "limits", "turns"], value: 200 },
+      { path: ["gates"], value: after.gates },
+    ]);
+    expect(wholeGates([changes[1]!], after)).toEqual([changes[1]]);
   });
 });
 

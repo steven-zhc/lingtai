@@ -16,7 +16,7 @@
 import { onboardState, updateState } from "@lingtai/conductor/wizard-page";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { RECIPE_PATH, proposeRecipe, resolveRecipe } from "@lingtai/recipe";
+import { RECIPE_PATH, RecipeInvalidError, proposeRecipe, resolveRecipe } from "@lingtai/recipe";
 import { type Loaded, WizardScreen } from "./wizard.tsx";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,15 @@ async function load(input: string): Promise<Loaded> {
     const base = await client.defaultBranch();
     const existing = await client.fileAt(RECIPE_PATH, base);
     if (existing !== null) {
-      const { recipe } = await resolveRecipe(async () => existing, base);
+      let resolved;
+      try {
+        resolved = await resolveRecipe(async () => existing, base);
+      } catch (err) {
+        // The repository answered; the file on it is what is wrong, and picking another repository does not fix it.
+        if (err instanceof RecipeInvalidError) return { state: "invalid", slug, why: err.message };
+        throw err;
+      }
+      const { recipe } = resolved;
       return { state: "ready", initial: updateState({ slug, recipe }), recipe, existing };
     }
     const proposal = await proposeRecipe(slug, client);

@@ -13,9 +13,16 @@
  *
  * It writes nothing. Where the file goes is 0046's, and not this page's.
  */
-import { applyDraft, changesFrom, finishRefusals, saidFor, type WizardState } from "@lingtai/conductor/wizard-page";
+import {
+  applyDraft,
+  changesFrom,
+  finishRefusals,
+  saidFor,
+  wholeGates,
+  type WizardState,
+} from "@lingtai/conductor/wizard-page";
 import { validateProposal } from "@lingtai/conductor/wizard";
-import { Recipe, editRecipe, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, editRecipe, hashRecipe, resolveRecipe } from "@lingtai/recipe";
 
 export type Finished =
   | { ok: true; file: string; changed: string[] }
@@ -38,14 +45,43 @@ export async function finishWizard(input: {
       const validated = await validateProposal(applyDraft(started, state), saidFor(state));
       return validated.ok ? { ok: true, file: validated.file, changed: [] } : { ok: false, refusals: [validated.refusal] };
     }
-    const { recipe } = await resolveRecipe(async () => input.existing, state.draft.base);
-    const changes = changesFrom(recipe, applyDraft(recipe, state));
-    return {
-      ok: true,
-      file: editRecipe(input.existing, changes),
-      changed: changes.map((c) => c.path.join(".")),
-    };
+    return await editExisting(input.existing, state);
   } catch (err) {
     return { ok: false, refusals: [(err as Error).message] };
   }
+}
+
+/**
+ * The existing file with the page's changes made, **checked by reading it back**.
+ *
+ * The changes are worked out on the recipe with its preset filled in, and made
+ * to the file as written, and the two are not the same shape: a file that says
+ * `extends:` and has no `gates:` gets every gate from the preset, and a `gates`
+ * block of one point replaces all of them. So the edited file is resolved again
+ * and must describe the recipe the page does; where it does not, the gates are
+ * written whole, and where that still does not, nothing is offered.
+ */
+export async function editExisting(existing: string, state: WizardState): Promise<Finished> {
+  const ref = state.draft.base;
+  const { recipe } = await resolveRecipe(async () => existing, ref);
+  const after = Recipe.parse(applyDraft(recipe, state));
+  const describes = async (file: string) =>
+    (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
+
+  let changes = changesFrom(recipe, after);
+  let file = editRecipe(existing, changes);
+  if (!(await describes(file))) {
+    changes = wholeGates(changes, after);
+    file = editRecipe(existing, changes);
+    if (!(await describes(file))) {
+      return {
+        ok: false,
+        refusals: [
+          `the edit to ${changes.map((c) => c.path.join(".")).join(", ")} would not read back as the recipe this page ` +
+            "describes — what the file inherits would change with it — so it is not offered",
+        ],
+      };
+    }
+  }
+  return { ok: true, file, changed: changes.map((c) => c.path.join(".")) };
 }

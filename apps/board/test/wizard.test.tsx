@@ -10,8 +10,9 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { passCeiling } from "@lingtai/conductor/filter";
-import { type WizardState, onboardState, wizardReducer } from "@lingtai/conductor/wizard-page";
-import { Recipe } from "@lingtai/recipe";
+import { type WizardState, onboardState, updateState, wizardReducer } from "@lingtai/conductor/wizard-page";
+import { PRESETS, Recipe, resolveRecipe } from "@lingtai/recipe";
+import { editExisting } from "../src/app/setup/wizard/finish.ts";
 import { WizardScreen } from "../src/app/setup/wizard/wizard.tsx";
 
 const recipe = (proposed: object[]) =>
@@ -106,6 +107,65 @@ describe("the one default that flips", () => {
 
   it("does not argue when the scan found checks", () => {
     expect(html(start(CHECKED), CHECKED)).not.toContain("wz-argues");
+  });
+
+  it("argues once every check the scan found is unticked", () => {
+    const state = wizardReducer(start(CHECKED), { type: "check", id: "pnpm test" });
+    expect(html(state, CHECKED)).toContain('class="wz-argues"');
+  });
+});
+
+describe("the work row", () => {
+  it("can be widened by a kind nobody has listed", () => {
+    const out = html({ ...start(CHECKED), editing: "source.kinds" }, CHECKED);
+    expect(out).toContain('placeholder="another kind"');
+  });
+});
+
+describe("a recipe on the base branch that does not parse", () => {
+  it("says the file is the fault, and does not send the person to another repository", () => {
+    const out = renderToStaticMarkup(
+      <WizardScreen
+        loaded={{ state: "invalid", slug: "acme/shop", why: ".lingtai/config.yaml on main is not valid: prepare: retired" }}
+      />,
+    );
+    expect(out).toContain("acme/shop was read, and its recipe was not");
+    expect(out).toContain("prepare: retired");
+    expect(out).not.toContain("Pick another");
+  });
+});
+
+describe("an edit to a recipe that extends a preset", () => {
+  const FILE =
+    "version: 1\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n\nruntime:\n  agent: claude-code\n";
+
+  it("keeps every gate the preset supplied when one gate point changes", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    expect(recipe.gates.end).toEqual([]);
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), {
+      type: "set",
+      draft: { closeOnLand: true },
+    });
+
+    const finished = await editExisting(FILE, state);
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.changed).toEqual(["gates"]);
+
+    const edited = (await resolveRecipe(async () => finished.file, "main")).recipe.gates;
+    const preset = PRESETS["pnpm-workspace"]!.gates!;
+    expect(edited.prepared).toEqual(preset.prepared);
+    expect(edited.proposed).toEqual(preset.proposed);
+    expect(edited.end).toEqual([{ name: "close the ticket", when: "landed", close: true }]);
+  });
+
+  it("still changes one line when nothing it changes is inherited", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
+
+    const finished = await editExisting(FILE, state);
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.changed).toEqual(["runtime.limits.turns"]);
+    expect((await resolveRecipe(async () => finished.file, "main")).recipe.gates).toEqual(recipe.gates);
   });
 });
 

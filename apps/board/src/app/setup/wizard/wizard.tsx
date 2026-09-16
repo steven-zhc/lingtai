@@ -38,6 +38,7 @@ import { type Finished, finishWizard } from "./finish.ts";
 export type Loaded =
   | { state: "no-app" }
   | { state: "unreadable"; why: string }
+  | { state: "invalid"; slug: string; why: string }
   | { state: "ready"; initial: WizardState; recipe: Recipe; existing: string | null };
 
 export function WizardScreen({ loaded }: { loaded: Loaded }) {
@@ -55,6 +56,11 @@ export function WizardScreen({ loaded }: { loaded: Loaded }) {
           {loaded.state === "no-app" ? (
             <p className="note">
               There is no GitHub App configured yet. <Link href="/setup/github-app">Create it first</Link>.
+            </p>
+          ) : loaded.state === "invalid" ? (
+            <p className="refusal">
+              {loaded.slug} was read, and its recipe was not — {loaded.why}. The fault is in that file, not the
+              repository: fix it on the base branch and reload.
             </p>
           ) : loaded.state === "unreadable" ? (
             <p className="refusal">
@@ -217,6 +223,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
               />
             );
           })}
+          <AddLabel add={(label) => act({ type: "kind", label })} placeholder="another kind" />
           <small>Ticked order is priority. The last kind cannot be unticked.</small>
         </>
       );
@@ -226,7 +233,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
           {state.excludeOptions.map((k) => (
             <Tick key={k} label={k} on={draft.exclude.includes(k)} flip={() => act({ type: "exclude", label: k })} />
           ))}
-          <AddLabel add={(label) => act({ type: "exclude", label })} />
+          <AddLabel add={(label) => act({ type: "exclude", label })} placeholder="another label" />
         </>
       );
     case "gates.proposed":
@@ -342,11 +349,11 @@ function Tick({
   );
 }
 
-function AddLabel({ add }: { add: (label: string) => void }) {
+function AddLabel({ add, placeholder }: { add: (label: string) => void; placeholder: string }) {
   const [label, setLabel] = useState("");
   return (
     <span className="wz-add">
-      <input value={label} placeholder="another label" onChange={(e) => setLabel(e.target.value)} />
+      <input value={label} placeholder={placeholder} onChange={(e) => setLabel(e.target.value)} />
       <button
         type="button"
         className="btn"

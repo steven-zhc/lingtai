@@ -161,7 +161,7 @@ export interface WizardState {
   settled: DecisionId[];
   /** A settled decision a person pressed `change` on. It stays settled; its answer is kept. */
   reopened: DecisionId | null;
-  /** The scan found nothing to check a diff with — the one case the page argues with. */
+  /** The scan found nothing to check a diff with — what flips the merge question's default. */
   noChecksFound: boolean;
   /** What the reading could not settle, in `proposeRecipe`'s words. */
   doubts: string[];
@@ -176,9 +176,10 @@ export const CLOSE_ACTION: GateAction = { name: "close the ticket", when: "lande
 /**
  * The sentence for a chain nothing reads, or null when something does.
  *
- * `wizard.ts`'s `nothingReadsIt` says it on the last screen and in the pull
- * request; this is the same sentence, kept here so the page can say it while
- * the answer is still being chosen.
+ * `wizard.ts`'s `nothingReadsIt` says it on the CLI's last screen; this is the
+ * same sentence, kept here so the page can say it while the answer is still
+ * being chosen. The page opens no pull request (0046), so on the page is the
+ * only place a person reads it there.
  */
 export function nothingChecks(base: string): string {
   return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${base}\`.`;
@@ -319,7 +320,10 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
       const on = draft.kinds.includes(move.label);
       if (on && draft.kinds.length === 1) return state;
       const kinds = on ? draft.kinds.filter((k) => k !== move.label) : [...draft.kinds, move.label];
-      return { ...state, draft: { ...draft, kinds } };
+      // A kind the recipe does not list yet, or a label the repository has not
+      // created, is added by name — otherwise the row could only ever narrow.
+      const kindOptions = state.kindOptions.includes(move.label) ? state.kindOptions : [...state.kindOptions, move.label];
+      return { ...state, kindOptions, draft: { ...draft, kinds } };
     }
     case "exclude": {
       const on = draft.exclude.includes(move.label);
@@ -396,11 +400,12 @@ export function mergeConsequence(draft: Draft): string {
 
 /**
  * Why the merge question's default is *a person approves*, or null when it is
- * not arguing. Said only when the scan found no checks: the one case the page
- * argues with.
+ * not arguing. Said only while no check is ticked: the one case the page argues
+ * with. It reads the ticks rather than what the scan found, so ticking a check
+ * the scan missed ends the argument, and unticking every one it found starts it.
  */
 export function mergeArgument(state: WizardState): string | null {
-  if (!state.noChecksFound) return null;
+  if (anyCheck(state.draft)) return null;
   return `${nothingChecks(state.draft.base)} So the default here is that a person approves.`;
 }
 
@@ -545,6 +550,20 @@ export function saidFor(state: WizardState): Record<string, string> {
   const limits = limitsSentence(state.draft.limits);
   if (limits.ok) said["runtime.limits"] = `A pass: ${limits.sentence}.`;
   return said;
+}
+
+/**
+ * `changes` with everything under `gates` made one change to the whole block.
+ *
+ * **A preset's gates come whole or not at all.** `applyPreset` takes a file's
+ * own `gates` in place of the preset's entire block (`presets.ts`), so on a file
+ * that says `extends:` and has no `gates:`, setting `gates.end` alone writes a
+ * `gates` of one point and every gate the preset supplied is gone. Writing the
+ * block the page describes keeps them, spelled out in the file.
+ */
+export function wholeGates(changes: readonly RecipeChange[], after: Recipe): RecipeChange[] {
+  const rest = changes.filter((c) => c.path[0] !== "gates");
+  return rest.length === changes.length ? [...changes] : [...rest, { path: ["gates"], value: after.gates }];
 }
 
 function at(value: unknown, path: readonly string[]): unknown {
