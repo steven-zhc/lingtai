@@ -15,6 +15,8 @@ import {
   projectFilter,
   runnableNow,
   selectRunnable,
+  type ClientFor,
+  type RecipeFor,
 } from "@lingtai/conductor";
 import { paint, stateInk } from "@lingtai/env/colour";
 import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from "@lingtai/projector";
@@ -38,7 +40,26 @@ function oneLine(text: string, n = 140): string {
   return said.length > n ? `${said.slice(0, n - 1)}…` : said;
 }
 
-export async function status(options: StatusOptions = {}, log = console.log): Promise<number> {
+/**
+ * How a project's client and recipe are found — defaulted, and injectable.
+ *
+ * The seam exists for one promise. The onboarding wizard's last screen tells an
+ * operator what the next pass will take (#165), and the only thing that makes
+ * that true an hour later is that both screens call `selectRunnable` and
+ * `passedOver`. A test can only hold that by running *this* command against the
+ * same GitHub the preview was given and comparing the two outputs, and
+ * `projectFilter` already takes both as arguments for exactly this reason.
+ */
+export interface StatusReading {
+  clientFor?: ClientFor;
+  recipeFor?: RecipeFor;
+}
+
+export async function status(
+  options: StatusOptions = {},
+  log = console.log,
+  reading: StatusReading = {},
+): Promise<number> {
   const projects = (await loadProjects()).filter(
     (p) => !options.project || p.project === options.project,
   );
@@ -62,7 +83,7 @@ export async function status(options: StatusOptions = {}, log = console.log): Pr
     // branch, its kinds in priority order, its excludes; or, when the recipe
     // will not resolve, that and the reason, which is the case that used to
     // render as a queue that was simply empty.
-    const filter = await projectFilter(project);
+    const filter = await projectFilter(project, reading.clientFor, reading.recipeFor);
     for (const line of describeFilter(filter)) log(`  ${line}`);
 
     // Priority order is the recipe's `kinds`, and the recipe lives in the

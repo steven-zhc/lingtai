@@ -36,6 +36,7 @@ export {
   projectFilters,
   type ClientFor,
   type GatePlan,
+  type RecipeFor,
   type PlannedAction,
   type ProjectFilter,
 } from "./filter.ts";

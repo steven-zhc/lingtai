@@ -79,6 +79,19 @@ guard. The board draws a card with `Recheck` on it, and `Recheck` runs
 `lingtai add`'s own path; nothing watches the pull request, by decision
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 
+What appends that first event is `startOnboarding`
+(`packages/conductor/src/wizard.ts`, `#165`), and it is **the whole wizard's
+only write**: the recipe is parsed by `resolveRecipe` before anything opens, so
+a file that would fail `lingtai add` on the base branch names its bad field
+instead; then the branch, the file and the pull request; then the event.
+Abandon the page before it and there is nothing anywhere to clean up. Beside it
+`firstPass` is the last screen — `selectRunnable` and `passedOver` and no rule
+of its own, so `12 runnable · 18 passed over — excluded-label 14, no-kind 4` is
+the sentence `lingtai status` will print an hour later. `Hold all` is
+`holdAll`, offered and never automatic, and the label it writes comes out of
+the recipe's own `source.exclude` — one the recipe does not exclude would hold
+nothing.
+
 ## stream — 7 prefixes, unbounded instances
 
 The events about one thing, in order. The **prefixes** are a closed set,
