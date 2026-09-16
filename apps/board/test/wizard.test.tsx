@@ -128,6 +128,25 @@ describe("the one default that flips", () => {
   });
 });
 
+describe("a recipe on the base branch that checks nothing and has nobody approving", () => {
+  it("opens the merge question with the argument and its default chosen, and offers no change", async () => {
+    const { recipe: r } = await resolveRecipe(
+      async () =>
+        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\n" +
+        "gates:\n  proposed: []\n  merge: []\nruntime:\n  agent: claude-code\n",
+      "main",
+    );
+    const out = renderToStaticMarkup(
+      <WizardScreen loaded={{ state: "ready", initial: updateState({ slug: "acme/shop", recipe: r }), recipe: r, existing: "" }} />,
+    );
+
+    expect(out).not.toContain("nobody approves");
+    expect(out).toContain('class="wz-argues"');
+    expect(out).toMatch(/<input type="radio" name="merge" checked=""[^>]*\/> Yes — a person approves/);
+    expect(out).not.toContain("Show the change");
+  });
+});
+
 describe("the checks row", () => {
   it("takes a command when the scan found none", () => {
     const out = html({ ...start(UNCHECKED), editing: "gates.proposed" }, UNCHECKED);

@@ -101,7 +101,12 @@ describe("source.kinds", () => {
         "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
       "main",
     );
-    const update = play(updateState({ slug: "acme/shop", recipe }), { type: "kind", label: "feature" });
+    // The file checks nothing, so the merge question is asked; answered as the file has it.
+    const update = play(
+      updateState({ slug: "acme/shop", recipe }),
+      { type: "set", draft: { personApproves: false } },
+      { type: "kind", label: "feature" },
+    );
     expect(update.kindOptions).toEqual(["bug", "feature"]);
     expect(update.draft.kinds).toEqual(["bug", "feature"]);
     expect(changesFrom(recipe, applyDraft(recipe, update))).toEqual([
@@ -173,11 +178,45 @@ describe("the one default that flips", () => {
     expect(openDecision(none)).toBe("gates.merge");
     expect(none.draft.personApproves).toBe(true);
     expect(mergeArgument(none)).toContain("So the default here is that a person approves.");
-    expect(finishRefusals(none)).toContain("gates.merge is open — settle it first.");
+    expect(finishRefusals(none)).toContain("Does a person approve the merge? is not answered yet.");
 
     const answered = play(none, { type: "settle", decision: "gates.merge" });
     expect(finishRefusals(answered)).toEqual([]);
     expect(applyDraft(scanned(), answered).gates.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+  });
+
+  it("leaves a limits question a person opened open when the last tick goes, and asks the merge question after it", () => {
+    const settled = play(fresh(), { type: "settle", decision: "gates.merge" }, { type: "settle", decision: "runtime.limits" });
+    const limits = play(settled, { type: "reopen", decision: "runtime.limits" });
+
+    const none = play(limits, { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
+    expect(none.reopened).toBe("runtime.limits");
+    expect(openDecision(none)).toBe("runtime.limits");
+    expect(finishRefusals(none)).toContain("Does a person approve the merge? is not answered yet.");
+
+    const next = play(none, { type: "settle", decision: "runtime.limits" });
+    expect(openDecision(next)).toBe("gates.merge");
+    expect(mergeArgument(next)).toContain("So the default here is that a person approves.");
+    expect(next.draft.personApproves).toBe(true);
+  });
+
+  it("asks the merge question of a recipe on the base branch that checks nothing and has nobody approving", async () => {
+    const { recipe } = await resolveRecipe(
+      async () =>
+        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\n" +
+        "gates:\n  proposed: []\n  merge: []\nruntime:\n  agent: claude-code\n",
+      "main",
+    );
+    const state = updateState({ slug: "acme/shop", recipe });
+
+    expect(openDecision(state)).toBe("gates.merge");
+    expect(state.draft.personApproves).toBe(true);
+    expect(mergeArgument(state)).toContain("So the default here is that a person approves.");
+    expect(finishRefusals(state)).toEqual(["Does a person approve the merge? is not answered yet."]);
+
+    const kept = play(state, { type: "set", draft: { personApproves: false } }, { type: "settle", decision: "gates.merge" });
+    expect(finishRefusals(kept)).toEqual([]);
+    expect(changesFrom(recipe, applyDraft(recipe, kept))).toEqual([]);
   });
 
   it("writes the consequence out whichever way it is answered", () => {
@@ -261,7 +300,11 @@ describe("a check the scan did not find", () => {
         "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
       "main",
     );
-    const state = play(updateState({ slug: "acme/tool", recipe }), { type: "add-check", run: "make test" });
+    const state = play(
+      updateState({ slug: "acme/tool", recipe }),
+      { type: "set", draft: { personApproves: false } },
+      { type: "add-check", run: "make test" },
+    );
     const after = Recipe.parse(applyDraft(recipe, state));
 
     expect(after.gates.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);

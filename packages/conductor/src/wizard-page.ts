@@ -161,7 +161,7 @@ export interface WizardState {
   settled: DecisionId[];
   /** A settled decision a person pressed `change` on. It stays settled; its answer is kept. */
   reopened: DecisionId | null;
-  /** The scan found nothing to check a diff with — what flips the merge question's default. */
+  /** The scan, or the file, has nothing to check a diff with — what flips the merge question's default. */
   noChecksFound: boolean;
   /** What the reading could not settle, in `proposeRecipe`'s words. */
   doubts: string[];
@@ -236,9 +236,17 @@ export function onboardState(input: {
  * The decisions open settled, because the file has answered them — a person
  * adjusting a recipe reads the answers as facts and presses `change` on the one
  * they came for.
+ *
+ * **Except the one the page argues with.** A file that checks nothing and has
+ * nobody approving is the case `mergeArgument` exists for, so the merge
+ * question opens unanswered with *a person approves* chosen, as it does when a
+ * scan finds nothing — the file's *no* is one click away, and the page cannot
+ * finish until somebody has read the argument and answered it.
  */
 export function updateState(input: { slug: string; recipe: Recipe }): WizardState {
   const { recipe } = input;
+  const noChecksFound = recipe.gates.proposed.length === 0;
+  const unread = noChecksFound && !recipe.gates.merge.some((a) => "human" in a);
   const checks = recipe.gates.proposed.map((action, i) => ({
     id: `${i}:${action.name}`,
     label: "run" in action ? `${action.name} — ${action.run}` : action.name,
@@ -248,13 +256,13 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
   return {
     mode: "update",
     slug: input.slug,
-    draft: fromRecipe(recipe, checks),
+    draft: unread ? { ...fromRecipe(recipe, checks), personApproves: true } : fromRecipe(recipe, checks),
     kindOptions: [...recipe.source.kinds],
     excludeOptions: [...recipe.source.exclude],
     editing: null,
-    settled: DECISIONS.map((d) => d.id),
+    settled: DECISIONS.map((d) => d.id).filter((id) => !(unread && id === "gates.merge")),
     reopened: null,
-    noChecksFound: false,
+    noChecksFound,
     doubts: [],
   };
 }
@@ -370,8 +378,12 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
  *
  * Unticking the last check is the one case the page argues with, whatever the
  * scan found: the default becomes *a person approves*, and a merge answer that
- * was already settled is opened again, so the argument is on the page and the
- * end is refused until the question is answered with it in view.
+ * was already settled becomes unanswered again, so the end is refused until the
+ * question is answered with the argument in view.
+ *
+ * It unsettles rather than reopens: `reopened` is what a person pressed `change`
+ * on, and a limits question they had open stays open — the merge question is
+ * the next one asked once that is settled.
  */
 function withChecks(state: WizardState, checks: Check[]): WizardState {
   const next = { ...state, draft: { ...state.draft, checks } };
@@ -379,7 +391,8 @@ function withChecks(state: WizardState, checks: Check[]): WizardState {
   return {
     ...next,
     draft: { ...next.draft, personApproves: true },
-    reopened: state.settled.includes("gates.merge") ? "gates.merge" : state.reopened,
+    settled: state.settled.filter((id) => id !== "gates.merge"),
+    reopened: state.reopened === "gates.merge" ? null : state.reopened,
   };
 }
 
