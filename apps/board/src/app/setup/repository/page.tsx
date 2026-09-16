@@ -18,7 +18,7 @@
  */
 import Link from "next/link";
 import { offerCreation } from "@lingtai/conductor/create-app";
-import { type Choice, type Picker, choose, listRepositories } from "@lingtai/conductor/pick-repository";
+import { type Choice, type Picker, choose, listRepositories, unrecorded } from "@lingtai/conductor/pick-repository";
 import { loadAllProjects } from "@lingtai/conductor/projects";
 import type { ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -120,7 +120,7 @@ export function RepositoryScreen({
           ) : loaded.state === "unreadable" ? (
             <p className="refusal">GitHub would not say what the App can see — {loaded.why}. Reload to ask again.</p>
           ) : loaded.picker.installations.length === 0 ? (
-            <NotInstalled installUrl={loaded.picker.installUrl} />
+            <NotInstalled installUrl={loaded.picker.installUrl} logUnanswered={loaded.logUnanswered} />
           ) : (
             <Listed
               picker={loaded.picker}
@@ -149,7 +149,7 @@ function Grants() {
 }
 
 /** The first-class *not installed yet* screen. */
-function NotInstalled({ installUrl }: { installUrl: string | null }) {
+function NotInstalled({ installUrl, logUnanswered }: { installUrl: string | null; logUnanswered: string | null }) {
   return (
     <>
       <p className="note">
@@ -158,7 +158,14 @@ function NotInstalled({ installUrl }: { installUrl: string | null }) {
         On those repositories it may do this, and nothing else:
       </p>
       <Grants />
-      {installUrl === null ? (
+      {installUrl === null && logUnanswered !== null ? (
+        <p className="refusal">
+          The log could not be read — {logUnanswered} — so Lingtai cannot tell this App&rsquo;s name, which
+          creating it recorded there. Install it from{" "}
+          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, or
+          reload this page once the log answers.
+        </p>
+      ) : installUrl === null ? (
         <p className="note">
           Lingtai does not know this App&rsquo;s name, because it was configured by hand. Install it from{" "}
           <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then
@@ -202,7 +209,7 @@ function Listed({
       )}
       {choice === null ? null : <Chosen choice={choice} />}
 
-      {picker.installations.map(({ installation, gaps, repositories }) => (
+      {picker.installations.map(({ installation, unanswered, gaps, repositories }) => (
         <div key={installation.id}>
           <h3>
             {installation.account}{" "}
@@ -216,11 +223,21 @@ function Listed({
               )}
             </small>
           </h3>
+          {unanswered === null ? null : (
+            <p className="refusal">
+              GitHub would not say what the App can see on {installation.account} — {unanswered}. Reload to ask
+              again.
+            </p>
+          )}
           {gaps.length === 0 ? null : <Gaps gaps={gaps} />}
           <ul className="meta">
             {repositories.map((r) => (
               <li key={r.slug}>
-                {r.onboarded !== null ? (
+                {r.onboarded === "unrecorded" ? (
+                  <>
+                    <code>{r.slug}</code> — {unrecorded(r)}
+                  </>
+                ) : r.onboarded !== null ? (
                   <>
                     <code>{r.slug}</code> — {r.onboarded === "registered" ? "already onboarded" : "onboarding, recipe pending"}
                   </>

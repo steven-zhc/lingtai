@@ -48,12 +48,24 @@ export interface ListedRepository extends VisibleRepository {
    * null is offered. A repository that is either of the first two is shown and
    * never offered — a second onboarding of it is a second stream's worth of
    * confusion about one repository.
+   *
+   * `unrecorded` is a project of this name registered before owners were, when
+   * the App can see that name under more than one account: the log cannot say
+   * which of them it is, so neither is called onboarded, and neither is offered
+   * — a project is keyed by the name, so onboarding either writes to that one
+   * stream.
    */
-  onboarded: "registered" | "pending" | null;
+  onboarded: "registered" | "pending" | "unrecorded" | null;
 }
 
 export interface ListedInstallation {
   installation: Installation;
+  /**
+   * Why GitHub would not list this installation's repositories — a suspended
+   * installation refuses its token — or null. One installation that will not
+   * answer is a sentence under its own account, never the whole picker.
+   */
+  unanswered: string | null;
   /** `permissionGaps`, named one by one — a gap here is a 403 in the middle of a merge. */
   gaps: PermissionGap[];
   repositories: ListedRepository[];
@@ -83,13 +95,19 @@ export function installLink(installUrl: string | null, state = randomBytes(16).t
 
 const same = (a: string | null, b: string) => a !== null && a.toLowerCase() === b.toLowerCase();
 
-function onboardedAs(projects: readonly ProjectState[], repo: VisibleRepository): ListedRepository["onboarded"] {
+function onboardedAs(
+  projects: readonly ProjectState[],
+  repo: VisibleRepository,
+  owners: ReadonlySet<string>,
+): ListedRepository["onboarded"] {
   // A project is keyed by the repository's name, and `owner` is null on one
-  // registered before it was recorded — so a null owner matches on the name.
+  // registered before it was recorded — so a null owner matches on the name,
+  // and only says which repository it is when one account has that name.
   const found = projects.find(
     (p) => same(p.project, repo.repo) && (p.owner === null || same(p.owner, repo.owner)),
   );
   if (found === undefined) return null;
+  if (found.owner === null && owners.size > 1) return "unrecorded";
   return found.configHash !== null ? "registered" : "pending";
 }
 
@@ -102,17 +120,33 @@ export async function listRepositories(options: {
   installUrl: string | null;
 }): Promise<Picker> {
   const installations = await appInstallations(options.reader);
-  const listed = await Promise.all(
-    installations.map(async (installation) => ({
-      installation,
-      gaps: permissionGaps(installation),
-      repositories: (await installationRepositories(options.reader, installation.id)).map((r) => ({
-        ...r,
-        slug: `${r.owner}/${r.repo}`,
-        onboarded: onboardedAs(options.projects, r),
-      })),
-    })),
+  const fetched = await Promise.all(
+    installations.map(async (installation) => {
+      try {
+        return { installation, repositories: await installationRepositories(options.reader, installation.id), unanswered: null };
+      } catch (err) {
+        return { installation, repositories: [], unanswered: (err as Error).message };
+      }
+    }),
   );
+  // Which accounts the App can see each repository name under.
+  const owners = new Map<string, Set<string>>();
+  for (const { repositories } of fetched) {
+    for (const r of repositories) {
+      const name = r.repo.toLowerCase();
+      owners.set(name, (owners.get(name) ?? new Set()).add(r.owner.toLowerCase()));
+    }
+  }
+  const listed = fetched.map(({ installation, repositories, unanswered }) => ({
+    installation,
+    unanswered,
+    gaps: permissionGaps(installation),
+    repositories: repositories.map((r) => ({
+      ...r,
+      slug: `${r.owner}/${r.repo}`,
+      onboarded: onboardedAs(options.projects, r, owners.get(r.repo.toLowerCase())!),
+    })),
+  }));
   return { installations: listed, installUrl: installLink(options.installUrl) };
 }
 
@@ -164,7 +198,9 @@ export function choose(picker: Picker, input: string): Choice {
         why:
           found.onboarded === "registered"
             ? `${found.slug} is already onboarded.`
-            : `${found.slug} is already on its way in — its recipe pull request has not landed yet.`,
+            : found.onboarded === "pending"
+              ? `${found.slug} is already on its way in — its recipe pull request has not landed yet.`
+              : unrecorded(found),
         fix: null,
         gaps: [],
       };
@@ -189,6 +225,14 @@ export function choose(picker: Picker, input: string): Choice {
       gaps: [],
     };
   }
+  if (onOwner.unanswered !== null) {
+    return {
+      ok: false,
+      why: `GitHub would not say what the App can see on ${onOwner.installation.account} — ${onOwner.unanswered}.`,
+      fix: settings(onOwner.installation, `Check the installation on ${onOwner.installation.account}`),
+      gaps: [],
+    };
+  }
   return {
     ok: false,
     why:
@@ -199,6 +243,15 @@ export function choose(picker: Picker, input: string): Choice {
     fix: settings(onOwner.installation, `Add ${repo} on the installation's page`),
     gaps: onOwner.gaps,
   };
+}
+
+/** What a name registered before owners were can and cannot say, and how to settle it. */
+export function unrecorded(repo: { repo: string }): string {
+  return (
+    `A project called ${repo.repo} was registered before owners were recorded, and the App can see ${repo.repo} ` +
+    `under more than one account, so Lingtai cannot tell which it is. ` +
+    `Run pnpm lingtai add <owner>/${repo.repo} for the one it is, and that owner is recorded.`
+  );
 }
 
 function settings(installation: Installation, label: string): Fix | null {

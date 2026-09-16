@@ -26,7 +26,7 @@ interface FakeInstallation {
   repositories: string[];
 }
 
-function fakeReader(installations: FakeInstallation[]) {
+function fakeReader(installations: FakeInstallation[], suspended: number[] = []) {
   const calls: string[] = [];
   return {
     calls,
@@ -52,6 +52,8 @@ function fakeReader(installations: FakeInstallation[]) {
         return raw(found) as T;
       }
       if (url.pathname === "/installation/repositories" && typeof as === "number") {
+        // A suspended installation's token is refused before any listing.
+        if (suspended.includes(as)) throw new GitHubError(403, `/app/installations/${as}/access_tokens`, "This installation has been suspended");
         const i = installations.find((x) => x.id === as)!;
         return {
           repositories: (page === 1 ? i.repositories : []).map((name) => ({
@@ -122,6 +124,41 @@ describe("listRepositories", () => {
     const link = new URL(picker.installUrl!);
     expect(`${link.origin}${link.pathname}`).toBe(INSTALL);
     expect(link.searchParams.get("state")).toMatch(/^[\w-]{16,}$/);
+  });
+
+  it("lists the installations that answer when one of them does not", async () => {
+    const reader = fakeReader(
+      [
+        { id: 7, account: "steven-zhc", repositories: ["lingtai"] },
+        { id: 9, account: "acme", repositories: ["app"] },
+      ],
+      [9],
+    );
+
+    const picker = await listRepositories({ reader, projects: [], installUrl: INSTALL });
+
+    expect(picker.installations.map((l) => [l.installation.account, l.unanswered === null])).toEqual([
+      ["steven-zhc", true],
+      ["acme", false],
+    ]);
+    expect(picker.installations[1]!.unanswered).toMatch(/suspended/);
+    expect(choose(picker, "steven-zhc/lingtai")).toMatchObject({ ok: true, slug: "steven-zhc/lingtai" });
+    expect(choose(picker, "acme/app")).toMatchObject({ ok: false, why: /would not say what the App can see on acme/ });
+  });
+
+  it("does not call a same-named repository on another account onboarded when no owner was recorded", async () => {
+    const reader = fakeReader([
+      { id: 7, account: "steven-zhc", repositories: ["lingtai"] },
+      { id: 9, account: "acme", repositories: ["lingtai"] },
+    ]);
+
+    const picker = await listRepositories({ reader, projects: [project("lingtai", null, "abc")], installUrl: INSTALL });
+
+    expect(picker.installations.map((l) => l.repositories[0]!.onboarded)).toEqual(["unrecorded", "unrecorded"]);
+    const choice = choose(picker, "acme/lingtai");
+    expect(choice).toMatchObject({ ok: false, why: /cannot tell which it is/ });
+    expect(!choice.ok && choice.why).not.toMatch(/already onboarded/);
+    expect(!choice.ok && choice.why).toMatch(/lingtai add <owner>\/lingtai/);
   });
 
   it("names the missing scopes individually", async () => {

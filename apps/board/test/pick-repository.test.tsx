@@ -28,6 +28,7 @@ const picker: Picker = {
   installations: [
     {
       installation: installation(),
+      unanswered: null,
       gaps: [],
       repositories: [
         { owner: "steven-zhc", repo: "lingtai", private: true, slug: "steven-zhc/lingtai", onboarded: "registered" },
@@ -79,6 +80,37 @@ describe("no installation yet", () => {
     expect(out).toContain(INSTALL.replace("&", "&amp;"));
     expect(out).toContain("pull_requests");
     expect(out).not.toContain('class="refusal"');
+  });
+
+  it("blames the log, not a hand-configured App, when the log cannot be read", () => {
+    const out = html({ state: "listed", picker: { installUrl: null, installations: [] }, logUnanswered: "connection refused" });
+
+    expect(out).toContain("connection refused");
+    expect(out).not.toContain("configured by hand");
+  });
+});
+
+describe("an installation that will not answer", () => {
+  it("is named under its own account, and the others are still offered", () => {
+    const out = html({
+      state: "listed",
+      picker: {
+        ...picker,
+        installations: [
+          ...picker.installations,
+          {
+            installation: installation({ id: 9, account: "acme" }),
+            unanswered: "GitHub 403: This installation has been suspended",
+            gaps: [],
+            repositories: [],
+          },
+        ],
+      },
+      logUnanswered: null,
+    });
+
+    expect(out).toContain("GitHub would not say what the App can see on acme — GitHub 403: This installation has been suspended");
+    expect(out).toContain('href="/setup/repository?repo=steven-zhc%2Ffresh"');
   });
 });
 
