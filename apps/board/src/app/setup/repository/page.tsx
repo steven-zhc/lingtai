@@ -13,8 +13,8 @@
  *
  * **Nothing is written.** Choosing is a `GET` of this page with `?repo=`, and
  * every call to GitHub goes through a reader whose only method is `GET`. What
- * comes after a slug is known is not this page's — `lingtai add` today, the
- * wizard (#164) when it lands.
+ * comes after a slug is known is not this page's — the wizard (#164), or
+ * `lingtai add`.
  */
 import Link from "next/link";
 import { offerCreation } from "@lingtai/conductor/create-app";
@@ -304,7 +304,8 @@ function Chosen({ choice }: { choice: Choice }) {
           Chosen — {choice.slug}, on installation {choice.installation.id}.
         </p>
         <p className="note">
-          Next: <code>pnpm lingtai add {choice.slug}</code>
+          Next: <Link href={`/setup/wizard?repo=${encodeURIComponent(choice.slug)}`}>read it back</Link>, or{" "}
+          <code>pnpm lingtai add {choice.slug}</code>
         </p>
       </>
     );

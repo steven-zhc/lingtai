@@ -38,6 +38,9 @@ importers:
       '@lingtai/projector':
         specifier: workspace:*
         version: link:../../packages/projector
+      '@lingtai/recipe':
+        specifier: workspace:*
+        version: link:../../packages/recipe
       '@lingtai/repo':
         specifier: workspace:*
         version: link:../../packages/repo

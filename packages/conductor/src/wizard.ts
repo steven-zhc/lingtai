@@ -52,6 +52,7 @@ import {
 } from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
 import { type Runnable, selectRunnable } from "./queue.ts";
+import { nothingChecks } from "./wizard-page.ts";
 
 export interface FirstPassOptions {
   client: GitHubClient;
@@ -122,7 +123,7 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
 export function nothingReadsIt(recipe: Recipe): string | null {
   if (recipe.gates.merge.length > 0) return null;
   if (recipe.gates.proposed.length > 0) return null;
-  return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${recipe.repo.base}\`.`;
+  return nothingChecks(recipe.repo.base);
 }
 
 /**

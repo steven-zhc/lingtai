@@ -1,0 +1,225 @@
+/**
+ * The wizard's page as a value (#164): the collapse, the one default that
+ * flips, the limits sentence, and an edit that changes one field.
+ *
+ * Pure: the page runs this in the browser, and a test that needed a database or
+ * a client to reach it would be testing something the page does not do.
+ */
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { Recipe, editRecipe, resolveRecipe } from "@lingtai/recipe";
+import { passCeiling } from "../src/filter.ts";
+import {
+  type WizardState,
+  applyDraft,
+  changesFrom,
+  fastLine,
+  finishRefusals,
+  limitsSentence,
+  mergeArgument,
+  mergeConsequence,
+  onboardState,
+  openDecision,
+  settledDecisions,
+  updateState,
+  wizardReducer,
+} from "../src/wizard-page.ts";
+
+// What `proposeRecipe` makes of a repository with `typecheck` and `test` at its root.
+const scanned = (proposed: object[] = [{ name: "build", run: "pnpm typecheck && pnpm test", timeout: "20m", env: [] }]) =>
+  Recipe.parse({
+    version: 1,
+    repo: { base: "develop" },
+    source: { kinds: ["bug", "feature"], exclude: ["agent:hold", "epic"] },
+    env: { required: [], plantAt: ".env.local" },
+    gates: { proposed, end: [{ name: "close the ticket", when: "landed", close: true }] },
+    runtime: { agent: "claude-code" },
+  });
+
+const SCRIPTS = [
+  { dir: "", name: "test", run: "pnpm test", guessed: true },
+  { dir: "", name: "dev", run: "pnpm dev", guessed: false },
+  { dir: "", name: "typecheck", run: "pnpm typecheck", guessed: true },
+];
+
+const fresh = (recipe = scanned()): WizardState =>
+  onboardState({ slug: "acme/shop", recipe, scripts: SCRIPTS, labels: ["bug", "feature", "question"] });
+
+const play = (state: WizardState, ...moves: Parameters<typeof wizardReducer>[1][]) => moves.reduce(wizardReducer, state);
+
+describe("the collapse", () => {
+  it("shows one open question at a time, and an answered one collapses to a settled line", () => {
+    const start = fresh();
+    expect(openDecision(start)).toBe("gates.merge");
+    expect(settledDecisions(start)).toEqual([]);
+
+    const merged = play(start, { type: "settle", decision: "gates.merge" });
+    expect(openDecision(merged)).toBe("runtime.limits");
+    expect(settledDecisions(merged)).toEqual(["gates.merge"]);
+
+    const done = play(merged, { type: "settle", decision: "runtime.limits" });
+    expect(openDecision(done)).toBeNull();
+    expect(settledDecisions(done)).toEqual(["gates.merge", "runtime.limits"]);
+  });
+
+  it("re-opening a settled decision keeps its answer, and settling it again collapses it", () => {
+    const answered = play(
+      fresh(),
+      { type: "set", draft: { personApproves: true } },
+      { type: "settle", decision: "gates.merge" },
+      { type: "settle", decision: "runtime.limits" },
+    );
+    const reopened = play(answered, { type: "reopen", decision: "gates.merge" });
+
+    expect(openDecision(reopened)).toBe("gates.merge");
+    expect(settledDecisions(reopened)).toEqual(["runtime.limits"]);
+    expect(reopened.draft.personApproves).toBe(true);
+    expect(finishRefusals(reopened)).toContain("gates.merge is open — settle it first.");
+
+    const again = play(reopened, { type: "settle", decision: "gates.merge" });
+    expect(openDecision(again)).toBeNull();
+    expect(again.draft.personApproves).toBe(true);
+  });
+
+  it("does not reopen a decision nobody has answered", () => {
+    const start = fresh();
+    expect(play(start, { type: "reopen", decision: "runtime.limits" })).toBe(start);
+  });
+});
+
+describe("source.kinds", () => {
+  it("refuses to untick the last kind", () => {
+    const one = play(fresh(), { type: "kind", label: "feature" });
+    expect(one.draft.kinds).toEqual(["bug"]);
+    expect(play(one, { type: "kind", label: "bug" }).draft.kinds).toEqual(["bug"]);
+  });
+
+  it("cannot reach the end empty, however the state arrived", () => {
+    const empty = fresh();
+    empty.draft.kinds = [];
+    const settled = play(empty, { type: "settle", decision: "gates.merge" }, { type: "settle", decision: "runtime.limits" });
+    expect(finishRefusals(settled)).toEqual([
+      "source.kinds is empty — no issue would ever be work. Tick at least one kind.",
+    ]);
+  });
+});
+
+describe("the one default that flips", () => {
+  it("defaults to nobody approving when the scan found checks, and says nothing", () => {
+    const state = fresh();
+    expect(state.draft.personApproves).toBe(false);
+    expect(mergeArgument(state)).toBeNull();
+  });
+
+  it("defaults to a person approving when the scan found no checks, and says why", () => {
+    const state = fresh(scanned([]));
+    expect(state.noChecksFound).toBe(true);
+    expect(state.draft.personApproves).toBe(true);
+    expect(mergeArgument(state)).toBe(
+      "Nothing checks a diff before it merges. Every ticket goes from an agent straight into `develop`. " +
+        "So the default here is that a person approves.",
+    );
+    expect(applyDraft(scanned([]), state).gates.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+  });
+
+  it("writes the consequence out whichever way it is answered", () => {
+    const none = fresh(scanned([]));
+    expect(mergeConsequence({ ...none.draft, personApproves: false })).toBe(
+      "Nothing checks a diff before it merges. Every ticket goes from an agent straight into `develop`.",
+    );
+    expect(mergeConsequence(fresh().draft)).toContain("nobody reads it first");
+  });
+});
+
+describe("limits", () => {
+  it("is passCeiling's sentence, recomputed as a dial moves", () => {
+    const state = play(fresh(), { type: "limit", key: "restarts", value: 1 }, { type: "limit", key: "wall", value: "1h" });
+    const said = limitsSentence(state.draft.limits);
+    expect(said).toEqual({
+      ok: true,
+      sentence: passCeiling({ turns: 300, wall: "1h", wallMs: 3_600_000, rounds: 2, restarts: 1 }),
+    });
+    expect(said.ok && said.sentence).toContain("at most 2 passes, 6 agent runs and 6h");
+  });
+
+  it("names a dial that does not make a sentence, and will not finish on it", () => {
+    const state = play(
+      fresh(),
+      { type: "limit", key: "wall", value: "two hours" },
+      { type: "settle", decision: "gates.merge" },
+      { type: "settle", decision: "runtime.limits" },
+    );
+    expect(limitsSentence(state.draft.limits).ok).toBe(false);
+    expect(finishRefusals(state)[0]).toMatch(/^runtime\.limits: "two hours" is not a duration/);
+  });
+
+  it("says no money", () => {
+    const said = limitsSentence(fresh().draft.limits);
+    expect(said.ok && said.sentence).not.toMatch(/\$|USD|cost/);
+  });
+});
+
+describe("the fast lane", () => {
+  it("lists every script found, ticks the guesses in the order the gate runs them, and builds that gate", () => {
+    const state = fresh();
+    expect(state.draft.checks.map((c) => [c.label, c.ticked])).toEqual([
+      ["pnpm typecheck", true],
+      ["pnpm test", true],
+      ["pnpm dev", false],
+    ]);
+    expect(fastLine(state.draft, "gates.proposed")).toBe("pnpm typecheck && pnpm test   (1 more found, not ticked)");
+    expect(applyDraft(scanned(), state).gates.proposed).toEqual(scanned().gates.proposed);
+
+    const unticked = play(state, { type: "check", id: "pnpm test" });
+    expect(applyDraft(scanned(), unticked).gates.proposed).toEqual([
+      { name: "build", run: "pnpm typecheck", timeout: "20m", env: [] },
+    ]);
+  });
+
+  it("a recipe the page built parses", () => {
+    const state = play(fresh(), { type: "exclude", label: "question" }, { type: "set", draft: { closeOnLand: false } });
+    const recipe = Recipe.parse(applyDraft(scanned(), state));
+    expect(recipe.source.exclude).toEqual(["agent:hold", "epic", "question"]);
+    expect(recipe.gates.end).toEqual([]);
+  });
+});
+
+describe("an existing recipe", () => {
+  const file = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
+
+  it("loads into the fast lane, with its decisions settled", async () => {
+    const { recipe } = await resolveRecipe(async () => file, "main");
+    const state = updateState({ slug: "steven-zhc/lingtai", recipe });
+
+    expect(state.draft.kinds).toEqual(["bug", "tech-debt", "feature"]);
+    expect(state.draft.limits).toMatchObject({ turns: 150, wall: "1h" });
+    expect(openDecision(state)).toBeNull();
+    expect(changesFrom(recipe, applyDraft(recipe, state))).toEqual([]);
+  });
+
+  it("editing one field changes one field, and one line of the file", async () => {
+    const { recipe } = await resolveRecipe(async () => file, "main");
+    const state = play(updateState({ slug: "steven-zhc/lingtai", recipe }), { type: "limit", key: "turns", value: 200 });
+
+    const changes = changesFrom(recipe, applyDraft(recipe, state));
+    expect(changes).toEqual([{ path: ["runtime", "limits", "turns"], value: 200 }]);
+
+    const edited = editRecipe(file, changes);
+    const before = file.split("\n");
+    const after = edited.split("\n");
+    expect(after).toHaveLength(before.length);
+    const moved = before.flatMap((line, i) => (line === after[i] ? [] : [[line, after[i]]]));
+    expect(moved).toEqual([["    turns: 150", "    turns: 200"]]);
+  });
+
+  it("unticking a check removes that gate and nothing else", async () => {
+    const { recipe } = await resolveRecipe(async () => file, "main");
+    const state = updateState({ slug: "steven-zhc/lingtai", recipe });
+    expect(state.draft.checks.every((c) => c.ticked)).toBe(true);
+    const first = state.draft.checks[0]!;
+    const after = applyDraft(recipe, play(state, { type: "check", id: first.id }));
+
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["gates.proposed"]);
+    expect(after.gates.proposed).toEqual(recipe.gates.proposed.slice(1));
+  });
+});

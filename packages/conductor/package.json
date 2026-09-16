@@ -14,6 +14,7 @@
     "./discover": "./src/discover.ts",
     "./discuss": "./src/discuss.ts",
     "./filter": "./src/filter.ts",
+    "./ceiling": "./src/ceiling.ts",
     "./labels": "./src/labels.ts",
     "./prompt": "./src/prompt.ts",
     "./queue": "./src/queue.ts",
@@ -22,7 +23,8 @@
     "./close": "./src/close.ts",
     "./create-app": "./src/create-app.ts",
     "./ticket-store": "./src/ticket-store.ts",
-    "./wizard": "./src/wizard.ts"
+    "./wizard": "./src/wizard.ts",
+    "./wizard-page": "./src/wizard-page.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
