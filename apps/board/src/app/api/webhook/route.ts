@@ -22,11 +22,14 @@ import { verifyWebhook, DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER } from "
 import { CONTROL_STREAM } from "@lingtai/daemon";
 import { eventStore } from "@lingtai/event-store";
 import { parsePayload } from "@lingtai/domain";
+import { githubWebhookSecret } from "@lingtai/env";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
-  const secret = process.env["LINGTAI_GITHUB_WEBHOOK_SECRET"];
+  // Read per request, from `.env.local` as it is now when the environment does
+  // not set it: the setup page writes it there while this board runs (#169).
+  const secret = githubWebhookSecret();
   if (!secret) {
     // Not configured is not an error to shout about — the sweep covers it — but
     // returning 200 would tell GitHub the delivery landed when it did not.

@@ -119,7 +119,11 @@ So there are three answers and the screen says a different thing about each:
 **configured** (the credentials are here — install it), **minted** (an App of
 ours is on GitHub and its key never landed — finish that one, and GitHub will
 not hand the key over twice), and **unanswered** (the log did not say, so
-nothing is offered). Only the first two stop the button, and all three do.
+nothing is offered). **Only `configured` and `unanswered` withhold the
+button.** `minted` is named beside the form and does not close it: a stranded
+App whose key cannot be fetched again must leave a way to create another, and
+only a form posted *before* that App was minted is refused, where the writing
+happens.
 
 ## Where the flow lives: the board
 

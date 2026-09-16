@@ -908,8 +908,13 @@ async function configuration(options: {
   const inTarget = await namedIn(options.envFile, APP_ID_VAR);
   const inFiles = inTarget ?? (await namedIn(join(dirname(options.envFile), ".env"), APP_ID_VAR));
   const envAppId = optional(APP_ID_VAR, options.env) ?? null;
+  // **The environment alone**, with no files. Handed `process.env`,
+  // `hasGitHubApp` reads the env files as well, so an App named only in
+  // `.env.local` answered *the environment has one* while the environment's own
+  // id was null — and the id, the slug and the install link all went with it.
+  const inEnvironment = envAppId !== null && hasGitHubApp(options.env, []);
 
-  const appId = hasGitHubApp(options.env) ? envAppId : (inFiles?.value ?? null);
+  const appId = inEnvironment ? envAppId : (inFiles?.value ?? null);
   // **The id is the configuration's and the slug is the log's**, so the slug
   // describes this App only when the log is about this App. An operator who
   // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
@@ -920,7 +925,7 @@ async function configuration(options: {
   const slug = minted !== null && appId !== null && minted.appId === appId ? minted.slug : null;
 
   const configured: Configured | null =
-    hasGitHubApp(options.env) && envAppId !== null
+    inEnvironment && envAppId !== null
       ? { appId: envAppId, slug, where: "environment", file: null }
       : inFiles !== null
         ? { appId: inFiles.value, slug, where: "file", file: inFiles.file }

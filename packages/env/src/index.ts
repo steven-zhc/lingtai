@@ -276,7 +276,7 @@ export function repoRoot(): string {
  * The env files `@lingtai/env` loads, in its order — first to name a value wins.
  *
  * The same two paths as the `config()` call at the top of this file, which reads
- * them once. `appValue` reads them again on every call, for the three names
+ * them once. `appValues` reads them again on every call, for the App's names
  * below and no others.
  */
 export function envFiles(): string[] {
@@ -284,8 +284,8 @@ export function envFiles(): string[] {
 }
 
 /**
- * One of the App's three names: the environment's, or else the files' as they
- * are **now** (#169).
+ * The App's names, from the environment or else the files as they are **now**
+ * (#169) — and **every name from the source that names the App ID**.
  *
  * The private key was always re-read per call — `readFileSync` is inside
  * `githubApp` — while the App ID came from `process.env`, which Next.js and
@@ -295,24 +295,55 @@ export function envFiles(): string[] {
  * id the way the key is read closes that, in every process, with nothing to
  * restart.
  *
- * `process.env` keeps winning where it is set, so a deployment that supplies the
- * variable directly is unaffected; an absent variable is a reason to look at the
- * file rather than a verdict. A file that cannot be read says nothing.
+ * **One source per App, not one per name.** The id and the key are a pair, and
+ * a `.env.local` copied from `.env.example` ships the key path filled in with
+ * the id blank — so `process.env` holds a key path from start while the id is
+ * only ever in the file. Asked name by name, the id came from the file and the
+ * key path from that stale snapshot: the setup page writes a key aside because
+ * one is already at the default path, points the file at it, and every call
+ * signs the new App's JWT with the old App's key. So the source that names the
+ * id is asked first for every other name, and the rest only for what it does
+ * not say.
+ *
+ * `process.env` keeps winning where it names the id, so a deployment that
+ * supplies the variables directly is unaffected. A file that cannot be read
+ * says nothing.
  */
-function appValue(name: string, from: NodeJS.ProcessEnv, files: readonly string[]): string | undefined {
-  const set = optional(name, from);
-  if (set) return set;
+function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): (name: string) => string | undefined {
+  const sources: ((name: string) => string | undefined)[] = [(name) => optional(name, from)];
   for (const file of files) {
-    let text: string;
+    let parsed: Record<string, string>;
     try {
-      text = readFileSync(file, "utf8");
+      parsed = parse(readFileSync(file, "utf8"));
     } catch {
       continue;
     }
-    const value = parse(text)[name];
-    if (value) return value;
+    sources.push((name) => parsed[name] || undefined);
   }
-  return undefined;
+  const owner = sources.find((source) => source(`${PREFIX}GITHUB_APP_ID`) !== undefined);
+  const ordered = owner === undefined ? sources : [owner, ...sources.filter((s) => s !== owner)];
+  return (name) => {
+    for (const source of ordered) {
+      const value = source(name);
+      if (value) return value;
+    }
+    return undefined;
+  };
+}
+
+/**
+ * The secret `/api/webhook` verifies deliveries with, read the way the App is.
+ *
+ * The setup page writes it into `.env.local` beside the id, while the board is
+ * running — so a receiver reading `process.env` alone answered every delivery
+ * of an App created with an active hook *webhooks are not configured* until
+ * somebody restarted the board, under a screen saying nothing had to be.
+ */
+export function githubWebhookSecret(
+  from: NodeJS.ProcessEnv = process.env,
+  files: readonly string[] = from === process.env ? envFiles() : [],
+): string | undefined {
+  return appValues(from, files)(`${PREFIX}GITHUB_WEBHOOK_SECRET`);
 }
 
 /**
@@ -332,7 +363,8 @@ export function githubApp(
   from: NodeJS.ProcessEnv = process.env,
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): GitHubAppCredentials {
-  const appId = appValue(`${PREFIX}GITHUB_APP_ID`, from, files);
+  const value = appValues(from, files);
+  const appId = value(`${PREFIX}GITHUB_APP_ID`);
   if (!appId) {
     throw new Error(
       `${PREFIX}GITHUB_APP_ID is not set. ` +
@@ -341,8 +373,8 @@ export function githubApp(
           : "Copy .env.example to .env.local at the repo root and fill it in."),
     );
   }
-  const path = appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from, files);
-  const inline = appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from, files);
+  const path = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`);
+  const inline = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`);
 
   if (path) {
     return { appId, privateKey: readFileSync(resolvePath(path), "utf8"), keySource: path };
@@ -365,9 +397,9 @@ export function hasGitHubApp(
   from: NodeJS.ProcessEnv = process.env,
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): boolean {
+  const value = appValues(from, files);
   return Boolean(
-    appValue(`${PREFIX}GITHUB_APP_ID`, from, files) &&
-      (appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from, files) ||
-        appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from, files)),
+    value(`${PREFIX}GITHUB_APP_ID`) &&
+      (value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
   );
 }

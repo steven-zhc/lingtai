@@ -1541,10 +1541,15 @@ export const Reconciled = z.object({
  * the install link — `https://github.com/apps/<slug>/installations/new` — which
  * is creation's only handover to installing it (`#168`).
  *
- * It is also what stops a second App being minted by accident. `hasGitHubApp()`
- * reads `process.env`, and `LINGTAI_GITHUB_APP_ID` is fixed at process start —
- * so the board that has just written one still answers *not configured* until
- * it is restarted (0042). This event is the fact that outlives that window.
+ * **It says an App was minted, and never that one is configured.** It is
+ * appended the moment the conversion returns — before the key file and the env
+ * file — so that a write which fails still leaves a record of the App it failed
+ * for. Folded into *configured*, it would report exactly those failures as
+ * finished Apps. What is configured is what the environment and the env files
+ * say, and `hasGitHubApp()` reads those files per call, so nothing needs a
+ * restart to see a written App. This event names an App of ours on GitHub whose
+ * key may never have landed; the setup page names it and **keeps offering
+ * creation beside it**, and only a form posted before it was minted is refused.
  */
 export const GitHubAppCreated = z.object({
   /** The App ID, as `LINGTAI_GITHUB_APP_ID` now carries it. */
