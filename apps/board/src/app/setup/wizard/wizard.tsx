@@ -223,7 +223,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
               />
             );
           })}
-          <AddLabel add={(label) => act({ type: "kind", label })} placeholder="another kind" />
+          <AddLabel add={(label) => act({ type: "kind", label, add: true })} placeholder="another kind" />
           <small>Ticked order is priority. The last kind cannot be unticked.</small>
         </>
       );
@@ -233,7 +233,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
           {state.excludeOptions.map((k) => (
             <Tick key={k} label={k} on={draft.exclude.includes(k)} flip={() => act({ type: "exclude", label: k })} />
           ))}
-          <AddLabel add={(label) => act({ type: "exclude", label })} placeholder="another label" />
+          <AddLabel add={(label) => act({ type: "exclude", label, add: true })} placeholder="another label" />
         </>
       );
     case "gates.proposed":
@@ -243,6 +243,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
           {draft.checks.map((c) => (
             <Tick key={c.id} label={c.label} on={c.ticked} flip={() => act({ type: "check", id: c.id })} />
           ))}
+          <AddLabel add={(run) => act({ type: "add-check", run })} placeholder="another command, e.g. make test" />
         </>
       );
     case "env.required":

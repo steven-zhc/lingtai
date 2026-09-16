@@ -109,9 +109,30 @@ describe("the one default that flips", () => {
     expect(html(start(CHECKED), CHECKED)).not.toContain("wz-argues");
   });
 
-  it("argues once every check the scan found is unticked", () => {
+  it("argues once every check the scan found is unticked, with the default it argues for chosen", () => {
     const state = wizardReducer(start(CHECKED), { type: "check", id: "pnpm test" });
-    expect(html(state, CHECKED)).toContain('class="wz-argues"');
+    const out = html(state, CHECKED);
+    expect(out).toContain('class="wz-argues"');
+    expect(out).toMatch(/<input type="radio" name="merge" checked=""[^>]*\/> Yes — a person approves/);
+  });
+
+  it("opens a merge answer already given when the checks are unticked afterwards, and offers no recipe", () => {
+    let state = wizardReducer(start(CHECKED), { type: "settle", decision: "gates.merge" });
+    state = wizardReducer(state, { type: "settle", decision: "runtime.limits" });
+    state = wizardReducer(state, { type: "check", id: "pnpm test" });
+    const out = html(state, CHECKED);
+
+    expect(out).toContain('class="wz-argues"');
+    expect(out).toContain("Does a person approve the merge?");
+    expect(out).not.toContain("Show the recipe");
+  });
+});
+
+describe("the checks row", () => {
+  it("takes a command when the scan found none", () => {
+    const out = html({ ...start(UNCHECKED), editing: "gates.proposed" }, UNCHECKED);
+    expect(out).toContain("No scripts were found.");
+    expect(out).toContain('placeholder="another command, e.g. make test"');
   });
 });
 

@@ -285,9 +285,10 @@ export type WizardMove =
   | { type: "reopen"; decision: DecisionId }
   | { type: "settle"; decision: DecisionId }
   | { type: "set"; draft: Partial<Pick<Draft, "base" | "submodules" | "agent" | "closeOnLand" | "personApproves">> }
-  | { type: "kind"; label: string }
-  | { type: "exclude"; label: string }
+  | { type: "kind"; label: string; add?: true }
+  | { type: "exclude"; label: string; add?: true }
   | { type: "check"; id: string }
+  | { type: "add-check"; run: string }
   | { type: "env"; names: string[] }
   | { type: "limit"; key: keyof Limits; value: number | string };
 
@@ -298,6 +299,9 @@ export type WizardMove =
  * page that lets the parse catch it at the end has let a person build a recipe
  * that takes no work. The move is refused where it is made, and `finishRefusals`
  * says it again for a state that arrived some other way.
+ *
+ * **`add` adds and never removes.** A kind or a label typed into a row's `add`
+ * that is already ticked stays ticked; only the tick itself takes one away.
  */
 export function wizardReducer(state: WizardState, move: WizardMove): WizardState {
   const draft = state.draft;
@@ -318,7 +322,7 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
       return { ...state, draft: { ...draft, ...move.draft } };
     case "kind": {
       const on = draft.kinds.includes(move.label);
-      if (on && draft.kinds.length === 1) return state;
+      if (on && (move.add || draft.kinds.length === 1)) return state;
       const kinds = on ? draft.kinds.filter((k) => k !== move.label) : [...draft.kinds, move.label];
       // A kind the recipe does not list yet, or a label the repository has not
       // created, is added by name — otherwise the row could only ever narrow.
@@ -327,6 +331,7 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
     }
     case "exclude": {
       const on = draft.exclude.includes(move.label);
+      if (on && move.add) return state;
       const exclude = on ? draft.exclude.filter((k) => k !== move.label) : [...draft.exclude, move.label];
       const excludeOptions = state.excludeOptions.includes(move.label)
         ? state.excludeOptions
@@ -334,18 +339,48 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
       return { ...state, excludeOptions, draft: { ...draft, exclude } };
     }
     case "check":
-      return {
-        ...state,
-        draft: {
-          ...draft,
-          checks: draft.checks.map((c) => (c.id === move.id ? { ...c, ticked: !c.ticked } : c)),
-        },
-      };
+      return withChecks(
+        state,
+        draft.checks.map((c) => (c.id === move.id ? { ...c, ticked: !c.ticked } : c)),
+      );
+    case "add-check": {
+      // A command the scan did not find — a repository with no `package.json`
+      // has none — is typed in, ticked, and runs in the gate like a found one.
+      const run = move.run.trim();
+      if (run === "") return state;
+      const id = state.mode === "update" ? `added:${run}` : run;
+      if (draft.checks.some((c) => c.id === id)) {
+        return withChecks(state, draft.checks.map((c) => (c.id === id ? { ...c, ticked: true } : c)));
+      }
+      const check: Check =
+        state.mode === "update"
+          ? { id, label: `check — ${run}`, ticked: true, action: { name: "check", run, timeout: "20m", env: [] } }
+          : { id, label: run, ticked: true };
+      return withChecks(state, [...draft.checks, check]);
+    }
     case "env":
       return { ...state, draft: { ...draft, envRequired: [...new Set(move.names.filter(Boolean))] } };
     case "limit":
       return { ...state, draft: { ...draft, limits: { ...draft.limits, [move.key]: move.value } } };
   }
+}
+
+/**
+ * The checks changed, and **the merge question follows the ticks.**
+ *
+ * Unticking the last check is the one case the page argues with, whatever the
+ * scan found: the default becomes *a person approves*, and a merge answer that
+ * was already settled is opened again, so the argument is on the page and the
+ * end is refused until the question is answered with it in view.
+ */
+function withChecks(state: WizardState, checks: Check[]): WizardState {
+  const next = { ...state, draft: { ...state.draft, checks } };
+  if (!anyCheck(state.draft) || anyCheck(next.draft)) return next;
+  return {
+    ...next,
+    draft: { ...next.draft, personApproves: true },
+    reopened: state.settled.includes("gates.merge") ? "gates.merge" : state.reopened,
+  };
 }
 
 /**

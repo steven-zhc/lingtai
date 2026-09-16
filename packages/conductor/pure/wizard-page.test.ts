@@ -113,6 +113,14 @@ describe("source.kinds", () => {
     expect(onboard.draft.kinds).toEqual(["bug", "feature", "chore"]);
   });
 
+  it("adding a kind that is already ticked keeps it", () => {
+    expect(play(fresh(), { type: "kind", label: "bug", add: true }).draft.kinds).toEqual(["bug", "feature"]);
+    expect(play(fresh(), { type: "exclude", label: "agent:hold", add: true }).draft.exclude).toEqual([
+      "agent:hold",
+      "epic",
+    ]);
+  });
+
   it("cannot reach the end empty, however the state arrived", () => {
     const empty = fresh();
     empty.draft.kinds = [];
@@ -149,6 +157,27 @@ describe("the one default that flips", () => {
     const found = fresh();
     const none = play(found, { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
     expect(mergeArgument(none)).toContain("Nothing checks a diff before it merges.");
+  });
+
+  it("flips the default to a person approving when the last tick goes, while the question is open", () => {
+    const none = play(fresh(), { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
+    expect(none.draft.personApproves).toBe(true);
+    expect(openDecision(none)).toBe("gates.merge");
+  });
+
+  it("opens a settled merge answer again when the last tick goes, and will not finish until it is answered", () => {
+    const settled = play(fresh(), { type: "settle", decision: "gates.merge" }, { type: "settle", decision: "runtime.limits" });
+    expect(settled.draft.personApproves).toBe(false);
+
+    const none = play(settled, { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
+    expect(openDecision(none)).toBe("gates.merge");
+    expect(none.draft.personApproves).toBe(true);
+    expect(mergeArgument(none)).toContain("So the default here is that a person approves.");
+    expect(finishRefusals(none)).toContain("gates.merge is open — settle it first.");
+
+    const answered = play(none, { type: "settle", decision: "gates.merge" });
+    expect(finishRefusals(answered)).toEqual([]);
+    expect(applyDraft(scanned(), answered).gates.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
   });
 
   it("writes the consequence out whichever way it is answered", () => {
@@ -210,6 +239,33 @@ describe("the fast lane", () => {
     const recipe = Recipe.parse(applyDraft(scanned(), state));
     expect(recipe.source.exclude).toEqual(["agent:hold", "epic", "question"]);
     expect(recipe.gates.end).toEqual([]);
+  });
+});
+
+describe("a check the scan did not find", () => {
+  it("is added by its command when nothing was found, and becomes the gate", () => {
+    const state = onboardState({ slug: "acme/tool", recipe: scanned([]), scripts: [], labels: [] });
+    const added = play(state, { type: "add-check", run: "cargo test" });
+
+    expect(added.draft.checks).toEqual([{ id: "cargo test", label: "cargo test", ticked: true }]);
+    expect(mergeArgument(added)).toBeNull();
+    expect(applyDraft(scanned([]), added).gates.proposed).toEqual([
+      { name: "build", run: "cargo test", timeout: "20m", env: [] },
+    ]);
+    expect(play(added, { type: "add-check", run: "cargo test" }).draft.checks).toHaveLength(1);
+  });
+
+  it("is added to a recipe that already has its gates, and changes only gates.proposed", async () => {
+    const { recipe } = await resolveRecipe(
+      async () =>
+        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
+      "main",
+    );
+    const state = play(updateState({ slug: "acme/tool", recipe }), { type: "add-check", run: "make test" });
+    const after = Recipe.parse(applyDraft(recipe, state));
+
+    expect(after.gates.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["gates.proposed"]);
   });
 });
 
