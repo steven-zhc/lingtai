@@ -1,7 +1,11 @@
 # The card, and the sequence inside it
 
-**Status** proposed · 2026-09-15 · `#170` · a picture at
+**Status** built · 2026-09-16 · `#170` · a picture at
 `claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d`
+
+What is in `apps/board/src/app/page.tsx` is `Segs` and `Rail`; what holds the
+line is `apps/board/test/rail.test.tsx`, which counts the objects on a running
+card and reads the geometry out of `globals.css` rather than out of itself.
 
 Thirteen objects, all of them boxed, wrapping to five rows at `22rem` — which is
 the width the column actually gives a card.
@@ -67,7 +71,7 @@ The first two are sequences and were drawn as sets. That is the whole of it.
 order — the five points, the rounds, anything added later that runs one way —
 gets a form that shows the order. Anything that does not stays a pill.
 
-It is in the code beside `Now` in `apps/board/src/app/page.tsx`, where the next
+It is in the code beside `Rail` in `apps/board/src/app/page.tsx`, where the next
 point-shaped thing would be added, and so where the argument has to be made.
 
 ## Why the bar cannot be "filled means done"
@@ -92,9 +96,18 @@ carries the distinction the sentence above demands:
 
 **`never-ran` is not an extra.** A bar that draws all five points must have a
 mark for *configured and did not run*, or that state renders as something it is
-not — which is the failure `0016 §4` names. Today it reaches `lingtai doctor` as
-a FAIL naming `#49`, `#53` and `#55` at the merge point, and reaches the board as
-nothing at all. `p.state` already carries all seven, so this costs no projection.
+not — which is the failure `0016 §4` names. It reached `lingtai doctor` as a FAIL
+naming `#49`, `#53` and `#55` at the merge point and reached the board as nothing
+at all. It costs no projection: `foldProgress` now makes
+`landedWithoutGatePoints`'s own comparison — the plan named actions here, the run
+recorded none, and the pass is over — and the caller supplies the last of those,
+because the landing is on the merge lane's stream and the work item's, not on the
+run's.
+
+**Four points and not five**, and doctor makes the same exclusion in as many
+words: `end`'s record is `EndActionsResolved` on the work item's stream, which
+this fold does not read. A silent `end` here is a question the run's stream
+cannot answer rather than a point that did not run.
 
 ## The labels, and what they let go
 
@@ -111,19 +124,45 @@ Four tones, and the third does work no colour alone can:
 | `off` | `rule-2`, **italic** — nothing configured. Italic because *nothing configured* and *not reached yet* are both grey, and the difference between them has to survive being grey |
 | `bad` | fail — it stopped here |
 
-## What is deliberately not settled
+## What was settled, and how
 
-**`N passed` and the bar are one fact at two granularities**, and only
-sometimes. `prepared: [install]` is one action, so *1 passed* **is** *prepared
-went green*; `proposed` holds `build` and `review`, so there it is half a point.
-Either the counter goes and a multi-action point carries that on its segment, or
-the counter stays and the redundancy stays with it. **Whichever, the reason
-belongs in the code** — carrying both unexamined is how the card reached
-thirteen.
+**`N passed` goes, and the segment carries what it said.** `prepared: [install]`
+is one action, so *1 passed* **was** *prepared went green*; `proposed` holds
+`build` and `review`, so there it was half a point and said so nowhere. The bar
+draws **one cell per planned action**, each with its own verdict, which is the
+granularity the counter had and the flattened row did not — so `proposed` with a
+running build and an unreached review is visibly half a point. All four counters
+go with it and not `passed` alone: *failed*, *waived* and *approved* are the
+same fact at the same two granularities, and keeping three of the four would
+have left a reader deciding which list to believe.
 
-**The two money figures stay two.** `#84`'s reason is intact. The mockup renders
-`$5.92 +4.88` as one object saying two numbers; if the amber cannot survive that
-compression, two pills is the right answer and not a regression.
+They stay, unchanged, on a card with **no** rail: a lane that does not fold, a
+run whose stream would not read, a Landed row the lane keeps collapsed. That is
+the rule in one sentence — *the counters are the fallback, not the reading* —
+and it is written where they are rendered.
+
+**The two money figures stay two.** `#84`'s reason is intact and the compression
+was not needed: the bar, its five labels and its sentence are **one** object,
+which is the whole of the design, so a running card carrying elapsed, turns,
+both figures and its round is six.
+
+**The second sequence is one object and not yet a form.** `attempt 2` and
+`restart 1 of 1` read as `attempt 2 · restart 1 of 1` in a single pill. One
+object is what stops 0040's two axes being drawn as a set; the form that shows
+*their* order is a later ticket, and the rule above says it is owed one.
+
+## What this lane costs, and where it stops
+
+The rail draws wherever the run's stream was read, and `laneProgress` decides
+that: Running, Waiting, and the Landed rows the lane renders open. It was
+Running alone, on `#79`'s argument that every other lane describes something
+over and the counts carry that whole truth. The counts were the thing that
+turned out not to be true — *configured and did not run* is not a number.
+
+It stops at the open rows deliberately. `progress.ts`'s trade is that only a
+lane holding a handful of cards may read a stream each, on a route that
+re-renders on every append; Landed grows without bound and there is no read that
+fetches many runs at once. The collapsed `older` rows keep their counters.
 
 ## Related
 
