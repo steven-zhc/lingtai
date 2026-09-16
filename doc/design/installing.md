@@ -185,23 +185,55 @@ Every resolved setting needs that treatment, and the store needs it most:
 **which database am I on, and where is it** must be one line at the top of
 `doctor`, not something inferred from an absent variable.
 
-## What is not decided here
+## Three things now decided
 
-- **How Lingtai is distributed.** `private: true` on both packages means there
-  is no install to improve yet. A `curl` installer, an npm package and a
-  Homebrew formula are three different answers and
-  [0010](../decisions/0010-source-runs-unbuilt.md)'s *the source runs unbuilt*
-  constrains all of them.
-- **Whether SQLite gets migrations from day one.** The schema will change, and a
-  personal database still has to survive that. `db:migrate` and `db:verify`
-  exist; whether `migrations/app/…/ops.json` is Postgres-specific has not been
-  checked.
-- **Moving from SQLite to Postgres.** A person who starts alone and later wants a
-  server will need it. The shape is free if nothing blocks it — the log is
-  append-only and self-describing, so a move is `readAll`, `append`, and
-  `projection rebuild`, all of which exist. **Writing that sentence down is
-  worth more today than building the tool**, because its cost is entirely in
-  not designing something that forecloses it.
+**Distribution is a `curl` installer.** One line, a shell script, and it handles
+the platform. [0010](../decisions/0010-source-runs-unbuilt.md) shapes it: the
+source runs unbuilt, so there is no binary to ship and the installer's job is to
+put a runtime and the source in place rather than to unpack a build. What it has
+to guarantee:
+
+| | |
+|---|---|
+| Node 22+ | `engines` says so. Install it or refuse by name — never run and fail later on a syntax error |
+| `pnpm` | `packageManager` pins `pnpm@11.9.0` |
+| `git` | the mirror and the worktrees are git |
+| the source | fetched, then `pnpm install` |
+| `lingtai` on `PATH` | a shim running `node …/apps/cli/src/lingtai.ts` |
+
+**The agent runtime is the one thing an installer cannot finish.** Signing in to
+`claude-code` is interactive and belongs to the person. `doctor` already detects
+it — *`claude-code` — signed in via claude.ai* — so the installer ends by
+saying which state it found, and the onboarding continues or stops there with a
+next action. That is OpenClaw's habit #4 applied to the one credential we cannot
+mint.
+
+**There is no migration, and switching stores starts a new log.** A person who
+moves from SQLite to Postgres, or whose schema outgrows what is on disk, picks up
+new tickets and leaves the old log where it is. Nothing is converted and no tool
+is built.
+
+**With one exception, and it is this repository.**
+[0019](../decisions/0019-a-second-reset.md) allows a reset only while
+
+> the log contains no run that anybody outside this repository depends on
+
+and Lingtai's own log fails that test: `CLAUDE.md` says *a finding that cites a
+seq number is worth more than one that argues*, and the ADRs and tickets do cite
+them. **Switching this installation's store would turn those citations into
+dangling references.** The rule is for the product; the exception is one log, and
+it is named here so nobody has to rediscover it by losing it.
+
+## What is still not decided
+
+- **Which platforms the installer claims.** macOS and Linux are the floor;
+  WSL2 is where Hermes stops and is probably where this should too. Saying so
+  is cheaper than discovering it in an issue.
+- **Whether SQLite gets migrations at all.** The schema will change and a
+  personal database still has to survive that — but *survive* may mean
+  `db:init` into a fresh file rather than a migration, given the paragraph
+  above. `migrations/app/…/ops.json` has not been checked for Postgres-specific
+  operations.
 
 ## Related
 
