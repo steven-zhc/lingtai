@@ -31,22 +31,30 @@ export async function POST(request: Request): Promise<Response> {
   // route that posts anyway is what would stop one on purpose.
   const offer = await offerCreation();
   // **Unknown is not no, here as on the page.** The durable record is the only
-  // guard a process started before `.env.local` was written has, so a log that
-  // will not say whether an App exists holds this route too: posting anyway
-  // mints a second App over a working one and rewrites `.env.local` to an id no
-  // repository has installed, and GitHub hands the private key over once.
+  // thing that remembers a creation whose writes failed, so a log that will not
+  // say whether an App exists holds this route too: posting anyway mints a
+  // second App beside an unfinished one, and GitHub hands the private key over
+  // once.
   if (offer.unanswered !== null) {
     return new Response(
       "Lingtai cannot tell whether an App was already created here: the log could not be read " +
-        `(${offer.unanswered}). Creating one now could mint a second App over a working one. ` +
+        `(${offer.unanswered}). Creating one now could mint a second App beside a working one. ` +
         "Run pnpm lingtai doctor, then try again.",
       { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }
   if (!offer.offered) {
+    // Configured and merely minted are two states and one refusal: in both an
+    // App of Lingtai's is on GitHub, which is the whole of what makes a second
+    // one wrong. What differs is what to do next, and the page says that.
     return new Response(
-      `a GitHub App is already configured${offer.configured?.appId ? ` — app ${offer.configured.appId}` : ""}. ` +
-        "Creating a second one would leave an App nothing is installed on. Install this one instead.",
+      offer.configured !== null
+        ? `a GitHub App is already configured — app ${offer.configured.appId}. Creating a second ` +
+          "one would leave an App nothing is installed on. Install this one instead."
+        : offer.minted !== null
+          ? `app ${offer.minted.appId} was already created here and its credentials never landed. Finish that ` +
+            "one — the setup page says how — rather than minting a second."
+          : "creation is not offered here.",
       { status: 409, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }

@@ -59,20 +59,29 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
             <span className="hfact">
               {offer.offered
                 ? "step 0 — Lingtai talks to GitHub as an App, not as a token"
-                : offer.configured === null
-                  ? "the log did not answer"
-                  : "already configured"}
+                : offer.configured !== null
+                  ? "already configured"
+                  : offer.minted !== null
+                    ? "created here, and not finished"
+                    : "the log did not answer"}
             </span>
           </h2>
 
           {outcome === null ? null : outcome.ok ? <Created outcome={outcome} /> : <Refused refusal={outcome.refusal} />}
 
+          {/* Four answers and four sentences, in the order they are true. The
+              two in the middle are the ones that used to be one: *the
+              credentials are here* and *an App of ours is on GitHub* coincide
+              only on the path where nothing failed, and it is the other paths a
+              screen is read on. */}
           {offer.offered ? (
             <Create offer={offer} />
-          ) : outcome?.ok ? null : offer.configured === null ? (
-            <Unanswered why={offer.unanswered ?? ""} />
-          ) : (
+          ) : outcome?.ok ? null : offer.configured !== null ? (
             <Configured configured={offer.configured} installUrl={offer.installUrl} />
+          ) : offer.minted !== null ? (
+            <Unfinished minted={offer.minted} keyPath={offer.keyPath} />
+          ) : (
+            <Unanswered why={offer.unanswered ?? ""} />
           )}
         </section>
       </div>
@@ -217,21 +226,28 @@ function Created({
   );
 }
 
-/** Already configured: the install link, and no offer to mint a second one. */
+/**
+ * Already configured: the install link, and no offer to mint a second one.
+ *
+ * **`where` is about this process and never about the App.** The credentials
+ * exist either way — what differs is whether the process drawing this page can
+ * use them yet, since the key is re-read on every call and the App ID was fixed
+ * at start. `file` is therefore a restart and not a repair.
+ */
 function Configured({
   configured,
   installUrl,
 }: {
-  configured: { appId: string | null; slug: string | null; from: "environment" | "log" };
+  configured: { appId: string; slug: string | null; where: "environment" | "file"; file: string | null };
   installUrl: string | null;
 }) {
   return (
     <>
       <p className="note">
-        {configured.from === "environment"
-          ? `This Lingtai is configured with app ${configured.appId ?? "(unnamed)"}.`
-          : `App ${configured.appId} was created here and is on the log, though this process started before it — ` +
-            `run pnpm lingtai restart "picking up the new App" to use it.`}{" "}
+        {configured.where === "environment"
+          ? `This Lingtai is configured with app ${configured.appId}.`
+          : `App ${configured.appId} is configured in ${configured.file}, and this process started before that ` +
+            `line was written — run pnpm lingtai restart "picking up the new App" to use it.`}{" "}
         Creation is not offered again: a second App would be one nothing is installed on.
       </p>
       {installUrl === null ? (
@@ -251,16 +267,52 @@ function Configured({
 }
 
 /**
+ * An App was minted here and its credentials never landed.
+ *
+ * **This is the screen that used to say "configured".** `GitHubAppCreated` is
+ * appended the moment GitHub returns the conversion — before the key file and
+ * before the env file, so that a write which fails still leaves a record of the
+ * App it failed for. Read as a configuration, that record turned the one
+ * outcome it exists to describe into *created here, run `lingtai restart`* —
+ * advice that does nothing, because there is no key on this machine for the
+ * restart to pick up.
+ *
+ * So it says what is true: the App is on GitHub, its private key was handed
+ * over once during an exchange that did not finish, and the way out is a new
+ * key on the App's own page rather than a second App.
+ */
+function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string }; keyPath: string }) {
+  return (
+    <>
+      <p className="refusal">
+        App {minted.appId} ({minted.slug}) was created here, and this Lingtai is not configured with
+        it — the credentials did not reach this machine, so <code>{keyPath}</code> and the env file
+        do not name it. Creation is not offered again: the App exists, and a second one would be one
+        nothing is installed on.
+      </p>
+      <p className="note">
+        GitHub hands a private key over exactly once, so that one cannot be fetched again. Generate a
+        new key on the App&rsquo;s own page — <a href={`https://github.com/settings/apps/${minted.slug}`}>
+          Settings → Developer settings → GitHub Apps → General → Private keys
+        </a>{" "}
+        — and finish it by hand from step 2 of <code>doc/operating.md</code>. Deleting the App there
+        and starting again is the other way.
+      </p>
+    </>
+  );
+}
+
+/**
  * The log would not answer, so the page does not guess — and does not draw the
  * button.
  *
- * `GitHubAppCreated` is the only durable record that an App was minted here:
- * `LINGTAI_GITHUB_APP_ID` is read at process start, so a board that was started
- * before `.env.local` was written has nothing in its own environment to go on,
- * however long the App has been working. A store unreachable for a few minutes
- * must therefore read as *unknown* and never as *nothing* — the button on an
- * unanswered question is a second App minted over a working one, with
- * `.env.local` pointed at an id no repository has installed.
+ * `GitHubAppCreated` is the only durable record that an App was minted here, and
+ * the creations it is the *only* record of are the ones whose writes failed:
+ * there is no key file and no env line for those, so nothing else on this
+ * machine remembers them. A store unreachable for a few minutes must therefore
+ * read as *unknown* and never as *nothing* — the button on an unanswered
+ * question mints a second App while the first is still unfinished, and GitHub
+ * hands a private key over exactly once.
  */
 function Unanswered({ why }: { why: string }) {
   return (

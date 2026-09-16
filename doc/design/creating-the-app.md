@@ -48,7 +48,7 @@ Three things exist and were built for other reasons:
 
 | | |
 |---|---|
-| `hasGitHubApp()` (`packages/env/src/index.ts:309`) | *"Whether the App is configured at all, without throwing to find out."* The board already calls it twice (`actions.ts:71`, `:198`). **This is the idempotency check** the manifest flow needs and does not have of its own |
+| `hasGitHubApp()` (`packages/env/src/index.ts:309`) | *"Whether the App is configured at all, without throwing to find out."* The board already calls it twice (`actions.ts:71`, `:198`). **This is half the idempotency check** the manifest flow needs and does not have of its own — half, because it reads a `process.env` fixed at start, and the other half is the file (below) |
 | `githubApp()` reads the key **per call** | `readFileSync(resolvePath(path))` is inside the function, not module scope. A key written to `LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH` after a process started is picked up by that process's next call |
 | 0006's permission table | It is exactly the manifest's `default_permissions`, already agreed and already written down |
 
@@ -82,6 +82,35 @@ reaching config. It has two honest answers and the ticket must pick one:
 **The first is correct.** The second is the kind of half-true green that this
 repository keeps finding — and the page would be claiming a state only one of
 two processes is in.
+
+### Two more questions that look like one, found while building it
+
+*Is an App configured here* is what decides whether the button is drawn, and it
+has exactly two honest sources — and the first draft used neither of them
+properly.
+
+**It is asked of `.env.local` and not only of `process.env`.** The file is what
+this flow *writes*; `process.env` is a snapshot `@lingtai/env` took when the
+board started. An operator who finds they lack the organisation role the
+manifest flow needs, falls back to `operating.md` and adds the two lines by hand
+has changed nothing that snapshot can see — so a still-open board tab draws the
+button, and the exchange replaces both lines with a second App's while the
+screen says *Created*. Asking a snapshot whether the thing about to be
+overwritten is there is not asking.
+
+**And `GitHubAppCreated` says an App was minted, never that one is configured.**
+The record is appended the moment the conversion returns — before the key file
+and before the env file — precisely so that a write which fails leaves
+something durable behind it. Folded into *configured*, it therefore reported
+exactly the creations that did *not* finish as Apps a restart would pick up:
+the key write failed, the page said *created here — run `lingtai restart`*, and
+the restart found `LINGTAI_GITHUB_APP_ID` unset and changed nothing.
+
+So there are three answers and the screen says a different thing about each:
+**configured** (the credentials are here — install it), **minted** (an App of
+ours is on GitHub and its key never landed — finish that one, and GitHub will
+not hand the key over twice), and **unanswered** (the log did not say, so
+nothing is offered). Only the first two stop the button, and all three do.
 
 ## Where the flow lives: the board
 

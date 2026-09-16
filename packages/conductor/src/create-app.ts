@@ -38,13 +38,20 @@
  * received it is in. `lingtai restart`
  * ([0042](../../../doc/decisions/0042-restart-is-a-command.md)) exists to be
  * the honest ending.
+ *
+ * **And the same snapshot is why the guard reads the file.** *Is an App already
+ * configured* decides whether the button is drawn and whether a returning code
+ * is applied, and its answer lives in `.env.local` — the file this writes —
+ * where `process.env` only holds what was in it at start. `configuration()` is
+ * that question, asked of the file, of the environment and of the log, each for
+ * the one thing it knows.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { ENV_FILE_MODE, setEnvLine } from "@lingtai/agent-env";
+import { ENV_FILE_MODE, parseEnvFile, setEnvLine } from "@lingtai/agent-env";
 import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
 import { PREFIX, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
@@ -120,7 +127,26 @@ export type Outcome =
       warning: string | null;
       at: Date;
     }
-  | { ok: false; refusal: string; at: Date };
+  | {
+      ok: false;
+      refusal: string;
+      /**
+       * The App this refusal left behind on GitHub, when there is one.
+       *
+       * **A refusal after the conversion is not a refusal to create.** GitHub
+       * minted the App the moment the person pressed its button, so the half of
+       * this flow that cannot be undone is already done — and every later
+       * failure (the key file, the env file, the log) leaves it standing. This
+       * is what stops the page offering to mint a second one on the strength of
+       * the first having "failed", which is a press an operator reading *could
+       * not be written* makes without hesitating.
+       *
+       * Null for every refusal **before** the conversion, where nothing was
+       * created and starting again is exactly the right advice.
+       */
+      minted: { appId: string; slug: string } | null;
+      at: Date;
+    };
 
 export interface BeginOptions {
   /** Where the redirect comes back to, absolute — the board's own origin. */
@@ -353,7 +379,12 @@ async function convertAndWrite(
   issued: Map<string, Attempt>,
   succeeded: Outcome | null,
 ): Promise<Outcome> {
-  const refuse = (refusal: string): Outcome => ({ ok: false, refusal, at: now });
+  const refuse = (refusal: string, minted: { appId: string; slug: string } | null = null): Outcome => ({
+    ok: false,
+    refusal,
+    minted,
+    at: now,
+  });
 
   if (!options.code) {
     return refuse(
@@ -384,6 +415,7 @@ async function convertAndWrite(
   }
 
   const env = options.env ?? process.env;
+  const envFile = options.envFile ?? join(repoRoot(), ".env.local");
   // **The question the page and `start/route.ts` asked, asked again where the
   // writing happens.** A `state` is good for a whole hour and neither of those
   // two checks is one this path makes, so a first tab left on GitHub's naming
@@ -405,26 +437,37 @@ async function convertAndWrite(
         "Settings → Developer settings → GitHub Apps, and can be deleted there.",
     );
   }
-  const already = await configuredApp(env, options.store ?? eventStore);
+  const already = await configuration({ env, envFile, store: options.store ?? eventStore });
   if (already.configured !== null) {
     return refuse(
-      `a GitHub App is already configured here${
-        already.configured.appId === null ? "" : ` — app ${already.configured.appId}`
-      }, ${
-        already.configured.from === "environment" ? "in this process's environment" : "on the log"
+      `a GitHub App is already configured here — app ${already.configured.appId}, ${
+        already.configured.where === "environment" ? "in this process's environment" : `in ${already.configured.file}`
       }. This return was not applied: nothing was written, and that App's id, key path and webhook ` +
         "secret are untouched. GitHub did create the App this tab named — it is under Settings → " +
         "Developer settings → GitHub Apps, and can be deleted there. A second App is one nothing " +
         "is installed on.",
     );
   }
-  if (already.unanswered !== null) {
-    // **Unknown is not no, here as on the page and in `start`.** The log is the
-    // only guard a board started before `.env.local` was written has, so a read
-    // that fails cannot be read as *nothing is configured* — that is a working
-    // App's configuration overwritten by a few minutes of unreachable Postgres.
+  if (already.minted !== null) {
+    // An App minted here whose credentials did not land — the log kept the fact
+    // and `.env.local` does not name it. Two is not the answer to one that is
+    // unfinished, and this is the one place that can say so before the second
+    // one's key is fetched.
     return refuse(
-      "Lingtai cannot tell whether an App is already configured here: the log could not be read " +
+      `app ${already.minted.appId} was created here already and this Lingtai is still not ` +
+        `configured with it — ${envFile} does not name it, so that creation did not finish. This ` +
+        "return was not applied and nothing was written: the App to finish is that one, by hand " +
+        "from step 2 of doc/operating.md. GitHub did create the App this tab named as well — it " +
+        "is under Settings → Developer settings → GitHub Apps, and can be deleted there.",
+    );
+  }
+  if (already.unanswered !== null) {
+    // **Unknown is not no, here as on the page and in `start`.** The log is what
+    // remembers an App minted here whose writes did not land, so a read that
+    // fails cannot be read as *nothing was created* — that is a second App
+    // minted on a few minutes of unreachable Postgres.
+    return refuse(
+      "Lingtai cannot tell whether an App was already created here: the log could not be read " +
         `(${already.unanswered}). This return was not applied and nothing was written, because ` +
         "writing it over an App this process cannot see would point .env.local at an id no " +
         "repository has installed. GitHub did create the App this tab named — it is under Settings " +
@@ -448,17 +491,22 @@ async function convertAndWrite(
   }
 
   // **The record goes down the moment the App exists, and before either write
-  // that can fail.** `GitHubAppCreated` is the only durable thing saying an App
-  // was minted here — `LINGTAI_GITHUB_APP_ID` is fixed at process start, so
-  // until a restart the log is the whole of what `offerCreation` has to go on.
-  // Appended after the writes instead, a `.env.local` that will not take three
-  // lines returned a refusal with no record behind it: `offered` went back to
-  // true, the page drew the form again under the refusal, and an operator who
-  // read *could not be written* as a failure and pressed Create was given
-  // another App, another orphan key at `.pem`'s sibling name, and the same
-  // refusal — every press, with the log that exists to stop a second App
-  // holding none of them. The App exists from here on whatever else fails, so
-  // this is where the fact belongs.
+  // that can fail.** Appended after the writes instead, a `.env.local` that
+  // would not take three lines returned a refusal with no record behind it: the
+  // page drew the form again under it, and an operator who read *could not be
+  // written* as a failure and pressed Create was given another App, another
+  // orphan key, and the same refusal — every press. The App exists from here on
+  // whatever else fails, so this is where the fact belongs.
+  //
+  // **What it records is that an App was minted, and never that one is
+  // configured.** Those two are one fact only on the path where nothing went
+  // wrong, and it is the other paths this record exists for: written first, it
+  // is on the log *before* the key file and the env file are, so reading it as
+  // *the credentials are there, this process is merely stale* would report a
+  // creation whose key write failed as an App a restart will pick up. What is
+  // configured is what `.env.local` and the environment say — `configuration()`
+  // asks them and does not ask this — and this says an App of Lingtai's is out
+  // there on GitHub, which is the fact that makes minting a second one wrong.
   let notRecorded: string | null = null;
   try {
     const store = options.store ?? eventStore;
@@ -481,14 +529,24 @@ async function convertAndWrite(
     notRecorded = (err as Error).message;
   }
 
-  /** What a refusal after this point can promise about pressing Create again. */
+  /** The App this exchange put on GitHub, carried by every refusal below. */
+  const minted = { appId: String(created.id), slug: created.slug };
+
+  /**
+   * What a refusal after this point can promise about pressing Create again.
+   *
+   * Two guards and not one, because they fail at different times. This process
+   * remembers `minted` for as long as it runs, whatever the log said; the log
+   * is what survives a restart. So a record that would not go down is a true
+   * thing to say — it is the difference between *this page* and *this
+   * installation* not offering another.
+   */
   const andTheLog =
     notRecorded === null
       ? " It is on Lingtai's log, so this page will not offer to create another: finish this one."
-      : ` The log did not record it either (${notRecorded}), so this page may go on offering to ` +
-        "create another App — do not press it, the App exists.";
+      : ` The log did not record it either (${notRecorded}), so this page will stop offering to ` +
+        "create another only until Lingtai is restarted — after that, do not press it: the App exists.";
 
-  const envFile = options.envFile ?? join(repoRoot(), ".env.local");
   const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT;
 
   let keyPath: string;
@@ -503,15 +561,20 @@ async function convertAndWrite(
         "again; generate a new one on the App's own page (Settings → Developer settings → GitHub " +
         "Apps → General → Private keys) and follow doc/operating.md from step 2." +
         andTheLog,
+      minted,
     );
   }
 
   try {
-    await writeEnv(envFile, {
-      [APP_ID_VAR]: String(created.id),
-      [KEY_PATH_VAR]: keyPath,
-      [WEBHOOK_SECRET_VAR]: created.webhookSecret,
-    });
+    await writeEnv(
+      envFile,
+      {
+        [APP_ID_VAR]: String(created.id),
+        [KEY_PATH_VAR]: keyPath,
+        [WEBHOOK_SECRET_VAR]: created.webhookSecret,
+      },
+      APP_ID_VAR,
+    );
   } catch (err) {
     // Two of the three values can be written by hand from this sentence. The
     // third cannot: GitHub generates the webhook secret during the conversion
@@ -530,6 +593,7 @@ async function convertAndWrite(
         "page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write " +
         `that one here as ${WEBHOOK_SECRET_VAR}.` +
         andTheLog,
+      minted,
     );
   }
 
@@ -607,16 +671,45 @@ async function exists(path: string): Promise<boolean> {
  * when it did: that mode is the operator's, and a command that widened a file
  * somebody had narrowed, while claiming to secure it, would be worse than one
  * that never touched it (`agent-env`'s own rule).
+ *
+ * **`keep` is the guard where the guard belongs.** `configuration()` asks this
+ * same file whether an App is configured, and refuses the whole flow when it
+ * says yes — but that read is minutes and a round trip to GitHub away from this
+ * write, and what happens in between is somebody adding the two lines by hand
+ * because the manifest flow would not work for them. So the line that must not
+ * be replaced is named here, the file is read once, and the name's presence in
+ * *that* read is what decides: the check and the write see the same bytes,
+ * which is the only version of this that cannot be raced.
  */
-async function writeEnv(file: string, values: Record<string, string>): Promise<void> {
+async function writeEnv(file: string, values: Record<string, string>, keep: string): Promise<void> {
   const before = await readOrNull(file);
   const created = before === null;
+  if (before !== null && named(parseEnvFile(before).values, keep) !== null) {
+    throw new Error(
+      `${keep} is already set in ${file} — it was written between this page's check and this write, ` +
+        "and replacing it would point Lingtai at a different App",
+    );
+  }
   let text = before ?? header();
   for (const [name, value] of Object.entries(values)) text = setEnvLine(text, name, value);
 
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, text, { mode: ENV_FILE_MODE });
   if (created) await chmod(file, ENV_FILE_MODE);
+}
+
+/**
+ * What an env file's own values say a name is, or null.
+ *
+ * `optional`'s rule — **an empty value is not a value** — applied to a parsed
+ * file rather than to a process environment. It matters at exactly one line:
+ * `.env.example` ships `LINGTAI_GITHUB_APP_ID=` blank, so a person who copied
+ * the template has that name in their file and no App, and reading the name as
+ * a configuration would refuse them the one screen they came for.
+ */
+function named(values: Record<string, string>, name: string): string | null {
+  const value = values[name];
+  return value === undefined || value === "" ? null : value;
 }
 
 async function readOrNull(file: string): Promise<string | null> {
@@ -651,61 +744,132 @@ export async function recordedApp(
   return null;
 }
 
+/** An App this installation has the credentials of, and where they are. */
+export interface Configured {
+  /** Never null: an id is what *being* configured means, in both branches. */
+  appId: string;
+  /** The App's name on GitHub, when the log agrees this is that App. */
+  slug: string | null;
+  /**
+   * `environment` — this process can use it now.
+   * `file` — the env file names it and this process started before it did, so
+   * it takes a restart (0042).
+   */
+  where: "environment" | "file";
+  /** The env file, when that is what says so — the page names it. */
+  file: string | null;
+}
+
 /**
- * What is already configured here, and how that is known — or why nobody knows.
+ * Three separate questions with one answer each, and the separation is the
+ * point.
+ *
+ * - **`configured`** — are the credentials here? Asked of `process.env` and of
+ *   the env files, which are where `githubApp()` can read them from, and of
+ *   nothing else.
+ * - **`minted`** — is there an App of Lingtai's on GitHub? Asked of the log,
+ *   which is the only durable record of one.
+ * - **`unanswered`** — the log would not say, so `minted` is unknown rather
+ *   than no.
+ *
+ * **`minted` was `configured` once, and it was wrong.** `GitHubAppCreated` is
+ * appended the moment the conversion returns — before the key file and before
+ * the env file, deliberately, so that a write that fails leaves a record behind
+ * it. Folding it into *configured* therefore reported exactly the creations
+ * that did not finish as Apps a restart would pick up: the key write failed,
+ * the page said *created here, run `lingtai restart`*, and the restart found
+ * `LINGTAI_GITHUB_APP_ID` unset and nothing changed.
+ *
+ * **And `configured` reads the file, not only `process.env`.** The file is what
+ * the write targets, and `@lingtai/env` parses it once at import — so a process
+ * running since before somebody added the two lines by hand answers *not
+ * configured* for as long as it runs, however long the App has worked. Asking
+ * `process.env` alone is asking a snapshot whether the thing about to be
+ * overwritten is there.
  *
  * **One function because it is one condition.** The page asks it to decide
  * whether to draw the button, `start/route.ts` asks it again where the form
  * arrives, and `convertAndWrite` asks it a third time where the credentials
  * would be written. A guard the last of those does not share is a guard a
  * `state` from a forgotten tab walks straight past an hour later.
- *
- * **Two ways of already having one, and the second is the one that matters.**
- * `hasGitHubApp()` reads `process.env`, which a board fixed at start — so the
- * process that has just written `LINGTAI_GITHUB_APP_ID` still answers *not
- * configured*. The log is what closes it: `GitHubAppCreated` is durable, and
- * the App it names exists whatever this process's environment says.
  */
-async function configuredApp(
-  env: NodeJS.ProcessEnv,
-  store: EventStore,
-): Promise<{
-  configured: { appId: string | null; slug: string | null; from: "environment" | "log" } | null;
+async function configuration(options: {
+  env: NodeJS.ProcessEnv;
+  envFile: string;
+  store: EventStore;
+}): Promise<{
+  configured: Configured | null;
+  minted: { appId: string; slug: string } | null;
   unanswered: string | null;
 }> {
-  let recorded: { appId: string; slug: string } | null = null;
+  let minted: { appId: string; slug: string } | null = null;
   let unanswered: string | null = null;
   try {
-    recorded = await recordedApp(store);
+    minted = await recordedApp(options.store);
   } catch (err) {
     unanswered = (err as Error).message;
   }
-  const envAppId = optional(APP_ID_VAR, env) ?? null;
-  // **The id is the environment's and the slug is the log's**, so the slug
+
+  // **Both files `@lingtai/env` reads, and in its order.** It loads
+  // `.env.local` and then `.env`, first to name a value winning — so an id
+  // added by hand to `.env` after this process started is a real configuration
+  // that this process's environment cannot see, and writing `.env.local` would
+  // shadow it rather than replace it: the same accident with an extra file in
+  // it. The write target is still only the first.
+  const inTarget = await namedIn(options.envFile, APP_ID_VAR);
+  const inFiles = inTarget ?? (await namedIn(join(dirname(options.envFile), ".env"), APP_ID_VAR));
+  const envAppId = optional(APP_ID_VAR, options.env) ?? null;
+
+  const appId = hasGitHubApp(options.env) ? envAppId : (inFiles?.value ?? null);
+  // **The id is the configuration's and the slug is the log's**, so the slug
   // describes this App only when the log is about this App. An operator who
   // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
   // would otherwise be shown 222's id beside 111's install link — they install
   // 111, and `lingtai add` answers *not installed* for 222 with nothing saying
   // the link was for a different App. A name Lingtai does not know is the
   // honest answer, and `Configured` already has that sentence.
-  const slugOfEnvApp = recorded !== null && envAppId !== null && recorded.appId === envAppId ? recorded.slug : null;
-  const configured = hasGitHubApp(env)
-    ? { appId: envAppId, slug: slugOfEnvApp, from: "environment" as const }
-    : recorded !== null
-      ? { appId: recorded.appId, slug: recorded.slug, from: "log" as const }
-      : null;
-  return { configured, unanswered };
+  const slug = minted !== null && appId !== null && minted.appId === appId ? minted.slug : null;
+
+  const configured: Configured | null =
+    hasGitHubApp(options.env) && envAppId !== null
+      ? { appId: envAppId, slug, where: "environment", file: null }
+      : inFiles !== null
+        ? { appId: inFiles.value, slug, where: "file", file: inFiles.file }
+        : null;
+  return { configured, minted, unanswered };
+}
+
+/**
+ * What one env file says a name is, with the file it said it in — or null.
+ *
+ * **A named id is enough here, where the environment needs both.**
+ * `hasGitHubApp` asks for an id *and* a key because that is what it takes to
+ * use one; this reads the file the flow *writes*, and a half-finished
+ * configuration in it is still a line that would be replaced by a different
+ * App's.
+ */
+async function namedIn(file: string, name: string): Promise<{ value: string; file: string } | null> {
+  const text = await readOrNull(file);
+  if (text === null) return null;
+  const value = named(parseEnvFile(text).values, name);
+  return value === null ? null : { value, file };
 }
 
 export interface Offer {
   /** Whether the page offers to create an App at all. */
   offered: boolean;
-  /** Why not, when it is not: what is already configured, and how that is known. */
-  configured: { appId: string | null; slug: string | null; from: "environment" | "log" } | null;
+  /** The credentials this installation has, when it has them. */
+  configured: Configured | null;
+  /**
+   * An App minted here that nothing is configured with — the creation that did
+   * not finish. **Never rendered as "configured"**: it says the App is on
+   * GitHub, not that its key reached this machine.
+   */
+  minted: { appId: string; slug: string } | null;
   /**
    * Why the question could not be answered, when it could not — the store's own
-   * message. **Not the same as `configured: null`**, which says *there is no
-   * App*; this says *nobody knows*, and nothing is offered on it.
+   * message. **Not the same as `minted: null`**, which says *no App was created
+   * here*; this says *nobody knows*, and nothing is offered on it.
    */
   unanswered: string | null;
   /** #168's first screen, when there is a slug to build it from. */
@@ -725,40 +889,59 @@ export interface Offer {
 /**
  * Whether to offer creation, and everything the screen needs to say why not.
  *
- * **Two ways of already having one, and the second is the one that matters.**
- * `hasGitHubApp()` reads `process.env`, which a board fixed at start — so the
- * process that has just written `LINGTAI_GITHUB_APP_ID` still answers *not
- * configured*, and a page reading only that would cheerfully offer to mint a
- * second App on the next render. The log is what closes it: `GitHubAppCreated`
- * is durable, and the App it names exists whatever this process's environment
- * says.
+ * Four reasons not to, and each is a different sentence on the page:
  *
- * **So a log that will not answer is not a log that said no.** Because the
- * durable guard is the only one a board started before `.env.local` was written
- * has, a read that fails and is read as *nothing is configured* is a few
- * minutes of unreachable Postgres turning into a second App minted over a
- * working one — `.env.local` rewritten to an id no repository has installed,
- * and the private key of the App that was working handed over once and gone.
- * The failure is carried as `unanswered` and creation is withheld on it.
+ * | | |
+ * |---|---|
+ * | `configured` | the credentials are here — offer the install link instead |
+ * | `minted` | an App is on GitHub whose credentials never landed — finish that one |
+ * | this process minted one | including one the log would not record |
+ * | `unanswered` | the log did not say, and a button on an unanswered question mints a second App |
+ *
+ * **A log that will not answer is not a log that said no.** The record is the
+ * only thing that outlives a restart when the writes failed, so a read that
+ * fails and is taken as *nothing was created* is a few minutes of unreachable
+ * Postgres turning into a second App — and GitHub hands a private key over
+ * exactly once. The failure is carried as `unanswered` and creation is withheld
+ * on it.
+ *
+ * **And this process's own last return counts, whatever the log took.** A
+ * refusal after the conversion carries `minted`: the App exists whether or not
+ * the record went down, and *the write failed* is precisely the sentence that
+ * gets Create pressed a second time.
  */
 export async function offerCreation(
-  options: { env?: NodeJS.ProcessEnv; store?: EventStore; session?: CreationSession; now?: Date } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    /** The write target, which is also what `configured` is read from. */
+    envFile?: string;
+    store?: EventStore;
+    session?: CreationSession;
+    now?: Date;
+  } = {},
 ): Promise<Offer> {
   const env = options.env ?? process.env;
+  const envFile = options.envFile ?? join(repoRoot(), ".env.local");
   const session = options.session ?? creation;
-  const { configured, unanswered } = await configuredApp(env, options.store ?? eventStore);
+  const { configured, minted, unanswered } = await configuration({
+    env,
+    envFile,
+    store: options.store ?? eventStore,
+  });
   const outcome = session.outcome();
+  const mintedHere = minted ?? (outcome !== null && outcome.ok === false ? outcome.minted : null);
 
   return {
-    // **Three ways of already having one**, and the third is the narrowest: an
-    // App that was created a moment ago, whose record the log would not take
-    // (`warning`). The files on disk are the credential either way, so offering
-    // again would mint a second App over a working one. And a fourth that is
-    // not a way of having one at all: `unanswered`, where the question stands.
-    offered: unanswered === null && configured === null && outcome?.ok !== true,
+    offered: unanswered === null && configured === null && mintedHere === null && outcome?.ok !== true,
     configured,
+    minted: mintedHere,
     unanswered,
-    installUrl: configured?.slug ? `https://github.com/apps/${configured.slug}/installations/new` : null,
+    // The App the person is being sent to install is the one they are
+    // configured with, and the slug is null unless the log agrees it is that
+    // App — so an unfinished creation's slug is never offered as this one's.
+    installUrl: configured?.slug
+      ? `https://github.com/apps/${configured.slug}/installations/new`
+      : null,
     keyPath: optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT,
     suggestedName: suggestedName(),
     permissions: REQUIRED_PERMISSIONS,

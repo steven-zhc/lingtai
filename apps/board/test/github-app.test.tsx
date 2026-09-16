@@ -25,6 +25,7 @@ const PERMISSIONS = [
 const OFFERING: Offer = {
   offered: true,
   configured: null,
+  minted: null,
   unanswered: null,
   installUrl: null,
   keyPath: "~/.ssh/lingtai-agent.private-key.pem",
@@ -91,7 +92,8 @@ describe("an App that already exists", () => {
   const CONFIGURED: Offer = {
     ...OFFERING,
     offered: false,
-    configured: { appId: "1234567", slug: "lingtai-steven", from: "environment" },
+    configured: { appId: "1234567", slug: "lingtai-steven", where: "environment", file: null },
+    minted: { appId: "1234567", slug: "lingtai-steven" },
     installUrl: "https://github.com/apps/lingtai-steven/installations/new",
   };
 
@@ -103,17 +105,58 @@ describe("an App that already exists", () => {
   });
 
   /**
-   * Created here, and this process started before it. Saying *configured* would
-   * be true of the files and false of the daemon, so the sentence is the
-   * restart.
+   * Written to the env file, and this process started before that line. Saying
+   * *configured* alone would be true of the file and false of the daemon, so
+   * the sentence is the restart.
    */
-  it("says so from the log too, and names the restart that picks it up", () => {
+  it("names the env file and the restart that picks it up, when the file is what says so", () => {
     const out = html({
       ...CONFIGURED,
-      configured: { appId: "1234567", slug: "lingtai-steven", from: "log" },
+      configured: {
+        appId: "1234567",
+        slug: "lingtai-steven",
+        where: "file",
+        file: "/repo/.env.local",
+      },
     });
 
+    expect(out).toContain("/repo/.env.local");
     expect(out).toContain("lingtai restart");
+  });
+});
+
+/**
+ * **An App on the log is not a configured App**, and this is the screen that
+ * says the difference.
+ *
+ * `GitHubAppCreated` is appended before the key file and the env file, so that
+ * a write which fails leaves a record of the App it failed for. Rendered as a
+ * configuration, that record turned exactly those failures into *created here,
+ * run `lingtai restart`* — and the restart would find `LINGTAI_GITHUB_APP_ID`
+ * unset and do nothing, with no sentence anywhere saying the key never landed.
+ */
+describe("an App minted here whose credentials never landed", () => {
+  const UNFINISHED: Offer = {
+    ...OFFERING,
+    offered: false,
+    configured: null,
+    minted: { appId: "1234567", slug: "lingtai-steven" },
+  };
+
+  it("does not read as configured, and does not send anyone to a restart", () => {
+    const out = html(UNFINISHED);
+
+    expect(out).toContain("not configured with it");
+    expect(out).not.toContain("lingtai restart");
+    expect(out).not.toContain("already configured");
+  });
+
+  it("draws no form, and points at a new key rather than a second App", () => {
+    const out = html(UNFINISHED);
+
+    expect(out).not.toContain('action="/setup/github-app/start"');
+    expect(out).toContain("Private keys");
+    expect(out).toContain("doc/operating.md");
   });
 });
 
@@ -149,7 +192,8 @@ describe("the ending", () => {
   const CREATED: Offer = {
     ...OFFERING,
     offered: false,
-    configured: { appId: "1234567", slug: "lingtai-steven", from: "log" },
+    configured: { appId: "1234567", slug: "lingtai-steven", where: "file", file: "/repo/.env.local" },
+    minted: { appId: "1234567", slug: "lingtai-steven" },
     installUrl: "https://github.com/apps/lingtai-steven/installations/new",
     outcome: {
       ok: true,
@@ -188,7 +232,7 @@ describe("the ending", () => {
   });
 
   it("says a refusal in the server's own words and offers the form again", () => {
-    const out = html({ ...OFFERING, outcome: { ok: false, refusal: "the hour lapsed — start again", at: new Date() } });
+    const out = html({ ...OFFERING, outcome: { ok: false, refusal: "the hour lapsed — start again", minted: null, at: new Date() } });
 
     expect(out).toContain("the hour lapsed — start again");
     expect(out).toContain('action="/setup/github-app/start"');

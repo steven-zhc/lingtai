@@ -319,7 +319,7 @@ describe("a return from a tab the operator forgot", () => {
       envFile,
     });
 
-    expect(late.ok === false && late.refusal).toContain("cannot tell whether an App is already configured");
+    expect(late.ok === false && late.refusal).toContain("cannot tell whether an App was already created");
     expect(late.ok === false && late.refusal).toContain("connection terminated unexpectedly");
     expect(await there(envFile)).toBe(false);
     expect(await there(keyPath)).toBe(false);
@@ -513,10 +513,17 @@ describe("what the six returned values become", () => {
 
     // The second press, in this process and in a restarted one: both refused,
     // and the second is the log alone.
+    const { envFile } = await workspace();
     for (const asked of [session, createCreationSession()]) {
-      const offer = await offerCreation({ env: {}, store, session: asked });
+      const offer = await offerCreation({ env: {}, envFile, store, session: asked });
       expect(offer.offered).toBe(false);
-      expect(offer.configured).toEqual({ appId: "1234567", slug: "lingtai-steven", from: "log" });
+      // **`minted` and not `configured`.** Nothing was written — that is what
+      // this test just made happen — so a page that read the record as a
+      // configuration would say *created here, run `lingtai restart`*, and the
+      // restart would find `LINGTAI_GITHUB_APP_ID` unset and change nothing.
+      expect(offer.configured).toBeNull();
+      expect(offer.minted).toEqual({ appId: "1234567", slug: "lingtai-steven" });
+      expect(offer.installUrl).toBeNull();
     }
   });
 
@@ -542,7 +549,7 @@ describe("what the six returned values become", () => {
 
     expect(outcome.ok).toBe(false);
     expect((await store.readAll(0n, 100)).map((e) => (e.data as { appId: string }).appId)).toEqual(["1234567"]);
-    expect(await offerCreation({ env: {}, store, session: createCreationSession() })).toMatchObject({
+    expect(await offerCreation({ env: {}, envFile, store, session: createCreationSession() })).toMatchObject({
       offered: false,
     });
   });
@@ -616,12 +623,20 @@ describe("what the six returned values become", () => {
 
 describe("what the screen offers", () => {
   const store = () => createMemoryEventStore();
+  /** An env file that is not this repository's, and is not there yet. */
+  const blank = async () => (await workspace()).envFile;
 
   it("offers creation when nothing is configured and nothing is on the log", async () => {
-    const offer = await offerCreation({ env: {}, store: store(), session: createCreationSession() });
+    const offer = await offerCreation({
+      env: {},
+      envFile: await blank(),
+      store: store(),
+      session: createCreationSession(),
+    });
 
     expect(offer.offered).toBe(true);
     expect(offer.configured).toBeNull();
+    expect(offer.minted).toBeNull();
     expect(offer.permissions.map((p) => p.name)).toContain("issues");
   });
 
@@ -629,12 +644,116 @@ describe("what the screen offers", () => {
   it("does not offer creation when the environment already has an App", async () => {
     const offer = await offerCreation({
       env: { [APP_ID_VAR]: "42", [KEY_PATH_VAR]: "~/.ssh/k.pem" },
+      envFile: await blank(),
       store: store(),
       session: createCreationSession(),
     });
 
     expect(offer.offered).toBe(false);
-    expect(offer.configured).toEqual({ appId: "42", slug: null, from: "environment" });
+    expect(offer.configured).toEqual({ appId: "42", slug: null, where: "environment", file: null });
+  });
+
+  /**
+   * **The guard has to read the file the write targets, and not only the
+   * environment the process started in.**
+   *
+   * `@lingtai/env` parses `.env.local` once at import, so `process.env` is a
+   * snapshot taken when the board started. An operator who finds they lack the
+   * organisation role this flow needs and falls back to `doc/operating.md` —
+   * creating the App by hand, saving the key, adding the two lines — has
+   * changed nothing that snapshot can see. Reading it alone, the still-open
+   * board tab answers *nothing is configured*, draws the button, and the
+   * exchange replaces both lines with a second App's while the screen says
+   * *Created*: every call fails as not-installed after the next restart, and
+   * the working App's key is the one GitHub will not hand over twice.
+   */
+  it("reads the env file it would write, not only the environment it started with", async () => {
+    const { envFile, keyPath } = await workspace();
+    await writeFile(
+      envFile,
+      `# by hand, after this board started\n${APP_ID_VAR}=999\n${KEY_PATH_VAR}=${keyPath}\n`,
+    );
+    const log = store();
+
+    const offer = await offerCreation({
+      env: {},
+      envFile,
+      store: log,
+      session: createCreationSession(),
+    });
+
+    expect(offer.offered).toBe(false);
+    // `file`, not `environment`: the credentials are on disk and this process
+    // started before them, which is what `lingtai restart` is for (0042).
+    expect(offer.configured).toEqual({ appId: "999", slug: null, where: "file", file: envFile });
+  });
+
+  /**
+   * `@lingtai/env` loads `.env.local` and then `.env`, first to name a value
+   * winning. So an id in `.env` is a real configuration, and writing
+   * `.env.local` would *shadow* it — the same accident with an extra file in
+   * it, and one where the line that was replaced is still sitting there
+   * looking correct.
+   */
+  it("reads the .env beside it, which is the other file the environment comes from", async () => {
+    const { dir, envFile, keyPath } = await workspace();
+    await writeFile(join(dir, ".env"), `${APP_ID_VAR}=999\n${KEY_PATH_VAR}=${keyPath}\n`);
+
+    const offer = await offerCreation({
+      env: {},
+      envFile,
+      store: store(),
+      session: createCreationSession(),
+    });
+
+    expect(offer.offered).toBe(false);
+    expect(offer.configured).toEqual({
+      appId: "999",
+      slug: null,
+      where: "file",
+      file: join(dir, ".env"),
+    });
+  });
+
+  /** A copied `.env.example` names it and has no App: that is not a configuration. */
+  it("reads an empty line as no App, so a copied template still gets the screen", async () => {
+    const { envFile } = await workspace();
+    await writeFile(envFile, `# copied from .env.example\n${APP_ID_VAR}=\n${KEY_PATH_VAR}=\n`);
+
+    const offer = await offerCreation({
+      env: {},
+      envFile,
+      store: store(),
+      session: createCreationSession(),
+    });
+
+    expect(offer.offered).toBe(true);
+    expect(offer.configured).toBeNull();
+  });
+
+  /** And the same question again where the writing happens. */
+  it("refuses a return that would write over an env file configured by hand", async () => {
+    const { envFile, keyPath } = await workspace();
+    const before = `${APP_ID_VAR}=999\n${KEY_PATH_VAR}=${keyPath}\n`;
+    await writeFile(envFile, before);
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-x", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    const outcome = await session.finish({
+      code: "fresh",
+      state: begun.state,
+      by: "human:steven",
+      fetch: conversion(),
+      store: store(),
+      env: {},
+      keyPath: join(await mkdtemp(join(tmpdir(), "lingtai-key-")), "agent.private-key.pem"),
+      envFile,
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.refusal).toContain("app 999");
+    expect(outcome.ok === false && outcome.refusal).toContain("nothing was written");
+    expect(await readFile(envFile, "utf8")).toBe(before);
   });
 
   /**
@@ -661,11 +780,12 @@ describe("what the screen offers", () => {
 
     const offer = await offerCreation({
       env: { [APP_ID_VAR]: "7654321", [KEY_PATH_VAR]: "~/.ssh/by-hand.pem" },
+      envFile: await blank(),
       store: log,
       session: createCreationSession(),
     });
 
-    expect(offer.configured).toEqual({ appId: "7654321", slug: null, from: "environment" });
+    expect(offer.configured).toEqual({ appId: "7654321", slug: null, where: "environment", file: null });
     expect(offer.installUrl).toBeNull();
   });
 
@@ -682,21 +802,29 @@ describe("what the screen offers", () => {
       },
     } as unknown as EventStore;
 
-    const offer = await offerCreation({ env: {}, store: unreachable, session: createCreationSession() });
+    const offer = await offerCreation({
+      env: {},
+      envFile: await blank(),
+      store: unreachable,
+      session: createCreationSession(),
+    });
 
     expect(offer.offered).toBe(false);
     expect(offer.unanswered).toBe("connection terminated unexpectedly");
-    // Not `configured`: nothing is known to be configured. The two are
-    // different answers and the page says different things about them.
+    // Neither `configured` nor `minted`: nothing is *known*. Three answers, and
+    // the page says a different thing about each.
     expect(offer.configured).toBeNull();
+    expect(offer.minted).toBeNull();
   });
 
   /**
    * The asymmetry, as the page meets it: the App ID is fixed at process start,
-   * so the board that just wrote one still answers *not configured*. The log is
-   * what stops it offering to mint a second.
+   * so the board that just wrote one still answers *not configured* from its
+   * own environment. **The file it wrote is what closes that**, and it says
+   * `where: "file"` — the credentials are there and a restart is what is owed,
+   * which is the sentence `lingtai restart` is the answer to (0042).
    */
-  it("does not offer creation when the log says one was created, though this process has no App", async () => {
+  it("sees the App it has just written, in a process whose environment predates it", async () => {
     const log = store();
     const session = createCreationSession();
     const { keyPath, envFile } = await workspace();
@@ -714,10 +842,16 @@ describe("what the screen offers", () => {
 
     // A fresh session, as a restarted board would have: the environment is
     // still empty and the offer is still refused.
-    const offer = await offerCreation({ env: {}, store: log, session: createCreationSession() });
+    const offer = await offerCreation({ env: {}, envFile, store: log, session: createCreationSession() });
 
     expect(offer.offered).toBe(false);
-    expect(offer.configured).toEqual({ appId: "1234567", slug: "lingtai-steven", from: "log" });
+    expect(offer.configured).toEqual({
+      appId: "1234567",
+      slug: "lingtai-steven",
+      where: "file",
+      file: envFile,
+    });
+    expect(offer.minted).toEqual({ appId: "1234567", slug: "lingtai-steven" });
     expect(offer.installUrl).toBe("https://github.com/apps/lingtai-steven/installations/new");
   });
 
@@ -731,14 +865,17 @@ describe("what the screen offers", () => {
     const at = new Date("2026-09-15T10:00:00Z");
     session.begin({ name: "lingtai-taken", redirectUrl: "http://127.0.0.1:3200/created", now: at });
 
+    const envFile = await blank();
     const waiting = await offerCreation({
       env: {},
+      envFile,
       store: store(),
       session,
       now: new Date(at.getTime() + 60_000),
     });
     const lapsed = await offerCreation({
       env: {},
+      envFile,
       store: store(),
       session,
       now: new Date(at.getTime() + ATTEMPT_WINDOW_MS + 1000),
