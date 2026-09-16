@@ -707,9 +707,18 @@ export default async function Page({
         </span>
         <span className="sep" />
         {/* A filter, not a caption. With one project there is nothing to choose
-            between, so it stays the sentence it was. */}
+            between, so it stays the sentence it was.
+
+            **Nothing configured is the one board with somewhere to go**, and it
+            is the same object rather than a fifth one: the slot already says
+            *there is nothing here yet*, and step 0 — create the App, install
+            it, add a repository — is what a person on that board is looking
+            for (#169). A board with projects gets the filter it always had, so
+            the row does not grow. */}
         {filters.length === 0 ? (
-          <span>no project configured</span>
+          <Link className="tab" href="/setup/github-app" title="create the GitHub App, then install it">
+            no project configured
+          </Link>
         ) : filters.length === 1 ? (
           <span>{filters[0]}</span>
         ) : (

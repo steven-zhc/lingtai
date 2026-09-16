@@ -16,7 +16,7 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 58 types
+## event — 59 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -38,6 +38,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
 | prompt (1) | `PromptEdited` |
 | project & queue (7) | `QueueChanged` `RunRequested` `ProjectOnboardingStarted` `ProjectConfigured` `ProjectRefused` `ProjectRecovered` `Reconciled` |
+| github app (1) | `GitHubAppCreated` — the team's own App, minted from a manifest (`#169`). **Two fields, and the other four values that arrived are the reason**: the private key, the webhook secret and an OAuth client secret Lingtai has no flow for. The log is permanent and `projection rebuild` replays it, so what is recorded is the **id and the slug** — the key goes to a `0600` file, the webhook secret to the env file, and the OAuth pair is dropped where the conversion is read (`packages/github/src/manifest.ts`) |
 | extension (1) | `PluginFailed` |
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload
@@ -116,9 +117,14 @@ are not — one per work item, run, lane and project, forever.
 | `run-` | run (one attempt) | `run-75b80f13-9f88-48cf-b4d2-79b9779f47cf` |
 | `int-` | integration lane, per base branch | `int-nextloom-ai-admin-develop` |
 | `prj-` | project | `prj-nextloom-ai-admin` |
-| `ctl-` | control | `ctl-conductor` (the only one so far) |
+| `ctl-` | control | `ctl-conductor`, `ctl-github-app` |
 | `chat-` | discussion about one work item | `chat-8f21…` |
 | `ext-` | extension | `ext-subscribers` (the only one so far) |
+
+`ctl-github-app` is the installation's App and holds one event per creation
+(`#169`). It is beside `ctl-conductor` rather than on it because the daemon
+appends to that stream while it runs, and a board recording an App would race a
+pass for the version — `ext-subscribers` is apart for the same reason.
 
 ## upcaster — 15 chains, 17 steps
 

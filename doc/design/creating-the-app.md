@@ -1,6 +1,8 @@
 # Creating the App, as step 0
 
-**Status** analysis · 2026-09-15 · precedes
+**Status** built as [#169](https://github.com/steven-zhc/lingtai/issues/169) ·
+2026-09-15 · `/setup/github-app` on the board, `packages/github/src/manifest.ts`
+and `packages/conductor/src/create-app.ts` · precedes
 [the onboarding wizard](the-onboarding-wizard.md) and
 [#168](https://github.com/steven-zhc/lingtai/issues/168)
 

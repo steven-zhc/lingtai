@@ -13,6 +13,17 @@ export {
   type PermissionGap,
 } from "./app.ts";
 export {
+  LINGTAI_URL,
+  MANIFEST_EVENTS,
+  buildManifest,
+  convertManifest,
+  defaultPermissions,
+  manifestFormAction,
+  type AppManifest,
+  type CreatedApp,
+  type ManifestOptions,
+} from "./manifest.ts";
+export {
   createGitHubClient,
   parseSlug,
   type CreateClientOptions,

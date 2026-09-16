@@ -72,6 +72,21 @@ export function projectStream(project: string): string {
  */
 export const SUBSCRIBER_STREAM = "ext-subscribers";
 
+/**
+ * `ctl-github-app` — the team's own App, and there is one of it (`#169`).
+ *
+ * The installation's, like `ctl-conductor` and for the same reason: an App
+ * belongs to the team and not to a repository, and creation happens once for
+ * all of them ([0045](../../../doc/decisions/0045-one-team-one-conductor.md)).
+ *
+ * **Not `ctl-conductor` itself**, which is the tempting place. That stream is
+ * the one the daemon appends pauses, shutdowns and run requests to while it
+ * runs, so a board writing to it would race a conductor and turn *the App was
+ * created* into a `ConcurrencyError` in the middle of a pass — the argument
+ * `SUBSCRIBER_STREAM` above makes about the same collision.
+ */
+export const GITHUB_APP_STREAM = "ctl-github-app";
+
 /** `int-{project}-{base}` — one lane per base branch, forever. */
 export function integrationStream(project: string, base: string): string {
   return `int-${project}-${base.replace(/\//g, ".")}`;
