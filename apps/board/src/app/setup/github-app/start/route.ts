@@ -44,17 +44,13 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
   if (!offer.offered) {
-    // Configured and merely minted are two states and one refusal: in both an
-    // App of Lingtai's is on GitHub, which is the whole of what makes a second
-    // one wrong. What differs is what to do next, and the page says that.
+    // Configured, and not merely minted: an App whose credentials never landed
+    // keeps the offer open (#169), and the page names it beside the form.
     return new Response(
       offer.configured !== null
         ? `a GitHub App is already configured — app ${offer.configured.appId}. Creating a second ` +
           "one would leave an App nothing is installed on. Install this one instead."
-        : offer.minted !== null
-          ? `app ${offer.minted.appId} was already created here and its credentials never landed. Finish that ` +
-            "one — the setup page says how — rather than minting a second."
-          : "creation is not offered here.",
+        : "creation is not offered here.",
       { status: 409, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }

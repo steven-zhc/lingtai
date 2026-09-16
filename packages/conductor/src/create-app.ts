@@ -137,15 +137,14 @@ export type Outcome =
        * minted the App the moment the person pressed its button, so the half of
        * this flow that cannot be undone is already done — and every later
        * failure (the key file, the env file, the log) leaves it standing. This
-       * is what stops the page offering to mint a second one on the strength of
-       * the first having "failed", which is a press an operator reading *could
-       * not be written* makes without hesitating.
+       * is what lets the page name that App — its number and its settings link —
+       * beside the offer to create another, rather than drawing the form as if
+       * nothing had happened.
        *
        * It is **the App this process has minted and not finished**, and not
        * only this return's: a refusal before the conversion carries forward the
        * one an earlier return left behind, because the fact that outlives this
-       * answer is *an App of ours exists* and the session's last outcome is
-       * where `offerCreation` reads it from. Null only when there is no such
+       * answer is *an App of ours exists*. Null only when there is no such
        * App — nothing was created, and starting again is exactly the right
        * advice.
        */
@@ -214,6 +213,25 @@ export interface CreationSession {
   outstanding(now?: Date): Outstanding | null;
   /** What the last return from GitHub came to, or null. */
   outcome(): Outcome | null;
+  /**
+   * The App this process minted whose credentials did not all land, or null.
+   *
+   * **Not the last outcome**, because `begin` clears that: a person who reads
+   * the stranded App's name and presses Create again has chosen to, and the
+   * screen should still name the App they left behind.
+   */
+  unfinished(): { appId: string; slug: string } | null;
+}
+
+/**
+ * The last App this process minted, when it minted it, and whether its
+ * credentials landed. What the in-flight guard reads.
+ */
+interface Mint {
+  appId: string;
+  slug: string;
+  atMs: number;
+  finished: boolean;
 }
 
 export function createCreationSession(): CreationSession {
@@ -244,6 +262,7 @@ export function createCreationSession(): CreationSession {
   let converting: Promise<unknown> = Promise.resolve();
   let latest: Attempt | null = null;
   let last: Outcome | null = null;
+  let mint: Mint | null = null;
 
   /**
    * Two, because `finish` may only forget one of them.
@@ -314,13 +333,21 @@ export function createCreationSession(): CreationSession {
       // the queued section, so what `convertAndWrite` is told about the last
       // outcome is what is true when it runs rather than when it was queued.
       const outcome = converting.then(async () => {
-        const settled = await convertAndWrite(options, now, issued, last);
+        const settled = await convertAndWrite(options, now, issued, mint);
         // Either way this attempt is done with: a code is good for one
         // exchange, and a refused one is not worth a second press against the
         // same state.
         if (state !== null) issued.delete(state);
         if (latest !== null && latest.state === state) latest = null;
         last = settled;
+        // A refusal before the conversion carries the earlier App forward in
+        // `minted`; only a new id is a new mint, and only a new mint moves the
+        // time a form has to postdate.
+        if (settled.ok) {
+          mint = { appId: settled.appId, slug: settled.slug, atMs: now.getTime(), finished: true };
+        } else if (settled.minted !== null && settled.minted.appId !== mint?.appId) {
+          mint = { ...settled.minted, atMs: now.getTime(), finished: false };
+        }
         return settled;
       });
       converting = outcome.then(
@@ -345,6 +372,10 @@ export function createCreationSession(): CreationSession {
 
     outcome() {
       return last;
+    },
+
+    unfinished() {
+      return mint === null || mint.finished ? null : { appId: mint.appId, slug: mint.slug };
     },
   };
 }
@@ -382,7 +413,7 @@ async function convertAndWrite(
   options: FinishOptions,
   now: Date,
   issued: Map<string, Attempt>,
-  succeeded: Outcome | null,
+  previous: Mint | null,
 ): Promise<Outcome> {
   const refuse = (refusal: string, minted: { appId: string; slug: string } | null = null): Outcome => ({
     ok: false,
@@ -439,32 +470,32 @@ async function convertAndWrite(
   // minting succeeded.** A previous return that converted and then failed every
   // write — the key, the env file, and the append that is the only durable
   // record — comes back `ok: false` with `minted` set and leaves nothing on the
-  // log for `configuration()` to find: read for `ok === true` alone, this guard
-  // waved the second tab straight through, every check below passed on a log
-  // that genuinely says nothing, and a second App was minted beside an
+  // log for `configuration()` to find: read for success alone, this guard waved
+  // the second tab straight through, and a second App was minted beside an
   // unfinished first whose private key GitHub will never hand over again.
-  // `offerCreation` folds the same `outcome.minted` into `mintedHere` to stop
-  // the *button*; this is that fold where the writing happens.
-  const before =
-    succeeded === null ? null : succeeded.ok ? { appId: succeeded.appId, slug: succeeded.slug } : succeeded.minted;
-  if (before !== null && succeeded !== null) {
+  //
+  // **An unfinished App refuses only the forms that were issued before it.** A
+  // form posted afterwards came from a page that named the stranded App and
+  // offered creation anyway (#169: *a minted-but-unconfigured App must not
+  // close the door*), so pressing it was a choice made knowing; a form posted
+  // before it is a tab nobody has looked at since.
+  if (previous !== null && (previous.finished || attempt.startedAtMs <= previous.atMs)) {
+    const minted = { appId: previous.appId, slug: previous.slug };
+    const at = new Date(previous.atMs).toISOString();
     return refuse(
-      succeeded.ok
-        ? `app ${before.appId} was created here at ${succeeded.at.toISOString()}, and is what this ` +
+      previous.finished
+        ? `app ${previous.appId} was created here at ${at}, and is what this ` +
             "Lingtai is configured with. This return was not applied: nothing was written, and that " +
             "configuration is untouched. GitHub did create the App this tab named — it is under " +
             "Settings → Developer settings → GitHub Apps, and can be deleted there."
-        : `app ${before.appId} was created here at ${succeeded.at.toISOString()} and its credentials ` +
-            "did not all land, so that creation is the one to finish — the setup page says how. This " +
-            "return was not applied and nothing was written: a second App is one nothing is " +
-            "installed on, and the first one's private key cannot be fetched twice. GitHub did " +
-            "create the App this tab named as well — it is under Settings → Developer settings → " +
-            "GitHub Apps, and can be deleted there.",
+        : `app ${previous.appId} was created here at ${at} and its credentials ` +
+            "did not all land — and this tab's form was posted before that, so it was never shown " +
+            "that App. This return was not applied and nothing was written. GitHub did create the " +
+            "App this tab named as well — it is under Settings → Developer settings → GitHub Apps, " +
+            "and can be deleted there. The setup page names the unfinished App and how to finish it.",
       // Carried, not dropped: this refusal becomes the session's last outcome,
-      // and `offerCreation` reads `minted` off it to keep the button withheld.
-      // Null here would forget the App on the one path where the log did not
-      // record it, which is the path this guard exists for.
-      before,
+      // and the page reads `minted` off it to name the App.
+      previous.finished ? null : minted,
     );
   }
   const already = await configuration({ env, envFile, store: options.store ?? eventStore });
@@ -478,17 +509,17 @@ async function convertAndWrite(
         "is installed on.",
     );
   }
-  if (already.minted !== null) {
-    // An App minted here whose credentials did not land — the log kept the fact
-    // and `.env.local` does not name it. Two is not the answer to one that is
-    // unfinished, and this is the one place that can say so before the second
-    // one's key is fetched.
+  if (already.minted !== null && attempt.startedAtMs <= already.minted.at.getTime()) {
+    // The same rule on the log, for a board restarted between the two: an App
+    // minted here after this form was posted is one this tab was never shown.
+    // One minted *before* it was on the page that offered this form, by name.
+    const { appId, slug } = already.minted;
     return refuse(
-      `app ${already.minted.appId} was created here already and this Lingtai is still not ` +
-        `configured with it — ${envFile} does not name it, so that creation did not finish. This ` +
-        "return was not applied and nothing was written: the App to finish is that one, by hand " +
-        "from step 2 of doc/operating.md. GitHub did create the App this tab named as well — it " +
-        "is under Settings → Developer settings → GitHub Apps, and can be deleted there.",
+      `app ${appId} was created here at ${already.minted.at.toISOString()}, after this tab's form ` +
+        `was posted, and this Lingtai is not configured with it — ${envFile} does not name it. This ` +
+        "return was not applied and nothing was written. GitHub did create the App this tab named " +
+        "as well — it is under Settings → Developer settings → GitHub Apps, and can be deleted there.",
+      { appId, slug },
     );
   }
   if (already.unanswered !== null) {
@@ -573,9 +604,10 @@ async function convertAndWrite(
    */
   const andTheLog =
     notRecorded === null
-      ? " It is on Lingtai's log, so this page will not offer to create another: finish this one."
-      : ` The log did not record it either (${notRecorded}), so this page will stop offering to ` +
-        "create another only while this board keeps running — once it stops, do not press it: the App exists.";
+      ? " It is on Lingtai's log, so the setup page keeps naming it. Creating another is still offered, " +
+        "and this App stays on GitHub either way until it is deleted there."
+      : ` The log did not record it either (${notRecorded}), so the setup page names it only while ` +
+        `this board keeps running — note app ${created.id} now: it exists on GitHub whatever this page says later.`;
 
   const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT;
 
@@ -791,13 +823,13 @@ function header(): string {
 /** The App this log knows about, or null. */
 export async function recordedApp(
   store: EventStore = eventStore,
-): Promise<{ appId: string; slug: string } | null> {
+): Promise<{ appId: string; slug: string; at: Date } | null> {
   const events = await store.read(GITHUB_APP_STREAM);
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const event = events[i]!;
     if (event.type === "GitHubAppCreated") {
       const data = event.data as { appId: string; slug: string };
-      return { appId: data.appId, slug: data.slug };
+      return { appId: data.appId, slug: data.slug, at: event.at };
     }
   }
   return null;
@@ -856,10 +888,10 @@ async function configuration(options: {
   store: EventStore;
 }): Promise<{
   configured: Configured | null;
-  minted: { appId: string; slug: string } | null;
+  minted: { appId: string; slug: string; at: Date } | null;
   unanswered: string | null;
 }> {
-  let minted: { appId: string; slug: string } | null = null;
+  let minted: { appId: string; slug: string; at: Date } | null = null;
   let unanswered: string | null = null;
   try {
     minted = await recordedApp(options.store);
@@ -946,14 +978,20 @@ export interface Offer {
 /**
  * Whether to offer creation, and everything the screen needs to say why not.
  *
- * Four reasons not to, and each is a different sentence on the page:
+ * Two reasons not to, and each is a different sentence on the page:
  *
  * | | |
  * |---|---|
  * | `configured` | the credentials are here — offer the install link instead |
- * | `minted` | an App is on GitHub whose credentials never landed — finish that one |
- * | this process minted one | including one the log would not record |
  * | `unanswered` | the log did not say, and a button on an unanswered question mints a second App |
+ *
+ * **And one reason that is not a reason: `minted`.** An App on GitHub whose
+ * credentials never landed is named, with its settings link and the way to
+ * finish it by hand, and creation stays offered beside it (#169). Closing the
+ * door on it left a person with an App whose key cannot be fetched again and a
+ * screen that would never let them make another. A tab posted *before* the
+ * stranding is still refused where the writing happens, which is where a
+ * forgotten tab can be told from a deliberate press.
  *
  * **A log that will not answer is not a log that said no.** The record is the
  * only thing that outlives a restart when the writes failed, so a read that
@@ -962,10 +1000,9 @@ export interface Offer {
  * exactly once. The failure is carried as `unanswered` and creation is withheld
  * on it.
  *
- * **And this process's own last return counts, whatever the log took.** A
- * refusal after the conversion carries `minted`: the App exists whether or not
- * the record went down, and *the write failed* is precisely the sentence that
- * gets Create pressed a second time.
+ * **And this process's own memory counts, whatever the log took.** A refusal
+ * after the conversion carries `minted`: the App exists whether or not the
+ * record went down, and the page names it either way.
  */
 export async function offerCreation(
   options: {
@@ -986,10 +1023,11 @@ export async function offerCreation(
     store: options.store ?? eventStore,
   });
   const outcome = session.outcome();
-  const mintedHere = minted ?? (outcome !== null && outcome.ok === false ? outcome.minted : null);
+  const mintedHere =
+    session.unfinished() ?? (minted === null ? null : { appId: minted.appId, slug: minted.slug });
 
   return {
-    offered: unanswered === null && configured === null && mintedHere === null && outcome?.ok !== true,
+    offered: unanswered === null && configured === null && outcome?.ok !== true,
     configured,
     minted: mintedHere,
     unanswered,

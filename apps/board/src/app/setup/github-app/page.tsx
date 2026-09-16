@@ -60,29 +60,29 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
           <h2>
             <span className="hlab">GitHub App</span>
             <span className="hfact">
-              {offer.offered
-                ? "step 0 — Lingtai talks to GitHub as an App, not as a token"
-                : offer.configured !== null
-                  ? "already configured"
-                  : offer.minted !== null
-                    ? "created here, and not finished"
+              {offer.configured !== null
+                ? "already configured"
+                : offer.minted !== null
+                  ? "created here, and not finished"
+                  : offer.offered
+                    ? "step 0 — Lingtai talks to GitHub as an App, not as a token"
                     : "the log did not answer"}
             </span>
           </h2>
 
           {outcome === null ? null : outcome.ok ? <Created outcome={outcome} /> : <Refused refusal={outcome.refusal} />}
 
-          {/* Four answers and four sentences, in the order they are true. The
-              two in the middle are the ones that used to be one: *the
-              credentials are here* and *an App of ours is on GitHub* coincide
-              only on the path where nothing failed, and it is the other paths a
-              screen is read on. */}
+          {/* *The credentials are here* and *an App of ours is on GitHub*
+              coincide only on the path where nothing failed, and it is the
+              other paths a screen is read on. An unfinished App is named, and
+              does not close the door: the form is drawn under it. */}
+          {offer.configured === null && offer.minted !== null && outcome?.ok !== true ? (
+            <Unfinished minted={offer.minted} keyPath={offer.keyPath} />
+          ) : null}
           {offer.offered ? (
             <Create offer={offer} />
           ) : outcome?.ok ? null : offer.configured !== null ? (
             <Configured configured={offer.configured} installUrl={offer.installUrl} />
-          ) : offer.minted !== null ? (
-            <Unfinished minted={offer.minted} keyPath={offer.keyPath} />
           ) : (
             <Unanswered why={offer.unanswered ?? ""} />
           )}
@@ -276,7 +276,9 @@ function Configured({
  *
  * So it says what is true: the App is on GitHub, its private key was handed
  * over once during an exchange that did not finish, and the way out is a new
- * key on the App's own page rather than a second App.
+ * key on the App's own page. **It does not close the door** (#169): the form is
+ * still drawn below it, because a screen that refuses to make another App
+ * leaves a person whose key write failed with no way forward at all.
  */
 function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string }; keyPath: string }) {
   return (
@@ -284,16 +286,17 @@ function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string
       <p className="refusal">
         App {minted.appId} ({minted.slug}) was created here, and this Lingtai is not configured with
         it — the credentials did not reach this machine, so <code>{keyPath}</code> and the env file
-        do not name it. Creation is not offered again: the App exists, and a second one would be one
-        nothing is installed on.
+        do not name it. It is still on GitHub, and still counts against you there.
       </p>
       <p className="note">
-        GitHub hands a private key over exactly once, so that one cannot be fetched again. Generate a
-        new key on the App&rsquo;s own page — <a href={`https://github.com/settings/apps/${minted.slug}`}>
-          Settings → Developer settings → GitHub Apps → General → Private keys
+        GitHub hands a private key over exactly once, so that one cannot be fetched again. The way
+        out is to generate a new key on the App&rsquo;s own page —{" "}
+        <a href={`https://github.com/settings/apps/${minted.slug}`}>
+          github.com/settings/apps/{minted.slug}
         </a>{" "}
-        — and finish it by hand from step 2 of <code>doc/operating.md</code>. Deleting the App there
-        and starting again is the other way.
+        (an organisation&rsquo;s App is under that organisation&rsquo;s Settings → Developer settings →
+        GitHub Apps) → General → Private keys — and follow <code>doc/operating.md</code> from step 2.
+        Creating another App below also works; delete this one on that page if you do.
       </p>
     </>
   );

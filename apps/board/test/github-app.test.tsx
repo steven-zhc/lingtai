@@ -136,7 +136,7 @@ describe("an App that already exists", () => {
 describe("an App minted here whose credentials never landed", () => {
   const UNFINISHED: Offer = {
     ...OFFERING,
-    offered: false,
+    offered: true,
     configured: null,
     minted: { appId: "1234567", slug: "lingtai-steven" },
   };
@@ -149,11 +149,19 @@ describe("an App minted here whose credentials never landed", () => {
     expect(out).not.toContain("already configured");
   });
 
-  it("draws no form, and points at a new key rather than a second App", () => {
+  /**
+   * **It does not close the door** (#169). Withholding the form here left a
+   * person whose key write failed with an App whose key cannot be fetched
+   * again and a screen that would never let them make another.
+   */
+  it("still offers creation, and names the stranded App with its settings link and the way out", () => {
     const out = html(UNFINISHED);
 
-    expect(out).not.toContain('action="/setup/github-app/start"');
+    expect(out).toContain('action="/setup/github-app/start"');
+    expect(out).toContain("App 1234567");
+    expect(out).toContain('href="https://github.com/settings/apps/lingtai-steven"');
     expect(out).toContain("Private keys");
+    expect(out).toContain("from step 2");
     expect(out).toContain("doc/operating.md");
   });
 });
@@ -260,7 +268,7 @@ describe("every screen of the setup route", () => {
       offered: false,
       configured: { appId: "1234567", slug: null, where: "file", file: "/repo/.env.local" },
     },
-    unfinished: { ...OFFERING, offered: false, minted },
+    unfinished: { ...OFFERING, minted },
     unanswered: { ...OFFERING, offered: false, unanswered: "connection refused" },
     created: {
       ...OFFERING,
@@ -280,7 +288,6 @@ describe("every screen of the setup route", () => {
     },
     "refused after minting": {
       ...OFFERING,
-      offered: false,
       minted,
       outcome: { ok: false, refusal: "the env file could not be written", minted, at },
     },

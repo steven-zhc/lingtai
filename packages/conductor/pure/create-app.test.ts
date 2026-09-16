@@ -342,20 +342,78 @@ describe("a return from a tab the operator forgot", () => {
     expect(exchanges).toBe(0);
     expect((await store.readAll(0n, 100)).length).toBe(0);
 
-    // And the page stays shut, on this refusal alone — the log holds nothing.
+    // And the page names 111 on this process's memory alone — the log holds
+    // nothing — while leaving the door open (#169).
     const offer = await offerCreation({ env: {}, envFile, store: half, session });
-    expect(offer.offered).toBe(false);
+    expect(offer.offered).toBe(true);
     expect(offer.minted).toEqual({ appId: "111", slug: "lingtai-first" });
+  });
+
+  /**
+   * **The guard refuses a tab, not a person.** A form posted after the page
+   * named the stranded App is a choice made knowing, and refusing it too would
+   * close the door the ticket says must stay open.
+   */
+  it("lets through a form posted after the stranding, and still names the stranded App", async () => {
+    const { dir, keyPath } = await workspace();
+    const blocker = join(dir, "blocker");
+    await writeFile(blocker, "not a directory\n");
+    const at = new Date("2026-09-15T10:00:00Z");
+    // The log's clock is the conversion's, so the record is dated with it.
+    const store = createMemoryEventStore({ now: () => new Date(at.getTime() + 10_000) });
+    const session = createCreationSession();
+    const a = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created", now: at });
+    const first = await session.finish({
+      code: "a",
+      state: a.state,
+      by: "human:steven",
+      fetch: conversion(APP_111),
+      store,
+      env: {},
+      keyPath,
+      envFile: join(blocker, ".env.local"),
+      now: new Date(at.getTime() + 10_000),
+    });
+    expect(first.ok === false && first.minted).toEqual({ appId: "111", slug: "lingtai-first" });
+
+    // The page named 111 and offered the form; the person presses it.
+    const c = session.begin({
+      name: "lingtai-second",
+      redirectUrl: "http://127.0.0.1:3200/created",
+      now: new Date(at.getTime() + 60_000),
+    });
+    const { envFile } = await workspace();
+    expect((await offerCreation({ env: {}, envFile, store, session })).minted).toEqual({
+      appId: "111",
+      slug: "lingtai-first",
+    });
+    const second = await session.finish({
+      code: "c",
+      state: c.state,
+      by: "human:steven",
+      fetch: conversion(APP_222),
+      store,
+      env: {},
+      keyPath,
+      envFile,
+      now: new Date(at.getTime() + 90_000),
+    });
+
+    expect(second.ok).toBe(true);
+    expect(await readFile(envFile, "utf8")).toContain(`${APP_ID_VAR}="222"`);
   });
 
   /**
    * The same guard with no help from this process's memory: a board restarted
    * between the two presses has an empty environment and an empty session, and
-   * the log is the only thing that knows.
+   * the log — with the time it recorded the App — is the only thing that knows.
    */
-  it("refuses on the log alone, in a process whose environment has no App", async () => {
+  it("refuses on the log alone a form posted before the App it records", async () => {
     const { keyPath, envFile } = await workspace();
-    const store = createMemoryEventStore();
+    const at = new Date("2026-09-15T10:00:00Z");
+    const store = createMemoryEventStore({ now: () => new Date(at.getTime() + 60_000) });
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created", now: at });
     await store.append(GITHUB_APP_STREAM, 0, [
       {
         type: "GitHubAppCreated",
@@ -363,8 +421,6 @@ describe("a return from a tab the operator forgot", () => {
         data: parsePayload("GitHubAppCreated", { appId: "222", slug: "lingtai-second" }),
       },
     ]);
-    const session = createCreationSession();
-    const begun = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created" });
 
     const late = await session.finish({
       code: "a",
@@ -375,11 +431,46 @@ describe("a return from a tab the operator forgot", () => {
       env: {},
       keyPath,
       envFile,
+      now: new Date(at.getTime() + 120_000),
     });
 
     expect(late.ok === false && late.refusal).toContain("app 222");
+    expect(late.ok === false && late.refusal).toContain("nothing was written");
     expect(await there(envFile)).toBe(false);
     expect(await there(keyPath)).toBe(false);
+  });
+
+  it("takes a form posted after the App the log records, since the page named it first", async () => {
+    const { keyPath, envFile } = await workspace();
+    const at = new Date("2026-09-15T10:00:00Z");
+    const store = createMemoryEventStore({ now: () => at });
+    await store.append(GITHUB_APP_STREAM, 0, [
+      {
+        type: "GitHubAppCreated",
+        actor: "human:steven",
+        data: parsePayload("GitHubAppCreated", { appId: "222", slug: "lingtai-second" }),
+      },
+    ]);
+    const session = createCreationSession();
+    const begun = session.begin({
+      name: "lingtai-first",
+      redirectUrl: "http://127.0.0.1:3200/created",
+      now: new Date(at.getTime() + 60_000),
+    });
+
+    const outcome = await session.finish({
+      code: "a",
+      state: begun.state,
+      by: "human:steven",
+      fetch: conversion(APP_111),
+      store,
+      env: {},
+      keyPath,
+      envFile,
+      now: new Date(at.getTime() + 120_000),
+    });
+
+    expect(outcome.ok).toBe(true);
   });
 
   /** **Unknown is not no**, here as on the page and in `start/route.ts`. */
@@ -596,24 +687,29 @@ describe("what the six returned values become", () => {
     // second presses.
     expect(outcome.ok === false && outcome.refusal).toContain("It is on Lingtai's log");
 
-    // The second press, in this process and in a restarted one: both refused,
-    // and the second is the log alone.
+    // In this process and in a restarted one, the second on the log alone: the
+    // App is named, and creation stays offered (#169).
     const { envFile } = await workspace();
     for (const asked of [session, createCreationSession()]) {
       const offer = await offerCreation({ env: {}, envFile, store, session: asked });
-      expect(offer.offered).toBe(false);
+      expect(offer.offered).toBe(true);
       // **`minted` and not `configured`.** Nothing was written — that is what
       // this test just made happen — so a page that read the record as a
-      // configuration would say *created here, run `lingtai restart`*, and the
-      // restart would find `LINGTAI_GITHUB_APP_ID` unset and change nothing.
+      // configuration would say *already configured*, and no number of restarts
+      // would find `LINGTAI_GITHUB_APP_ID` set.
       expect(offer.configured).toBeNull();
       expect(offer.minted).toEqual({ appId: "1234567", slug: "lingtai-steven" });
       expect(offer.installUrl).toBeNull();
     }
   });
 
-  /** The same hole one write earlier: a key that cannot be written is an App too. */
-  it("records it when the key file is the write that fails", async () => {
+  /**
+   * **Minted is not configured** (#169): mint, the key write fails, the board
+   * restarts. The screen offers creation, does not claim configuration, and
+   * names the stranded App — the page's markup, with its settings link, is
+   * `apps/board/test/github-app.test.tsx`'s.
+   */
+  it("records it when the key file is the write that fails, and a restart still offers creation", async () => {
     const { dir, envFile } = await workspace();
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory\n");
@@ -635,7 +731,9 @@ describe("what the six returned values become", () => {
     expect(outcome.ok).toBe(false);
     expect((await store.readAll(0n, 100)).map((e) => (e.data as { appId: string }).appId)).toEqual(["1234567"]);
     expect(await offerCreation({ env: {}, envFile, store, session: createCreationSession() })).toMatchObject({
-      offered: false,
+      offered: true,
+      configured: null,
+      minted: { appId: "1234567", slug: "lingtai-steven" },
     });
   });
 
@@ -769,7 +867,7 @@ describe("what the screen offers", () => {
 
     expect(offer.offered).toBe(false);
     // `file`, not `environment`: the credentials are on disk and this process
-    // started before them, which is what `lingtai restart` is for (0042).
+    // started before them, and `githubApp()` reads them there per call.
     expect(offer.configured).toEqual({ appId: "999", slug: null, where: "file", file: envFile });
   });
 
@@ -954,8 +1052,7 @@ describe("what the screen offers", () => {
    * The asymmetry, as the page meets it: the App ID is fixed at process start,
    * so the board that just wrote one still answers *not configured* from its
    * own environment. **The file it wrote is what closes that**, and it says
-   * `where: "file"` — the credentials are there and a restart is what is owed,
-   * which is the sentence `lingtai restart` is the answer to (0042).
+   * `where: "file"` — the credentials are there, and read from there per call.
    */
   it("sees the App it has just written, in a process whose environment predates it", async () => {
     const log = store();
