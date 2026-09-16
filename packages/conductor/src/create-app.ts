@@ -136,7 +136,10 @@ export interface BeginOptions {
 
 /** The auto-submitting form's three values, and nothing a caller has to compose. */
 export interface Begun {
-  /** Where the form posts — GitHub's personal or organisation page. */
+  /**
+   * Where the form posts — GitHub's personal or organisation page, **carrying
+   * `state` in its query string**, which is where GitHub takes it from.
+   */
   action: string;
   manifest: AppManifest;
   /** The CSRF value, echoed back by GitHub and checked by `finish`. */
@@ -248,7 +251,13 @@ export function createCreationSession(): CreationSession {
       latest = attempt;
       last = null;
       return {
-        action: manifestFormAction(attempt.org),
+        // **The `state` is on the action URL**, because that is the one place
+        // GitHub reads it from — the query string of `/settings/apps/new`, not
+        // the body the manifest is posted in. A form that carries it only as a
+        // hidden field is one GitHub has nothing to echo, so every return is a
+        // `code` with no `state` and `finish` refuses it, an App already minted
+        // and its key already gone.
+        action: manifestFormAction(attempt.org, state),
         manifest: buildManifest({
           name: attempt.name,
           redirectUrl: options.redirectUrl,
@@ -333,9 +342,10 @@ export const creation: CreationSession =
  *
  * The order is the whole of it. Everything that can refuse refuses **before**
  * the conversion, because after it the PEM in hand is the only copy GitHub will
- * ever hand over — there is no *generate it again* on this path. After it, a
- * failure is reported with the path of whatever did land, so a half-written
- * credential is a sentence someone can act on rather than a lost key.
+ * ever hand over — there is no *generate it again* on this path. After it, the
+ * record goes down first and a failure is reported with the path of whatever
+ * did land, so a half-written credential is a sentence someone can act on
+ * rather than a lost key — and never a page offering to mint another.
  */
 async function convertAndWrite(
   options: FinishOptions,
@@ -437,6 +447,47 @@ async function convertAndWrite(
     return refuse(`GitHub would not exchange the code: ${(err as Error).message}. Nothing was written.`);
   }
 
+  // **The record goes down the moment the App exists, and before either write
+  // that can fail.** `GitHubAppCreated` is the only durable thing saying an App
+  // was minted here — `LINGTAI_GITHUB_APP_ID` is fixed at process start, so
+  // until a restart the log is the whole of what `offerCreation` has to go on.
+  // Appended after the writes instead, a `.env.local` that will not take three
+  // lines returned a refusal with no record behind it: `offered` went back to
+  // true, the page drew the form again under the refusal, and an operator who
+  // read *could not be written* as a failure and pressed Create was given
+  // another App, another orphan key at `.pem`'s sibling name, and the same
+  // refusal — every press, with the log that exists to stop a second App
+  // holding none of them. The App exists from here on whatever else fails, so
+  // this is where the fact belongs.
+  let notRecorded: string | null = null;
+  try {
+    const store = options.store ?? eventStore;
+    const existing = await store.read(GITHUB_APP_STREAM);
+    await store.append(GITHUB_APP_STREAM, existing.length, [
+      {
+        type: "GitHubAppCreated",
+        actor: options.by,
+        // The id and the slug and nothing else. The log is permanent and
+        // `projection rebuild` replays it, so a secret here would be read aloud
+        // for ever — and two of the six values that arrived are secrets.
+        data: parsePayload("GitHubAppCreated", { appId: String(created.id), slug: created.slug }),
+      },
+    ]);
+  } catch (err) {
+    // Not a refusal on its own: the App is real and the credentials may yet
+    // land. What is missing is the record, and the record is what stops this
+    // page offering to mint a second App before a restart — so every sentence
+    // below says which of the two is true.
+    notRecorded = (err as Error).message;
+  }
+
+  /** What a refusal after this point can promise about pressing Create again. */
+  const andTheLog =
+    notRecorded === null
+      ? " It is on Lingtai's log, so this page will not offer to create another: finish this one."
+      : ` The log did not record it either (${notRecorded}), so this page may go on offering to ` +
+        "create another App — do not press it, the App exists.";
+
   const envFile = options.envFile ?? join(repoRoot(), ".env.local");
   const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT;
 
@@ -450,7 +501,8 @@ async function convertAndWrite(
       `the App was created on GitHub — ${created.name} (app ${created.id}) — and its private key ` +
         `could not be written to ${wanted}: ${(err as Error).message}. The key cannot be fetched ` +
         "again; generate a new one on the App's own page (Settings → Developer settings → GitHub " +
-        "Apps → General → Private keys) and follow doc/operating.md from step 2.",
+        "Apps → General → Private keys) and follow doc/operating.md from step 2." +
+        andTheLog,
     );
   }
 
@@ -476,32 +528,20 @@ async function convertAndWrite(
         "back once, so it is not in that file and cannot be read off the App's page — and without " +
         "it every delivery to /api/webhook is refused. Set a new webhook secret on the App's own " +
         "page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write " +
-        `that one here as ${WEBHOOK_SECRET_VAR}.`,
+        `that one here as ${WEBHOOK_SECRET_VAR}.` +
+        andTheLog,
     );
   }
 
-  let warning: string | null = null;
-  try {
-    const store = options.store ?? eventStore;
-    const existing = await store.read(GITHUB_APP_STREAM);
-    await store.append(GITHUB_APP_STREAM, existing.length, [
-      {
-        type: "GitHubAppCreated",
-        actor: options.by,
-        // The id and the slug and nothing else. The log is permanent and
-        // `projection rebuild` replays it, so a secret here would be read aloud
-        // for ever — and two of the six values that arrived are secrets.
-        data: parsePayload("GitHubAppCreated", { appId: String(created.id), slug: created.slug }),
-      },
-    ]);
-  } catch (err) {
-    // Not a refusal: the credentials are on disk and they work. What is missing
-    // is the record, and the record is what stops this page offering to mint a
-    // second App before a restart — so it is said rather than swallowed.
-    warning =
-      `the log did not record it (${(err as Error).message}), so this page may offer to create ` +
-      "another App until Lingtai is restarted. Do not — the App exists.";
-  }
+  // The credentials are on disk and they work; if the log would not take the
+  // record, that is a true thing which is not a failure — and it is the one
+  // that lets this page offer a second App after a restart, so it is said
+  // rather than swallowed.
+  const warning =
+    notRecorded === null
+      ? null
+      : `the log did not record it (${notRecorded}), so this page may offer to create ` +
+        "another App until Lingtai is restarted. Do not — the App exists.";
 
   return {
     ok: true,

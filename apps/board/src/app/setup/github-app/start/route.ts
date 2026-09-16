@@ -94,13 +94,17 @@ export async function POST(request: Request): Promise<Response> {
     redirectUrl: new URL("/setup/github-app/created", origin).toString(),
   });
 
+  // One field and not two. The manifest is the body; the `state` is already in
+  // `begun.action`'s query string, which is the only place GitHub takes it from
+  // — a hidden `state` input beside the manifest is a value GitHub never reads,
+  // so it comes back with `code` and no `state` and every return is refused
+  // after the App has been minted.
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Creating the App on GitHub…</title></head>
 <body style="font:14px system-ui;padding:2rem">
 <p>Sending the App manifest to GitHub…</p>
 <form id="manifest" method="post" action="${attr(begun.action)}">
 <input type="hidden" name="manifest" value="${attr(JSON.stringify(begun.manifest))}">
-<input type="hidden" name="state" value="${attr(begun.state)}">
 <button type="submit">Continue to GitHub</button>
 </form>
 <script>document.getElementById("manifest").submit()</script>

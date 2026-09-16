@@ -26,9 +26,9 @@ that is GitHub's bound on the temporary code, not ours.
 
 ```
 1. Lingtai serves a page that AUTO-SUBMITS A POST FORM  ← not a link
-     personal → https://github.com/settings/apps/new
-     org      → https://github.com/organizations/<org>/settings/apps/new
-     body: manifest=<JSON> & state=<CSRF>
+     personal → https://github.com/settings/apps/new?state=<CSRF>
+     org      → https://github.com/organizations/<org>/settings/apps/new?state=<CSRF>
+     body: manifest=<JSON>       ← the state is on the URL, not in here
 
 2. GitHub's own screen. The person names the App and clicks Create GitHub App.
 
