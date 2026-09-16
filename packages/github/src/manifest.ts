@@ -42,10 +42,19 @@ export const LINGTAI_URL = "https://github.com/steven-zhc/lingtai";
 /**
  * 0006's last table row, which is a manifest field rather than a permission.
  *
- * `issues` is what makes discovery event-driven; `push` is what tells the
- * conductor a branch moved. Declared even when the hook is inactive: the events
- * an App subscribes to are what it *would* deliver, and a person who later
- * points it at a public address should not have to come back and tick two boxes.
+ * `issues` is what makes discovery event-driven. **`push` is subscribed and
+ * nothing acts on it** — `verifyWebhook` returns `act: false` for every push
+ * delivery deliberately (`webhook.ts:89`: a force-push already invalidates a
+ * gate verdict by arithmetic, since the verdict names the sha it was about, and
+ * acting on one would mean re-asking GitHub on every commit anybody makes). It
+ * is declared because 0006's table decided it and this manifest *is* that table
+ * — `test/manifest.test.ts` reads the row out of the ADR — so a subscription
+ * removed here would be the manifest and the decision disagreeing. What it
+ * costs is a delivery that is verified and ignored.
+ *
+ * Declared even when the hook is inactive: the events an App subscribes to are
+ * what it *would* deliver, and a person who later points it at a public address
+ * should not have to come back and tick two boxes.
  */
 export const MANIFEST_EVENTS = ["issues", "push"] as const;
 

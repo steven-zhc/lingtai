@@ -175,9 +175,21 @@ GitHub App**, and GitHub hands the credentials back — the page writes the id,
 the webhook secret and the private key at `0600`, and never shows you the key.
 The permissions below are in the manifest, so they are not a question and
 cannot be answered wrong, which is the whole of why 0006's founding failure
-cannot happen on that path. It ends by telling you to run
-`pnpm lingtai restart "picking up the new App"`, because the App ID is read
-once at process start.
+cannot happen on that path.
+
+It ends by telling you to restart **two** processes, because the App ID is read
+from `process.env` once at process start and neither restart is the other's:
+
+```bash
+# the board — stop it where you started it, then start it again. Until you do,
+# it answers "no GitHub App configured" to Approve and Close, whatever the
+# file now says (apps/board/src/app/actions.ts).
+pnpm --filter @lingtai/board dev
+
+# the daemon. `lingtai restart` drains the pass in flight and starts a daemon
+# on the new credentials — and it does not touch the board.
+pnpm lingtai restart "picking up the new App"
+```
 
 **What is below is the fallback, and it stays one.** A person may prefer to
 create the App themselves; an organisation role that cannot create an App has

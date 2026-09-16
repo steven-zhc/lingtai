@@ -264,6 +264,91 @@ describe("a return from a tab the operator forgot", () => {
   });
 
   /**
+   * **The first return minted an App and then failed every write, including the
+   * append.** That is the one outcome with no durable trace of itself: no env
+   * line, no key file the guard reads, and nothing on the log — so
+   * `configuration()` answers *nothing is configured, nothing was minted,
+   * nothing went wrong* and every check below this one passes honestly.
+   *
+   * The only thing that remembers is this session's last outcome, and it is a
+   * refusal — `ok === false` with `minted` set. A guard that asked whether the
+   * previous return *succeeded* therefore waved the second tab through: a
+   * second App was minted twenty seconds later, the screen said *Created — app
+   * 222*, and app 111 was left on GitHub with a private key GitHub will never
+   * hand over again and nothing anywhere naming it. `offerCreation` folds the
+   * same field into `mintedHere` to withhold the button; this is that fold
+   * where the key would be fetched.
+   */
+  it("refuses the second tab when the first minted an App and every write failed", async () => {
+    const { dir, keyPath } = await workspace();
+    const blocker = join(dir, "blocker");
+    await writeFile(blocker, "not a directory\n");
+    const envFile = join(blocker, ".env.local");
+    // The Postgres blip: readable, and it will not take an append.
+    const half = {
+      read: async () => [],
+      readAll: async () => [],
+      append: async () => {
+        throw new Error("connection terminated unexpectedly");
+      },
+    } as unknown as EventStore;
+    const session = createCreationSession();
+    const at = new Date("2026-09-15T10:00:00Z");
+    // Two tabs, two live states, both inside GitHub's hour.
+    const a = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created", now: at });
+    const b = session.begin({ name: "lingtai-second", redirectUrl: "http://127.0.0.1:3200/created", now: at });
+
+    const first = await session.finish({
+      code: "a",
+      state: a.state,
+      by: "human:steven",
+      fetch: conversion(APP_111),
+      store: half,
+      env: {},
+      keyPath,
+      envFile,
+      now: new Date(at.getTime() + 10_000),
+    });
+
+    // Minted, and nothing landed: not the env file, not the log.
+    expect(first.ok).toBe(false);
+    expect(first.ok === false && first.minted).toEqual({ appId: "111", slug: "lingtai-first" });
+    expect(await there(envFile)).toBe(false);
+
+    // Postgres comes back, and twenty seconds later tab B returns.
+    let exchanges = 0;
+    const counted = (async () => {
+      exchanges += 1;
+      return new Response(JSON.stringify(APP_222), { status: 200 });
+    }) as typeof fetch;
+    const store = createMemoryEventStore();
+    const late = await session.finish({
+      code: "b",
+      state: b.state,
+      by: "human:steven",
+      fetch: counted,
+      store,
+      env: {},
+      keyPath,
+      envFile,
+      now: new Date(at.getTime() + 30_000),
+    });
+
+    expect(late.ok).toBe(false);
+    expect(late.ok === false && late.refusal).toContain("app 111");
+    expect(late.ok === false && late.refusal).toContain("nothing was written");
+    // Refused **before** the conversion: the second App was never minted, so
+    // there is no second orphan and no second key GitHub will not repeat.
+    expect(exchanges).toBe(0);
+    expect((await store.readAll(0n, 100)).length).toBe(0);
+
+    // And the page stays shut, on this refusal alone — the log holds nothing.
+    const offer = await offerCreation({ env: {}, envFile, store: half, session });
+    expect(offer.offered).toBe(false);
+    expect(offer.minted).toEqual({ appId: "111", slug: "lingtai-first" });
+  });
+
+  /**
    * The same guard with no help from this process's memory: a board restarted
    * between the two presses has an empty environment and an empty session, and
    * the log is the only thing that knows.
@@ -754,6 +839,54 @@ describe("what the screen offers", () => {
     expect(outcome.ok === false && outcome.refusal).toContain("app 999");
     expect(outcome.ok === false && outcome.refusal).toContain("nothing was written");
     expect(await readFile(envFile, "utf8")).toBe(before);
+  });
+
+  /**
+   * **And once more where the write is**, because the two are minutes and a
+   * round trip to GitHub apart.
+   *
+   * `configuration()` read this file before the conversion and it held no App;
+   * what happens during the conversion is the operator, in another terminal,
+   * giving up on an organisation role they do not have and adding the two lines
+   * from `doc/operating.md` by hand. `writeEnv` writes the file whole, so
+   * without its own re-read those lines are simply gone — replaced by an App
+   * nothing is installed on, under a screen saying *Created*.
+   *
+   * The re-read is a check and a write and cannot be atomic; what it promises
+   * is that a line already on disk when it looks is refused rather than
+   * rewritten, and the refusal is the one that names the webhook secret.
+   */
+  it("refuses a line that appeared during the conversion, and leaves it exactly as it was", async () => {
+    const { envFile, keyPath } = await workspace();
+    const byHand = `# added by hand while GitHub was answering\n${APP_ID_VAR}=999\n${KEY_PATH_VAR}=${keyPath}\n`;
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-x", redirectUrl: "http://127.0.0.1:3200/created" });
+    // The conversion's round trip is the window, so this is where the hand
+    // edit lands: after the page's check and before the write.
+    const slowly = (async () => {
+      await writeFile(envFile, byHand);
+      return new Response(JSON.stringify(CONVERSION), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await session.finish({
+      code: "fresh",
+      state: begun.state,
+      by: "human:steven",
+      fetch: slowly,
+      store: store(),
+      env: {},
+      keyPath: join(await mkdtemp(join(tmpdir(), "lingtai-key-")), "agent.private-key.pem"),
+      envFile,
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.refusal).toContain(APP_ID_VAR);
+    // The operator's own lines, byte for byte.
+    expect(await readFile(envFile, "utf8")).toBe(byHand);
+    // The App was minted before that write could fail, so the refusal carries
+    // it and the webhook secret's remedy is named — it is handed back once.
+    expect(outcome.ok === false && outcome.minted).toEqual({ appId: "1234567", slug: "lingtai-steven" });
+    expect(outcome.ok === false && outcome.refusal).toContain("Set a new webhook secret on the App's own page");
   });
 
   /**

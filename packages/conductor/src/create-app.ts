@@ -36,8 +36,12 @@
  * the App ID does not, so a credential minted at runtime works by half, and a
  * page that said *ready* would be claiming a state only the process that
  * received it is in. `lingtai restart`
- * ([0042](../../../doc/decisions/0042-restart-is-a-command.md)) exists to be
- * the honest ending.
+ * ([0042](../../../doc/decisions/0042-restart-is-a-command.md)) is the honest
+ * ending for the daemon — and **only** for the daemon: it drains and starts
+ * that process and leaves the board, which is where this flow runs, holding the
+ * environment it started with. The ending names both, because an operator given
+ * one command for two processes runs it, clicks Approve, and is told *no GitHub
+ * App configured* by the board that just said *Created*.
  *
  * **And the same snapshot is why the guard reads the file.** *Is an App already
  * configured* decides whether the button is drawn and whether a returning code
@@ -141,8 +145,13 @@ export type Outcome =
        * the first having "failed", which is a press an operator reading *could
        * not be written* makes without hesitating.
        *
-       * Null for every refusal **before** the conversion, where nothing was
-       * created and starting again is exactly the right advice.
+       * It is **the App this process has minted and not finished**, and not
+       * only this return's: a refusal before the conversion carries forward the
+       * one an earlier return left behind, because the fact that outlives this
+       * answer is *an App of ours exists* and the session's last outcome is
+       * where `offerCreation` reads it from. Null only when there is no such
+       * App — nothing was created, and starting again is exactly the right
+       * advice.
        */
       minted: { appId: string; slug: string } | null;
       at: Date;
@@ -429,12 +438,37 @@ async function convertAndWrite(
   // App is on GitHub either way — a person minted it there before this redirect
   // was sent — and credentials for an App that cannot be configured here are
   // not worth fetching. The refusal says where it is and how to be rid of it.
-  if (succeeded?.ok === true) {
+  //
+  // **What it asks is whether this process minted one, and never whether that
+  // minting succeeded.** A previous return that converted and then failed every
+  // write — the key, the env file, and the append that is the only durable
+  // record — comes back `ok: false` with `minted` set and leaves nothing on the
+  // log for `configuration()` to find: read for `ok === true` alone, this guard
+  // waved the second tab straight through, every check below passed on a log
+  // that genuinely says nothing, and a second App was minted beside an
+  // unfinished first whose private key GitHub will never hand over again.
+  // `offerCreation` folds the same `outcome.minted` into `mintedHere` to stop
+  // the *button*; this is that fold where the writing happens.
+  const before =
+    succeeded === null ? null : succeeded.ok ? { appId: succeeded.appId, slug: succeeded.slug } : succeeded.minted;
+  if (before !== null && succeeded !== null) {
     return refuse(
-      `app ${succeeded.appId} was created here at ${succeeded.at.toISOString()}, and is what this ` +
-        "Lingtai is configured with. This return was not applied: nothing was written, and that " +
-        "configuration is untouched. GitHub did create the App this tab named — it is under " +
-        "Settings → Developer settings → GitHub Apps, and can be deleted there.",
+      succeeded.ok
+        ? `app ${before.appId} was created here at ${succeeded.at.toISOString()}, and is what this ` +
+            "Lingtai is configured with. This return was not applied: nothing was written, and that " +
+            "configuration is untouched. GitHub did create the App this tab named — it is under " +
+            "Settings → Developer settings → GitHub Apps, and can be deleted there."
+        : `app ${before.appId} was created here at ${succeeded.at.toISOString()} and its credentials ` +
+            "did not all land, so that creation is the one to finish — the setup page says how. This " +
+            "return was not applied and nothing was written: a second App is one nothing is " +
+            "installed on, and the first one's private key cannot be fetched twice. GitHub did " +
+            "create the App this tab named as well — it is under Settings → Developer settings → " +
+            "GitHub Apps, and can be deleted there.",
+      // Carried, not dropped: this refusal becomes the session's last outcome,
+      // and `offerCreation` reads `minted` off it to keep the button withheld.
+      // Null here would forget the App on the one path where the log did not
+      // record it, which is the path this guard exists for.
+      before,
     );
   }
   const already = await configuration({ env, envFile, store: options.store ?? eventStore });
@@ -677,24 +711,53 @@ async function exists(path: string): Promise<boolean> {
  * says yes — but that read is minutes and a round trip to GitHub away from this
  * write, and what happens in between is somebody adding the two lines by hand
  * because the manifest flow would not work for them. So the line that must not
- * be replaced is named here, the file is read once, and the name's presence in
- * *that* read is what decides: the check and the write see the same bytes,
- * which is the only version of this that cannot be raced.
+ * be replaced is named here and asked of the bytes this function itself read,
+ * minutes later than the page's check and one statement before the write.
+ *
+ * **It is a read and a write, and those are two syscalls: this narrows the
+ * race and does not close it.** There is no compare-and-swap for a file, and a
+ * whole-file rewrite loses whatever was written between the two — so the bytes
+ * are read once more as late as there is anywhere to put it, anything that
+ * changed in between is refused rather than overwritten, and a file that was
+ * absent is created exclusively (`wx`), which a second creator loses. A person
+ * saving `.env.local` in an editor inside the remaining window gets a sentence
+ * they can act on instead of a silent loss.
+ *
+ * **What makes two returns of this flow safe is not this guard.** It is the
+ * `converting` serialisation in `createCreationSession`: one conversion writes
+ * at a time, so the re-read above is never racing another return of Lingtai's
+ * own. That serialisation is load-bearing and nothing here makes it redundant.
  */
 async function writeEnv(file: string, values: Record<string, string>, keep: string): Promise<void> {
   const before = await readOrNull(file);
   const created = before === null;
-  if (before !== null && named(parseEnvFile(before).values, keep) !== null) {
-    throw new Error(
-      `${keep} is already set in ${file} — it was written between this page's check and this write, ` +
-        "and replacing it would point Lingtai at a different App",
-    );
-  }
+  const refuseKept = (text: string) => {
+    if (named(parseEnvFile(text).values, keep) !== null) {
+      throw new Error(
+        `${keep} is already set in ${file} — it was written between this page's check and this write, ` +
+          "and replacing it would point Lingtai at a different App",
+      );
+    }
+  };
+  if (before !== null) refuseKept(before);
+
   let text = before ?? header();
   for (const [name, value] of Object.entries(values)) text = setEnvLine(text, name, value);
 
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, text, { mode: ENV_FILE_MODE });
+  // As late as there is anywhere to put it. What arrived in between is
+  // somebody else's line, and rewriting the whole file is how it is lost.
+  const nowOnDisk = await readOrNull(file);
+  if (nowOnDisk !== before) {
+    if (nowOnDisk !== null) refuseKept(nowOnDisk);
+    throw new Error(
+      `${file} changed between this write's own read of it and the write itself — nothing was ` +
+        "written, because rewriting the whole file would have lost that change",
+    );
+  }
+  // `wx` on a file that was not there: two creators race and the second is
+  // refused by the kernel rather than by a check it can outrun.
+  await writeFile(file, text, created ? { mode: ENV_FILE_MODE, flag: "wx" } : { mode: ENV_FILE_MODE });
   if (created) await chmod(file, ENV_FILE_MODE);
 }
 

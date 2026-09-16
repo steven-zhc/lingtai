@@ -18,9 +18,15 @@
  * is no URL a person can be sent to; `start/route.ts` is what serves the
  * self-submitting form, and `created/route.ts` is where GitHub comes back.
  *
- * **It ends on a restart.** The key hot-reloads and the App ID does not, so the
- * process that has just written one is still running without it — see
- * `create-app.ts`, and [0042](../../../../../../doc/decisions/0042-restart-is-a-command.md).
+ * **It ends on two restarts, and one of them is this board.** The key
+ * hot-reloads and the App ID does not, so the process that has just written one
+ * is still running without it — see `create-app.ts`, and
+ * [0042](../../../../../../doc/decisions/0042-restart-is-a-command.md).
+ * `lingtai restart` drains and starts the **daemon** and never touches this
+ * process, so naming it alone would leave the board answering *no GitHub App
+ * configured* to the next Approve with the remedy already spent
+ * (`actions.ts:73`, `:200`). The screen names the board's own restart first,
+ * because the board is the process the person is looking at.
  */
 import Link from "next/link";
 import { type Offer, offerCreation } from "@lingtai/conductor/create-app";
@@ -210,11 +216,24 @@ function Created({
       {/* The honest ending. `LINGTAI_GITHUB_APP_ID` is read from `process.env`
           and fixed at start, so every process now running — this board and the
           daemon both — still has the old answer. Saying "ready" here would be
-          claiming a state only one process is in. */}
+          claiming a state only one process is in.
+
+          **Two processes, and `lingtai restart` is only one of them.** That
+          command drains and starts the daemon (0042); it does not touch the
+          board serving this page, so a person told it alone restarts the
+          daemon, clicks Approve, and is answered *no GitHub App configured* by
+          `actions.ts:73` with nothing left to try. The board's own restart is
+          named first because it is the process they are looking at. */}
       <p className="note">
         Nothing running has this App yet: the private key is re-read on every call, but the App ID
-        was fixed when each process started. Run{" "}
-        <code>pnpm lingtai restart &quot;picking up the new App&quot;</code> to use it.
+        was fixed when each process started — <strong>this board included</strong>, so it will go on
+        answering <em>no GitHub App configured</em> until it is restarted. Stop the board where you
+        started it and run <code>pnpm --filter @lingtai/board dev</code> again.
+      </p>
+      <p className="note">
+        Then the daemon, which is a different process and a different command:{" "}
+        <code>pnpm lingtai restart &quot;picking up the new App&quot;</code>. It drains the pass in
+        flight and starts a daemon on the new credentials; it does not restart this board.
       </p>
       <p className="note">
         Then install it — <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>
@@ -232,7 +251,9 @@ function Created({
  * **`where` is about this process and never about the App.** The credentials
  * exist either way — what differs is whether the process drawing this page can
  * use them yet, since the key is re-read on every call and the App ID was fixed
- * at start. `file` is therefore a restart and not a repair.
+ * at start. `file` is therefore a restart and not a repair — **the board's
+ * restart**, since this process is the one that cannot see the line, with
+ * `lingtai restart` beside it for the daemon, which is the other one.
  */
 function Configured({
   configured,
@@ -246,8 +267,10 @@ function Configured({
       <p className="note">
         {configured.where === "environment"
           ? `This Lingtai is configured with app ${configured.appId}.`
-          : `App ${configured.appId} is configured in ${configured.file}, and this process started before that ` +
-            `line was written — run pnpm lingtai restart "picking up the new App" to use it.`}{" "}
+          : `App ${configured.appId} is configured in ${configured.file}, and this board started before that ` +
+            "line was written, so it cannot use it yet: stop the board and run " +
+            "pnpm --filter @lingtai/board dev again. The daemon is the other process and the other " +
+            'command — pnpm lingtai restart "picking up the new App", which does not restart this board.'}{" "}
         Creation is not offered again: a second App would be one nothing is installed on.
       </p>
       {installUrl === null ? (

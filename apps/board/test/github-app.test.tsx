@@ -8,9 +8,11 @@
  *
  * Three claims, and each is a line in the ticket:
  * **an App already configured is offered no second one**, **the key is a path
- * and never bytes**, and **the ending names `lingtai restart`** rather than
- * telling an operator the daemon is ready — which it is not, because the App ID
- * was fixed when that process started.
+ * and never bytes**, and **the ending names the restart of every process that
+ * is now stale** rather than telling an operator the daemon is ready — which it
+ * is not, because the App ID was fixed when that process started. There are two
+ * such processes and `pnpm lingtai restart` is one of them: it is the daemon's,
+ * and the board drawing this page has to be restarted on its own.
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -106,10 +108,17 @@ describe("an App that already exists", () => {
 
   /**
    * Written to the env file, and this process started before that line. Saying
-   * *configured* alone would be true of the file and false of the daemon, so
-   * the sentence is the restart.
+   * *configured* alone would be true of the file and false of both processes
+   * that have to use it, so the sentence is the restart.
+   *
+   * **And `lingtai restart` is the daemon's alone.** It drains and starts the
+   * conductor (0042) and does not touch the board serving this page — so a
+   * screen naming it by itself sends the operator to the one command that
+   * cannot fix what they are reading: the board goes on answering *no GitHub
+   * App configured* to Approve and Close (`actions.ts:73`, `:200`), and running
+   * it again shows the identical sentence.
    */
-  it("names the env file and the restart that picks it up, when the file is what says so", () => {
+  it("names the env file and both restarts, the board's first, when the file is what says so", () => {
     const out = html({
       ...CONFIGURED,
       configured: {
@@ -121,7 +130,12 @@ describe("an App that already exists", () => {
     });
 
     expect(out).toContain("/repo/.env.local");
+    expect(out).toContain("pnpm --filter @lingtai/board dev");
     expect(out).toContain("lingtai restart");
+    // The board is named as the stale process, and the daemon's command is not
+    // offered as this one's remedy.
+    expect(out).toContain("this board started before that line");
+    expect(out).toContain("does not restart this board");
   });
 });
 
@@ -214,6 +228,27 @@ describe("the ending", () => {
     expect(out).toContain("lingtai restart");
     expect(out).toContain("Nothing running has this App yet");
     expect(out).not.toMatch(/\bready\b/);
+  });
+
+  /**
+   * **The board is one of the two stale processes, and it is the one the person
+   * is looking at.** `pnpm lingtai restart` drains and starts the *daemon*
+   * (0042) and never touches this process, so an ending that named it alone
+   * would be handing the operator a command that cannot fix what they just
+   * read: they run it, click Approve, and `approveCard`'s `hasGitHubApp()`
+   * answers *no GitHub App configured* off the same snapshot
+   * (`apps/board/src/app/actions.ts:73`, `closeCard` at `:200`) — with nothing
+   * on the page or in the docs naming the board, so they run it again and see
+   * the identical sentence.
+   */
+  it("names the board's own restart, and says the daemon's command is not it", () => {
+    const out = html(CREATED);
+
+    expect(out).toContain("pnpm --filter @lingtai/board dev");
+    expect(out).toContain("this board included");
+    expect(out).toContain("it does not restart this board");
+    // The board's is first: it is the process drawing this page.
+    expect(out.indexOf("pnpm --filter @lingtai/board dev")).toBeLessThan(out.indexOf("lingtai restart"));
   });
 
   /** The path, never the key — a page cannot render what it was never handed. */
