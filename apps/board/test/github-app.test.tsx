@@ -25,6 +25,7 @@ const PERMISSIONS = [
 const OFFERING: Offer = {
   offered: true,
   configured: null,
+  unanswered: null,
   installUrl: null,
   keyPath: "~/.ssh/lingtai-agent.private-key.pem",
   suggestedName: "lingtai-steven",
@@ -113,6 +114,34 @@ describe("an App that already exists", () => {
     });
 
     expect(out).toContain("lingtai restart");
+  });
+});
+
+/**
+ * The half of this a fold cannot catch: the data said *unknown*, and what
+ * matters is that the markup does not read as *nothing is configured*.
+ */
+describe("a log that would not answer", () => {
+  const UNANSWERED: Offer = {
+    ...OFFERING,
+    offered: false,
+    unanswered: "connection terminated unexpectedly",
+  };
+
+  it("draws no form, and says the question could not be answered", () => {
+    const out = html(UNANSWERED);
+
+    expect(out).not.toContain('action="/setup/github-app/start"');
+    expect(out).toContain("cannot tell whether an App was already created here");
+    expect(out).toContain("connection terminated unexpectedly");
+  });
+
+  /** *Nothing is configured* is the sentence that gets a second App minted. */
+  it("does not claim nothing is configured", () => {
+    const out = html(UNANSWERED);
+
+    expect(out).not.toContain("already configured");
+    expect(out).not.toContain("step 0 — Lingtai talks to GitHub");
   });
 });
 

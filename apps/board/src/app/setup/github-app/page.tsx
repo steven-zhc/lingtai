@@ -57,7 +57,11 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
           <h2>
             <span className="hlab">GitHub App</span>
             <span className="hfact">
-              {offer.offered ? "step 0 — Lingtai talks to GitHub as an App, not as a token" : "already configured"}
+              {offer.offered
+                ? "step 0 — Lingtai talks to GitHub as an App, not as a token"
+                : offer.configured === null
+                  ? "the log did not answer"
+                  : "already configured"}
             </span>
           </h2>
 
@@ -65,8 +69,10 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
 
           {offer.offered ? (
             <Create offer={offer} />
-          ) : outcome?.ok ? null : (
-            <Configured configured={offer.configured!} installUrl={offer.installUrl} />
+          ) : outcome?.ok ? null : offer.configured === null ? (
+            <Unanswered why={offer.unanswered ?? ""} />
+          ) : (
+            <Configured configured={offer.configured} installUrl={offer.installUrl} />
           )}
         </section>
       </div>
@@ -240,6 +246,34 @@ function Configured({
           <code>pnpm lingtai add &lt;owner&gt;/&lt;repo&gt;</code>.
         </p>
       )}
+    </>
+  );
+}
+
+/**
+ * The log would not answer, so the page does not guess — and does not draw the
+ * button.
+ *
+ * `GitHubAppCreated` is the only durable record that an App was minted here:
+ * `LINGTAI_GITHUB_APP_ID` is read at process start, so a board that was started
+ * before `.env.local` was written has nothing in its own environment to go on,
+ * however long the App has been working. A store unreachable for a few minutes
+ * must therefore read as *unknown* and never as *nothing* — the button on an
+ * unanswered question is a second App minted over a working one, with
+ * `.env.local` pointed at an id no repository has installed.
+ */
+function Unanswered({ why }: { why: string }) {
+  return (
+    <>
+      <p className="refusal">
+        Lingtai cannot tell whether an App was already created here: the log could not be read
+        {why === "" ? "" : ` — ${why}`}. Creation is not offered on an unanswered question, because a
+        second App would be minted over the one this installation may already be using, and GitHub
+        hands a private key over exactly once.
+      </p>
+      <p className="note">
+        Run <code>pnpm lingtai doctor</code>, and reload this page once the log answers.
+      </p>
     </>
   );
 }
