@@ -154,6 +154,24 @@ describe("where the form posts", () => {
     expect(manifestFormAction(null)).toBe("https://github.com/settings/apps/new");
     expect(manifestFormAction("acme")).toBe("https://github.com/organizations/acme/settings/apps/new");
   });
+
+  /**
+   * **The one value GitHub reads from the query string.** The manifest is the
+   * posted body and `state` is the page it is posted to: carried as a hidden
+   * input beside the manifest, GitHub never sees it and has nothing to echo, so
+   * the redirect back carries `code` and no `state` — and `finish` refuses
+   * every return after the App has been minted and its only private key
+   * destroyed. Nothing on that path errors; it just never completes.
+   */
+  it("carries the state in the query string, where GitHub takes it from", () => {
+    expect(manifestFormAction(null, "s-1")).toBe("https://github.com/settings/apps/new?state=s-1");
+    expect(manifestFormAction("acme", "s-1")).toBe(
+      "https://github.com/organizations/acme/settings/apps/new?state=s-1",
+    );
+    // `randomBytes(…).toString("base64url")` needs no escaping and a state that
+    // did would be one GitHub echoed back as a different string.
+    expect(new URL(manifestFormAction(null, "a+b/c=d")).searchParams.get("state")).toBe("a+b/c=d");
+  });
 });
 
 describe("the conversion", () => {

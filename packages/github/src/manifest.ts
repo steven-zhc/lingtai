@@ -176,11 +176,23 @@ export function unreachableWebhook(url: string): string | null {
  * and an org whose owner role the person does not hold refuses on that page,
  * where Lingtai cannot see it. That refusal reaches this system as *the person
  * never came back*, which is why the caller treats a silence as an outcome.
+ *
+ * **The `state` goes on this URL and nowhere else.** It is the one value in
+ * this flow that GitHub reads from the *query string* of `/settings/apps/new`
+ * rather than from the posted body: the manifest is the form, and `state` is
+ * the page the form is on. Carried as a hidden input beside the manifest it is
+ * a value GitHub never sees, so the redirect comes back with `code` and no
+ * `state` — and `finish` refuses every one of them, after the App has been
+ * minted and the only copy of its private key destroyed. There is no error
+ * anywhere on that path: each attempt leaves an orphan App and refuses
+ * identically, which is why the placement is asserted here and in
+ * `create-app.ts`'s `begin`.
  */
-export function manifestFormAction(org?: string | null): string {
-  return org
+export function manifestFormAction(org?: string | null, state?: string | null): string {
+  const page = org
     ? `https://github.com/organizations/${encodeURIComponent(org)}/settings/apps/new`
     : "https://github.com/settings/apps/new";
+  return state ? `${page}?state=${encodeURIComponent(state)}` : page;
 }
 
 /**

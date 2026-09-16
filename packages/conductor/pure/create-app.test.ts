@@ -78,6 +78,65 @@ function captureOutput(): { said: () => string; stop: () => void } {
 
 afterEach(() => vi.restoreAllMocks());
 
+/**
+ * **A `state` GitHub is never given is a `state` GitHub cannot echo.**
+ *
+ * The manifest is the posted body; `state` is read from the query string of
+ * `/settings/apps/new` and from nowhere else. Put it in a hidden input beside
+ * the manifest and every step still works — the naming screen appears, the
+ * person presses *Create GitHub App*, the App is created — and the redirect
+ * comes back `?code=…` with no `state` at all, so `finish` refuses it, the
+ * hour's code is never exchanged and the private key GitHub generated is
+ * destroyed unrecoverably. There is no failure on that path to notice: every
+ * attempt leaves an orphan App and the same refusal. So what is asserted is
+ * the round trip GitHub performs — the value on the action URL is the value
+ * `finish` accepts.
+ */
+describe("the form GitHub is sent", () => {
+  it("carries the state on the action URL, which is the half GitHub echoes", () => {
+    const session = createCreationSession();
+
+    const mine = session.begin({ name: "lingtai-x", redirectUrl: "http://127.0.0.1:3200/created" });
+    const theirs = session.begin({
+      name: "lingtai-y",
+      org: "acme",
+      redirectUrl: "http://127.0.0.1:3200/created",
+    });
+
+    for (const begun of [mine, theirs]) {
+      const action = new URL(begun.action);
+      expect(action.searchParams.get("state")).toBe(begun.state);
+      expect(`${action.origin}${action.pathname}`).toBe(
+        begun === mine
+          ? "https://github.com/settings/apps/new"
+          : "https://github.com/organizations/acme/settings/apps/new",
+      );
+    }
+  });
+
+  it("is finished by the state GitHub reads off that URL", async () => {
+    const { keyPath, envFile } = await workspace();
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    // GitHub returns the query string's `state` beside the code, and nothing
+    // from the form body: this is the only value the return can carry.
+    const echoed = new URL(begun.action).searchParams.get("state");
+    const outcome = await session.finish({
+      code: "fresh",
+      state: echoed,
+      by: "human:steven",
+      fetch: conversion(),
+      store: createMemoryEventStore(),
+      env: {},
+      keyPath,
+      envFile,
+    });
+
+    expect(outcome.ok).toBe(true);
+  });
+});
+
 describe("only a code this process asked for", () => {
   it("refuses a state it never issued, and says nothing was written", async () => {
     const session = createCreationSession();
@@ -395,11 +454,12 @@ describe("what the six returned values become", () => {
    * has to name it, or the operator writes the two lines it *does* name and is
    * left with an active hook signed by a secret that exists nowhere.
    */
-  it("names the webhook secret, and its remedy, when the env file cannot be written", async () => {
+  /** The env file cannot be written: a directory `mkdir` will refuse to make. */
+  const unwritable = async () => {
     const { dir, keyPath } = await workspace();
-    // A regular file where a directory would have to be: `mkdir` refuses.
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory\n");
+    const store = createMemoryEventStore();
     const session = createCreationSession();
     const begun = session.begin({
       name: "x",
@@ -412,11 +472,16 @@ describe("what the six returned values become", () => {
       state: begun.state,
       by: "human:steven",
       fetch: conversion(),
-      store: createMemoryEventStore(),
+      store,
       env: {},
       keyPath,
       envFile: join(blocker, ".env.local"),
     });
+    return { outcome, store, session };
+  };
+
+  it("names the webhook secret, and its remedy, when the env file cannot be written", async () => {
+    const { outcome } = await unwritable();
 
     expect(outcome.ok).toBe(false);
     const refusal = outcome.ok === false ? outcome.refusal : "";
@@ -425,6 +490,93 @@ describe("what the six returned values become", () => {
     // Named, and never quoted: a refusal is rendered on a page and kept in the
     // session, which is not where a live secret belongs.
     expect(refusal).not.toContain("webhook-secret-abcdef");
+  });
+
+  /**
+   * **The App exists whether or not the writing finished, and the log has to
+   * say so.** Recorded only on the way out, a refusal here left nothing durable
+   * behind it: `offered` went back to true, the page drew the form under the
+   * refusal, and an operator reading *could not be written* as a failure
+   * pressed Create — minting a second App, a second orphan key beside the
+   * first, and the same refusal again, with the record that exists to stop a
+   * second App holding none of them.
+   */
+  it("records the App that was minted even though the env file refused it", async () => {
+    const { outcome, store, session } = await unwritable();
+    const events = await store.readAll(0n, 100);
+
+    expect(events.map((e) => e.type)).toEqual(["GitHubAppCreated"]);
+    expect(events[0]!.data).toEqual({ appId: "1234567", slug: "lingtai-steven" });
+    // The refusal says which way it went, because the two have different
+    // second presses.
+    expect(outcome.ok === false && outcome.refusal).toContain("It is on Lingtai's log");
+
+    // The second press, in this process and in a restarted one: both refused,
+    // and the second is the log alone.
+    for (const asked of [session, createCreationSession()]) {
+      const offer = await offerCreation({ env: {}, store, session: asked });
+      expect(offer.offered).toBe(false);
+      expect(offer.configured).toEqual({ appId: "1234567", slug: "lingtai-steven", from: "log" });
+    }
+  });
+
+  /** The same hole one write earlier: a key that cannot be written is an App too. */
+  it("records it when the key file is the write that fails", async () => {
+    const { dir, envFile } = await workspace();
+    const blocker = join(dir, "blocker");
+    await writeFile(blocker, "not a directory\n");
+    const store = createMemoryEventStore();
+    const session = createCreationSession();
+    const begun = session.begin({ name: "x", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    const outcome = await session.finish({
+      code: "fresh",
+      state: begun.state,
+      by: "human:steven",
+      fetch: conversion(),
+      store,
+      env: {},
+      keyPath: join(blocker, "agent.private-key.pem"),
+      envFile,
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect((await store.readAll(0n, 100)).map((e) => (e.data as { appId: string }).appId)).toEqual(["1234567"]);
+    expect(await offerCreation({ env: {}, store, session: createCreationSession() })).toMatchObject({
+      offered: false,
+    });
+  });
+
+  /**
+   * And when the log itself is what would not take it, the refusal says so —
+   * the page *will* offer another, and the operator is the only guard left.
+   */
+  it("says the log holds no record either, when the log is unreachable too", async () => {
+    const { dir, keyPath } = await workspace();
+    const blocker = join(dir, "blocker");
+    await writeFile(blocker, "not a directory\n");
+    const half = {
+      read: async () => [],
+      append: async () => {
+        throw new Error("connection terminated unexpectedly");
+      },
+    } as unknown as EventStore;
+    const session = createCreationSession();
+    const begun = session.begin({ name: "x", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    const outcome = await session.finish({
+      code: "fresh",
+      state: begun.state,
+      by: "human:steven",
+      fetch: conversion(),
+      store: half,
+      env: {},
+      keyPath,
+      envFile: join(blocker, ".env.local"),
+    });
+
+    expect(outcome.ok === false && outcome.refusal).toContain("The log did not record it either");
+    expect(outcome.ok === false && outcome.refusal).toContain("connection terminated unexpectedly");
   });
 
   /** The path, and never the key — what the screen is handed cannot leak one. */
