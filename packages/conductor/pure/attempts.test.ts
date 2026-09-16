@@ -451,29 +451,77 @@ describe("attemptBrief", () => {
     expect(brief).toContain("FAIL  packages/event-store/test/store.test.ts > appends");
     expect(brief).toContain("AssertionError: expected { type: 'WorkItemClaimed'");
     expect(brief).toContain("exited 1 after 370.1s");
-    expect(brief).not.toContain("elided");
+    expect(brief).not.toContain("…elided");
 
     const atDefault = briefAt(BUDGET.evidence);
     expect(atDefault).not.toContain("FAIL  packages/event-store/test/store.test.ts > appends");
     expect(atDefault).toContain(`…elided ${evidence.length - BUDGET.evidence} of ${evidence.length} characters here`);
   });
 
-  /** The other runner: `tsc` prints its errors first, and a tail-only clamp loses them. */
-  it("quotes a tsc-shaped failure past the budget with its first error still in it", () => {
-    const errors = [
-      "src/attempts.ts(393,10): error TS2322: Type 'number' is not assignable to type 'string'.",
+  /**
+   * The other runner: `tsc` prints its errors first, and a tail-only capture
+   * loses them before `clamp` is ever reached. The fixture is this repository's
+   * own `pnpm typecheck` failing — its preamble verbatim, 31 lines of `pnpm -r`
+   * before the first error — with 200 more errors after it, and it goes through
+   * `tail()` as `runCommand` stores it, not straight into `clamp`.
+   */
+  it("quotes a tsc-shaped failure past the capture with its first error still in it", () => {
+    const output = [
+      "$ pnpm -r --if-present typecheck",
+      "Scope: 18 of 19 workspace projects",
+      "packages/domain typecheck$ tsc --noEmit",
+      "packages/extension typecheck$ tsc --noEmit",
+      "packages/env typecheck$ tsc --noEmit",
+      "packages/hook typecheck$ tsc --noEmit",
+      "packages/hook typecheck: Done",
+      "packages/telegram typecheck$ tsc --noEmit",
+      "packages/extension typecheck: Done",
+      "packages/env typecheck: Done",
+      "packages/domain typecheck: Done",
+      "packages/telegram typecheck: Done",
+      "packages/event-store typecheck$ tsc --noEmit",
+      "packages/agent-env typecheck$ tsc --noEmit",
+      "packages/github typecheck$ tsc --noEmit",
+      "packages/recipe typecheck$ tsc --noEmit",
+      "packages/agent-env typecheck: Done",
+      "packages/github typecheck: Done",
+      "packages/recipe typecheck: Done",
+      "packages/event-store typecheck: Done",
+      "packages/agent typecheck$ tsc --noEmit",
+      "packages/repo typecheck$ tsc --noEmit",
+      "packages/projector typecheck$ tsc --noEmit",
+      "packages/projector typecheck: Done",
+      "packages/agent typecheck: Done",
+      "packages/repo typecheck: Done",
+      "apps/site typecheck$ tsc --noEmit",
+      "packages/actions typecheck$ tsc --noEmit",
+      "packages/actions typecheck: Done",
+      "apps/site typecheck: Done",
+      "packages/conductor typecheck$ tsc --noEmit",
+      "packages/conductor typecheck: src/attempts.ts(393,10): error TS2322: Type 'number' is not assignable to type 'string'.",
       ...Array.from(
         { length: 200 },
-        (_, i) => `src/generated-${i}.ts(1,1): error TS6133: 'unused' is declared but its value is never read.`,
+        (_, i) => `packages/conductor typecheck: src/generated-${i}.ts(1,1): error TS6133: 'unused' is declared but its value is never read.`,
       ),
-      "Found 201 errors in 201 files.",
+      "packages/conductor typecheck: Found 201 errors in 201 files.",
+      "packages/conductor typecheck: Failed",
+      "[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @lingtai/conductor@0.0.0 typecheck: `tsc --noEmit`",
+      "Exit status 2",
+      "[ELIFECYCLE] Command failed with exit code 2.",
     ].join("\n");
+    const evidence = `pnpm typecheck && pnpm test && pnpm test:db exited 2 after 41.2s\n\n${tail(output)}`;
+    expect(output.split("\n").slice(-60).join("\n")).not.toContain("TS2322");
+    expect(evidence).toContain("error TS2322: Type 'number' is not assignable");
+    expect(evidence).toContain("Found 201 errors in 201 files.");
+    expect(evidence.length).toBeLessThanOrEqual(EVIDENCE_BYTES + 100);
 
-    const quoted = clamp(errors, BUDGET.evidence);
+    const own = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
+    const recipe = Number(/^  budget:\n    evidence: (\d+)$/m.exec(own)?.[1]);
+    const quoted = clamp(evidence, recipe);
 
     expect(quoted).toContain("error TS2322: Type 'number' is not assignable");
     expect(quoted).toContain("Found 201 errors in 201 files.");
-    expect(quoted).toContain(`…elided ${errors.length - BUDGET.evidence} of ${errors.length} characters here`);
+    expect(quoted).toContain("exited 2 after 41.2s");
   });
 
   /** What fits is quoted whole, and says nothing about truncation it did not do. */

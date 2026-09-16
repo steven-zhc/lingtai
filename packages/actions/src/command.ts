@@ -130,13 +130,40 @@ export function plain(text: string): string {
   return text.replace(ESCAPES, "");
 }
 
-/** The last N lines, capped — a build log can be megabytes. Plain text, so the
- *  budget is spent on words rather than colour codes. */
+/**
+ * The last N lines, capped — a build log can be megabytes. Plain text, so the
+ * budget is spent on words rather than colour codes.
+ *
+ * **And the start, when it does not all fit** (#171): whole lines from the top,
+ * up to N of them and a quarter of `bytes`, then a line counting what was
+ * elided, then the end in what is left — `bytes` in all, so the payload bound
+ * is unchanged. The
+ * end alone is right for vitest, which prints its `FAIL` last, and wrong for
+ * `tsc`, which prints its first error first: under `pnpm -r typecheck` in this
+ * repository that error is line 32, 1125 bytes in, and 200 errors after it put
+ * it far outside the last 60 lines.
+ */
 export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTES): string {
   const trimmed = plain(text).trimEnd();
   if (!trimmed) return "";
-  const kept = trimmed.split("\n").slice(-lines).join("\n");
-  return kept.length <= bytes ? kept : `…${kept.slice(-bytes)}`;
+  const all = trimmed.split("\n");
+  if (all.length <= lines && trimmed.length <= bytes) return trimmed;
+
+  let first = 0;
+  for (let used = 0; first < lines && first < all.length && used + all[first]!.length + 1 <= bytes / 4; first++) {
+    used += all[first]!.length + 1;
+  }
+  if (first === 0) {
+    const kept = all.slice(-lines).join("\n");
+    return kept.length <= bytes ? kept : `…${kept.slice(-bytes)}`;
+  }
+  const head = all.slice(0, first).join("\n");
+  const rest = all.slice(Math.max(first, all.length - lines)).join("\n");
+  // The marker's own length is reserved rather than measured: it holds a count.
+  const room = Math.max(0, bytes - head.length - 80);
+  const end = rest.length <= room ? rest : rest.slice(-room);
+  const elided = trimmed.length - head.length - end.length - 2;
+  return [head, `…${elided} characters elided here; the start and the end are kept…`, end].join("\n");
 }
 
 /**

@@ -109,6 +109,16 @@ describe("tail", () => {
     expect(kept).not.toContain("line 100");
   });
 
+  it("keeps the start as well when it does not all fit, which is where tsc's error is (#171)", () => {
+    const text = ["tsc: first error", ...Array.from({ length: 500 }, (_, i) => `line ${i}`)].join("\n");
+    const kept = tail(text, 10, 400);
+    expect(kept).toContain("tsc: first error");
+    expect(kept).toContain("line 499");
+    expect(kept).not.toContain("line 100");
+    expect(kept).toMatch(/…\d+ characters elided here/);
+    expect(kept.length).toBeLessThanOrEqual(400);
+  });
+
   it("caps bytes as well as lines, because one line can be a megabyte", () => {
     expect(tail("x".repeat(50_000), 10, 100).length).toBeLessThanOrEqual(101);
   });
