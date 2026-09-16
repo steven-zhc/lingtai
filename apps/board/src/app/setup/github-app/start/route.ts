@@ -29,6 +29,19 @@ export async function POST(request: Request): Promise<Response> {
   // The screen not drawing a button is what stops a second App by accident; a
   // route that posts anyway is what would stop one on purpose.
   const offer = await offerCreation();
+  // **Unknown is not no, here as on the page.** The durable record is the only
+  // guard a process started before `.env.local` was written has, so a log that
+  // will not say whether an App exists holds this route too: posting anyway
+  // mints a second App over a working one and rewrites `.env.local` to an id no
+  // repository has installed, and GitHub hands the private key over once.
+  if (offer.unanswered !== null) {
+    return new Response(
+      "Lingtai cannot tell whether an App was already created here: the log could not be read " +
+        `(${offer.unanswered}). Creating one now could mint a second App over a working one. ` +
+        "Run pnpm lingtai doctor, then try again.",
+      { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
+    );
+  }
   if (!offer.offered) {
     return new Response(
       `a GitHub App is already configured${offer.configured?.appId ? ` — app ${offer.configured.appId}` : ""}. ` +
