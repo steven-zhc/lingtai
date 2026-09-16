@@ -235,6 +235,118 @@ it is named here so nobody has to rediscover it by losing it.
   above. `migrations/app/…/ops.json` has not been checked for Postgres-specific
   operations.
 
+## Starting and stopping what was installed
+
+**Two processes, one supervisor, and the CLI does not become a supervisor
+itself.** `apps/cli/src/service.ts:12` is the reason:
+
+> **Wrapping a service manager means inheriting its version churn**
+> (openclaw#40550). So each verb is one or two calls to `launchctl` or
+> `systemctl --user` … **No service manager is not an error to work around.** A
+> container, an init that is not systemd: the answer is `lingtai daemon` in the
+> foreground, **under whatever supervises that box**.
+
+`launchd` supervises two jobs as easily as one. Merging the board into the
+conductor to avoid supervising two would be the CLI taking on exactly the role
+that file declines.
+
+```
+lingtai start                   conduct, foreground
+lingtai shutdown [why]          drain, then stop            0030
+lingtai restart [why]           the checked restart         0042
+
+lingtai board start             serve the UI, print the URL, open a browser
+lingtai board stop
+lingtai board restart
+lingtai board status
+
+lingtai service install|start|stop|restart|status|uninstall     both jobs
+```
+
+**The conductor gets `shutdown`; the board gets `stop`, and the difference is
+the point.** `shutdown` means *finish the pass in flight first*, which waits as
+long as `runtime.limits.wall` — an hour here. A board has no pass to finish.
+Giving it the same verb would make somebody wait for nothing, or believe the
+conductor was draining when it was not. `restart` is the same: `lingtai restart`
+refuses a `HEAD` the remote does not have, a dirty worktree and a red `doctor`
+before it drains; `board restart` is stop-then-start and claims nothing more.
+
+**`service status` reports each job separately.** The rule is already in
+`service.ts:17` — *"The supervisor has the job loaded" and "a daemon is up and
+taking work" are different facts … no verb concludes the second from the first* —
+and two jobs make it sharper. One summary saying *running* would hide a board
+that is up beside a conductor `launchd` respawns every thirty seconds.
+
+**`board start` on a port already held says so in words.** The conductor has the
+advisory lock for this (`#93`); the board has nothing, so the failure would be a
+bare `EADDRINUSE`. It should read: *a board is already on 17820 —
+http://127.0.0.1:17820*, and name where the port is set.
+
+## Ports: one, reserved as two, and not higher
+
+```
+17820   the board
+17821   reserved. Nothing binds it today — see below
+```
+
+**Bigger is not safer past 32768**, which is the one thing worth knowing here:
+
+| | |
+|---|---|
+| macOS ephemeral | `49152–65535` |
+| Linux ephemeral | `32768–60999` (default) |
+
+A default in either range is handed out to other processes by the kernel, so it
+would collide **at random, intermittently, and mostly not at all** — which is
+harder to diagnose than a fixed clash. `10000–32767` is the band: high enough to
+be clear of anything common, below both ranges. `18789` is OpenClaw's, `27017`
+MongoDB's, `26257` CockroachDB's, `19999` Netdata's.
+
+**Defaults are in code and require no configuration.**
+`~/.lingtai/config.yaml` may override, and need not exist. The port is
+`apps/board/package.json`'s `next dev -p 3200` today, which is the wrong place:
+somebody who installed Lingtai does not edit its `package.json`.
+
+### The daemon binds nothing, and that is the design
+
+Verified 2026-09-16: `packages/daemon/src`, `packages/conductor/src` and
+`apps/cli/src` contain no `node:http`, no `node:net`, no `createServer`. The
+hook socket is a **unix socket path** (`hook-socket.ts:369`), and the liveness
+beacon is a file (`#46`).
+
+**Everything reaches the daemon through the log.** `pause`, `shutdown`,
+`restart`, `approve`, `requeue` and `close` all append to a stream the daemon is
+subscribed to; `doctor` asks whether a daemon is alive by reading a file, not by
+calling an endpoint. That is `0014` and `0022` in practice, and it is why there
+is nothing to `curl`.
+
+`17821` is reserved rather than bound so that a second listener, if one is ever
+needed, has an obvious home instead of being scattered. **Binding it today with
+no use would be a port the next reader has to explain**, and the two ways that
+ends — inventing a purpose, or deleting it — are both worse than an empty line
+in this table.
+
+### The one consequence of two processes, named rather than fixed
+
+**The GitHub webhook receiver is `apps/board/src/app/api/webhook/route.ts` — it
+is the board's, not the daemon's.** So a board that is not running is a webhook
+that is not received, and discovery falls back to `SWEEP_MS`.
+
+`0006`'s consequence reads:
+
+> Webhooks come with the App rather than needing separate configuration, **which
+> is what makes discovery event-driven**.
+
+Under two processes that is **conditionally** true, and the condition is that the
+board is up. On a laptop it makes no observable difference — `work-loop.ts:21`
+already says a webhook needs a public address and this runs on a laptop — so
+nothing moves today. **It is written here because the day somebody gives the
+board a public address, "event-driven" will quietly mean "while I have the tab
+open", and the sentence that would have warned them is in an ADR that predates
+the split.**
+
+Moving the receiver to the daemon is what `17821` would be for. Not now.
+
 ## Related
 
 - [0046](../decisions/0046-lingtai-is-personal.md) — one person, one Lingtai, one
