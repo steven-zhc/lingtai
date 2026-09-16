@@ -63,6 +63,7 @@ describe("permissionGaps", () => {
     permissions,
     account: "steven-zhc",
     repositorySelection: "selected",
+    htmlUrl: null,
   });
 
   it("is empty when the installation grants everything", () => {
@@ -177,5 +178,44 @@ describe("parseSlug", () => {
   it("says what was wrong rather than guessing", () => {
     expect(() => parseSlug("nextloom-ai-admin")).toThrow(/is not owner\/repo/);
     expect(() => parseSlug("a/b/c")).toThrow();
+  });
+
+  /**
+   * Every shape a person pastes (#168), by name. The `.git` rows are a bug on
+   * `main` before this: `.` is a name character, so `owner/repo.git` parsed
+   * into a repository called `repo.git` and `lingtai add` was told GitHub had
+   * no such thing.
+   */
+  const lingtai = { owner: "steven-zhc", repo: "lingtai" };
+  it.each([
+    ["owner/repo", "steven-zhc/lingtai"],
+    ["owner/repo with .git", "steven-zhc/lingtai.git"],
+    ["owner/repo with a trailing slash", "steven-zhc/lingtai/"],
+    ["surrounding whitespace", "  steven-zhc/lingtai\n"],
+    ["https link", "https://github.com/steven-zhc/lingtai"],
+    ["https link with .git", "https://github.com/steven-zhc/lingtai.git"],
+    ["https link with a trailing slash", "https://github.com/steven-zhc/lingtai/"],
+    ["https link to /tree/<branch>", "https://github.com/steven-zhc/lingtai/tree/main"],
+    ["https link to an issue, with a fragment", "https://github.com/steven-zhc/lingtai/issues/168#top"],
+    ["www and http", "http://www.github.com/steven-zhc/lingtai"],
+    ["no scheme", "github.com/steven-zhc/lingtai"],
+    ["ssh, scp-style", "git@github.com:steven-zhc/lingtai.git"],
+    ["ssh, url-style", "ssh://git@github.com/steven-zhc/lingtai.git"],
+  ])("accepts %s", (_name, input) => {
+    expect(parseSlug(input)).toEqual(lingtai);
+  });
+
+  it("does not parse owner/repo.git into a repository called repo.git", () => {
+    expect(parseSlug("steven-zhc/lingtai.git").repo).toBe("lingtai");
+  });
+
+  it.each([
+    ["another host", "https://gitlab.com/steven-zhc/lingtai", /gitlab\.com is not github\.com/],
+    ["another host, ssh", "git@gitlab.com:steven-zhc/lingtai.git", /is not github\.com/],
+    ["an owner alone", "https://github.com/steven-zhc", /is not owner\/repo/],
+    ["an empty segment", "steven-zhc//lingtai", /is not owner\/repo/],
+    ["only .git", "steven-zhc/.git", /is not owner\/repo/],
+  ])("refuses %s", (_name, input, message) => {
+    expect(() => parseSlug(input)).toThrow(message);
   });
 });

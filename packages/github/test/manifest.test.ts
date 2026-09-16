@@ -71,6 +71,18 @@ describe("the manifest asks for what 0006 decided", () => {
     expect(manifest.default_events).not.toContain("push");
   });
 
+  it("returns an install to the repository picker when given one, and on an update too (#168)", () => {
+    const manifest = buildManifest({
+      name: "lingtai-x",
+      redirectUrl: "http://127.0.0.1:3200/created",
+      setupUrl: "http://127.0.0.1:3200/setup/repository/installed",
+    });
+
+    expect(manifest.setup_url).toBe("http://127.0.0.1:3200/setup/repository/installed");
+    expect(manifest.setup_on_update).toBe(true);
+    expect("setup_url" in buildManifest({ name: "x", redirectUrl: "http://127.0.0.1:3200/created" })).toBe(false);
+  });
+
   it("is one team's own App, not a public one (0045)", () => {
     expect(buildManifest({ name: "lingtai-x", redirectUrl: "http://127.0.0.1:3200/created" }).public).toBe(false);
   });

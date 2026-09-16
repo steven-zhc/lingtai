@@ -96,6 +96,9 @@ export async function POST(request: Request): Promise<Response> {
     // The loopback is accepted by GitHub, which is what makes a local board a
     // place this flow can finish.
     redirectUrl: new URL("/setup/github-app/created", origin).toString(),
+    // Installing comes back to the repository picker (#168). An App created
+    // before this has no setup URL, and the picker does not need one.
+    setupUrl: new URL("/setup/repository/installed", origin).toString(),
   });
 
   // One field and not two. The manifest is the body; the `state` is already in

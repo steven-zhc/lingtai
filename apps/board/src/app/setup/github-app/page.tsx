@@ -221,7 +221,8 @@ function Created({
         Next, install it — <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>
           github.com/apps/{outcome.slug}
         </a>{" "}
-        — and pick the repositories it may see. Creating is not installing.
+        — and pick the repositories it may see. Creating is not installing. GitHub brings you back to{" "}
+        <Link href="/setup/repository">the repository picker</Link>.
       </p>
     </>
   );
@@ -252,12 +253,12 @@ function Configured({
         <p className="note">
           The App was configured by hand, so Lingtai does not know its name. Install it from{" "}
           <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>,
-          then run <code>pnpm lingtai add &lt;owner&gt;/&lt;repo&gt;</code>.
+          then pick the repository at <Link href="/setup/repository">/setup/repository</Link>.
         </p>
       ) : (
         <p className="note">
-          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then{" "}
-          <code>pnpm lingtai add &lt;owner&gt;/&lt;repo&gt;</code>.
+          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then pick it at{" "}
+          <Link href="/setup/repository">/setup/repository</Link>.
         </p>
       )}
     </>

@@ -451,9 +451,66 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
   };
 }
 
-/** `owner/repo` → its parts, or a message saying what was wrong with it. */
+/**
+ * A repository as a person names it → its parts, or a message saying what was
+ * wrong with it (#168).
+ *
+ * **Every shape that is on a clipboard**, because a link is what a person has
+ * and `owner/repo` is what this code wanted:
+ *
+ * ```
+ * steven-zhc/lingtai
+ * steven-zhc/lingtai/                               trailing slash
+ * https://github.com/steven-zhc/lingtai             and http://, www.
+ * github.com/steven-zhc/lingtai                     no scheme
+ * https://github.com/steven-zhc/lingtai.git
+ * https://github.com/steven-zhc/lingtai/tree/main   any page inside the repository
+ * git@github.com:steven-zhc/lingtai.git             and ssh://git@github.com/…
+ * ```
+ *
+ * **`.git` is taken off, and that is a fix and not a convenience.** `.` is a
+ * legal character in a repository name, so the old pattern parsed
+ * `owner/repo.git` *successfully* into a repository called `repo.git` — GitHub
+ * answered 404 and `lingtai add` said the App was not installed on a repository
+ * nobody meant. GitHub does not allow a name ending in `.git`, so stripping it
+ * never takes away a real one.
+ *
+ * Extra path segments are accepted only behind `github.com`: there they are a
+ * page inside the repository, while a bare `a/b/c` is not a thing anybody
+ * copies and is more likely a mistake than a link.
+ */
 export function parseSlug(slug: string): { owner: string; repo: string } {
-  const m = /^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)$/.exec(slug.trim());
-  if (!m) throw new Error(`"${slug}" is not owner/repo`);
-  return { owner: m[1]!, repo: m[2]! };
+  const refuse = (why?: string) =>
+    new Error(`"${slug}" is not owner/repo${why ? ` — ${why}` : ""}`);
+  let rest = slug.trim();
+
+  let linked = false;
+  const scp = /^[A-Za-z0-9._-]+@([A-Za-z0-9.-]+):(.*)$/.exec(rest);
+  if (scp) {
+    if (!isGitHubHost(scp[1]!)) throw refuse(`${scp[1]} is not github.com`);
+    rest = scp[2]!;
+    linked = true;
+  } else {
+    const url = /^(?:(?:https?|ssh|git):\/\/)?(?:[^@/]+@)?([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?::\d+)?\/(.*)$/.exec(rest);
+    if (url) {
+      if (!isGitHubHost(url[1]!)) throw refuse(`${url[1]} is not github.com`);
+      rest = url[2]!;
+      linked = true;
+    }
+  }
+
+  // A query or a fragment belongs to the page, not to the repository.
+  const parts = rest.replace(/[?#].*$/, "").replace(/\/+$/, "").split("/");
+  if (parts.length < 2 || parts.includes("") || (!linked && parts.length > 2)) throw refuse();
+
+  const owner = parts[0]!;
+  const repo = parts[1]!.replace(/\.git$/i, "");
+  const name = /^[A-Za-z0-9._-]+$/;
+  if (!name.test(owner) || !name.test(repo) || repo === "." || repo === "..") throw refuse();
+  return { owner, repo };
+}
+
+function isGitHubHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === "github.com" || h === "www.github.com";
 }

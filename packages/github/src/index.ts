@@ -1,16 +1,21 @@
 export {
+  appInstallations,
   appJwt,
+  createAppReader,
   createTokenSource,
   GITHUB_API,
   GitHubError,
   installationForRepo,
+  installationRepositories,
   installationToken,
   NotInstalledError,
   permissionGaps,
   REQUIRED_PERMISSIONS,
   type AppAuth,
+  type AppReader,
   type Installation,
   type PermissionGap,
+  type VisibleRepository,
 } from "./app.ts";
 export {
   LINGTAI_URL,

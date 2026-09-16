@@ -260,7 +260,7 @@ function fakeClient(issues: Issue[], project = "esctest"): GitHubClient {
   return {
     owner: "steven-zhc",
     repo: project,
-    installation: { id: 1, permissions: {}, account: "steven-zhc", repositorySelection: "selected" },
+    installation: { id: 1, permissions: {}, account: "steven-zhc", repositorySelection: "selected", htmlUrl: null },
     request: async () => {
       throw new Error("not used");
     },

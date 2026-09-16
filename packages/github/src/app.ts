@@ -41,6 +41,31 @@ export interface Installation {
   account: string;
   /** `all`, or `selected` when the App was installed on specific repositories. */
   repositorySelection: string;
+  /**
+   * The installation's own settings page — where its repositories and its
+   * permissions are changed, so the page a missing repository or a missing
+   * scope is fixed on (#168). Null only when GitHub did not send one.
+   */
+  htmlUrl: string | null;
+}
+
+/** An installation as GitHub's JSON spells it. */
+interface RawInstallation {
+  id: number;
+  permissions: Record<string, string>;
+  account: { login?: string } | null;
+  repository_selection: string;
+  html_url?: string | null;
+}
+
+function toInstallation(raw: RawInstallation, owner = ""): Installation {
+  return {
+    id: raw.id,
+    permissions: raw.permissions,
+    account: raw.account?.login ?? owner,
+    repositorySelection: raw.repository_selection,
+    htmlUrl: raw.html_url ?? null,
+  };
 }
 
 export class GitHubError extends Error {
@@ -130,21 +155,11 @@ export async function installationForRepo(
   repo: string,
 ): Promise<Installation> {
   try {
-    const raw = await githubJson<{
-      id: number;
-      permissions: Record<string, string>;
-      account: { login?: string } | null;
-      repository_selection: string;
-    }>(`/repos/${owner}/${repo}/installation`, {
+    const raw = await githubJson<RawInstallation>(`/repos/${owner}/${repo}/installation`, {
       token: appJwt(auth),
       tokenKind: "bearer",
     });
-    return {
-      id: raw.id,
-      permissions: raw.permissions,
-      account: raw.account?.login ?? owner,
-      repositorySelection: raw.repository_selection,
-    };
+    return toInstallation(raw, owner);
   } catch (err) {
     // 404 here means "no installation covers this repository", which is not the
     // same as "no such repository" and reads very differently to whoever is
@@ -259,4 +274,104 @@ export function createTokenSource(
     if (Exit.isSuccess(exit)) return exit.value;
     throw Cause.squash(exit.cause);
   };
+}
+
+/** One repository an installation can see. */
+export interface VisibleRepository {
+  owner: string;
+  repo: string;
+  private: boolean;
+}
+
+/**
+ * Reading what the App can see, and nothing else (#168).
+ *
+ * **`GET` is the only method on it**, and the type says so: this is the
+ * surface the repository picker is allowed, and the picker writes nothing. A
+ * test hands it a fake that fails any other method, the assertion #161's
+ * proposal carries.
+ *
+ * `as` is who asks: `"app"` is the App's JWT, which can read the App's own
+ * installations and nothing inside them; a number is that installation's token.
+ * Minting that token is a `POST` to `/app/installations/{id}/access_tokens`,
+ * and it lives beneath this seam on purpose — it is authentication, it changes
+ * nothing anyone can see, and every `GET` in this system already pays for one.
+ */
+export interface AppReader {
+  request<T>(method: "GET", path: string, as: "app" | number): Promise<T>;
+}
+
+export function createAppReader(auth: AppAuth): AppReader {
+  const tokens = new Map<number, () => Promise<string>>();
+  return {
+    async request<T>(method: "GET", path: string, as: "app" | number): Promise<T> {
+      if (method !== "GET") throw new Error(`the App reader only reads: refused ${method} ${path}`);
+      let token: string;
+      if (as === "app") {
+        token = appJwt(auth);
+      } else {
+        let source = tokens.get(as);
+        if (source === undefined) {
+          source = createTokenSource(auth, as);
+          tokens.set(as, source);
+        }
+        token = await source();
+      }
+      return githubJson<T>(path, { method, token, tokenKind: "bearer" });
+    },
+  };
+}
+
+/** GitHub's own page size ceiling, and how far a listing pages before it refuses. */
+const PAGE = 100;
+const MAX_PAGES = 20;
+
+/**
+ * Every installation of this App — the App's own report.
+ *
+ * `GET /app/installations`, with the App's JWT. This is also what an
+ * `installation_id` arriving on the setup URL is checked against: an id that
+ * is not in here is not one of this App's installations, whatever the query
+ * string says.
+ */
+export async function appInstallations(reader: AppReader): Promise<Installation[]> {
+  const out: Installation[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const raw = await reader.request<RawInstallation[]>(
+      "GET",
+      `/app/installations?per_page=${PAGE}&page=${page}`,
+      "app",
+    );
+    out.push(...raw.map((r) => toInstallation(r)));
+    if (raw.length < PAGE) return out;
+  }
+  throw new Error(`more than ${MAX_PAGES * PAGE} installations — the listing is incomplete`);
+}
+
+/**
+ * What one installation can see.
+ *
+ * **`GET /installation/repositories`, the blunt endpoint, on purpose.** There
+ * are two finer ones — `GET /user/installations` and
+ * `GET /user/installations/{id}/repositories` answer *what can this person
+ * see*, which is the better question — and both need a **user-to-server
+ * token**, which Lingtai does not have: it has no user OAuth, and
+ * [0045](../../../doc/decisions/0045-one-team-one-conductor.md) names who is
+ * asking as a separate epic. Under one team and one conductor, *what the App
+ * can see* is the right answer rather than a compromise. Reach for the `/user/`
+ * endpoints and there is no token to call them with.
+ */
+export async function installationRepositories(
+  reader: AppReader,
+  installationId: number,
+): Promise<VisibleRepository[]> {
+  const out: VisibleRepository[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const raw = await reader.request<{
+      repositories: { name: string; owner: { login: string }; private: boolean }[];
+    }>("GET", `/installation/repositories?per_page=${PAGE}&page=${page}`, installationId);
+    out.push(...raw.repositories.map((r) => ({ owner: r.owner.login, repo: r.name, private: r.private })));
+    if (raw.repositories.length < PAGE) return out;
+  }
+  throw new Error(`installation ${installationId} can see more than ${MAX_PAGES * PAGE} repositories — the listing is incomplete`);
 }

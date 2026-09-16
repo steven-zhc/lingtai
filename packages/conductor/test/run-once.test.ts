@@ -206,7 +206,7 @@ function fakeClient(over: Partial<GitHubClient> & { recipe?: string } = {}): Git
   return {
     owner: "steven-zhc",
     repo: PROJECT,
-    installation: { id: 1, permissions: {}, account: "steven-zhc", repositorySelection: "selected" },
+    installation: { id: 1, permissions: {}, account: "steven-zhc", repositorySelection: "selected", htmlUrl: null },
     request: async () => {
       throw new Error("not used");
     },

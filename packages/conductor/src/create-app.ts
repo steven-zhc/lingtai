@@ -161,6 +161,8 @@ export interface BeginOptions {
   org?: string | null;
   /** A public address GitHub can reach, or null for an inactive hook. */
   webhookUrl?: string | null;
+  /** Where GitHub returns a person who has installed the App — the picker (#168). */
+  setupUrl?: string | null;
   now?: Date;
 }
 
@@ -312,6 +314,7 @@ export function createCreationSession(): CreationSession {
           name: attempt.name,
           redirectUrl: options.redirectUrl,
           webhookUrl: attempt.webhookUrl,
+          setupUrl: options.setupUrl ?? null,
         }),
         state,
       };

@@ -173,7 +173,7 @@ function fakeClient(recipe: string, sha: () => string) {
   const client = {
     owner: "steven-zhc",
     repo: "lingtai",
-    installation: { id: 1, permissions: {}, account: "steven-zhc", repositorySelection: "selected" },
+    installation: { id: 1, permissions: {}, account: "steven-zhc", repositorySelection: "selected", htmlUrl: null },
     request: async () => {
       throw new Error("not used");
     },

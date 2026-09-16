@@ -168,7 +168,7 @@ function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
   return {
     owner: "nobody",
     repo: PROJECT,
-    installation: { id: 1, permissions: {}, account: "nobody", repositorySelection: "selected" },
+    installation: { id: 1, permissions: {}, account: "nobody", repositorySelection: "selected", htmlUrl: null },
     request: async () => { throw new Error("not used"); },
     token: async () => "not-a-real-token",
     defaultBranch: async () => "main",

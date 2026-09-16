@@ -77,6 +77,13 @@ export interface ManifestOptions {
    * is [0016 §4](../../../doc/decisions/0016-the-settled-model.md)'s complaint.
    */
   webhookUrl?: string | null;
+  /**
+   * Where GitHub sends a person after they install the App, absolute — the
+   * repository picker's return (#168). Absent, GitHub shows its own page and
+   * the person has to find their way back, which the picker survives: it reads
+   * the installations back from GitHub rather than from this redirect.
+   */
+  setupUrl?: string | null;
   /** The homepage field. Overridable only so a test need not assert a constant twice. */
   url?: string;
 }
@@ -90,6 +97,9 @@ export interface AppManifest {
   default_permissions: Record<string, string>;
   default_events: string[];
   hook_attributes: { url: string; active: boolean };
+  setup_url?: string;
+  /** Also come back when the repositories an installation covers are changed. */
+  setup_on_update?: boolean;
 }
 
 /**
@@ -115,6 +125,7 @@ export function buildManifest(options: ManifestOptions): AppManifest {
     default_permissions: defaultPermissions(),
     default_events: [...MANIFEST_EVENTS],
     hook_attributes: hook === null ? { url: `${LINGTAI_URL}#no-webhook`, active: false } : { url: hook, active: true },
+    ...(options.setupUrl ? { setup_url: options.setupUrl, setup_on_update: true } : {}),
   };
 }
 

@@ -31,6 +31,7 @@ const installation: Installation = {
   permissions: {},
   account: "steven-zhc",
   repositorySelection: "selected",
+  htmlUrl: null,
 };
 
 /** A raw issue as the REST list endpoint sends one, minus what nothing reads. */
