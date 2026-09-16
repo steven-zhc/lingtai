@@ -42,7 +42,7 @@ import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, work
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
 import { currentRecipe, loadAllProjects, loadProject } from "@lingtai/conductor/projects";
-import { add } from "@lingtai/conductor/onboard";
+import { add, resumeOnboarding } from "@lingtai/conductor/onboard";
 import { isPending, isRegistered } from "@lingtai/domain";
 import { requestRun, resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
@@ -305,6 +305,13 @@ export async function declineBacklogFinding(input: {
  * `ProjectConfigured`. Past that the project is registered and every other part
  * of the system treats it as one.
  *
+ * **The recorded base is where to look, and never a decision.** It goes through
+ * `resumeOnboarding`, which sends it unnamed: the wizard filled it from
+ * GitHub's default branch, so a recipe that declares another branch is adopted
+ * the way `lingtai add` with no flag adopts one. Sent as a typed `--base` it
+ * would be refused the moment the two differ — permanently, this button having
+ * no flag to leave off (#75, #163).
+ *
  * **Pressable again, because the common answer is "not yet".** A missing recipe
  * is a `RecipeMissingError` that `add` reports and returns 1 on, having written
  * nothing at all — the same refusal a person would get in the terminal, in the
@@ -323,12 +330,15 @@ export async function recheckProject(input: { project: string }): Promise<Action
     // press: it is already live, which is not a failure and is not a reason to
     // register it again.
     if (isRegistered(state)) return { ok: true, detail: `${input.project} is already live` };
-    if (!isPending(state) || !state.owner || !state.base) {
+    if (!isPending(state) || !state.project || !state.owner || !state.base) {
       return { ok: false, detail: `"${input.project}" was not recorded with an owner and a base — re-run the wizard, or lingtai add` };
     }
 
     const said: string[] = [];
-    const code = await add({ slug: `${state.owner}/${state.project}`, base: state.base }, (line) => said.push(line));
+    const code = await add(
+      resumeOnboarding({ owner: state.owner, project: state.project, base: state.base }),
+      (line) => said.push(line),
+    );
     revalidatePath("/");
     if (code === 0) return { ok: true, detail: `${input.project} is live` };
     // **Everything it said, not the last line.** A missing recipe is one

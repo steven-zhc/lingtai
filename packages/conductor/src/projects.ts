@@ -7,7 +7,7 @@
  */
 import { PROJECT_STREAM_PREFIX, projectStream } from "@lingtai/domain";
 import { type ResolvedRecipe, resolveRecipe } from "@lingtai/recipe";
-import { type ProjectState, isPending, isRegistered, reduceProject } from "@lingtai/domain";
+import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
@@ -43,6 +43,11 @@ export async function loadProject(
  *
  * The board needs both halves and must not read the log twice to get them
  * (#163); everything that conducts wants `loadProjects` below and nothing else.
+ *
+ * There is no `loadPendingProjects` beside it on purpose. The board's pending
+ * half comes out of `splitRegister` over *this* list, and a second reader
+ * nothing called would have been a test's idea of the board rather than the
+ * board — one that keeps passing while the strip it is named for is broken.
  */
 export async function loadAllProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
   const streams = await listProjectStreams();
@@ -60,16 +65,6 @@ export async function loadAllProjects(store: EventStore = eventStore): Promise<P
  */
 export async function loadProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
   return (await loadAllProjects(store)).filter(isRegistered);
-}
-
-/**
- * The repositories on their way in: recorded, and no recipe read yet.
- *
- * Only the board asks. Nothing here reaches GitHub — a pending project has no
- * recipe to resolve, and `currentRecipe` would throw rather than answer.
- */
-export async function loadPendingProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
-  return (await loadAllProjects(store)).filter(isPending);
 }
 
 

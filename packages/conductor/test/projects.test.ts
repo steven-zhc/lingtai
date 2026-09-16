@@ -17,11 +17,11 @@
  * over `events`, and the thing under test is the whole road from a row to a
  * state.
  */
-import { projectStream } from "@lingtai/domain";
+import { isPending, projectStream } from "@lingtai/domain";
 import { createDb, createEventStore, type Db, directDatabaseUrl, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadAllProjects, loadPendingProjects, loadProject, loadProjects } from "../src/projects.ts";
+import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";
 
 const PENDING = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -73,27 +73,31 @@ describe("the projects a conductor may take work from", () => {
 
   /**
    * The other half, and the reason the first is not simply "it is missing":
-   * the pending project *is* on the log and *is* readable. It is withheld from
-   * the conductor and offered to the board, which is a different fact from not
-   * being there.
+   * the pending project *is* on the log and *is* readable, with the owner and
+   * branch on it. Withheld from the conductor and still readable is a different
+   * fact from not being there.
+   *
+   * This says nothing about the board, deliberately. `loadAllProjects` is what
+   * the board reads and `splitRegister` is what it does with it, and only a
+   * test that calls `splitRegister` can hold the strip up — that one is
+   * `apps/board/test/pending.test.tsx`. A test here named for the board would
+   * pass while the board dropped it.
    */
-  it("offers it to the board instead, with the slug and the branch Recheck needs", async () => {
-    const pending = (await loadPendingProjects(store)).find((p) => p.project === PENDING);
+  it("still comes back from the whole register, with the owner and branch on it", async () => {
+    const all = await loadAllProjects(store);
+    const pending = all.find((p) => p.project === PENDING);
 
     expect(pending).toBeDefined();
     expect(pending?.owner).toBe("steven-zhc");
     expect(pending?.base).toBe("develop");
-    expect((await loadPendingProjects(store)).map((p) => p.project)).not.toContain(LIVE);
+    expect(isPending(pending!)).toBe(true);
   });
 
-  /** Every stream is on exactly one of the two lists, which is what makes them a line. */
+  /** Every stream is on exactly one of the two sides, which is what makes them a line. */
   it("splits the register in two, with nothing on both sides and nothing lost", async () => {
-    const [all, live, pending] = await Promise.all([
-      loadAllProjects(store),
-      loadProjects(store),
-      loadPendingProjects(store),
-    ]);
+    const [all, live] = await Promise.all([loadAllProjects(store), loadProjects(store)]);
     const named = all.filter((p) => p.project !== null);
+    const pending = all.filter(isPending);
 
     expect(live.length + pending.length).toBe(named.length);
     expect(live.map((p) => p.project).filter((n) => pending.some((p) => p.project === n))).toEqual([]);

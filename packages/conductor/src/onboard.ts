@@ -28,9 +28,11 @@
  * precisely this function, and a second implementation of it behind a button
  * would be two ways of registering a project, free to disagree about the base,
  * the permissions checked, or what is said when there is still no recipe there.
- * `lingtai add` is still the command; this is what it runs.
+ * `lingtai add` is still the command; this is what it runs. What the button
+ * replays is the base the wizard recorded, and it arrives as the hint it is
+ * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
-import { projectStream } from "@lingtai/domain";
+import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from "@lingtai/domain";
 import {
   RECIPE_PATH,
   type ReadAtRef,
@@ -59,9 +61,39 @@ export interface AddOptions {
    * recipe's `repo.base` decides that, and a `--base` disagreeing with it is
    * refused rather than obeyed (#75). Defaults to the repository's own default
    * branch.
+   *
+   * `named` is whether a **person** said this branch, and it is the whole of
+   * what earns that refusal: a typed `--base` must not be silently overruled,
+   * and the way out of it is to re-run without the flag. A branch this system
+   * *remembered* — the base a `ProjectOnboardingStarted` recorded, replayed by
+   * the board's `Recheck` (#163) — is not named and must not be refused:
+   * there is no flag for a button to omit, so the refusal would be permanent
+   * and its advice would name something nobody typed. Remembered, the recipe's
+   * `repo.base` is adopted from it exactly as it is from the default branch.
    */
-  base?: string;
+  base?: { ref: string; named: boolean };
   /** Containment floor. `guarded` is what the first project runs at (0007). */
+}
+
+/**
+ * What finishing a recorded onboarding asks `add` for (#163).
+ *
+ * One function rather than an object literal at the call site, because the
+ * field that matters is the one easiest to get wrong. The board's `Recheck` has
+ * a `ProjectOnboardingStarted` and nothing else: the base on it was filled from
+ * GitHub's default branch by the wizard, which makes it *exactly* the bootstrap
+ * hint `--base` is not. Sent as a named base it would be refused for ever the
+ * moment a review corrected `repo.base` in the recipe PR — the card advising an
+ * operator to re-run without a flag that a button cannot omit. Sent as what it
+ * is, the recipe decides the base, which is #75's rule and not an exception to
+ * it.
+ */
+export function resumeOnboarding(recorded: {
+  owner: string;
+  project: string;
+  base: string;
+}): AddOptions {
+  return { slug: `${recorded.owner}/${recorded.project}`, base: { ref: recorded.base, named: false } };
 }
 
 /** The recipe that governs, or the reason this command will not pick one. */
@@ -161,7 +193,7 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
 
   const client = await createGitHubClient({ auth, owner, repo, installation });
   const fromDefault = options.base === undefined;
-  const readFrom = options.base ?? (await client.defaultBranch());
+  const readFrom = options.base?.ref ?? (await client.defaultBranch());
   // Said *before* the read, not after it. When this is the wrong branch the
   // failure is otherwise a sentence about a file, and the reader has to work
   // out for themselves that the branch is the surprising part.
@@ -177,7 +209,10 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   try {
     found = await governing(
       (path, ref) => client.fileAt(path, ref),
-      { ref: readFrom, named: !fromDefault },
+      // Named is a person's flag and nothing else. A base this system
+      // remembered is a hint, and `governing` adopts the recipe's over it
+      // rather than refusing (#163).
+      { ref: readFrom, named: options.base?.named ?? false },
       `${owner}/${repo}`,
     );
   } catch (err: unknown) {
@@ -260,10 +295,29 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
     },
   ]);
 
-  log(
-    existing.length === 0
-      ? `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.gates).flat().length} action(s) across 5 gates`
-      : `updated ${repo} — its ${existing.length} earlier event(s) are still on the record`,
-  );
+  log(registrationLine(existing, repo, resolved));
   return 0;
+}
+
+/**
+ * The last line: *added*, or *updated* (#163).
+ *
+ * The question is whether this project was ever **configured**, and not whether
+ * its stream has anything on it. A repository the wizard recorded already has
+ * one event — `ProjectOnboardingStarted` — and has never been configured at
+ * all, so counting events reports the first registration of every
+ * wizard-onboarded repository as an update and swallows the tier-and-gates
+ * summary onboarding exists to print. `isRegistered` is the line
+ * `loadProjects` already draws, asked of the stream as it stood before this
+ * append.
+ */
+export function registrationLine(
+  prior: readonly Envelope[],
+  repo: string,
+  resolved: ResolvedRecipe,
+): string {
+  const before: ProjectState = reduceProject(prior);
+  return isRegistered(before)
+    ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
+    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.gates).flat().length} action(s) across 5 gates`;
 }

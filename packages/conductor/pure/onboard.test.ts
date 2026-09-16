@@ -5,9 +5,16 @@
  * `resolveRecipe` does, so the three rows of the table are assertable about the
  * decision itself rather than about a command that also talks to GitHub.
  */
-import { RECIPE_PATH } from "@lingtai/recipe";
+import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
+import {
+  type Envelope,
+  type EventType,
+  type PayloadOf,
+  SCHEMA_VER,
+  parsePayload,
+} from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
-import { governing } from "../src/onboard.ts";
+import { governing, registrationLine, resumeOnboarding } from "../src/onboard.ts";
 
 const recipe = (base: string) => `
 version: 1
@@ -112,5 +119,113 @@ describe("the base lingtai add records", () => {
     if (found.ok) return;
     expect(found.refusal).toContain("develop");
     expect(found.refusal).toContain("release");
+  });
+});
+
+/**
+ * The half the board presses, and the half it presses *with* (#163).
+ *
+ * `Recheck` has no flags on it and never will: what it sends is a base a
+ * `ProjectOnboardingStarted` recorded, filled by the wizard from GitHub's
+ * default branch. Sent as a typed `--base` the row above — *refuses, naming
+ * both branches* — would fire on the ordinary case and keep firing, because the
+ * advice it gives is to re-run without a flag nobody typed and a button cannot
+ * omit.
+ */
+describe("finishing an onboarding the wizard recorded", () => {
+  it("replays the recorded base as a hint, and not as a flag a person typed", () => {
+    expect(resumeOnboarding({ owner: "steven-zhc", project: "nextloom-ai-admin", base: "main" })).toEqual({
+      slug: SLUG,
+      base: { ref: "main", named: false },
+    });
+  });
+
+  /**
+   * The sequence in full. The wizard recorded `main`; review corrected
+   * `repo.base` to `develop` while the recipe PR was open, and the PR merged
+   * into `main`. The recipe governs, exactly as it does for `lingtai add` with
+   * no flag — and `Recheck` goes through rather than refusing for ever.
+   */
+  it("adopts the base the recipe declares when review moved it", async () => {
+    const options = resumeOnboarding({ owner: "steven-zhc", project: "nextloom-ai-admin", base: "main" });
+    const found = await governing(
+      reader({
+        [`main:${RECIPE_PATH}`]: recipe("develop"),
+        [`develop:${RECIPE_PATH}`]: recipe("develop"),
+      }),
+      options.base!,
+      SLUG,
+    );
+
+    expect(found.ok).toBe(true);
+    if (!found.ok) return;
+    expect(found.resolved.recipe.repo.base).toBe("develop");
+    expect(found.adoptedFrom).toBe("main");
+  });
+});
+
+let seq = 1n;
+
+/** One stream's envelopes, versioned in call order. Payloads go through zod. */
+function stream(streamId: string) {
+  let version = 0;
+  return function event<T extends EventType>(type: T, data: PayloadOf<T>): Envelope {
+    version += 1;
+    return {
+      seq: seq++,
+      streamId,
+      version,
+      type,
+      schemaVer: SCHEMA_VER[type],
+      data: parsePayload(type, data),
+      actor: "conductor",
+      causation: null,
+      at: new Date("2026-09-15T12:00:00.000Z"),
+    };
+  };
+}
+
+/**
+ * What the command says it did — which is about the *project*, not the stream.
+ *
+ * A wizard-onboarded repository arrives here with one event already on it, so
+ * counting events reports the first registration any of them ever had as an
+ * update, and the tier-and-gates summary onboarding exists to print is never
+ * printed for one (#163).
+ */
+describe("the last line lingtai add prints", () => {
+  const resolved = () => resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: recipe("develop") }), "develop");
+  const event = stream("prj-nextloom-ai-admin");
+  const started = event("ProjectOnboardingStarted", {
+    slug: SLUG,
+    base: "main",
+    by: "human:steven",
+  });
+  const configured = event("ProjectConfigured", {
+    project: "nextloom-ai-admin",
+    owner: "steven-zhc",
+    base: "develop",
+    configHash: "h",
+    fromSha: "s",
+  });
+
+  it("says added when the only earlier event is the wizard's", async () => {
+    const line = registrationLine([started], "nextloom-ai-admin", await resolved());
+
+    expect(line).toContain("added nextloom-ai-admin");
+    expect(line).toContain("tier ");
+    expect(line).toContain("across 5 gates");
+    expect(line).not.toContain("updated");
+  });
+
+  it("says updated only once the project has been configured before", async () => {
+    const line = registrationLine([started, configured], "nextloom-ai-admin", await resolved());
+
+    expect(line).toContain("updated nextloom-ai-admin");
+    expect(line).toContain("2 earlier event(s)");
+  });
+
+  it("says added on a stream with nothing on it at all", async () => {
+    expect(registrationLine([], "nextloom-ai-admin", await resolved())).toContain("added");
   });
 });

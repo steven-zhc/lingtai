@@ -236,7 +236,11 @@ async function addCommand(args: string[]): Promise<number> {
   }
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
-  return add({ slug, base: flags["base"] });
+  // `named`, because a person typed it here: a recipe that contradicts `--base`
+  // is refused rather than adopted (#75), which is a refusal only a typed flag
+  // may earn.
+  const base = flags["base"];
+  return add({ slug, base: base === undefined ? undefined : { ref: base, named: true } });
 }
 
 async function projectionCommand(args: string[]): Promise<number> {

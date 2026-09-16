@@ -767,9 +767,6 @@ export async function loadBoard(project?: string): Promise<Board> {
     // Narrowed like the columns are: a filter on one repository is a reader
     // saying which repository they are looking at, and another one arriving is
     // as much a distraction here as a card would be.
-    // Narrowed like the columns are: a filter on one repository is a reader
-    // saying which repository they are looking at, and another one arriving is
-    // as much a distraction here as a card would be.
     pending: pending.filter((p) => project === undefined || p.project === project),
   };
 }
