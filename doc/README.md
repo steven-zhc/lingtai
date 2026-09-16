@@ -83,7 +83,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0002](decisions/0002-typescript.md) | TypeScript, with the hook as a Bun single file | accepted |
 | [0003](decisions/0003-postgres-event-store.md) | PostgreSQL as the event store | accepted |
 | [0004](decisions/0004-prisma.md) | Prisma 8 as the ORM | accepted |
-| [0005](decisions/0005-config-in-target-repo.md) | Configuration lives in the managed repository | accepted |
+| [0005](decisions/0005-config-in-target-repo.md) | Configuration lives in the managed repository | policy half superseded by 0016; **the rest by [0046](decisions/0046-lingtai-is-personal.md)** |
 | [0006](decisions/0006-github-app.md) | A GitHub App, not a personal access token | accepted |
 | [0007](decisions/0007-dual-runtime.md) | Two runtime interfaces, one implementation | accepted |
 | [0008](decisions/0008-nextjs-board.md) | Next.js for the board, SSE for live updates | accepted |
@@ -123,7 +123,8 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0042](decisions/0042-the-restart-is-a-command.md) | **The restart is a command, the checks come before the drain, and a start is an event** | accepted; completes 0030 |
 | [0043](decisions/0043-evidence-is-plain-text.md) | **A gate's evidence is plain text, stripped where it is captured** | accepted; closes #156 |
 | [0044](decisions/0044-a-close-is-a-terminal-outcome.md) | **A close is a terminal outcome, so `end` runs on it** | accepted; completes #151 |
-| [0045](decisions/0045-one-team-one-conductor.md) | **One team, one conductor, one recipe** | accepted; records what `#93` assumed |
+| [0045](decisions/0045-one-team-one-conductor.md) | **One team, one conductor, one recipe** | **superseded by [0046](decisions/0046-lingtai-is-personal.md)** |
+| [0046](decisions/0046-lingtai-is-personal.md) | **Lingtai is personal; the repository is the team's** | accepted; supersedes 0045 and 0005's surviving half |
 
 ## Experiments
 
