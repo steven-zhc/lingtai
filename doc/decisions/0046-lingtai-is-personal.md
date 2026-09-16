@@ -149,9 +149,40 @@ the environment; the machine only holds it*. Generalised:
 `runtime.agent` was the counter-example hiding in plain sight — which CLI is
 installed is a fact about a machine, sitting in a file meant to describe a
 project. 0045 defended it *because there was only ever one machine conducting*;
-that defence dies here. It does not move, it **goes**: `lingtai doctor` already
-detects which runtime is signed in, so it is a fact to observe rather than a
-value to hold.
+that defence dies here, and the field **moves to the machine**.
+
+> **It moves. It does not go**, and the first draft of this ADR said it went —
+> on the grounds that `doctor` already detects which runtime is signed in, so
+> there was nothing left to configure. That is wrong for three reasons and the
+> third is already in the code.
+>
+> [0007](0007-dual-runtime.md) supports two runtimes deliberately, and something
+> must choose between them. A person may want a different one per project, which
+> is a per-machine preference with a natural home. And **both can be signed in at
+> once** — `packages/recipe/src/propose.ts:320` resolves that case in a ternary
+> that picks `claude-code` and says nothing:
+>
+> ```ts
+> const runtime: RuntimeId | null = signedIn.includes("claude-code")
+>   ? "claude-code"
+>   : signedIn.includes("codex") ? "codex" : null;
+> ```
+>
+> Deleting the field does not remove the choice. It moves the choice into a
+> default nobody wrote down, which is the opposite of what this ADR is for.
+
+So it takes the same shape as the store:
+
+```
+~/.lingtai/<project>.yaml names one       →  that one
+absent, exactly one signed in             →  that one
+absent, more than one signed in           →  say so and ask; never pick silently
+absent, none signed in                    →  refuse by name, which propose.ts already does
+```
+
+**Detected is a default, not a replacement for being told.** A value that changes
+because somebody installed another CLI is a value that makes *why did this run
+differently today* unanswerable.
 
 `runtime.limits` goes too, and for a reason worth stating: more rounds does not
 lower quality, because the gates are what decide quality. More rounds costs more
