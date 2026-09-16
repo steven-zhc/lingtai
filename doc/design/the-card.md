@@ -133,11 +133,30 @@ Four tones, and the third does work no colour alone can:
 | `off` | `rule-2`, **italic** — nothing configured. Italic because *nothing configured* and *not reached yet* are both grey, and the difference between them has to survive being grey |
 | `bad` | fail — it stopped here |
 
-**The sentence under the bar has three readings and not two.** `build 42s / 20m`
+**The sentence under the bar has four readings and not two.** `build 42s / 20m`
 while something is running, `between points` while the agent has finished and no
 point has started — and `build refused`, because a refusal clears the live phase
 and leaves neither. Drawing the second of those on the third told an operator
 the agent had just finished, under a segment that was red.
+
+The fourth is `nothing running`, and it is the one the run's own stream cannot
+name. *In flight between two points* and *stopped, by something that is not on
+this stream* fold identically — no phase, no refusal — so **the lane settles
+which**, exactly as it settles the elapsed pill. A pass the merge lane refused
+is that card: `IntegrationRefused` goes to the integration lane's stream, the
+board never reads it, and the rail above the sentence is five passed points.
+
+**A refusal being answered is not a refusal**, which is why the refused reading
+is only reached with nothing in flight *and* off the running lane: its hover
+says a person is being waited on, and that is a fact about the column rather
+than about the stream. A bought round
+appends `FixRequested`, runs an agent against the findings and appends
+`FixApplied` — and no `RunStarted`, because a round is a step inside a run. With
+`rounds: 3` that is the ordinary path here, so a fold that saw no phase in it
+put `build refused` under a hover saying a person was being waited on, on a card
+that was spending money at the time. The round is a phase: `fixing round 2 of 3`,
+under the wall clock `RunStarted` recorded, which is the one the fixer is
+launched with.
 
 ## What was settled, and how
 

@@ -131,6 +131,70 @@ const refused = (): Envelope[] => [
 ];
 
 /**
+ * The same refusal, with the round the pipeline ordinarily buys to answer it.
+ *
+ * `rounds: 3` in this repository's own recipe, so this is the common path and
+ * not an edge: `FixRequested`, then an agent patching the diff for minutes,
+ * then `FixApplied` (`run-once.ts:1631`, `:1721`). No `RunStarted` between
+ * them — a round is a step inside a run — and `task_view` keeps the card
+ * `running` throughout (`task-view.ts:554`).
+ */
+const fixRound = (): Envelope[] => [
+  ...refused(),
+  at("2026-09-15T17:34:01Z", "FixRequested", {
+    runId: "run-170",
+    round: 1,
+    of: 3,
+    action: "build",
+    onSha: "b1b8694",
+    findings: [],
+  }),
+];
+
+/** That round back, having committed nothing: the refusal stands. */
+const fixSpent = (): Envelope[] => [
+  ...fixRound(),
+  at("2026-09-15T17:48:00Z", "FixApplied", {
+    runId: "run-170",
+    round: 1,
+    headSha: null,
+    turns: 9,
+    costUsd: 0.91,
+    failure: null,
+  }),
+];
+
+/**
+ * A pass every gate passed, and the merge lane refused.
+ *
+ * The scenario verbatim: `RunStarted, GatesResolved, RunFinished`, the build
+ * and the review green — and then nothing at all, because `IntegrationRefused`
+ * is appended to `int-lingtai-main` and never touches the run's stream. What
+ * reaches the card is `task_view`'s doing: Waiting, and `conflict: base moved`
+ * as the note (`task-view.ts:637`).
+ */
+function refusedByTheLane(): Envelope[] {
+  const upToTheAgent = running().slice(0, 6);
+  return [
+    ...upToTheAgent,
+    at("2026-09-15T17:20:43Z", "GateRequested", gate("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateStarted", gate("proposed", "build")),
+    at("2026-09-15T17:21:10Z", "GatePassed", {
+      ...gate("proposed", "build"),
+      evidence: "ok",
+      findings: [],
+    }),
+    at("2026-09-15T17:21:11Z", "GateRequested", gate("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "GateStarted", gate("proposed", "review")),
+    at("2026-09-15T17:22:00Z", "GatePassed", {
+      ...gate("proposed", "review"),
+      evidence: "no findings",
+      findings: [],
+    }),
+  ];
+}
+
+/**
  * The install refused, so the pipeline stopped there.
  *
  * The plan is on the record and names `build` and `review` at `proposed`, and
@@ -538,6 +602,107 @@ describe("a card stopped on a person", () => {
   /** And a run with nothing refused keeps the neutral sentence it had. */
   it("leaves the in-between sentence to a run that is in between", () => {
     expect(sentence(render({}, running().slice(0, 6)))).toBe("between points");
+  });
+
+  /**
+   * **A refusal that is not on this stream.** Every gate passed, the run's
+   * stream ends at the last verdict, and the pass is stopped anyway: the merge
+   * lane refused the integration on `int-lingtai-main`, which this fold does
+   * not read. Nothing in flight and nothing refused here is *also* what a run
+   * one second between two points looks like, so the lane settles it — and
+   * `between points`, whose title says the agent has just finished and
+   * something is coming, was the wrong half of that on the one lane 0016 §8
+   * calls the lane the board exists for.
+   */
+  it("never says between points about a pass that is not between anything", () => {
+    const html = render(
+      { state: "waiting", note: "conflict: base moved", updatedAt: new Date("2026-09-15T17:25:00Z") },
+      refusedByTheLane(),
+    );
+
+    expect(sentence(html)).toBe("nothing running");
+    expect(html).not.toContain("between points");
+    expect(html).not.toContain("the agent has finished and no point has started yet");
+    // The rail itself is unchanged and honest: the gates it drew all passed.
+    expect(cellsAt(html, "proposed")).toEqual(["t-pass", "t-pass"]);
+    // And the reason is on the card, one line down, where `task_view` put it.
+    expect(html).toContain("conflict: base moved");
+  });
+});
+
+// --- a card answering a refusal --------------------------------------------
+
+/**
+ * **A refusal being answered is not a refusal**, and with `rounds: 3` it is the
+ * ordinary path here rather than an edge. The pipeline stops at the first
+ * refusal and then buys a round: an agent patching the diff, minutes at a time,
+ * on a card `task_view` keeps `running`.
+ *
+ * The fold had nothing in flight for the whole of that agent's run, so the card
+ * read `build refused` under a hover saying nothing was running and a person
+ * was being waited on — both false, while money was being spent. The round is a
+ * phase now, which is what the fixture above this stops short of.
+ */
+describe("a card answering a refusal", () => {
+  it("names the round it is spending rather than calling the pass refused", () => {
+    const html = render({}, fixRound());
+
+    expect(sentence(html)).toMatch(/^fixing round 1 of 3 \d/);
+    expect(html).not.toContain("build refused");
+    expect(html).not.toContain("between points");
+    expect(html).not.toContain(
+      "the pipeline stops at the first refusal and waits for a person",
+    );
+  });
+
+  /**
+   * The round's event carries no ceiling of its own, and the fixer is launched
+   * under the same `runtime.limits.wall` the implementer was (`run-once.ts:1088`,
+   * `:1697`) — which `RunStarted` is the only event to write down. *Slow* and
+   * *about to be killed* are the two this line exists to separate.
+   */
+  it("measures the round against the wall clock the run recorded", () => {
+    expect(sentence(render({}, fixRound()))).toMatch(/\/ 1h$/);
+  });
+
+  /**
+   * And the gap between a refusal and the round bought to answer it, which is
+   * the same second the conductor spends deciding. `build refused` carries a
+   * title saying a person is being waited on — a claim about the lane, and one
+   * this card is the wrong lane for.
+   */
+  it("keeps the refusal off a card whose lane says the pass is still working", () => {
+    const html = render({}, refused());
+
+    expect(sentence(html)).toBe("between points");
+    expect(html).not.toContain("build refused");
+    // The segment is red all the same. The bar reports the verdict; the
+    // sentence reports who is waiting on what.
+    expect(cellsAt(html, "proposed")).toEqual(["t-fail", "t-pending"]);
+  });
+
+  /** The name of a phase that is not a point, printed whole and not sliced. */
+  it("highlights no point for a phase that is not one", () => {
+    const html = render({}, fixRound());
+
+    expect(labels(html).filter(([tone]) => tone === "l-at")).toEqual([]);
+    // And the refused segment stays red: the round is answering that verdict,
+    // not replacing it.
+    expect(cellsAt(html, "proposed")).toEqual(["t-fail", "t-pending"]);
+  });
+
+  /**
+   * And the round coming back does not leave a phase standing. A fixer that
+   * committed nothing is the refusal standing: the card goes to a person, and
+   * what it says is what refused it.
+   */
+  it("goes back to the refusal when the round is spent", () => {
+    const html = render(
+      { state: "waiting", blocked: true, gatesFailed: 1, awaitingSha: "b".repeat(40) },
+      fixSpent(),
+    );
+
+    expect(sentence(html)).toBe("build refused");
   });
 });
 

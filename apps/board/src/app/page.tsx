@@ -11,8 +11,8 @@ import {
 } from "@/lib/board";
 import { kindDot } from "@/lib/kind-colour";
 import {
-  AGENT,
   elapsed,
+  pointOf,
   type PointProgress,
   type PointState,
   type RunProgress,
@@ -200,10 +200,16 @@ function Segs({
 /**
  * What stopped this run, named as the action it was.
  *
- * A refusal clears the live phase — the pipeline and the pass both stop at the
- * first one (0041 §4) — so a refused run has nothing in flight and nothing
- * coming, which is not the same as being *between* two points. In point order,
+ * A refusal clears the live phase, so a run with a red segment and nothing in
+ * flight is stopped on it rather than *between* two points. In point order,
  * because the first refusal is the one that stopped it.
+ *
+ * **Only where nothing is in flight, and a bought round is in flight.** The
+ * pipeline stops at the first refusal (0041 §4) and then, here, ordinarily buys
+ * a round to answer it: `rounds: 3`, an agent patching the diff, and the card
+ * still `running`. `foldProgress` names that phase for exactly this reason — a
+ * refusal being answered is not a refusal waiting for a person, and this
+ * function cannot tell them apart on its own.
  */
 function refusedAt(points: readonly PointProgress[]): string | null {
   for (const p of points) {
@@ -227,20 +233,46 @@ function refusedAt(points: readonly PointProgress[]): string | null {
  *
  * **The point name is said once.** The line used to read `proposed:build 42s /
  * 20m`; the highlighted label already says `proposed`, so the sentence is the
- * action and its bound and nothing else.
+ * action and its bound and nothing else. A phase that names no point — the
+ * agent, a bought round — is printed whole, which is `pointOf`'s whole job.
+ *
+ * **The sentence has four readings and the lane settles three of them.** What
+ * is running, what refused, a run in flight between two points, and a run that
+ * is not in flight at all. The last two look identical on this stream — no
+ * phase, no refusal — and only one of them is *between* anything; the thing
+ * holding the other is not on the run's stream to be found, because the merge
+ * lane appends `IntegrationRefused` to its own and the card gets the note. And
+ * the second is only ever true off the running lane: a refusal a pass is still
+ * working through is not a refusal anybody has been handed.
  *
  * The clock is the server's, read at render. That is exactly as current as
  * everything else on the page: an append re-renders the route (`live.tsx`), and
  * a run appends steadily enough that this moves on its own.
  */
-function Rail({ progress }: { progress: RunProgress }) {
+function Rail({
+  progress,
+  live,
+}: {
+  progress: RunProgress;
+  /**
+   * Whether the run is in flight — the lane's word, as it is for the elapsed
+   * pill above, and never the rail's. A fold cannot answer it: a pass stopped
+   * by the merge lane's refusal has a run stream that simply ends, which is
+   * indistinguishable here from one a second between two points.
+   */
+  live: boolean;
+}) {
   const now = progress.now;
   // The point half of `proposed:build`, which is what the label highlights.
-  // `agent` is not a point and names none.
-  const at = now === null || now.label === AGENT ? null : (now.label.split(":")[0] ?? null);
-  // Only when nothing is in flight: a refusal from an earlier round sits under
-  // a live gate on the same card, and that card is running, not stopped.
-  const refused = now === null ? refusedAt(progress.points) : null;
+  // Null where the phase names no point — the agent, and a bought round.
+  const at = now === null ? null : pointOf(now.label);
+  // Only when nothing is in flight, **and** only off the running lane — the
+  // sentence's own title says a person is being waited on, and that is a fact
+  // about the lane rather than about the stream. A refusal from an earlier
+  // round sits under a live gate on the same card, and between a refusal and
+  // the round bought to answer it there is a moment with neither; both are a
+  // pass still working, and neither is anybody's to act on.
+  const refused = now === null && !live ? refusedAt(progress.points) : null;
 
   return (
     <div className="seq">
@@ -258,7 +290,7 @@ function Rail({ progress }: { progress: RunProgress }) {
               killed*, and it is absent rather than invented where nothing
               bounds the phase — an approval waits on a person, and a person has
               no timeout. */}
-          {now.label === AGENT ? AGENT : now.label.slice(at === null ? 0 : at.length + 1)}{" "}
+          {at === null ? now.label : now.label.slice(at.length + 1)}{" "}
           {elapsed(Date.now() - Date.parse(now.since))}
           {now.budgetMs === null ? "" : ` / ${inWords(now.budgetMs)}`}
         </p>
@@ -275,9 +307,24 @@ function Rail({ progress }: { progress: RunProgress }) {
         >
           {refused} refused
         </p>
-      ) : (
+      ) : live ? (
         <p className="snow quiet" title="the agent has finished and no point has started yet">
           between points
+        </p>
+      ) : (
+        /* The fourth reading, and the one the run's own stream cannot name.
+           Nothing is in flight and nothing on this stream refused, and the pass
+           is stopped anyway — so what stopped it happened somewhere this fold
+           does not read. `IntegrationRefused` is the ordinary one: it goes to
+           the merge lane's stream, `task_view` turns it into the note below,
+           and the rail above it is five passed points. Saying *between points*
+           here told an operator the agent had just finished and something was
+           coming, about a card that had been still for hours. */
+        <p
+          className="snow quiet"
+          title="nothing on this run's stream is running and nothing on it refused — what the pass is stopped on is not on it, and the note says what"
+        >
+          nothing running
         </p>
       )}
     </div>
@@ -521,8 +568,14 @@ export function Card({
           describes something over and the counts above are the whole truth
           about it (#79). They are not: a point that was configured and did not
           run is invisible in a count, and that is the one state 0016 §4 calls
-          our bug. `laneProgress` decides which cards have one. */}
-      {card.progress ? <Rail progress={card.progress} /> : null}
+          our bug. `laneProgress` decides which cards have one.
+
+          The lane's own word goes with it, for the reason the elapsed pill
+          above takes it: *this run is in flight* is a fact about the column and
+          not one the fold can reach. */}
+      {card.progress ? (
+        <Rail progress={card.progress} live={card.column === "running"} />
+      ) : null}
 
       {card.note ? <p className="question">{card.note}</p> : null}
 
