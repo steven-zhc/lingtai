@@ -15,6 +15,7 @@
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -128,10 +129,191 @@ describe("only a code this process asked for", () => {
       by: "human:s",
       fetch: conversion({ message: "Not Found" }, 422),
       store: createMemoryEventStore(),
+      env: {},
     });
 
     expect(outcome.ok === false && outcome.refusal).toContain("one exchange");
     expect(outcome.ok === false && outcome.refusal).toContain("Nothing was written");
+  });
+});
+
+/**
+ * **A `state` is good for an hour, and `finish` is where that hour is spent.**
+ * The page and `start/route.ts` both refuse to offer a second App, but a tab
+ * already sitting on GitHub's naming screen was offered one before anything
+ * existed — so the guard has to be re-asserted where the writing happens, or a
+ * forgotten tab finished twenty minutes later replaces a working App's id, key
+ * path and install link with an App no repository has installed.
+ */
+describe("a return from a tab the operator forgot", () => {
+  const APP_111 = { ...CONVERSION, id: 111, slug: "lingtai-first", name: "lingtai-first" };
+  const APP_222 = { ...CONVERSION, id: 222, slug: "lingtai-second", name: "lingtai-second" };
+
+  const there = (path: string) =>
+    readFile(path, "utf8").then(
+      () => true,
+      () => false,
+    );
+
+  it("leaves the App that was created second configured, and writes nothing for the first", async () => {
+    const { keyPath, envFile } = await workspace();
+    const store = createMemoryEventStore();
+    const session = createCreationSession();
+    const at = new Date("2026-09-15T10:00:00Z");
+    // Nothing is configured, so both presses were offered — one per tab.
+    const first = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created", now: at });
+    const second = session.begin({ name: "lingtai-second", redirectUrl: "http://127.0.0.1:3200/created", now: at });
+
+    const made = await session.finish({
+      code: "b",
+      state: second.state,
+      by: "human:steven",
+      fetch: conversion(APP_222),
+      store,
+      env: {},
+      keyPath,
+      envFile,
+      now: new Date(at.getTime() + 60_000),
+    });
+    expect(made.ok).toBe(true);
+
+    // Twenty minutes later, still inside GitHub's hour, the first tab returns.
+    const late = await session.finish({
+      code: "a",
+      state: first.state,
+      by: "human:steven",
+      fetch: conversion(APP_111),
+      store,
+      env: {},
+      keyPath,
+      envFile,
+      now: new Date(at.getTime() + 20 * 60_000),
+    });
+
+    expect(late.ok).toBe(false);
+    expect(late.ok === false && late.refusal).toContain("222");
+    expect(late.ok === false && late.refusal).toContain("nothing was written");
+    // The three places the second App's configuration lives, all untouched.
+    const env = await readFile(envFile, "utf8");
+    expect(env).toContain(`${APP_ID_VAR}="222"`);
+    expect(env).not.toContain(`${APP_ID_VAR}="111"`);
+    expect(await there(keyPath.replace(/\.pem$/, ".111.pem"))).toBe(false);
+    const events = await store.readAll(0n, 100);
+    expect(events.map((e) => (e.data as { appId: string }).appId)).toEqual(["222"]);
+    // And the screen says the refusal rather than "Created — app 111".
+    expect(session.outcome()).toBe(late);
+  });
+
+  /**
+   * The same guard with no help from this process's memory: a board restarted
+   * between the two presses has an empty environment and an empty session, and
+   * the log is the only thing that knows.
+   */
+  it("refuses on the log alone, in a process whose environment has no App", async () => {
+    const { keyPath, envFile } = await workspace();
+    const store = createMemoryEventStore();
+    await store.append(GITHUB_APP_STREAM, 0, [
+      {
+        type: "GitHubAppCreated",
+        actor: "human:steven",
+        data: parsePayload("GitHubAppCreated", { appId: "222", slug: "lingtai-second" }),
+      },
+    ]);
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    const late = await session.finish({
+      code: "a",
+      state: begun.state,
+      by: "human:steven",
+      fetch: conversion(APP_111),
+      store,
+      env: {},
+      keyPath,
+      envFile,
+    });
+
+    expect(late.ok === false && late.refusal).toContain("app 222");
+    expect(await there(envFile)).toBe(false);
+    expect(await there(keyPath)).toBe(false);
+  });
+
+  /** **Unknown is not no**, here as on the page and in `start/route.ts`. */
+  it("refuses when the log will not say, rather than writing over what it cannot see", async () => {
+    const { keyPath, envFile } = await workspace();
+    const unreachable = {
+      read: async () => {
+        throw new Error("connection terminated unexpectedly");
+      },
+    } as unknown as EventStore;
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-first", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    const late = await session.finish({
+      code: "a",
+      state: begun.state,
+      by: "human:steven",
+      fetch: conversion(APP_111),
+      store: unreachable,
+      env: {},
+      keyPath,
+      envFile,
+    });
+
+    expect(late.ok === false && late.refusal).toContain("cannot tell whether an App is already configured");
+    expect(late.ok === false && late.refusal).toContain("connection terminated unexpectedly");
+    expect(await there(envFile)).toBe(false);
+    expect(await there(keyPath)).toBe(false);
+  });
+});
+
+/**
+ * The conversion is a round trip and the page looks hung, so the operator
+ * reloads. GitHub honours a code once: a second exchange is a 422 whose
+ * sentence is *nothing was written*, and that must not become the answer for a
+ * creation that wrote everything.
+ */
+describe("a return that arrives twice", () => {
+  it("hands the reload the first exchange's answer, and exchanges the code once", async () => {
+    const { keyPath, envFile } = await workspace();
+    const store = createMemoryEventStore();
+    const session = createCreationSession();
+    const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
+
+    let exchanges = 0;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The first exchange is held open, which is where the reload lands.
+    const onceOnly = (async () => {
+      exchanges += 1;
+      if (exchanges > 1) return new Response(JSON.stringify({ message: "Not Found" }), { status: 422 });
+      await held;
+      return new Response(JSON.stringify(CONVERSION), { status: 200 });
+    }) as typeof fetch;
+
+    const returning = {
+      code: "C",
+      state: begun.state,
+      by: "human:steven",
+      fetch: onceOnly,
+      store,
+      env: {},
+      keyPath,
+      envFile,
+    };
+    const first = session.finish({ ...returning });
+    const reload = session.finish({ ...returning });
+    release();
+    const [settled, second] = await Promise.all([first, reload]);
+
+    expect(exchanges).toBe(1);
+    expect(settled.ok).toBe(true);
+    expect(second).toBe(settled);
+    // The screen reads this, and it is not a refusal.
+    expect(session.outcome()).toBe(settled);
+    expect(await readFile(envFile, "utf8")).toContain(`${APP_ID_VAR}="1234567"`);
   });
 });
 

@@ -185,13 +185,51 @@ export interface CreationSession {
 export function createCreationSession(): CreationSession {
   /** Every state this process issued and has not seen back, by its value. */
   const issued = new Map<string, Attempt>();
+  /**
+   * Every state that has been returned, and the one answer it was given.
+   *
+   * **One state, one outcome.** The conversion is a round trip to
+   * api.github.com and the page looks hung while it runs, so a reload lands a
+   * second return carrying the same code — and GitHub honours a code once. The
+   * second exchange is a 422, whose sentence is *nothing was written*, and
+   * letting that become the screen's answer would report a failure for a
+   * creation that wrote the key, the env file and the event. So a return whose
+   * state is already being settled joins that settlement rather than starting a
+   * second one, and is given its answer.
+   */
+  const answered = new Map<string, { startedAtMs: number; outcome: Promise<Outcome> }>();
+  /**
+   * The conversions, one at a time.
+   *
+   * `convertAndWrite` reads what is already configured and then writes it, so
+   * two returns converting at once would both read *nothing is configured* and
+   * both write — the two-tab failure below with twenty minutes replaced by
+   * twenty milliseconds. Serialising them is what makes that re-read mean
+   * something.
+   */
+  let converting: Promise<unknown> = Promise.resolve();
   let latest: Attempt | null = null;
   let last: Outcome | null = null;
+
+  /**
+   * Two, because `finish` may only forget one of them.
+   *
+   * Dropping a lapsed *issue* on the way in would turn *the hour lapsed — the
+   * form was posted at …* into *that state is not one this page issued*, which
+   * is a different thing and a worse sentence. `convertAndWrite` is what times
+   * an attempt out, and it needs the attempt to do it.
+   */
+  const forgetLapsedAnswers = (nowMs: number) => {
+    for (const [state, settled] of answered) {
+      if (nowMs - settled.startedAtMs > ATTEMPT_WINDOW_MS) answered.delete(state);
+    }
+  };
 
   const prune = (nowMs: number) => {
     for (const [state, attempt] of issued) {
       if (nowMs - attempt.startedAtMs > ATTEMPT_WINDOW_MS) issued.delete(state);
     }
+    forgetLapsedAnswers(nowMs);
   };
 
   return {
@@ -222,13 +260,37 @@ export function createCreationSession(): CreationSession {
 
     async finish(options) {
       const now = options.now ?? new Date();
-      const outcome = await convertAndWrite(options, now, issued);
-      // Either way this attempt is done with: a code is good for one exchange,
-      // and a refused one is not worth a second press against the same state.
-      if (options.state !== null) issued.delete(options.state);
-      if (latest !== null && latest.state === options.state) latest = null;
-      last = outcome;
-      return outcome;
+      forgetLapsedAnswers(now.getTime());
+      const state = options.state;
+
+      // A return carrying a state that is already being settled — a reload, or
+      // a browser retrying — is handed the first one's answer. It is the same
+      // code, and there is one exchange in it.
+      const settling = state === null ? undefined : answered.get(state);
+      if (settling !== undefined) return await settling.outcome;
+
+      const attempt = state === null ? undefined : issued.get(state);
+      // Everything that reads or writes this session's memory happens inside
+      // the queued section, so what `convertAndWrite` is told about the last
+      // outcome is what is true when it runs rather than when it was queued.
+      const outcome = converting.then(async () => {
+        const settled = await convertAndWrite(options, now, issued, last);
+        // Either way this attempt is done with: a code is good for one
+        // exchange, and a refused one is not worth a second press against the
+        // same state.
+        if (state !== null) issued.delete(state);
+        if (latest !== null && latest.state === state) latest = null;
+        last = settled;
+        return settled;
+      });
+      converting = outcome.then(
+        () => undefined,
+        () => undefined,
+      );
+      if (state !== null && attempt !== undefined) {
+        answered.set(state, { startedAtMs: attempt.startedAtMs, outcome });
+      }
+      return await outcome;
     },
 
     outstanding(now = new Date()) {
@@ -279,6 +341,7 @@ async function convertAndWrite(
   options: FinishOptions,
   now: Date,
   issued: Map<string, Attempt>,
+  succeeded: Outcome | null,
 ): Promise<Outcome> {
   const refuse = (refusal: string): Outcome => ({ ok: false, refusal, at: now });
 
@@ -310,6 +373,57 @@ async function convertAndWrite(
     );
   }
 
+  const env = options.env ?? process.env;
+  // **The question the page and `start/route.ts` asked, asked again where the
+  // writing happens.** A `state` is good for a whole hour and neither of those
+  // two checks is one this path makes, so a first tab left on GitHub's naming
+  // screen is live for the rest of that hour: finish it after creating the App
+  // from a second tab and `.env.local`, the key path and the install link are
+  // all rewritten to an App no repository has installed, with the screen saying
+  // *Created* and nothing saying what was replaced. Every GitHub call fails as
+  // not-installed after the next restart.
+  //
+  // It refuses **before** the conversion, which is the only place it can: the
+  // App is on GitHub either way — a person minted it there before this redirect
+  // was sent — and credentials for an App that cannot be configured here are
+  // not worth fetching. The refusal says where it is and how to be rid of it.
+  if (succeeded?.ok === true) {
+    return refuse(
+      `app ${succeeded.appId} was created here at ${succeeded.at.toISOString()}, and is what this ` +
+        "Lingtai is configured with. This return was not applied: nothing was written, and that " +
+        "configuration is untouched. GitHub did create the App this tab named — it is under " +
+        "Settings → Developer settings → GitHub Apps, and can be deleted there.",
+    );
+  }
+  const already = await configuredApp(env, options.store ?? eventStore);
+  if (already.configured !== null) {
+    return refuse(
+      `a GitHub App is already configured here${
+        already.configured.appId === null ? "" : ` — app ${already.configured.appId}`
+      }, ${
+        already.configured.from === "environment" ? "in this process's environment" : "on the log"
+      }. This return was not applied: nothing was written, and that App's id, key path and webhook ` +
+        "secret are untouched. GitHub did create the App this tab named — it is under Settings → " +
+        "Developer settings → GitHub Apps, and can be deleted there. A second App is one nothing " +
+        "is installed on.",
+    );
+  }
+  if (already.unanswered !== null) {
+    // **Unknown is not no, here as on the page and in `start`.** The log is the
+    // only guard a board started before `.env.local` was written has, so a read
+    // that fails cannot be read as *nothing is configured* — that is a working
+    // App's configuration overwritten by a few minutes of unreachable Postgres.
+    return refuse(
+      "Lingtai cannot tell whether an App is already configured here: the log could not be read " +
+        `(${already.unanswered}). This return was not applied and nothing was written, because ` +
+        "writing it over an App this process cannot see would point .env.local at an id no " +
+        "repository has installed. GitHub did create the App this tab named — it is under Settings " +
+        "→ Developer settings → GitHub Apps, where it can be deleted, or kept and finished by hand " +
+        "once pnpm lingtai doctor passes (doc/operating.md from step 2, with a private key " +
+        "generated on its own page — the one from this exchange was not fetched).",
+    );
+  }
+
   let created;
   try {
     created = await convertManifest(options.code, options.fetch ? { fetch: options.fetch } : {});
@@ -323,7 +437,6 @@ async function convertAndWrite(
     return refuse(`GitHub would not exchange the code: ${(err as Error).message}. Nothing was written.`);
   }
 
-  const env = options.env ?? process.env;
   const envFile = options.envFile ?? join(repoRoot(), ".env.local");
   const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT;
 
@@ -498,6 +611,52 @@ export async function recordedApp(
   return null;
 }
 
+/**
+ * What is already configured here, and how that is known — or why nobody knows.
+ *
+ * **One function because it is one condition.** The page asks it to decide
+ * whether to draw the button, `start/route.ts` asks it again where the form
+ * arrives, and `convertAndWrite` asks it a third time where the credentials
+ * would be written. A guard the last of those does not share is a guard a
+ * `state` from a forgotten tab walks straight past an hour later.
+ *
+ * **Two ways of already having one, and the second is the one that matters.**
+ * `hasGitHubApp()` reads `process.env`, which a board fixed at start — so the
+ * process that has just written `LINGTAI_GITHUB_APP_ID` still answers *not
+ * configured*. The log is what closes it: `GitHubAppCreated` is durable, and
+ * the App it names exists whatever this process's environment says.
+ */
+async function configuredApp(
+  env: NodeJS.ProcessEnv,
+  store: EventStore,
+): Promise<{
+  configured: { appId: string | null; slug: string | null; from: "environment" | "log" } | null;
+  unanswered: string | null;
+}> {
+  let recorded: { appId: string; slug: string } | null = null;
+  let unanswered: string | null = null;
+  try {
+    recorded = await recordedApp(store);
+  } catch (err) {
+    unanswered = (err as Error).message;
+  }
+  const envAppId = optional(APP_ID_VAR, env) ?? null;
+  // **The id is the environment's and the slug is the log's**, so the slug
+  // describes this App only when the log is about this App. An operator who
+  // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
+  // would otherwise be shown 222's id beside 111's install link — they install
+  // 111, and `lingtai add` answers *not installed* for 222 with nothing saying
+  // the link was for a different App. A name Lingtai does not know is the
+  // honest answer, and `Configured` already has that sentence.
+  const slugOfEnvApp = recorded !== null && envAppId !== null && recorded.appId === envAppId ? recorded.slug : null;
+  const configured = hasGitHubApp(env)
+    ? { appId: envAppId, slug: slugOfEnvApp, from: "environment" as const }
+    : recorded !== null
+      ? { appId: recorded.appId, slug: recorded.slug, from: "log" as const }
+      : null;
+  return { configured, unanswered };
+}
+
 export interface Offer {
   /** Whether the page offers to create an App at all. */
   offered: boolean;
@@ -547,30 +706,8 @@ export async function offerCreation(
 ): Promise<Offer> {
   const env = options.env ?? process.env;
   const session = options.session ?? creation;
-  let recorded: { appId: string; slug: string } | null = null;
-  let unanswered: string | null = null;
-  try {
-    recorded = await recordedApp(options.store ?? eventStore);
-  } catch (err) {
-    unanswered = (err as Error).message;
-  }
-  const configuredHere = hasGitHubApp(env);
-
+  const { configured, unanswered } = await configuredApp(env, options.store ?? eventStore);
   const outcome = session.outcome();
-  const envAppId = optional(APP_ID_VAR, env) ?? null;
-  // **The id is the environment's and the slug is the log's**, so the slug
-  // describes this App only when the log is about this App. An operator who
-  // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
-  // would otherwise be shown 222's id beside 111's install link — they install
-  // 111, and `lingtai add` answers *not installed* for 222 with nothing saying
-  // the link was for a different App. A name Lingtai does not know is the
-  // honest answer, and `Configured` already has that sentence.
-  const slugOfEnvApp = recorded !== null && envAppId !== null && recorded.appId === envAppId ? recorded.slug : null;
-  const configured = configuredHere
-    ? { appId: envAppId, slug: slugOfEnvApp, from: "environment" as const }
-    : recorded !== null
-      ? { appId: recorded.appId, slug: recorded.slug, from: "log" as const }
-      : null;
 
   return {
     // **Three ways of already having one**, and the third is the narrowest: an

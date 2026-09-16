@@ -18,7 +18,13 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { GitHubError } from "../src/app.ts";
-import { buildManifest, convertManifest, defaultPermissions, manifestFormAction } from "../src/manifest.ts";
+import {
+  buildManifest,
+  convertManifest,
+  defaultPermissions,
+  manifestFormAction,
+  unreachableWebhook,
+} from "../src/manifest.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -89,6 +95,57 @@ describe("webhooks are declared inactive rather than pointed at localhost", () =
       url: "https://lingtai.example.com/api/webhook",
       active: true,
     });
+  });
+});
+
+/**
+ * The half a scheme test cannot do. `https://localhost:3200/api/webhook` is a
+ * well-formed `https://` URL and is this machine: an App created with it has
+ * `active: true` and deliveries that fail on GitHub's side where Lingtai cannot
+ * see them, which is 0016 §4's complaint and the state the caller's own comment
+ * says is refused.
+ */
+describe("an address GitHub cannot reach", () => {
+  it("refuses this machine however it is spelled, https:// and all", () => {
+    for (const url of [
+      "https://localhost:3200/api/webhook",
+      "https://LOCALHOST/api/webhook",
+      "https://board.localhost/api/webhook",
+      "https://127.0.0.1:3200/api/webhook",
+      "https://[::1]:3200/api/webhook",
+      "https://0.0.0.0/api/webhook",
+    ]) {
+      expect(unreachableWebhook(url), url).not.toBeNull();
+    }
+  });
+
+  it("refuses the private ranges and the names that only resolve on a LAN", () => {
+    for (const url of [
+      "https://192.168.1.14:3200/api/webhook",
+      "https://10.0.0.5/api/webhook",
+      "https://172.20.3.9/api/webhook",
+      "https://169.254.1.1/api/webhook",
+      "https://[fd00::1]/api/webhook",
+      "https://[fe80::1]/api/webhook",
+      "https://steven-laptop.local/api/webhook",
+      "https://board.internal/api/webhook",
+      "https://board/api/webhook",
+    ]) {
+      expect(unreachableWebhook(url), url).not.toBeNull();
+    }
+  });
+
+  it("still refuses a scheme GitHub does not deliver over, and a non-URL", () => {
+    expect(unreachableWebhook("http://lingtai.example.com/api/webhook")).not.toBeNull();
+    expect(unreachableWebhook("lingtai.example.com/api/webhook")).not.toBeNull();
+  });
+
+  /** And takes a public address, which is the whole point of the field. */
+  it("takes an address on the public internet", () => {
+    expect(unreachableWebhook("https://lingtai.example.com/api/webhook")).toBeNull();
+    expect(unreachableWebhook("https://203.0.113.7/api/webhook")).toBeNull();
+    expect(unreachableWebhook("https://172.15.0.1/api/webhook")).toBeNull();
+    expect(unreachableWebhook("https://172.32.0.1/api/webhook")).toBeNull();
   });
 });
 

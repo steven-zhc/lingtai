@@ -111,6 +111,64 @@ export function buildManifest(options: ManifestOptions): AppManifest {
   };
 }
 
+/** Loopback, the three private IPv4 ranges, link-local, and their IPv6 kin. */
+const LOCAL_ADDRESS = [
+  /^127\./,
+  /^0\.0\.0\.0$/,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^169\.254\./,
+  /^::1$/,
+  /^::$/,
+  /^f[cd][0-9a-f]{2}:/,
+  /^fe[89ab][0-9a-f]:/,
+];
+
+/**
+ * Why GitHub could not deliver to this address, or null when it could.
+ *
+ * **A scheme is not a reachability check.** `https://localhost:3200/api/webhook`
+ * is a perfectly good URL and is this machine, so a manifest carrying it asks
+ * for an App with `hook_attributes.active: true` pointed somewhere GitHub
+ * cannot resolve — deliveries fail on GitHub's side, where Lingtai cannot see
+ * them, and the operator believes discovery is event-driven. That is
+ * [0016 §4](../../../doc/decisions/0016-the-settled-model.md)'s complaint, and
+ * it is worse than the inactive hook a blank field declares, because inactive
+ * is true.
+ *
+ * So the host is read as well as the scheme: loopback, the private ranges, the
+ * link-local one, the names that only resolve on a LAN, and a bare name with no
+ * dot in it — GitHub resolves none of them. What is left is not *proof* the
+ * address is reachable, which nothing on this side of the wire can be; it is
+ * every address that is knowably not.
+ */
+export function unreachableWebhook(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return `${url} is not a URL`;
+  }
+  if (parsed.protocol !== "https:") return "GitHub delivers over https:// and this is not";
+
+  // `URL.hostname` keeps an IPv6 literal's brackets; the checks below want the
+  // address itself.
+  const raw = parsed.hostname.toLowerCase();
+  const host = raw.startsWith("[") ? raw.slice(1, -1) : raw;
+  const ipv6 = host.includes(":");
+
+  if (host === "localhost" || host.endsWith(".localhost")) return `${parsed.hostname} is this machine`;
+  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".home.arpa")) {
+    return `${parsed.hostname} resolves on a local network and not on GitHub's`;
+  }
+  if (!ipv6 && !host.includes(".")) return `${parsed.hostname} is a bare name, which GitHub cannot resolve`;
+  if (LOCAL_ADDRESS.some((range) => range.test(host))) {
+    return `${parsed.hostname} is a loopback or private address, which GitHub cannot reach`;
+  }
+  return null;
+}
+
 /**
  * Where the form posts: a person's own account, or an organisation's.
  *

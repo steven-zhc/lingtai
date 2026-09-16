@@ -19,6 +19,7 @@ export {
   convertManifest,
   defaultPermissions,
   manifestFormAction,
+  unreachableWebhook,
   type AppManifest,
   type CreatedApp,
   type ManifestOptions,

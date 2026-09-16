@@ -16,6 +16,7 @@
  * nothing that needs undoing.
  */
 import { creation, offerCreation } from "@lingtai/conductor/create-app";
+import { unreachableWebhook } from "@lingtai/github";
 
 export const dynamic = "force-dynamic";
 
@@ -66,10 +67,19 @@ export async function POST(request: Request): Promise<Response> {
   // App whose deliveries fail silently from the first minute, which is 0016
   // §4's complaint. Inactive is the honest state, and it costs the sweep's
   // latency and nothing else.
-  if (webhook !== "" && !/^https:\/\//.test(webhook)) {
+  //
+  // **The host is what is checked, and not only the scheme.** `https://` is
+  // what a person types in front of `localhost:3200` — a scheme test passes it,
+  // `buildManifest` takes the non-null branch, and the App is created with
+  // `active: true` pointed at this machine, which is the exact state the
+  // paragraph above says is refused. `unreachableWebhook` is where that
+  // judgement lives, beside the manifest it decides a field of.
+  const unreachable = webhook === "" ? null : unreachableWebhook(webhook);
+  if (unreachable !== null) {
     return new Response(
-      "a webhook address has to be an https:// URL GitHub can reach. Leave it blank and the hook is " +
-        "declared inactive — discovery runs on the daemon's sweep until this board has a public address.",
+      `a webhook address has to be one GitHub can reach: ${unreachable}. Leave it blank and the hook ` +
+        "is declared inactive — discovery runs on the daemon's sweep until this board has a public " +
+        "address.",
       { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }
