@@ -363,6 +363,24 @@ export interface BoardColumn {
  */
 export const LANDED_OPEN = 3;
 
+/**
+ * How many Waiting cards draw a rail.
+ *
+ * `progress.ts`'s trade is that a lane holding a *handful* of cards may read a
+ * stream each on a route that re-renders on every append. The Waiting lane is
+ * not that lane and the `COLUMNS` entry below says so in its own words — it
+ * exists "because it is where the queue actually stalls: 45 items and growing"
+ * — so folding it whole would put forty-five concurrent stream reads on every
+ * render, which is the cost `#112` was about.
+ *
+ * A cap and not a prediction: with Running holding a card per conductor and
+ * Landed opening three, a render reads under a dozen streams whatever the lane
+ * holds. `readTasks` orders Waiting oldest-first *because* that is what to do
+ * next, so the cards that fold are the ones being worked through; the rest keep
+ * their counters, which is what every card had before `#170`.
+ */
+export const WAITING_RAILS = 6;
+
 export const COLUMNS: { id: ColumnId; label: string }[] = [
   { id: "queued", label: "Queued" },
   { id: "running", label: "Running" },
@@ -688,15 +706,18 @@ export async function queuedCards(
  * a point that was *configured and did not run* is invisible in them, which is
  * the one state 0016 §4 calls Lingtai's bug, and `lingtai doctor` has been
  * failing on three of this repository's own items while the board said nothing
- * (#170). So Waiting folds too — it is the lane asking for a person, and it is
- * small — and the Landed lane folds the rows it draws open.
+ * (#170). So Waiting folds too — it is the lane asking for a person — and the
+ * Landed lane folds the rows it draws open.
  *
- * **And it stops there, deliberately.** `progress.ts`'s trade is that only a
- * lane holding a handful of cards may read a stream each, on a route that
- * re-renders on every append; Landed grows without bound and has no read that
- * would fetch many runs at once. The collapsed `older` rows keep the counts
- * they have always had. A rail that is absent on a row nobody has opened is a
- * smaller lie than a list view that reads fifty streams to draw it.
+ * **And every one of the three is bounded.** `progress.ts`'s trade is that only
+ * a lane holding a handful of cards may read a stream each, on a route that
+ * re-renders on every append, and neither of the two lanes added here is that
+ * lane on its own: Landed grows without bound and Waiting is documented at 45
+ * items. `railCandidates` is where both are cut — `LANDED_OPEN` rows and
+ * `WAITING_RAILS` cards — and it is a separate, pure function because the cut
+ * is the whole of what makes this cheap. Everything past it keeps the counts it
+ * has always had: a rail that is absent on a card is a smaller lie than a list
+ * view that reads fifty streams to draw it.
  *
  * A stream that will not read costs that card its detail and nothing else. The
  * card is still on the board with its counts, which is what it had before.
@@ -705,30 +726,65 @@ async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, GatePlan>,
 ): Promise<Map<string, RunProgress>> {
-  const named = tasks.filter((t) => t.runId !== null);
-  const live = named.filter((t) => COLUMN_OF[t.state] === "running" || COLUMN_OF[t.state] === "waiting");
-  // The same order and the same count `Landed` renders open, so the rows that
-  // fold are exactly the rows that are on screen.
-  const done = named
-    .filter((t) => COLUMN_OF[t.state] === "landed")
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-    .slice(0, LANDED_OPEN);
-
   const folded = await Promise.all(
-    [...live, ...done].map(async (t) => {
-      // `over` is what the run's own stream cannot say: the merge lane and the
-      // work item carry the landing, and without it a point that recorded
-      // nothing reads as one nobody has reached yet.
-      const over = COLUMN_OF[t.state] === "landed";
+    railCandidates(tasks).map(async ({ task, over }) => {
       try {
-        const events = await eventStore.read(t.runId as string);
-        return [t.taskId, foldProgress(events, plans.get(t.project), over)] as const;
+        const events = await eventStore.read(task.runId as string);
+        return [task.taskId, foldProgress(events, plans.get(task.project), over)] as const;
       } catch {
-        return [t.taskId, null] as const;
+        return [task.taskId, null] as const;
       }
     }),
   );
   return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null));
+}
+
+/** A card that draws a rail, and whether this run's pass landed. */
+export interface RailCandidate {
+  task: TaskCard;
+  /**
+   * The item **landed** — not merely that it is over.
+   *
+   * This is `foldProgress`'s third argument and the only thing that turns a
+   * point that recorded nothing from `pending` into `never-ran`, so it is held
+   * to `landedWithoutGatePoints`'s own anchor: *an item that landed is the case
+   * with no excuse — a change on the base branch went past every point on its
+   * way there* (`gate-audit.ts`). A **closed** item has that excuse and shares
+   * this lane anyway (`COLUMN_OF`): the pipeline stops at the first refusal
+   * (0041 §4), so a run refused at `prepared` and then closed by a person has
+   * later points that correctly did not run, and marking them our bug would
+   * draw the hatch on exactly the outcome the rail exists to report truthfully.
+   */
+  over: boolean;
+}
+
+/**
+ * Which cards draw a rail, in the order their lane draws them.
+ *
+ * Pure, and split from the read above, because both things it decides are
+ * claims a test can hold and neither is visible in a folded stream: **how many
+ * streams one render may read**, and **which cards may be called landed**.
+ *
+ * **The head of each lane, as that lane renders it.** `Landed` opens
+ * `LANDED_OPEN` rows of `toColumns`'s newest-first order and collapses the
+ * rest, so the same sort and the same count are taken here — and `runId` is
+ * filtered *after* the slice, not before, or a ticket closed on GitHub before
+ * any run was claimed would push the fold onto a row inside the `older`
+ * disclosure. Waiting is `readTasks`'s oldest-first order, which is what to do
+ * next, so its head is the head of the work.
+ */
+export function railCandidates(tasks: readonly TaskCard[]): RailCandidate[] {
+  const lane = (id: ColumnId) => tasks.filter((t) => COLUMN_OF[t.state] === id);
+  const open = [
+    ...lane("running"),
+    ...lane("waiting").slice(0, WAITING_RAILS),
+    ...lane("landed")
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, LANDED_OPEN),
+  ];
+  return open
+    .filter((t) => t.runId !== null)
+    .map((t) => ({ task: t, over: t.state === "landed" }));
 }
 
 /**

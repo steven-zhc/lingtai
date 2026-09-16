@@ -14,13 +14,21 @@
  * `GatePlan` so that the board has no opinion about what `20m` is.
  *
  * **Why this is a second read, when `task_view` is the one projection.** 0012's
- * rule is that a *list* is cheap, and this does not make it less so: only the
- * Running lane folds, that lane holds one card per conductor, and what it wants
- * is the one thing that changes every second — which is the worst possible
- * shape for a table. It is the same trade the Queued column already makes by
- * asking GitHub on render, and the same one the task page makes by folding a
- * detail on demand. A phase that fails to be read costs its own card its detail
- * and not the board.
+ * rule is that a *list* is cheap, and this does not make it less so: what a
+ * fold wants is the thing that changes every second, which is the worst
+ * possible shape for a table. It is the same trade the Queued column already
+ * makes by asking GitHub on render, and the same one the task page makes by
+ * folding a detail on demand. A phase that fails to be read costs its own card
+ * its detail and not the board.
+ *
+ * **What keeps it cheap is a bound, and the bound is not in this file.** Three
+ * lanes fold since #170 — Running, Waiting and the Landed rows the lane draws
+ * open — and only the first of them is small by nature, at a card per
+ * conductor. The other two are cut to `WAITING_RAILS` and `LANDED_OPEN` by
+ * `board.ts`'s `railCandidates`, which is pure and tested for exactly that. So
+ * the question to ask of a fourth lane is not *is it small* — Waiting was
+ * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
+ * cuts it*, and the answer has to be a number in `railCandidates`.
  */
 import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
@@ -144,7 +152,18 @@ function stateOf(
   point: GatePoint,
   planned: readonly string[],
   seen: readonly PointState[],
-  over: boolean,
+  /**
+   * The item landed, **and** `GatesResolved` is what named `planned`.
+   *
+   * Both halves, because both are `landedWithoutGatePoints`'s, and the check
+   * below is meant to be its comparison and not a looser one. Its `planned` CTE
+   * selects from `GatesResolved` rows, so a run whose stream has none
+   * contributes nothing to it — and here such a run is folded against the
+   * recipe being read *now*, which may not be the one it got. Calling a point
+   * that recipe configures `never-ran` would invent Lingtai's bug out of a
+   * recipe the run never saw.
+   */
+  onRecord: boolean,
 ): PointState {
   if (planned.length === 0 && seen.length === 0) return "skipped";
   // Above `failed`, because it is always the ending: the pipeline and the pass
@@ -152,16 +171,18 @@ function stateOf(
   // refusal from an earlier round, about a commit that is no longer the head.
   if (seen.includes("never-ran")) return "never-ran";
   // **`lingtai doctor`'s comparison, made where a person is already looking.**
-  // The plan named actions here, the run recorded nothing at all — no request,
-  // no verdict, no approval, no waiver — and the pass is over, so there is no
-  // later moment for it to run in. `landedWithoutGatePoints` asks exactly this
-  // and fails the doctor for it; until now it reached the board as `pending`,
-  // which is the word for *configured, not reached yet* and is the one thing
-  // this is not (0016 §4).
+  // The log's own plan named actions here, the run recorded nothing at all — no
+  // request, no verdict, no approval, no waiver — and the item landed, so there
+  // was no later moment for it to run in. `landedWithoutGatePoints` asks exactly
+  // this and fails the doctor for it; until now it reached the board as
+  // `pending`, which is the word for *configured, not reached yet* and is the
+  // one thing this is not (0016 §4).
   //
-  // `over` is why this is safe: a run still in flight legitimately has points
-  // it has not got to, and calling those `never-ran` would put the fail colour
-  // on every ordinary card.
+  // `onRecord` is why this is safe, and it is narrow on purpose — see its own
+  // doc. A run still in flight legitimately has points it has not got to, and a
+  // refusal stops the pipeline where it stands, so anything looser than *this
+  // landed, against the plan this run was given* puts the fail colour on a
+  // pipeline that was working.
   //
   // **Four points and not five**, which is the same exclusion
   // `landedWithoutGatePoints` makes in as many words: `end`'s record is
@@ -169,7 +190,7 @@ function stateOf(
   // fold reads the run's. A silent `end` here is a question this stream cannot
   // answer, not a point that did not run — `lingtai doctor` has its own check
   // for that one, against the stream that holds it.
-  if (over && point !== "end" && seen.length === 0) return "never-ran";
+  if (onRecord && point !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";
   const settled = seen.filter((s) => s === "passed" || s === "waived");
@@ -191,13 +212,19 @@ export function foldProgress(
   events: readonly Envelope[],
   plan: GatePlan = new Map(),
   /**
-   * Whether this run's pass is finished — the item landed, or was closed.
+   * Whether this item **landed**. Not whether it is over.
    *
    * It cannot be read off the run's own stream: the merge lane appends
    * `IntegrationSucceeded` to its own stream and `WorkItemLanded` goes on the
    * work item's, so the caller is the only one holding the fact. Passing it is
    * what turns *a point that recorded nothing* from `pending` into `never-ran`,
    * and it is the whole of the difference between the two.
+   *
+   * A **closed** item is not this, however finished it is: the pipeline stops
+   * at the first refusal (0041 §4), so its later points recorded nothing
+   * because nothing should have run in them. `landedWithoutGatePoints` is
+   * anchored on `WorkItemLanded` for that reason and so is this — see
+   * `RailCandidate.over`, which is the caller holding the same line.
    */
   over = false,
 ): RunProgress | null {
@@ -300,7 +327,8 @@ export function foldProgress(
     // `prepared` gates have already run, so for the first seconds of a run it
     // is the only thing that can say a point exists — and once it lands it is
     // the record, because a recipe read now may not be the one this run got.
-    const planned = resolved?.get(point) ?? (plan.get(point) ?? []).map((a) => a.name);
+    const recorded = resolved?.get(point);
+    const planned = recorded ?? (plan.get(point) ?? []).map((a) => a.name);
     const mine = [...verdicts]
       .filter(([k]) => k.startsWith(`${point}:`))
       .map(([k, v]) => [k.slice(point.length + 1), v] as const);
@@ -308,7 +336,11 @@ export function foldProgress(
       point,
       planned,
       mine.map(([, v]) => v),
-      over,
+      // Landed, *and* against the plan the log says this run was given. A
+      // stream with no `GatesResolved` — one that died before it landed, one
+      // predating the event — falls back to today's recipe above, and today's
+      // recipe cannot accuse a run of skipping a point it was never given.
+      over && recorded !== undefined,
     );
     const byAction = new Map(mine);
     // The plan's order first, because that is the order they run in; then

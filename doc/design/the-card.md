@@ -99,10 +99,19 @@ mark for *configured and did not run*, or that state renders as something it is
 not — which is the failure `0016 §4` names. It reached `lingtai doctor` as a FAIL
 naming `#49`, `#53` and `#55` at the merge point and reached the board as nothing
 at all. It costs no projection: `foldProgress` now makes
-`landedWithoutGatePoints`'s own comparison — the plan named actions here, the run
-recorded none, and the pass is over — and the caller supplies the last of those,
-because the landing is on the merge lane's stream and the work item's, not on the
-run's.
+`landedWithoutGatePoints`'s own comparison, and the same one rather than a
+looser one, because this mark accuses Lingtai and a false one is worse than
+none. All three halves of it:
+
+| | |
+|---|---|
+| the plan named actions here | and **`GatesResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything (doctor's `planned` CTE selects from those rows and nothing else) |
+| the run recorded none | no request, no verdict, no approval, no waiver |
+| **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later points recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. Doctor is anchored on `WorkItemLanded`; so is this |
+
+The caller supplies the last of those, because the landing is on the merge
+lane's stream and the work item's, not on the run's — `railCandidates` is where
+it is decided and where a test holds it.
 
 **Four points and not five**, and doctor makes the same exclusion in as many
 words: `end`'s record is `EndActionsResolved` on the work item's stream, which
@@ -123,6 +132,12 @@ Four tones, and the third does work no colour alone can:
 | `done` | muted — behind it |
 | `off` | `rule-2`, **italic** — nothing configured. Italic because *nothing configured* and *not reached yet* are both grey, and the difference between them has to survive being grey |
 | `bad` | fail — it stopped here |
+
+**The sentence under the bar has three readings and not two.** `build 42s / 20m`
+while something is running, `between points` while the agent has finished and no
+point has started — and `build refused`, because a refusal clears the live phase
+and leaves neither. Drawing the second of those on the third told an operator
+the agent had just finished, under a segment that was red.
 
 ## What was settled, and how
 
@@ -153,16 +168,27 @@ object is what stops 0040's two axes being drawn as a set; the form that shows
 
 ## What this lane costs, and where it stops
 
-The rail draws wherever the run's stream was read, and `laneProgress` decides
-that: Running, Waiting, and the Landed rows the lane renders open. It was
-Running alone, on `#79`'s argument that every other lane describes something
-over and the counts carry that whole truth. The counts were the thing that
-turned out not to be true — *configured and did not run* is not a number.
+The rail draws wherever the run's stream was read, and `railCandidates` decides
+that: Running, the head of Waiting, and the Landed rows the lane renders open.
+It was Running alone, on `#79`'s argument that every other lane describes
+something over and the counts carry that whole truth. The counts were the thing
+that turned out not to be true — *configured and did not run* is not a number.
 
-It stops at the open rows deliberately. `progress.ts`'s trade is that only a
-lane holding a handful of cards may read a stream each, on a route that
-re-renders on every append; Landed grows without bound and there is no read that
-fetches many runs at once. The collapsed `older` rows keep their counters.
+**Every added lane is cut by a number, and *it is small* is not one.**
+`progress.ts`'s trade is that only a lane holding a handful of cards may read a
+stream each, on a route that re-renders on every append. Waiting was argued into
+this design as small and is the opposite: the `COLUMNS` entry that gives it a
+column of its own says why it has one — *45 items and growing* — so it is cut to
+`WAITING_RAILS`, at the head, which is where `readTasks`'s oldest-first order
+puts what to do next. Landed grows without bound and has no read that fetches
+many runs at once, so it is cut to the `LANDED_OPEN` rows the lane draws open —
+and to *those* rows, `runId` filtered after the slice and not before, or a
+ticket closed before any run was claimed pulls the fold down into the collapsed
+`older` disclosure. Everything past either cut keeps its counters.
+
+Which makes `railCandidates` pure and separate from the read: the cut is the
+whole of what makes the rail cheap, and a claim about cost that no test can hold
+is the one this design already got wrong once.
 
 ## Related
 

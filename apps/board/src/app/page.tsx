@@ -198,6 +198,23 @@ function Segs({
 }
 
 /**
+ * What stopped this run, named as the action it was.
+ *
+ * A refusal clears the live phase — the pipeline and the pass both stop at the
+ * first one (0041 §4) — so a refused run has nothing in flight and nothing
+ * coming, which is not the same as being *between* two points. In point order,
+ * because the first refusal is the one that stopped it.
+ */
+function refusedAt(points: readonly PointProgress[]): string | null {
+  for (const p of points) {
+    const bad = p.actions.find((a) => a.state === "failed");
+    if (bad) return bad.name;
+    if (p.state === "failed") return p.point;
+  }
+  return null;
+}
+
+/**
  * Where the run has got to, and what it is doing this second.
  *
  * **A sequence drawn as one, which it was not.** The five points were a wrapped
@@ -221,6 +238,9 @@ function Rail({ progress }: { progress: RunProgress }) {
   // The point half of `proposed:build`, which is what the label highlights.
   // `agent` is not a point and names none.
   const at = now === null || now.label === AGENT ? null : (now.label.split(":")[0] ?? null);
+  // Only when nothing is in flight: a refusal from an earlier round sits under
+  // a live gate on the same card, and that card is running, not stopped.
+  const refused = now === null ? refusedAt(progress.points) : null;
 
   return (
     <div className="seq">
@@ -241,6 +261,19 @@ function Rail({ progress }: { progress: RunProgress }) {
           {now.label === AGENT ? AGENT : now.label.slice(at === null ? 0 : at.length + 1)}{" "}
           {elapsed(Date.now() - Date.parse(now.since))}
           {now.budgetMs === null ? "" : ` / ${inWords(now.budgetMs)}`}
+        </p>
+      ) : refused ? (
+        /* The action and what came of it, the same shape as the line above —
+           and never the neutral one, whose title says the agent has just
+           finished and nothing has started. On a card in the Waiting lane that
+           is the opposite of true: the rail's own segment is red, a person is
+           being asked, and a sentence saying *between points* under a red
+           segment contradicts the bar it is there to explain. */
+        <p
+          className="snow"
+          title="the pipeline stops at the first refusal and waits for a person, so nothing is running (0041 §4)"
+        >
+          {refused} refused
         </p>
       ) : (
         <p className="snow quiet" title="the agent has finished and no point has started yet">
@@ -352,8 +385,16 @@ export function Card({
             just started — a plausible number, which is the worst kind.
 
             Absent on a card GitHub is offering that the log has never touched:
-            there is no time for one, and the render clock is not it. */}
-        {card.progress ? (
+            there is no time for one, and the render clock is not it.
+
+            **The lane decides this and not the rail.** Until #170 only a
+            running card had `progress`, so the two tests were the same one;
+            Waiting folds now, and a card stopped on a person would have read
+            `running 13h58m` about a run that was refused and is not in flight
+            — a plausible number, which is the worst kind. It is the lane's own
+            word here for the same reason it is everywhere else in this
+            sentence. */}
+        {card.column === "running" && card.progress ? (
           <li className="pill run" title={`this run's first event was ${card.progress.since}`}>
             running {elapsed(Date.now() - Date.parse(card.progress.since))}
           </li>

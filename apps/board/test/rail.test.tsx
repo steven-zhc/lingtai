@@ -26,7 +26,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 import type { TaskCard } from "@lingtai/projector/task-view";
-import { toCard } from "../src/lib/board.ts";
+import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from "../src/lib/board.ts";
 import { foldProgress } from "../src/lib/progress.ts";
 import { Card, LandedRow } from "../src/app/page.tsx";
 
@@ -129,6 +129,58 @@ const refused = (): Envelope[] => [
     findings: [],
   }),
 ];
+
+/**
+ * The install refused, so the pipeline stopped there.
+ *
+ * The plan is on the record and names `build` and `review` at `proposed`, and
+ * nothing whatever happened at that point — which is the same *shape* as the
+ * doctor's finding below and is the opposite of it in meaning: the pipeline
+ * stops at the first refusal (0041 §4), so those two not running is the
+ * pipeline working.
+ */
+function refusedAtPrepared(): Envelope[] {
+  seq = 0n;
+  return [
+    at("2026-09-15T17:12:20Z", "GateRequested", gate("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateStarted", gate("prepared", "install")),
+    resolved(PLAN),
+    at("2026-09-15T17:12:26Z", "GateFailed", {
+      ...gate("prepared", "install"),
+      evidence: "the lockfile is out of date",
+      findings: [],
+    }),
+  ];
+}
+
+/**
+ * A run that recorded no plan at all: `RunStarted`, `RunFinished`, nothing else.
+ *
+ * A run that died before `GatesResolved` was appended, or one predating the
+ * event. The fold falls back to the recipe being read *now*, which is exactly
+ * the case the doctor's `planned` CTE cannot see, because it selects from
+ * `GatesResolved` rows.
+ */
+function noPlanRecorded(): Envelope[] {
+  seq = 0n;
+  return [
+    at("2026-09-15T17:12:30Z", "RunStarted", {
+      workItemId: "wi-lingtai-170",
+      invocation: {
+        command: "claude",
+        args: [],
+        tier: "guarded",
+        limits: { turns: 150, wallMs: 3_600_000 },
+      },
+    }),
+    at("2026-09-15T17:20:42Z", "RunFinished", {
+      exitCode: 0,
+      turns: 12,
+      durationMs: 492_000,
+      costUsd: 1.1,
+    }),
+  ];
+}
 
 /**
  * **`lingtai doctor`'s three items, as a fixture.**
@@ -240,6 +292,20 @@ const render = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN, over = fa
   renderToStaticMarkup(
     <Card card={card(t, events, plan, over)} showProject={false} issue={null} paused={false} />,
   );
+
+/**
+ * The card as the *board* builds it, with `railCandidates` supplying `over`
+ * rather than the test asserting its own answer.
+ *
+ * `laneProgress` is the one thing here that cannot be called without a
+ * database, and `over` is the whole of what it decides — so the decision lives
+ * in a pure function and this composes the two the way the board does.
+ */
+const asBoard = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN) => {
+  const one = task(t);
+  const [candidate] = railCandidates([one]);
+  return toCard(one, null, candidate ? foldProgress(events, plan, candidate.over) : null);
+};
 
 // --- reading the markup ----------------------------------------------------
 
@@ -426,6 +492,55 @@ describe("all five points, in every lane", () => {
   });
 });
 
+// --- a card stopped on a person --------------------------------------------
+
+/**
+ * The Waiting lane folds since #170, and a fold is not a run in flight. What is
+ * asserted here is that nothing the rail brought with it overwrote the lane's
+ * own reading: `waiting 3h` is a question nobody has answered, and the sentence
+ * under the bar has to agree with the segment above it.
+ */
+describe("a card stopped on a person", () => {
+  const blocked = () =>
+    render(
+      { state: "waiting", blocked: true, gatesFailed: 1, awaitingSha: "b".repeat(40) },
+      refused(),
+    );
+
+  /**
+   * The elapsed pill used to branch on *is there a rail*, which was the same
+   * test as *is this card running* only while Running was the one lane that
+   * folded. A refused card read `running 13h58m` about a run that is not
+   * running — a plausible number, which is the worst kind.
+   */
+  it("keeps the lane's own number and never claims the run is in flight", () => {
+    const html = blocked();
+
+    expect(html).toMatch(/<li class="pill" title="[^"]*">waiting /);
+    expect(html).not.toContain(`class="pill run"`);
+  });
+
+  /**
+   * `between points` carries the title *the agent has finished and no point has
+   * started yet*, which on this card is the opposite of what happened: the
+   * build was refused, the segment above the sentence is red, and a person is
+   * being asked. The sentence is the action and what came of it, the same shape
+   * the live line has.
+   */
+  it("says what refused it, under the segment that says so", () => {
+    const html = blocked();
+
+    expect(sentence(html)).toBe("build refused");
+    expect(html).not.toContain("between points");
+    expect(html).not.toContain("the agent has finished and no point has started yet");
+  });
+
+  /** And a run with nothing refused keeps the neutral sentence it had. */
+  it("leaves the in-between sentence to a run that is in between", () => {
+    expect(sentence(render({}, running().slice(0, 6)))).toBe("between points");
+  });
+});
+
 // --- the seven states ------------------------------------------------------
 
 describe("the seven states", () => {
@@ -479,6 +594,113 @@ describe("the seven states", () => {
     // ordinary case and painting it red would put the fail colour everywhere.
     const live = foldProgress(landedPastMerge(), MERGE_PLAN, false);
     expect(live?.points.find((p) => p.point === "merge")?.state).toBe("pending");
+  });
+});
+
+// --- what may be called our bug --------------------------------------------
+
+/**
+ * `never-ran` is the one mark on the rail that accuses Lingtai rather than
+ * reporting on a run, so the rule that draws it is held to exactly the
+ * comparison `landedWithoutGatePoints` makes — *this item landed*, and *against
+ * the plan the log says this run was given*. Everything looser than that puts
+ * the hatch on a pipeline that was working.
+ */
+describe("the hatch, and what may not draw it", () => {
+  /**
+   * The pipeline stops at the first refusal (0041 §4), so a run refused at
+   * `prepared` has a `proposed` that correctly recorded nothing. Close the
+   * ticket and the card joins the Landed column — `COLUMN_OF.closed` is
+   * `landed` — which is the whole of how a closed item can be mistaken for a
+   * landed one. The doctor is anchored on `WorkItemLanded` and never reports
+   * this run; the board must not either.
+   */
+  it("never draws it on a closed item whose run was refused", () => {
+    const html = renderToStaticMarkup(
+      <Card
+        card={asBoard({ state: "closed", gatesFailed: 1 }, refusedAtPrepared())}
+        showProject={false}
+        issue={null}
+        paused={false}
+      />,
+    );
+
+    expect(segments(html)).toEqual(["skipped", "failed", "pending", "skipped", "pending"]);
+    expect(cells(html)).not.toContain("t-never");
+  });
+
+  /** And the flag itself, which is where that is decided. */
+  it("calls an item landed only when it landed", () => {
+    const landed = railCandidates([task({ state: "landed" })]);
+    const closed = railCandidates([task({ state: "closed" })]);
+
+    expect(landed.map((c) => c.over)).toEqual([true]);
+    expect(closed.map((c) => c.over)).toEqual([false]);
+  });
+
+  /**
+   * The doctor's `planned` CTE selects from `GatesResolved` rows, so a stream
+   * without one contributes nothing to it. Here such a stream falls back to the
+   * recipe being read *now* — which may not be the one this run got — and a
+   * recipe the run never saw cannot accuse it of skipping a point.
+   */
+  it("never draws it from a plan the log did not record", () => {
+    const over = foldProgress(noPlanRecorded(), PLAN, true);
+
+    expect(over?.points.map((p) => p.state)).toEqual([
+      "skipped",
+      "pending",
+      "pending",
+      "skipped",
+      "pending",
+    ]);
+  });
+});
+
+// --- what a lane costs, and what it says -----------------------------------
+
+describe("which cards draw a rail", () => {
+  /**
+   * The lane the board exists for (0016 §8) is also the lane that stalls —
+   * `COLUMNS` says "45 items and growing" — and the rail reads a whole run
+   * stream per card on a route that re-renders on every append (`live.tsx`).
+   * *It is small* is not a bound; `WAITING_RAILS` is.
+   */
+  it("bounds the Waiting fold, however long the lane is", () => {
+    const lane = Array.from({ length: 45 }, (_, i) =>
+      task({ taskId: `wi-${i}`, runId: `run-${i}`, state: "waiting" }),
+    );
+
+    const folded = railCandidates(lane);
+    expect(folded).toHaveLength(WAITING_RAILS);
+    // The head of the lane, in the order `readTasks` gives it — oldest wait
+    // first, which is what to do next.
+    expect(folded.map((c) => c.task.taskId)).toEqual(
+      lane.slice(0, WAITING_RAILS).map((t) => t.taskId),
+    );
+  });
+
+  /**
+   * `Landed` opens the newest `LANDED_OPEN` rows of *all* its cards and
+   * collapses the rest, and a ticket closed on GitHub before any run was
+   * claimed has no `runId` and a fresh `updatedAt` — so it occupies an open row
+   * without folding. Filtering `runId` before the slice rather than after would
+   * fill that place from the fourth-newest card, drawing a rail on a row inside
+   * the `older` disclosure.
+   */
+  it("folds the Landed rows the lane draws open, and no others", () => {
+    const row = (taskId: string, runId: string | null, state: TaskCard["state"], hour: number) =>
+      task({ taskId, runId, state, updatedAt: new Date(`2026-09-16T0${hour}:00:00Z`) });
+    const rows = [
+      row("never-claimed", null, "closed", 9),
+      row("landed-b", "run-b", "landed", 8),
+      row("closed-c", "run-c", "closed", 7),
+      row("collapsed-d", "run-d", "landed", 6),
+    ];
+    expect(rows).toHaveLength(LANDED_OPEN + 1);
+
+    const folded = railCandidates(rows);
+    expect(folded.map((c) => c.task.taskId)).toEqual(["landed-b", "closed-c"]);
   });
 });
 
