@@ -40,7 +40,7 @@ import {
   projectStream,
   reduceProject,
 } from "@lingtai/domain";
-import { type EventStore, eventStore } from "@lingtai/event-store";
+import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { GitHubError, type GitHubClient } from "@lingtai/github";
 import {
   RECIPE_PATH,
@@ -295,14 +295,18 @@ export const ONBOARDING_BRANCH = "lingtai/onboarding";
  * card and offers no `Recheck`. Merging that pull request appends nothing
  * either: only this function does. So the window is closed on the way back in
  * rather than by asking a person to delete a branch — step 3 finishes a pull
- * request it recognises as its own instead of refusing it, and a failure to
- * append is a refusal that names the open pull request and says another press
- * is what picks it up.
+ * request **it recognises as this proposal**, the same file against the same
+ * base, instead of refusing it; and a failure to append is a refusal that names
+ * the open pull request and says which of the two things it is, because only one
+ * of them is finished by pressing again (`record`).
  *
  * **The pull request targets `repo.base`, and there is no second base here.**
  * The recipe has to land on the branch it governs — that is 0005 — and the base
  * recorded on the event is a copy of that one value rather than a decision
- * taken beside it (#75). `Recheck` replays it as the hint it is (#163).
+ * taken beside it (#75). `Recheck` replays it as the hint it is (#163). An
+ * adopted pull request is checked against it rather than assumed to agree: the
+ * event says where the recipe lands, so a base no pull request targets is a
+ * pending card that can never finish.
  */
 export async function startOnboarding(options: StartOnboardingOptions): Promise<Started> {
   const { client, recipe } = options;
@@ -334,8 +338,18 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
     // not somebody else's work — it is this function's, interrupted between
     // the pull request and the append. Adopting it is the only way out: the
     // event is the one thing missing, and nothing but this appends it.
-    const ours = (await client.fileAt(RECIPE_PATH, branch)) !== null;
-    const open = ours ? await openPullRequest(client, branch) : null;
+    //
+    // **It is adopted only when it is this proposal** — the same file, and the
+    // same base — and that is not a formality, because a second press is also
+    // how an operator retries after *changing* the recipe. Adopting whatever is
+    // there would append a base the pull request does not target and tell them
+    // onboarding started with the recipe they just edited, while the pull
+    // request that merges carries the one they replaced; `Recheck` would then
+    // look for the recipe on a branch nothing is landing it on, for ever. So
+    // `validated.file` is compared with what the branch carries rather than
+    // thrown away, and `open.base` with the base about to be recorded.
+    const onBranch = await client.fileAt(RECIPE_PATH, branch);
+    const open = onBranch === null ? null : await openPullRequest(client, branch);
     if (open === null) {
       return {
         ok: false,
@@ -344,14 +358,31 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
           "open on it — delete the branch, then press this again.",
       };
     }
+    const differs = [
+      ...(open.base === base ? [] : [`it targets ${open.base} and not ${base}`]),
+      ...(onBranch === validated.file ? [] : [`it carries a different ${RECIPE_PATH}`]),
+    ];
+    if (differs.length > 0) {
+      return {
+        ok: false,
+        refusal:
+          `${slug} already has an onboarding pull request open — ${open.url} — and it is not the one ` +
+          `this would open: ${differs.join(", and ")}. Merging it lands that recipe on ${open.base}, ` +
+          `not this one on ${base}. Press this again without the change to finish it, or close it and ` +
+          `delete ${branch} to open this one instead.`,
+      };
+    }
     return record({
       store,
       stream,
       expected: existing.length,
       by: options.by,
       slug,
+      // Equal to `open.base` by the check just above, so the event records the
+      // branch this pull request actually merges into rather than a second
+      // opinion about it taken from a recipe that may have moved on.
       base,
-      pr: open,
+      pr: { number: open.number, url: open.url },
       branch,
     });
   }
@@ -403,9 +434,21 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
  * to leave `startOnboarding` throwing over an open pull request: the operator
  * told onboarding failed, the log empty, so no pending card and no `Recheck`,
  * and the branch check refusing every further press. It is a refusal instead,
- * and it says the two things that state needs said — the pull request exists,
- * and pressing again is what finishes it, because the branch check now adopts
- * that pull request rather than pointing at it.
+ * and it names the pull request, which exists whichever way the append failed.
+ *
+ * **The two failures do not have the same way out, so they do not get the same
+ * sentence.** A store that blinked leaves the stream where the read found it, so
+ * pressing again reaches the branch check and the branch check adopts that pull
+ * request — *press this again* is true. A `ConcurrencyError` is the stream
+ * having moved: a concurrent `lingtai add` or a second press recorded this
+ * project, and the next press never reaches the branch check at all — it stops
+ * at `isRegistered` or `isPending` and says so without a word about GitHub. To
+ * tell that operator to press again is to send them to a refusal that answers a
+ * different question and leaves an open pull request nobody has mentioned —
+ * one that would put this unreviewed recipe on the base branch if it is merged.
+ * So that branch of the refusal says what actually became of the project, says
+ * plainly that pressing again will not finish it, and hands back the branch and
+ * the pull request as the thing left to decide about.
  */
 async function record(at: {
   store: EventStore;
@@ -426,12 +469,27 @@ async function record(at: {
       },
     ]);
   } catch (err) {
+    // The half both refusals share: the pull request is open either way, and it
+    // is the thing an operator has to be handed back before anything else.
+    const named =
+      `${at.slug}'s pull request is open — ${at.pr.url} — and onboarding was not recorded: ` +
+      `${(err as Error).message}.`;
+    if (err instanceof ConcurrencyError) {
+      return {
+        ok: false,
+        refusal:
+          `${named} Something else recorded this project while the wizard was opening it, so pressing ` +
+          `this again will not finish it — it will say ${at.slug} is already registered, or already on ` +
+          `its way in. The branch ${at.branch} and the pull request on it are still there and nothing ` +
+          `will pick them up: merge it only if you want this recipe on ${at.base}, and otherwise close ` +
+          `it and delete ${at.branch}.`,
+      };
+    }
     return {
       ok: false,
       refusal:
-        `${at.slug}'s pull request is open — ${at.pr.url} — and onboarding was not recorded: ` +
-        `${(err as Error).message}. Press this again; it picks up the pull request on ${at.branch} ` +
-        "rather than opening a second one.",
+        `${named} Press this again; it picks up the pull request on ${at.branch} rather than opening ` +
+        "a second one.",
     };
   }
   return { ok: true, pr: at.pr, branch: at.branch };
@@ -442,18 +500,25 @@ async function record(at: {
  *
  * Asked of GitHub rather than remembered, because the state it exists to
  * recognise is the one where nothing was written down.
+ *
+ * `base` comes back with it for the same reason: the caller is deciding whether
+ * this is its own interrupted work, and a pull request's base is the branch the
+ * recipe will actually govern — the one fact about it the caller is otherwise
+ * guessing from the recipe in hand.
  */
 async function openPullRequest(
   client: GitHubClient,
   branch: string,
-): Promise<{ number: number; url: string } | null> {
+): Promise<{ number: number; url: string; base: string } | null> {
   const head = encodeURIComponent(`${client.owner}:${branch}`);
-  const open = await client.request<{ number: number; html_url: string }[]>(
+  const open = await client.request<{ number: number; html_url: string; base: { ref: string } }[]>(
     "GET",
     `/repos/${client.owner}/${client.repo}/pulls?state=open&head=${head}`,
   );
   const first = open[0];
-  return first === undefined ? null : { number: first.number, url: first.html_url };
+  return first === undefined
+    ? null
+    : { number: first.number, url: first.html_url, base: first.base.ref };
 }
 
 /** Whether a branch is already there. A 404 is the answer, not a failure. */

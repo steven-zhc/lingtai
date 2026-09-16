@@ -147,17 +147,33 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
  * `setLabels` is left as `readOnlyClient` has it — throwing. Nothing here may
  * reach it: a hold that replaces an issue's label set is the defect, not the
  * feature, so the double refuses to be the thing that makes it look fine.
+ *
+ * `fileOnBranch` is the bytes the branch carries and not a boolean, and
+ * `pullBase` the branch the open pull request targets, because those two are
+ * exactly what the adopting press has to check: a repository left behind by an
+ * interrupted press carries the file *that press wrote*, and a test that let the
+ * double invent either one would be asserting that adoption happens rather than
+ * that it happens to the right pull request.
  */
 function recordingClient(
   project: string,
-  over: { branchExists?: boolean; recipeOnBranch?: boolean; pullOpen?: boolean } = {},
+  over: {
+    branchExists?: boolean;
+    fileOnBranch?: string;
+    pullOpen?: boolean;
+    pullBase?: string;
+  } = {},
 ) {
   const calls: { method: string; path: string; body?: unknown }[] = [];
   const base = readOnlyClient(project);
-  const pull = { number: 7, html_url: `https://github.com/${OWNER}/${project}/pull/7` };
+  const pull = {
+    number: 7,
+    html_url: `https://github.com/${OWNER}/${project}/pull/7`,
+    base: { ref: over.pullBase ?? "develop" },
+  };
   const client: GitHubClient = {
     ...base,
-    fileAt: async () => (over.recipeOnBranch ? YAML : null),
+    fileAt: async () => over.fileOnBranch ?? null,
     request: (async (method: string, path: string, body?: unknown) => {
       calls.push({ method, path, body });
       if (method === "GET" && path.includes("/git/ref/heads/")) {
@@ -179,6 +195,29 @@ function recordingClient(
         labels: (c.body as { labels: string[] }).labels,
       }));
   return { client, calls, labelled, pull };
+}
+
+/**
+ * The file a press left on the branch, read back off the `PUT` it made.
+ *
+ * The repository an interrupted press leaves behind carries those exact bytes,
+ * and adoption is now a comparison against them — so the second press's double
+ * is handed this rather than a constant, and a test that passes passes because
+ * the two presses agree and not because the fixture was written to agree.
+ */
+function wroteToBranch(calls: { method: string; body?: unknown }[]): string {
+  const put = calls.find((c) => c.method === "PUT")!.body as { content: string };
+  return Buffer.from(put.content, "base64").toString("utf8");
+}
+
+/** A store whose append fails without the stream having moved: the database blinked. */
+function blinks(): EventStore {
+  return {
+    ...store,
+    append: async () => {
+      throw new Error("the connection was reset");
+    },
+  };
 }
 
 beforeAll(async () => {
@@ -391,7 +430,7 @@ describe("the pull request", () => {
    */
   it("refuses by naming the open pull request when the append fails, and finishes it on the next press", async () => {
     const project = fresh();
-    const { client: github, pull } = recordingClient(project);
+    const { client: github, calls, pull } = recordingClient(project);
     const blinked: EventStore = {
       ...store,
       append: async () => {
@@ -407,11 +446,13 @@ describe("the pull request", () => {
     expect(failed.refusal).toContain("Press this again");
     expect(await store.read(projectStream(project))).toEqual([]);
 
-    // The second press, against the repository that state left behind: the
-    // branch is there, the recipe is on it, the pull request is open.
+    // The second press, against the repository that state left behind — and the
+    // branch carries what the first press *wrote*, read back off its own PUT,
+    // rather than a file the double invented. Adoption is a comparison now, so
+    // a double that guessed the bytes would be testing itself.
     const again = recordingClient(project, {
       branchExists: true,
-      recipeOnBranch: true,
+      fileOnBranch: wroteToBranch(calls),
       pullOpen: true,
     });
     const finished = await startOnboarding({ client: again.client, recipe, by: "human:tester", store });
@@ -426,11 +467,85 @@ describe("the pull request", () => {
   });
 
   /**
+   * **The edited retry, which is the other reason a second press happens.**
+   * The first press left a branch, a file and a pull request against `develop`;
+   * the operator then changes `repo.base` to `main` and presses again. Adopting
+   * that pull request would append `base: main` while #7 goes on merging into
+   * `develop` — the board's pending card would then look for the recipe on
+   * `main`, never find it, and say so for ever, with the log recording a base no
+   * pull request ever targeted and the live recipe the one they rejected.
+   *
+   * So the base the pull request targets is compared with the base about to be
+   * recorded, and nothing is appended when they disagree.
+   */
+  it("refuses to adopt a pull request that targets a different base", async () => {
+    const project = fresh();
+    const first = recordingClient(project);
+    expect(
+      (await startOnboarding({ client: first.client, recipe, by: "human:tester", store: blinks() })).ok,
+    ).toBe(false);
+
+    const toMain = { ...recipe, repo: { ...recipe.repo, base: "main" } } as Recipe;
+    const again = recordingClient(project, {
+      branchExists: true,
+      fileOnBranch: wroteToBranch(first.calls),
+      pullOpen: true,
+      pullBase: "develop",
+    });
+    const next = await startOnboarding({ client: again.client, recipe: toMain, by: "human:tester", store });
+
+    expect(next.ok).toBe(false);
+    if (next.ok) return;
+    expect(next.refusal).toContain(first.pull.html_url);
+    expect(next.refusal).toContain("targets develop and not main");
+    // Nothing recorded, and no second pull request opened either.
+    expect(await store.read(projectStream(project))).toEqual([]);
+    expect(again.calls.filter((c) => c.method !== "GET")).toEqual([]);
+  });
+
+  /**
+   * The same press with the recipe itself edited — the base unchanged, the
+   * kinds not. The pull request on the branch carries the recipe the operator
+   * replaced, and adopting it would tell them onboarding started with the one
+   * they are looking at.
+   */
+  it("refuses to adopt a pull request carrying a different recipe", async () => {
+    const project = fresh();
+    const first = recordingClient(project);
+    expect(
+      (await startOnboarding({ client: first.client, recipe, by: "human:tester", store: blinks() })).ok,
+    ).toBe(false);
+
+    const bugsOnly = { ...recipe, source: { ...recipe.source, kinds: ["bug"] } } as Recipe;
+    const again = recordingClient(project, {
+      branchExists: true,
+      fileOnBranch: wroteToBranch(first.calls),
+      pullOpen: true,
+    });
+    const next = await startOnboarding({ client: again.client, recipe: bugsOnly, by: "human:tester", store });
+
+    expect(next.ok).toBe(false);
+    if (next.ok) return;
+    expect(next.refusal).toContain(first.pull.html_url);
+    expect(next.refusal).toContain(`carries a different ${RECIPE_PATH}`);
+    expect(await store.read(projectStream(project))).toEqual([]);
+    expect(again.calls.filter((c) => c.method !== "GET")).toEqual([]);
+  });
+
+  /**
    * The other way that append fails: `lingtai add` wrote `ProjectConfigured`
    * between the read at the top and the append at the bottom, so the expected
    * version is stale and the store refuses. The way out is not this function —
    * the project is registered — and the next press says so rather than talking
    * about a branch.
+   *
+   * **So this refusal must not send them to that press.** *Press this again; it
+   * picks up the pull request* is true of a store that blinked and false here:
+   * the next press stops at `isRegistered` and says nothing about GitHub, so an
+   * operator who followed that advice would be left with a branch and an open
+   * pull request nobody has mentioned — one that would put this unreviewed
+   * recipe on `develop` if anyone merges it. The refusal names both and says
+   * what became of the project instead.
    */
   it("sends an operator to the registration when the stream moved underneath it", async () => {
     const project = fresh();
@@ -456,11 +571,22 @@ describe("the pull request", () => {
     expect(raced.ok).toBe(false);
     if (raced.ok) return;
     expect(raced.refusal).toContain(pull.html_url);
+    // Not the sentence the blinking store gets, because it is not true here.
+    expect(raced.refusal).not.toContain("Press this again");
+    expect(raced.refusal).toContain("will not finish it");
+    // The two things left on their repository, named, with what to do about them.
+    expect(raced.refusal).toContain(ONBOARDING_BRANCH);
+    expect(raced.refusal).toContain("already registered");
+    expect(raced.refusal).toContain("close it and delete");
     expect((await store.read(projectStream(project))).map((e) => e.type)).toEqual([
       "ProjectConfigured",
     ]);
 
-    const again = recordingClient(project, { branchExists: true, recipeOnBranch: true, pullOpen: true });
+    const again = recordingClient(project, {
+      branchExists: true,
+      fileOnBranch: YAML,
+      pullOpen: true,
+    });
     const next = await startOnboarding({ client: again.client, recipe, by: "human:tester", store });
 
     expect(next.ok).toBe(false);
@@ -472,7 +598,7 @@ describe("the pull request", () => {
   /** A branch of that name that is not an interrupted onboarding is still refused. */
   it("refuses a branch of its own name that carries no onboarding", async () => {
     const project = fresh();
-    // `recipeOnBranch` off: `.lingtai/config.yaml` is not on the branch, so it
+    // No `fileOnBranch`: `.lingtai/config.yaml` is not on the branch, so it
     // is somebody else's and there is nothing here to adopt.
     const { client: github } = recordingClient(project, { branchExists: true });
 

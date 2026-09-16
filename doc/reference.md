@@ -85,10 +85,13 @@ wizard makes of its own accord**: the recipe is parsed by `resolveRecipe`
 before anything opens, so a file that would fail `lingtai add` on the base
 branch names its bad field instead; then the branch, the file and the pull
 request; then the event. Abandon the page before it and the wizard has left
-nothing anywhere to clean up. If the append fails over an open pull request it
-says so and says to press again — the branch check finishes a pull request it
-recognises as its own, because merging one the log knows nothing about appends
-nothing. Beside it `firstPass` is the last screen — `selectRunnable` and
+nothing of its own accord to clean up. If the append fails over an open pull
+request it names the pull request and says which of two things happened, because
+merging one the log knows nothing about appends nothing: a store that blinked is
+finished by pressing again, since the branch check adopts a pull request that is
+*this* proposal — the same file against the same base — while a stream that moved
+underneath it is not, and that refusal says so and hands back the branch. Beside
+it `firstPass` is the last screen — `selectRunnable` and
 `passedOver` and no rule of its own, so
 `12 runnable · 18 passed over — excluded-label 14, no-kind 4` is the sentence
 `lingtai status` will print an hour later.

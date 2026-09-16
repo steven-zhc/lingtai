@@ -88,12 +88,24 @@ recorded, and its reason is a day that was lost:
 The wizard inherits it and gets to do it better: a page can name *which*
 permission is missing and link to the screen that grants it.
 
-It also inherits the rule's spirit — **nothing is written anywhere until the last
-action**. No labels are created, no branch is cut. Abandon the wizard halfway and
-there is nothing to clean up. (Labels need no creating anyway: GitHub creates one
-the first time it is applied, so a recipe may name `agent:hold` before that label
-exists. Naming a label nobody has used yet is harmless, not dead configuration —
-this repository's own `exclude` names two.)
+It also inherits the rule's spirit — **the wizard writes nothing of its own
+accord until the last action**. No branch is cut, no event is appended. Abandon
+the wizard halfway and the wizard has left nothing to clean up. (Labels need no
+creating anyway: GitHub creates one the first time it is applied, so a recipe may
+name `agent:hold` before that label exists. Naming a label nobody has used yet is
+harmless, not dead configuration — this repository's own `exclude` names two.)
+
+**`Hold all` is the one exception, and the rule is worded around it on purpose.**
+It sits on the last screen, before the button, and it is not the wizard writing —
+it is the operator, through the wizard. What it writes is `agent:hold` on every
+issue the screen listed, in somebody's repository, visible to everyone and to
+every other tool reading it, **with nothing on Lingtai's log recording that
+Lingtai did it**, because the project has no stream until the button is pressed.
+So *abandon and there is nothing to clean up* is true of everything the wizard
+does by itself and false of that button: press it, close the tab, and twelve
+issues still carry the label. Taking them off is the operator's, and **the screen
+has to say so before they press it** — there is no undo here and no record to
+read afterwards.
 
 ## Onboard, or adjust
 
@@ -245,7 +257,7 @@ The next pass will take these, in this order
   …  9 more
 12 runnable · 18 passed over — excluded-label 14, no-kind 4
 
-[ Hold all 12 ]
+[ Hold all 12 ]  adds agent:hold to all 12. The labels stay if you leave this page.
 ```
 
 Onboarding takes work immediately — that is the decision, and this screen is what
@@ -254,6 +266,22 @@ PRs* becomes *you saw the list before you pressed the button.*
 
 **`Hold all` is offered and never taken automatically.** It is thirty API writes
 and thirty timeline entries in the repository; that is the operator's to spend.
+
+**It is also the one thing on this page that outlives the page** — the exception
+to *nothing is written until the last action*, set out above. The labels go on
+GitHub and stay there whether or not the button is ever pressed, and the project
+has no stream yet, so nothing on Lingtai's log will say they were applied or by
+whom. Hence the annotation beside the button rather than a tooltip: the sentence
+an operator needs is *these stay*, and they need it before pressing, because
+afterwards there is nothing to read and nothing to undo.
+
+**The label it writes is `agent:hold`, or there is no button.** `source.exclude`
+is free-form, so an operator's own excludes may be `wontfix` or `epic` — and
+stamping `wontfix` across twelve open bug reports is a sentence about them that
+Lingtai is not entitled to write. `agent:hold` is the one name Lingtai defines as
+meaning *not yet*, so a recipe that does not exclude it gets the reason instead
+of the button, and ticking `agent:hold` back into the excludes is one action away
+on the same page.
 
 Before any of it: **the generated recipe is parsed with the system's own
 `Recipe.parse`**. A PR that merges and then fails `lingtai add` would leave a bad
