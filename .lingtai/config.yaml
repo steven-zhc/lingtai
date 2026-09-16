@@ -128,12 +128,31 @@ gates:
     # That is also why it could not be declared here if it wanted to be: an
     # extension may not name one of Lingtai's own.
     - name: build
-      # **Both halves, written out.** `pnpm test` is the fast one since `#158` —
-      # the tests that need no Postgres — and `pnpm test:db` is the rest. Naming
-      # only the first would leave a gate that runs and does not check the thing
-      # it was built to check, which is the failure this repository calls its own
-      # bug. If a third half is ever added, it is named here or it does not run.
-      run: pnpm typecheck && pnpm test && pnpm test:db
+      # **`pnpm test:db` is suspended from this gate, and that is a loss.**
+      #
+      # The sentence that stood here said both halves are named or the gate
+      # checks less than it claims, and it was right. This is not a correction
+      # of it — it is a trade taken with the cost written down, on 2026-09-16.
+      #
+      # The reason is the network, not the tests. The suite reaches an
+      # IPv6-only Supabase host, and a laptop that moves, sleeps or loses a
+      # route gets `ENETUNREACH` — which arrives looking exactly like a broken
+      # diff. `#169` lost a whole attempt to it, and the fix round that followed
+      # spent 28 turns and committed nothing. A gate that goes red for reasons
+      # the diff cannot cause is a gate that teaches people to disbelieve it.
+      #
+      # **What stops being checked on every merge**: 28 files across six
+      # packages — claim, the queue, `run-once`, the projections, the advisory
+      # lock, `work-loop`, `reconcile`, `integrate`. That is real coverage and
+      # this comment does not pretend otherwise. The script still exists and
+      # still runs when a person runs it.
+      #
+      # **It comes back when it no longer needs a network.** `#178` gives the
+      # store, the waker and the lock a SQLite implementation; restoring this
+      # line is one of its Done-whens. Until then the risk is concentrated
+      # exactly where the queued work is — `#180`, `#181` and `#182` touch the
+      # recipe and the claim, which is what these tests covered.
+      run: pnpm typecheck && pnpm test
       timeout: 20m
       env: []
 
@@ -493,8 +512,9 @@ runtime:
   # Every value but `evidence` is the default. `evidence` was sized for a gate
   # that was only `pnpm typecheck && pnpm test` — failures short and specific, so
   # 2000 characters was a whole one rather than a fragment. **It is not the
-  # default here any more** (#171): `build` is `typecheck && test && test:db`
-  # since #158, and a failure there is the capture — its last 60 lines, up to
+  # default here any more** (#171): `build` grew past what 2000 was sized for
+  # when #158 split the suite, and a failure there is the capture — its last 60
+  # lines, up to
   # 8000 bytes (`EVIDENCE_LINES`/`EVIDENCE_BYTES`), and up to 2000 more of its
   # start on top when it does not all fit, of which vitest spends most on `✓`
   # before the `FAIL`. The default quotes two ends of that, 1000 characters each,
