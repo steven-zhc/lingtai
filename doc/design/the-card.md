@@ -1,7 +1,11 @@
 # The card, and the sequence inside it
 
-**Status** proposed · 2026-09-15 · `#170` · a picture at
+**Status** built · 2026-09-16 · `#170` · a picture at
 `claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d`
+
+What is in `apps/board/src/app/page.tsx` is `Segs` and `Rail`; what holds the
+line is `apps/board/test/rail.test.tsx`, which counts the objects on a running
+card and reads the geometry out of `globals.css` rather than out of itself.
 
 Thirteen objects, all of them boxed, wrapping to five rows at `22rem` — which is
 the width the column actually gives a card.
@@ -67,7 +71,7 @@ The first two are sequences and were drawn as sets. That is the whole of it.
 order — the five points, the rounds, anything added later that runs one way —
 gets a form that shows the order. Anything that does not stays a pill.
 
-It is in the code beside `Now` in `apps/board/src/app/page.tsx`, where the next
+It is in the code beside `Rail` in `apps/board/src/app/page.tsx`, where the next
 point-shaped thing would be added, and so where the argument has to be made.
 
 ## Why the bar cannot be "filled means done"
@@ -92,9 +96,27 @@ carries the distinction the sentence above demands:
 
 **`never-ran` is not an extra.** A bar that draws all five points must have a
 mark for *configured and did not run*, or that state renders as something it is
-not — which is the failure `0016 §4` names. Today it reaches `lingtai doctor` as
-a FAIL naming `#49`, `#53` and `#55` at the merge point, and reaches the board as
-nothing at all. `p.state` already carries all seven, so this costs no projection.
+not — which is the failure `0016 §4` names. It reached `lingtai doctor` as a FAIL
+naming `#49`, `#53` and `#55` at the merge point and reached the board as nothing
+at all. It costs no projection: `foldProgress` now makes
+`landedWithoutGatePoints`'s own comparison, and the same one rather than a
+looser one, because this mark accuses Lingtai and a false one is worse than
+none. All three halves of it:
+
+| | |
+|---|---|
+| the plan named actions here | and **`GatesResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything (doctor's `planned` CTE selects from those rows and nothing else) |
+| the run recorded none | no request, no verdict, no approval, no waiver |
+| **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later points recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. Doctor is anchored on `WorkItemLanded`; so is this |
+
+The caller supplies the last of those, because the landing is on the merge
+lane's stream and the work item's, not on the run's — `railCandidates` is where
+it is decided and where a test holds it.
+
+**Four points and not five**, and doctor makes the same exclusion in as many
+words: `end`'s record is `EndActionsResolved` on the work item's stream, which
+this fold does not read. A silent `end` here is a question the run's stream
+cannot answer rather than a point that did not run.
 
 ## The labels, and what they let go
 
@@ -111,19 +133,81 @@ Four tones, and the third does work no colour alone can:
 | `off` | `rule-2`, **italic** — nothing configured. Italic because *nothing configured* and *not reached yet* are both grey, and the difference between them has to survive being grey |
 | `bad` | fail — it stopped here |
 
-## What is deliberately not settled
+**The sentence under the bar has four readings and not two.** `build 42s / 20m`
+while something is running, `between points` while the agent has finished and no
+point has started — and `build refused`, because a refusal clears the live phase
+and leaves neither. Drawing the second of those on the third told an operator
+the agent had just finished, under a segment that was red.
 
-**`N passed` and the bar are one fact at two granularities**, and only
-sometimes. `prepared: [install]` is one action, so *1 passed* **is** *prepared
-went green*; `proposed` holds `build` and `review`, so there it is half a point.
-Either the counter goes and a multi-action point carries that on its segment, or
-the counter stays and the redundancy stays with it. **Whichever, the reason
-belongs in the code** — carrying both unexamined is how the card reached
-thirteen.
+The fourth is `nothing running`, and it is the one the run's own stream cannot
+name. *In flight between two points* and *stopped, by something that is not on
+this stream* fold identically — no phase, no refusal — so **the lane settles
+which**, exactly as it settles the elapsed pill. A pass the merge lane refused
+is that card: `IntegrationRefused` goes to the integration lane's stream, the
+board never reads it, and the rail above the sentence is five passed points.
 
-**The two money figures stay two.** `#84`'s reason is intact. The mockup renders
-`$5.92 +4.88` as one object saying two numbers; if the amber cannot survive that
-compression, two pills is the right answer and not a regression.
+**A refusal being answered is not a refusal**, which is why the refused reading
+is only reached with nothing in flight *and* off the running lane: its hover
+says a person is being waited on, and that is a fact about the column rather
+than about the stream. A bought round
+appends `FixRequested`, runs an agent against the findings and appends
+`FixApplied` — and no `RunStarted`, because a round is a step inside a run. With
+`rounds: 3` that is the ordinary path here, so a fold that saw no phase in it
+put `build refused` under a hover saying a person was being waited on, on a card
+that was spending money at the time. The round is a phase: `fixing round 2 of 3`,
+under the wall clock `RunStarted` recorded, which is the one the fixer is
+launched with.
+
+## What was settled, and how
+
+**`N passed` goes, and the segment carries what it said.** `prepared: [install]`
+is one action, so *1 passed* **was** *prepared went green*; `proposed` holds
+`build` and `review`, so there it was half a point and said so nowhere. The bar
+draws **one cell per planned action**, each with its own verdict, which is the
+granularity the counter had and the flattened row did not — so `proposed` with a
+running build and an unreached review is visibly half a point. All four counters
+go with it and not `passed` alone: *failed*, *waived* and *approved* are the
+same fact at the same two granularities, and keeping three of the four would
+have left a reader deciding which list to believe.
+
+They stay, unchanged, on a card with **no** rail: a lane that does not fold, a
+run whose stream would not read, a Landed row the lane keeps collapsed. That is
+the rule in one sentence — *the counters are the fallback, not the reading* —
+and it is written where they are rendered.
+
+**The two money figures stay two.** `#84`'s reason is intact and the compression
+was not needed: the bar, its five labels and its sentence are **one** object,
+which is the whole of the design, so a running card carrying elapsed, turns,
+both figures and its round is six.
+
+**The second sequence is one object and not yet a form.** `attempt 2` and
+`restart 1 of 1` read as `attempt 2 · restart 1 of 1` in a single pill. One
+object is what stops 0040's two axes being drawn as a set; the form that shows
+*their* order is a later ticket, and the rule above says it is owed one.
+
+## What this lane costs, and where it stops
+
+The rail draws wherever the run's stream was read, and `railCandidates` decides
+that: Running, the head of Waiting, and the Landed rows the lane renders open.
+It was Running alone, on `#79`'s argument that every other lane describes
+something over and the counts carry that whole truth. The counts were the thing
+that turned out not to be true — *configured and did not run* is not a number.
+
+**Every added lane is cut by a number, and *it is small* is not one.**
+`progress.ts`'s trade is that only a lane holding a handful of cards may read a
+stream each, on a route that re-renders on every append. Waiting was argued into
+this design as small and is the opposite: the `COLUMNS` entry that gives it a
+column of its own says why it has one — *45 items and growing* — so it is cut to
+`WAITING_RAILS`, at the head, which is where `readTasks`'s oldest-first order
+puts what to do next. Landed grows without bound and has no read that fetches
+many runs at once, so it is cut to the `LANDED_OPEN` rows the lane draws open —
+and to *those* rows, `runId` filtered after the slice and not before, or a
+ticket closed before any run was claimed pulls the fold down into the collapsed
+`older` disclosure. Everything past either cut keeps its counters.
+
+Which makes `railCandidates` pure and separate from the read: the cut is the
+whole of what makes the rail cheap, and a claim about cost that no test can hold
+is the one this design already got wrong once.
 
 ## Related
 

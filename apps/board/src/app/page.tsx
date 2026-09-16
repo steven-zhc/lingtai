@@ -10,7 +10,13 @@ import {
   LANDED_OPEN,
 } from "@/lib/board";
 import { kindDot } from "@/lib/kind-colour";
-import { AGENT, elapsed, type RunProgress } from "@/lib/progress";
+import {
+  elapsed,
+  pointOf,
+  type PointProgress,
+  type PointState,
+  type RunProgress,
+} from "@/lib/progress";
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
 // pipeline in behind it. `describeHold` is pure and lives beside the field it
 // reads, so the card and `lingtai status` say the same thing about a hold.
@@ -59,6 +65,14 @@ import { Paused } from "./paused.tsx";
  * ([the-bar.md](../../../../doc/design/the-bar.md)). Four objects now — filter,
  * reading, health, headline — and the rule that keeps it four is stated at the
  * end of the bar below, where the next chip would be added.
+ *
+ * **And so did the card, and two of its thirteen objects were sequences.** Same
+ * story, one surface along, with one thing the bar did not have: the five gate
+ * points run *one way*, and a wrapped row of equal pills is a set. They are a
+ * bar of five segments now, named underneath, and the rule the card keeps is in
+ * `Rail` below — *a sequence is not a set, and a pill cannot say which*
+ * (#170, [the-card.md](../../../../doc/design/the-card.md)). Six objects, and
+ * the ones that went were the counters the bar says better.
  */
 export const dynamic = "force-dynamic";
 
@@ -86,41 +100,186 @@ function accent(card: BoardCard): string {
 }
 
 /**
- * Which pill a point's state wears. The card's existing vocabulary, reused:
- * a person's word (`waived`) is the held colour and never the green one, the
- * same distinction the counts below make.
+ * Where a point got to, as one class on one cell.
+ *
+ * **Not the card's pill vocabulary, and that is the point.** `pill pass` green
+ * meant *a gate action passed* in the counters above and *this point passed* in
+ * the row below, six tones doing two jobs, and a reader had to know which list
+ * they were in before the colour meant anything
+ * ([the-card.md](../../../../doc/design/the-card.md)). These are the sequence's
+ * own, and nothing else on the card wears them.
+ *
+ * Three of the seven look empty and mean different things, so shape carries
+ * what colour cannot: `pending` is a flat rule, `skipped` is a dashed outline
+ * with no fill, and `never-ran` is hatched in the fail colour. A bar that drew
+ * all five points with only "filled means done" would render the second of
+ * those as the first, which is precisely the failure 0016 §4 names.
  */
-const POINT_TONE: Record<string, string> = {
-  passed: "pass",
-  failed: "fail",
-  running: "run",
-  waived: "hold",
-  // The held colour and never the red one: nothing refused this diff, the
-  // agent that would have judged it never started (#133).
-  "never-ran": "hold",
-  pending: "",
-  skipped: "skip",
+const CELL_TONE: Record<PointState, string> = {
+  passed: "t-pass",
+  failed: "t-fail",
+  running: "t-run",
+  // A person's word standing in for a gate, and never the green one: an
+  // override of a red build must not look like a build that went green.
+  waived: "t-waived",
+  // Hatched, in the fail colour and with no verdict behind it — the one mark
+  // that breaks the rhythm, because it is the one state that is our bug.
+  "never-ran": "t-never",
+  pending: "t-pending",
+  skipped: "t-skipped",
 };
 
 /**
- * Where the run is *now*, under the counts that say where it has been.
+ * Which of the four weights a point's name carries.
  *
- * The phase first — what is executing this second, and how far into whatever
- * bounds it — then all five points, so a point the recipe configured is visible
- * before it runs and a point nobody configured reads as `skipped` rather than
- * as an absence (0016 §4).
+ * `off` is the one doing work no colour can. *Nothing configured* and *not
+ * reached yet* are both grey, so the difference between them has to survive
+ * being grey: it is italic.
+ */
+function labelTone(p: PointProgress, at: string | null): string {
+  if (p.actions.length === 0) return "l-off";
+  if (p.state === "failed" || p.state === "never-ran") return "l-bad";
+  if (p.state === "running" || p.point === at) return "l-at";
+  return "l-done";
+}
+
+/** What a segment says on hover: what was configured there, and what came of it. */
+function segTitle(p: PointProgress): string {
+  if (p.actions.length === 0) return `${p.point}: nothing configured, so nothing runs`;
+  if (p.state === "never-ran") {
+    return `${p.point}: ${p.planned.join(", ")} — configured and did not run, which is Lingtai's bug (0016 §4)`;
+  }
+  return `${p.point}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
+}
+
+/**
+ * The five points, in point order, as a bar.
+ *
+ * **All five, always.** A point that is merely omitted is indistinguishable
+ * from one that was configured and silently did not run, and only the second of
+ * those is Lingtai's bug (0016 §4).
+ *
+ * **One cell per action.** `prepared: [install]` draws one; `proposed` holds
+ * `build` and `review` and draws two, each with its own verdict, so a point
+ * that is half done looks half done. That is what let `N passed` go from the
+ * counters above: a count of actions and a position in a sequence were the same
+ * fact at two granularities, and only one of them has a shape. A point the
+ * recipe left empty draws a single dashed cell — it keeps its place in the
+ * sequence without claiming anything happened in it.
+ */
+function Segs({
+  points,
+  at,
+  labels,
+}: {
+  points: readonly PointProgress[];
+  at: string | null;
+  /**
+   * Off on a landed row, which is one line by #81's decision and has no room
+   * for five names. The row's rail is scanned for the one mark that is wrong —
+   * the hatch — and the title on each segment says the rest.
+   */
+  labels: boolean;
+}) {
+  return (
+    <ol className="segs">
+      {points.map((p) => (
+        <li key={p.point} className={`seg s-${p.state}`} title={segTitle(p)}>
+          <span className="sbar">
+            {(p.actions.length === 0 ? [{ name: p.point, state: p.state }] : p.actions).map((a) => (
+              <span key={a.name} className={`scell ${CELL_TONE[a.state]}`} />
+            ))}
+          </span>
+          {labels ? <span className={`slab ${labelTone(p, at)}`}>{p.point}</span> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * What stopped this run, named as the action it was.
+ *
+ * A refusal clears the live phase, so a run with a red segment and nothing in
+ * flight is stopped on it rather than *between* two points. In point order,
+ * because the first refusal is the one that stopped it.
+ *
+ * **Only where nothing is in flight, and a bought round is in flight.** The
+ * pipeline stops at the first refusal (0041 §4) and then, here, ordinarily buys
+ * a round to answer it: `rounds: 3`, an agent patching the diff, and the card
+ * still `running`. `foldProgress` names that phase for exactly this reason — a
+ * refusal being answered is not a refusal waiting for a person, and this
+ * function cannot tell them apart on its own.
+ */
+function refusedAt(points: readonly PointProgress[]): string | null {
+  for (const p of points) {
+    const bad = p.actions.find((a) => a.state === "failed");
+    if (bad) return bad.name;
+    if (p.state === "failed") return p.point;
+  }
+  return null;
+}
+
+/**
+ * Where the run has got to, and what it is doing this second.
+ *
+ * **A sequence drawn as one, which it was not.** The five points were a wrapped
+ * row of equal pills — a set — and a set loses the one thing a sequence has:
+ * that it runs one way, and one of its members is *here*
+ * ([the-card.md](../../../../doc/design/the-card.md), #170). Anything added to
+ * this card that has an order gets a form that shows the order; anything that
+ * does not stays a pill. `attempt` and `restart` are the other sequence, and
+ * they are one object above for that reason.
+ *
+ * **The point name is said once.** The line used to read `proposed:build 42s /
+ * 20m`; the highlighted label already says `proposed`, so the sentence is the
+ * action and its bound and nothing else. A phase that names no point — the
+ * agent, a bought round — is printed whole, which is `pointOf`'s whole job.
+ *
+ * **The sentence has four readings and the lane settles three of them.** What
+ * is running, what refused, a run in flight between two points, and a run that
+ * is not in flight at all. The last two look identical on this stream — no
+ * phase, no refusal — and only one of them is *between* anything; the thing
+ * holding the other is not on the run's stream to be found, because the merge
+ * lane appends `IntegrationRefused` to its own and the card gets the note. And
+ * the second is only ever true off the running lane: a refusal a pass is still
+ * working through is not a refusal anybody has been handed.
  *
  * The clock is the server's, read at render. That is exactly as current as
  * everything else on the page: an append re-renders the route (`live.tsx`), and
  * a run appends steadily enough that this moves on its own.
  */
-function Now({ progress }: { progress: RunProgress }) {
+function Rail({
+  progress,
+  live,
+}: {
+  progress: RunProgress;
+  /**
+   * Whether the run is in flight — the lane's word, as it is for the elapsed
+   * pill above, and never the rail's. A fold cannot answer it: a pass stopped
+   * by the merge lane's refusal has a run stream that simply ends, which is
+   * indistinguishable here from one a second between two points.
+   */
+  live: boolean;
+}) {
   const now = progress.now;
+  // The point half of `proposed:build`, which is what the label highlights.
+  // Null where the phase names no point — the agent, and a bought round.
+  const at = now === null ? null : pointOf(now.label);
+  // Only when nothing is in flight, **and** only off the running lane — the
+  // sentence's own title says a person is being waited on, and that is a fact
+  // about the lane rather than about the stream. A refusal from an earlier
+  // round sits under a live gate on the same card, and between a refusal and
+  // the round bought to answer it there is a moment with neither; both are a
+  // pass still working, and neither is anybody's to act on.
+  const refused = now === null && !live ? refusedAt(progress.points) : null;
+
   return (
-    <ul className="meta">
+    <div className="seq">
+      <Segs points={progress.points} at={at} labels />
       {now ? (
-        <li
-          className="pill run"
+        <p
+          className="snow"
           title={
             now.budgetMs === null
               ? `${now.label} since ${now.since}; nothing puts a clock on it`
@@ -131,32 +290,44 @@ function Now({ progress }: { progress: RunProgress }) {
               killed*, and it is absent rather than invented where nothing
               bounds the phase — an approval waits on a person, and a person has
               no timeout. */}
-          {now.label === AGENT ? "agent" : now.label}{" "}
+          {at === null ? now.label : now.label.slice(at.length + 1)}{" "}
           {elapsed(Date.now() - Date.parse(now.since))}
           {now.budgetMs === null ? "" : ` / ${inWords(now.budgetMs)}`}
-        </li>
-      ) : (
-        <li className="pill" title="the agent has finished and no point has started yet">
-          between points
-        </li>
-      )}
-      {/* All five, always. A point that is merely omitted is indistinguishable
-          from one that was configured and silently did not run, and only the
-          second of those is Lingtai's bug (0016 §4). */}
-      {progress.points.map((p) => (
-        <li
-          key={p.point}
-          className={`pill ${POINT_TONE[p.state] ?? ""}`}
-          title={
-            p.planned.length === 0
-              ? `${p.point}: nothing configured, so nothing runs`
-              : `${p.point}: ${p.planned.join(", ")} — ${p.state}`
-          }
+        </p>
+      ) : refused ? (
+        /* The action and what came of it, the same shape as the line above —
+           and never the neutral one, whose title says the agent has just
+           finished and nothing has started. On a card in the Waiting lane that
+           is the opposite of true: the rail's own segment is red, a person is
+           being asked, and a sentence saying *between points* under a red
+           segment contradicts the bar it is there to explain. */
+        <p
+          className="snow"
+          title="the pipeline stops at the first refusal and waits for a person, so nothing is running (0041 §4)"
         >
-          {p.point}
-        </li>
-      ))}
-    </ul>
+          {refused} refused
+        </p>
+      ) : live ? (
+        <p className="snow quiet" title="the agent has finished and no point has started yet">
+          between points
+        </p>
+      ) : (
+        /* The fourth reading, and the one the run's own stream cannot name.
+           Nothing is in flight and nothing on this stream refused, and the pass
+           is stopped anyway — so what stopped it happened somewhere this fold
+           does not read. `IntegrationRefused` is the ordinary one: it goes to
+           the merge lane's stream, `task_view` turns it into the note below,
+           and the rail above it is five passed points. Saying *between points*
+           here told an operator the agent had just finished and something was
+           coming, about a card that had been still for hours. */
+        <p
+          className="snow quiet"
+          title="nothing on this run's stream is running and nothing on it refused — what the pass is stopped on is not on it, and the note says what"
+        >
+          nothing running
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -209,7 +380,7 @@ function KindDot({ card }: { card: BoardCard }) {
   );
 }
 
-function Card({
+export function Card({
   card,
   showProject,
   issue,
@@ -261,8 +432,16 @@ function Card({
             just started — a plausible number, which is the worst kind.
 
             Absent on a card GitHub is offering that the log has never touched:
-            there is no time for one, and the render clock is not it. */}
-        {card.progress ? (
+            there is no time for one, and the render clock is not it.
+
+            **The lane decides this and not the rail.** Until #170 only a
+            running card had `progress`, so the two tests were the same one;
+            Waiting folds now, and a card stopped on a person would have read
+            `running 13h58m` about a run that was refused and is not in flight
+            — a plausible number, which is the worst kind. It is the lane's own
+            word here for the same reason it is everywhere else in this
+            sentence. */}
+        {card.column === "running" && card.progress ? (
           <li className="pill run" title={`this run's first event was ${card.progress.since}`}>
             running {elapsed(Date.now() - Date.parse(card.progress.since))}
           </li>
@@ -273,21 +452,40 @@ function Card({
         ) : null}
         {card.turns !== null ? <li className="pill">{card.turns} turns</li> : null}
         {card.costUsd !== null ? <li className="pill">${card.costUsd.toFixed(2)}</li> : null}
-        {/* Green is a gate that ran and went green. A waiver and an approval are
-            a person's word standing in for one, so they carry the held colour
-            and their own word — counting either as "passed" made an override of
-            a red build look identical to a green one. */}
-        {card.gatesPassed > 0 ? <li className="pill pass">{card.gatesPassed} passed</li> : null}
-        {card.gatesFailed > 0 ? <li className="pill fail">{card.gatesFailed} failed</li> : null}
-        {card.gatesWaived > 0 ? (
-          <li className="pill hold" title="a person overrode a failed gate">
-            {card.gatesWaived} waived
-          </li>
-        ) : null}
-        {card.gatesApproved > 0 ? (
-          <li className="pill hold" title="a person approved, rather than a gate passing">
-            {card.gatesApproved} approved
-          </li>
+        {/* **The counters are the fallback, not the reading** (#170).
+
+            `1 passed` and a green `prepared` segment are one fact at two
+            granularities, and the ticket that drew the rail would not carry
+            both unexamined — that is how this card reached thirteen objects.
+            So where there is a rail the counters go: it says the same thing per
+            point, in order, and a point holding more than one action draws a
+            cell each, which is the granularity the counter had and the rail was
+            missing. The four of them, and not `passed` alone: a count of
+            failures and a count of waivers are the same fact at the same two
+            granularities, and keeping three of the four would have left the
+            reader deciding which list to believe.
+
+            Where there is no rail they stay, unchanged, and are the whole of
+            what the card says about its gates — a card in a lane that does not
+            fold, a run whose stream would not read, a row the Landed lane keeps
+            collapsed. Green is a gate that ran and went green; a waiver and an
+            approval are a person's word standing in for one, so they carry the
+            held colour and their own word. */}
+        {card.progress === null ? (
+          <>
+            {card.gatesPassed > 0 ? <li className="pill pass">{card.gatesPassed} passed</li> : null}
+            {card.gatesFailed > 0 ? <li className="pill fail">{card.gatesFailed} failed</li> : null}
+            {card.gatesWaived > 0 ? (
+              <li className="pill hold" title="a person overrode a failed gate">
+                {card.gatesWaived} waived
+              </li>
+            ) : null}
+            {card.gatesApproved > 0 ? (
+              <li className="pill hold" title="a person approved, rather than a gate passing">
+                {card.gatesApproved} approved
+              </li>
+            ) : null}
+          </>
         ) : null}
         {/* Apart from the work's cost, deliberately. Answering a refusal is
             default-on and spends an agent without being asked again, so folding
@@ -307,26 +505,36 @@ function Card({
             ${card.repairCostUsd.toFixed(2)} answering
           </li>
         ) : null}
-        {/* A card that keeps failing should read as one rather than looking new
-            every time it comes back round. */}
-        {card.attempts > 1 ? (
-          <li className="pill sig" title="attempts so far">
-            attempt {card.attempts}
-          </li>
-        ) : null}
-        {/* **Which arm, beside how many attempts** (0040 §3). The two are not
-            the same number and the difference is what a person acts on: an
-            attempt is a claim, so a crash, a backoff and an abandoned approach
-            all read as `attempt 3`, while this says the reviewer refused a whole
-            approach and the ticket was started over. `hold` rather than `sig`
-            because it is the pill that says a ceiling is being spent.
+        {/* **Which round, as one object** (#170). A card that keeps failing
+            should read as one rather than looking new every time it comes back
+            round — and *which attempt* and *which arm* are 0040's two axes, not
+            two unrelated counters. They sat as two pills among the scalars,
+            which is the question they answered worst.
 
-            The sentence is `describeArm`'s, so this and `lingtai status` cannot
-            drift apart (#100). Null on every card whose recipe leaves
+            They are not the same number and the difference is what a person
+            acts on: an attempt is a claim, so a crash, a backoff and an
+            abandoned approach all read as `attempt 3`, while the arm says the
+            reviewer refused a whole approach and the ticket was started over.
+            One reading, said in one place, in the order they nest — an arm
+            contains attempts. The second sequence deserves a form that shows
+            its order the way the rail below does, and that is not this ticket's
+            (the-card.md); one object is what stops it being drawn as a set.
+
+            The arm's sentence is `describeArm`'s, so this and `lingtai status`
+            cannot drift apart (#100). Null on every card whose recipe leaves
             `restarts` at zero, which is all of them today. */}
-        {card.arm ? (
-          <li className="pill hold" title="approaches abandoned, against the recipe's ceiling">
-            {card.arm}
+        {card.attempts > 1 || card.arm ? (
+          <li
+            className="pill sig"
+            title={
+              card.arm
+                ? "attempts so far, and approaches abandoned against the recipe's ceiling"
+                : "attempts so far"
+            }
+          >
+            {[card.attempts > 1 ? `attempt ${card.attempts}` : null, card.arm]
+              .filter((s): s is string => s !== null)
+              .join(" · ")}
           </li>
         ) : null}
         {/* When, not whether (#95) — and, since #100, which of the three a
@@ -355,10 +563,19 @@ function Card({
         ) : null}
       </ul>
 
-      {/* Only where there is a run in flight to describe. Every other lane is
-          describing something that is over, and the counts above are the whole
-          truth about it — this is the one lane where they are not (#79). */}
-      {card.progress ? <Now progress={card.progress} /> : null}
+      {/* Wherever the run's stream was read — Running, and Waiting since #170.
+          It used to be Running alone, on the argument that every other lane
+          describes something over and the counts above are the whole truth
+          about it (#79). They are not: a point that was configured and did not
+          run is invisible in a count, and that is the one state 0016 §4 calls
+          our bug. `laneProgress` decides which cards have one.
+
+          The lane's own word goes with it, for the reason the elapsed pill
+          above takes it: *this run is in flight* is a fact about the column and
+          not one the fold can reach. */}
+      {card.progress ? (
+        <Rail progress={card.progress} live={card.column === "running"} />
+      ) : null}
 
       {card.note ? <p className="question">{card.note}</p> : null}
 
@@ -529,6 +746,25 @@ export function LandedRow({
 
   return (
     <li className="lrow">
+      {/* **The five points, on the row that says it landed** (#170).
+
+          The counts never carried the one state that matters here. `lingtai
+          doctor` fails on three of this repository's own items for having
+          landed past a point that was configured and did not run — #49, #53,
+          #55 at `merge` — and the board said nothing at all about them, because
+          the row lists what a run accumulated and *nothing happened here* is
+          not a number. The hatch is that mark, and it is the only thing on this
+          rail that breaks its rhythm.
+
+          First on the line, before the reference, so the rails line up down the
+          column and the one that is wrong is found by scanning rather than by
+          reading. Absent on the rows the lane keeps collapsed — `laneProgress`
+          says why it stops where it does. */}
+      {card.progress ? (
+        <span className="lseq">
+          <Segs points={card.progress.points} at={null} labels={false} />
+        </span>
+      ) : null}
       {showProject ? <span className="proj">{card.project}</span> : null}
       <IssueRef href={issue} issue={card.ref} />
       <Link

@@ -361,11 +361,94 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 /* A verdict about a commit that is no longer the head. Nothing revoked it — a
    force-push simply made it about a different diff. */
 .pill.stale { opacity: 0.45; text-decoration: line-through; }
-/* A point the recipe configured nothing at. Quiet, but present: a point that is
-   merely omitted is indistinguishable from one that was configured and silently
-   did not run, and only the second is Lingtai's bug (0016 §4). Faded and not
-   struck through — nothing was cancelled, there was never anything there. */
-.pill.skip { opacity: 0.4; }
+/* --- the sequence ---------------------------------------------------------
+   The five points, drawn as the sequence they are (#170,
+   `doc/design/the-card.md`).
+
+   They were a wrapped row of equal pills in the same `.meta` class as the
+   counters above, which made `pill pass` green mean *a gate action passed* in
+   one list and *this point passed* in the other — six tones doing two jobs, and
+   a reader had to know which list they were in before the colour meant
+   anything. Nothing below reuses the pill vocabulary for that reason: these
+   tones belong to the sequence and appear nowhere else on the card.
+
+   **A grid of five equal columns, and never a flex row.** Five columns is what
+   makes the labels line up under their own segments and what stops the bar
+   wrapping at the width a column actually gives a card (22rem); a flex row with
+   `wrap` is the shape this replaced. */
+.seq { display: grid; gap: 3px; margin: 1px 0 0; }
+.segs {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px;
+  margin: 0; padding: 0; list-style: none;
+}
+.seg { display: grid; gap: 2px; min-width: 0; }
+/* One cell per planned action, so a point holding `build` and `review` is half
+   a bar when half of it has run — the granularity the `N passed` counter had
+   and the flattened row did not. A point the recipe left empty draws one cell. */
+.sbar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px; height: 5px; }
+.scell { display: block; border-radius: 1px; background: var(--rule); }
+.scell.t-pass { background: var(--pass); }
+.scell.t-fail { background: var(--fail); }
+.scell.t-run { background: var(--accent); animation: seg-live 1.8s ease-in-out infinite; }
+/* A person's word standing in for a gate. Never the green one: an override of a
+   red build must not look like a build that went green. */
+.scell.t-waived { background: var(--held); }
+/* Configured, not reached yet. Quiet, because nothing is wrong. */
+.scell.t-pending { background: var(--rule); }
+/* Nothing configured — `admit: []`, `merge: []`. No fill at all, so the point
+   keeps its place in the sequence without claiming anything happened in it. */
+.scell.t-skipped { background: transparent; border: 1px dashed var(--rule-2); }
+/* **Configured, and did not run** — the one segment that breaks the bar's
+   rhythm, and the only place the fail colour appears with no verdict behind it.
+   Hatched rather than filled because it is not a refusal: nothing judged this
+   diff, and 0016 §4 calls that Lingtai's bug rather than the run's.
+
+   It cannot be a shade of grey. `pending`, `skipped` and this are the three
+   states that look empty and mean different things, and a bar that told them
+   apart by lightness alone would render our own bug as somebody's
+   configuration. */
+.scell.t-never {
+  background: repeating-linear-gradient(
+    45deg, var(--fail) 0 2px, var(--fail-soft) 2px 4px
+  );
+  box-shadow: inset 0 0 0 1px var(--fail);
+}
+/* The only motion on a card, and it stops when the reader has asked for stillness.
+   The rule at the top of this file already covers it; this is here so that
+   deleting the blanket rule cannot quietly leave a card pulsing. */
+@keyframes seg-live { 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .scell.t-run { animation: none; } }
+
+/* The five names, which let the sentence below drop the point name: it read
+   `proposed:build 42s / 20m` and now reads `build 42s / 20m`, because the
+   highlighted label already said `proposed`. */
+.slab {
+  font-family: var(--mono); font-size: 9px; letter-spacing: -0.02em;
+  color: var(--muted);
+  overflow: hidden; text-overflow: clip; white-space: nowrap;
+}
+.slab.l-at { color: var(--accent-ink); font-weight: 500; }
+.slab.l-done { color: var(--muted); }
+/* Italic, and not merely paler. *Nothing configured* and *not reached yet* are
+   both grey, and the difference between them has to survive being grey. */
+.slab.l-off { color: var(--rule-2); font-style: italic; }
+.slab.l-bad { color: var(--fail); }
+
+/* The one sentence under the bar: the action, and what bounds it. */
+.snow {
+  margin: 0;
+  font-family: var(--mono); font-size: 10px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.snow.quiet { color: var(--muted); }
+
+/* The same rail on a landed row, at the width one line can give it and with no
+   labels — the row is one line by #81's decision, and what is scanned for here
+   is the hatch. */
+.lseq { flex: 0 0 auto; width: 34px; }
+.lseq .segs { gap: 2px; }
+.lseq .sbar { height: 4px; }
 
 /* The reference, now that it goes somewhere. Inherits the `.id` line's colour
    rather than taking the accent: which ticket is context, and a second coloured

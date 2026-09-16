@@ -197,12 +197,16 @@ export interface BoardCard {
    */
   runnableAt: string | null;
   /**
-   * Where the run is *now*: the phase, its elapsed, and all five points.
+   * Where the run got to: the phase, its elapsed, and all five points.
    *
-   * Only on a running card, and null everywhere else. A card in any other lane
-   * is describing something that is over, and the accumulated numbers beside it
-   * are the whole truth about it; this is the one lane where they are not
-   * (#79). Folded from the run's own stream rather than held in `task_view` —
+   * Null on a card no run has touched, and on the Landed rows the lane keeps
+   * collapsed — `laneProgress` decides, and says why it stops where it does.
+   *
+   * It was the Running lane alone, on the argument that every other lane
+   * describes something over and the accumulated numbers are the whole truth
+   * about it (#79). They are not: *a point that was configured and did not run*
+   * is not a number, and it is the one state 0016 §4 calls Lingtai's bug
+   * (#170). Folded from the run's own stream rather than held in `task_view` —
    * see `progress.ts` for why that does not make the list expensive.
    */
   progress: RunProgress | null;
@@ -358,6 +362,24 @@ export interface BoardColumn {
  * a record is something you open rather than something you scan.
  */
 export const LANDED_OPEN = 3;
+
+/**
+ * How many Waiting cards draw a rail.
+ *
+ * `progress.ts`'s trade is that a lane holding a *handful* of cards may read a
+ * stream each on a route that re-renders on every append. The Waiting lane is
+ * not that lane and the `COLUMNS` entry below says so in its own words — it
+ * exists "because it is where the queue actually stalls: 45 items and growing"
+ * — so folding it whole would put forty-five concurrent stream reads on every
+ * render, which is the cost `#112` was about.
+ *
+ * A cap and not a prediction: with Running holding a card per conductor and
+ * Landed opening three, a render reads under a dozen streams whatever the lane
+ * holds. `readTasks` orders Waiting oldest-first *because* that is what to do
+ * next, so the cards that fold are the ones being worked through; the rest keep
+ * their counters, which is what every card had before `#170`.
+ */
+export const WAITING_RAILS = 6;
 
 export const COLUMNS: { id: ColumnId; label: string }[] = [
   { id: "queued", label: "Queued" },
@@ -586,7 +608,7 @@ export async function queuedCards(
   // and a third repository would have added a third (#112). The cost was linear
   // in the number of repositories, which is the number that grows.
   //
-  // The fan-out is `runningProgress`'s, two hundred lines down and written by
+  // The fan-out is `laneProgress`'s, two hundred lines down and written by
   // the same hand: this loop simply did not get it.
   const asked = await Promise.all(projects.map((p) => ask(p)));
 
@@ -676,32 +698,93 @@ export async function queuedCards(
 }
 
 /**
- * Where each running card's run has got to, keyed by task id.
+ * Where each card's run got to, keyed by task id.
  *
- * Only the Running lane, and only the cards that name a run. Every other lane
- * is describing something that is over, and the numbers `task_view` already
- * carries are the whole truth about it — this is the one lane where "what it
- * accumulated" is not the answer to "what is it doing" (#79).
+ * **Three lanes, not one.** It was the Running lane alone, on the argument that
+ * every other lane describes something that is over and the counts carry that
+ * whole truth (#79). The counts were the thing that turned out not to be true:
+ * a point that was *configured and did not run* is invisible in them, which is
+ * the one state 0016 §4 calls Lingtai's bug, and `lingtai doctor` has been
+ * failing on three of this repository's own items while the board said nothing
+ * (#170). So Waiting folds too — it is the lane asking for a person — and the
+ * Landed lane folds the rows it draws open.
+ *
+ * **And every one of the three is bounded.** `progress.ts`'s trade is that only
+ * a lane holding a handful of cards may read a stream each, on a route that
+ * re-renders on every append, and neither of the two lanes added here is that
+ * lane on its own: Landed grows without bound and Waiting is documented at 45
+ * items. `railCandidates` is where both are cut — `LANDED_OPEN` rows and
+ * `WAITING_RAILS` cards — and it is a separate, pure function because the cut
+ * is the whole of what makes this cheap. Everything past it keeps the counts it
+ * has always had: a rail that is absent on a card is a smaller lie than a list
+ * view that reads fifty streams to draw it.
  *
  * A stream that will not read costs that card its detail and nothing else. The
  * card is still on the board with its counts, which is what it had before.
  */
-async function runningProgress(
+async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, GatePlan>,
 ): Promise<Map<string, RunProgress>> {
-  const live = tasks.filter((t) => COLUMN_OF[t.state] === "running" && t.runId !== null);
   const folded = await Promise.all(
-    live.map(async (t) => {
+    railCandidates(tasks).map(async ({ task, over }) => {
       try {
-        const events = await eventStore.read(t.runId as string);
-        return [t.taskId, foldProgress(events, plans.get(t.project))] as const;
+        const events = await eventStore.read(task.runId as string);
+        return [task.taskId, foldProgress(events, plans.get(task.project), over)] as const;
       } catch {
-        return [t.taskId, null] as const;
+        return [task.taskId, null] as const;
       }
     }),
   );
   return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null));
+}
+
+/** A card that draws a rail, and whether this run's pass landed. */
+export interface RailCandidate {
+  task: TaskCard;
+  /**
+   * The item **landed** — not merely that it is over.
+   *
+   * This is `foldProgress`'s third argument and the only thing that turns a
+   * point that recorded nothing from `pending` into `never-ran`, so it is held
+   * to `landedWithoutGatePoints`'s own anchor: *an item that landed is the case
+   * with no excuse — a change on the base branch went past every point on its
+   * way there* (`gate-audit.ts`). A **closed** item has that excuse and shares
+   * this lane anyway (`COLUMN_OF`): the pipeline stops at the first refusal
+   * (0041 §4), so a run refused at `prepared` and then closed by a person has
+   * later points that correctly did not run, and marking them our bug would
+   * draw the hatch on exactly the outcome the rail exists to report truthfully.
+   */
+  over: boolean;
+}
+
+/**
+ * Which cards draw a rail, in the order their lane draws them.
+ *
+ * Pure, and split from the read above, because both things it decides are
+ * claims a test can hold and neither is visible in a folded stream: **how many
+ * streams one render may read**, and **which cards may be called landed**.
+ *
+ * **The head of each lane, as that lane renders it.** `Landed` opens
+ * `LANDED_OPEN` rows of `toColumns`'s newest-first order and collapses the
+ * rest, so the same sort and the same count are taken here — and `runId` is
+ * filtered *after* the slice, not before, or a ticket closed on GitHub before
+ * any run was claimed would push the fold onto a row inside the `older`
+ * disclosure. Waiting is `readTasks`'s oldest-first order, which is what to do
+ * next, so its head is the head of the work.
+ */
+export function railCandidates(tasks: readonly TaskCard[]): RailCandidate[] {
+  const lane = (id: ColumnId) => tasks.filter((t) => COLUMN_OF[t.state] === id);
+  const open = [
+    ...lane("running"),
+    ...lane("waiting").slice(0, WAITING_RAILS),
+    ...lane("landed")
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, LANDED_OPEN),
+  ];
+  return open
+    .filter((t) => t.runId !== null)
+    .map((t) => ({ task: t, over: t.state === "landed" }));
 }
 
 /**
@@ -738,7 +821,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
-  const progress = await runningProgress(tasks, queued.plans);
+  const progress = await laneProgress(tasks, queued.plans);
   const now = Date.now();
   const fromLog = tasks.map((t) =>
     toCard(
