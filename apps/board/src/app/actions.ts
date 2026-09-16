@@ -41,7 +41,9 @@ import { editHash } from "@lingtai/conductor/prompt";
 import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
-import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
+import { currentRecipe, loadAllProjects, loadProject } from "@lingtai/conductor/projects";
+import { add } from "@lingtai/conductor/onboard";
+import { isPending, isRegistered } from "@lingtai/domain";
 import { requestRun, resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
 import { git } from "@lingtai/repo";
@@ -291,6 +293,57 @@ export async function declineBacklogFinding(input: {
  * No `onSha`, because there is no diff being agreed to: the thing being
  * decided is the conductor, and it has one state.
  */
+/**
+ * Finish onboarding a repository whose recipe has landed (#163).
+ *
+ * **The existing `lingtai add` path, and not a second one.** The wizard ends at
+ * a pull request; the board is a render and cannot follow one, and the daemon
+ * does not know repositories it has not onboarded — so nothing watches, and
+ * this button is the whole of the second half. It calls `add` with the slug and
+ * the base the `ProjectOnboardingStarted` recorded, which checks the
+ * installation and its scopes, reads the recipe from that branch, and appends
+ * `ProjectConfigured`. Past that the project is registered and every other part
+ * of the system treats it as one.
+ *
+ * **Pressable again, because the common answer is "not yet".** A missing recipe
+ * is a `RecipeMissingError` that `add` reports and returns 1 on, having written
+ * nothing at all — the same refusal a person would get in the terminal, in the
+ * same words, naming the file and the branch. Nothing changes and the card
+ * stays exactly where it was.
+ *
+ * `add` prints its progress, and here that output *is* the answer: the sentence
+ * that says why it will not go through is the last thing it said.
+ */
+export async function recheckProject(input: { project: string }): Promise<ActionResult> {
+  try {
+    if (!hasGitHubApp()) return { ok: false, detail: "no GitHub App configured" };
+    const state = (await loadAllProjects()).find((p) => p.project === input.project);
+    if (state === undefined) return { ok: false, detail: `nothing in the log about "${input.project}"` };
+    // Pressed twice, or pressed on a board rendered before somebody else's
+    // press: it is already live, which is not a failure and is not a reason to
+    // register it again.
+    if (isRegistered(state)) return { ok: true, detail: `${input.project} is already live` };
+    if (!isPending(state) || !state.owner || !state.base) {
+      return { ok: false, detail: `"${input.project}" was not recorded with an owner and a base — re-run the wizard, or lingtai add` };
+    }
+
+    const said: string[] = [];
+    const code = await add({ slug: `${state.owner}/${state.project}`, base: state.base }, (line) => said.push(line));
+    revalidatePath("/");
+    if (code === 0) return { ok: true, detail: `${input.project} is live` };
+    // **Everything it said, not the last line.** A missing recipe is one
+    // sentence and a permission gap is one line per scope with what each is
+    // for; a rule here about which line is the refusal would have to know
+    // which failure it was, and would be wrong the first time `add` grows
+    // another. This is the transcript a person would have read in the
+    // terminal.
+    const why = said.filter((l) => l.trim() !== "").join("\n");
+    return { ok: false, detail: why === "" ? `${input.project} could not be registered` : why };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message };
+  }
+}
+
 export async function resumeWork(): Promise<ActionResult> {
   try {
     const by = actor();

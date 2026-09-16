@@ -31,11 +31,11 @@ import {
   type TaskCard,
   type TaskState,
 } from "@lingtai/projector/task-view";
-import type { BlockDiagnosis, ProjectState } from "@lingtai/domain";
+import { type BlockDiagnosis, type ProjectState, isPending, isRegistered } from "@lingtai/domain";
 import { eventStore } from "@lingtai/event-store";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { passedOver, runnableNow } from "@lingtai/conductor/discover";
-import { loadProjects } from "@lingtai/conductor/projects";
+import { loadAllProjects } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/filter";
 import { projectFilter, type GatePlan, type ProjectFilter } from "@lingtai/conductor/filter";
 import { foldProgress, type RunProgress } from "./progress.ts";
@@ -281,6 +281,29 @@ export interface Board {
    * only ever offer the choice already made.
    */
   projects: string[];
+  /**
+   * The repositories that are recorded and not yet conducted — a card each,
+   * with `Recheck` (#163).
+   *
+   * Beside the columns rather than in one: a column holds work, and a pending
+   * project has none — it has not been asked GitHub for a queue and must not
+   * be, because it has no recipe to be asked under.
+   */
+  pending: PendingProject[];
+}
+
+/**
+ * A repository on its way in, as the card needs it.
+ *
+ * Not a `BoardCard`, for the reason `QueueProblem` is not one: every card on
+ * this board is a piece of work, and this is a repository. The fields are what
+ * `Recheck` is pressed with and what the reader is owed — which repository,
+ * whose, and the branch the recipe is expected on.
+ */
+export interface PendingProject {
+  project: string;
+  owner: string | null;
+  base: string | null;
 }
 
 /**
@@ -698,11 +721,12 @@ export async function loadBoard(project?: string): Promise<Board> {
   // `registered` is loaded once and read twice: every registered project names
   // a filter the bar can offer, and only the ones the filter admits are asked
   // for their queue.
-  const [tasks, registered, onBoard] = await Promise.all([
+  const [tasks, all, onBoard] = await Promise.all([
     readTasks(project === undefined ? {} : { project }).catch(emptyIfUnbuilt),
-    loadProjects().catch(() => []),
+    loadAllProjects().catch(() => []),
     onBoardProjects(),
   ]);
+  const { registered, pending } = splitRegister(all);
   const names = registered.map((p) => p.project).filter((p): p is string => p !== null);
 
   // Before the fold, because the fold needs what it learned: a card the backoff
@@ -740,6 +764,39 @@ export async function loadBoard(project?: string): Promise<Board> {
     // so narrowing it to the current choice would remove every way back to the
     // rest — including "all".
     projects: filterOptions(names, onBoard),
+    // Narrowed like the columns are: a filter on one repository is a reader
+    // saying which repository they are looking at, and another one arriving is
+    // as much a distraction here as a card would be.
+    // Narrowed like the columns are: a filter on one repository is a reader
+    // saying which repository they are looking at, and another one arriving is
+    // as much a distraction here as a card would be.
+    pending: pending.filter((p) => project === undefined || p.project === project),
+  };
+}
+
+/**
+ * The register, split into what can be conducted and what is on its way in.
+ *
+ * **The whole of #163's "must not break", in one place.** A pending project has
+ * no recipe, so `currentRecipe` throws for it — and `askProject` turns a throw
+ * into `unreadable`, which the Queued column renders as *the queue could not be
+ * listed*. One repository waiting for a pull request would therefore have put a
+ * red line on the board, which is the failure the design names: **one card that
+ * is not ready must not redden the page.** So the pending half never reaches
+ * `queuedCards` and is asked nothing at all.
+ *
+ * Exported and pure for that reason: the property worth pinning is *who gets
+ * asked*, and a test can hold it without a database or a GitHub.
+ */
+export function splitRegister(projects: readonly ProjectState[]): {
+  registered: ProjectState[];
+  pending: PendingProject[];
+} {
+  return {
+    registered: projects.filter(isRegistered),
+    pending: projects
+      .filter(isPending)
+      .map((p) => ({ project: p.project as string, owner: p.owner, base: p.base })),
   };
 }
 

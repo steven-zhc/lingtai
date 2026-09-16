@@ -7,7 +7,7 @@
  */
 import { RECIPE_PATH } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
-import { governing } from "../src/add.ts";
+import { governing } from "../src/onboard.ts";
 
 const recipe = (base: string) => `
 version: 1

@@ -16,6 +16,7 @@ import { AGENT, elapsed, type RunProgress } from "@/lib/progress";
 // reads, so the card and `lingtai status` say the same thing about a hold.
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import { loadProjects } from "@lingtai/conductor/projects";
+import { Pending } from "./pending.tsx";
 import { inWords } from "@lingtai/conductor/queue";
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
@@ -669,7 +670,7 @@ export default async function Page({
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, queueOrder, projects: filters }, registered, control] =
+  const [{ columns, queueOrder, projects: filters, pending }, registered, control] =
     await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()]);
   const total = columns.reduce((n, c) => n + c.cards.length, 0);
   // What the *cards* say, not what is registered: a card can outlive its
@@ -830,6 +831,13 @@ export default async function Page({
               limits are on `/spend`. */}
         </span>
       </div>
+
+      {/* Repositories that are recorded and not yet conducted (#163). Above
+          the lanes because it is not work — `loadProjects()` does not return
+          one and nothing will take a ticket from it — and absent entirely
+          when there are none, which is nearly always: this costs the ordinary
+          board no room at all. */}
+      <Pending projects={pending} />
 
       <div className="cols">
         {columns.map((col) => (

@@ -1373,6 +1373,43 @@ export const PromptEdited = z.object({
 
 
 /**
+ * A repository is on its way in: recorded, visible, and not yet conducted.
+ *
+ * **The stream's first event, and the only thing pending is** (`#163`). There
+ * is no projects table and no `pending` column: a project is the fold of
+ * `prj-{project}`, and `isRegistered` is `project !== null && configHash !==
+ * null`. `configHash` arrives with `ProjectConfigured`, which is appended only
+ * after a recipe has been read — so *this repository has a recipe* was already
+ * the line between registered and not, and pending is the other side of a line
+ * that has been there all along ([0022](../../../doc/decisions/0022-the-seams.md)).
+ *
+ * The wizard ends at a pull request, and a pull request is not a thing a page
+ * can wait on: the board is a render and the daemon does not know repositories
+ * it has not onboarded. So this event is what the wizard leaves behind, and
+ * `Recheck` on the card is what finishes it — *watch the PR and finish
+ * automatically* was removed rather than built.
+ *
+ * `slug` is `owner/repo` as it was given, because the owner is what a later
+ * `lingtai add` has to be told and the repository name alone cannot be reached.
+ * `base` is where the recipe is expected to land, and it is the branch
+ * `Recheck` reads: the same decision `ProjectConfigured.base` records, made
+ * before there was a file to copy it from.
+ *
+ * `by` is `human:<id>`, as every decision here is recorded
+ * ([0007](../../../doc/decisions/0007-dual-runtime.md)). It is an OS username today and
+ * a verified identity later — recorded now so the line becomes trustworthy
+ * without being rewritten.
+ */
+export const ProjectOnboardingStarted = z.object({
+  /** `owner/repo`, as the wizard was given it. */
+  slug: z.string(),
+  /** The branch the recipe is expected on, and the one `Recheck` reads. */
+  base: z.string(),
+  /** Who asked for it — `human:<id>`. */
+  by: z.string(),
+});
+
+/**
  * The recipe as resolved from origin/<base>, hashed so replays can be compared.
  *
  * Two fields were added after the fact, and both for the same reason: what was
@@ -1584,6 +1621,7 @@ export const EVENTS = {
   DiscussionAnswered,
   DiscussionHeld,
   PromptEdited,
+  ProjectOnboardingStarted,
   ProjectConfigured,
   ProjectRefused,
   ProjectRecovered,

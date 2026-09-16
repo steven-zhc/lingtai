@@ -40,7 +40,7 @@ import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
-import { add } from "./add.ts";
+import { add } from "@lingtai/conductor/onboard";
 import { approveCommand } from "./approve.ts";
 import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";

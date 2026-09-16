@@ -16,7 +16,7 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 57 types
+## event — 58 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -37,7 +37,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions/0022-the-seams.md)), `RETIRED` in the same file |
 | discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
 | prompt (1) | `PromptEdited` |
-| project & queue (6) | `QueueChanged` `RunRequested` `ProjectConfigured` `ProjectRefused` `ProjectRecovered` `Reconciled` |
+| project & queue (7) | `QueueChanged` `RunRequested` `ProjectOnboardingStarted` `ProjectConfigured` `ProjectRefused` `ProjectRecovered` `Reconciled` |
 | extension (1) | `PluginFailed` |
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload
@@ -68,6 +68,16 @@ apart from *this process is too old for a recipe that is fine*. It is not
 `DispatchRefused`, which is about tiers and is appended after a claim that a
 refusing pass never reaches. A run that `runOnce` stops before its claim is not
 a `ProjectRefused` either.
+
+A project is **pending** between `ProjectOnboardingStarted` and
+`ProjectConfigured` (`#163`): recorded, visible on the board, and conducted by
+nothing. There is no flag and no table — `isRegistered` is `project !== null &&
+configHash !== null`, `configHash` arrives only with a recipe that was read, and
+so *this repository has a recipe* was already the line. `loadProjects()` has
+filtered on it since before pending existed, which is why the daemon needed no
+guard. The board draws a card with `Recheck` on it, and `Recheck` runs
+`lingtai add`'s own path; nothing watches the pull request, by decision
+([the onboarding wizard](design/the-onboarding-wizard.md)).
 
 ## stream — 7 prefixes, unbounded instances
 

@@ -212,6 +212,21 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .tab:hover { color: var(--ink); border-color: var(--rule-2); }
 .tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
 
+/* Repositories on their way in (#163) — recorded, and not yet conducted.
+
+   A strip above the lanes rather than a lane of its own. It is not work, and
+   it is the state a repository is in for a few minutes once: a permanent fifth
+   column for it would cost the four that carry the board some width for ever.
+   Drawn only when there is one, so the ordinary board is exactly what it was. */
+.pending {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--rule);
+  padding: 11px 10px 12px;
+}
+.pending .cards { flex-direction: row; flex-wrap: wrap; }
+.pending .card { flex: 0 1 22rem; }
+.pending code { font-family: var(--mono); font-size: 11px; }
+
 .cols {
   /* Flex rather than equal grid tracks, because since #81 the lanes are not
      equal: Landed is a list of one-line rows and does not need a card's width,

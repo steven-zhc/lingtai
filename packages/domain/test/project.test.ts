@@ -6,7 +6,14 @@
  * a clock (0027) — every answer here comes from the stream alone.
  */
 import { describe, expect, it } from "vitest";
-import { type PassObservation, passTransition, reduceProject, refusalText } from "../src/project.ts";
+import {
+  type PassObservation,
+  isPending,
+  isRegistered,
+  passTransition,
+  reduceProject,
+  refusalText,
+} from "../src/project.ts";
 import { makeStream } from "./support.ts";
 
 const REFUSAL = 'lingtai: .lingtai/config.yaml on main is not valid:\n  env: Unrecognized key: "refuseHosts"';
@@ -110,5 +117,65 @@ describe("a pass's refusal, on the project stream", () => {
       version: p.events.length + 1,
     });
     expect(reduceProject(p.events).refused?.detail).toBe(REFUSAL);
+  });
+});
+
+/**
+ * Pending, which is one side of a line that was already drawn (#163).
+ *
+ * `isRegistered` reads `configHash`, and `configHash` only ever arrives with a
+ * recipe that was read — so a repository the wizard has recorded and whose
+ * recipe has not landed is *not registered* without anything new being asked.
+ * What these pin is that the new event does not accidentally make it one, and
+ * that the two questions never both answer yes.
+ */
+describe("a repository on its way in", () => {
+  const started = () => {
+    const event = makeStream("prj-esctest");
+    const events = [
+      event("ProjectOnboardingStarted", {
+        slug: "steven-zhc/esctest",
+        base: "develop",
+        by: "human:steven",
+      }),
+    ];
+    return { event, events };
+  };
+
+  it("is named, owned and pointed at a branch, and is not registered", () => {
+    const state = reduceProject(started().events);
+
+    expect(state.project).toBe("esctest");
+    expect(state.owner).toBe("steven-zhc");
+    expect(state.base).toBe("develop");
+    // The one field that decides it, and the one the wizard cannot supply:
+    // there is no recipe to hash yet.
+    expect(state.configHash).toBeNull();
+    expect(isRegistered(state)).toBe(false);
+    expect(isPending(state)).toBe(true);
+  });
+
+  it("becomes live through ProjectConfigured, and stops being pending in the same fold", () => {
+    const { event, events } = started();
+    events.push(
+      event("ProjectConfigured", {
+        project: "esctest",
+        owner: "steven-zhc",
+        base: "develop",
+        configHash: "h",
+        fromSha: "s",
+      }),
+    );
+    const state = reduceProject(events);
+
+    expect(isRegistered(state)).toBe(true);
+    expect(isPending(state)).toBe(false);
+  });
+
+  /** Nothing has been recorded at all: neither question says yes. */
+  it("is neither, on a stream nothing has been appended to", () => {
+    const state = reduceProject([]);
+    expect(isRegistered(state)).toBe(false);
+    expect(isPending(state)).toBe(false);
   });
 });

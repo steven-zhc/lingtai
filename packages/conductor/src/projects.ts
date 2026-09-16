@@ -7,7 +7,7 @@
  */
 import { PROJECT_STREAM_PREFIX, projectStream } from "@lingtai/domain";
 import { type ResolvedRecipe, resolveRecipe } from "@lingtai/recipe";
-import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
+import { type ProjectState, isPending, isRegistered, reduceProject } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
@@ -38,10 +38,38 @@ export async function loadProject(
   return isRegistered(state) ? state : null;
 }
 
-export async function loadProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
+/**
+ * Every project stream folded, registered or not.
+ *
+ * The board needs both halves and must not read the log twice to get them
+ * (#163); everything that conducts wants `loadProjects` below and nothing else.
+ */
+export async function loadAllProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
   const streams = await listProjectStreams();
-  const states = await Promise.all(streams.map((s) => store.read(s).then(reduceProject)));
-  return states.filter(isRegistered);
+  return Promise.all(streams.map((s) => store.read(s).then(reduceProject)));
+}
+
+/**
+ * The projects a conductor may take work from.
+ *
+ * **`isRegistered` is the guard, and it predates anything it guards against.**
+ * A repository that has been recorded and whose recipe has not landed yet
+ * (`ProjectOnboardingStarted`, #163) has no `configHash`, so it does not come
+ * back from here — the daemon needs no new check, and `test/projects.test.ts`
+ * pins that rather than adding one.
+ */
+export async function loadProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
+  return (await loadAllProjects(store)).filter(isRegistered);
+}
+
+/**
+ * The repositories on their way in: recorded, and no recipe read yet.
+ *
+ * Only the board asks. Nothing here reaches GitHub — a pending project has no
+ * recipe to resolve, and `currentRecipe` would throw rather than answer.
+ */
+export async function loadPendingProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
+  return (await loadAllProjects(store)).filter(isPending);
 }
 
 

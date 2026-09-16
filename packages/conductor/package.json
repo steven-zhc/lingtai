@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./claim": "./src/claim.ts",
     "./projects": "./src/projects.ts",
+    "./onboard": "./src/onboard.ts",
     "./decide": "./src/approve.ts",
     "./ask": "./src/ask.ts",
     "./discover": "./src/discover.ts",

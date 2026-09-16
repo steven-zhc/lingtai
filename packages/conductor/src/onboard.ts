@@ -21,6 +21,14 @@
  * branch and adopts the `repo.base` it finds; given a flag the recipe
  * contradicts, it refuses and names both, because a person typed something
  * specific and must not be silently overridden.
+ *
+ * **In the conductor rather than in the CLI, because it has two callers**
+ * (#163). The board's `Recheck` finishes a pending project by reading the
+ * recipe from the base branch and appending `ProjectConfigured` — which is
+ * precisely this function, and a second implementation of it behind a button
+ * would be two ways of registering a project, free to disagree about the base,
+ * the permissions checked, or what is said when there is still no recipe there.
+ * `lingtai add` is still the command; this is what it runs.
  */
 import { projectStream } from "@lingtai/domain";
 import {
@@ -42,7 +50,7 @@ import {
 } from "@lingtai/github";
 import { githubApp } from "@lingtai/env";
 import { eventStore } from "@lingtai/event-store";
-import { passCeiling } from "@lingtai/conductor";
+import { passCeiling } from "./filter.ts";
 
 export interface AddOptions {
   slug: string;

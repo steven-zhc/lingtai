@@ -65,6 +65,21 @@ export function applyProject(state: ProjectState, event: Envelope): ProjectState
 
   switch (event.type) {
 
+    /**
+     * The stream's first event, and the whole of *pending* (#163).
+     *
+     * It records everything a `Recheck` needs and deliberately not
+     * `configHash`: that field is what `isRegistered` reads, and it may only
+     * arrive with a recipe that was actually read. So the fold that follows
+     * this event is a project the board can name, list and act on, and one
+     * `loadProjects()` does not return.
+     */
+    case "ProjectOnboardingStarted": {
+      const d = event.data as PayloadOf<"ProjectOnboardingStarted">;
+      const [owner, repo] = splitSlug(d.slug);
+      return { ...state, ...at, project: repo, owner, base: d.base };
+    }
+
     case "ProjectConfigured": {
       const d = event.data as PayloadOf<"ProjectConfigured">;
       return {
@@ -96,9 +111,34 @@ export function reduceProject(events: readonly Envelope[]): ProjectState {
   return events.reduce(applyProject, emptyProject);
 }
 
+/**
+ * `owner/repo` as two, keeping the repository name whatever precedes it.
+ *
+ * The stream is named for the repository (`prj-{repo}`), so the half after the
+ * slash is the half that has to be right; a slug with no slash is a repository
+ * name with no owner recorded, which is the state a project registered before
+ * `ProjectConfigured` carried one is already in.
+ */
+function splitSlug(slug: string): [owner: string | null, repo: string] {
+  const cut = slug.lastIndexOf("/");
+  return cut === -1 ? [null, slug] : [slug.slice(0, cut), slug.slice(cut + 1)];
+}
+
 /** Whether this stream has ever been configured. */
 export function isRegistered(state: ProjectState): boolean {
   return state.project !== null && state.configHash !== null;
+}
+
+/**
+ * Whether this repository is on its way in — recorded, and no recipe read yet.
+ *
+ * The complement of `isRegistered` over the streams that exist, and it is that
+ * rather than a flag on purpose (#163): the two are one line drawn once, so a
+ * project cannot be both and cannot be neither. The daemon asks the first
+ * question and the board asks both.
+ */
+export function isPending(state: ProjectState): boolean {
+  return state.project !== null && state.configHash === null;
 }
 
 /** What one pass saw of a project: refused, and why — or looked at and not refused. */
