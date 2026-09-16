@@ -31,6 +31,7 @@ Three kinds of thing live here, and the distinction matters.
 | [`reference.md`](reference.md) | Every term, and everything currently in it — counted. |
 | [`roadmap.md`](roadmap.md) | Six phases, each with an exit criterion that is a fact. The backlog, with issue numbers. |
 | [`design.md`](design.md) | How the system is meant to work, as a whole. Rewritten as it changes. |
+| [`design/1.0.md`](design/1.0.md) | **The 1.0 target, whole.** What ships, where it lives, the two processes and their commands, the store, upgrade and uninstall, what 1.0 is not, and the work in order. Read this before any other design file — the rest are its parts. |
 | [`design/`](design/) | One surface per file: what it is for, what it got wrong, and the rule that came out of it. The mockups are private artifacts and are linked, never inlined — **a picture of a decision is not the decision**, and only the decision belongs in the repository. |
 | [`decisions/`](decisions/) | One decision per file, with its context and its consequences. **Append-only in spirit** — a decision that turns out wrong gets a new file that supersedes it, not an edit. |
 | [`experiments/`](experiments/) | Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument. |
