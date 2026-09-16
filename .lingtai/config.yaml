@@ -494,12 +494,14 @@ runtime:
   # that was only `pnpm typecheck && pnpm test` — failures short and specific, so
   # 2000 characters was a whole one rather than a fragment. **It is not the
   # default here any more** (#171): `build` is `typecheck && test && test:db`
-  # since #158, and a failure there is the capture — its start and its last 60
-  # lines, 8000 bytes (`EVIDENCE_LINES`/`EVIDENCE_BYTES`), of which vitest spends most on `✓`
+  # since #158, and a failure there is the capture — its last 60 lines, up to
+  # 8000 bytes (`EVIDENCE_LINES`/`EVIDENCE_BYTES`), and up to 2000 more of its
+  # start on top when it does not all fit, of which vitest spends most on `✓`
   # before the `FAIL`. The default quotes two ends of that, 1000 characters each,
   # and one `toEqual` on a four-key object is already 775 from its ` FAIL ` to the
   # end: a longer diff or a second failing test and the prompt never names the
-  # test or the assertion. So `8200` is the capture whole plus the
+  # test or the assertion. So `10200` is the capture whole — both parts and the
+  # line counting what is elided between them — plus the
   # `… exited 1 after …` line in front of it, and the head-and-tail elision is
   # only for evidence that did not come from a command's capture — a review's
   # findings, an integrator's refusal. `attempts.test.ts` reads this number and
@@ -509,7 +511,7 @@ runtime:
   # — five, against a reviewer told to report only what it can write a failure
   # scenario for — and `diff` is what that reviewer is shown before truncation.
   budget:
-    evidence: 8200
+    evidence: 10200
     attempts: 5
     findings: 5
     diff: 400000

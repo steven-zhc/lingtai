@@ -513,7 +513,7 @@ describe("attemptBrief", () => {
     expect(output.split("\n").slice(-60).join("\n")).not.toContain("TS2322");
     expect(evidence).toContain("error TS2322: Type 'number' is not assignable");
     expect(evidence).toContain("Found 201 errors in 201 files.");
-    expect(evidence.length).toBeLessThanOrEqual(EVIDENCE_BYTES + 100);
+    expect(evidence.length).toBeLessThanOrEqual(EVIDENCE_BYTES * 1.25 + 200);
 
     const own = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
     const recipe = Number(/^  budget:\n    evidence: (\d+)$/m.exec(own)?.[1]);

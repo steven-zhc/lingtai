@@ -116,7 +116,39 @@ describe("tail", () => {
     expect(kept).toContain("line 499");
     expect(kept).not.toContain("line 100");
     expect(kept).toMatch(/…\d+ characters elided here/);
-    expect(kept.length).toBeLessThanOrEqual(400);
+    expect(kept.length).toBeLessThanOrEqual(400 + 100 + 80);
+  });
+
+  it("keeps an output whole and unmarked when its start and its last lines meet", () => {
+    for (const length of [61, 80, 120]) {
+      const text = Array.from({ length }, (_, i) => `line ${i}`).join("\n");
+      expect(tail(text)).toBe(text);
+    }
+  });
+
+  it("keeps the last lines it kept before it kept a start, which is where vitest's first FAIL is", () => {
+    const diff = (name: string) => [
+      ` FAIL  packages/event-store/test/store.test.ts > ${name}`,
+      ...Array.from({ length: 26 }, (_, i) => `-   "field${i}": "${"x".repeat(100)}",`),
+    ];
+    const text = [
+      ...Array.from({ length: 200 }, (_, i) => ` ✓ packages/conductor/test/run-once-${i}.test.ts (48 tests) 12034ms`),
+      ...diff("appends"),
+      ...diff("reads back"),
+      " Test Files  1 failed | 200 passed (201)",
+      "      Tests  2 failed | 2400 passed (2402)",
+      "   Duration  370.12s",
+      " ELIFECYCLE  Test failed. See above for more details.",
+      "ELIFECYCLE  Command failed with exit code 1.",
+    ].join("\n");
+    const last = text.split("\n").slice(-60).join("\n");
+    expect(last.length).toBeGreaterThan(6_000);
+    expect(last).toContain("> appends");
+
+    const kept = tail(text);
+    expect(kept).toContain(last);
+    expect(kept).toContain(" ✓ packages/conductor/test/run-once-0.test.ts");
+    expect(kept.length).toBeLessThanOrEqual(8_000 * 1.25 + 80);
   });
 
   it("caps bytes as well as lines, because one line can be a megabyte", () => {

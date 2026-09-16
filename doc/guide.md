@@ -434,8 +434,9 @@ quotes verbatim. What fits is quoted whole; what does not is quoted as **two
 ends**, the first `evidence/2` characters and the last, with the middle elided
 and counted (#171). So at the default each end is **1000** characters, and the
 number to size against is not the failure but *the capture it sits in*: a
-command gate stores the exit line and, of its output, the start (up to 2000
-bytes) and the last 60 lines, 8000 bytes in all. `tsc` puts its first error in
+command gate stores the exit line and, of its output, the last 60 lines (up
+to 8000 bytes) and, when that is not all of it, up to 2000 bytes of its start on
+top. `tsc` puts its first error in
 the start — under `pnpm -r` after a preamble of every package it checked — and
 vitest puts its
 ` FAIL ` and `AssertionError` near the tail — but one `toEqual` on a four-key
@@ -444,7 +445,7 @@ a second failing test pushes the first one into the elided middle, where the
 prompt never names the test or the assertion. **A failure in the middle of its
 output is the case two ends of 2000 cannot carry.** This repository's gate is
 `pnpm typecheck && pnpm test && pnpm test:db`, so its recipe sets `evidence:
-8200` — the whole capture and the line in front of it — and says so; the
+10200` — the whole capture and the line in front of it — and says so; the
 default was sized for `typecheck && test` alone, *"failures short and specific,
 so 2000 characters was a whole one rather than a fragment."* An agent that
 cannot see the failure repeats it, and the ticket buys another agent. The other three —

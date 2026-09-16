@@ -136,8 +136,13 @@ export function plain(text: string): string {
  *
  * **And the start, when it does not all fit** (#171): whole lines from the top,
  * up to N of them and a quarter of `bytes`, then a line counting what was
- * elided, then the end in what is left — `bytes` in all, so the payload bound
- * is unchanged. The
+ * elided, then the end. The end is exactly what this kept before it kept a
+ * start — the last N lines, capped at `bytes` — and the start comes on top of
+ * it rather than out of it, so the payload bound is `bytes` and a quarter. Out
+ * of it would have been a second failure in place of the first: the last 60
+ * lines of a vitest run with two diffs are 6000 bytes, its first `FAIL` is in
+ * them, and a start of `✓` lines pushed it out. A start and an end that meet
+ * are the output whole, and carry no marker for a cut that did not happen. The
  * end alone is right for vitest, which prints its `FAIL` last, and wrong for
  * `tsc`, which prints its first error first: under `pnpm -r typecheck` in this
  * repository that error is line 32, 1125 bytes in, and 200 errors after it put
@@ -149,20 +154,19 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
   const all = trimmed.split("\n");
   if (all.length <= lines && trimmed.length <= bytes) return trimmed;
 
+  const last = all.slice(-lines).join("\n");
+  const end = last.length <= bytes ? last : last.slice(-bytes);
+  const from = trimmed.length - end.length;
   let first = 0;
-  for (let used = 0; first < lines && first < all.length && used + all[first]!.length + 1 <= bytes / 4; first++) {
+  for (let used = 0; first < lines && used + all[first]!.length + 1 <= Math.min(bytes / 4, from); first++) {
     used += all[first]!.length + 1;
   }
-  if (first === 0) {
-    const kept = all.slice(-lines).join("\n");
-    return kept.length <= bytes ? kept : `…${kept.slice(-bytes)}`;
-  }
+  if (first === 0) return last.length <= bytes ? last : `…${end}`;
   const head = all.slice(0, first).join("\n");
-  const rest = all.slice(Math.max(first, all.length - lines)).join("\n");
-  // The marker's own length is reserved rather than measured: it holds a count.
-  const room = Math.max(0, bytes - head.length - 80);
-  const end = rest.length <= room ? rest : rest.slice(-room);
-  const elided = trimmed.length - head.length - end.length - 2;
+  // Between the two: the newline after the start, and the one before the end
+  // when the end begins at a line.
+  const elided = from - head.length - 1 - (trimmed[from - 1] === "\n" ? 1 : 0);
+  if (elided <= 0) return trimmed;
   return [head, `…${elided} characters elided here; the start and the end are kept…`, end].join("\n");
 }
 
