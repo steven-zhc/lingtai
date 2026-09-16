@@ -58,6 +58,28 @@ describe("the list", () => {
     expect(out).toContain("already onboarded");
   });
 
+  it("shows a repository whose name another owner's project has without offering it", () => {
+    const out = html({
+      state: "listed",
+      picker: {
+        ...picker,
+        installations: [
+          {
+            ...picker.installations[0]!,
+            installation: installation({ id: 9, account: "acme" }),
+            repositories: [
+              { owner: "acme", repo: "lingtai", private: true, slug: "acme/lingtai", onboarded: "taken", takenBy: "steven-zhc" },
+            ],
+          },
+        ],
+      },
+      logUnanswered: null,
+    });
+
+    expect(out).not.toContain("repo=acme%2Flingtai");
+    expect(out).toContain("already steven-zhc/lingtai");
+  });
+
   it("offers nothing while the log cannot say what is already onboarded", () => {
     const out = html({ state: "listed", picker, logUnanswered: "connection refused" });
 

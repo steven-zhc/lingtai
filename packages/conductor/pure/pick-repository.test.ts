@@ -161,6 +161,48 @@ describe("listRepositories", () => {
     expect(!choice.ok && choice.why).toMatch(/lingtai add <owner>\/lingtai/);
   });
 
+  it("does not offer a same-named repository on another account when the project's owner is recorded", async () => {
+    const reader = fakeReader([
+      { id: 7, account: "steven-zhc", repositories: ["lingtai"] },
+      { id: 9, account: "acme", repositories: ["lingtai"] },
+    ]);
+
+    const picker = await listRepositories({
+      reader,
+      projects: [project("lingtai", "steven-zhc", "abc")],
+      installUrl: INSTALL,
+    });
+
+    expect(picker.installations.map((l) => l.repositories[0]!.onboarded)).toEqual(["registered", "taken"]);
+    const choice = choose(picker, "acme/lingtai");
+    expect(choice).toMatchObject({ ok: false, why: /already steven-zhc\/lingtai/ });
+  });
+
+  it("does not call an ownerless project onboarded under the one account left when another will not answer", async () => {
+    const reader = fakeReader(
+      [
+        { id: 7, account: "steven-zhc", repositories: ["lingtai"] },
+        { id: 9, account: "acme", repositories: ["lingtai"] },
+      ],
+      [7],
+    );
+
+    const picker = await listRepositories({ reader, projects: [project("lingtai", null, "abc")], installUrl: INSTALL });
+
+    expect(picker.installations[1]!.repositories[0]!.onboarded).toBe("unrecorded");
+    const choice = choose(picker, "acme/lingtai");
+    expect(choice).toMatchObject({ ok: false, why: /cannot tell which it is/ });
+    expect(!choice.ok && choice.why).not.toMatch(/already onboarded/);
+  });
+
+  it("still calls an ownerless project onboarded when one account has the name and every installation answered", async () => {
+    const reader = fakeReader([{ id: 7, account: "steven-zhc", repositories: ["lingtai"] }]);
+
+    const picker = await listRepositories({ reader, projects: [project("lingtai", null, "abc")], installUrl: INSTALL });
+
+    expect(picker.installations[0]!.repositories[0]!.onboarded).toBe("registered");
+  });
+
   it("names the missing scopes individually", async () => {
     const reader = fakeReader([
       { id: 7, account: "steven-zhc", permissions: { issues: "read", metadata: "read" }, repositories: ["lingtai"] },

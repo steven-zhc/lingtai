@@ -18,7 +18,7 @@
  */
 import Link from "next/link";
 import { offerCreation } from "@lingtai/conductor/create-app";
-import { type Choice, type Picker, choose, listRepositories, unrecorded } from "@lingtai/conductor/pick-repository";
+import { type Choice, type Picker, choose, listRepositories, taken, unrecorded } from "@lingtai/conductor/pick-repository";
 import { loadAllProjects } from "@lingtai/conductor/projects";
 import type { ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
@@ -236,6 +236,10 @@ function Listed({
                 {r.onboarded === "unrecorded" ? (
                   <>
                     <code>{r.slug}</code> — {unrecorded(r)}
+                  </>
+                ) : r.onboarded === "taken" ? (
+                  <>
+                    <code>{r.slug}</code> — {taken(r)}
                   </>
                 ) : r.onboarded !== null ? (
                   <>

@@ -50,12 +50,19 @@ export interface ListedRepository extends VisibleRepository {
    * confusion about one repository.
    *
    * `unrecorded` is a project of this name registered before owners were, when
-   * the App can see that name under more than one account: the log cannot say
-   * which of them it is, so neither is called onboarded, and neither is offered
+   * the App cannot vouch that this is the only account with that name — it can
+   * see the name under more than one, or an installation would not answer: the
+   * log cannot say which it is, so none is called onboarded, and none is offered
    * — a project is keyed by the name, so onboarding either writes to that one
    * stream.
+   *
+   * `taken` is a project of this name recorded under another owner, named in
+   * `takenBy`. It is not this repository, and it is not offered either: `add`
+   * would write this repository onto that project's stream.
    */
-  onboarded: "registered" | "pending" | "unrecorded" | null;
+  onboarded: "registered" | "pending" | "unrecorded" | "taken" | null;
+  /** The owner of the project that already has this name, when `onboarded` is `taken`. */
+  takenBy?: string;
 }
 
 export interface ListedInstallation {
@@ -99,16 +106,18 @@ function onboardedAs(
   projects: readonly ProjectState[],
   repo: VisibleRepository,
   owners: ReadonlySet<string>,
-): ListedRepository["onboarded"] {
-  // A project is keyed by the repository's name, and `owner` is null on one
-  // registered before it was recorded — so a null owner matches on the name,
-  // and only says which repository it is when one account has that name.
-  const found = projects.find(
-    (p) => same(p.project, repo.repo) && (p.owner === null || same(p.owner, repo.owner)),
-  );
-  if (found === undefined) return null;
-  if (found.owner === null && owners.size > 1) return "unrecorded";
-  return found.configHash !== null ? "registered" : "pending";
+  everyAnswered: boolean,
+): Pick<ListedRepository, "onboarded" | "takenBy"> {
+  // A project is keyed by the repository's name, whoever owns it — so the
+  // match is on the name, and the owner only decides whether it is this one.
+  const found = projects.find((p) => same(p.project, repo.repo));
+  if (found === undefined) return { onboarded: null };
+  if (found.owner !== null && !same(found.owner, repo.owner)) return { onboarded: "taken", takenBy: found.owner };
+  // `owner` is null on one registered before it was recorded, and then it only
+  // says which repository it is when every installation answered and one
+  // account has that name.
+  if (found.owner === null && (owners.size > 1 || !everyAnswered)) return { onboarded: "unrecorded" };
+  return { onboarded: found.configHash !== null ? "registered" : "pending" };
 }
 
 /** Every repository the App can see, installation by installation. */
@@ -137,6 +146,7 @@ export async function listRepositories(options: {
       owners.set(name, (owners.get(name) ?? new Set()).add(r.owner.toLowerCase()));
     }
   }
+  const everyAnswered = fetched.every((f) => f.unanswered === null);
   const listed = fetched.map(({ installation, repositories, unanswered }) => ({
     installation,
     unanswered,
@@ -144,7 +154,7 @@ export async function listRepositories(options: {
     repositories: repositories.map((r) => ({
       ...r,
       slug: `${r.owner}/${r.repo}`,
-      onboarded: onboardedAs(options.projects, r, owners.get(r.repo.toLowerCase())!),
+      ...onboardedAs(options.projects, r, owners.get(r.repo.toLowerCase())!, everyAnswered),
     })),
   }));
   return { installations: listed, installUrl: installLink(options.installUrl) };
@@ -200,7 +210,9 @@ export function choose(picker: Picker, input: string): Choice {
             ? `${found.slug} is already onboarded.`
             : found.onboarded === "pending"
               ? `${found.slug} is already on its way in — its recipe pull request has not landed yet.`
-              : unrecorded(found),
+              : found.onboarded === "taken"
+                ? taken(found)
+                : unrecorded(found),
         fix: null,
         gaps: [],
       };
@@ -248,9 +260,17 @@ export function choose(picker: Picker, input: string): Choice {
 /** What a name registered before owners were can and cannot say, and how to settle it. */
 export function unrecorded(repo: { repo: string }): string {
   return (
-    `A project called ${repo.repo} was registered before owners were recorded, and the App can see ${repo.repo} ` +
-    `under more than one account, so Lingtai cannot tell which it is. ` +
+    `A project called ${repo.repo} was registered before owners were recorded, and the App cannot see ${repo.repo} ` +
+    `under exactly one account with every installation answering, so Lingtai cannot tell which it is. ` +
     `Run pnpm lingtai add <owner>/${repo.repo} for the one it is, and that owner is recorded.`
+  );
+}
+
+/** Why a repository whose name another owner's project already has is not offered. */
+export function taken(repo: { slug: string; repo: string; takenBy?: string }): string {
+  return (
+    `A project called ${repo.repo} is already ${repo.takenBy}/${repo.repo}, and a project is keyed by its name, ` +
+    `so onboarding ${repo.slug} would write onto that project's stream.`
   );
 }
 
