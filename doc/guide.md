@@ -428,14 +428,24 @@ one was not is not blind, and does not wait: a repair jumps the backoff, and so
 does `lingtai now`.
 
 **`runtime.budget.*`** — this is what a run is **given**, not what it may spend,
-and it is the setting most worth tuning to your own gates. `evidence: 2000`
-characters is the slice of one earlier failure's output the next prompt quotes
-verbatim, and the recipe justifies the number by naming the gate it has to
-carry: *"This repository's gate is `pnpm typecheck && pnpm test`, whose failures
-are short and specific, so 2000 characters is a whole failure rather than a
-fragment of one."* If your `proposed` gate emits a 5,000-character stack trace,
-2000 gives the second attempt a fragment, and **an agent that cannot see the
-failure repeats it, and the ticket buys another agent.** The other three —
+and it is the setting most worth tuning to your own gates. `evidence` — default
+`2000` characters — is how much of one earlier failure's output the next prompt
+quotes verbatim. What fits is quoted whole; what does not is quoted as **two
+ends**, the first `evidence/2` characters and the last, with the middle elided
+and counted (#171). So at the default each end is **1000** characters, and the
+number to size against is not the failure but *the capture it sits in*: a
+command gate stores the exit line and the last 60 lines, up to 8000 bytes, of
+its output. `tsc` puts its first error in the head, and vitest puts its
+` FAIL ` and `AssertionError` near the tail — but one `toEqual` on a four-key
+object is already 775 characters from ` FAIL ` to the end, and a longer diff or
+a second failing test pushes the first one into the elided middle, where the
+prompt never names the test or the assertion. **A failure in the middle of its
+output is the case two ends of 2000 cannot carry.** This repository's gate is
+`pnpm typecheck && pnpm test && pnpm test:db`, so its recipe sets `evidence:
+8200` — the whole capture and the line in front of it — and says so; the
+default was sized for `typecheck && test` alone, *"failures short and specific,
+so 2000 characters was a whole one rather than a fragment."* An agent that
+cannot see the failure repeats it, and the ticket buys another agent. The other three —
 `attempts: 5` rows, `findings: 5`, `diff: 400000` bytes — answer the same
 question at different scales.
 

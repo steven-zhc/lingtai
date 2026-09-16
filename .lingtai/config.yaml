@@ -490,22 +490,26 @@ runtime:
   # files nobody read together, and this is the repository that has to be able
   # to read its own policy without opening its own source.
   #
-  # Every value is the default. `evidence` was sized for a gate that was only
-  # `pnpm typecheck && pnpm test` — failures short and specific, so 2000
-  # characters was a whole one rather than a fragment. **It is not sized against
-  # that any more** (#171): `build` is `typecheck && test && test:db` since #158,
-  # and a failure there is the capture's tail — up to 60 lines, 8000 bytes, of
-  # which vitest spends most on `✓` before the `FAIL`. So 2000 is two ends of
-  # that, 1000 characters each with the middle elided and counted: the head
-  # holds the command line and a `tsc` error, the tail a `vitest` failure and its
-  # summary. A gate whose failure sits in the middle of its output is one this
-  # number is too small for. **Since the cold reviewer
+  # Every value but `evidence` is the default. `evidence` was sized for a gate
+  # that was only `pnpm typecheck && pnpm test` — failures short and specific, so
+  # 2000 characters was a whole one rather than a fragment. **It is not the
+  # default here any more** (#171): `build` is `typecheck && test && test:db`
+  # since #158, and a failure there is the capture's tail — up to 60 lines, 8000
+  # bytes (`EVIDENCE_LINES`/`EVIDENCE_BYTES`), of which vitest spends most on `✓`
+  # before the `FAIL`. The default quotes two ends of that, 1000 characters each,
+  # and one `toEqual` on a four-key object is already 775 from its ` FAIL ` to the
+  # end: a longer diff or a second failing test and the prompt never names the
+  # test or the assertion. So `8200` is the capture whole plus the
+  # `… exited 1 after …` line in front of it, and the head-and-tail elision is
+  # only for evidence that did not come from a command's capture — a review's
+  # findings, an integrator's refusal. `attempts.test.ts` reads this number and
+  # quotes a failure of that shape with it. **Since the cold reviewer
   # went on at `proposed` (2026-09-09) two of these bind that did not before:**
   # `findings` is how many of a review's findings the next attempt is told about
   # — five, against a reviewer told to report only what it can write a failure
   # scenario for — and `diff` is what that reviewer is shown before truncation.
   budget:
-    evidence: 2000
+    evidence: 8200
     attempts: 5
     findings: 5
     diff: 400000

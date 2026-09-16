@@ -10,7 +10,9 @@
  * fold over envelopes, and a decision that needed a database would be the wrong
  * shape.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { EVIDENCE_BYTES, tail } from "@lingtai/actions";
 import {
   type Envelope,
   type EventType,
@@ -383,35 +385,77 @@ describe("attemptBrief", () => {
    * **#171.** A vitest run prints every passing file before the first `FAIL`, so
    * the head of a failed build is the part that says nothing went wrong. A fix
    * round on #169 was shown 2000 characters of `✓` and committed nothing.
+   *
+   * The fixture is the build's evidence as `runCommand` stores it — the exit
+   * line, then `tail()` of the output — with two failing tests, a diff of an
+   * ordinary event payload each, and `pnpm`'s `ELIFECYCLE` after the summary, so
+   * the first ` FAIL ` sits well over 1000 characters from the end. Quoted at
+   * this repository's own `runtime.budget.evidence`, it names the test and the
+   * assertion; quoted at the default's two ends, it does not, and that is the
+   * reason the recipe does not use the default.
    */
-  it("quotes a vitest-shaped failure past the budget with its FAIL still in it", () => {
+  it("quotes a vitest-shaped failure at this recipe's budget with its FAIL still in it", () => {
     const passes = Array.from(
       { length: 200 },
-      (_, i) => ` ✓ packages/conductor/test/file-${i}.test.ts (12 tests) 340ms`,
-    ).join("\n");
-    const failure = [
-      " FAIL  packages/event-store/test/store.test.ts > appends",
-      "Error: connect ENETUNREACH 2600:1f18::1:5432",
-      " Test Files  1 failed | 200 passed (201)",
-    ].join("\n");
-    const output = `pnpm test:db exited 1 after 370s\n\n${passes}\n${failure}`;
-    expect(output.length).toBeGreaterThan(BUDGET.evidence * 4);
-
-    const run = stream("run-1");
-    const attempts = priorAttempts([
-      stream("wi-lingtai-169")("WorkItemClaimed", claim("run-1")),
-      stream("wi-lingtai-169")("WorkItemReleased", { runId: "run-1", reason: "gates refused the diff" }),
-    ]);
-    attempts[0]!.outcome = attemptOutcome(
-      [run("GateFailed", { ...gate("build"), evidence: output, findings: [] })],
-      BUDGET,
+      (_, i) => ` ✓ packages/conductor/test/run-once-${i}.test.ts > the merge lane > holds at a human action (48 tests | 3 skipped) 12034ms`,
     );
-    const brief = attemptBrief(attempts, BUDGET);
+    const failed = (name: string) => [
+      ` FAIL  packages/event-store/test/store.test.ts > ${name}`,
+      "AssertionError: expected { type: 'WorkItemClaimed', …(3) } to deeply equal { type: 'WorkItemClaimed', …(3) }",
+      "",
+      "- Expected",
+      "+ Received",
+      "",
+      "  {",
+      ...Array.from({ length: 5 }, (_, i) => `-   "field${i}": "wi-lingtai-169/run-42ae0c78-1c72-480b-9b1e-be4bd6b0a819/expected-${i}",\n+   "field${i}": "wi-lingtai-169/run-42ae0c78-1c72-480b-9b1e-be4bd6b0a819/received-${i}",`),
+      "  }",
+      "",
+      ` ❯ packages/event-store/test/store.test.ts:88:21`,
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯",
+    ];
+    const output = [
+      ...passes,
+      ...failed("appends"),
+      ...failed("reads back"),
+      " Test Files  1 failed | 200 passed (201)",
+      "      Tests  2 failed | 2400 passed (2402)",
+      "   Start at  23:06:11",
+      "   Duration  370.12s",
+      " ELIFECYCLE  Test failed. See above for more details.",
+      "ELIFECYCLE  Command failed with exit code 1.",
+    ].join("\n");
+    const evidence = `pnpm typecheck && pnpm test && pnpm test:db exited 1 after 370.1s\n\n${tail(output)}`;
+    expect(evidence.length - evidence.indexOf(" FAIL  ")).toBeGreaterThan(1_000);
+    expect(tail(output)).toContain(" FAIL  packages/event-store/test/store.test.ts > appends");
 
+    const own = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
+    const recipe = Number(/^  budget:\n    evidence: (\d+)$/m.exec(own)?.[1]);
+    expect(recipe).toBeGreaterThanOrEqual(EVIDENCE_BYTES);
+
+    const briefAt = (evidenceBudget: number) => {
+      const budget = { ...BUDGET, evidence: evidenceBudget };
+      const run = stream("run-1");
+      const attempts = priorAttempts([
+        stream("wi-lingtai-169")("WorkItemClaimed", claim("run-1")),
+        stream("wi-lingtai-169")("WorkItemReleased", { runId: "run-1", reason: "gates refused the diff" }),
+      ]);
+      attempts[0]!.outcome = attemptOutcome(
+        [run("GateFailed", { ...gate("build"), evidence, findings: [] })],
+        budget,
+      );
+      return attemptBrief(attempts, budget);
+    };
+
+    const brief = briefAt(recipe);
     expect(brief).toContain("FAIL  packages/event-store/test/store.test.ts > appends");
-    expect(brief).toContain("connect ENETUNREACH");
-    expect(brief).toContain("pnpm test:db exited 1 after 370s");
-    expect(brief).toContain(`…elided ${output.length - BUDGET.evidence} of ${output.length} characters here`);
+    expect(brief).toContain("AssertionError: expected { type: 'WorkItemClaimed'");
+    expect(brief).toContain("exited 1 after 370.1s");
+    expect(brief).not.toContain("elided");
+
+    const atDefault = briefAt(BUDGET.evidence);
+    expect(atDefault).not.toContain("FAIL  packages/event-store/test/store.test.ts > appends");
+    expect(atDefault).toContain(`…elided ${evidence.length - BUDGET.evidence} of ${evidence.length} characters here`);
   });
 
   /** The other runner: `tsc` prints its errors first, and a tail-only clamp loses them. */
