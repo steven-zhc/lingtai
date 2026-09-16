@@ -70,8 +70,25 @@ the pass already fetches, so asking costs no extra request. **Null is not
 zero**: a GitHub that says nothing about dependencies degrades to the behaviour
 from before this existed rather than passing everything over.
 
-The body becomes the agent's prompt, so it is written to be worked from rather
-than filed. House style, as in #52, #55, #58:
+**A ticket has two readers and they want opposite things.** The body becomes the
+agent's prompt, so it is written to be worked from rather than filed — and a
+person deciding what to work next reads twenty of them. **A four-row table, then
+the evidence.** The table is the person's; everything under it is the agent's,
+and none of it is cut to make room.
+
+    | | |
+    |---|---|
+    | **Problem** | one sentence, and the failure rather than the area |
+    | **Want** | what is true when this is done |
+    | **Fix** | the shape of it, not the diff |
+    | **Watch out** | the trap — what costs money, or fails silently, or has already been got wrong once |
+
+`Watch out` is the row that earns the table. It holds what used to sit in the
+third paragraph, where a tired reader never reached it: *this opens a second
+discussion and buys a second agent*, *tail-only fixes vitest and breaks tsc*.
+Leave the row out when there is no trap; never leave the trap in the prose.
+
+Then, under a rule, the evidence — house style as in #52, #55, #58:
 
 - Lead with the evidence — the seq numbers, the log excerpt, the exact output.
 - Say **why it stayed hidden**, when it did. That is usually the real finding.
