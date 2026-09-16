@@ -492,7 +492,14 @@ runtime:
   #
   # Every value is the default. `evidence` was sized for a gate that was only
   # `pnpm typecheck && pnpm test` — failures short and specific, so 2000
-  # characters is a whole one rather than a fragment. **Since the cold reviewer
+  # characters was a whole one rather than a fragment. **It is not sized against
+  # that any more** (#171): `build` is `typecheck && test && test:db` since #158,
+  # and a failure there is the capture's tail — up to 60 lines, 8000 bytes, of
+  # which vitest spends most on `✓` before the `FAIL`. So 2000 is two ends of
+  # that, 1000 characters each with the middle elided and counted: the head
+  # holds the command line and a `tsc` error, the tail a `vitest` failure and its
+  # summary. A gate whose failure sits in the middle of its output is one this
+  # number is too small for. **Since the cold reviewer
   # went on at `proposed` (2026-09-09) two of these bind that did not before:**
   # `findings` is how many of a review's findings the next attempt is told about
   # — five, against a reviewer told to report only what it can write a failure

@@ -77,8 +77,8 @@ export interface AttemptOutcome {
    * What refused, and what it said.
    *
    * `what` names the gate point and action (`proposed:build`) or the run's own
-   * ending (`the run itself (timeout)`); `text` is that output verbatim, up to
-   * `budget.evidence`. Null for a run with no recorded refusal at all.
+   * ending (`the run itself (timeout)`); `text` is that output verbatim, and
+   * the brief quotes its two ends up to `budget.evidence`. Null for a run with no recorded refusal at all.
    */
   evidence: { what: string; text: string } | null;
   /** From `RunFinished`. Null for a run that never got that far. */
@@ -389,11 +389,32 @@ export function attemptBrief(attempts: readonly PriorAttempt[], budget: PromptBu
   return lines.join("\n");
 }
 
-/** Verbatim, up to the bound. Truncation says so rather than trailing off. */
-function clamp(text: string, max: number): string {
+/**
+ * Verbatim, up to the bound, and **both ends of it** (#171). Truncation says so,
+ * and says how much, rather than trailing off.
+ *
+ * The head alone is right for `tsc`, which prints its errors first, and exactly
+ * wrong for `vitest`, which prints every passing file and *then* the failure: a
+ * fix round on #169 was handed 2000 characters of `✓` and spent 28 turns
+ * committing nothing, which is the correct response to a build shown passing.
+ * The tail alone trades one runner for the other. Keeping both is right for
+ * either, and for whatever else a recipe puts in a gate.
+ *
+ * The count is in the text because the text is all anyone gets — the prompt,
+ * and the page that shows the prompt `RunPrompted` recorded — and *two ends of
+ * a 40000-character failure* must not read as *a 2000-character failure*.
+ */
+export function clamp(text: string, max: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= max) return trimmed;
-  return `${trimmed.slice(0, max)}\n…truncated at ${max} characters.`;
+  const head = Math.ceil(max / 2);
+  const tail = max - head;
+  const elided = trimmed.length - max;
+  return [
+    trimmed.slice(0, head),
+    `…elided ${elided} of ${trimmed.length} characters here; the start and the end are shown…`,
+    tail > 0 ? trimmed.slice(-tail) : "",
+  ].join("\n");
 }
 
 /** One line, so a reason with a newline in it cannot break the table. */

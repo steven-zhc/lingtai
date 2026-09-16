@@ -21,6 +21,7 @@ import {
 import {
   attemptBrief,
   attemptOutcome,
+  clamp,
   priorAttempts,
   promptVersionFor,
   type PromptBudget,
@@ -372,10 +373,81 @@ describe("attemptBrief", () => {
 
     expect(rows).toHaveLength(BUDGET.attempts);
     expect(brief).toContain("3 earlier attempt(s), omitted");
-    expect(brief).toContain(`truncated at ${BUDGET.evidence} characters`);
+    expect(brief).toContain(`…elided ${10_000 - BUDGET.evidence} of 10000 characters here`);
     expect(brief.length).toBeLessThan(BUDGET.evidence + 3_000);
     // The one that would break the bound: an earlier run's output, pasted too.
     expect(brief).not.toContain("attempt 1 failed");
+  });
+
+  /**
+   * **#171.** A vitest run prints every passing file before the first `FAIL`, so
+   * the head of a failed build is the part that says nothing went wrong. A fix
+   * round on #169 was shown 2000 characters of `✓` and committed nothing.
+   */
+  it("quotes a vitest-shaped failure past the budget with its FAIL still in it", () => {
+    const passes = Array.from(
+      { length: 200 },
+      (_, i) => ` ✓ packages/conductor/test/file-${i}.test.ts (12 tests) 340ms`,
+    ).join("\n");
+    const failure = [
+      " FAIL  packages/event-store/test/store.test.ts > appends",
+      "Error: connect ENETUNREACH 2600:1f18::1:5432",
+      " Test Files  1 failed | 200 passed (201)",
+    ].join("\n");
+    const output = `pnpm test:db exited 1 after 370s\n\n${passes}\n${failure}`;
+    expect(output.length).toBeGreaterThan(BUDGET.evidence * 4);
+
+    const run = stream("run-1");
+    const attempts = priorAttempts([
+      stream("wi-lingtai-169")("WorkItemClaimed", claim("run-1")),
+      stream("wi-lingtai-169")("WorkItemReleased", { runId: "run-1", reason: "gates refused the diff" }),
+    ]);
+    attempts[0]!.outcome = attemptOutcome(
+      [run("GateFailed", { ...gate("build"), evidence: output, findings: [] })],
+      BUDGET,
+    );
+    const brief = attemptBrief(attempts, BUDGET);
+
+    expect(brief).toContain("FAIL  packages/event-store/test/store.test.ts > appends");
+    expect(brief).toContain("connect ENETUNREACH");
+    expect(brief).toContain("pnpm test:db exited 1 after 370s");
+    expect(brief).toContain(`…elided ${output.length - BUDGET.evidence} of ${output.length} characters here`);
+  });
+
+  /** The other runner: `tsc` prints its errors first, and a tail-only clamp loses them. */
+  it("quotes a tsc-shaped failure past the budget with its first error still in it", () => {
+    const errors = [
+      "src/attempts.ts(393,10): error TS2322: Type 'number' is not assignable to type 'string'.",
+      ...Array.from(
+        { length: 200 },
+        (_, i) => `src/generated-${i}.ts(1,1): error TS6133: 'unused' is declared but its value is never read.`,
+      ),
+      "Found 201 errors in 201 files.",
+    ].join("\n");
+
+    const quoted = clamp(errors, BUDGET.evidence);
+
+    expect(quoted).toContain("error TS2322: Type 'number' is not assignable");
+    expect(quoted).toContain("Found 201 errors in 201 files.");
+    expect(quoted).toContain(`…elided ${errors.length - BUDGET.evidence} of ${errors.length} characters here`);
+  });
+
+  /** What fits is quoted whole, and says nothing about truncation it did not do. */
+  it("leaves an output within the budget whole and unmarked", () => {
+    const short = "pnpm typecheck exited 2 after 9s\n\nsrc/x.ts(1,1): error TS2304";
+    expect(clamp(short, BUDGET.evidence)).toBe(short);
+    expect(clamp("x".repeat(BUDGET.evidence), BUDGET.evidence)).not.toContain("elided");
+  });
+
+  /** The bound is still a bound: the two ends together are the budget, not twice it. */
+  it("keeps exactly the budget's worth of characters across the two ends", () => {
+    const text = `${"a".repeat(5_000)}${"b".repeat(5_000)}`;
+    const quoted = clamp(text, 101);
+    const [head, marker, tail] = quoted.split("\n");
+
+    expect(head).toBe("a".repeat(51));
+    expect(tail).toBe("b".repeat(50));
+    expect(marker).toBe("…elided 9899 of 10000 characters here; the start and the end are shown…");
   });
 
   /** A reason with a newline in it must not break the table it sits in. */
