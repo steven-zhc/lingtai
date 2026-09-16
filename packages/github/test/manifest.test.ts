@@ -18,6 +18,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { GitHubError } from "../src/app.ts";
+import { ACTED_ON } from "../src/webhook.ts";
 import {
   buildManifest,
   convertManifest,
@@ -31,12 +32,11 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 /**
  * 0006's Decision table, as the ADR publishes it.
  *
- * `Issues | read + write` is `issues: write` in a manifest, and the last row —
- * `Webhooks | issues, push` — is not a permission at all but the events the App
- * subscribes to. Both are read out of the same table, because both are things
- * the manifest declares and the ADR decided.
+ * `Issues | read + write` is `issues: write` in a manifest. The last row —
+ * `Webhooks | issues, push` — is not a permission at all, and is skipped: the
+ * events are read against `webhook.ts` instead (below).
  */
-async function documented(): Promise<{ permissions: Record<string, string>; events: string[] }> {
+async function documented(): Promise<{ permissions: Record<string, string> }> {
   const md = await readFile(`${root}doc/decisions/0006-github-app.md`, "utf8");
   const rows = [...md.matchAll(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/gm)]
     .map((m) => ({ name: m[1]!.trim(), level: m[2]!.trim() }))
@@ -44,15 +44,11 @@ async function documented(): Promise<{ permissions: Record<string, string>; even
   if (rows.length === 0) throw new Error("0006 has no permission table — the manifest has no source");
 
   const permissions: Record<string, string> = {};
-  let events: string[] = [];
   for (const row of rows) {
-    if (row.name.toLowerCase() === "webhooks") {
-      events = [...row.level.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]!);
-      continue;
-    }
+    if (row.name.toLowerCase() === "webhooks") continue;
     permissions[row.name.toLowerCase().replace(/\s+/g, "_")] = row.level.includes("write") ? "write" : "read";
   }
-  return { permissions, events };
+  return { permissions };
 }
 
 describe("the manifest asks for what 0006 decided", () => {
@@ -62,11 +58,17 @@ describe("the manifest asks for what 0006 decided", () => {
     expect(defaultPermissions()).toEqual(permissions);
   });
 
-  it("subscribes to exactly the ADR's events", async () => {
-    const { events } = await documented();
+  /**
+   * **Against the receiver, not the ADR.** 0006's row says `issues, push`, and
+   * `webhook.ts:100` drops every `push` on purpose — so a subscription read off
+   * the ADR asks GitHub to deliver what the receiver throws away. The events
+   * worth subscribing to are the ones a delivery can be acted on for.
+   */
+  it("subscribes to exactly the events the receiver acts on, and not push", () => {
     const manifest = buildManifest({ name: "lingtai-x", redirectUrl: "http://127.0.0.1:3200/created" });
 
-    expect(manifest.default_events).toEqual(events);
+    expect(manifest.default_events).toEqual(Object.keys(ACTED_ON));
+    expect(manifest.default_events).not.toContain("push");
   });
 
   it("is one team's own App, not a public one (0045)", () => {

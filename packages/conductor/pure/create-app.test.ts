@@ -749,7 +749,7 @@ describe("what the screen offers", () => {
    * changed nothing that snapshot can see. Reading it alone, the still-open
    * board tab answers *nothing is configured*, draws the button, and the
    * exchange replaces both lines with a second App's while the screen says
-   * *Created*: every call fails as not-installed after the next restart, and
+   * *Created*: every call fails as not-installed from then on, and
    * the working App's key is the one GitHub will not hand over twice.
    */
   it("reads the env file it would write, not only the environment it started with", async () => {

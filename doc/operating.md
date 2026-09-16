@@ -177,19 +177,11 @@ The permissions below are in the manifest, so they are not a question and
 cannot be answered wrong, which is the whole of why 0006's founding failure
 cannot happen on that path.
 
-It ends by telling you to restart **two** processes, because the App ID is read
-from `process.env` once at process start and neither restart is the other's:
-
-```bash
-# the board — stop it where you started it, then start it again. Until you do,
-# it answers "no GitHub App configured" to Approve and Close, whatever the
-# file now says (apps/board/src/app/actions.ts).
-pnpm --filter @lingtai/board dev
-
-# the daemon. `lingtai restart` drains the pass in flight and starts a daemon
-# on the new credentials — and it does not touch the board.
-pnpm lingtai restart "picking up the new App"
-```
+Nothing has to be restarted afterwards. `hasGitHubApp()` and `githubApp()` read
+the App ID and the key path from `.env.local` on disk whenever the environment
+does not set them, so the App is usable at once — by the board that wrote it and
+by a daemon that was already running. A variable set in the environment still
+wins over the file.
 
 **What is below is the fallback, and it stays one.** A person may prefer to
 create the App themselves; an organisation role that cannot create an App has

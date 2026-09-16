@@ -1,10 +1,11 @@
 /**
  * Where configuration values come from. No database, no network.
  */
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolvePath } from "../src/index.ts";
+import { envFiles, githubApp, hasGitHubApp, resolvePath } from "../src/index.ts";
 
 describe("resolvePath", () => {
   /**
@@ -35,5 +36,47 @@ describe("resolvePath", () => {
     expect(fromRoot.endsWith("lingtai-app.pem")).toBe(true);
     expect(fromRoot.startsWith("/")).toBe(true);
     expect(fromRoot).not.toContain("packages/env");
+  });
+});
+
+/**
+ * #169. The board's setup page writes `LINGTAI_GITHUB_APP_ID` into `.env.local`
+ * while the board — and a daemon — are already running. The key was always
+ * re-read per call; the id came from `process.env`, fixed at start, so the page
+ * that had just written the App was answered *no GitHub App configured* by its
+ * own next click. The id is now read the way the key is.
+ */
+describe("the App is read from the env file as it is now", () => {
+  it("sees an App written to the file after this module was loaded", async () => {
+
+    const dir = await mkdtemp(join(tmpdir(), "lingtai-env-"));
+    const envLocal = join(dir, ".env.local");
+    const key = join(dir, "app.pem");
+    const env = {};
+
+    expect(hasGitHubApp(env, [envLocal])).toBe(false);
+
+    await writeFile(key, "not a real key");
+    await writeFile(envLocal, `LINGTAI_GITHUB_APP_ID=4242\nLINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=${key}\n`);
+
+    expect(hasGitHubApp(env, [envLocal])).toBe(true);
+    expect(githubApp(env, [envLocal])).toEqual({ appId: "4242", privateKey: "not a real key", keySource: key });
+  });
+
+  it("lets a variable in the environment win over the file", async () => {
+
+    const dir = await mkdtemp(join(tmpdir(), "lingtai-env-"));
+    const envLocal = join(dir, ".env.local");
+    await writeFile(envLocal, "LINGTAI_GITHUB_APP_ID=1\nLINGTAI_GITHUB_APP_PRIVATE_KEY=from-file\n");
+
+    const app = githubApp({ LINGTAI_GITHUB_APP_ID: "2" }, [envLocal]);
+    expect(app.appId).toBe("2");
+    expect(app.privateKey).toBe("from-file");
+  });
+
+  it("reads no file for an environment it was handed, unless told which", async () => {
+    // `lingtai doctor` reports on the environment it is given (see `githubApp`).
+    expect(hasGitHubApp({})).toBe(false);
+    expect(envFiles().map((f) => f.split("/").pop())).toEqual([".env.local", ".env"]);
   });
 });

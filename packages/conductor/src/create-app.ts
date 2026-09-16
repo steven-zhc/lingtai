@@ -29,24 +29,20 @@
  * because `CreatedApp` drops it at the seam. Nothing returned from this module
  * carries a key, so nothing a page renders or a log records can.
  *
- * **It ends on a restart and not on "ready".** `githubApp()` re-reads the key
- * file on every call, so a PEM that lands at a configured path is picked up by
- * a running process — but `LINGTAI_GITHUB_APP_ID` is read from `process.env`,
- * which was fixed when that process started. The private key hot-reloads and
- * the App ID does not, so a credential minted at runtime works by half, and a
- * page that said *ready* would be claiming a state only the process that
- * received it is in. `lingtai restart`
- * ([0042](../../../doc/decisions/0042-restart-is-a-command.md)) is the honest
- * ending for the daemon — and **only** for the daemon: it drains and starts
- * that process and leaves the board, which is where this flow runs, holding the
- * environment it started with. The ending names both, because an operator given
- * one command for two processes runs it, clicks Approve, and is told *no GitHub
- * App configured* by the board that just said *Created*.
+ * **It ends on "usable now", and names no restart.** `githubApp()` always
+ * re-read the key file per call, but read `LINGTAI_GITHUB_APP_ID` from
+ * `process.env`, fixed when the process started — so a credential minted at
+ * runtime worked by half, and the board that wrote it went on answering *no
+ * GitHub App configured*. `@lingtai/env` now reads the id and the key path from
+ * `.env.local` on disk when the environment does not set them, so the App is
+ * usable the moment the file is written, in every process, including a daemon
+ * that was already running. `lingtai restart` restarts the daemon and not the
+ * board, and a page naming it would promise what it does not do.
  *
- * **And the same snapshot is why the guard reads the file.** *Is an App already
- * configured* decides whether the button is drawn and whether a returning code
- * is applied, and its answer lives in `.env.local` — the file this writes —
- * where `process.env` only holds what was in it at start. `configuration()` is
+ * **And the guard reads the file too.** *Is an App already configured* decides
+ * whether the button is drawn and whether a returning code is applied, and its
+ * answer lives in `.env.local` — the file this writes — where `process.env`
+ * only holds what was in it at start. `configuration()` is
  * that question, asked of the file, of the environment and of the log, each for
  * the one thing it knows.
  */
@@ -432,7 +428,7 @@ async function convertAndWrite(
   // from a second tab and `.env.local`, the key path and the install link are
   // all rewritten to an App no repository has installed, with the screen saying
   // *Created* and nothing saying what was replaced. Every GitHub call fails as
-  // not-installed after the next restart.
+  // not-installed from the next call.
   //
   // It refuses **before** the conversion, which is the only place it can: the
   // App is on GitHub either way — a person minted it there before this redirect
@@ -579,7 +575,7 @@ async function convertAndWrite(
     notRecorded === null
       ? " It is on Lingtai's log, so this page will not offer to create another: finish this one."
       : ` The log did not record it either (${notRecorded}), so this page will stop offering to ` +
-        "create another only until Lingtai is restarted — after that, do not press it: the App exists.";
+        "create another only while this board keeps running — once it stops, do not press it: the App exists.";
 
   const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT;
 
@@ -639,7 +635,7 @@ async function convertAndWrite(
     notRecorded === null
       ? null
       : `the log did not record it (${notRecorded}), so this page may offer to create ` +
-        "another App until Lingtai is restarted. Do not — the App exists.";
+        "another App once this board process stops. Do not — the App exists.";
 
   return {
     ok: true,
@@ -814,9 +810,8 @@ export interface Configured {
   /** The App's name on GitHub, when the log agrees this is that App. */
   slug: string | null;
   /**
-   * `environment` — this process can use it now.
-   * `file` — the env file names it and this process started before it did, so
-   * it takes a restart (0042).
+   * Which source named it: the process environment, or an env file on disk.
+   * Both are read per call by `githubApp()`, so either is usable as it stands.
    */
   where: "environment" | "file";
   /** The env file, when that is what says so — the page names it. */
@@ -839,9 +834,8 @@ export interface Configured {
  * appended the moment the conversion returns — before the key file and before
  * the env file, deliberately, so that a write that fails leaves a record behind
  * it. Folding it into *configured* therefore reported exactly the creations
- * that did not finish as Apps a restart would pick up: the key write failed,
- * the page said *created here, run `lingtai restart`*, and the restart found
- * `LINGTAI_GITHUB_APP_ID` unset and nothing changed.
+ * that did not finish as configured ones, with no key on this machine behind
+ * them.
  *
  * **And `configured` reads the file, not only `process.env`.** The file is what
  * the write targets, and `@lingtai/env` parses it once at import — so a process

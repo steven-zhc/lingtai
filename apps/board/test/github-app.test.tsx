@@ -8,11 +8,11 @@
  *
  * Three claims, and each is a line in the ticket:
  * **an App already configured is offered no second one**, **the key is a path
- * and never bytes**, and **the ending names the restart of every process that
- * is now stale** rather than telling an operator the daemon is ready — which it
- * is not, because the App ID was fixed when that process started. There are two
- * such processes and `pnpm lingtai restart` is one of them: it is the daemon's,
- * and the board drawing this page has to be restarted on its own.
+ * and never bytes**, and **no screen names `lingtai restart`**. The App ID and
+ * key path are read from `.env.local` on every call, so a created App is usable
+ * at once in this board and in a running daemon — and `lingtai restart`
+ * restarts only the daemon, so a sentence naming it would promise a fix for the
+ * board it cannot deliver.
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -106,19 +106,8 @@ describe("an App that already exists", () => {
     expect(out).toContain("https://github.com/apps/lingtai-steven/installations/new");
   });
 
-  /**
-   * Written to the env file, and this process started before that line. Saying
-   * *configured* alone would be true of the file and false of both processes
-   * that have to use it, so the sentence is the restart.
-   *
-   * **And `lingtai restart` is the daemon's alone.** It drains and starts the
-   * conductor (0042) and does not touch the board serving this page — so a
-   * screen naming it by itself sends the operator to the one command that
-   * cannot fix what they are reading: the board goes on answering *no GitHub
-   * App configured* to Approve and Close (`actions.ts:73`, `:200`), and running
-   * it again shows the identical sentence.
-   */
-  it("names the env file and both restarts, the board's first, when the file is what says so", () => {
+  /** Named by the file: usable as it stands, since the file is read per call. */
+  it("names the env file, and no restart, when the file is what says so", () => {
     const out = html({
       ...CONFIGURED,
       configured: {
@@ -130,12 +119,8 @@ describe("an App that already exists", () => {
     });
 
     expect(out).toContain("/repo/.env.local");
-    expect(out).toContain("pnpm --filter @lingtai/board dev");
-    expect(out).toContain("lingtai restart");
-    // The board is named as the stale process, and the daemon's command is not
-    // offered as this one's remedy.
-    expect(out).toContain("this board started before that line");
-    expect(out).toContain("does not restart this board");
+    expect(out).toContain("configured with app 1234567");
+    expect(out).not.toMatch(/restart/i);
   });
 });
 
@@ -145,9 +130,8 @@ describe("an App that already exists", () => {
  *
  * `GitHubAppCreated` is appended before the key file and the env file, so that
  * a write which fails leaves a record of the App it failed for. Rendered as a
- * configuration, that record turned exactly those failures into *created here,
- * run `lingtai restart`* — and the restart would find `LINGTAI_GITHUB_APP_ID`
- * unset and do nothing, with no sentence anywhere saying the key never landed.
+ * configuration, that record turned exactly those failures into *created here*,
+ * with no sentence anywhere saying the key never landed.
  */
 describe("an App minted here whose credentials never landed", () => {
   const UNFINISHED: Offer = {
@@ -222,33 +206,12 @@ describe("the ending", () => {
     },
   };
 
-  it("names lingtai restart and does not claim the running daemon has the App", () => {
+  it("says the App is usable now, and names no restart", () => {
     const out = html(CREATED);
 
-    expect(out).toContain("lingtai restart");
-    expect(out).toContain("Nothing running has this App yet");
-    expect(out).not.toMatch(/\bready\b/);
-  });
-
-  /**
-   * **The board is one of the two stale processes, and it is the one the person
-   * is looking at.** `pnpm lingtai restart` drains and starts the *daemon*
-   * (0042) and never touches this process, so an ending that named it alone
-   * would be handing the operator a command that cannot fix what they just
-   * read: they run it, click Approve, and `approveCard`'s `hasGitHubApp()`
-   * answers *no GitHub App configured* off the same snapshot
-   * (`apps/board/src/app/actions.ts:73`, `closeCard` at `:200`) — with nothing
-   * on the page or in the docs naming the board, so they run it again and see
-   * the identical sentence.
-   */
-  it("names the board's own restart, and says the daemon's command is not it", () => {
-    const out = html(CREATED);
-
-    expect(out).toContain("pnpm --filter @lingtai/board dev");
-    expect(out).toContain("this board included");
-    expect(out).toContain("it does not restart this board");
-    // The board's is first: it is the process drawing this page.
-    expect(out.indexOf("pnpm --filter @lingtai/board dev")).toBeLessThan(out.indexOf("lingtai restart"));
+    expect(out).toContain("nothing has to be restarted");
+    expect(out).not.toContain("lingtai restart");
+    expect(out).not.toContain("pnpm --filter @lingtai/board dev");
   });
 
   /** The path, never the key — a page cannot render what it was never handed. */
@@ -272,4 +235,60 @@ describe("the ending", () => {
     expect(out).toContain("the hour lapsed — start again");
     expect(out).toContain('action="/setup/github-app/start"');
   });
+});
+
+/**
+ * **No screen names `lingtai restart`** (#169). It restarts the daemon and not
+ * the board, and nothing here needs either: the env file is read per call. So
+ * every state the setup route can render is rendered and grepped.
+ */
+describe("every screen of the setup route", () => {
+  const minted = { appId: "1234567", slug: "lingtai-steven" };
+  const at = new Date("2026-09-15T10:05:00Z");
+  const screens: Record<string, Offer> = {
+    offering: OFFERING,
+    waiting: { ...OFFERING, outstanding: { name: "lingtai-steven", org: null, startedAt: at, state: "waiting" } },
+    lapsed: { ...OFFERING, outstanding: { name: "lingtai-steven", org: null, startedAt: at, state: "lapsed" } },
+    "configured, environment": {
+      ...OFFERING,
+      offered: false,
+      configured: { ...minted, where: "environment", file: null },
+      installUrl: "https://github.com/apps/lingtai-steven/installations/new",
+    },
+    "configured, file, by hand": {
+      ...OFFERING,
+      offered: false,
+      configured: { appId: "1234567", slug: null, where: "file", file: "/repo/.env.local" },
+    },
+    unfinished: { ...OFFERING, offered: false, minted },
+    unanswered: { ...OFFERING, offered: false, unanswered: "connection refused" },
+    created: {
+      ...OFFERING,
+      offered: false,
+      configured: { ...minted, where: "file", file: "/repo/.env.local" },
+      minted,
+      outcome: {
+        ok: true,
+        ...minted,
+        name: "lingtai-steven",
+        keyPath: "~/.ssh/lingtai-agent.private-key.pem",
+        envFile: "/repo/.env.local",
+        webhookActive: true,
+        warning: "the log did not record it (down)",
+        at,
+      },
+    },
+    "refused after minting": {
+      ...OFFERING,
+      offered: false,
+      minted,
+      outcome: { ok: false, refusal: "the env file could not be written", minted, at },
+    },
+  };
+
+  for (const [name, offer] of Object.entries(screens)) {
+    it(`${name}: does not name lingtai restart`, () => {
+      expect(html(offer)).not.toContain("lingtai restart");
+    });
+  }
 });

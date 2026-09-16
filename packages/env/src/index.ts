@@ -1,4 +1,4 @@
-import { config } from "dotenv";
+import { config, parse } from "dotenv";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -273,15 +273,66 @@ export function repoRoot(): string {
 }
 
 /**
+ * The env files `@lingtai/env` loads, in its order — first to name a value wins.
+ *
+ * The same two paths as the `config()` call at the top of this file, which reads
+ * them once. `appValue` reads them again on every call, for the three names
+ * below and no others.
+ */
+export function envFiles(): string[] {
+  return [resolve(root, ".env.local"), resolve(root, ".env")];
+}
+
+/**
+ * One of the App's three names: the environment's, or else the files' as they
+ * are **now** (#169).
+ *
+ * The private key was always re-read per call — `readFileSync` is inside
+ * `githubApp` — while the App ID came from `process.env`, which Next.js and
+ * dotenv both fill once, at start. So an App created at runtime by the board's
+ * setup page worked by half: the key landed and every process, the board that
+ * wrote it included, went on answering *no GitHub App configured*. Reading the
+ * id the way the key is read closes that, in every process, with nothing to
+ * restart.
+ *
+ * `process.env` keeps winning where it is set, so a deployment that supplies the
+ * variable directly is unaffected; an absent variable is a reason to look at the
+ * file rather than a verdict. A file that cannot be read says nothing.
+ */
+function appValue(name: string, from: NodeJS.ProcessEnv, files: readonly string[]): string | undefined {
+  const set = optional(name, from);
+  if (set) return set;
+  for (const file of files) {
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    const value = parse(text)[name];
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/**
  * `from` exists so that a caller which was *handed* an environment reports on
  * that one. `lingtai doctor` takes an environment as an argument and is supposed to
  * be a function of it; reading past it to `process.env` made its report partly
  * about the argument and partly about the machine, which showed up the moment
  * the operator configured a real App and a test asserting "not configured"
  * started failing for a reason that had nothing to do with the code.
+ *
+ * `files` follows the same rule: the env files on disk are consulted only when
+ * the environment is this process's own, since they are what that environment
+ * was loaded from. A caller handing in another environment gets no files unless
+ * it names them.
  */
-export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCredentials {
-  const appId = optional(`${PREFIX}GITHUB_APP_ID`, from);
+export function githubApp(
+  from: NodeJS.ProcessEnv = process.env,
+  files: readonly string[] = from === process.env ? envFiles() : [],
+): GitHubAppCredentials {
+  const appId = appValue(`${PREFIX}GITHUB_APP_ID`, from, files);
   if (!appId) {
     throw new Error(
       `${PREFIX}GITHUB_APP_ID is not set. ` +
@@ -290,8 +341,8 @@ export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCrede
           : "Copy .env.example to .env.local at the repo root and fill it in."),
     );
   }
-  const path = optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from);
-  const inline = optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from);
+  const path = appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from, files);
+  const inline = appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from, files);
 
   if (path) {
     return { appId, privateKey: readFileSync(resolvePath(path), "utf8"), keySource: path };
@@ -306,10 +357,17 @@ export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCrede
   );
 }
 
-/** Whether the App is configured at all, without throwing to find out. */
-export function hasGitHubApp(from: NodeJS.ProcessEnv = process.env): boolean {
+/**
+ * Whether the App is configured at all, without throwing to find out — asked of
+ * the environment and then of the env files as they are now, like `githubApp`.
+ */
+export function hasGitHubApp(
+  from: NodeJS.ProcessEnv = process.env,
+  files: readonly string[] = from === process.env ? envFiles() : [],
+): boolean {
   return Boolean(
-    optional(`${PREFIX}GITHUB_APP_ID`, from) &&
-      (optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from) || optional(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from)),
+    appValue(`${PREFIX}GITHUB_APP_ID`, from, files) &&
+      (appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`, from, files) ||
+        appValue(`${PREFIX}GITHUB_APP_PRIVATE_KEY`, from, files)),
   );
 }

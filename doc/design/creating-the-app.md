@@ -83,6 +83,15 @@ reaching config. It has two honest answers and the ticket must pick one:
 repository keeps finding — and the page would be claiming a state only one of
 two processes is in.
 
+**Neither was built, and the first was wrong.** A page naming `lingtai restart`
+names a command that restarts the daemon and not the board — the process that
+just wrote the credentials — so the next click still answers *no GitHub App
+configured* and running it again prints the same sentence. The asymmetry is
+closed at its source instead: `hasGitHubApp()` and `githubApp()` read the ID and
+the key path from `.env.local` on disk, per call, whenever `process.env` does
+not set them. The App is usable the moment it is written, in every process, and
+the page names no restart. `process.env` still wins where it is set.
+
 ### Two more questions that look like one, found while building it
 
 *Is an App configured here* is what decides whether the button is drawn, and it
@@ -167,7 +176,7 @@ decide whether to offer creation at all — the board already calls it twice.
     "pull_requests": "write",
     "metadata":      "read"
   },
-  "default_events":  ["issues", "push"],
+  "default_events":  ["issues"],             // not push: webhook.ts drops every one
   "redirect_url":    "http://127.0.0.1:<port>/created",
   "hook_attributes": { /* see below */ }
 }
@@ -187,7 +196,7 @@ than an error.
 
 ## Webhooks: say it rather than pre-fill a URL that cannot work
 
-`hook_attributes.url` is where GitHub will post `issues` and `push`. Lingtai's
+`hook_attributes.url` is where GitHub will post `issues`. Lingtai's
 receiver is `apps/board/src/app/api/webhook/route.ts` — and on `localhost:3200`
 **GitHub cannot reach it**.
 

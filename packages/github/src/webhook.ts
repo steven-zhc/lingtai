@@ -53,6 +53,17 @@ const ISSUE_ACTIONS = new Set([
   "edited",
 ]);
 
+/**
+ * Every event a delivery of can be acted on, with the actions that count.
+ *
+ * **This is the table an App's subscriptions are read against** (#169): the
+ * manifest asks GitHub for these events and no others, and
+ * `test/manifest.test.ts` reads this rather than a second copy. An event that is
+ * not here is one `verifyWebhook` drops — `push` is not, below — so subscribing
+ * to it asks GitHub to send what this system throws away.
+ */
+export const ACTED_ON: Readonly<Record<string, ReadonlySet<string>>> = { issues: ISSUE_ACTIONS };
+
 export function verifyWebhook(
   body: string,
   headers: Record<string, string | undefined>,
@@ -82,7 +93,7 @@ export function verifyWebhook(
   const project = payload.repository?.name;
   if (!project) return { ok: true, act: false, reason: `${event}: no repository`, delivery };
 
-  if (event === "issues" && payload.action && ISSUE_ACTIONS.has(payload.action)) {
+  if (payload.action && ACTED_ON[event]?.has(payload.action)) {
     return { ok: true, act: true, project, reason: `issues.${payload.action}`, delivery };
   }
 

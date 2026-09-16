@@ -18,15 +18,12 @@
  * is no URL a person can be sent to; `start/route.ts` is what serves the
  * self-submitting form, and `created/route.ts` is where GitHub comes back.
  *
- * **It ends on two restarts, and one of them is this board.** The key
- * hot-reloads and the App ID does not, so the process that has just written one
- * is still running without it — see `create-app.ts`, and
- * [0042](../../../../../../doc/decisions/0042-restart-is-a-command.md).
- * `lingtai restart` drains and starts the **daemon** and never touches this
- * process, so naming it alone would leave the board answering *no GitHub App
- * configured* to the next Approve with the remedy already spent
- * (`actions.ts:73`, `:200`). The screen names the board's own restart first,
- * because the board is the process the person is looking at.
+ * **It ends on the install link and names no restart.** `hasGitHubApp()` and
+ * `githubApp()` read `.env.local` as it is on disk, per call, so the App is
+ * usable the moment it is written — by this board's next Approve and by a daemon
+ * that was already running. An ending that said *now run `lingtai restart`*
+ * would name a command that restarts the daemon and not this board, beside a
+ * claim that it fixes both: #167's defect, one surface along.
  */
 import Link from "next/link";
 import { type Offer, offerCreation } from "@lingtai/conductor/create-app";
@@ -42,7 +39,7 @@ export default async function GitHubApp() {
  *
  * Exported and separate for the reason `TaskBody` is: what this page claims —
  * *an App already configured is never offered a second one*, *the key is a path
- * and never bytes*, *the ending names a restart* — are claims about the markup,
+ * and never bytes*, *no screen names a restart* — are claims about the markup,
  * and #101 is the ticket that settled that a fold alone cannot catch one.
  */
 export function GitHubAppScreen({ offer }: { offer: Offer }) {
@@ -113,7 +110,7 @@ function Permissions({ permissions }: { permissions: { name: string; level: stri
           </li>
         ))}
         <li>
-          <code>issues</code>, <code>push</code> — the events it subscribes to
+          <code>issues</code> — the one event it subscribes to, since a <code>push</code> delivery is one the receiver drops
         </li>
       </ul>
     </>
@@ -187,7 +184,7 @@ function Create({ offer }: { offer: Offer }) {
   );
 }
 
-/** The ending, and it names a restart rather than claiming the daemon is ready. */
+/** The ending: the App is usable now, and installing it is the next step. */
 function Created({
   outcome,
 }: {
@@ -213,30 +210,15 @@ function Created({
         </li>
       </ul>
       {outcome.warning === null ? null : <p className="refusal">{outcome.warning}</p>}
-      {/* The honest ending. `LINGTAI_GITHUB_APP_ID` is read from `process.env`
-          and fixed at start, so every process now running — this board and the
-          daemon both — still has the old answer. Saying "ready" here would be
-          claiming a state only one process is in.
-
-          **Two processes, and `lingtai restart` is only one of them.** That
-          command drains and starts the daemon (0042); it does not touch the
-          board serving this page, so a person told it alone restarts the
-          daemon, clicks Approve, and is answered *no GitHub App configured* by
-          `actions.ts:73` with nothing left to try. The board's own restart is
-          named first because it is the process they are looking at. */}
+      {/* No restart here. The App ID and the key path are read from the env
+          file on every call, so this board and a running daemon both have the
+          App from the moment it was written. */}
       <p className="note">
-        Nothing running has this App yet: the private key is re-read on every call, but the App ID
-        was fixed when each process started — <strong>this board included</strong>, so it will go on
-        answering <em>no GitHub App configured</em> until it is restarted. Stop the board where you
-        started it and run <code>pnpm --filter @lingtai/board dev</code> again.
+        This board and a daemon that is already running use it from now on — the env file is read
+        on every call, so nothing has to be restarted.
       </p>
       <p className="note">
-        Then the daemon, which is a different process and a different command:{" "}
-        <code>pnpm lingtai restart &quot;picking up the new App&quot;</code>. It drains the pass in
-        flight and starts a daemon on the new credentials; it does not restart this board.
-      </p>
-      <p className="note">
-        Then install it — <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>
+        Next, install it — <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>
           github.com/apps/{outcome.slug}
         </a>{" "}
         — and pick the repositories it may see. Creating is not installing.
@@ -248,12 +230,8 @@ function Created({
 /**
  * Already configured: the install link, and no offer to mint a second one.
  *
- * **`where` is about this process and never about the App.** The credentials
- * exist either way — what differs is whether the process drawing this page can
- * use them yet, since the key is re-read on every call and the App ID was fixed
- * at start. `file` is therefore a restart and not a repair — **the board's
- * restart**, since this process is the one that cannot see the line, with
- * `lingtai restart` beside it for the daemon, which is the other one.
+ * `where` only says which source named it: both are read on every call, so
+ * either way the App is usable by this board and the daemon as it stands.
  */
 function Configured({
   configured,
@@ -267,10 +245,7 @@ function Configured({
       <p className="note">
         {configured.where === "environment"
           ? `This Lingtai is configured with app ${configured.appId}.`
-          : `App ${configured.appId} is configured in ${configured.file}, and this board started before that ` +
-            "line was written, so it cannot use it yet: stop the board and run " +
-            "pnpm --filter @lingtai/board dev again. The daemon is the other process and the other " +
-            'command — pnpm lingtai restart "picking up the new App", which does not restart this board.'}{" "}
+          : `This Lingtai is configured with app ${configured.appId}, in ${configured.file}.`}{" "}
         Creation is not offered again: a second App would be one nothing is installed on.
       </p>
       {installUrl === null ? (
@@ -296,9 +271,8 @@ function Configured({
  * appended the moment GitHub returns the conversion — before the key file and
  * before the env file, so that a write which fails still leaves a record of the
  * App it failed for. Read as a configuration, that record turned the one
- * outcome it exists to describe into *created here, run `lingtai restart`* —
- * advice that does nothing, because there is no key on this machine for the
- * restart to pick up.
+ * outcome it exists to describe into *created here* — a claim with no key on
+ * this machine behind it.
  *
  * So it says what is true: the App is on GitHub, its private key was handed
  * over once during an exchange that did not finish, and the way out is a new
