@@ -168,8 +168,25 @@ its installation, so `lingtai add` can ask and answer that question at onboardin
 time instead of a day later. See
 [ADR 0006](decisions/0006-github-app.md).
 
-This part cannot be automated: creating an App is a browser step, and the
-private key it hands you is a real secret.
+**One click does steps 1, 2 and 4 of this section** (`#169`). Open the board
+with nothing configured and it links to `/setup/github-app`, which posts an App
+*manifest* to GitHub: you name the App on GitHub's own screen, press **Create
+GitHub App**, and GitHub hands the credentials back — the page writes the id,
+the webhook secret and the private key at `0600`, and never shows you the key.
+The permissions below are in the manifest, so they are not a question and
+cannot be answered wrong, which is the whole of why 0006's founding failure
+cannot happen on that path. It ends by telling you to run
+`pnpm lingtai restart "picking up the new App"`, because the App ID is read
+once at process start.
+
+**What is below is the fallback, and it stays one.** A person may prefer to
+create the App themselves; an organisation role that cannot create an App has
+no other path; and the manifest flow does not support **enterprise-owned**
+Apps at all. Installing it — step 3 — is the same either way.
+
+What cannot be automated on either path is the browser: a human presses
+*Create GitHub App*, by design, and the private key it hands you is a real
+secret.
 
 ### 1. Create the App
 

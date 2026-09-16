@@ -2018,3 +2018,23 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
   max-width: 82ch;
 }
 .policy .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--ink); }
+
+/* --- setting up -----------------------------------------------------------
+   The GitHub App, created from a manifest (#169). A form and not a card: the
+   three fields are the only choices on the page, because the permissions are
+   0006's table and are shown rather than asked about. */
+.setup { display: grid; gap: 1rem; max-width: 46rem; margin: 1rem 0; }
+.setup label { display: grid; gap: 0.25rem; }
+.setup label > span {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.setup input {
+  font: 400 13px/1.5 var(--mono);
+  padding: 5px 8px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+}
+.setup small { font-size: 11px; color: var(--muted); line-height: 1.5; }
