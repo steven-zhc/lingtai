@@ -141,27 +141,44 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
   };
 }
 
-/** A client that records what was asked of it, and answers the three calls the PR needs. */
-function recordingClient(project: string, over: { branchExists?: boolean } = {}) {
+/**
+ * A client that records what was asked of it, and answers the calls the PR needs.
+ *
+ * `setLabels` is left as `readOnlyClient` has it — throwing. Nothing here may
+ * reach it: a hold that replaces an issue's label set is the defect, not the
+ * feature, so the double refuses to be the thing that makes it look fine.
+ */
+function recordingClient(
+  project: string,
+  over: { branchExists?: boolean; recipeOnBranch?: boolean; pullOpen?: boolean } = {},
+) {
   const calls: { method: string; path: string; body?: unknown }[] = [];
-  const labelled: { issue: number; labels: readonly string[] }[] = [];
   const base = readOnlyClient(project);
+  const pull = { number: 7, html_url: `https://github.com/${OWNER}/${project}/pull/7` };
   const client: GitHubClient = {
     ...base,
+    fileAt: async () => (over.recipeOnBranch ? YAML : null),
     request: (async (method: string, path: string, body?: unknown) => {
       calls.push({ method, path, body });
       if (method === "GET" && path.includes("/git/ref/heads/")) {
         if (over.branchExists) return { ref: path };
         throw new GitHubError(404, path, "Not Found");
       }
-      if (path.endsWith("/pulls")) return { number: 7, html_url: `https://github.com/${OWNER}/${project}/pull/7` };
+      // The listing, which GitHub answers with an array however many there are.
+      if (method === "GET" && path.includes("/pulls?")) return over.pullOpen ? [pull] : [];
+      if (path.endsWith("/pulls")) return pull;
       return {};
     }) as GitHubClient["request"],
-    setLabels: async (n, labels) => {
-      labelled.push({ issue: n, labels });
-    },
   };
-  return { client, calls, labelled };
+  /** What `holdAll` asked GitHub to add, read back off the requests it made. */
+  const labelled = () =>
+    calls
+      .filter((c) => c.method === "POST" && /\/issues\/\d+\/labels$/.test(c.path))
+      .map((c) => ({
+        issue: Number(/\/issues\/(\d+)\/labels$/.exec(c.path)![1]),
+        labels: (c.body as { labels: string[] }).labels,
+      }));
+  return { client, calls, labelled, pull };
 }
 
 beforeAll(async () => {
@@ -235,9 +252,9 @@ describe("abandoning the wizard", () => {
    * **The rule the whole epic inherits, and the only place it can be checked.**
    * Every read-only step runs — the preview, the validation, the file, the pull
    * request body — against a GitHub whose every write throws, and the project
-   * stream is read back afterwards. No labels, no branch, no events.
+   * stream is read back afterwards. No branch, no events.
    */
-  it("leaves nothing behind — no labels, no branch, no events", async () => {
+  it("leaves nothing behind — no branch, no events", async () => {
     const project = fresh();
     const github = readOnlyClient(project);
 
@@ -259,6 +276,34 @@ describe("abandoning the wizard", () => {
     expect((await store.read(projectStream(project))).map((e) => e.type)).toEqual([
       "ProjectOnboardingStarted",
     ]);
+  });
+
+  /**
+   * **`Hold all` is the exception, and it is on the same screen.** It runs
+   * before the button, it writes to GitHub, and nothing records that it did —
+   * so the clause above is *no branch, no events* and never *no labels*.
+   *
+   * Asserted against the code that can break it rather than around it: the
+   * five other functions on that screen cannot reach a write, `holdAll` is the
+   * one that can, and here every write throws, so what it would have written
+   * comes back in `failed` instead. The issues it was given are the issues the
+   * screen listed.
+   */
+  it("does not hold anything the operator did not press Hold all for", async () => {
+    const project = fresh();
+    const github = readOnlyClient(project);
+    const pass = await firstPass({ client: github, recipe });
+
+    const attempted = await holdAll({
+      client: github,
+      issues: pass.taking.map((r) => r.issue),
+      label: holdLabel(recipe)!,
+    });
+
+    expect(attempted.held).toEqual([]);
+    expect(attempted.failed.map((f) => f.issue)).toEqual([398, 412, 4100, 7]);
+    for (const f of attempted.failed) expect(f.detail).toContain("the wizard wrote to GitHub");
+    expect(await store.read(projectStream(project))).toEqual([]);
   });
 });
 
@@ -335,6 +380,111 @@ describe("the pull request", () => {
   });
 
   /**
+   * **The window between the pull request and the event, both halves of it.**
+   * The pull request is open — the four calls all succeeded — and the append
+   * throws. That used to throw out of `startOnboarding`, leaving an operator
+   * told onboarding failed over an open pull request bearing their recipe, the
+   * log empty so no pending card and no `Recheck`, and every further press
+   * refused by the branch check with *delete it, or the pull request on it is
+   * the one to merge* — advice that leads nowhere, since merging appends
+   * nothing either.
+   */
+  it("refuses by naming the open pull request when the append fails, and finishes it on the next press", async () => {
+    const project = fresh();
+    const { client: github, pull } = recordingClient(project);
+    const blinked: EventStore = {
+      ...store,
+      append: async () => {
+        throw new Error("the connection was reset");
+      },
+    };
+
+    const failed = await startOnboarding({ client: github, recipe, by: "human:tester", store: blinked });
+
+    expect(failed.ok).toBe(false);
+    if (failed.ok) return;
+    expect(failed.refusal).toContain(pull.html_url);
+    expect(failed.refusal).toContain("Press this again");
+    expect(await store.read(projectStream(project))).toEqual([]);
+
+    // The second press, against the repository that state left behind: the
+    // branch is there, the recipe is on it, the pull request is open.
+    const again = recordingClient(project, {
+      branchExists: true,
+      recipeOnBranch: true,
+      pullOpen: true,
+    });
+    const finished = await startOnboarding({ client: again.client, recipe, by: "human:tester", store });
+
+    expect(finished.ok).toBe(true);
+    if (!finished.ok) return;
+    expect(finished.pr).toEqual({ number: 7, url: pull.html_url });
+    // No second branch and no second pull request: it finished the first one.
+    expect(again.calls.filter((c) => c.method !== "GET")).toEqual([]);
+    const state = reduceProject(await store.read(projectStream(project)));
+    expect(state.base).toBe("develop");
+  });
+
+  /**
+   * The other way that append fails: `lingtai add` wrote `ProjectConfigured`
+   * between the read at the top and the append at the bottom, so the expected
+   * version is stale and the store refuses. The way out is not this function —
+   * the project is registered — and the next press says so rather than talking
+   * about a branch.
+   */
+  it("sends an operator to the registration when the stream moved underneath it", async () => {
+    const project = fresh();
+    const { client: github, pull } = recordingClient(project);
+    await store.append(projectStream(project), 0, [
+      {
+        type: "ProjectConfigured",
+        actor: "conductor",
+        data: {
+          project,
+          owner: OWNER,
+          base: "develop",
+          configHash: "sha256:whatever",
+          fromSha: "0".repeat(40),
+        },
+      },
+    ]);
+    // What `startOnboarding` read before that landed: nothing.
+    const stale: EventStore = { ...store, read: async () => [] };
+
+    const raced = await startOnboarding({ client: github, recipe, by: "human:tester", store: stale });
+
+    expect(raced.ok).toBe(false);
+    if (raced.ok) return;
+    expect(raced.refusal).toContain(pull.html_url);
+    expect((await store.read(projectStream(project))).map((e) => e.type)).toEqual([
+      "ProjectConfigured",
+    ]);
+
+    const again = recordingClient(project, { branchExists: true, recipeOnBranch: true, pullOpen: true });
+    const next = await startOnboarding({ client: again.client, recipe, by: "human:tester", store });
+
+    expect(next.ok).toBe(false);
+    if (next.ok) return;
+    expect(next.refusal).toContain("already registered");
+    expect(again.calls).toEqual([]);
+  });
+
+  /** A branch of that name that is not an interrupted onboarding is still refused. */
+  it("refuses a branch of its own name that carries no onboarding", async () => {
+    const project = fresh();
+    // `recipeOnBranch` off: `.lingtai/config.yaml` is not on the branch, so it
+    // is somebody else's and there is nothing here to adopt.
+    const { client: github } = recordingClient(project, { branchExists: true });
+
+    const started = await startOnboarding({ client: github, recipe, by: "human:tester", store });
+
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.refusal).toContain("delete the branch");
+    expect(await store.read(projectStream(project))).toEqual([]);
+  });
+
+  /**
    * The body says what the recipe does in the sentences the wizard showed —
    * the same record the file's comments come from, so the two cannot drift.
    */
@@ -360,15 +510,38 @@ describe("the pull request", () => {
 });
 
 describe("Hold all", () => {
-  /** The label has to be one the recipe excludes, or holding holds nothing. */
-  it("takes its label from source.exclude", () => {
+  /**
+   * `agent:hold`, excluded, or no button at all.
+   *
+   * `source.exclude` is free-form (`recipe.ts:326`), so the first entry of an
+   * operator's own excludes is a label whose meaning nothing here knows:
+   * `wontfix` across twelve open bug reports is a sentence about them Lingtai
+   * would be writing in their repository, with no undo and nothing on the log
+   * saying Lingtai wrote it. A hold is offered only where a hold is what it
+   * would say.
+   */
+  it("offers a hold only when the recipe excludes agent:hold", () => {
+    const excluding = (exclude: string[]) =>
+      holdLabel({ ...recipe, source: { ...recipe.source, exclude } } as Recipe);
+
     expect(holdLabel(recipe)).toBe(HOLD_LABEL);
-    expect(holdLabel({ ...recipe, source: { ...recipe.source, exclude: ["paused"] } } as Recipe)).toBe("paused");
-    expect(holdLabel({ ...recipe, source: { ...recipe.source, exclude: [] } } as Recipe)).toBeNull();
+    expect(excluding(["wontfix", "epic"])).toBeNull();
+    expect(excluding(["paused"])).toBeNull();
+    expect(excluding([])).toBeNull();
+    expect(excluding(["epic", HOLD_LABEL])).toBe(HOLD_LABEL);
   });
 
-  /** Exactly the listed issues, and each keeps the labels it already had. */
-  it("applies the hold to exactly the issues the screen listed", async () => {
+  /**
+   * Exactly the listed issues, and one label added to each.
+   *
+   * **Added by GitHub, not by a set this code read first.** The loop runs for
+   * tens of seconds over thirty issues, so a label somebody else puts on #398
+   * while it is at #10 would be silently taken off by a read-then-replace —
+   * with no error, nothing in `failed`, and #398 reported held. There is no set
+   * here to go stale: the request carries the one label, and `setLabels` — the
+   * call that replaces — throws on this double and is never reached.
+   */
+  it("adds the hold to exactly the issues the screen listed, and touches no other label", async () => {
     const project = fresh();
     const { client: github, labelled } = recordingClient(project);
     const pass = await firstPass({ client: github, recipe });
@@ -381,12 +554,49 @@ describe("Hold all", () => {
 
     expect(held.held).toEqual([398, 412, 4100, 7]);
     expect(held.failed).toEqual([]);
-    expect(labelled).toEqual([
-      { issue: 398, labels: ["bug", HOLD_LABEL] },
-      { issue: 412, labels: ["bug", HOLD_LABEL] },
-      { issue: 4100, labels: ["bug", HOLD_LABEL] },
-      { issue: 7, labels: ["feature", HOLD_LABEL] },
+    expect(labelled()).toEqual([
+      { issue: 398, labels: [HOLD_LABEL] },
+      { issue: 412, labels: [HOLD_LABEL] },
+      { issue: 4100, labels: [HOLD_LABEL] },
+      { issue: 7, labels: [HOLD_LABEL] },
     ]);
+  });
+
+  /**
+   * The interleaving the read-then-replace lost, run through: #398 gains
+   * `needs-info` after the pass that would have read it and before the pass
+   * that writes it. The write says `agent:hold` and nothing else, so GitHub's
+   * union keeps `needs-info` — the label is still there at the end.
+   */
+  it("keeps a label added while the loop was running", async () => {
+    const project = fresh();
+    const { client: github } = recordingClient(project);
+    const carried = new Map<number, string[]>([
+      [412, ["bug"]],
+      [398, ["bug"]],
+    ]);
+
+    const racing: GitHubClient = {
+      ...github,
+      request: (async (method: string, path: string, body?: unknown) => {
+        const at = /\/issues\/(\d+)\/labels$/.exec(path);
+        if (method === "POST" && at !== null) {
+          const n = Number(at[1]);
+          // A colleague labels #398 while the loop is on the issue before it.
+          if (n === 412) carried.set(398, [...carried.get(398)!, "needs-info"]);
+          const union = new Set([...carried.get(n)!, ...(body as { labels: string[] }).labels]);
+          carried.set(n, [...union]);
+          return {};
+        }
+        return github.request(method, path, body);
+      }) as GitHubClient["request"],
+    };
+
+    const held = await holdAll({ client: racing, issues: ["412", "398"], label: HOLD_LABEL });
+
+    expect(held.held).toEqual([412, 398]);
+    expect(held.failed).toEqual([]);
+    expect(carried.get(398)).toEqual(["bug", "needs-info", HOLD_LABEL]);
   });
 
   /** A refusal on one is not a refusal on the rest. */
@@ -394,9 +604,12 @@ describe("Hold all", () => {
     const { client: github } = recordingClient(fresh());
     const refusing: GitHubClient = {
       ...github,
-      setLabels: async (n) => {
-        if (n === 412) throw new GitHubError(403, "/", "Resource not accessible by integration");
-      },
+      request: (async (method: string, path: string, body?: unknown) => {
+        if (path.endsWith("/issues/412/labels")) {
+          throw new GitHubError(403, path, "Resource not accessible by integration");
+        }
+        return github.request(method, path, body);
+      }) as GitHubClient["request"],
     };
 
     const held = await holdAll({ client: refusing, issues: ["412", "398"], label: HOLD_LABEL });

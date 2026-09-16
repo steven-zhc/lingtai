@@ -80,17 +80,26 @@ guard. The board draws a card with `Recheck` on it, and `Recheck` runs
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 
 What appends that first event is `startOnboarding`
-(`packages/conductor/src/wizard.ts`, `#165`), and it is **the whole wizard's
-only write**: the recipe is parsed by `resolveRecipe` before anything opens, so
-a file that would fail `lingtai add` on the base branch names its bad field
-instead; then the branch, the file and the pull request; then the event.
-Abandon the page before it and there is nothing anywhere to clean up. Beside it
-`firstPass` is the last screen — `selectRunnable` and `passedOver` and no rule
-of its own, so `12 runnable · 18 passed over — excluded-label 14, no-kind 4` is
-the sentence `lingtai status` will print an hour later. `Hold all` is
-`holdAll`, offered and never automatic, and the label it writes comes out of
-the recipe's own `source.exclude` — one the recipe does not exclude would hold
-nothing.
+(`packages/conductor/src/wizard.ts`, `#165`), and it is **the only write the
+wizard makes of its own accord**: the recipe is parsed by `resolveRecipe`
+before anything opens, so a file that would fail `lingtai add` on the base
+branch names its bad field instead; then the branch, the file and the pull
+request; then the event. Abandon the page before it and the wizard has left
+nothing anywhere to clean up. If the append fails over an open pull request it
+says so and says to press again — the branch check finishes a pull request it
+recognises as its own, because merging one the log knows nothing about appends
+nothing. Beside it `firstPass` is the last screen — `selectRunnable` and
+`passedOver` and no rule of its own, so
+`12 runnable · 18 passed over — excluded-label 14, no-kind 4` is the sentence
+`lingtai status` will print an hour later.
+
+`Hold all` is `holdAll`, and it is **the operator's write and not the
+wizard's** — the one thing on that screen that outlives abandoning the page,
+since the labels stay on GitHub and the project has no stream to record them
+on. So it is offered and never automatic, it adds its label rather than
+replacing an issue's set, and the label is `agent:hold` or there is no button:
+`source.exclude` is free-form, and a recipe that excludes only `wontfix` gets
+no offer rather than that word stamped across twelve bug reports.
 
 ## stream — 7 prefixes, unbounded instances
 

@@ -20,10 +20,18 @@
  * `passCeiling` are already here for (#100).
  *
  * Then `startOnboarding`: validate, open the pull request, append
- * `ProjectOnboardingStarted`. **Up to that call the wizard has written nothing
- * anywhere** — no labels, no branch, no event — which is `lingtai add`'s own
- * rule that *a half-onboarded project is not a state that exists*, inherited by
- * the page. Abandon before it and there is nothing to clean up.
+ * `ProjectOnboardingStarted`. **It is the only write the wizard makes of its
+ * own accord** — no branch and no event exist before it — which is `lingtai
+ * add`'s own rule that *a half-onboarded project is not a state that exists*,
+ * inherited by the page.
+ *
+ * **`Hold all` is the exception, and it is the operator's own write.** It sits
+ * on this same last screen, it runs before the button, and it puts a label on
+ * every issue it is given — in somebody's repository, visible to everyone, with
+ * nothing on Lingtai's log recording that Lingtai did it, because the project
+ * has no stream yet. So *abandon and there is nothing to clean up* holds for
+ * everything the wizard does by itself and not for a button a person pressed:
+ * the labels stay, and taking them off is theirs. The screen has to say so.
  */
 import {
   isPending,
@@ -120,19 +128,26 @@ export function nothingReadsIt(recipe: Recipe): string | null {
 /**
  * The hold this repository's own recipe will honour, or null when none will.
  *
- * `Hold all` writes a label, and a label the recipe does not exclude holds
- * nothing — the button would report thirty successes and the next pass would
- * take all thirty. So the label comes out of `source.exclude` rather than being
- * a constant: `agent:hold` when the proposal's recommended set is intact, and
- * otherwise whatever this operator kept. It need not exist on GitHub yet, which
- * is why nothing creates it: a label is created the first time it is applied.
+ * Two things have to be true of the label `Hold all` writes, and only one of
+ * them is in the recipe. It must be **excluded**, or the button reports thirty
+ * successes and the next pass takes all thirty. And it must **mean a hold**,
+ * which is a thing the recipe cannot say: `source.exclude` is free-form, so
+ * `wontfix` and `epic` are as excluded as `agent:hold` is, and stamping
+ * `wontfix` across twelve open bug reports is a sentence about them that Lingtai
+ * is not entitled to write — visible to every human and every other tool reading
+ * that repository, with nothing on the log saying Lingtai did it.
+ *
+ * So only `agent:hold` qualifies. It is the one name Lingtai defines as meaning
+ * *not yet*, and a recipe that does not exclude it gets no button rather than a
+ * guess: the screen says the recipe excludes no hold, and ticking `agent:hold`
+ * back into the excludes is one action away on that same screen. The label need
+ * not exist on GitHub yet, which is why nothing creates it: a label is created
+ * the first time it is applied.
  */
 export const HOLD_LABEL = "agent:hold";
 
 export function holdLabel(recipe: Recipe): string | null {
-  const exclude = recipe.source.exclude;
-  if (exclude.length === 0) return null;
-  return exclude.includes(HOLD_LABEL) ? HOLD_LABEL : exclude[0]!;
+  return recipe.source.exclude.includes(HOLD_LABEL) ? HOLD_LABEL : null;
 }
 
 export interface HoldAllOptions {
@@ -157,10 +172,18 @@ export interface HoldAllResult {
  * writes and thirty timeline entries in somebody's repository; that is the
  * operator's to spend, not ours, so nothing in `startOnboarding` calls it.
  *
- * The label is *added* to the set each issue already carries, read back
- * immediately before the write. `setLabels` replaces, which is right for a
- * state Lingtai computes and wrong for this: a hold a person is applying must
- * not take an issue's other labels off with it.
+ * **The label is added by GitHub, not by a set this code computed.** `setLabels`
+ * replaces (`client.ts:164`), which is right for a state Lingtai computes and
+ * wrong for this: read the labels, append one, write the set back and every
+ * label added in between is silently taken off — and on a thirty-issue
+ * repository the loop runs for tens of seconds, so *in between* is an ordinary
+ * afternoon, a colleague adding `needs-info` to an issue further down the list.
+ * It would not appear in `failed` either; the issue would be reported held.
+ * `POST issues/:n/labels` is set union performed by GitHub against whatever the
+ * issue carries at that instant, so there is no set here to be stale, and a
+ * label already present is not an error. Union is the wrong shape for a
+ * transition and the right shape for this: a hold a person is applying adds one
+ * label and touches nothing else.
  *
  * One at a time, and a refusal on one does not stop the rest. Thirty parallel
  * writes is how an installation meets a secondary rate limit, and a screen that
@@ -168,15 +191,14 @@ export interface HoldAllResult {
  * error over an unknown prefix of the list.
  */
 export async function holdAll(options: HoldAllOptions): Promise<HoldAllResult> {
+  const { client } = options;
   const result: HoldAllResult = { held: [], failed: [] };
   for (const ref of options.issues) {
     const n = Number(ref);
     try {
-      const issue = await options.client.getIssue(n);
-      const carried = issue.labels.map((l) => l.name);
-      if (!carried.includes(options.label)) {
-        await options.client.setLabels(n, [...carried, options.label]);
-      }
+      await client.request("POST", `/repos/${client.owner}/${client.repo}/issues/${n}/labels`, {
+        labels: [options.label],
+      });
       result.held.push(n);
     } catch (err) {
       result.failed.push({ issue: n, detail: (err as Error).message });
@@ -251,9 +273,10 @@ export const ONBOARDING_BRANCH = "lingtai/onboarding";
 /**
  * The button: validate, open the pull request, record that onboarding started.
  *
- * **The first and only write in the whole wizard**, and the order inside it is
- * the same rule at a smaller scale — everything that can refuse, refuses before
- * anything is written:
+ * **The only write the wizard makes of its own accord** — `Hold all` beside it
+ * is the operator's, and it has already run if they pressed it — and the order
+ * inside it is `lingtai add`'s rule at a smaller scale: everything that can
+ * refuse, refuses before anything is written:
  *
  * 1. the stream, because a repository already recorded must not collect a
  *    second `ProjectOnboardingStarted` and a second pull request;
@@ -264,6 +287,17 @@ export const ONBOARDING_BRANCH = "lingtai/onboarding";
  * Then the branch, the file and the pull request, and then the event. The event
  * last because it is the thing the board reads: a card offering `Recheck` for a
  * pull request that was never opened is a state nobody can get out of.
+ *
+ * **Between those two there is a window, and this is the one function that can
+ * close it.** The pull request is open and the append has not happened — the
+ * database blinked, or a concurrent `lingtai add` moved the stream under the
+ * expected version — and the log knows nothing, so the board draws no pending
+ * card and offers no `Recheck`. Merging that pull request appends nothing
+ * either: only this function does. So the window is closed on the way back in
+ * rather than by asking a person to delete a branch — step 3 finishes a pull
+ * request it recognises as its own instead of refusing it, and a failure to
+ * append is a refusal that names the open pull request and says another press
+ * is what picks it up.
  *
  * **The pull request targets `repo.base`, and there is no second base here.**
  * The recipe has to land on the branch it governs — that is 0005 — and the base
@@ -296,10 +330,30 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   if (!validated.ok) return { ok: false, refusal: validated.refusal };
 
   if (await branchExists(client, branch)) {
-    return {
-      ok: false,
-      refusal: `${slug} already has a branch called ${branch} — delete it, or the pull request on it is the one to merge.`,
-    };
+    // A branch of this name with the recipe on it and a pull request open is
+    // not somebody else's work — it is this function's, interrupted between
+    // the pull request and the append. Adopting it is the only way out: the
+    // event is the one thing missing, and nothing but this appends it.
+    const ours = (await client.fileAt(RECIPE_PATH, branch)) !== null;
+    const open = ours ? await openPullRequest(client, branch) : null;
+    if (open === null) {
+      return {
+        ok: false,
+        refusal:
+          `${slug} already has a branch called ${branch} with no onboarding pull request ` +
+          "open on it — delete the branch, then press this again.",
+      };
+    }
+    return record({
+      store,
+      stream,
+      expected: existing.length,
+      by: options.by,
+      slug,
+      base,
+      pr: open,
+      branch,
+    });
   }
 
   let pr: { number: number; url: string };
@@ -329,15 +383,77 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
     return { ok: false, refusal: `the pull request was not opened: ${(err as Error).message}` };
   }
 
-  await store.append(stream, existing.length, [
-    {
-      type: "ProjectOnboardingStarted",
-      actor: options.by,
-      data: parsePayload("ProjectOnboardingStarted", { slug, base, by: options.by }),
-    },
-  ]);
+  return record({
+    store,
+    stream,
+    expected: existing.length,
+    by: options.by,
+    slug,
+    base,
+    pr,
+    branch,
+  });
+}
 
-  return { ok: true, pr, branch };
+/**
+ * The append, and the refusal that keeps its failure recoverable.
+ *
+ * A throw here — the store unreachable, or a `ConcurrencyError` because
+ * something appended to this stream between the read at the top and now — used
+ * to leave `startOnboarding` throwing over an open pull request: the operator
+ * told onboarding failed, the log empty, so no pending card and no `Recheck`,
+ * and the branch check refusing every further press. It is a refusal instead,
+ * and it says the two things that state needs said — the pull request exists,
+ * and pressing again is what finishes it, because the branch check now adopts
+ * that pull request rather than pointing at it.
+ */
+async function record(at: {
+  store: EventStore;
+  stream: string;
+  expected: number;
+  by: string;
+  slug: string;
+  base: string;
+  pr: { number: number; url: string };
+  branch: string;
+}): Promise<Started> {
+  try {
+    await at.store.append(at.stream, at.expected, [
+      {
+        type: "ProjectOnboardingStarted",
+        actor: at.by,
+        data: parsePayload("ProjectOnboardingStarted", { slug: at.slug, base: at.base, by: at.by }),
+      },
+    ]);
+  } catch (err) {
+    return {
+      ok: false,
+      refusal:
+        `${at.slug}'s pull request is open — ${at.pr.url} — and onboarding was not recorded: ` +
+        `${(err as Error).message}. Press this again; it picks up the pull request on ${at.branch} ` +
+        "rather than opening a second one.",
+    };
+  }
+  return { ok: true, pr: at.pr, branch: at.branch };
+}
+
+/**
+ * The open pull request on a branch, or null when there is none.
+ *
+ * Asked of GitHub rather than remembered, because the state it exists to
+ * recognise is the one where nothing was written down.
+ */
+async function openPullRequest(
+  client: GitHubClient,
+  branch: string,
+): Promise<{ number: number; url: string } | null> {
+  const head = encodeURIComponent(`${client.owner}:${branch}`);
+  const open = await client.request<{ number: number; html_url: string }[]>(
+    "GET",
+    `/repos/${client.owner}/${client.repo}/pulls?state=open&head=${head}`,
+  );
+  const first = open[0];
+  return first === undefined ? null : { number: first.number, url: first.html_url };
 }
 
 /** Whether a branch is already there. A 404 is the answer, not a failure. */
