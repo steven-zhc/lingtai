@@ -3,9 +3,8 @@
  *
  * Two things, and the second is the one that costs money. The box has **one
  * height**, with the conversation scrolling inside it and the input box under
- * it — the moves sit below both panes, so a pane that grew with its content
- * pushed the button you were deciding with off the screen, a long conversation
- * costing you the decision it was meant to inform. And a turn with no answer
+ * it — so a long conversation never pushes the box you ask the next question in
+ * off the screen (#132, and the viewport's height since #173). And a turn with no answer
  * yet **follows the chat's own log** rather than saying nothing until the agent
  * exits: that is the defect
  * [0034](../../../doc/decisions/0034-the-run-log.md) opens with, solved for
@@ -21,10 +20,10 @@
  * these are the three things a follower can be holding and the three sentences
  * a reader is handed for them, asserted directly.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DiscussionView } from "../src/lib/task.ts";
-import { Discussion, Echoed, Trace, echoing, traceSays } from "../src/app/discussion.tsx";
+import { Discussion, Echoed, Trace, canAsk, echoing, onAskKey, traceSays } from "../src/app/discussion.tsx";
 import { againAfter, asksAgain, reported, type TailState } from "../src/app/run-log.tsx";
 
 const waiting: DiscussionView = {
@@ -366,4 +365,58 @@ describe("the pane, once the page has stopped following the log", () => {
     expect(stopped).toContain("reload to see the answer");
     expect(stopped).not.toContain("waiting for the daemon to answer");
   });
+});
+
+/**
+ * `Enter` asks, `Shift+Enter` is a newline (#173) — and **`Enter` while
+ * `asking…` asks nothing**. That is the case that costs money: until the ask
+ * returns the fold has no conversation, so `open` is null and a second
+ * `askDiscussion` goes without a `chatId` — a second discussion, and a second
+ * agent paid for. No DOM here, so the handler is asserted on what it is handed.
+ */
+describe("the keys in the input box", () => {
+  const press = (key: string, extra: { shiftKey?: boolean; isComposing?: boolean } = {}) => {
+    const preventDefault = vi.fn();
+    return { event: { key, shiftKey: false, ...extra, preventDefault }, preventDefault };
+  };
+
+  it("asks on Enter, and takes the Enter rather than typing it", () => {
+    const ask = vi.fn();
+    const { event, preventDefault } = press("Enter");
+    onAskKey(event, false, "why no branch?", ask);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it("opens no second discussion on Enter while the first ask is in flight", () => {
+    const ask = vi.fn();
+    const { event, preventDefault } = press("Enter");
+    onAskKey(event, true, "why no branch?", ask);
+    expect(ask).not.toHaveBeenCalled();
+    // Not a newline either, or it would be sent with the next question.
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it("leaves Shift+Enter, a composition's Enter and every other key to the box", () => {
+    const ask = vi.fn();
+    for (const { event, preventDefault } of [
+      press("Enter", { shiftKey: true }),
+      press("Enter", { isComposing: true }),
+      press("a"),
+    ]) {
+      onAskKey(event, false, "why no branch?", ask);
+      expect(preventDefault).not.toHaveBeenCalled();
+    }
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("asks nothing for a blank box — the button's own guard", () => {
+    const ask = vi.fn();
+    onAskKey(press("Enter").event, false, "  \n ", ask);
+    expect(ask).not.toHaveBeenCalled();
+    expect(canAsk(false, "  ")).toBe(false);
+    expect(canAsk(true, "why?")).toBe(false);
+    expect(canAsk(false, "why?")).toBe(true);
+  });
+
 });

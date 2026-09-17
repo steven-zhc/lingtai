@@ -38,11 +38,12 @@
  * below follows the chat's own log while the answer is being written; see it
  * for what that trace is and is not.
  *
- * **The box has one height.** The moves sat under it and under the outgoing
- * prompt beside it, so a conversation that grew with its content pushed the
- * button you were deciding with off the screen. The conversation scrolls in
- * `.chatscroll`, the input box is under it, and neither moves (#132) — and the
- * moves are above the pair now, so nothing in here is before them (#152).
+ * **The box has one height, and the viewport sets it** (#173). The conversation
+ * scrolls in `.chatscroll` with the input box under it (#132), so however long
+ * the exchange runs, the box you type in is on the screen. It was a fixed
+ * `24rem` while the moves sat under the pair; they are above it now (#152), and
+ * the cap read the conversation through a ten-line slot for nothing.
+ * `Enter` asks and `Shift+Enter` is a newline — see `onAskKey`.
  *
  * **Turns, not a transcript** (#152): a bubble each, with who said it, pinned
  * to the newest line, and an answer being written grows under a caret.
@@ -358,6 +359,38 @@ export function Echoed({
   );
 }
 
+/**
+ * Whether a key in the input box asks, shared with the Ask button (#173).
+ *
+ * `Enter` asks and `Shift+Enter` is a newline — and `Enter` answers to exactly
+ * the guard the button's `disabled` does, because **the failure here costs
+ * money**: while `asking…` the fold does not have the conversation yet, so
+ * `open` is null and an `askDiscussion` without a `chatId` opens a second
+ * discussion and buys a second agent. An `Enter` that finishes an IME
+ * composition is the composition's, not a question.
+ */
+export function canAsk(busy: boolean, question: string): boolean {
+  return !busy && question.trim() !== "";
+}
+
+export function onAskKey(
+  event: {
+    key: string;
+    shiftKey: boolean;
+    isComposing?: boolean;
+    preventDefault: () => void;
+  },
+  busy: boolean,
+  question: string,
+  ask: () => void,
+): void {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  // Never a newline, whether or not it asks: a busy box that took the Enter as
+  // text would send it with the next question.
+  event.preventDefault();
+  if (canAsk(busy, question)) ask();
+}
+
 export function Discussion({
   taskId,
   attempt,
@@ -443,6 +476,17 @@ export function Discussion({
     return () => follow.disconnect();
   }, [shown]);
 
+  const input = useRef<HTMLTextAreaElement | null>(null);
+  // Grows with what is typed, to the bound `.chatask textarea` sets, and then
+  // scrolls in itself — so a long question takes room from the conversation
+  // only up to a point (#173).
+  useEffect(() => {
+    const box = input.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+  }, [question]);
+
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
     setBusy(true);
     setRefusal(null);
@@ -457,6 +501,18 @@ export function Discussion({
       setEcho(null);
       setRefusal(result.detail);
     });
+  };
+
+  const ask = () => {
+    setEcho({ question, turns: turnsIn(discussions) });
+    run(() =>
+      askDiscussion({
+        taskId,
+        attempt: open?.attempt ?? attempt,
+        question,
+        ...(open === null ? {} : { chatId: open.chatId }),
+      }),
+    );
   };
 
   return (
@@ -623,9 +679,23 @@ export function Discussion({
 
       <div className="chatask">
         <textarea
+          ref={input}
           rows={2}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) =>
+            onAskKey(
+              {
+                key: e.key,
+                shiftKey: e.shiftKey,
+                isComposing: e.nativeEvent.isComposing,
+                preventDefault: () => e.preventDefault(),
+              },
+              busy,
+              question,
+              ask,
+            )
+          }
           placeholder={
             open === null ? "why did attempt 2 not produce a branch?" : "ask a follow-up"
           }
@@ -633,18 +703,8 @@ export function Discussion({
         <div className="btnrow">
           <button
             className={pri}
-            disabled={busy || !question.trim()}
-            onClick={() => {
-              setEcho({ question, turns: turnsIn(discussions) });
-              run(() =>
-                askDiscussion({
-                  taskId,
-                  attempt: open?.attempt ?? attempt,
-                  question,
-                  ...(open === null ? {} : { chatId: open.chatId }),
-                }),
-              );
-            }}
+            disabled={!canAsk(busy, question)}
+            onClick={ask}
           >
             {busy ? "asking…" : "Ask"}
           </button>

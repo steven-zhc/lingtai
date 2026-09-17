@@ -1034,20 +1034,25 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    `minmax(0, 1fr)` rather than `1fr`: both boxes hold a `pre` of a composed
    prompt, and a grid track whose minimum is its content would be as wide as the
    longest line in it and push the other column off the page. */
-/* **One row height, and each pane scrolls inside it** (#132).
+/* **One row height, the viewport's, and each pane scrolls inside it** (#173).
 
-   This is not alignment. The moves sit *under* both boxes, so a pane that grew
-   with its content pushed the button you are deciding with off the screen — a
-   long conversation costing you the decision it was meant to inform, which is
-   exactly the conversation you had it to make. So the row is a fixed height
-   neither pane can change: the prompt scrolls in its own `pre`, the discussion
-   scrolls above its own input box, and the row of moves is where it was before
-   you asked anything. */
+   What the bound protects now is the box you type in and the button you send
+   with. A pane that grew with its content would put the discussion's input
+   under the conversation it continues — a long exchange costing you the place
+   to ask the next question — so each pane scrolls inside the row: the prompt in
+   its own `pre`, the discussion above its own input box. One row, so the two
+   panes stay one height beside each other.
+
+   It was `24rem` (#132), for a row of moves that sat under both boxes. #152
+   moved the moves above them, and the cap stayed to protect nothing, reading a
+   conversation through ten lines with a screen empty under it. The viewport
+   less the head of the page is the bound, with a floor so a short window still
+   has a conversation in it. `vh` first, for a browser without `dvh`. */
 .spair {
   display: grid;
   gap: 0.5rem;
-  --pair-h: 24rem;
-  grid-auto-rows: var(--pair-h);
+  grid-auto-rows: max(22rem, calc(100vh - 6rem));
+  grid-auto-rows: max(22rem, calc(100dvh - 6rem));
 }
 @media (min-width: 64rem) {
   .spair {
@@ -1420,6 +1425,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 .chatask { display: grid; gap: 0.35rem; }
+/* Grows with what is typed (`Discussion` sets the height), to a bound, and then
+   scrolls in itself: a long question takes room from the conversation above it
+   only so far (#173). */
 .chatask textarea {
   font: 0.8rem/1.5 var(--sans);
   padding: 0.35rem 0.45rem;
@@ -1427,7 +1435,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   border-radius: 2px;
   background: var(--surface);
   color: var(--ink);
-  resize: vertical;
+  resize: none;
+  max-height: 12rem;
+  overflow-y: auto;
 }
 
 /* --- the record -----------------------------------------------------------
