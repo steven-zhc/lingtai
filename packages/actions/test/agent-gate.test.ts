@@ -269,6 +269,52 @@ describe("asking the reviewer again after a fix", () => {
       expect(result?.verdict).toBe("failed");
     }
   });
+
+  /**
+   * A round runs the point again when HEAD moved, not when it moved somewhere
+   * unreviewed: a fixer that resets to the commit round 1 refused puts round 3
+   * back on round 1's sha, with the same plain branch.
+   */
+  it("reviews a round whose fixer went back to a commit an earlier round reviewed", async () => {
+    const used = new Set<string>();
+    const runtime = reviewer(outcome());
+    runtime.run = async (request) => {
+      runtime.seen.push(request);
+      const session = sessionIdFor(request.runId);
+      if (used.has(session)) {
+        return outcome({
+          exitCode: 1,
+          turns: 0,
+          costUsd: null,
+          failure: { kind: "crash", detail: `Error: Session ID ${session} is already in use.` },
+        });
+      }
+      used.add(session);
+      return outcome({ text: JSON.stringify({ findings: [finding()] }), sessionId: session });
+    };
+    const gate = createAgentGate(
+      { name: "review", prompt: "" },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => "diff --git a/x b/x\n+1",
+        settingsPath: "/tmp/s.json",
+        limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+      },
+    );
+
+    for (const round of [0, 2]) {
+      const pass = await runGatePipeline({
+        point: "proposed",
+        gates: [gate],
+        context: { ...context, round },
+        emit: () => {},
+      });
+      const [result] = pass.results;
+      expect(result?.evidence).not.toMatch(/did not finish/);
+      expect(result?.findings).toHaveLength(1);
+    }
+  });
 });
 
 describe("reading the reviewer's answer", () => {

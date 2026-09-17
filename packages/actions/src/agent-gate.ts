@@ -342,14 +342,19 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
       // session id round 1 had used: `Session ID … is already in use`, exit 1
       // in one second, and a pass that ended having never been reviewed
       // (#195). The crash was the lucky outcome — a runtime that resumed
-      // instead would have been this comment's warm reviewer. A round only
-      // re-runs the point on a new commit, so the sha is what makes each
-      // review its own, and it keeps the id computable from what the log
-      // records (`sessionIdFor`).
+      // instead would have been this comment's warm reviewer.
+      //
+      // **And the round, because the sha alone is not a new review.** A round
+      // re-runs the point when HEAD moved, not when it moved somewhere no
+      // review has read: a fixer that `git reset --hard`s back to the commit
+      // round 1 refused puts the point on that sha again. The round is
+      // recorded on `FixApplied`, so the id stays computable from the log
+      // (`sessionIdFor`).
+      const round = context.round === undefined ? "" : `:round-${context.round}`;
       const reviewId =
         recheck.length === 0
-          ? `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
-          : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}`;
+          ? `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}${round}`
+          : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}${round}`;
       context.log?.note(
         "review",
         `${reviewId} · ${diff.length} bytes of diff` +
