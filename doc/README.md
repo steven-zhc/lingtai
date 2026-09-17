@@ -32,6 +32,8 @@ Three kinds of thing live here, and the distinction matters.
 | [`roadmap.md`](roadmap.md) | Six phases, each with an exit criterion that is a fact. The backlog, with issue numbers. |
 | [`design.md`](design.md) | How the system is meant to work, as a whole. Rewritten as it changes. |
 | [`design/1.0.md`](design/1.0.md) | **The 1.0 target, whole.** What ships, where it lives, the two processes and their commands, the store, upgrade and uninstall, what 1.0 is not, and the work in order. Read this before any other design file — the rest are its parts. |
+| [`design/agent-runtimes.md`](design/agent-runtimes.md) | **Claude Code and Codex, by role.** Accepted, implementation pending: project defaults, development/fix, independent review gates and discussion; configuration, containment, budgets, migration and the acceptance matrix. |
+| [`design/agent-runtimes-plan.md`](design/agent-runtimes-plan.md) | **The implementation tickets.** Epic #198, 11 held tickets, native sub-issues and blocked-by dependencies; release order and acceptance. |
 | [`design/`](design/) | One surface per file: what it is for, what it got wrong, and the rule that came out of it. The mockups are private artifacts and are linked, never inlined — **a picture of a decision is not the decision**, and only the decision belongs in the repository. |
 | [`decisions/`](decisions/) | One decision per file, with its context and its consequences. **Append-only in spirit** — a decision that turns out wrong gets a new file that supersedes it, not an edit. |
 | [`experiments/`](experiments/) | Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument. |
@@ -86,7 +88,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0004](decisions/0004-prisma.md) | Prisma 8 as the ORM | accepted |
 | [0005](decisions/0005-config-in-target-repo.md) | Configuration lives in the managed repository | policy half superseded by 0016; **the rest by [0046](decisions/0046-lingtai-is-personal.md)** |
 | [0006](decisions/0006-github-app.md) | A GitHub App, not a personal access token | accepted |
-| [0007](decisions/0007-dual-runtime.md) | Two runtime interfaces, one implementation | accepted |
+| [0007](decisions/0007-dual-runtime.md) | Two runtime interfaces, one implementation | accepted; role-specific containment and capability contract extended by 0054 (implementation pending) |
 | [0008](decisions/0008-nextjs-board.md) | Next.js for the board, SSE for live updates | accepted |
 | [0009](decisions/0009-two-connections.md) | Two connection strings: pooled, and session mode | accepted |
 | [0010](decisions/0010-source-runs-unbuilt.md) | The source runs unbuilt, so it obeys strip-only rules | accepted |
@@ -110,7 +112,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0030](decisions/0030-shutting-down-safely.md) | **Shutting down safely: the boundary is the pass, and the trigger is a command** | accepted; §2's *a daemon that is down finds it waiting* superseded by 0048 |
 | [0031](decisions/0031-a-run-that-never-started.md) | **A run that never started is its own outcome, and a quota stops the conductor** | accepted |
 | [0032](decisions/0032-the-page-is-organised-by-attempt.md) | **The task page is organised by attempt, and its control is the prompt** | accepted |
-| [0033](decisions/0033-the-third-kind-of-agent.md) | **The third kind of agent: one that reads, and cannot run** | accepted |
+| [0033](decisions/0033-the-third-kind-of-agent.md) | **The third kind of agent: one that reads, and cannot run** | accepted; configurable runtime under 0053 and role boundary extended by 0054 (implementation pending) |
 | [0034](decisions/0034-the-run-log.md) | **A run leaves a log you can watch, and it is a trace, not a record** | accepted |
 | [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
 | [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
@@ -125,13 +127,15 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0043](decisions/0043-evidence-is-plain-text.md) | **A gate's evidence is plain text, stripped where it is captured** | accepted; closes #156 |
 | [0044](decisions/0044-a-close-is-a-terminal-outcome.md) | **A close is a terminal outcome, so `end` runs on it** | accepted; completes #151 |
 | [0045](decisions/0045-one-team-one-conductor.md) | **One team, one conductor, one recipe** | **superseded by [0046](decisions/0046-lingtai-is-personal.md)** |
-| [0046](decisions/0046-lingtai-is-personal.md) | **Lingtai is personal; the repository is the team's** | accepted; supersedes 0045 and 0005's surviving half |
+| [0046](decisions/0046-lingtai-is-personal.md) | **Lingtai is personal; the repository is the team's** | accepted; supersedes 0045 and 0005's surviving half; §3's machine placement of agent and limits superseded by 0053 (implementation pending) |
 | [0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md) | **The recipe a run was given is on the log, and nothing resolves from it** | accepted; qualifies 0005 |
 | [0048](decisions/0048-a-signal-is-aimed-at-one-daemon.md) | **A signal is aimed at one daemon, so the restart hands nothing to the next** | accepted; supersedes 0030 §2's waiting request and 0042 §8's handoff |
 | [0049](decisions/0049-the-publishable-unit-is-dist.md) | **The publishable unit is `dist/`, and both workspace manifests stay private** | accepted; qualifies 0010 for distribution, and 0035's *built by `pnpm build`* |
 | [0050](decisions/0050-the-binary-is-a-sea-signed-ad-hoc.md) | **The binary is a SEA built on its own platform, signed ad hoc, and run before it is published** | accepted; builds on 0049 |
 | [0051](decisions/0051-a-version-is-a-directory.md) | **A version is a directory, and the shim is the only thing that moves** | accepted; the installer, upgrade, rollback and uninstall (#184) |
 | [0052](decisions/0052-the-lock-is-sqlite-on-a-file.md) | **The lock is SQLite's, on a file, and the queue is made rather than given** | accepted; supersedes 0046 §1's `flock(2)`, which Node cannot call |
+| [0053](decisions/0053-the-recipe-chooses-the-agent-for-each-role.md) | **The recipe chooses the agent for each role** | accepted, implementation pending; supersedes 0046 §3's machine placement of agent and limits |
+| [0054](decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md) | **A role keeps its permissions when its agent changes** | accepted, implementation pending; extends 0007/0033; independent review worktrees and enforceable limits |
 
 ## Experiments
 
