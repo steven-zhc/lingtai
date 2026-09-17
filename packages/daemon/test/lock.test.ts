@@ -12,7 +12,7 @@ import { directDatabaseUrl } from "@lingtai/env";
 import { taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { acquireDaemonLock, conductorLockHolder, startDaemon } from "../src/index.ts";
+import { acquireDaemonLock, conductorLockHolder, queueForDaemonLock, startDaemon } from "../src/index.ts";
 
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`;
 
@@ -64,6 +64,46 @@ describe("the daemon lock", () => {
     const after = await acquireDaemonLock({ key: k });
     expect(after.ok).toBe(true);
     if (after.ok) await after.lock.release();
+  });
+});
+
+/**
+ * `lingtai service shutdown` has to be the next holder, not a racer (#174): the
+ * copy KeepAlive starts the moment the drained daemon exits tries for the lock
+ * and, since #159, would take work if it won.
+ */
+describe("a place in the queue for the lock", () => {
+  it("is handed the lock on release, before a try from anybody else can find it free", async () => {
+    const k = key();
+    const daemon = await acquireDaemonLock({ key: k });
+    expect(daemon.ok).toBe(true);
+    const place = await queueForDaemonLock({ key: k });
+    try {
+      expect(place.held()).toBe(false);
+      if (daemon.ok) await daemon.lock.release();
+      const copy = await acquireDaemonLock({ key: k });
+      expect(copy.ok).toBe(false);
+      await vi.waitFor(() => expect(place.held()).toBe(true));
+    } finally {
+      await place.leave();
+    }
+    const after = await acquireDaemonLock({ key: k });
+    expect(after.ok).toBe(true);
+    if (after.ok) await after.lock.release();
+  });
+
+  it("leaves the queue when it leaves before its turn, so it never holds the lock afterwards", async () => {
+    const k = key();
+    const daemon = await acquireDaemonLock({ key: k });
+    expect(daemon.ok).toBe(true);
+    const place = await queueForDaemonLock({ key: k });
+    await place.leave();
+    await place.leave();
+    expect(place.held()).toBe(false);
+    if (daemon.ok) await daemon.lock.release();
+    const next = await acquireDaemonLock({ key: k });
+    expect(next.ok).toBe(true);
+    if (next.ok) await next.lock.release();
   });
 });
 

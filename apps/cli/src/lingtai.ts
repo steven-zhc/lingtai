@@ -48,7 +48,7 @@ import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { parseRestartArgs, prepareRestart, startRecorder, startSupervised, waitForTheLock } from "./restart.ts";
+import { parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, startSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -320,12 +320,12 @@ function serviceOptions(): ServiceOptions {
       const c = await readControl();
       return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
     },
-    // `lingtai shutdown`'s own append and `lingtai restart`'s own wait (#174):
-    // the supervisor is told only once nothing holds the conductor lock.
+    // `lingtai shutdown`'s own append and a wait on the lock (#174): the
+    // supervisor is told only once this command holds the conductor lock.
     drain: {
       ask: (by, reason) => requestShutdownUnlessStanding(by, reason),
       holding: async () => describeInFlight(await inFlight().catch(() => [])),
-      quiet: (log) => waitForTheLock("draining", null, log),
+      queue: () => queueForTheLock(),
       withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     },
   };
