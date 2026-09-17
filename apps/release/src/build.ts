@@ -132,7 +132,7 @@ export function layout(dir: string, prefix = ""): string[] {
  */
 async function bundleCli(root: string, out: string): Promise<void> {
   await esbuild({
-    entryPoints: [join(root, "apps", "cli", "src", "lingtai.ts")],
+    entryPoints: [join(root, "apps", "cli", "src", "entry.ts")],
     outfile: join(out, "lingtai.cjs"),
     bundle: true,
     platform: "node",

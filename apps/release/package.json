@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node src/build.ts",
+    "release": "node src/pack.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

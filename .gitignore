@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# `pnpm release <version>` writes the tarballs a GitHub Release carries here.
+/release/
 *.tsbuildinfo
 
 # Next.js
