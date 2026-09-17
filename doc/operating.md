@@ -712,7 +712,7 @@ within five minutes of the withdrawal — a start after that is nobody's restart
 whoever typed it; on any other commit
 it is recorded as `daemon` and says why, and the restart exits non-zero naming
 what did start. `--no-conduct` and `--no-merge` are refused there, because the
-unit decides how the supervisor starts it. A file left after `service stop` is
+unit decides how the supervisor starts it. A file left after `service shutdown` is
 not a keeper — nothing starts from it — so that restart runs in the terminal.
 
 A start is now in the log as well as in the beacon — `ConductorStarted`, with
@@ -775,7 +775,9 @@ crashes:
 ```bash
 pnpm lingtai service install     # write the file for this platform, and load it
 pnpm lingtai service status      # the supervisor's answer, then the beacon's
-pnpm lingtai service start|stop|restart
+pnpm lingtai service shutdown "why"  # drain through the log, wait for the pass, then unload
+pnpm lingtai service restart "why"   # that, then start — unchecked; see below
+pnpm lingtai service start
 pnpm lingtai service uninstall   # logs are kept
 ```
 
@@ -816,20 +818,37 @@ uses the new unit. `service restart` is what applies it now — on macOS
 `bootout`, a wait until the job has gone, and `bootstrap`, never
 `kickstart -k`, which would reuse the old definition.
 
-**`stop` and `restart` are the supervisor's signal.** The daemon drains on it as
-it does on Ctrl+C, but launchd and systemd wait seconds, not a pass, before they
-SIGKILL, which leaves the agent for the next conductor to kill. To wait for the
-pass in flight, use `lingtai restart "why"` instead of `service restart`: it
-drains, withdraws only its own request — a pause stays — and has the supervisor
-start the daemon, recorded as yours (above). By hand, it is `lingtai shutdown
-"why"` *instead of* `service restart`, not before it. A shutdown request outlives the process, so under a supervisor every copy
-it brings back reads it and exits again until `lingtai resume` lifts it — which
-makes the shutdown the restart: once `service status` says the daemon it was
-aimed at has exited, `lingtai resume`, and the supervisor's next start takes
-work on the new code. `service start`, `service restart`, and `service install`
-over a job the supervisor does not have, refuse and exit 1 without starting
-anything while a shutdown request stands, because the daemon they started
-would exit at once and keep doing so behind a command that had said 0.
+**`shutdown` drains first and tells the supervisor last** (#174). The
+supervisor's own stop is a signal and a deadline — launchd SIGKILLs at its
+default `ExitTimeOut` of 20 seconds, systemd at `TimeoutStopSec`'s 90 — and a
+pass takes up to an hour. `service stop` used to send that signal: the daemon
+began its drain and launchd killed the agent twenty seconds in. So `service
+shutdown` appends the request `lingtai shutdown` appends, waits until nothing
+holds the conductor lock, and only then runs `bootout` or `systemctl --user
+stop`, when there is nothing left to kill. Last, it withdraws its own request,
+so a later `service start` is not refused over it; a request somebody else
+asked for is waited on and left standing. On a quiet daemon the wait is over at
+once. Ctrl+C during it tells the supervisor nothing and leaves the request
+standing — every copy KeepAlive starts reads it and exits — and the next
+`service shutdown` picks it up. `service stop` is gone and says so.
+
+`ExitTimeOut` and `TimeoutStopSec` are **deliberately left at their defaults.**
+Set to the wall limit, they would make `bootout`, a logout and a machine
+shutdown block for an hour. The daemon still drains on `SIGTERM`, for whatever
+else signals it; nothing depends on that finishing.
+
+**`service restart` is `shutdown` and then `start`, and nothing is checked.**
+`lingtai restart "why"` is the checked one (0042): before anything stops it
+refuses a `HEAD` the tracking remote does not have, a dirty worktree, and a
+failed `lingtai doctor`, then drains, checks again, and has the supervisor start
+the daemon recorded as yours. `service restart` does none of that — it starts
+whatever the checkout holds — and it is the plumbing for a rewritten unit that
+must be loaded now. A shutdown request outlives the process, so under a
+supervisor every copy it brings back reads it and exits again until it is
+lifted. `service start`, `service restart`, and `service install` over a job
+the supervisor does not have, refuse and exit 1 without starting anything while
+a shutdown request stands, because the daemon they
+started would exit at once and keep doing so behind a command that had said 0.
 (`install` still writes the file, and after `resume` it is `service start` that
 loads it.)
 
@@ -837,7 +856,7 @@ loads it.)
 are cleared by it. If you had paused on purpose, `resume` alone lets the next
 daemon take the work you were holding. To keep the pause, take the supervisor
 out of the way first so nothing starts between the two commands: once the daemon
-has exited, `service stop`, `resume`, `pause "why"` again, `service start`. The
+has exited, `service shutdown`, `resume`, `pause "why"` again, `service start`. The
 refusal above names the pause and prints that order when one is in force.
 **Not for a pause that lifts itself** — the conductor's own, after a run that
 never started, carries a time (0031 §3) and `lingtai pause` cannot: pausing

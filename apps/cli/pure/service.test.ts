@@ -12,12 +12,15 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { readControl, requestShutdownUnlessStanding, withdrawShutdown } from "@lingtai/daemon/control";
 import { repoRoot } from "@lingtai/env";
+import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   LAUNCHCTL_NO_SUCH_SERVICE,
   LAUNCHD_LABEL,
   NO_SUPERVISOR,
+  SYSTEMD_UNIT,
   keeper,
   launchdPlist,
   lingering,
@@ -25,6 +28,7 @@ import {
   serviceCommand,
   systemdUnit,
   type Exec,
+  type ServiceDrain,
 } from "../src/service.ts";
 
 let home: string;
@@ -51,6 +55,25 @@ function supervisor(answers: [string, { status: number; out: string } | (() => {
   return { calls, exec };
 }
 
+/**
+ * A drain with nothing in flight: the request is appended, nothing holds the
+ * lock, and the wait is over on the first ask. `said` is what it was asked, in order.
+ */
+function quietDrain() {
+  const said: string[] = [];
+  let version = 0;
+  const drain: ServiceDrain = {
+    ask: async (by, reason) => (said.push(`ask ${by} ${reason}`), { asked: true, version: ++version }),
+    holding: async () => "nothing in flight",
+    quiet: async () => (said.push("quiet"), "free"),
+    withdraw: async (by, v) => (
+      said.push(`withdraw ${v}`),
+      { withdrew: true, version: v + 1, request: { by, reason: "", timeoutMs: null, force: false, version: v } as never }
+    ),
+  };
+  return { drain, said };
+}
+
 /** Whoever runs the suite, so the checkout `install` stats is theirs. */
 const UID = process.getuid!();
 
@@ -65,15 +88,18 @@ function command(
     /** `"default"` leaves `root` unset, so the command resolves it as it would for real. */
     root?: string | "default";
     uid?: number;
+    drain?: ServiceDrain;
   } = {},
 ) {
   const out: string[] = [];
   const err: string[] = [];
-  const go = (verb: string) =>
-    serviceCommand([verb], {
+  const go = (verb: string, ...why: string[]) =>
+    serviceCommand([verb, ...why], {
       liveness: extra.liveness ?? (async () => "last seen 3000s ago (pid 41) — not running"),
       shutdown: extra.shutdown ?? (async () => null),
       pause: extra.pause ?? (async () => null),
+      drain: extra.drain ?? quietDrain().drain,
+      by: "human:lingtai",
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
       ...(extra.root === "default" ? {} : { root: extra.root ?? home }),
@@ -154,6 +180,7 @@ describe("no service manager", () => {
     const code = await serviceCommand(["status"], {
       liveness: async () => "",
       shutdown: async () => null,
+      drain: quietDrain().drain,
       platform: "linux",
       env: { HOME: home },
       which: (bin) => (bin === "node" ? NODE : null),
@@ -210,18 +237,31 @@ describe("install on macOS", () => {
 });
 
 describe("restart on macOS", () => {
-  it("unloads, waits until launchd says it is gone, and loads the file again — not kickstart -k", async () => {
+  it("drains, unloads, waits until launchd says it is gone, and loads the file again — not kickstart -k", async () => {
     let prints = 0;
     const s = supervisor([
       // loaded, still loaded after bootout, then gone
       ["launchctl print", () => (++prints <= 2 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
     ]);
-    const { go } = command("darwin", s.exec);
+    const d = quietDrain();
+    const { go } = command("darwin", s.exec, { drain: d.drain });
     await launchdFile();
-    expect(await go("restart")).toBe(0);
+    expect(await go("restart", "picking", "up", "#88")).toBe(0);
     const verbs = s.calls.map((c) => c.split(" ").slice(0, 2).join(" "));
-    expect(verbs).toEqual(["launchctl print", "launchctl bootout", "launchctl print", "launchctl print", "launchctl bootstrap"]);
+    expect(verbs).toEqual(["launchctl print", "launchctl bootout", "launchctl print", "launchctl print", "launchctl print", "launchctl bootstrap"]);
     expect(s.calls.join("\n")).not.toContain("kickstart");
+    expect(d.said).toEqual(["ask human:lingtai service restart: picking up #88", "quiet", "withdraw 1"]);
+  });
+
+  it("on Linux, is shutdown then start — never systemctl restart, which is the signal", async () => {
+    const s = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }]]);
+    const { go } = command("linux", s.exec);
+    await systemdFile();
+    expect(await go("restart")).toBe(0);
+    expect(s.calls.filter((c) => !c.startsWith("systemctl --user show"))).toEqual([
+      `systemctl --user stop ${SYSTEMD_UNIT}`,
+      `systemctl --user start ${SYSTEMD_UNIT}`,
+    ]);
   });
 
   it("starts nothing while a shutdown request stands, which the daemon it started would read and exit on", async () => {
@@ -256,17 +296,184 @@ describe("restart on macOS", () => {
     expect(out.join("\n")).toContain("could not read whether a shutdown request stands — connect ECONNREFUSED");
   });
 
-  it("offers shutdown instead of restart, then resume, never shutdown before it", async () => {
+  it("picks up a request its own interrupted wait left standing, rather than refusing it", async () => {
     let prints = 0;
     const s = supervisor([
       ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
     ]);
-    const { go, out } = command("darwin", s.exec);
+    const { go, err } = command("darwin", s.exec, { shutdown: async () => ({ by: "human:lingtai", reason: "service restart: x" }) });
     await launchdFile();
     expect(await go("restart")).toBe(0);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(true);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
+    expect(err.join("\n")).not.toContain("a shutdown request stands");
+  });
+});
+
+/**
+ * #174. `service stop` sent the supervisor's signal, the daemon began a drain,
+ * and launchd SIGKILLed it twenty seconds in. What has to be true is not that a
+ * request was appended — the old verb's daemon drained too — but that the pass
+ * in flight *finished* before the supervisor was told anything.
+ */
+describe("shutdown", () => {
+  /**
+   * A daemon mid-pass, on a real control stream, under a launchd that behaves
+   * as launchd does: `bootout` SIGKILLs whatever is still running. The daemon
+   * reads the stream as the work loop does, finishes its pass a few polls after
+   * it sees a request, and only then lets go of the lock.
+   */
+  function world(passPolls: number) {
+    const store = createMemoryEventStore();
+    const daemon = { running: true, pass: "in flight" as "in flight" | "finished" | "killed", polls: 0 };
+    const order: string[] = [];
+    const tick = async (): Promise<void> => {
+      if (!daemon.running) return;
+      if ((await readControl(store)).shutdown === null) return;
+      if (daemon.pass === "in flight" && ++daemon.polls >= passPolls) {
+        daemon.pass = "finished";
+        order.push("pass finished");
+      }
+      if (daemon.pass === "finished") {
+        daemon.running = false;
+        order.push("lock released");
+      }
+    };
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      [
+        "launchctl bootout",
+        () => {
+          order.push("bootout");
+          if (daemon.running) {
+            // launchd's ExitTimeOut, compressed: the signal, then SIGKILL.
+            if (daemon.pass === "in flight") daemon.pass = "killed";
+            daemon.running = false;
+          }
+          loaded = false;
+          return { status: 0, out: "" };
+        },
+      ],
+    ]);
+    const drain: ServiceDrain = {
+      ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
+      holding: async () => (daemon.pass === "in flight" ? "1 in flight: lingtai#174" : "nothing in flight"),
+      quiet: async () => {
+        for (;;) {
+          await tick();
+          if (!daemon.running) return "free";
+        }
+      },
+      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, null, store),
+    };
+    return { store, daemon, order, s, drain };
+  }
+
+  it("lets the pass in flight finish before launchd is told anything, then unloads and withdraws its request", async () => {
+    const w = world(5);
+    const { go, out } = command("darwin", w.s.exec, { drain: w.drain });
+    await launchdFile();
+    expect(await go("shutdown", "picking", "up", "#88")).toBe(0);
+
+    expect(w.daemon.pass).toBe("finished");
+    expect(w.order).toEqual(["pass finished", "lock released", "bootout"]);
+    // Withdrawn after the unload, so `service start` is not refused over it.
+    expect((await readControl(w.store)).shutdown).toBeNull();
     const text = out.join("\n");
-    expect(text).toContain('`pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited');
-    expect(text).not.toContain("first");
+    expect(text).toContain("draining — 1 in flight: lingtai#174");
+    expect(text).toContain("It is waiting, not hung");
+  });
+
+  it("on Linux, the same order: drained, then systemctl stop", async () => {
+    const w = world(3);
+    const s = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }],
+      [
+        "systemctl --user stop",
+        () => {
+          if (w.daemon.running && w.daemon.pass === "in flight") w.daemon.pass = "killed";
+          w.daemon.running = false;
+          return { status: 0, out: "" };
+        },
+      ],
+    ]);
+    const { go } = command("linux", s.exec, { drain: w.drain });
+    await systemdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(w.daemon.pass).toBe("finished");
+    expect(s.calls).toContain(`systemctl --user stop ${SYSTEMD_UNIT}`);
+  });
+
+  it("is fast on a quiet daemon: the wait is for work, and there is none", async () => {
+    const w = world(0);
+    w.daemon.pass = "finished";
+    const { go } = command("darwin", w.s.exec, { drain: w.drain });
+    await launchdFile();
+    const began = Date.now();
+    expect(await go("shutdown")).toBe(0);
+    expect(Date.now() - began).toBeLessThan(1_000);
+    expect(w.order).toEqual(["lock released", "bootout"]);
+  });
+
+  it("tells the supervisor nothing when the wait is interrupted, and leaves the request standing", async () => {
+    const w = world(5);
+    const { go, out } = command("darwin", w.s.exec, { drain: { ...w.drain, quiet: async () => "interrupted" } });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(130);
+    expect(w.s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(false);
+    expect((await readControl(w.store)).shutdown).not.toBeNull();
+    expect(out.join("\n")).toContain("pnpm lingtai service shutdown again picks the request up");
+  });
+
+  it("waits on somebody else's standing request and leaves it standing — theirs to lift", async () => {
+    const w = world(2);
+    await requestShutdownUnlessStanding("human:ops", "migrating the database", null, w.store);
+    const { go, out } = command("darwin", w.s.exec, { drain: w.drain });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(w.daemon.pass).toBe("finished");
+    expect((await readControl(w.store)).shutdown?.by).toBe("human:ops");
+    expect(out.join("\n")).toContain("a shutdown asked by human:ops (migrating the database) is already standing");
+  });
+
+  it("sends no signal when the request could not be appended", async () => {
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    const drain = { ...quietDrain().drain, ask: async () => Promise.reject(new Error("connect ECONNREFUSED")) };
+    const { go, err } = command("darwin", s.exec, { drain });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(false);
+    expect(err.join("\n")).toContain("connect ECONNREFUSED");
+  });
+
+  it("asks for no drain when the supervisor is not running the job", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const d = quietDrain();
+    const { go } = command("darwin", s.exec, { drain: d.drain });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(d.said).toEqual([]);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(false);
+  });
+
+  it("answers `stop` by name with the verb that replaced it, and signals nothing", async () => {
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    const { go, err } = command("darwin", s.exec);
+    await launchdFile();
+    expect(await go("stop")).toBe(2);
+    expect(s.calls).toEqual([]);
+    expect(err.join("\n")).toContain("pnpm lingtai service shutdown");
+  });
+
+  it("leaves ExitTimeOut and TimeoutStopSec at the supervisors' defaults, and says why", () => {
+    // Set to the wall limit, a logout or a machine shutdown would block for an hour.
+    const plist = launchdPlist({ node: NODE, root: ROOT, env: { HOME: "/Users/x", USER: "x" } }).content;
+    expect(plist).not.toContain("<key>ExitTimeOut</key>");
+    expect(plist).toContain("No ExitTimeOut, deliberately");
+    const unit = systemdUnit({ node: NODE, root: ROOT, env: { HOME: "/home/x", USER: "x" } }).content;
+    expect(unit).not.toMatch(/^TimeoutStopSec=/m);
+    expect(unit).toContain("No TimeoutStopSec, deliberately");
   });
 });
 
@@ -315,7 +522,7 @@ describe("while a shutdown request stands", () => {
     const said = err.join("\n");
     expect(said).toContain("A pause is in force too — steven (the importer is flaky today) — and pnpm lingtai resume lifts it");
     expect(said).toContain(
-      'pnpm lingtai service stop, pnpm lingtai resume, pnpm lingtai pause "the importer is flaky today", pnpm lingtai service start.',
+      'pnpm lingtai service shutdown, pnpm lingtai resume, pnpm lingtai pause "the importer is flaky today", pnpm lingtai service start.',
     );
     expect(said).not.toContain("the supervisor's next start takes work");
   });
@@ -337,7 +544,7 @@ describe("while a shutdown request stands", () => {
     expect(said).toContain(`A pause is in force too — conductor (account limit) — until ${until.toISOString()}, when it lifts by itself`);
     expect(said).toContain(`After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited`);
     expect(said).not.toContain("pnpm lingtai pause");
-    expect(said).not.toContain("pnpm lingtai service stop");
+    expect(said).not.toContain("pnpm lingtai service shutdown");
   });
 });
 
@@ -377,6 +584,11 @@ describe("install, and whose checkout it names", () => {
     expect(existsSync(join(home, ".config/systemd/user/lingtai.service"))).toBe(false);
   });
 });
+
+async function systemdFile() {
+  await mkdir(join(home, ".config/systemd/user"), { recursive: true });
+  await writeFile(join(home, ".config/systemd/user", SYSTEMD_UNIT), "");
+}
 
 async function launchdFile() {
   const { writeFile, mkdir } = await import("node:fs/promises");
@@ -536,7 +748,7 @@ describe("whether a supervisor keeps the daemon, for a restart", () => {
     expect(keeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toMatchObject({ kept: true, platform: "launchd" });
   });
 
-  it("does not, for a file somebody `service stop`ped — nothing would start from it", async () => {
+  it("does not, for a file somebody `service shutdown` unloaded — nothing would start from it", async () => {
     await install("launchd", ROOT);
     const { exec } = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
     expect(keeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
