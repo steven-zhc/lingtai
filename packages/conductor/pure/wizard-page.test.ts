@@ -370,8 +370,12 @@ describe("an existing recipe", () => {
 
 /**
  * The last screen once the button has written (#182). It says what it wrote and
- * where — this machine — and ends without a pull request: what a pending card
- * waits for is the App's installation, and nothing is left to merge.
+ * where — this machine — and ends without a pull request and nothing to merge.
+ *
+ * **And without "install the App".** `finishWizard` builds its client on the
+ * App's installation on the repository and refuses without one, so this screen
+ * only exists where the App is installed; telling the operator to install it
+ * would send them after a step already done. What is left is `Recheck`.
  */
 describe("the last screen, written", () => {
   const said = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml");
@@ -382,9 +386,9 @@ describe("the last screen, written", () => {
     expect(said).toContain("Nothing was written to acme/shop");
   });
 
-  it("waits for the App, and mentions no pull request and nothing to merge", () => {
-    expect(said).toContain("GitHub App is installed on acme/shop");
-    expect(said).toContain("Recheck");
-    expect(said).not.toMatch(/pull request|merge/i);
+  it("ends at Recheck, and asks for no install, no pull request and nothing to merge", () => {
+    expect(said).toContain("press Recheck");
+    expect(said).toContain("permissions on acme/shop");
+    expect(said).not.toMatch(/install|pull request|merge/i);
   });
 });

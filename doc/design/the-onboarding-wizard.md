@@ -2,8 +2,8 @@
 
 **Status** decided · 2026-09-15 · the design the wizard epic is cut from ·
 **amended by [0046](../decisions/0046-lingtai-is-personal.md)**: the recipe is
-this machine's, the wizard opens no pull request, and *pending* waits for the
-App's installation (#180, #182). The sections that argued otherwise say so where
+this machine's, the wizard opens no pull request, and *pending* waits for
+`Recheck` and no longer for a recipe to land (#180, #182). The sections that argued otherwise say so where
 they stand.
 
 Two drawings, and they are the record of the choice rather than decoration:
@@ -306,20 +306,25 @@ repository and nothing waits on a merge** (0046 §3, #182). Then:
 ```
 wizard finishes   → ProjectOnboardingStarted { slug, base, by }   ← the stream's first event
 board shows       → a card: pending, with Recheck
-Recheck           → ask GitHub whether the App is installed on the repository
+Recheck           → ask GitHub for the App's installation on the repository
   not installed   → unchanged, and it says so: install the App, then press again
   installed       → the existing lingtai add path: scopes, the machine's recipe,
                     ProjectConfigured, and it is live
+  add refuses     → unchanged, and everything add said: a missing scope, a recipe
+                    that does not resolve
 ```
 
-**Pending waits for the App, and that is a state that ends.** It used to wait for
-a recipe to land in the repository, which 0046 made impossible — nothing lands
-there any more. A repository the App is not installed on is still a real pending
-state, and it is the same fact #168's first screen starts from, seen from the
-other end.
+**Pending no longer waits for a recipe to land**, which 0046 made impossible —
+nothing lands in the repository any more. **Nor does it wait for the App to be
+installed.** The wizard's scan and its button both build their client on the
+installation on that repository and refuse without one, so a pending project had
+one when it was recorded; *not installed* at `Recheck` means removed since.
+What a pending card is waiting for is somebody pressing `Recheck`, and what can
+still refuse is `add`'s own checks. A repository the App has never been installed
+on never reaches pending: that is #168's first screen, before the wizard.
 
-**No watcher, and that is deliberate.** The board is a page and cannot follow an
-installation for hours; the daemon does not know repositories it has not
+**No watcher, and that is deliberate.** The board is a page and cannot follow a
+repository for hours; the daemon does not know repositories it has not
 onboarded. `Recheck` is the second half.
 
 The daemon cannot touch a pending project either, and not because we guarded it:
@@ -332,8 +337,9 @@ page.
 
 ## What it does not do
 
-- **It does not run `lingtai add` for you.** `add` checks the App's installation
-  and scopes, and the App may not be installed yet; `Recheck` is the second half.
+- **It does not run `lingtai add` for you.** `add` checks the installation's
+  scopes and resolves the recipe, and either can refuse after the wizard has
+  written; `Recheck` is the second half.
 - **It never takes a secret.** `env.required` names variables; values go through
   `lingtai env set`, which reads them from stdin unechoed. Nothing is typed into
   a web page.

@@ -166,11 +166,11 @@ describe("finishing an onboarding the wizard recorded", () => {
 });
 
 /**
- * What `Recheck` waits for: the App's installation, and no longer a recipe
- * landing in the repository (#182). The wizard wrote the recipe on this machine
- * before it recorded anything, so *not installed yet* is the pending state that
- * can still end — and it must end by being asked about, with nothing written
- * while the answer is no.
+ * What `Recheck` asks: GitHub for the installation first, then `add` — and no
+ * longer for a recipe landing in the repository (#182). The wizard recorded the
+ * project through the installation, but it can have been removed since, and
+ * that must be answered in its own sentence with nothing written; so must a
+ * refusal from `add` of an installation that is there.
  */
 describe("Recheck", () => {
   const RECORDED = { owner: "steven-zhc", project: "nextloom-ai-admin", base: "main" };

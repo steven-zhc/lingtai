@@ -295,14 +295,15 @@ export async function declineBacklogFinding(input: {
  * decided is the conductor, and it has one state.
  */
 /**
- * Finish onboarding a repository once the App is installed on it (#163, #182).
+ * Finish onboarding a repository the wizard recorded (#163, #182).
  *
- * **Pending waits for the App.** The wizard wrote the recipe on this machine
- * before it recorded anything (0046 §3), so what a pending project can still
- * lack is an installation, and this asks GitHub about exactly that first —
- * `recheck`, which answers *not installed yet* in its own sentence with nothing
- * written, so the card stays where it was and is pressed again once somebody
- * installs it.
+ * **Pending waits for this button, and for no one cause.** The wizard wrote the
+ * recipe on this machine (0046 §3) and recorded the project through a client
+ * built on the App's installation, which it refuses without — so a pending
+ * project had an installation when it was recorded. What can still refuse is
+ * what `add` checks: the installation's permissions, the recipe, or an
+ * installation removed since. `recheck` answers each in its own sentence with
+ * nothing written, so the card stays where it was and is pressed again.
  *
  * **The existing `lingtai add` path, and not a second one.** Installed, `recheck`
  * runs `add` with the slug and the base the `ProjectOnboardingStarted`

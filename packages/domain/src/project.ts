@@ -132,10 +132,12 @@ export function isRegistered(state: ProjectState): boolean {
 /**
  * Whether this repository is on its way in — recorded, and no recipe read yet.
  *
- * What it waits for is the GitHub App's installation (#182): the wizard writes
- * the recipe on this machine before it records anything, and `Recheck` asks
- * `installationForRepo` before it reads it. The fold cannot know that, and does
- * not have to — it only draws the line.
+ * What it waits for is `Recheck` (#182), and not an installation: the wizard
+ * writes the recipe on this machine and records the project only through the
+ * App's installation on the repository, refusing without one. What can still
+ * keep it here is what `lingtai add` checks — the installation's permissions,
+ * the recipe, an installation removed since. The fold cannot know which, and
+ * does not have to — it only draws the line.
  *
  * The complement of `isRegistered` over the streams that exist, and it is that
  * rather than a flag on purpose (#163): the two are one line drawn once, so a

@@ -75,14 +75,17 @@ A project is **pending** between `ProjectOnboardingStarted` and
 nothing. There is no flag and no table — `isRegistered` is `project !== null &&
 configHash !== null`, and `configHash` arrives only with a recipe that was read.
 `loadProjects()` has filtered on it since before pending existed, which is why
-the daemon needed no guard. **What pending waits for is the GitHub App's
-installation** (`#182`): the wizard writes the recipe on this machine before it
-records anything, so the thing a pending project can still lack is an App that
-can see the repository. The board draws a card with `Recheck` on it, and
-`Recheck` is `recheck` (`packages/conductor/src/onboard.ts`): it asks
-`installationForRepo` first and answers *not installed yet* with nothing written,
-and once the App is there runs `lingtai add`'s own path — the scopes,
-`~/.lingtai/<project>/recipe.yml`, `ProjectConfigured`. Nothing finishes it
+the daemon needed no guard. **What pending waits for is `Recheck`, not an
+installation** (`#182`): the wizard writes the recipe on this machine and
+records the project only through a client built on the App's installation on
+the repository, refusing without one — so every pending project had one when it
+was recorded. What can still refuse is `lingtai add`'s checks: the
+installation's permissions, the recipe, or an installation removed since. The
+board draws a card with `Recheck` on it, and `Recheck` is `recheck`
+(`packages/conductor/src/onboard.ts`): it asks `installationForRepo` first and
+answers *not installed* with nothing written, and otherwise runs `lingtai add`'s
+own path — the scopes, `~/.lingtai/<project>/recipe.yml`, `ProjectConfigured` —
+saying everything `add` said when it refuses. Nothing finishes it
 automatically, by decision
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 

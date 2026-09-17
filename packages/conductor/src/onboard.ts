@@ -23,8 +23,8 @@
  * specific and must not be silently overridden.
  *
  * **In the conductor rather than in the CLI, because it has two callers**
- * (#163). The board's `Recheck` finishes a pending project once the App is
- * installed on it (#182), by reading the machine's recipe and appending
+ * (#163). The board's `Recheck` finishes a pending project (#182) by checking
+ * the installation, reading the machine's recipe and appending
  * `ProjectConfigured` — which is
  * precisely this function, and a second implementation of it behind a button
  * would be two ways of registering a project, free to disagree about the base,
@@ -119,17 +119,19 @@ export interface RecheckDeps {
 }
 
 /**
- * `Recheck`: is the App installed on this repository yet, and if so, register
+ * `Recheck`: is the App still installed on this repository, and if so, register
  * it (#182).
  *
- * **Pending waits for the App, not for a recipe.** The wizard writes the recipe
- * on this machine before it records anything (0046 §3), so a pending project
- * always has one; what it can still lack is an installation — and that is a
- * state that ends, by somebody installing the App, where *a recipe landing in
- * the repository* no longer can (#168's first screen is the same fact). So the
- * question asked first is GitHub's, `installationForRepo`, and a repository the
- * App cannot see is answered in its own sentence with nothing written, the card
- * left exactly where it was to be pressed again.
+ * **Pending waits for `Recheck`, not for a recipe landing in the repository**,
+ * which 0046 §3 made impossible. And **not for an installation either**: the
+ * wizard writes the recipe on this machine and records the project only through
+ * a client built on the App's installation there, and refuses without one — so
+ * every pending project had one when it was recorded. What can still refuse is
+ * what `add` checks: the installation's permissions, the machine's recipe
+ * (`~/.lingtai/config.yml` edited into something invalid since), and the
+ * installation itself if it has been removed since. The installation is asked
+ * first, and a repository the App can no longer see is answered in its own
+ * sentence with nothing written, the card left where it was.
  *
  * Installed, it is `add` with the recorded base as the hint it is
  * (`resumeOnboarding`) and the installation just read, so GitHub is asked once:
@@ -153,7 +155,7 @@ export async function recheck(
       ok: false,
       installed: false,
       detail:
-        `the GitHub App is not installed on ${slug} yet — install it on that repository ` +
+        `the GitHub App is not installed on ${slug} — install it on that repository ` +
         "(Settings → GitHub Apps → Configure), then press Recheck. Nothing was written.",
     };
   }

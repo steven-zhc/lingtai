@@ -1,9 +1,9 @@
 /**
  * A repository that is on its way in, on a board that still works (#163).
  *
- * The wizard ends with the recipe on this machine, and the App may not be
- * installed on the repository yet (#182). In between, the project is on the log
- * and is not registered — and the Queued
+ * The wizard ends with the recipe on this machine, and `Recheck` registers it
+ * later (#182). In between, the project is on the log and is not registered —
+ * and the Queued
  * column's whole job is to ask GitHub, under a recipe, what a project is
  * offering. Asked about this one it would refuse, and a refusal there is not
  * quiet: `#76` made it a red line naming the project, precisely so a broken
@@ -54,7 +54,7 @@ describe("the register, split", () => {
    * The one that matters. `askProject` never throws — it answers `unreadable`,
    * and `queuedCards` turns that into a `problem`, which is a red line in the
    * Queued column naming the project. A pending repository put through here
-   * would redden the board every render until somebody installed the App.
+   * would redden the board every render until somebody pressed Recheck.
    */
   it("asks GitHub about the live project and nothing at all about the pending one", async () => {
     const asked: string[] = [];
@@ -89,18 +89,22 @@ describe("the pending card", () => {
   });
 
   /**
+   * What `Recheck` checks, since #182 — and never a cause. The wizard only
+   * records a repository the App is installed on, so *waiting for the App to be
+   * installed* would be false on every card; nor is there a pull request.
+   */
+  it("says what Recheck checks, and neither waits for an install nor for anything to merge", () => {
+    const out = html();
+
+    expect(out).toContain("installation and permissions");
+    expect(out).not.toMatch(/to be installed|waiting for|pull request|merge/i);
+  });
+
+  /**
    * The button reads a file, and which file is the whole of what it does — the
    * machine's since #180, never one in the repository. A card that did not say
    * so would be a control nobody could tell had been pointed at the wrong place.
    */
-  /** What it is waiting for, since #182: the App, and never a pull request. */
-  it("says it waits for the App to be installed, and not for anything to merge", () => {
-    const out = html();
-
-    expect(out).toContain("GitHub App to be installed");
-    expect(out).not.toMatch(/pull request|merge/i);
-  });
-
   it("says which file on this machine it reads, and for which branch", () => {
     const out = html();
 
