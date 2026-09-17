@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectState } from "@lingtai/domain";
 import { projectFilter } from "@lingtai/conductor";
-import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase } from "../src/doctor.ts";
+import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase, recipeRow } from "../src/doctor.ts";
 
 const RECIPE = `
 version: 1
@@ -50,6 +50,25 @@ describe("the recipe row, with no App configured", () => {
     expect(filter.kinds).toEqual(["bug"]);
     expect(filter.provenance["runtime.agent"]).toBe(`claude-code ← ${join(home, "config.yml")}`);
     expect(filter.provenance["gates"]).toContain(join(home, "app", "recipe.yml"));
+  });
+
+  /**
+   * A machine that names codex resolves, and every pass of it is refused by
+   * `runOnce` before its claim — so the row that says what a run will do is a
+   * fail in that refusal's words, not an ok that prints `codex` (#180).
+   */
+  it("fails when runtime.agent names a runtime this conductor does not dispatch", async () => {
+    await writeFile(join(home, "config.yml"), "runtime:\n  agent: codex\n");
+    const state = { project: "app", owner: "me", base: "main" } as ProjectState;
+    const filter = await projectFilter(state, recipeClientFor({}));
+
+    const row = recipeRow(filter, "claude-code");
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("runtime.agent is codex");
+    expect(row.detail).toContain("this conductor runs claude-code");
+
+    await writeFile(join(home, "config.yml"), "runtime:\n  agent: claude-code\n");
+    expect(recipeRow(await projectFilter(state, recipeClientFor({})), "claude-code").status).toBe("ok");
   });
 
   /**

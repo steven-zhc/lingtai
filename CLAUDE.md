@@ -31,9 +31,11 @@ to them but the projection.
 ## Opening an issue
 
 An issue needs a **kind** label or the queue never sees it. The recipe's
-`source.kinds` in `.lingtai/config.yaml` decides which — currently `bug`,
-`tech-debt`, `feature`. The other labels in this repo (`enhancement`,
-`documentation`, …) are invisible to the conductor.
+`source.kinds` decides which — currently `bug`, `tech-debt`, `feature`. That is
+the conducting machine's `~/.lingtai/lingtai/recipe.yml` since #180, and **not**
+`.lingtai/config.yaml`: nothing reads the repository's copy, so a label added
+there and merged stays invisible, and says nothing. The other labels in this
+repo (`enhancement`, `documentation`, …) are invisible to the conductor.
 
 Add **`agent:hold`** unless you mean an agent to take it now. Self-hosting runs
 one unheld ticket at a time, so an unheld ticket is one you are asking the next

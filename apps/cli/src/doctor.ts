@@ -25,6 +25,8 @@
 import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
   type ClientFor,
+  type ProjectFilter,
+  agentRefusal,
   currentRecipe,
   endedWithoutEndActions,
   githubClientFor,
@@ -34,7 +36,7 @@ import {
   projectFilters,
 } from "@lingtai/conductor";
 import type { GitHubClient } from "@lingtai/github";
-import { type Recipe, baseDivergence } from "@lingtai/recipe";
+import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1225,8 +1227,35 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
     return [{ name, status: "ok", detail: "nothing is registered, so no recipe governs anything" }];
   }
 
-  return (await projectFilters(projects, recipeClientFor(env))).map((f) =>
-    f.ok
+  return (await projectFilters(projects, recipeClientFor(env))).map((f) => recipeRow(f));
+}
+
+/**
+ * One project's `recipe:` row.
+ *
+ * **A recipe that resolves is not yet one that runs.** `runtime.agent` may name
+ * a runtime this conductor does not dispatch, and `runOnce` refuses every pass
+ * of such a project before its claim (#180) — so that is a `fail` here, in
+ * `runOnce`'s own sentence, and not an `ok` that prints the agent and says
+ * nothing of it.
+ */
+export function recipeRow(
+  f: ProjectFilter,
+  dispatched: string = createClaudeCodeRuntime().capabilities.id,
+): CheckResult {
+  const wrongAgent = f.ok ? agentRefusal(f, dispatched) : null;
+  if (f.ok && wrongAgent !== null) {
+    return {
+      name: `recipe: ${f.project}`,
+      status: "fail",
+      detail:
+        `${wrongAgent} — every run of this project is refused before its claim, and nothing will be taken. ` +
+        `Name runtime.agent: ${dispatched} in ${machinePath()}; ` +
+        `no other runtime is dispatched yet\n` +
+        provenanceLines(f.provenance),
+    };
+  }
+  return f.ok
       ? {
           name: `recipe: ${f.project}`,
           status: "ok" as const,
@@ -1248,8 +1277,7 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
           name: `recipe: ${f.project}`,
           status: "fail" as const,
           detail: `${f.problem} — nothing will be taken from this project`,
-        },
-  );
+        };
 }
 
 /**

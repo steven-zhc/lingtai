@@ -3,20 +3,31 @@
  * it work. What the rows are and how a line moves is
  * `@lingtai/conductor/wizard-page`; this is where the page gets its first state.
  *
- * **Step one reads the base branch.** If `.lingtai/config.yaml` is already
- * there the page is an update flow — the same two speeds, the fast lane filled
- * from the file, and an edit made with `editRecipe` so the file's comments
- * survive it. Otherwise the repository is read back by `proposeRecipe` (#161).
+ * **Step one reads this machine, not the repository.** The recipe is
+ * `~/.lingtai/<project>/recipe.yml` ([0046](../../../../../../doc/decisions/0046-lingtai-is-personal.md)
+ * §3, #180), so if that file is there the page is an update flow — the same two
+ * speeds, the fast lane filled from it with the machine's agent and limits, and
+ * an edit made with `editRecipe` so the file's comments survive it. A
+ * `.lingtai/config.yaml` in the repository is not read: nothing runs by it, and
+ * a page editing it would be editing values nothing obeys. Otherwise the
+ * repository is read back by `proposeRecipe` (#161).
  *
- * **Nothing is written.** Every request here is a `GET`, and the page ends at
- * the recipe as a file: [0046](../../../../../../doc/decisions/0046-lingtai-is-personal.md)
- * removed the step that committed it to the repository, so there is no pull
- * request to open from here.
+ * **Nothing is written by loading it.** Every request here is a `GET`; the
+ * page's button is what writes, and only on this machine (`finish.ts`).
  */
 import { onboardState, updateState } from "@lingtai/conductor/wizard-page";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { RECIPE_PATH, RecipeInvalidError, proposeRecipe, resolveRecipe } from "@lingtai/recipe";
+import type { ProjectState } from "@lingtai/domain";
+import { currentRecipe } from "@lingtai/conductor/projects";
+import {
+  AgentUnresolvedError,
+  MachineConfigInvalidError,
+  RecipeInvalidError,
+  proposeRecipe,
+  recipePath,
+} from "@lingtai/recipe";
+import { readFile } from "node:fs/promises";
 import { type Loaded, WizardScreen } from "./wizard.tsx";
 
 export const dynamic = "force-dynamic";
@@ -38,15 +49,24 @@ async function load(input: string): Promise<Loaded> {
   const slug = `${owner}/${repo}`;
   try {
     const client = await createGitHubClient({ auth: githubApp(), owner, repo });
-    const base = await client.defaultBranch();
-    const existing = await client.fileAt(RECIPE_PATH, base);
+    const existing = await readFile(recipePath(repo), "utf8").catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return null;
+      throw err;
+    });
     if (existing !== null) {
       let resolved;
       try {
-        resolved = await resolveRecipe(async () => existing, base);
+        // The read a run makes, so the page shows the agent and limits a run gets.
+        resolved = await currentRecipe({ project: repo, owner } as ProjectState);
       } catch (err) {
-        // The repository answered; the file on it is what is wrong, and picking another repository does not fix it.
-        if (err instanceof RecipeInvalidError) return { state: "invalid", slug, why: err.message };
+        // The files on this machine are what is wrong, and picking another repository does not fix it.
+        if (
+          err instanceof RecipeInvalidError ||
+          err instanceof MachineConfigInvalidError ||
+          err instanceof AgentUnresolvedError
+        ) {
+          return { state: "invalid", slug, why: err.message };
+        }
         throw err;
       }
       const { recipe } = resolved;

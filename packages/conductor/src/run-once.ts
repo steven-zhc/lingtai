@@ -180,6 +180,24 @@ export const changedFilesArgs = (baseSha: string): string[] => [
   `${baseSha}...HEAD`,
 ];
 
+/**
+ * Why a resolved recipe will not run on the runtime a conductor dispatches, or
+ * null when it will (#180).
+ *
+ * One sentence for both places that ask: `runOnce`, which refuses before its
+ * claim, and `lingtai doctor`'s recipe row, which must not be `ok` for a
+ * recipe every pass of which that refusal stops.
+ */
+export function agentRefusal(
+  resolved: Pick<ResolvedRecipe, "recipe" | "provenance">,
+  dispatched: string,
+): string | null {
+  const named = resolved.recipe.runtime.agent;
+  if (named === dispatched) return null;
+  const from = resolved.provenance?.["runtime.agent"];
+  return `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`;
+}
+
 export interface RunOnceOptions {
   project: ProjectState;
   client: GitHubClient;
@@ -363,17 +381,14 @@ export function runOnce(
     // pick that rule refuses — and it would record the runtime it was handed,
     // with nothing anywhere saying the named one was not used. Before the claim,
     // for the same reason as the refusals around it.
-    if (recipe.runtime.agent !== options.runtime.capabilities.id) {
-      const from = resolved.provenance?.["runtime.agent"];
+    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id);
+    if (wrongAgent !== null) {
       return {
         ok: false,
         workItemId: null,
         runId: null,
         stage: "recipe",
-        detail:
-          `runtime.agent is ${recipe.runtime.agent}${from ? ` (${from})` : ""}, and this conductor runs ` +
-          `${options.runtime.capabilities.id} — nothing was claimed. Name ${options.runtime.capabilities.id} ` +
-          "there to run with it; no other runtime is dispatched yet",
+        detail: `${wrongAgent} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; no other runtime is dispatched yet`,
       };
     }
     // Safe now, and only now: past the refusal these two are the same branch.

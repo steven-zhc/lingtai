@@ -82,7 +82,8 @@ finishes it automatically, by decision
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 
 What appends that first event is `startOnboarding`
-(`packages/conductor/src/wizard.ts`, `#165`), and it is **the only write the
+(`packages/conductor/src/wizard.ts`, `#165`), called by the wizard page's
+*Write the recipe on this machine* (`apps/board/src/app/setup/wizard/finish.ts`), and it is **the only write the
 wizard makes of its own accord** — and since `#180` it writes nothing to the
 repository: the recipe is parsed before anything is written, so a file that
 would fail `lingtai add` names its bad field instead; then

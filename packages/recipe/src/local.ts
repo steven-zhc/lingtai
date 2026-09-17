@@ -321,11 +321,18 @@ export function machineFiles(input: {
   /** The machine file's current text, or null when there is none. */
   machine: string | null;
   home?: string;
+  /**
+   * Set the project's section even when it already says something else. For
+   * an edit a person made to that very section on a page showing its current
+   * value — never for a first onboarding, which must not overwrite a choice.
+   */
+  replace?: boolean;
 }): MachineFiles {
   const home = input.home ?? stateDir();
   const doc = parseDocument(input.file);
-  doc.deleteIn(["runtime", "agent"]);
-  doc.deleteIn(["runtime", "limits"]);
+  // A file already without them — the machine's own, being edited — has no `runtime` to delete from.
+  if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
+  if (doc.hasIn(["runtime", "limits"])) doc.deleteIn(["runtime", "limits"]);
   const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 
   const chosen = { agent: input.recipe.runtime.agent, limits: { ...input.recipe.runtime.limits } };
@@ -350,6 +357,10 @@ export function machineFiles(input: {
       ? (existing as { toJSON: () => unknown }).toJSON()
       : existing;
     if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };
+    if (input.replace) {
+      machine.setIn(at, chosen);
+      return { ok: true, recipe, machine: machine.toString() };
+    }
     return {
       ok: false,
       refusal:

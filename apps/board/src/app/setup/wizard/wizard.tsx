@@ -59,8 +59,8 @@ export function WizardScreen({ loaded }: { loaded: Loaded }) {
             </p>
           ) : loaded.state === "invalid" ? (
             <p className="refusal">
-              {loaded.slug} was read, and its recipe was not — {loaded.why}. The fault is in that file, not the
-              repository: fix it on the base branch and reload.
+              {loaded.slug} was read, and its recipe was not — {loaded.why}. The fault is in this machine's files, not
+              the repository: fix what it names and reload.
             </p>
           ) : loaded.state === "unreadable" ? (
             <p className="refusal">
@@ -94,7 +94,7 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
         <span className="hfact">
           {state.mode === "onboard"
             ? `read from ${state.draft.base} — change anything that is wrong`
-            : `the recipe on ${state.draft.base} — change what you came for`}
+            : `this machine's recipe, for ${state.draft.base} — change what you came for`}
         </span>
       </h2>
 
@@ -164,20 +164,29 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
                 startTransition(async () => setFinished(await finishWizard({ state, recipe, existing })))
               }
             >
-              {state.mode === "onboard" ? "Show the recipe" : "Show the change"}
+              {state.mode === "onboard" ? "Write the recipe on this machine" : "Show the change"}
             </button>
           </div>
         )}
         {finished === null ? null : finished.ok ? (
           <>
             <p className="decided">
-              {state.mode === "update"
-                ? finished.changed.length === 0
+              {finished.written
+                ? `Written to ${finished.path}, and onboarding recorded — press Recheck on the board's pending card to finish.`
+                : finished.changed.length === 0
                   ? "Nothing changed."
-                  : `Changes ${finished.changed.join(", ")}, and every other line as it was.`
-                : "The recipe, parsed by the system's own parser. Nothing has been written."}
+                  : `Changes ${finished.changed.join(", ")}, and every other line as it was. Nothing has been written — this is ${finished.path}:`}
             </p>
             <pre className="wz-file">{finished.file}</pre>
+            {finished.machine === null ? null : (
+              <>
+                <p className="note">
+                  The agent and the limits are this machine&apos;s, not the recipe&apos;s — <code>~/.lingtai/config.yml</code>{" "}
+                  with this change:
+                </p>
+                <pre className="wz-file">{finished.machine}</pre>
+              </>
+            )}
           </>
         ) : (
           <ul className="wz-refusals">

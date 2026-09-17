@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { passCeiling } from "@lingtai/conductor/filter";
 import { type WizardState, onboardState, updateState, wizardReducer } from "@lingtai/conductor/wizard-page";
-import { PRESETS, Recipe, resolveRecipe } from "@lingtai/recipe";
+import { PRESETS, Recipe, machinePath, recipePath, resolveLocalRecipe, resolveRecipe } from "@lingtai/recipe";
 import { editExisting } from "../src/app/setup/wizard/finish.ts";
 import { WizardScreen } from "../src/app/setup/wizard/wizard.tsx";
 
@@ -124,7 +124,7 @@ describe("the one default that flips", () => {
 
     expect(out).toContain('class="wz-argues"');
     expect(out).toContain("Does a person approve the merge?");
-    expect(out).not.toContain("Show the recipe");
+    expect(out).not.toContain("Write the recipe on this machine");
   });
 });
 
@@ -176,8 +176,11 @@ describe("a recipe on the base branch that does not parse", () => {
 });
 
 describe("an edit to a recipe that extends a preset", () => {
+  // The machine's recipe, which carries no `runtime.agent` or `runtime.limits` (#180).
   const FILE =
-    "version: 1\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n\nruntime:\n  agent: claude-code\n";
+    "version: 1\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n";
+  const HOME = "/home/me/.lingtai";
+  const on = (current: Recipe, machine: string | null = null) => ({ project: "shop", current, machine, home: HOME });
 
   it("keeps every gate the preset supplied when one gate point changes", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
@@ -187,9 +190,10 @@ describe("an edit to a recipe that extends a preset", () => {
       draft: { closeOnLand: true },
     });
 
-    const finished = await editExisting(FILE, state);
+    const finished = await editExisting(FILE, state, on(recipe));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
     expect(finished.changed).toEqual(["gates"]);
+    expect(finished.machine).toBeNull();
 
     const edited = (await resolveRecipe(async () => finished.file, "main")).recipe.gates;
     const preset = PRESETS["pnpm-workspace"]!.gates!;
@@ -202,10 +206,38 @@ describe("an edit to a recipe that extends a preset", () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
 
-    const finished = await editExisting(FILE, state);
+    const finished = await editExisting(FILE, state, on(recipe));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
     expect(finished.changed).toEqual(["runtime.limits.turns"]);
     expect((await resolveRecipe(async () => finished.file, "main")).recipe.gates).toEqual(recipe.gates);
+  });
+
+  /**
+   * **What the page shows is what the machine reads** (#180). A limit changed
+   * on the page goes into `~/.lingtai/config.yml`, never into the recipe file —
+   * a recipe carrying `runtime.limits` is refused at the path it is read from.
+   * Read back the way a run reads it, the two files are the recipe the page
+   * describes.
+   */
+  it("keeps the agent and the limits out of the recipe file, and puts them in the machine file", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const machineBefore = "# mine\nprojects:\n  shop:\n    runtime:\n      agent: claude-code\n";
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
+
+    const finished = await editExisting(FILE, state, on(recipe, machineBefore));
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.path).toBe(recipePath("shop", HOME));
+    expect(finished.file).not.toMatch(/^\s*(agent|limits|turns):/m);
+    expect(finished.machine).toContain("# mine");
+
+    const resolved = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) =>
+        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? finished.machine : null,
+    });
+    expect(resolved.recipe.runtime.limits.turns).toBe(7);
+    expect(resolved.recipe.gates).toEqual(recipe.gates);
   });
 });
 
@@ -213,14 +245,14 @@ describe("the end", () => {
   it("names what is unanswered rather than offering the button", () => {
     const out = html(start(CHECKED), CHECKED);
     expect(out).toContain("Does a person approve the merge? is not answered yet.");
-    expect(out).not.toContain("Show the recipe");
+    expect(out).not.toContain("Write the recipe on this machine");
   });
 
   it("offers the button once every decision is settled", () => {
     let state = start(CHECKED);
     state = wizardReducer(state, { type: "settle", decision: "gates.merge" });
     state = wizardReducer(state, { type: "settle", decision: "runtime.limits" });
-    expect(html(state, CHECKED)).toContain("Show the recipe");
+    expect(html(state, CHECKED)).toContain("Write the recipe on this machine");
   });
 });
 
