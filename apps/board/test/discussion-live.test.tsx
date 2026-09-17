@@ -468,6 +468,32 @@ describe("the pair's height", () => {
     expect(row(892, 528, 8000)).toBe(24 * rem);
   });
 
+  it("sizes each pane to its own content, so an empty discussion beside a long prompt is not the room tall", () => {
+    // The row is the taller pane's. A pane stretched to it — `height: 100%`, the
+    // grid's default `align-self: stretch`, or a `min-height` of the room — is
+    // an empty `.chat` 1843px tall beside a prompt that reaches the room, which
+    // the arithmetic above cannot see. So every declaration that reaches a pane
+    // is read: a height from its content, floored at 24rem, and the room only
+    // ever as a `max-height`.
+    const pane = /\.spair\s*>\s*(?:\.outgoing|\.chat|\.plan|:only-child)\b/;
+    const decls = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selector]) => selector.split(",").some((s) => pane.test(s)))
+      .flatMap(([, , body]) =>
+        body.split(";").map((d) => d.trim()).filter(Boolean).map((d) => {
+          const i = d.indexOf(":");
+          return [d.slice(0, i).trim(), d.slice(i + 1).trim()] as const;
+        }),
+      );
+    expect(decls.length).toBeGreaterThan(0);
+    expect(decls).toContainEqual(["align-self", "start"]);
+    expect(decls.filter(([name]) => name === "align-self").map(([, v]) => v)).toEqual(["start"]);
+    expect(decls.filter(([name]) => name === "height")).toEqual([]);
+    expect(decls.filter(([name]) => name === "min-height").map(([, v]) => v)).toEqual(["24rem"]);
+    for (const [name, value] of decls) {
+      if (/pair-top|vh|%/.test(value)) expect(name).toBe("max-height");
+    }
+  });
+
   it("puts the moves and the input on one screen wherever the old 24rem pair did", () => {
     // Heads of several hundred pixels in a 900px window: the pair ends above the fold.
     for (const top of [300, 420, 516]) expect(top + row(900, top)).toBeLessThanOrEqual(900);

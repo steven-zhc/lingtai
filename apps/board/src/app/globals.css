@@ -1042,7 +1042,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    under the conversation it continues — a long exchange costing you the place
    to ask the next question — so each pane scrolls inside the row: the prompt in
    its own `pre`, the discussion above its own input box. One row, so the two
-   panes stay one height beside each other.
+   panes start level beside each other.
 
    It was `24rem` (#132), for a row of moves that sat under both boxes. #152
    moved the moves above them, and the cap stayed to protect nothing, reading a
@@ -1055,14 +1055,18 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    `--pair-top`, and the row ends a rem above the bottom of the first screen, so
    the moves and the input are on it together. Stacked, two rows share that room.
 
-   **The room is a ceiling, not a target** (#192). The row is as tall as what is
-   in it — `minmax(24rem, auto)` — and each pane's `max-height` is the room, so
-   the row is `clamp(24rem, content, room)`. It was `max(24rem, room)`, a floor
-   with no ceiling: at 1440×2387 that was an 1843px box round 328px of prompt,
-   with the Ask button 1500px under the conversation it belongs to. A laptop
-   never shows it — at 892px the room is under the floor and the floor wins. A
-   long conversation still reaches the room and scrolls inside it; an empty one
-   sits on the floor.
+   **The room is a ceiling, not a target** (#192). Each pane is as tall as what
+   is in it, floored at `24rem` and capped by its `max-height`, the room — so a
+   pane is `clamp(24rem, content, room)`, its own and not its neighbour's. It
+   was `max(24rem, room)`, a floor with no ceiling: at 1440×2387 that was an
+   1843px box round 328px of prompt, with the Ask button 1500px under the
+   conversation it belongs to. A laptop never shows it — at 892px the room is
+   under the floor and the floor wins. A long conversation still reaches the
+   room and scrolls inside it; an empty one sits on the floor, even beside a
+   prompt that reaches the room. That is why a pane is not stretched to the
+   row: the row is the taller pane's, and a short pane filling it is the same
+   empty box moved to the other side. So side by side the two panes are one
+   height only when their content is.
 
    **The floor is the old `24rem`, for every row, stacked or not.** A pane is
    never shorter than it was before this: the discussion's fixed parts — its
@@ -1102,16 +1106,16 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
      of the pair rather than half of it. */
   .spair > :only-child { grid-column: 1 / -1; }
 }
-/* The frames fill the row and never grow past the room. `min-height: 0` on both
-   is what lets a flex child scroll rather than push: without it a `pre` reports
-   its whole content as its minimum and the box grows anyway. The row sizes to
-   the panes' content before `height: 100%` resolves, so the content still
-   counts — bounded by the `max-height` above. */
+/* The frames are their content's height, between the floor and the `max-height`
+   above, and never the row's: `align-self: start` rather than the grid's
+   stretch, and no `height`. A flex column under a `max-height` shrinks its
+   children to fit it, so the `pre` and `.chatscroll` — each `min-height: 0` —
+   scroll rather than push the box past the room. */
 .spair > .outgoing,
 .spair > .chat,
 .spair > .plan {
-  min-height: 0;
-  height: 100%;
+  align-self: start;
+  min-height: 24rem;
   margin-top: 0;
   overflow: hidden;
 }
