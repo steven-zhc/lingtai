@@ -78,6 +78,7 @@ import {
   type Asking,
   type CodeVersion,
   type ControlState,
+  type DaemonStart,
   type Identity,
   type LockPlace,
   type RecordedStart,
@@ -231,8 +232,12 @@ export interface Before {
    * free, and a start here would be a second one. It also changes what a drain
    * somebody else asked for means: it may be aimed at that daemon, and `lingtai
    * resume` would cancel it (#167).
+   *
+   * `{ unread }` when the stream could not be asked. That is not null: a start
+   * that could not be read is refused as one that might have happened, and the
+   * `resume` advice is withheld for it as for a start that did.
    */
-  startedSince: RecordedStart | null;
+  startedSince: RecordedStart | null | { unread: string };
 }
 
 /** One reason not to start, and the one flag that overrides it — or null, for none. */
@@ -306,7 +311,14 @@ export function planRestart(before: Before, waivers: Waivers): Plan {
   }
 
   const started = before.startedSince;
-  if (started !== null) {
+  if (started !== null && "unread" in started) {
+    refusals.unshift({
+      line:
+        `whether a daemon started while this waited could not be read — ${started.unread}. ` +
+        `A start here could be a second conductor after one that holds the lock; lingtai doctor says what is up`,
+      waiver: null,
+    });
+  } else if (started !== null) {
     refusals.unshift({
       line:
         `a daemon started while this waited — ${started.by} started ${describeIdentity(started)} as ${started.worker}. ` +
@@ -324,10 +336,13 @@ export function planRestart(before: Before, waivers: Waivers): Plan {
         `Somebody asked this system to stop, and restarting over that would be this command deciding for them. ` +
         // The one piece of advice that must not be given when a daemon started
         // since: that request may be aimed at it, and `resume` would cancel a
-        // drain of the daemon that is running (#167).
+        // drain of the daemon that is running (#167). Nor when whether one
+        // started could not be read, which is not the same as none.
         (started === null
           ? `lingtai resume lifts it, and then this will start`
-          : `It may be aimed at the daemon that started since, so lifting it is theirs to decide, not this command's`),
+          : "unread" in started
+            ? `It may be aimed at a daemon that started since — whether one did could not be read — so lifting it is theirs to decide, not this command's`
+            : `It may be aimed at the daemon that started since, so lifting it is theirs to decide, not this command's`),
       waiver: null,
     });
   }
@@ -415,6 +430,70 @@ export function lostTheLock(holder: string | null, log: (line: string) => void):
     ),
   );
   return 1;
+}
+
+/**
+ * `lingtai daemon`'s start, up to the beacon: the lock, the code this process
+ * loaded, and — for a restart — the refusals only a started daemon can be asked.
+ * On a refusal the daemon is stopped before anything is taken.
+ *
+ * Here and not in `daemonCommand` so that the terminal restart's side of
+ * `RESTART_GUARDS` — `lostTheLock` and `startRefusals` — is the code the table
+ * test plays, not a copy of it written beside the test (#167).
+ */
+export async function openDaemon(
+  /** Who asked for this start and the code their checks examined — when it is a restart. */
+  restart: { examined: Pick<CodeVersion, "sha" | "dirty"> } | null,
+  how: {
+    start: () => Promise<DaemonStart>;
+    /** What this process loaded, read once the lock is held. */
+    code: () => Promise<CodeVersion>;
+    /** The whole control stream, folded. */
+    control: () => Promise<Pick<ControlState, "shutdown">>;
+    log: (line: string) => void;
+  },
+): Promise<{ ok: false; code: number } | { ok: true; started: Extract<DaemonStart, { ok: true }>; code: CodeVersion }> {
+  const started = await how.start();
+  if (!started.ok) {
+    if (restart) return { ok: false, code: lostTheLock(started.holder, how.log) };
+    // A refusal, and deliberately the quietest line the daemon has. Nothing is
+    // wrong — red here would be the error that teaches people to ignore errors
+    // — and nothing happened, so dim is the honest weight for it.
+    how.log(paint.muted(`another daemon holds the lock${started.holder ? ` (${started.holder})` : ""} — nothing to do`));
+    return { ok: false, code: 0 };
+  }
+
+  const code = await how.code();
+
+  // What is on disk now is what `lingtai restart` examined, or nothing starts.
+  // And what it examined is the commit this process *loaded*: its first read,
+  // taken before the doctor and the drain, and required again after the wait
+  // (`planRestart`'s `loaded`). Node imported the conductor, the gates and this
+  // daemon when the command was typed, so a `git pull` during an hour's drain
+  // changes the disk and not the process — and a `ConductorStarted` naming the
+  // disk would be #98 again, with a record saying the opposite.
+  //
+  // And a drain somebody else asked for between the restart's checks and this
+  // daemon's watermark is one it would never read (#159) — so it would take
+  // work over that stop. Both are `startRefusals`, which the supervised restart
+  // asks of the record its daemon leaves (#167).
+  if (restart) {
+    const refused = startRefusals({
+      examined: restart.examined,
+      running: code,
+      standing: (await how.control().catch(() => null))?.shutdown ?? null,
+      unreadThrough: started.since,
+    });
+    if (refused.length > 0) {
+      how.log(paint.fail("not starting:"));
+      for (const r of refused) how.log(paint.fail(`  · ${r.line}`));
+      how.log(paint.fail("Nothing started, and no daemon is running: lingtai restart checks again."));
+      started.daemon.stop();
+      await started.daemon.stopped;
+      return { ok: false, code: 1 };
+    }
+  }
+  return { ok: true, started, code };
 }
 
 // ------------------------------------------------------------ the table ----
@@ -525,21 +604,27 @@ export const RESTART_GUARDS: readonly Guard[] = [
     supervised: "checkAfterTheWait → planRestart, before service start — the same call",
   },
   {
+    id: "started-unread",
+    refusal: "after the wait, whether a daemon started could not be read — and no resume advice over it",
+    terminal: "checkAfterTheWait → planRestart, before the start",
+    supervised: "checkAfterTheWait → planRestart, before service start — the same call",
+  },
+  {
     id: "code-at-start",
     refusal: "the daemon that started is not running the commit that was checked",
-    terminal: "startRefusals in the daemon, which starts nothing on it",
+    terminal: "startRefusals in openDaemon, which stops the daemon before it takes anything",
     supervised: "startRefusals on the daemon's ConductorStarted, said with exit 1 — the process is the supervisor's",
   },
   {
     id: "drain-at-start",
     refusal: "a shutdown somebody else asked for landed between the checks and the daemon's watermark",
-    terminal: "startRefusals in the daemon, which starts nothing on it",
+    terminal: "startRefusals in openDaemon, which stops the daemon before it takes anything",
     supervised: "service start refuses while it stands, and startRefusals on the record says one that landed during the start",
   },
   {
     id: "nothing-started",
     refusal: "the start took no work — the lock was taken first, or the daemon recorded nothing",
-    terminal: "lostTheLock: startDaemon lost the lock, and the restart exits 1 and says so",
+    terminal: "lostTheLock in openDaemon: startDaemon lost the lock, and the restart exits 1 and says so",
     supervised: "service start waits for ConductorStarted and exits 1 when none is recorded",
   },
 ];
@@ -697,8 +782,13 @@ async function checkBeforeTheDrain(args: RestartArgs, by: string, facts: Restart
 async function checkAfterTheWait(
   checked: Extract<Checked, { ok: true }>,
   args: RestartArgs,
-  /** Where the stream was before the drain was asked, so a start since then is somebody else's. */
-  mark: number,
+  /**
+   * Where the stream was when a start since then is somebody else's: before the
+   * drain on the terminal path, and after `service shutdown` on the supervised
+   * one — whose drain holds the lock through the unload, so a copy that started
+   * during it has been drained and unloaded, and is nobody's conductor now.
+   */
+  mark: number | null,
   facts: RestartFacts,
 ): Promise<{ plan: Plan; now: Identity }> {
   const now = await facts.identity();
@@ -711,7 +801,10 @@ async function checkAfterTheWait(
       daemonUp: false,
       shutdown: (await facts.control().catch(() => null))?.shutdown ?? null,
       loaded: { sha: checked.identity.sha, dirty: checked.identity.dirty },
-      startedSince: await facts.startAfter(mark).catch(() => null),
+      startedSince:
+        mark === null
+          ? { unread: "where the control stream stood after the drain could not be read" }
+          : await facts.startAfter(mark).catch((err: unknown) => ({ unread: (err as Error).message })),
     },
     { dirty: args.dirty, despiteDoctor: args.despiteDoctor },
   );
@@ -934,8 +1027,12 @@ export async function prepareRestart(
 export async function restartSupervised(
   args: RestartArgs,
   how: {
-    /** `lingtai service <argv>`, with the drain asked as this restart asks it — `--timeout` and `--force` included. */
-    service: (argv: string[]) => Promise<number>;
+    /**
+     * `lingtai service <argv>`, with the drain asked as `drain` says — which is
+     * this invocation's `--timeout` and `--force`, or those of the request it
+     * took over, as the terminal path asks it.
+     */
+    service: (argv: string[], drain: { timeoutMs: number | null; force: boolean }) => Promise<number>;
     facts?: RestartFacts;
     log?: (line: string) => void;
   },
@@ -953,6 +1050,11 @@ export async function restartSupervised(
     log(paint.held(`a shutdown you asked for is already standing (${checked.plan.adopted.reason}) — taken over, and asked again by the drain below.`));
     if (!(await liftAdopted(by, checked.plan.adopted, facts, log))) return 1;
   }
+  // The request taken over is asked again as it was asked — its timeout and its
+  // `--force` — never as this invocation's flags, which is `prepareRestart`'s rule.
+  const drain = checked.plan.adopted
+    ? { timeoutMs: checked.plan.adopted.timeoutMs, force: checked.plan.adopted.force }
+    : { timeoutMs: args.timeoutMs, force: args.force };
 
   const mark = await facts.watermark().catch(() => null);
   if (mark === null) {
@@ -963,13 +1065,19 @@ export async function restartSupervised(
   }
 
   log(paint.held("the supervisor keeps the daemon, so the drain is lingtai service shutdown's and the start is its start."));
-  const drained = await how.service(["shutdown", `restarting: ${args.reason}`]);
+  const drained = await how.service(["shutdown", `restarting: ${args.reason}`], drain);
   if (drained !== 0) {
     log(paint.held("nothing was started: the drain above did not finish. lingtai service status says what the supervisor has."));
     return drained;
   }
 
-  const { plan: after, now } = await checkAfterTheWait(checked, args, mark, facts);
+  // Where the stream is now, and not `mark`: `service shutdown` held the lock
+  // through the unload, so a copy KeepAlive started while it waited — one that
+  // took the lock when the drain's own connection dropped, and was drained again
+  // — is unloaded and conducting nothing. Only a start after the drain is a
+  // second conductor.
+  const drainedAt = await facts.watermark().catch(() => null);
+  const { plan: after, now } = await checkAfterTheWait(checked, args, drainedAt, facts);
   if (after.go === "refuse") {
     sayRefusal(`the wait is over and something that passed before it no longer does — not starting ${describeIdentity(now)}:`, after.because, log);
     log(
@@ -982,7 +1090,7 @@ export async function restartSupervised(
   }
 
   const startMark = await facts.watermark().catch(() => null);
-  const started = await how.service(["start"]);
+  const started = await how.service(["start"], drain);
   if (started !== 0) return started;
 
   // `service start` has seen a start recorded; this is which one, and whether it

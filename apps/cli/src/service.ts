@@ -701,8 +701,20 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       return 1;
     }
     log(`waiting for the daemon to record its start — up to ${START_WAIT_POLLS}s, since it records after its reconcile. It is waiting, not hung.`);
+    /**
+     * Why the last read failed, or null when it answered. A read that failed is
+     * not a read that found nothing: the daemon may have recorded its start and
+     * be taking work while this cannot see the stream.
+     */
+    let unread: string | null = null;
     for (let i = 0; i < START_WAIT_POLLS; i++) {
-      const record = await options.started.after(mark).catch(() => null);
+      let record: RecordedStart | null = null;
+      try {
+        record = await options.started.after(mark);
+        unread = null;
+      } catch (err) {
+        unread = (err as Error).message;
+      }
       if (record !== null) {
         log(
           `a daemon recorded its start — ${record.sha ? record.sha.slice(0, 7) : "an unrecorded commit"}` +
@@ -711,6 +723,12 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         return 0;
       }
       await sleep(1_000);
+    }
+    if (unread !== null) {
+      error(`the supervisor accepted the start, and the control stream could not be read to see whether a daemon recorded one — ${unread}.`);
+      error("So whether a daemon took work is not known: a daemon may be running a pass now.");
+      error("pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.");
+      return 1;
     }
     error(`the supervisor accepted the start, and no daemon recorded one in ${START_WAIT_POLLS}s — so no work is being taken on its account.`);
     error("A daemon that loses the conductor lock, reads a shutdown, or fails on its way up records nothing, and may exit 0 for the supervisor to start again.");
@@ -726,7 +744,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     // A daemon the supervisor is already running is not started again — and is
     // not a start to wait for, which would be a wait for nothing.
     if (answer.loaded && processRunning(platform, answer.lines)) {
-      log("the supervisor is already running a daemon, so nothing was started — pnpm lingtai service status says what it is");
+      log(
+        "the supervisor is already running a daemon, so nothing was started — and nothing was confirmed either: that process " +
+          "may have lost the lock and be taking no work. lingtai doctor says who holds the lock",
+      );
       return 0;
     }
     if (platform === "systemd") return startAndConfirm(["systemctl", "--user", "start", SYSTEMD_UNIT]);

@@ -186,8 +186,12 @@ asked for is theirs to lift. The commit and worktree are checked again after
 the wait. Where `lingtai service` keeps the daemon, the drain and the start are
 the supervisor's and every refusal is still the restart's: the same checks,
 `service shutdown`'s drain holding the lock through the unload, the checks
-again, and `service start` — which, like every service verb that starts, exits
-0 only once the daemon has recorded `ConductorStarted` (0048). A terminal daemon
+again, and `service start` — which, like every service verb that starts a
+process, exits 0 on that start only once the daemon has recorded
+`ConductorStarted` (0048). Where the supervisor was already running one,
+`service start` and `service install` start nothing, say so and exit 0 — and
+that exit confirms nothing: the process may have lost the lock, and `lingtai
+doctor` says who holds it. A terminal daemon
 beside a supervised one would be two conductors taking turns.
 `RESTART_GUARDS` in `apps/cli/src/restart.ts` is the table of what each path
 refuses, and a test fails on a row with one side (#167). Every start that takes work appends `ConductorStarted` with who,

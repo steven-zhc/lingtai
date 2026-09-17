@@ -719,7 +719,11 @@ restart runs in the terminal.
 be recorded**, up to two minutes, because the supervisor exiting 0 says the job
 was asked for and not that a daemon took work: a copy that loses the lock, or
 reads a drain, records nothing and exits 0 for the supervisor to start again.
-No record is exit 1, and the line says so. `apps/cli/src/restart.ts`'s
+No record is exit 1, and the line says so; a record that could not be read is
+exit 1 too, and says whether work is taken is not known rather than that none
+is. Where the supervisor already runs a process, `start` and `install` start
+nothing and exit 0, and that exit confirms nothing — `lingtai doctor` says who
+holds the lock. `apps/cli/src/restart.ts`'s
 `RESTART_GUARDS` is the table of what the terminal and the supervised restart
 each refuse.
 
@@ -728,8 +732,11 @@ who, why and the commit. `by` is `human:<you>` for a restart in the
 terminal or a `lingtai start` typed at one, and `daemon` for one launchd or
 systemd started — a supervised restart included, which is recorded as your
 drain and withdrawal, then that start — so *who restarted it at 23:06* is a question the log answers. A start
-into a standing drain is not recorded: it takes nothing and exits, and a
-supervisor repeats it every thirty seconds until the drain is lifted. A beacon
+that reads a drain asked while it was starting is not recorded: it takes nothing
+and exits. A drain asked before a daemon started is never read by it (#159,
+0048), so a standing one does not hold a supervisor's copies down, and `lingtai
+resume` is not the answer to a start nothing recorded — something else holding
+the lock is, and `lingtai doctor` names it. A beacon
 is one mutable row the next start overwrites, and it never could.
 
 Ctrl+C is the same drain and says what it is doing: the first one names what is

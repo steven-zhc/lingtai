@@ -22,7 +22,7 @@ import {
   SUPERVISED_ONLY,
   attributeStart,
   gatingFailures,
-  lostTheLock,
+  openDaemon,
   parseRestartArgs,
   planRestart,
   prepareRestart,
@@ -479,7 +479,14 @@ interface Scene {
   /** A request somebody else appends between the plan and the ask. */
   askFinds?: ShutdownRequest;
   /** Once the drain is over. */
-  after?: { identity?: Identity; shutdown?: ShutdownRequest | null; startedSince?: RecordedStart | null };
+  after?: {
+    identity?: Identity;
+    shutdown?: ShutdownRequest | null;
+    /** Version 14 is during the drain (between 10 and 30); version 35 is after it. */
+    startedSince?: RecordedStart | null;
+    /** Asking the stream for a start since throws, as a dropped connection does. */
+    startsUnread?: boolean;
+  };
   /** A drain standing when the start is asked for, or one that lands while the supervisor starts it. */
   atStart?: { standing?: ShutdownRequest; landsDuring?: ShutdownRequest };
   /** What the daemon that starts runs, when not what was checked — or null, when it takes no work and records nothing. */
@@ -493,6 +500,8 @@ interface Outcome {
   askedToStop: boolean;
   /** Something was withdrawn, and which version. */
   withdrew: number[];
+  /** The timeout and force every drain this command asked for carried. */
+  asks: { timeoutMs: number | null; force: boolean }[];
 }
 
 function worldOf(scene: Scene) {
@@ -501,6 +510,7 @@ function worldOf(scene: Scene) {
     lines: [] as string[],
     askedToStop: false,
     withdrew: [] as number[],
+    asks: [] as { timeoutMs: number | null; force: boolean }[],
   };
   let holderAsks = 0;
   let drainedReads = 0;
@@ -524,7 +534,8 @@ function worldOf(scene: Scene) {
     daemonUp: scene.daemonUp ?? (async () => true),
     control: async () => ({ shutdown: shutdownNow() }),
     inFlight: async () => [],
-    ask: async () => {
+    ask: async (_by, _reason, timeoutMs, force) => {
+      w.asks.push({ timeoutMs, force });
       if (scene.askFinds) return { asked: false, standing: scene.askFinds };
       w.askedToStop = true;
       return { asked: true, version: 11 };
@@ -533,16 +544,18 @@ function worldOf(scene: Scene) {
       w.withdrew.push(version);
       return { withdrew: true, version: version + 1, request: { by, reason: "", timeoutMs: null, version, force: false } };
     },
-    watermark: async () => (w.phase === "before" ? 10 : 20),
+    // 10 before the drain, 30 once it is over; the start the command makes is 41.
+    watermark: async () => (w.phase === "before" ? 10 : 30),
     startAfter: async (version) => {
-      if (version < 20) return w.phase === "before" ? null : scene.after?.startedSince ?? null;
-      if (w.phase !== "started" || scene.runs === null) return null;
-      return startOf(scene.runs ?? identityNow());
+      if (w.phase === "before") return null;
+      if (scene.after?.startsUnread) throw new Error("the connection dropped");
+      const starts = [scene.after?.startedSince ?? null, w.phase === "started" && scene.runs !== null ? startOf(scene.runs ?? identityNow(), 41) : null];
+      return starts.find((s) => s !== null && s.version > version) ?? null;
     },
     pollMs: 1,
   };
   const log = (line: string): void => void w.lines.push(line);
-  const outcome = (code: number): Outcome => ({ code, said: w.lines.join("\n"), askedToStop: w.askedToStop, withdrew: w.withdrew });
+  const outcome = (code: number): Outcome => ({ code, said: w.lines.join("\n"), askedToStop: w.askedToStop, withdrew: w.withdrew, asks: w.asks });
   return { w, facts, log, outcome, shutdownNow };
 }
 
@@ -556,21 +569,37 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-/** `lingtai restart` with nothing supervising: `prepareRestart`, then `daemonCommand`'s part of it. */
+/**
+ * `lingtai restart` with nothing supervising: `prepareRestart`, then `openDaemon`
+ * — the function `daemonCommand` starts every daemon through — with the lock and
+ * the code the scene's.
+ */
 async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome> {
   const { w, facts, log, outcome } = worldOf(scene);
   const prepared = await prepareRestart(args, log, facts);
   if (!prepared.ok) return outcome(prepared.code);
   w.phase = "started";
-  if (scene.runs === null) return outcome(lostTheLock("lingtai run pid 77", log));
-  const refused = startRefusals({
-    examined: prepared.examined,
-    running: scene.runs ?? prepared.examined,
-    standing: scene.atStart?.standing ?? scene.atStart?.landsDuring ?? null,
-    unreadThrough: 20,
-  });
-  for (const r of refused) log(r.line);
-  return outcome(refused.length > 0 ? 1 : 0);
+  let stopped = false;
+  const opened = await openDaemon(
+    { examined: prepared.examined },
+    {
+      start: async () =>
+        scene.runs === null
+          ? { ok: false, reason: "already-running", holder: "lingtai run pid 77" }
+          : {
+              ok: true,
+              since: 30,
+              daemon: { stopped: Promise.resolve("asked"), stop: () => void (stopped = true), failure: null },
+            },
+      code: async () => scene.runs ?? prepared.examined,
+      control: facts.control,
+      log,
+    },
+  );
+  if (opened.ok) return outcome(0);
+  // A refusal after the lock was taken stops the daemon before it takes anything.
+  if (scene.runs !== null && !stopped) throw new Error("the terminal restart refused and left its daemon running");
+  return outcome(opened.code);
 }
 
 /** `lingtai restart` under launchd: `restartSupervised` over the real `serviceCommand`. */
@@ -589,13 +618,13 @@ async function supervised(scene: Scene, args: RestartArgs = ARGS): Promise<Outco
     }
     return { status: 0, out: "" };
   };
-  const service = (argv: string[]): Promise<number> =>
+  const service = (argv: string[], asked: { timeoutMs: number | null; force: boolean }): Promise<number> =>
     serviceCommand(argv, {
       liveness: async () => "up",
       shutdown: async () => shutdownNow(),
       pause: async () => null,
       drain: {
-        ask: (by, reason) => facts.ask(by, reason, null, false),
+        ask: (by, reason) => facts.ask(by, reason, asked.timeoutMs, asked.force),
         holding: async () => "nothing in flight",
         queue: async () => ({
           wait: async () => ((w.phase = "drained"), "held"),
@@ -672,14 +701,20 @@ const SCENES: Record<string, { scene: Scene; says: Says; notSays?: string; nothi
     nothingStopped: false,
   },
   "after-foreign-drain": {
-    scene: { after: { shutdown: ops(15), startedSince: startOf(pushed, 14) } },
+    scene: { after: { shutdown: ops(15), startedSince: startOf(pushed, 35) } },
     says: "It may be aimed at the daemon that started since",
     notSays: "lingtai resume lifts it",
     nothingStopped: false,
   },
   "started-since": {
-    scene: { after: { startedSince: startOf(pushed, 14) } },
+    scene: { after: { startedSince: startOf(pushed, 35) } },
     says: "a daemon started while this waited — daemon started 2926f2d as mac:4242",
+    nothingStopped: false,
+  },
+  "started-unread": {
+    scene: { after: { shutdown: ops(15), startsUnread: true } },
+    says: "whether a daemon started while this waited could not be read — the connection dropped",
+    notSays: "lingtai resume lifts it",
     nothingStopped: false,
   },
   "code-at-start": {
@@ -791,9 +826,31 @@ describe("#167's five findings, on the supervised path", () => {
     expect(s.said).not.toContain("launchctl bootstrap");
   });
 
+  /**
+   * The second review's finding 4: `service shutdown`'s lock connection dropped,
+   * a KeepAlive copy took the lock and recorded its start, and the drain asked
+   * again and unloaded it. That copy is nobody's conductor now.
+   */
+  it("a copy started and drained inside service shutdown is not a daemon started since", async () => {
+    const out = await supervised({ after: { startedSince: startOf(pushed, 14) } });
+    expect(out.code, out.said).toBe(0);
+    expect(out.said).not.toContain("a daemon started while this waited");
+    expect(out.said).toContain("restarted 2926f2d as mac:4242");
+  });
+
+  /** The second review's finding 5: a drain taken over is asked again as it was asked, on both paths. */
+  it("a request taken over keeps its own --force and --timeout, not this invocation's", async () => {
+    const mine: ShutdownRequest = { by: BY, reason: "restarting: ctrl-c'd", timeoutMs: 5_000, version: 7, force: true };
+    for (const run of [terminal, supervised]) {
+      const out = await run({ shutdown: mine });
+      expect(out.code, out.said).toBe(0);
+      expect(out.asks).toEqual([{ timeoutMs: 5_000, force: true }]);
+    }
+  });
+
   /** minor 5 — guarded: a start recorded since is named, and resume is not advised over it. */
   it("a refusal after the wait never advises lifting a drain aimed at a daemon that started since", async () => {
-    const out = await supervised({ after: { shutdown: ops(15), startedSince: startOf(pushed, 14) } });
+    const out = await supervised({ after: { shutdown: ops(15), startedSince: startOf(pushed, 35) } });
     expect(out.code).toBe(1);
     expect(out.said).toContain("a daemon started while this waited");
     expect(out.said).not.toContain("lingtai resume lifts it");

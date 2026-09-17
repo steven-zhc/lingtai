@@ -1180,6 +1180,29 @@ describe("a start the daemon never recorded", () => {
     expect(out.join("\n")).toContain("nothing was started");
   });
 
+  /**
+   * The second review's finding 1: the CLI's connection drops, launchd's daemon
+   * wins the lock, records its start and takes work, and every read of the
+   * record fails. That is not a start nothing recorded.
+   */
+  it("does not say no work is taken when every read of the record failed", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, out, err } = command("darwin", s.exec, {
+      started: {
+        watermark: async () => 8,
+        after: async () => {
+          throw new Error("Connection terminated unexpectedly");
+        },
+      },
+    });
+    await launchdFile();
+    expect(await go("start")).toBe(1);
+    expect(out.join("\n")).not.toMatch(TOOK_WORK);
+    expect(err.join("\n")).not.toContain("no work is being taken");
+    expect(err.join("\n")).toContain("whether a daemon took work is not known");
+    expect(err.join("\n")).toContain("Connection terminated unexpectedly");
+  });
+
   it("does not claim a start it could not confirm, when the control stream cannot be read", async () => {
     const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
     const { go, err } = command("darwin", s.exec, {

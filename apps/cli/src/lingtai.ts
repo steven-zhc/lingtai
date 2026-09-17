@@ -49,7 +49,7 @@ import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, startRefusals, restartSupervised, lostTheLock } from "./restart.ts";
+import { openDaemon, parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -366,62 +366,30 @@ async function daemonCommand(
   /** Who asked for this start, why, and the code their checks examined — when it is a restart. */
   restart: { by: string; reason: string; examined: CodeVersion } | null = null,
 ): Promise<number> {
-  const started = await startDaemon({
-    projections: PROJECTIONS,
+  // The lock, the status table, the code this process loaded, and — for a
+  // restart — the refusals only a started daemon can be asked. One function for
+  // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
+  // `pure/restart.test.ts` runs and not a copy of it (#167).
+  const opened = await openDaemon(restart, {
+    start: () => startDaemon({ projections: PROJECTIONS, log: (line) => console.log(line) }),
+    code: async () => {
+      // The beacon. One timer in the whole system, and it decides nothing — it
+      // says "still here", which is the difference between a board that is behind
+      // and a board that is broken. Two work items merged for real while their
+      // cards sat still and nothing reported it; this is what makes that a glance.
+      await createStatusTable();
+      // Read once, here, and carried on every beat afterwards. Node caches a module
+      // at import, so this process runs whatever `HEAD` pointed at now for as long
+      // as it lives — a merge into `main` reaches the CLI, the gates and the board
+      // and does not reach this. #88 landed thirty-nine minutes after a daemon
+      // started and never executed once; nothing in the beacon could have said so.
+      return readCodeVersion();
+    },
+    control: () => readControl(),
     log: (line) => console.log(line),
   });
-
-  if (!started.ok) {
-    const holder = started.holder ? ` (${started.holder})` : "";
-    if (restart) return lostTheLock(started.holder, (line) => console.log(line));
-    // A refusal, and deliberately the quietest line the daemon has. Nothing is
-    // wrong — red here would be the error that teaches people to ignore errors
-    // — and nothing happened, so dim is the honest weight for it.
-    console.log(paint.muted(`another daemon holds the lock${holder} — nothing to do`));
-    return 0;
-  }
-
-  // The beacon. One timer in the whole system, and it decides nothing — it
-  // says "still here", which is the difference between a board that is behind
-  // and a board that is broken. Two work items merged for real while their
-  // cards sat still and nothing reported it; this is what makes that a glance.
-  await createStatusTable();
-
-  // Read once, here, and carried on every beat afterwards. Node caches a module
-  // at import, so this process runs whatever `HEAD` pointed at now for as long
-  // as it lives — a merge into `main` reaches the CLI, the gates and the board
-  // and does not reach this. #88 landed thirty-nine minutes after a daemon
-  // started and never executed once; nothing in the beacon could have said so.
-  const code = await readCodeVersion();
-
-  // What is on disk now is what `lingtai restart` examined, or nothing starts.
-  // And what it examined is the commit this process *loaded*: its first read,
-  // taken before the doctor and the drain, and required again after the wait
-  // (`planRestart`'s `loaded`). Node imported the conductor, the gates and this
-  // daemon when the command was typed, so a `git pull` during an hour's drain
-  // changes the disk and not the process — and a `ConductorStarted` naming the
-  // disk would be #98 again, with a record saying the opposite.
-  //
-  // And a drain somebody else asked for between the restart's checks and this
-  // daemon's watermark is one it would never read (#159) — so it would take
-  // work over that stop. Both are `startRefusals`, which the supervised restart
-  // asks of the record its daemon leaves (#167).
-  if (restart) {
-    const refused = startRefusals({
-      examined: restart.examined,
-      running: code,
-      standing: (await readControl().catch(() => null))?.shutdown ?? null,
-      unreadThrough: started.since,
-    });
-    if (refused.length > 0) {
-      console.log(paint.fail("not starting:"));
-      for (const r of refused) console.log(paint.fail(`  · ${r.line}`));
-      console.log(paint.fail("Nothing started, and no daemon is running: lingtai restart checks again."));
-      started.daemon.stop();
-      await started.daemon.stopped;
-      return 1;
-    }
-  }
+  if (!opened.ok) return opened.code;
+  const { started, code } = opened;
 
   // **Beating from here**, and not from after the reconcile below — which is
   // what `#144` was. The two lines that follow this one read a recipe per
@@ -1089,12 +1057,17 @@ async function main(argv: string[]): Promise<number> {
       // functions as below, and `RESTART_GUARDS` is the table of both (#167).
       if (kept.kept) {
         const options = serviceOptions();
-        const drain = {
-          ...options.drain,
-          ask: (by: string, reason: string) =>
-            requestShutdownUnlessStanding(by, reason, parsed.args.timeoutMs, undefined, parsed.args.force),
-        };
-        return restartSupervised(parsed.args, { service: (argv) => serviceCommand(argv, { ...options, drain }) });
+        return restartSupervised(parsed.args, {
+          service: (argv, asked) =>
+            serviceCommand(argv, {
+              ...options,
+              drain: {
+                ...options.drain,
+                ask: (by: string, reason: string) =>
+                  requestShutdownUnlessStanding(by, reason, asked.timeoutMs, undefined, asked.force),
+              },
+            }),
+        });
       }
       // Two halves of one command, and the seam is the only place a daemon is
       // started. `prepareRestart` refuses, drains and waits; everything after

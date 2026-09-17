@@ -97,8 +97,10 @@ for the supervisor to start again every thirty seconds. So `service start`,
 `service restart` and `service install` take the control watermark before the
 supervisor call, wait up to 120 seconds for a `ConductorStarted` after it, say
 which start it was, and **exit 1 without one** — never a line that could be read
-as work being taken. A daemon the supervisor is already running is said to be
-running and not waited for.
+as work being taken. A record that could not be read is exit 1 as well, and
+says that whether work is taken is not known — not that none is. A daemon the
+supervisor is already running is said to be running and not waited for, with
+exit 0 that confirms nothing about the lock.
 
 ### 5. Every refusal is on both paths, and the table is the test
 
