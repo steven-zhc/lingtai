@@ -85,8 +85,19 @@ export type ProjectFilter =
       ok: true;
       /** Of the *resolved* recipe. Identifies which configuration this is. */
       configHash: string;
-      /** The base branch it was read from — never an agent's branch (0005). */
+      /**
+       * The base branch this recipe governs. Since #180 the recipe is read from
+       * this machine rather than from that branch, and `provenance` says from
+       * where.
+       */
       ref: string;
+      /**
+       * Where each value came from — the recipe file, the machine file,
+       * detection or a default — keyed by its path in the recipe. What
+       * `lingtai doctor` prints, because a value that can come from four places
+       * is not answerable by reading one file.
+       */
+      provenance: Readonly<Record<string, string>>;
       /** The labels that name work, most wanted first. */
       kinds: readonly string[];
       /** The labels that keep an agent off a ticket. */
@@ -189,6 +200,7 @@ export async function projectFilter(
       ok: true,
       configHash: resolved.configHash,
       ref: resolved.ref,
+      provenance: resolved.provenance ?? {},
       kinds: resolved.recipe.source.kinds,
       exclude: resolved.recipe.source.exclude,
       limits: {

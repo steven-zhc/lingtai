@@ -1172,13 +1172,21 @@ async function subscribers(url: string): Promise<CheckResult> {
   };
 }
 
+/** One line per value, `key  value ← where`, indented under the row. */
+export function provenanceLines(provenance: Readonly<Record<string, string>>): string {
+  return Object.entries(provenance)
+    .map(([key, from]) => `         ${key.padEnd(24)} ${from}\n`)
+    .join("");
+}
+
 /**
  * Per project: does its recipe resolve at all, and what will it therefore take.
  *
  * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
  * recipe read here would be "a different commit's" than the one a run reads.
- * That argument was about the wrong thing. The run reads `origin/<base>` through
- * the API and so does this, via the same `currentRecipe`; and the question being
+ * That argument was about the wrong thing. The run reads
+ * `~/.lingtai/<project>/recipe.yml` (#180) and so does this, via the same
+ * `currentRecipe`; and the question being
  * asked is not "will this exact commit's gates pass", it is "does the file that
  * governs the next run parse" — which was `no` on `main` for long enough that
  * every issue in the project sat unpicked, with doctor green throughout.
@@ -1212,8 +1220,12 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
           name: `recipe: ${f.project}`,
           status: "ok" as const,
           detail:
-            `${f.configHash.slice(0, 12)} from ${f.ref} · picks up ${f.kinds.join(" > ")} · ` +
+            `${f.configHash.slice(0, 12)} for ${f.ref} · picks up ${f.kinds.join(" > ")} · ` +
             `excludes ${f.exclude.length > 0 ? f.exclude.join(", ") : "nothing"}\n` +
+            // The resolved recipe and where each value came from (#180): the
+            // recipe file, the machine file, detection or a default. Four
+            // places cannot be read by opening one file, so they are said here.
+            provenanceLines(f.provenance) +
             // What a pass of this project may cost, from the same function
             // `lingtai add` and the board's chip call (0039 §3). Doctor is
             // where an operator looks before starting something, which makes

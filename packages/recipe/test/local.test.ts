@@ -52,7 +52,10 @@ describe("resolveLocalRecipe", () => {
     expect(recipePath("app", HOME)).toBe(`${HOME}/app/recipe.yml`);
     expect(resolved.recipe.gates.proposed.map((a) => a.name)).toEqual(["build"]);
     expect(resolved.ref).toBe("main");
-    expect(resolved.provenance?.["gates"]).toBe(`${HOME}/app/recipe.yml`);
+    expect(resolved.provenance?.["gates"]).toBe(
+      `admit 0, prepared 0, proposed 1, merge 0, end 0 ← ${HOME}/app/recipe.yml`,
+    );
+    expect(resolved.provenance?.["repo.base"]).toBe(`main ← ${HOME}/app/recipe.yml`);
   });
 
   it("refuses a missing recipe by its path", async () => {

@@ -242,7 +242,6 @@ export async function resolveLocalRecipe(
   const agent = await resolveAgent(named, options.signedIn, machineFile);
 
   const provenance: Record<string, string> = {
-    recipe: path,
     "runtime.agent": `${agent.agent} ← ${agent.from}`,
   };
   const limits: Record<string, unknown> = {};
@@ -274,8 +273,19 @@ export async function resolveLocalRecipe(
     return [];
   });
 
-  for (const key of ["gates", "source.kinds", "source.exclude", "env.required", "repo.base"]) {
-    provenance[key] = path;
-  }
+  // What stays the repository's facts, from the recipe file — said with its
+  // value, so the doctor prints the resolved recipe rather than a list of names.
+  const { recipe } = resolved;
+  const list = (items: readonly string[]) => (items.length > 0 ? items.join(", ") : "(none)");
+  const recipeValues: Record<string, string> = {
+    "repo.base": recipe.repo.base,
+    "source.kinds": recipe.source.kinds.join(" > "),
+    "source.exclude": list(recipe.source.exclude),
+    "env.required": list(recipe.env.required),
+    gates: Object.entries(recipe.gates)
+      .map(([point, actions]) => `${point} ${actions.length}`)
+      .join(", "),
+  };
+  for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value} ← ${path}`;
   return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
 }
