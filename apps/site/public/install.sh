@@ -62,9 +62,11 @@ fi
 
 version="${LINGTAI_VERSION:-}"
 if [ -z "$version" ]; then
-  tag=$(curl -fsSL -H 'Accept: application/vnd.github+json' "$API/latest" |
-    sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1) ||
+  # Asked on its own and not piped: sh has no pipefail, so a failed request at
+  # the head of a pipeline would read as a release that does not exist.
+  latest=$(curl -fsSL -H 'Accept: application/vnd.github+json' "$API/latest") ||
     refuse "could not ask $API/latest which version is newest"
+  tag=$(printf '%s\n' "$latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
   [ -n "$tag" ] || refuse "$API/latest named no release"
   version="${tag#v}"
 fi
@@ -80,7 +82,7 @@ if [ -e "$dir/lingtai" ]; then
 else
   artifact="lingtai-$version-$platform.tar.gz"
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/lingtai-install.XXXXXX")
-  partial="$HOME_DIR/versions/.$version.partial"
+  partial=""
   trap 'rm -rf "$scratch" "$partial"' EXIT INT TERM
 
   say "fetching $artifact"
@@ -96,14 +98,21 @@ else
     refuse "$artifact does not match its checksum — expected $expected, got $actual. Nothing was unpacked"
 
   mkdir -p "$HOME_DIR/versions"
-  rm -rf "$partial"
-  mkdir "$partial"
+  # One of its own, so an unpack beside this one never removes it or fills it.
+  partial=$(mktemp -d "$HOME_DIR/versions/.$version.partial-XXXXXX")
   tar -xzf "$scratch/$artifact" -C "$partial" || refuse "tar could not unpack $artifact"
   if ! said=$("$partial/lingtai" version 2>&1) || ! printf '%s' "$said" | grep -q "$version"; then
     refuse "the unpacked lingtai does not run here, so it was not installed — it said: ${said:-nothing}. Until the binary ships (#185) it needs Node 22 or later on PATH"
   fi
-  mv "$partial" "$dir"
-  say "installed lingtai $version into $dir, checksum verified"
+  if mv "$partial" "$dir" 2> /dev/null && [ ! -e "$dir/$(basename "$partial")" ]; then
+    say "installed lingtai $version into $dir, checksum verified"
+  else
+    # Another install renamed its whole directory into place first; mv moved
+    # this one inside it, or refused, and either way that one is used.
+    rm -rf "$dir/$(basename "$partial")"
+    [ -e "$dir/lingtai" ] || refuse "could not move $partial into place as $dir"
+    say "lingtai $version was installed into $dir alongside this — left as it is"
+  fi
 fi
 
 # --------------------------------------------------------------------- shim --

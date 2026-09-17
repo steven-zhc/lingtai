@@ -150,7 +150,14 @@ describe("install.sh", () => {
     expect(ran.code).toBe(1);
     expect(ran.said).toContain("does not match its checksum");
     expect(existsSync(join(user, ".lingtai", "versions", "1.0.2"))).toBe(false);
-    expect(existsSync(join(user, ".lingtai", "versions", ".1.0.2.partial"))).toBe(false);
+    expect(readdirSync(join(user, ".lingtai", "versions")).filter((name) => name.includes("partial"))).toEqual([]);
+  });
+
+  it("says the request failed, and not that nothing is released, when the releases API cannot be asked", () => {
+    const ran = install("", { LINGTAI_RELEASES_API: `file://${join(work, "no-such-api")}` });
+    expect(ran.code).toBe(1);
+    expect(ran.said).toContain("could not ask");
+    expect(ran.said).not.toContain("named no release");
   });
 
   it("refuses a platform nothing is built for by name", () => {

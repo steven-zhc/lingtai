@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ import {
   platformName,
   pointShim,
   releaseCheck,
+  runningFrom,
   unpackRelease,
   type Drained,
   type World,
@@ -98,6 +99,7 @@ function world(overrides: Partial<World> = {}): World {
     log: (line) => lines.push(line),
     ask: async () => true,
     running: () => [],
+    conducting: async () => null,
     drain: async (): Promise<Drained> => {
       const shim = installPaths(env).shim;
       calls.push(`drain while the shim runs ${readlinkSync(shim)}`);
@@ -148,6 +150,14 @@ describe("the platform", () => {
 
   it("orders versions as semver does", () => {
     expect(["1.0.10", "1.0.0-rc.1", "1.0.2", "1.0.0"].sort(compareVersions)).toEqual(["1.0.0-rc.1", "1.0.0", "1.0.2", "1.0.10"]);
+    expect(["1.0.0", "1.0.0-rc.10", "1.0.0-rc", "1.0.0-rc.2", "1.0.0-beta.1", "1.0.0-rc.a"].sort(compareVersions)).toEqual([
+      "1.0.0-beta.1",
+      "1.0.0-rc",
+      "1.0.0-rc.2",
+      "1.0.0-rc.10",
+      "1.0.0-rc.a",
+      "1.0.0",
+    ]);
   });
 });
 
@@ -171,7 +181,7 @@ describe("lingtai upgrade", () => {
     const paths = installPaths({ HOME: home });
     expect(lines.join("\n")).toContain("does not match its checksum");
     expect(existsSync(join(paths.versions, "1.0.1"))).toBe(false);
-    expect(existsSync(join(paths.versions, ".1.0.1.partial"))).toBe(false);
+    expect(readdirSync(paths.versions).filter((name) => name.includes("partial"))).toEqual([]);
     expect(calls).toEqual([]);
     expect(shimSays()).toBe("lingtai 1.0.0");
   });
@@ -235,7 +245,73 @@ describe("lingtai rollback", () => {
   });
 });
 
+describe("lingtai rollback, among prereleases", () => {
+  it("takes rc.2 as older than rc.10", async () => {
+    const paths = installPaths({ HOME: home });
+    for (const v of ["1.0.0-rc.2", "1.0.0-rc.10"]) {
+      mkdirSync(join(paths.versions, v), { recursive: true });
+      writeFileSync(join(paths.versions, v, "lingtai"), `#!/bin/sh\necho "lingtai ${v}"\n`);
+      chmodSync(join(paths.versions, v, "lingtai"), 0o755);
+    }
+    pointShim(paths, "1.0.0-rc.10");
+    expect(await installCommand(["rollback"], world())).toBe(0);
+    expect(shimSays()).toBe("lingtai 1.0.0-rc.2");
+  });
+});
+
 describe("lingtai uninstall", () => {
+  it("refuses while a daemon from a checkout holds the conductor lock, and removes nothing", async () => {
+    await installOld();
+    const worktree = join(home, ".lingtai", "worktrees", "lingtai", "run-1");
+    mkdirSync(worktree, { recursive: true });
+    const w = world({ conducting: async () => "steven@host pid 777" });
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(1);
+    expect(lines.join("\n")).toContain("steven@host pid 777 holds the conductor lock");
+    expect(existsSync(worktree)).toBe(true);
+  });
+
+  it("refuses when the log cannot say whether anything conducts", async () => {
+    await installOld();
+    const w = world({ conducting: async () => { throw new Error("connection refused"); } });
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(1);
+    expect(lines.join("\n")).toContain("could not ask the log whether anything conducts");
+    expect(existsSync(join(home, ".lingtai"))).toBe(true);
+  });
+
+  it("finds a process by the directory it works in, where its command line names nothing", async () => {
+    const worktree = join(home, ".lingtai", "worktrees", "lingtai", "run-1");
+    mkdirSync(worktree, { recursive: true });
+    const child = spawn("sleep", ["30"], { cwd: worktree, stdio: "ignore" });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(runningFrom([join(home, ".lingtai") + "/"]).map((p) => p.pid)).toContain(child.pid);
+    } finally {
+      child.kill();
+    }
+  });
+
+  it("says a key read from the environment is still there", async () => {
+    await installOld();
+    const w = world({
+      app: async () => ({ slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 1, key: { variable: "LINGTAI_GITHUB_APP_PRIVATE_KEY", files: [] } }),
+    });
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(0);
+    const said = lines.join("\n");
+    expect(said).toContain("Its private key is in LINGTAI_GITHUB_APP_PRIVATE_KEY in your environment, which nothing here removed");
+    expect(said).not.toContain("cannot be recovered");
+  });
+
+  it("says a key set in an env file under ~/.lingtai went with it", async () => {
+    await installOld();
+    const file = join(home, ".lingtai", "versions", ".env.local");
+    writeFileSync(file, "LINGTAI_GITHUB_APP_PRIVATE_KEY=x\n");
+    const w = world({
+      app: async () => ({ slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 1, key: { variable: "LINGTAI_GITHUB_APP_PRIVATE_KEY", files: [file] } }),
+    });
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(0);
+    expect(lines.join("\n")).toContain("which is gone");
+  });
+
   it("refuses while a process runs from what it would remove", async () => {
     await installOld();
     const w = world({ running: () => [{ pid: 4242, command: "node /x/.local/bin/lingtai start" }] });
@@ -259,7 +335,7 @@ describe("lingtai uninstall", () => {
       app: async () => {
         // Asked while the key is still there to sign with.
         appAsked = existsSync(join(home, ".lingtai"));
-        return { slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 2, keyPath: join(home, ".lingtai", "lingtai", "app.pem") };
+        return { slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 2, key: { path: join(home, ".lingtai", "lingtai", "app.pem") } };
       },
       logConfigured: () => true,
     });

@@ -12,6 +12,7 @@
  * A dynamic `import()` and not a static one, since a static import is evaluated
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.
  */
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 // Only the loader, which reads `.env.local` and connects to nothing.
 import { databaseUrl } from "@lingtai/env";
@@ -54,6 +55,15 @@ function liveWorld(): World {
       }
     },
     running: runningFrom,
+    conducting: async () => {
+      try {
+        databaseUrl();
+      } catch {
+        return null;
+      }
+      const daemon = await import("@lingtai/daemon");
+      return daemon.conductorLockHolder();
+    },
     drain: liveDrain,
     app: liveApp,
     logConfigured: () => {
@@ -143,6 +153,18 @@ async function liveApp(): Promise<AppFacts | null> {
     organisation: app.owner.type === "Organization",
     installations: installations.length,
     repositories,
-    keyPath: credentials.keySource.startsWith("LINGTAI_") ? null : env.resolvePath(credentials.keySource),
+    key: credentials.keySource.startsWith("LINGTAI_")
+      ? { variable: credentials.keySource, files: env.envFiles().filter((file) => envFileSets(file, credentials.keySource)) }
+      : { path: env.resolvePath(credentials.keySource) },
   };
+}
+
+/** Whether an env file names `variable` — so an uninstall can say whether removing the file removed the key. */
+function envFileSets(file: string, variable: string): boolean {
+  try {
+    // dotenv's own shape, `NAME=value` with an optional `export`, and not empty.
+    return new RegExp(`^\\s*(export\\s+)?${variable}\\s*=\\s*[^\\s#]`, "m").test(readFileSync(file, "utf8"));
+  } catch {
+    return false;
+  }
 }

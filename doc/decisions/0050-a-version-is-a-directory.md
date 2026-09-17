@@ -21,11 +21,15 @@ the shape to survive #185 replacing a directory of JavaScript with a binary.
 ```
 
 **1. A version's directory is written once and never rewritten or removed by an
-upgrade.** It is unpacked into `versions/.<v>.partial`, run once (`lingtai
-version` must say `<v>`), and renamed — so a directory named for a version is
-always a whole one that runs here. One already present is used as it is: a
-process may be running from it. Nothing but `uninstall` removes a version, and
-uninstall refuses while any process's command line names `versions/` or the shim.
+upgrade.** It is unpacked into a `versions/.<v>.partial-*` of its own, run once
+(`lingtai version` must say `<v>`), and renamed — so a directory named for a
+version is always a whole one that runs here, and two unpacks at once never
+share one. One already present is used as it is: a process may be running from
+it. Nothing but `uninstall` removes a version, and uninstall refuses while any
+process's command line names the shim or anything under `~/.lingtai`, while any
+process works in a directory under it, or while anything holds the conductor
+lock — a daemon started from a checkout names none of those, and its worktrees
+are under `~/.lingtai` all the same.
 
 **2. The shim is the switch.** A new link beside it, renamed over it: a command
 started between the two gets one version or the other. Upgrade moves it forward,
@@ -53,10 +57,10 @@ the bundle is built from.
 
 **6. `upgrade` does what can fail first, then drains, then switches.** The
 question, the download, the checksum and the trial run all happen while the old
-version still conducts; a refusal there changes nothing. Then — only where a log
-is configured and something holds the conductor lock — `lingtai doctor` gates as
-it gates a restart (`--despite-doctor`), `lingtai shutdown`'s drain is asked,
-and the command waits on the lock. The shim moves after the lock is free, and
+version still conducts; a refusal there changes nothing. Then, wherever a log is
+configured, `lingtai doctor` gates as it gates a restart (`--despite-doctor`) —
+whether or not anything conducts — and only where something holds the conductor
+lock is `lingtai shutdown`'s drain asked and the lock waited on. The shim moves after the lock is free, and
 the drain is withdrawn. **It starts nothing**: `lingtai start` runs the new
 version. It does not call `lingtai restart`, which refuses a start with no
 checkout to name a commit from — every installed copy — and holds a daemon in

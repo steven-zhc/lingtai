@@ -88,8 +88,11 @@ export interface AppFacts {
   organisation: boolean;
   installations: number;
   repositories: number;
-  /** Where the private key was read from, when it was a file. */
-  keyPath: string | null;
+  /**
+   * Where the private key was read from: a file, or a variable together with the
+   * env files that set it — none where only the environment carries it.
+   */
+  key: { path: string } | { variable: string; files: string[] };
 }
 
 /** Everything these commands reach outside themselves. Replaceable, so a test needs no database, network or GitHub. */
@@ -101,8 +104,14 @@ export interface World {
   log: (line: string) => void;
   /** One yes-or-no question. False when there is nobody to ask. */
   ask: (question: string) => Promise<boolean>;
-  /** Processes whose command line names one of `paths`, other than this one. */
+  /** Processes whose command line names one of `paths`, or whose working directory is under one, other than this one. */
   running: (paths: readonly string[]) => { pid: number; command: string }[];
+  /**
+   * Who holds the conductor lock, where a log is configured — null where nothing
+   * does. A daemon started from a checkout names nothing under `~/.lingtai`, and
+   * still runs its agents there.
+   */
+  conducting: () => Promise<string | null>;
   /** Drain whatever conducts before the shim moves. `despiteDoctor` waives a red doctor and nothing else. */
   drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
   /** The GitHub App this machine is configured with, asked before anything is removed. */
@@ -128,10 +137,18 @@ export function platformName(os: string = process.platform, arch: string = proce
   return `${o}-${a}`;
 }
 
-/** Semver's order, without the build metadata nobody here writes: `1.0.0-rc.1` < `1.0.0` < `1.0.10`. */
+/**
+ * Semver's order, without the build metadata nobody here writes: `1.0.0-rc.2` <
+ * `1.0.0-rc.10` < `1.0.0` < `1.0.10`. A prerelease compares field by field, a
+ * numeric field as a number and below any that is not, and fewer fields first.
+ */
 export function compareVersions(a: string, b: string): number {
-  const [coreA = "", preA] = a.split("-", 2) as [string, string | undefined];
-  const [coreB = "", preB] = b.split("-", 2) as [string, string | undefined];
+  const split = (v: string): [string, string | undefined] => {
+    const dash = v.indexOf("-");
+    return dash === -1 ? [v, undefined] : [v.slice(0, dash), v.slice(dash + 1)];
+  };
+  const [coreA, preA] = split(a);
+  const [coreB, preB] = split(b);
   const na = coreA.split(".").map(Number);
   const nb = coreB.split(".").map(Number);
   for (let i = 0; i < Math.max(na.length, nb.length); i++) {
@@ -139,7 +156,19 @@ export function compareVersions(a: string, b: string): number {
     if (d !== 0) return d;
   }
   if (preA === undefined || preB === undefined) return preA === preB ? 0 : preA === undefined ? 1 : -1;
-  return preA < preB ? -1 : preA > preB ? 1 : 0;
+  const fa = preA.split(".");
+  const fb = preB.split(".");
+  for (let i = 0; i < Math.min(fa.length, fb.length); i++) {
+    const x = fa[i]!;
+    const y = fb[i]!;
+    if (x === y) continue;
+    const xn = /^\d+$/.test(x);
+    const yn = /^\d+$/.test(y);
+    if (xn && yn) return Number(x) - Number(y);
+    if (xn !== yn) return xn ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+  return fa.length - fb.length;
 }
 
 /**
@@ -263,9 +292,11 @@ async function download(world: Pick<World, "fetch">, url: string): Promise<Buffe
  * Fetch this platform's artifact, **check it against `SHA256SUMS` before a byte
  * of it is unpacked**, and unpack it into `versions/<v>/`.
  *
- * Into `versions/.<v>.partial` first, then renamed: a directory named for a
- * version is always a whole one. One already there is left exactly as it is —
- * a process may be running from it.
+ * Into a `versions/.<v>.partial-*` of its own first, then renamed: a directory
+ * named for a version is always a whole one, and two unpacks at once never
+ * share a staging directory. One already there is left exactly as it is — a
+ * process may be running from it, and an unpack that finds another got there
+ * first uses that one.
  */
 export async function unpackRelease(
   world: Pick<World, "fetch" | "log">,
@@ -293,12 +324,10 @@ export async function unpackRelease(
 
   mkdirSync(paths.versions, { recursive: true });
   const scratch = mkdtempSync(join(tmpdir(), "lingtai-upgrade-"));
-  const partial = join(paths.versions, `.${release.version}.partial`);
+  const partial = mkdtempSync(join(paths.versions, `.${release.version}.partial-`));
   try {
     const tarball = join(scratch, name);
     writeFileSync(tarball, bytes);
-    rmSync(partial, { recursive: true, force: true });
-    mkdirSync(partial);
     const tar = spawnSync("tar", ["-xzf", tarball, "-C", partial], { encoding: "utf8" });
     if (tar.status !== 0) throw new Error(`tar could not unpack ${name}: ${tar.stderr.trim()}`);
     const runs = versionRuns(partial, release.version);
@@ -308,7 +337,13 @@ export async function unpackRelease(
           `Until the binary ships (#185) it needs Node 22 or later on PATH`,
       );
     }
-    renameSync(partial, dir);
+    try {
+      renameSync(partial, dir);
+    } catch (err) {
+      // Another unpack renamed its whole directory into place first.
+      if (existsSync(join(dir, "lingtai"))) return "present";
+      throw err;
+    }
     return "unpacked";
   } finally {
     rmSync(partial, { recursive: true, force: true });
@@ -461,13 +496,31 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     return 0;
   }
 
-  // The rule the layout rests on: a version's directory is not removed while a
-  // process runs from it. A daemon started through the shim names the shim, not
-  // the directory, so both are looked for.
-  const running = world.running([paths.versions + sep, paths.shim]);
+  // The rule the layout rests on: nothing is removed while a process runs from
+  // it. A daemon started through the shim names the shim, not the directory, and
+  // an agent in `worktrees/` may name neither but works in it — so the shim, and
+  // anything under the home by command line or working directory, are looked for.
+  const running = world.running([paths.home + sep, paths.shim]);
   if (running.length > 0) {
     world.log(paint.fail("not uninstalling — these are running from what would be removed:"));
     for (const p of running) world.log(paint.fail(`  · pid ${p.pid}  ${p.command}`));
+    world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
+    return 1;
+  }
+  // A daemon from a checkout is none of those, and its agents' worktrees,
+  // recipes and run logs are here all the same. The lock says it conducts.
+  let holder: string | null;
+  try {
+    holder = await world.conducting();
+  } catch (err) {
+    return refuse(
+      world,
+      `not uninstalling: could not ask the log whether anything conducts (${(err as Error).message}) — ` +
+        "a daemon's worktrees are under what would be removed. Unset LINGTAI_DATABASE_URL if that log is gone",
+    );
+  }
+  if (holder !== null) {
+    world.log(paint.fail(`not uninstalling — ${holder} holds the conductor lock, and its worktrees, recipe and run logs are under ${paths.home}`));
     world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
     return 1;
   }
@@ -482,7 +535,10 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   }
 
   // Decided before the removal, while the path it compares with still exists.
-  const keyKept = app !== null && !("unread" in app) && app.keyPath !== null && !isUnder(app.keyPath, paths.home);
+  const keyKept =
+    app !== null &&
+    !("unread" in app) &&
+    ("path" in app.key ? !isUnder(app.key.path, paths.home) : !app.key.files.some((f) => isUnder(f, paths.home)));
 
   rmSync(paths.home, { recursive: true, force: true });
   if (ownShim) unlinkSync(paths.shim);
@@ -498,9 +554,14 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
       ),
     );
   } else {
-    const key = keyKept
-        ? `Its private key at ${app.keyPath} was not under ${paths.home} and is still there.`
-        : "Its private key is gone and cannot be recovered — if you reinstall, create a new App.";
+    const key =
+      "path" in app.key
+        ? keyKept
+          ? `Its private key at ${app.key.path} was not under ${paths.home} and is still there.`
+          : "Its private key is gone and cannot be recovered — if you reinstall, create a new App."
+        : keyKept
+          ? `Its private key is in ${app.key.variable}${app.key.files.length > 0 ? ` in ${app.key.files.join(", ")}` : " in your environment"}, which nothing here removed.`
+          : `Its private key was in ${app.key.variable} in ${app.key.files.join(", ")}, which is gone — unless your shell exports ${app.key.variable} too, if you reinstall, create a new App.`;
     world.log(
       paint.signal(
         `The GitHub App ${app.slug} still exists and is still installed on ${app.repositories} ` +
@@ -547,16 +608,49 @@ export async function releaseCheck(
 
 // ------------------------------------------------------------------ live --
 
-/** `ps`, filtered to command lines naming one of `needles`, without this process. */
+/**
+ * `ps`, filtered to command lines naming one of `needles` or working
+ * directories under one, without this process or the shell that started it.
+ */
 export function runningFrom(needles: readonly string[]): { pid: number; command: string }[] {
   const ps = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" });
   if (ps.status !== 0) throw new Error(`ps could not list processes: ${ps.stderr.trim()}`);
+  const dirs = needles.filter((n) => n.endsWith(sep)).flatMap((n) => [n, realpath(n) + sep]);
+  const cwds = workingDirectories();
   return ps.stdout
     .split("\n")
     .map((line) => line.trim().match(/^(\d+)\s+(.*)$/))
     .filter((m): m is RegExpMatchArray => m !== null)
     .map((m) => ({ pid: Number(m[1]), command: m[2]! }))
-    .filter((p) => p.pid !== process.pid && needles.some((n) => p.command.includes(n)));
+    .filter((p) => p.pid !== process.pid && p.pid !== process.ppid)
+    .filter((p) => {
+      const cwd = cwds.get(p.pid);
+      return needles.some((n) => p.command.includes(n)) || (cwd !== undefined && dirs.some((d) => (cwd + sep).startsWith(d)));
+    });
+}
+
+/** Every process's working directory this user may read: `/proc` on Linux, `lsof` elsewhere. */
+function workingDirectories(): Map<number, string> {
+  const out = new Map<number, string>();
+  if (existsSync("/proc/self/cwd")) {
+    for (const name of readdirSync("/proc")) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        out.set(Number(name), readlinkSync(`/proc/${name}/cwd`));
+      } catch {
+        // Gone, or not ours to read.
+      }
+    }
+    return out;
+  }
+  const lsof = spawnSync("lsof", ["-w", "-a", "-d", "cwd", "-F", "pn"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (lsof.error) throw new Error(`lsof could not list working directories: ${lsof.error.message}`);
+  let pid = 0;
+  for (const line of lsof.stdout.split("\n")) {
+    if (line.startsWith("p")) pid = Number(line.slice(1));
+    else if (line.startsWith("n") && pid > 0) out.set(pid, line.slice(1));
+  }
+  return out;
 }
 
 /**
