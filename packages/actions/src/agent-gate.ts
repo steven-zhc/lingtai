@@ -401,6 +401,14 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
             findings: [],
           };
         }
+        // **Still a refusal on the log, and that is a known defect, not a
+        // decision.** A reviewer that crashed judged nothing either, yet this
+        // appends `GateFailed` and `run-once.ts` buys a fix round for it — what
+        // #192 spent rounds 2 and 3 on. #195 removed the trigger it measured
+        // (the reused session id); the class is #196's. It is not `never-ran`
+        // here, because that stands the conductor down for an account-wide
+        // wall, and re-reading `turns` to guess would be the second home the
+        // comment above refuses.
         return {
           verdict: "failed",
           evidence: `the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
