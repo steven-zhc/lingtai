@@ -30,7 +30,7 @@ import { Document, isMap, parse as parseYaml, parseDocument } from "yaml";
 import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
-import { LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
+import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
 
 /** A project's recipe, under `stateDir()`. */
@@ -60,6 +60,13 @@ const MachineLimits = z.strictObject({
 const MachineRuntime = z.strictObject({
   agent: RuntimeId.optional(),
   limits: MachineLimits.optional(),
+  /**
+   * Whose tickets this machine takes (0046 §2, #181). Both keys optional, so
+   * the login can be said once machine-wide and `take` per project.
+   */
+  assignee: z
+    .strictObject({ login: z.string().min(1).optional(), take: AssigneeTake.optional() })
+    .optional(),
 });
 
 /**
@@ -254,6 +261,26 @@ export async function resolveLocalRecipe(
     provenance[`runtime.limits.${key}`] = `${limits[key]} ← ${from}`;
   }
 
+  // Absent unless the machine said something, so a machine that has not heard
+  // of assignees resolves the recipe — and its hash — exactly as before.
+  const assigneeFrom = (key: "login" | "take") =>
+    scoped?.assignee?.[key] !== undefined ? scopedAt : shared?.assignee?.[key] !== undefined ? machineFile : null;
+  const login = scoped?.assignee?.login ?? shared?.assignee?.login;
+  const take = scoped?.assignee?.take ?? shared?.assignee?.take;
+  let assignee: AssigneeRule | undefined;
+  if (login !== undefined || take !== undefined) {
+    const parsed = AssigneeRule.safeParse({ login, take });
+    if (!parsed.success) {
+      throw new MachineConfigInvalidError(
+        machineFile,
+        parsed.error.issues.map((i) => `runtime.assignee.${i.path.join(".")}: ${i.message}`),
+      );
+    }
+    assignee = parsed.data;
+  }
+  provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"} ← ${assigneeFrom("take") ?? "default"}`;
+  provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"} ← ${assigneeFrom("login") ?? "default"}`;
+
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
     const refused: string[] = [];
     const runtime = raw["runtime"];
@@ -261,7 +288,7 @@ export async function resolveLocalRecipe(
       runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {};
-    for (const key of ["agent", "limits"]) {
+    for (const key of ["agent", "limits", "assignee"]) {
       if (key in own) {
         refused.push(
           `runtime.${key}: moved to this machine (0046 §3) — write it in ${machineFile}, ` +
@@ -270,7 +297,7 @@ export async function resolveLocalRecipe(
       }
     }
     if (refused.length > 0) return refused;
-    raw["runtime"] = { ...own, agent: agent.agent, limits };
+    raw["runtime"] = { ...own, agent: agent.agent, limits, ...(assignee ? { assignee } : {}) };
     return [];
   });
 
@@ -333,6 +360,7 @@ export function machineFiles(input: {
   // A file already without them — the machine's own, being edited — has no `runtime` to delete from.
   if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
   if (doc.hasIn(["runtime", "limits"])) doc.deleteIn(["runtime", "limits"]);
+  if (doc.hasIn(["runtime", "assignee"])) doc.deleteIn(["runtime", "assignee"]);
   const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 
   const chosen = { agent: input.recipe.runtime.agent, limits: { ...input.recipe.runtime.limits } };

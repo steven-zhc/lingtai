@@ -264,6 +264,33 @@ export const Subscriber = z.strictObject({
 });
 export type Subscriber = z.infer<typeof Subscriber>;
 
+/**
+ * `mine`: only issues assigned to `login`. `unassigned`: only issues assigned
+ * to nobody. `both`: every issue, whoever it is assigned to — today's queue.
+ */
+export const AssigneeTake = z.enum(["mine", "unassigned", "both"]);
+export type AssigneeTake = z.infer<typeof AssigneeTake>;
+
+/**
+ * The machine's GitHub login and what it takes by assignee.
+ *
+ * The login is not proof of anything, and does not need to be: a wrong one
+ * hands this machine somebody else's tickets on the next pass, which is a
+ * mistake that shows itself (0046 §2).
+ */
+export const AssigneeRule = z
+  .strictObject({
+    login: z.string().min(1).optional(),
+    take: AssigneeTake.default("both"),
+  })
+  // `mine` with nobody named would match no issue at all, and an empty queue
+  // reads exactly like a repository with nothing to do.
+  .refine((rule) => rule.take !== "mine" || rule.login !== undefined, {
+    message: "take: mine needs a login — the GitHub login this machine's issues are assigned to",
+    path: ["login"],
+  });
+export type AssigneeRule = z.infer<typeof AssigneeRule>;
+
 export const Recipe = z.object({
   version: z.literal(1),
   /** Pulls install/build/test defaults from a preset shipped with Lingtai. */
@@ -562,6 +589,21 @@ export const Recipe = z.object({
         restarts: z.number().int().nonnegative().default(0),
       })
       .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
+    /**
+     * Which issues this machine takes, by their assignee
+     * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §2, #181).
+     *
+     * **The machine's, never the recipe file's**: `resolveLocalRecipe` puts it
+     * here from `~/.lingtai/config.yml` and refuses it written in the recipe,
+     * as it does `agent` and `limits`. Whether one person's Lingtai leaves a
+     * colleague's tickets alone is that person's setting, not the repository's.
+     *
+     * **Optional, and absent is `both`** — every ticket, assigned or not, which
+     * is how the queue behaved before an assignee was read and what somebody
+     * working alone expects. Optional rather than defaulted so that a recipe
+     * that says nothing hashes and emits exactly as it did.
+     */
+    assignee: AssigneeRule.optional(),
     /**
      * How much an agent is told, in characters and rows
      * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).

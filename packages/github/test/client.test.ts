@@ -115,4 +115,28 @@ describe("listOpenIssues", () => {
 
     expect((await (await client()).listOpenIssues())[0]!.dependencies).toBeNull();
   });
+
+  /**
+   * Whose work a ticket is (#181), off the listing a pass already makes. One
+   * request for the page and none per issue: a second request per candidate is
+   * the cost `issue_dependencies_summary` was chosen to avoid.
+   */
+  it("reads the assignees off the listing, without a second request", async () => {
+    stub([
+      raw({ number: 181, assignees: [{ login: "alice" }, { login: "bob" }] }),
+      raw({ number: 182, assignees: [] }),
+      raw({ number: 183 }),
+    ]);
+    const answered = globalThis.fetch;
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      asked.push(String(url));
+      return answered(url, init);
+    });
+
+    const issues = await (await client()).listOpenIssues();
+
+    expect(issues.map((i) => i.assignees)).toEqual([["alice", "bob"], [], []]);
+    expect(asked.filter((url) => url.includes("/issues"))).toHaveLength(1);
+  });
 });

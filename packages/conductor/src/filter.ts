@@ -265,6 +265,10 @@ export function describeFilter(filter: ProjectFilter): string[] {
     `${name} recipe ${filter.configHash.slice(0, 12)} from ${filter.ref}`,
     `  picks up     ${filter.kinds.join(" > ")}${order}`,
     `  excludes     ${filter.exclude.length > 0 ? filter.exclude.join(", ") : "nothing"}`,
+    // With the login in it, because a wrong login is the mistake this setting
+    // can have, and it should be readable before it hands over somebody else's
+    // tickets rather than only after (0046 §2, #181).
+    `  assignee     ${describeAssignee(filter.recipe.runtime.assignee)}`,
     // Printed whether it buys anything or not, like a `skipped` gate point: a
     // default that only appears when it is doing something is a default nobody
     // can audit, and this one spends money (0025 §2).
@@ -278,6 +282,19 @@ export function describeFilter(filter: ProjectFilter): string[] {
     // change on purpose.
     `  retries      after ${filter.recipe.source.backoff}, unless a repair is pending`,
   ];
+}
+
+/** `runtime.assignee` as a person reads it. Absent is `both`, and says so. */
+export function describeAssignee(rule: Recipe["runtime"]["assignee"]): string {
+  const as = rule?.login ? ` (this machine is ${rule.login})` : "";
+  switch (rule?.take ?? "both") {
+    case "mine":
+      return `only issues assigned to ${rule?.login}`;
+    case "unassigned":
+      return `only issues assigned to nobody${as}`;
+    default:
+      return `any issue, whoever it is assigned to${as}`;
+  }
 }
 
 export function describeFilters(filters: readonly ProjectFilter[]): string[] {

@@ -162,6 +162,7 @@ const issue: Issue = {
   state: "open",
   url: "https://example.invalid/7",
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
+  assignees: [],
 };
 
 const project: ProjectState = {

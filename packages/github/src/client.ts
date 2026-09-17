@@ -94,6 +94,16 @@ export interface Issue {
    * looking at the thing you think it is. `runnableNow` says so once instead.
    */
   dependencies: Dependencies | null;
+  /**
+   * Who the issue is assigned to, as GitHub logins — empty when nobody is.
+   *
+   * **Whose work a ticket is** ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §2,
+   * #181). A person writes it when planning, it never goes stale when a machine
+   * dies, and a conflict over it is a reassignment GitHub already renders — so
+   * it is read, rather than a claim label of Lingtai's own. On the object the
+   * listing already fetched, as `dependencies` is.
+   */
+  assignees: string[];
 }
 
 export interface GitHubClient {
@@ -331,9 +341,16 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     state: string;
     html_url: string;
     issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null;
+    assignees?: ({ login?: string } | null)[] | null;
   }): Issue {
     return {
       dependencies: dependenciesOf(raw),
+      // Off the listing, never `/issues/{n}/assignees`: a pass considers every
+      // open issue, and one request each would be the cost `dependenciesOf`
+      // refuses for the same reason.
+      assignees: (raw.assignees ?? [])
+        .map((a) => a?.login ?? "")
+        .filter((login) => login !== ""),
       number: raw.number,
       title: raw.title,
       body: raw.body ?? "",

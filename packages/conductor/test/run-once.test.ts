@@ -127,6 +127,7 @@ const issue: Issue = {
   state: "open",
   url: "https://example.invalid/117",
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
+  assignees: [],
 };
 
 /** The `end` point, configured: close the issue when the item lands. */

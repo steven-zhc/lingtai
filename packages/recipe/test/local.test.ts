@@ -135,6 +135,51 @@ describe("resolveLocalRecipe", () => {
     });
   });
 
+  /** Whose tickets this machine takes (0046 §2, #181). */
+  describe("runtime.assignee", () => {
+    it("is absent when the machine says nothing — `both`, and the hash is unchanged", async () => {
+      const resolved = await resolveLocalRecipe("app", withMachine(undefined));
+      expect(resolved.recipe.runtime.assignee).toBeUndefined();
+      expect(resolved.provenance?.["runtime.assignee.take"]).toBe("both ← default");
+    });
+
+    it("takes the login machine-wide and `take` per project", async () => {
+      const resolved = await resolveLocalRecipe(
+        "app",
+        withMachine("runtime:\n  assignee:\n    login: alice\nprojects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n"),
+      );
+      expect(resolved.recipe.runtime.assignee).toEqual({ login: "alice", take: "mine" });
+      expect(resolved.provenance?.["runtime.assignee.login"]).toBe(`alice ← ${HOME}/config.yml`);
+      expect(resolved.provenance?.["runtime.assignee.take"]).toContain("projects.app");
+    });
+
+    it("defaults `take` to both when only a login is named", async () => {
+      const resolved = await resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    login: alice\n"));
+      expect(resolved.recipe.runtime.assignee).toEqual({ login: "alice", take: "both" });
+    });
+
+    it("refuses `mine` with no login, rather than taking nothing and saying nothing", async () => {
+      await expect(
+        resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    take: mine\n")),
+      ).rejects.toThrow(/runtime\.assignee\.login: take: mine needs a login/);
+    });
+
+    it("refuses a value that is not one of the three", async () => {
+      await expect(
+        resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    take: everyone\n")),
+      ).rejects.toThrow(MachineConfigInvalidError);
+    });
+
+    it("is the machine's: written in the recipe it is refused, naming the machine file", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  assignee:\n    take: both\n`,
+      });
+      await expect(
+        resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
+      ).rejects.toThrow(/runtime\.assignee: moved to this machine.*config\.yml/);
+    });
+  });
+
   describe("what belongs in the other file is refused, not dropped", () => {
     it("a gates key in the machine file is a parse error that says where gates live", async () => {
       const resolving = resolveLocalRecipe(

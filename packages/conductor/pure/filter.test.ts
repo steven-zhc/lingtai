@@ -14,7 +14,7 @@
 import type { ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { describe, expect, it } from "vitest";
-import { type RecipeFor, describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
+import { type RecipeFor, describeAssignee, describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
 import { resolveRecipe } from "@lingtai/recipe";
 
 const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
@@ -177,11 +177,15 @@ describe("describeFilter", () => {
     const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
     const lines = describeFilter(filter);
 
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(6);
     expect(lines[0]).toMatch(/^lingtai\s+recipe [0-9a-f]{12} from main$/);
     expect(lines[1]).toContain("picks up     bug > tech-debt > documentation");
     expect(lines[1]).toContain("(in priority order)");
     expect(lines[2]).toContain("excludes     blocked, agent:hold");
+    // Said when the machine says nothing, as `both` — unassigned work and
+    // everybody's, which is what the queue did before it read an assignee (#181).
+    const assignee = lines.splice(3, 1)[0];
+    expect(assignee).toContain("assignee     any issue, whoever it is assigned to");
     // Printed by a recipe that never mentions it, which is the point: a default
     // that spends money has to be readable without opening Lingtai's source
     // (0025 §2), and a line that only appears when it is on is not that.
@@ -296,5 +300,19 @@ describe("what a pass may spend", () => {
     expect(none).toContain("runtime.limits.restarts: 0");
     expect(none).toContain("goes to you");
     expect(none).not.toContain("restart(s) —");
+  });
+});
+
+/** The login is printed, because a wrong one is the mistake this setting can have (#181). */
+describe("describeAssignee", () => {
+  it("names the login it matches, under each setting", () => {
+    expect(describeAssignee(undefined)).toBe("any issue, whoever it is assigned to");
+    expect(describeAssignee({ login: "alice", take: "mine" })).toBe("only issues assigned to alice");
+    expect(describeAssignee({ login: "alice", take: "unassigned" })).toBe(
+      "only issues assigned to nobody (this machine is alice)",
+    );
+    expect(describeAssignee({ login: "alice", take: "both" })).toBe(
+      "any issue, whoever it is assigned to (this machine is alice)",
+    );
   });
 });

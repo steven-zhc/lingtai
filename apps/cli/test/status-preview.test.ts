@@ -47,6 +47,7 @@ const issue = (
   state: "open",
   url: `https://example.invalid/${over.number}`,
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
+  assignees: [],
   ...over,
   labels: (over.labels ?? []).map((l) => (typeof l === "string" ? { name: l, color: null } : l)),
 });

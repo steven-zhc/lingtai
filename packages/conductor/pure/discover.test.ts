@@ -54,6 +54,7 @@ const issue = (
   state: "open",
   url: `https://example.invalid/${over.number}`,
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
+  assignees: [],
   ...over,
   labels: (over.labels ?? []).map((l) => (typeof l === "string" ? { name: l, color: null } : l)),
 });
@@ -204,6 +205,57 @@ describe("considerIssue", () => {
         recipe,
       ).skip,
     ).toBe("excluded-label");
+  });
+});
+
+/**
+ * Whose work a ticket is, read off the assignee (0046 §2, #181) — and never off
+ * `lingtai:working`, which says a machine is running it and decides nothing.
+ */
+describe("the assignee", () => {
+  const as = (assignee: Recipe["runtime"]["assignee"]) =>
+    ({ ...recipe, runtime: { ...recipe.runtime, assignee } }) as Recipe;
+  const alices = issue({ number: 181, labels: ["bug"], assignees: ["alice"] });
+  const mine = issue({ number: 182, labels: ["bug"], assignees: ["Bob"] });
+  const nobodys = issue({ number: 183, labels: ["bug"] });
+
+  it("is not offered under `mine` when it is somebody else's, and is under `both`", () => {
+    expect(considerIssue(alices, as({ login: "bob", take: "mine" })).skip).toBe("assigned-elsewhere");
+    expect(considerIssue(alices, as({ login: "bob", take: "both" })).skip).toBeNull();
+  });
+
+  /** Unassigned work is taken by default — what the queue did before, and what somebody alone expects. */
+  it("offers everything when the machine says nothing", () => {
+    for (const i of [alices, mine, nobodys]) expect(considerIssue(i, recipe).skip).toBeNull();
+  });
+
+  it("under `mine`, takes only this login's, compared as GitHub does, without case", () => {
+    const rule = as({ login: "bob", take: "mine" });
+    expect(considerIssue(mine, rule).skip).toBeNull();
+    expect(considerIssue(nobodys, rule).skip).toBe("unassigned");
+  });
+
+  it("under `unassigned`, takes only nobody's", () => {
+    const rule = as({ login: "bob", take: "unassigned" });
+    expect(considerIssue(nobodys, rule).skip).toBeNull();
+    expect(considerIssue(alices, rule).skip).toBe("assigned-elsewhere");
+    expect(considerIssue(mine, rule).skip).toBe("assigned-to-me");
+  });
+
+  /** A stale label misinforms and blocks nobody. */
+  it("does not read `lingtai:working`, under any setting", () => {
+    const working = issue({ number: 184, labels: ["bug", "lingtai:working"] });
+    expect(considerIssue(working, as({ take: "both" })).skip).toBeNull();
+    expect(considerIssue(working, as({ take: "unassigned" })).skip).toBeNull();
+  });
+
+  it("is counted on the line `lingtai status` prints, beside the other reasons", async () => {
+    const found = await runnableNow({
+      client: fakeClient([alices, mine, nobodys]),
+      recipe: as({ login: "bob", take: "mine" }),
+    });
+    expect(found.runnable.map((r) => r.ref)).toEqual(["182"]);
+    expect(passedOver(found.skipped)).toBe("2 passed over — assigned-elsewhere 1, unassigned 1");
   });
 });
 

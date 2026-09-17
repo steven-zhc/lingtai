@@ -104,6 +104,10 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   // Said as the thing that has to change, not as a state it is in: the ticket
   // moves the moment the last blocker closes, with nothing to clear here (#131).
   "blocked-by": "an issue it is blocked by is still open",
+  // The assignee, as this machine's `runtime.assignee` reads it (#181).
+  "assigned-elsewhere": "it is assigned to somebody else",
+  unassigned: "it is assigned to nobody, and this machine takes only its own",
+  "assigned-to-me": "it is assigned to you, and this machine takes only unassigned work",
 };
 
 /**

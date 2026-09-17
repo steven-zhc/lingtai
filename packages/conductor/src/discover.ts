@@ -26,7 +26,7 @@
  * any `agent:*` label is one the old loop has touched, so Lingtai does not
  * discover it at all.
  */
-import type { Recipe } from "@lingtai/recipe";
+import type { AssigneeRule, Recipe } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
@@ -105,7 +105,21 @@ export type SkipReason =
    * reorder: a refused item is still first in line next pass, refused again,
    * forever. `agent:hold` already works the way this does, one line above.
    */
-  | "blocked-by";
+  | "blocked-by"
+  /**
+   * Assigned to somebody other than this machine's login, under `take: mine`
+   * or `take: unassigned` (0046 §2, #181).
+   *
+   * **Not a lock.** A person wrote the assignee when planning, so it never goes
+   * stale and needs no expiry — the lease 0027 deleted does not come back.
+   * `lingtai:working` is not read here and never decides this: a stale one
+   * misinforms and blocks nobody.
+   */
+  | "assigned-elsewhere"
+  /** Assigned to nobody, under `take: mine`. */
+  | "unassigned"
+  /** Assigned to this machine's own login, under `take: unassigned`. */
+  | "assigned-to-me";
 
 export interface Considered {
   issue: Issue;
@@ -154,7 +168,35 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   // existed rather than passing everything over — `runnableNow` is what says so.
   if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: "blocked-by" };
 
+  const assignee = assigneeSkip(issue, recipe.runtime.assignee);
+  if (assignee) return { issue, skip: assignee };
+
   return { issue, skip: null };
+}
+
+/**
+ * Whether this machine's assignee setting passes an issue over, and why.
+ *
+ * **The assignee, and never a label.** `lingtai:working` is still written and
+ * still rendered, and it says *somebody's Lingtai is running this now* — which
+ * is information, and nothing in selection reads it (0046 §2).
+ *
+ * Absent is `both`: every issue is offered whoever it is assigned to, which is
+ * what the queue did before it read an assignee. Logins compare
+ * case-insensitively, because GitHub's do.
+ */
+export function assigneeSkip(issue: Issue, rule: AssigneeRule | undefined): SkipReason | null {
+  const take = rule?.take ?? "both";
+  if (take === "both") return null;
+  const me = rule?.login?.toLowerCase();
+  const assignees = issue.assignees.map((a) => a.toLowerCase());
+  const mine = me !== undefined && assignees.includes(me);
+  if (take === "mine") {
+    if (mine) return null;
+    return assignees.length === 0 ? "unassigned" : "assigned-elsewhere";
+  }
+  if (assignees.length === 0) return null;
+  return mine ? "assigned-to-me" : "assigned-elsewhere";
 }
 
 export interface Offered {

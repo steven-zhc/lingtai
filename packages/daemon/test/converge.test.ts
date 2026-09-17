@@ -48,6 +48,7 @@ function fakeGitHub(start: { labels: string[]; state?: "open" | "closed" }) {
       state: world.state,
       url: `https://example.invalid/${n}`,
       dependencies: { blockedBy: 0, totalBlockedBy: 0 },
+      assignees: [],
     }),
     setLabels: async (_n: number, labels: readonly string[]) => {
       world.labels = [...labels];
