@@ -66,8 +66,8 @@ export async function loadAllProjects(store: EventStore = eventStore): Promise<P
  * The projects a conductor may take work from.
  *
  * **`isRegistered` is the guard, and it predates anything it guards against.**
- * A repository that has been recorded and whose recipe has not landed yet
- * (`ProjectOnboardingStarted`, #163) has no `configHash`, so it does not come
+ * A repository that has been recorded and not yet registered — waiting for the
+ * App's installation (`ProjectOnboardingStarted`, #163, #182) — has no `configHash`, so it does not come
  * back from here — the daemon needs no new check, and `test/projects.test.ts`
  * pins that rather than adding one.
  */

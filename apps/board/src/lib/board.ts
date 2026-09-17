@@ -856,9 +856,10 @@ export async function loadBoard(project?: string): Promise<Board> {
  * The register, split into what can be conducted and what is on its way in.
  *
  * **The whole of #163's "must not break", in one place.** A pending project has
- * no recipe, so `currentRecipe` throws for it — and `askProject` turns a throw
- * into `unreadable`, which the Queued column renders as *the queue could not be
- * listed*. One repository waiting for a pull request would therefore have put a
+ * no registration, so `currentRecipe` has nothing to answer for it — and
+ * `askProject` turns a throw into `unreadable`, which the Queued column renders
+ * as *the queue could not be listed*. One repository waiting for the App to be
+ * installed (#182) would therefore have put a
  * red line on the board, which is the failure the design names: **one card that
  * is not ready must not redden the page.** So the pending half never reaches
  * `queuedCards` and is asked nothing at all.

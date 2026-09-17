@@ -319,6 +319,29 @@ describe("abandoning the wizard", () => {
   });
 });
 
+describe("the managed repository", () => {
+  /**
+   * **Nothing in onboarding writes to it** (0046 §3, #182). The whole wizard —
+   * the preview, the validation, the button — runs against a GitHub that fails
+   * any request that is not a `GET`, and it finishes: the recipe is on this
+   * machine and the project is recorded as pending. The pull request that used
+   * to be the last step would fail here by name, which is the point.
+   */
+  it("is only ever read: the wizard finishes against a client that fails any non-GET", async () => {
+    const project = fresh();
+    const github = readOnlyClient(project);
+    const home = await machine();
+
+    await firstPass({ client: github, recipe });
+    const started = await startOnboarding({ client: github, recipe, said: SAID, by: "human:tester", store, home });
+
+    expect(started).toEqual({ ok: true, path: recipePath(project, home) });
+    const state = reduceProject(await store.read(projectStream(project)));
+    expect(state.project).toBe(project);
+    expect(state.configHash).toBeNull();
+  });
+});
+
 describe("the recipe the button writes", () => {
   /**
    * A recipe that will not parse writes nothing at all. The refusal names the

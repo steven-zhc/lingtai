@@ -1,6 +1,10 @@
 # Onboarding, as a page
 
-**Status** decided · 2026-09-15 · the design the wizard epic is cut from
+**Status** decided · 2026-09-15 · the design the wizard epic is cut from ·
+**amended by [0046](../decisions/0046-lingtai-is-personal.md)**: the recipe is
+this machine's, the wizard opens no pull request, and *pending* waits for the
+App's installation (#180, #182). The sections that argued otherwise say so where
+they stand.
 
 Two drawings, and they are the record of the choice rather than decoration:
 [the five models compared](https://claude.ai/code/artifact/e91bc22c-3b46-4bab-9f76-e73412489da6),
@@ -59,7 +63,12 @@ only exists once a recipe has been read. **So "this repository has a recipe" is
 already the line between registered and not** — the pending state needs no new
 concept, only a first event on the stream.
 
-## The constraint that decides the shape
+## The constraint that decided the shape — superseded
+
+> **Superseded by [0046](../decisions/0046-lingtai-is-personal.md) §3.** The
+> recipe is `~/.lingtai/<project>/recipe.yml`, nothing is written to the managed
+> repository, and the pull request below is gone (#182). What follows is kept
+> as the argument that was made, not as what the page does.
 
 ADR [0005](../decisions/0005-config-in-target-repo.md) puts the recipe in the
 managed repository, and `lingtai add` says so in its own first paragraph:
@@ -284,37 +293,47 @@ of the button, and ticking `agent:hold` back into the excludes is one action awa
 on the same page.
 
 Before any of it: **the generated recipe is parsed with the system's own
-`Recipe.parse`**. A PR that merges and then fails `lingtai add` would leave a bad
-file on the base branch. `source.kinds` has `.min(1)`, so the page must also stop
+`Recipe.parse`**. A file written and then refused by `lingtai add` would be a bad
+recipe on this machine, where the next thing to read it is a run. `source.kinds` has `.min(1)`, so the page must also stop
 you unticking the last kind rather than letting the parse catch it at the end.
 
 ## Pending, and a button
 
-The wizard ends at the pull request. Then:
+The wizard ends on this machine: the recipe written to
+`~/.lingtai/<project>/recipe.yml`, and the event. **Nothing is written to the
+repository and nothing waits on a merge** (0046 §3, #182). Then:
 
 ```
 wizard finishes   → ProjectOnboardingStarted { slug, base, by }   ← the stream's first event
 board shows       → a card: pending, with Recheck
-Recheck           → read the recipe from the base branch
-  found           → the existing lingtai add path: ProjectConfigured, and it is live
-  not found       → unchanged, and it says .lingtai/config.yaml is not there yet
+Recheck           → ask GitHub whether the App is installed on the repository
+  not installed   → unchanged, and it says so: install the App, then press again
+  installed       → the existing lingtai add path: scopes, the machine's recipe,
+                    ProjectConfigured, and it is live
 ```
 
-**No watcher, and that is deliberate.** The board is a page and cannot follow a PR
-for hours; the daemon does not know repositories it has not onboarded. *Watch the
-PR* was scope invented in the first draft and is removed rather than built.
+**Pending waits for the App, and that is a state that ends.** It used to wait for
+a recipe to land in the repository, which 0046 made impossible — nothing lands
+there any more. A repository the App is not installed on is still a real pending
+state, and it is the same fact #168's first screen starts from, seen from the
+other end.
+
+**No watcher, and that is deliberate.** The board is a page and cannot follow an
+installation for hours; the daemon does not know repositories it has not
+onboarded. `Recheck` is the second half.
 
 The daemon cannot touch a pending project either, and not because we guarded it:
 `loadProjects()` has filtered on `isRegistered` since before this existed.
 
 **The board must survive a pending card.** Its Queued column asks GitHub on
-render, and a pending project has no recipe — `currentRecipe` throws. One card
-that is not ready must not redden the page.
+render, and a pending project is not registered — `currentRecipe` would be asked
+about a project nothing conducts. One card that is not ready must not redden the
+page.
 
 ## What it does not do
 
-- **It does not run `lingtai add` for you.** The recipe is read from the base
-  branch, so the PR merges first. `Recheck` is the second half.
+- **It does not run `lingtai add` for you.** `add` checks the App's installation
+  and scopes, and the App may not be installed yet; `Recheck` is the second half.
 - **It never takes a secret.** `env.required` names variables; values go through
   `lingtai env set`, which reads them from stdin unechoed. Nothing is typed into
   a web page.

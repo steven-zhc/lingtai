@@ -1,8 +1,9 @@
 /**
  * A repository that is on its way in, on a board that still works (#163).
  *
- * The wizard ends at a pull request and the recipe lands minutes or days later.
- * In between, the project is on the log and has no recipe — and the Queued
+ * The wizard ends with the recipe on this machine, and the App may not be
+ * installed on the repository yet (#182). In between, the project is on the log
+ * and is not registered — and the Queued
  * column's whole job is to ask GitHub, under a recipe, what a project is
  * offering. Asked about this one it would refuse, and a refusal there is not
  * quiet: `#76` made it a red line naming the project, precisely so a broken
@@ -20,7 +21,7 @@ import { emptyProject, type ProjectState } from "@lingtai/domain";
 import { type ProjectQueue, queuedCards, splitRegister } from "../src/lib/board.ts";
 import { Pending } from "../src/app/pending.tsx";
 
-/** A project the wizard recorded and whose recipe has not landed. */
+/** A project the wizard recorded and `Recheck` has not registered. */
 const ARRIVING: ProjectState = {
   ...emptyProject,
   project: "esctest-arriving",
@@ -53,7 +54,7 @@ describe("the register, split", () => {
    * The one that matters. `askProject` never throws — it answers `unreadable`,
    * and `queuedCards` turns that into a `problem`, which is a red line in the
    * Queued column naming the project. A pending repository put through here
-   * would redden the board every render until somebody merged a pull request.
+   * would redden the board every render until somebody installed the App.
    */
   it("asks GitHub about the live project and nothing at all about the pending one", async () => {
     const asked: string[] = [];
@@ -92,6 +93,14 @@ describe("the pending card", () => {
    * machine's since #180, never one in the repository. A card that did not say
    * so would be a control nobody could tell had been pointed at the wrong place.
    */
+  /** What it is waiting for, since #182: the App, and never a pull request. */
+  it("says it waits for the App to be installed, and not for anything to merge", () => {
+    const out = html();
+
+    expect(out).toContain("GitHub App to be installed");
+    expect(out).not.toMatch(/pull request|merge/i);
+  });
+
   it("says which file on this machine it reads, and for which branch", () => {
     const out = html();
 

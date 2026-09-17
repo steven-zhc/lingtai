@@ -5,11 +5,12 @@
  *
  * The wizard ends by writing the recipe on this machine,
  * `~/.lingtai/<project>/recipe.yml` (0046 §3, #180) — nothing is written to the
- * repository and there is nothing to merge. Until `Recheck` registers it the
- * repository is **recorded and not conducted**:
- * `ProjectOnboardingStarted` is on its stream, `loadProjects()` does not return
- * it, and nothing in the system will touch it. That is a real state and it had
- * nowhere to be seen.
+ * repository and there is nothing to merge. What it can still be waiting for is
+ * **the GitHub App, installed on that repository** (#182, #168): until `Recheck`
+ * finds it and registers the project, the repository is **recorded and not
+ * conducted** — `ProjectOnboardingStarted` is on its stream, `loadProjects()`
+ * does not return it, and nothing in the system will touch it. That is a real
+ * state, it ends when somebody installs the App, and it had nowhere to be seen.
  *
  * **Above the columns, and not a card in one.** The four columns are work, and
  * this is a repository with none — a fifth kind of card among them would make
@@ -17,14 +18,14 @@
  * `QueueProblem` is not a card.
  *
  * **Recheck, and nothing watching.** The daemon does not know repositories it
- * has not onboarded, so nothing finishes this automatically. Pressing it reads
- * the recipe from this machine and checks the App can reach the repository:
- * found, and the project is live; not found, and it says so and changes
- * nothing, so it can be pressed again once the file is there.
+ * has not onboarded, so nothing finishes this automatically. Pressing it asks
+ * GitHub whether the App is installed there: not yet, and it says so and
+ * changes nothing, so it can be pressed again once it is; installed, it reads
+ * the recipe from this machine and the project is live.
  *
  * It does not ask "sure?" the way Resume does. Resume moves the whole
- * installation; this reads a file and either registers a repository the
- * operator already asked for or reports that the file is not there yet.
+ * installation; this asks one question and either registers a repository the
+ * operator already asked for or reports that the App is not there yet.
  */
 import { useState, useTransition } from "react";
 import { recheckProject } from "./actions.ts";
@@ -64,15 +65,16 @@ function PendingCard({ project }: { project: PendingProject }) {
       {/* Held, not failed. Nothing is broken: the project has been asked for
           and not yet registered, which is the ordinary shape of this state. */}
       <span>
-        <span className="chip held" title="recorded, and not conducted — no recipe has been read for it yet">
+        <span className="chip held" title="recorded, and not conducted — waiting for the GitHub App to be installed on it">
           pending
         </span>
       </span>
-      {/* The one fact `Recheck` acts on, said before it is pressed: which
-          file is being read. A button whose target is invisible is one
+      {/* What it is waiting for, and what `Recheck` reads once that is true,
+          said before it is pressed. A button whose target is invisible is one
           nobody can tell has been pointed at the wrong place. */}
       <p className="note">
-        reads <code>~/.lingtai/{project.project}/recipe.yml</code> on this machine, for{" "}
+        waits for the GitHub App to be installed on this repository, then reads{" "}
+        <code>~/.lingtai/{project.project}/recipe.yml</code> on this machine, for{" "}
         <strong>{project.base ?? "its base branch"}</strong>
       </p>
       {done ? (
@@ -86,9 +88,10 @@ function PendingCard({ project }: { project: PendingProject }) {
               setRefusal(null);
               startTransition(async () => {
                 const result = await recheckProject({ project: project.project });
-                // The server's own sentence either way. "not there yet" and
-                // "the App cannot see that repository" send an operator to two
-                // different places, and only the server knows which it was.
+                // The server's own sentence either way. "the App is not
+                // installed there" and "the installation is missing a scope"
+                // send an operator to two different places, and only the
+                // server knows which it was.
                 if (result.ok) setDone(result.detail);
                 else setRefusal(result.detail);
               });

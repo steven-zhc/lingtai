@@ -2,8 +2,9 @@
  * What a conductor is allowed to see, on the real log (#163).
  *
  * A repository can be recorded and not yet conducted: the wizard appends
- * `ProjectOnboardingStarted` and the recipe lands in a pull request some time
- * later. Nothing must take work from it in between — not because a guard was
+ * `ProjectOnboardingStarted` and `Recheck` registers it once the App is
+ * installed there, some time later (#182). Nothing must take work from it in
+ * between — not because a guard was
  * added, but because `loadProjects()` has filtered on `isRegistered` since
  * before any of this existed, and `isRegistered` reads a `configHash` that only
  * a resolved recipe can supply.

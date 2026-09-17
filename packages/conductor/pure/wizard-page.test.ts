@@ -19,6 +19,7 @@ import {
   mergeArgument,
   mergeConsequence,
   onboardState,
+  onboardingWritten,
   openDecision,
   settledDecisions,
   updateState,
@@ -364,5 +365,26 @@ describe("an existing recipe", () => {
 
     expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["gates.proposed"]);
     expect(after.gates.proposed).toEqual(recipe.gates.proposed.slice(1));
+  });
+});
+
+/**
+ * The last screen once the button has written (#182). It says what it wrote and
+ * where — this machine — and ends without a pull request: what a pending card
+ * waits for is the App's installation, and nothing is left to merge.
+ */
+describe("the last screen, written", () => {
+  const said = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml");
+
+  it("names the files it wrote on this machine", () => {
+    expect(said).toContain("/home/me/.lingtai/shop/recipe.yml");
+    expect(said).toContain("projects.shop.runtime in ~/.lingtai/config.yml");
+    expect(said).toContain("Nothing was written to acme/shop");
+  });
+
+  it("waits for the App, and mentions no pull request and nothing to merge", () => {
+    expect(said).toContain("GitHub App is installed on acme/shop");
+    expect(said).toContain("Recheck");
+    expect(said).not.toMatch(/pull request|merge/i);
   });
 });

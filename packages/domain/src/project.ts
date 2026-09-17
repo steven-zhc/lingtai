@@ -132,6 +132,11 @@ export function isRegistered(state: ProjectState): boolean {
 /**
  * Whether this repository is on its way in — recorded, and no recipe read yet.
  *
+ * What it waits for is the GitHub App's installation (#182): the wizard writes
+ * the recipe on this machine before it records anything, and `Recheck` asks
+ * `installationForRepo` before it reads it. The fold cannot know that, and does
+ * not have to — it only draws the line.
+ *
  * The complement of `isRegistered` over the streams that exist, and it is that
  * rather than a flag on purpose (#163): the two are one line drawn once, so a
  * project cannot be both and cannot be neither. The daemon asks the first

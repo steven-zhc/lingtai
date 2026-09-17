@@ -14,7 +14,8 @@ import {
   parsePayload,
 } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
-import { governing, registrationLine, resumeOnboarding } from "../src/onboard.ts";
+import { type Installation, NotInstalledError } from "@lingtai/github";
+import { type AddOptions, governing, recheck, registrationLine, resumeOnboarding } from "../src/onboard.ts";
 
 const recipe = (base: string) => `
 version: 1
@@ -161,6 +162,91 @@ describe("finishing an onboarding the wizard recorded", () => {
     if (!found.ok) return;
     expect(found.resolved.recipe.repo.base).toBe("develop");
     expect(found.adoptedFrom).toBe("main");
+  });
+});
+
+/**
+ * What `Recheck` waits for: the App's installation, and no longer a recipe
+ * landing in the repository (#182). The wizard wrote the recipe on this machine
+ * before it recorded anything, so *not installed yet* is the pending state that
+ * can still end — and it must end by being asked about, with nothing written
+ * while the answer is no.
+ */
+describe("Recheck", () => {
+  const RECORDED = { owner: "steven-zhc", project: "nextloom-ai-admin", base: "main" };
+  const INSTALLED: Installation = {
+    id: 7,
+    permissions: {},
+    account: "steven-zhc",
+    repositorySelection: "selected",
+    htmlUrl: null,
+  };
+
+  it("asks GitHub about the installation and registers nothing while the App is not installed", async () => {
+    const asked: string[] = [];
+    const registered: AddOptions[] = [];
+    const result = await recheck(RECORDED, {
+      installation: async (owner, repo) => {
+        asked.push(`${owner}/${repo}`);
+        throw new NotInstalledError(owner, repo);
+      },
+      register: async (options) => {
+        registered.push(options);
+        return 0;
+      },
+    });
+
+    expect(asked).toEqual([SLUG]);
+    expect(registered).toEqual([]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.installed).toBe(false);
+    expect(result.detail).toContain(`not installed on ${SLUG}`);
+    expect(result.detail).toContain("press Recheck");
+    expect(result.detail).not.toContain("lingtai add");
+  });
+
+  it("registers through add, with the recorded base as a hint and the installation it read", async () => {
+    const registered: AddOptions[] = [];
+    const result = await recheck(RECORDED, {
+      installation: async () => INSTALLED,
+      register: async (options, log) => {
+        registered.push(options);
+        log("recipe: ~/.lingtai/nextloom-ai-admin/recipe.yml");
+        return 0;
+      },
+    });
+
+    expect(registered).toEqual([{ ...resumeOnboarding(RECORDED), installation: INSTALLED }]);
+    expect(result).toEqual({ ok: true, detail: "nextloom-ai-admin is live" });
+  });
+
+  it("hands back everything add said when it refuses an installed repository", async () => {
+    const result = await recheck(RECORDED, {
+      installation: async () => INSTALLED,
+      register: async (_options, log) => {
+        log("the installation is missing permissions:");
+        log("  issues: have read, need write — reading work items");
+        return 1;
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      installed: true,
+      detail: "the installation is missing permissions:\n  issues: have read, need write — reading work items",
+    });
+  });
+
+  it("does not read any other failure as not installed", async () => {
+    await expect(
+      recheck(RECORDED, {
+        installation: async () => {
+          throw new Error("502 on /repos/steven-zhc/nextloom-ai-admin/installation: Bad Gateway");
+        },
+        register: async () => 0,
+      }),
+    ).rejects.toThrow("502");
   });
 });
 

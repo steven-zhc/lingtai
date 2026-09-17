@@ -42,7 +42,7 @@ import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, work
 import { eventStore } from "@lingtai/event-store";
 import { randomUUID } from "node:crypto";
 import { currentRecipe, loadAllProjects, loadProject } from "@lingtai/conductor/projects";
-import { add, resumeOnboarding } from "@lingtai/conductor/onboard";
+import { recheck } from "@lingtai/conductor/onboard";
 import { isPending, isRegistered } from "@lingtai/domain";
 import { requestRun, resumeConductor } from "@lingtai/daemon/control";
 import { stateDir } from "@lingtai/env";
@@ -295,31 +295,24 @@ export async function declineBacklogFinding(input: {
  * decided is the conductor, and it has one state.
  */
 /**
- * Finish onboarding a repository whose recipe is on this machine (#163, #180).
+ * Finish onboarding a repository once the App is installed on it (#163, #182).
  *
- * **The existing `lingtai add` path, and not a second one.** The daemon does
- * not know repositories it has not onboarded, so nothing watches, and this
- * button is the whole of the second half. It calls `add` with the slug and the
- * base the `ProjectOnboardingStarted` recorded, which checks the installation
- * and its scopes, reads `~/.lingtai/<project>/recipe.yml` — never the
- * repository — and appends `ProjectConfigured`. Past that the project is
- * registered and every other part of the system treats it as one.
+ * **Pending waits for the App.** The wizard wrote the recipe on this machine
+ * before it recorded anything (0046 §3), so what a pending project can still
+ * lack is an installation, and this asks GitHub about exactly that first —
+ * `recheck`, which answers *not installed yet* in its own sentence with nothing
+ * written, so the card stays where it was and is pressed again once somebody
+ * installs it.
  *
- * **The recorded base is where to look, and never a decision.** It goes through
- * `resumeOnboarding`, which sends it unnamed: the wizard filled it from
- * GitHub's default branch, so a recipe that declares another branch is adopted
- * the way `lingtai add` with no flag adopts one. Sent as a typed `--base` it
- * would be refused the moment the two differ — permanently, this button having
- * no flag to leave off (#75, #163).
+ * **The existing `lingtai add` path, and not a second one.** Installed, `recheck`
+ * runs `add` with the slug and the base the `ProjectOnboardingStarted`
+ * recorded: the scopes, `~/.lingtai/<project>/recipe.yml`, `ProjectConfigured`.
+ * The recorded base is where to look and never a decision — it goes through
+ * `resumeOnboarding`, which sends it unnamed, since this button has no flag to
+ * leave off (#75, #163).
  *
- * **Pressable again, because the common answer is "not yet".** A missing recipe
- * is a `RecipeMissingError` that `add` reports and returns 1 on, having written
- * nothing at all — the same refusal a person would get in the terminal, in the
- * same words, naming the file on this machine. Nothing changes and the card
- * stays exactly where it was.
- *
- * `add` prints its progress, and here that output *is* the answer: the sentence
- * that says why it will not go through is the last thing it said.
+ * Nothing watches the installation: the daemon does not know repositories it
+ * has not onboarded, and this button is the whole of the second half.
  */
 export async function recheckProject(input: { project: string }): Promise<ActionResult> {
   try {
@@ -334,21 +327,9 @@ export async function recheckProject(input: { project: string }): Promise<Action
       return { ok: false, detail: `"${input.project}" was not recorded with an owner and a base — re-run the wizard, or lingtai add` };
     }
 
-    const said: string[] = [];
-    const code = await add(
-      resumeOnboarding({ owner: state.owner, project: state.project, base: state.base }),
-      (line) => said.push(line),
-    );
+    const result = await recheck({ owner: state.owner, project: state.project, base: state.base });
     revalidatePath("/");
-    if (code === 0) return { ok: true, detail: `${input.project} is live` };
-    // **Everything it said, not the last line.** A missing recipe is one
-    // sentence and a permission gap is one line per scope with what each is
-    // for; a rule here about which line is the refusal would have to know
-    // which failure it was, and would be wrong the first time `add` grows
-    // another. This is the transcript a person would have read in the
-    // terminal.
-    const why = said.filter((l) => l.trim() !== "").join("\n");
-    return { ok: false, detail: why === "" ? `${input.project} could not be registered` : why };
+    return { ok: result.ok, detail: result.detail };
   } catch (err) {
     return { ok: false, detail: (err as Error).message };
   }

@@ -185,6 +185,26 @@ export function nothingChecks(base: string): string {
   return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${base}\`.`;
 }
 
+/**
+ * The last screen's sentence once the button has written (#182): what was
+ * written, where, and what is still to happen.
+ *
+ * **Where is this machine, and never the repository** (0046 §3). The recipe is
+ * the file the button wrote; the agent and limits live beside every other
+ * project's in the machine file; and the repository is named only to say that
+ * nothing went to it. What is left is the App's installation — the one thing a
+ * pending project can still be waiting for — and `Recheck` is what asks.
+ */
+export function onboardingWritten(slug: string, path: string): string {
+  const project = slug.slice(slug.lastIndexOf("/") + 1);
+  return (
+    `Written on this machine: the recipe is ${path}, and the agent and limits are ` +
+    `projects.${project}.runtime in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
+    `Onboarding is recorded — once the GitHub App is installed on ${slug}, press Recheck on ` +
+    "the board's pending card."
+  );
+}
+
 /** The scripts a scan found, in the order a gate would run the guessed ones. */
 export interface ScannedScript {
   dir: string;

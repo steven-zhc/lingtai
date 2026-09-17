@@ -23,8 +23,9 @@
  * specific and must not be silently overridden.
  *
  * **In the conductor rather than in the CLI, because it has two callers**
- * (#163). The board's `Recheck` finishes a pending project by reading the
- * machine's recipe and appending `ProjectConfigured` — which is
+ * (#163). The board's `Recheck` finishes a pending project once the App is
+ * installed on it (#182), by reading the machine's recipe and appending
+ * `ProjectConfigured` — which is
  * precisely this function, and a second implementation of it behind a button
  * would be two ways of registering a project, free to disagree about the base,
  * the permissions checked, or what is said when there is still no recipe there.
@@ -47,6 +48,7 @@ import {
 import { signedInHere } from "./projects.ts";
 import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/domain";
 import {
+  type Installation,
   NotInstalledError,
   createGitHubClient,
   installationForRepo,
@@ -75,6 +77,11 @@ export interface AddOptions {
    * `repo.base` is adopted from it exactly as it is from the default branch.
    */
   base?: { ref: string; named: boolean };
+  /**
+   * The installation, when the caller has already asked GitHub for it —
+   * `recheck` has, and a second request would ask the same question twice.
+   */
+  installation?: Installation;
   /** Containment floor. `guarded` is what the first project runs at (0007). */
 }
 
@@ -97,6 +104,77 @@ export function resumeOnboarding(recorded: {
   base: string;
 }): AddOptions {
   return { slug: `${recorded.owner}/${recorded.project}`, base: { ref: recorded.base, named: false } };
+}
+
+/** What pressing `Recheck` came to, in the sentences a person reads. */
+export type Rechecked =
+  | { ok: true; detail: string }
+  | { ok: false; installed: boolean; detail: string };
+
+export interface RecheckDeps {
+  /** `installationForRepo` against the App this machine has. */
+  installation: (owner: string, repo: string) => Promise<Installation>;
+  /** `add`. */
+  register: (options: AddOptions, log: (line: string) => void) => Promise<number>;
+}
+
+/**
+ * `Recheck`: is the App installed on this repository yet, and if so, register
+ * it (#182).
+ *
+ * **Pending waits for the App, not for a recipe.** The wizard writes the recipe
+ * on this machine before it records anything (0046 §3), so a pending project
+ * always has one; what it can still lack is an installation — and that is a
+ * state that ends, by somebody installing the App, where *a recipe landing in
+ * the repository* no longer can (#168's first screen is the same fact). So the
+ * question asked first is GitHub's, `installationForRepo`, and a repository the
+ * App cannot see is answered in its own sentence with nothing written, the card
+ * left exactly where it was to be pressed again.
+ *
+ * Installed, it is `add` with the recorded base as the hint it is
+ * (`resumeOnboarding`) and the installation just read, so GitHub is asked once:
+ * the scopes, the machine's recipe, `ProjectConfigured`. Nothing here, and
+ * nothing `add` does, writes to the repository.
+ */
+export async function recheck(
+  recorded: { owner: string; project: string; base: string },
+  deps: RecheckDeps = {
+    installation: (owner, repo) => installationForRepo(githubApp(), owner, repo),
+    register: add,
+  },
+): Promise<Rechecked> {
+  const slug = `${recorded.owner}/${recorded.project}`;
+  let installation: Installation;
+  try {
+    installation = await deps.installation(recorded.owner, recorded.project);
+  } catch (err) {
+    if (!(err instanceof NotInstalledError)) throw err;
+    return {
+      ok: false,
+      installed: false,
+      detail:
+        `the GitHub App is not installed on ${slug} yet — install it on that repository ` +
+        "(Settings → GitHub Apps → Configure), then press Recheck. Nothing was written.",
+    };
+  }
+
+  const said: string[] = [];
+  const code = await deps.register(
+    { ...resumeOnboarding(recorded), installation },
+    (line) => said.push(line),
+  );
+  if (code === 0) return { ok: true, detail: `${recorded.project} is live` };
+  // **Everything it said, not the last line.** A permission gap is one line per
+  // scope with what each is for; a rule here about which line is the refusal
+  // would have to know which failure it was, and would be wrong the first time
+  // `add` grows another. This is the transcript a person would have read in
+  // the terminal.
+  const why = said.filter((l) => l.trim() !== "").join("\n");
+  return {
+    ok: false,
+    installed: true,
+    detail: why === "" ? `${recorded.project} could not be registered` : why,
+  };
 }
 
 /** The recipe that governs, or the reason this command will not pick one. */
@@ -171,9 +249,9 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
 
   // 1. Is the App installed here at all? This is the question a PAT cannot be
   //    asked, and the reason 0006 chose an App.
-  let installation;
+  let installation = options.installation;
   try {
-    installation = await installationForRepo(auth, owner, repo);
+    installation ??= await installationForRepo(auth, owner, repo);
   } catch (err) {
     if (err instanceof NotInstalledError) {
       log(err.message);
