@@ -3,7 +3,7 @@
  *
  * Everything real except GitHub: a bare repository in a temp directory as the
  * remote, the compiled `lingtai-hook` on a real unix socket, real gates running real
- * commands, the real integrator taking a real advisory lock, and the real board
+ * commands, the real integrator taking a real lock, and the real board
  * projection at the end. The agent is a shell script that makes a commit,
  * because what is under test is the *wiring* — the order of the steps and what
  * each one records — and not the model.

@@ -1,0 +1,38 @@
+# The lock, on both platforms 1.0 ships (#193).
+#
+# #178's attempt 1 locked through SQLite's `unix-flock` VFS, which is compiled
+# in only on Apple's builds: its tests passed on the Mac they were written on and
+# the locker threw on Linux. So the tests that prove the lock — the contract, a
+# killed holder, the queue `service shutdown` waits in — run on Linux here, and
+# on a Mac beside it, rather than wherever somebody happens to work.
+#
+# No database: the lock needs none, and `pure/` is the half of the suite that
+# never connects (#158).
+name: lock
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: the lock contract, a killed holder, and the queue's order
+        run: pnpm --filter @lingtai/daemon exec vitest run -c vitest.pure.config.ts pure/lock.test.ts

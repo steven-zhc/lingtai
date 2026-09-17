@@ -41,13 +41,13 @@ import {
   type Locker,
   type LockResult,
   acquireDaemonLock,
-  createPostgresLocker,
+  createFileLocker,
 } from "./lock.ts";
 
 export interface DaemonOptions {
   /** Everything the follower keeps current. */
   projections: readonly Projection[];
-  /** What holds the conductor lock. Defaults to a Postgres advisory lock on the configured log. */
+  /** What holds the conductor lock. Defaults to this machine's lock file. */
   locker?: Locker;
   lockKey?: string;
   log?: (line: string) => void;
@@ -105,7 +105,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
     // Named, so that a `lingtai run` turned away by this lock — and
     // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
     name: "lingtai daemon",
-    locker: options.locker ?? createPostgresLocker(),
+    locker: options.locker ?? createFileLocker(),
     ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
   });
   if (!held.ok) return { ok: false, reason: "already-running", holder: held.holder };

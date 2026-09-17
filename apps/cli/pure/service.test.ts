@@ -343,9 +343,10 @@ describe("shutdown", () => {
    * from its own watermark, as the work loop does since #159, so a copy started
    * after the request never sees it — and one that wins the lock claims work.
    *
-   * The lock is Postgres's: one holder, and the sessions blocked in
-   * `pg_advisory_lock` granted it in order on release, before a
-   * `pg_try_advisory_lock` can find it free. The command's wait is the real
+   * The lock is the conductor's: one holder, and a place queued for it handed
+   * it on release before any try can take it — what `pg_advisory_lock` gave,
+   * and what the file lock's queue gives since #193 (`pure/lock.test.ts` in
+   * `@lingtai/daemon` races it). The command's wait is the real
    * `queueForTheLock` over the real `waitForTheLock`; each poll is one step of
    * the world.
    */

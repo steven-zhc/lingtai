@@ -410,7 +410,7 @@ export async function createStatusTable(url = directDatabaseUrl()): Promise<void
   await client.connect();
   try {
     // Single row, enforced by the primary key. Two daemons cannot both be up —
-    // the advisory lock sees to that — so a second row would be a lie.
+    // the conductor lock sees to that — so a second row would be a lie.
     await client.query(`
       create table if not exists daemon_status (
         id             int primary key default 1 check (id = 1),

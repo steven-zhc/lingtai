@@ -3,8 +3,8 @@
  *
  * `packages/event-store/test/contract.ts` is the pattern, and its sentence is
  * the reason: a fake held to a hand-written contract is worth exactly the
- * contract it is held to. Written while Postgres's advisory lock is the only
- * locker, so the SQLite store arrives to a list it has to pass.
+ * contract it is held to. Written while Postgres's advisory lock was the only
+ * locker, and passed unchanged by the file lock that replaced it (#193).
  *
  * Two promises, and they are the two #93 and 0027 stand on:
  *
@@ -16,9 +16,9 @@
  *   later conductor out until somebody cleans up by hand. So the holder here is
  *   another process, and it is killed.
  *
- * `test/lock.test.ts` runs it against `createPostgresLocker`. What is
- * Postgres's alone — the queue `queueForDaemonLock` waits in, reading
- * `pg_locks` — stays in that file below the contract.
+ * `pure/lock.test.ts` runs it against `createFileLocker`. What is not every
+ * locker's — who holds it without taking it, and the queue
+ * `queueForDaemonLock` waits in — stays in that file below the contract.
  */
 import { describe, expect, it } from "vitest";
 import type { Locker } from "../src/lock.ts";

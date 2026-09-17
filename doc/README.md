@@ -131,6 +131,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0049](decisions/0049-the-publishable-unit-is-dist.md) | **The publishable unit is `dist/`, and both workspace manifests stay private** | accepted; qualifies 0010 for distribution, and 0035's *built by `pnpm build`* |
 | [0050](decisions/0050-the-binary-is-a-sea-signed-ad-hoc.md) | **The binary is a SEA built on its own platform, signed ad hoc, and run before it is published** | accepted; builds on 0049 |
 | [0051](decisions/0051-a-version-is-a-directory.md) | **A version is a directory, and the shim is the only thing that moves** | accepted; the installer, upgrade, rollback and uninstall (#184) |
+| [0052](decisions/0052-the-lock-is-sqlite-on-a-file.md) | **The lock is SQLite's, on a file, and the queue is made rather than given** | accepted; supersedes 0046 §1's `flock(2)`, which Node cannot call |
 
 ## Experiments
 

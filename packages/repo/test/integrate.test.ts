@@ -221,9 +221,9 @@ describe("integrate", () => {
   });
 
   /**
-   * Two integrations against one base must never overlap. The lane is a
-   * session-level advisory lock in Postgres, so a process that dies holding it
-   * drops it when its connection closes — nothing to unwind.
+   * Two integrations against one base must never overlap. The lane is a lock
+   * file (#193), so a process that dies holding it has it dropped by the
+   * kernel — nothing to unwind.
    */
   it("serialises: a second integration on the same base is refused as lane-busy", async () => {
     await branchWith("agent/7", { "src/d.ts": "export const d = 1;\n" });

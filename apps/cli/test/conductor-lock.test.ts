@@ -13,11 +13,11 @@
  *
  * Its own key, so the suite does not fight the operator's daemon.
  */
-import { acquireDaemonLock, conductorLockHolder, createPostgresLocker } from "@lingtai/daemon";
+import { acquireDaemonLock, conductorLockHolder, createFileLocker } from "@lingtai/daemon";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.ts";
 
-const locker = createPostgresLocker();
+const locker = createFileLocker();
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`;
 
 describe("lingtai run and the conductor lock", () => {
@@ -38,9 +38,7 @@ describe("lingtai run and the conductor lock", () => {
       expect(code).toBe(0);
 
       // Who has it, from the read `lingtai doctor` does — which never takes the
-      // lock, and so can answer this while somebody else holds it. Asserted on
-      // the reader rather than on the printed line: `application_name` is the
-      // backend's own, and a pooler in front of Postgres reports its own name.
+      // lock, and so can answer this while somebody else holds it.
       expect(await conductorLockHolder({ key: k })).toBeTruthy();
     } finally {
       await held.lock.release();
@@ -62,7 +60,7 @@ describe("lingtai run and the conductor lock", () => {
     // Nothing holds it, so this run takes it — and then refuses, because a
     // throwaway name is not a registered project or there is no App to ask
     // with. Either way it returns through a path that is not the happy one,
-    // which is exactly the path an advisory lock gets stranded on.
+    // which is exactly the path a lock gets stranded on.
     await run({ project: "esctest-never-registered", lockKey: k }, () => {});
 
     expect(await conductorLockHolder({ key: k })).toBeNull();

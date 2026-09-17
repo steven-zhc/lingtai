@@ -8,7 +8,7 @@
  *
  * It takes the queue now, and nomination is no longer the safety rule — the
  * conductor lock is (#93). **This command is a conductor**: it runs the same
- * `runQueue` the daemon's pass does, so it holds the same advisory lock, and a
+ * `runQueue` the daemon's pass does, so it holds the same lock, and a
  * second one is turned away rather than racing for the same ticket. See
  * `conductor-lock.ts`.
  *

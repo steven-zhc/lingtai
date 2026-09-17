@@ -21,23 +21,23 @@
  * trace.
  *
  * A scope, not a pair of statements, for the reason `projector.ts` gives: `run`
- * returns on several paths, and an advisory lock held by a connection nobody
- * closes keeps the next conductor out until the process dies.
+ * returns on several paths, and a lock nobody releases keeps the next conductor
+ * out until the process dies.
  */
-import { DAEMON_LOCK_KEY, acquireDaemonLock, createPostgresLocker } from "@lingtai/daemon";
+import { DAEMON_LOCK_KEY, acquireDaemonLock, createFileLocker } from "@lingtai/daemon";
 import { Context, Data, Effect, Layer } from "effect";
 
 /**
- * Somebody else is conducting. `holder` is their `application_name` and pid,
- * when Postgres could say — `lingtai daemon pid 5123`.
+ * Somebody else is conducting. `holder` is the name, pid and host it recorded —
+ * `lingtai daemon pid 5123 on studio`.
  */
 export class ConductorBusy extends Data.TaggedError("ConductorBusy")<{
   readonly holder: string | null;
 }> {}
 
 /**
- * The lock could not be asked about at all — no database, wrong URL, a pooler
- * where a session-mode connection was wanted.
+ * The lock could not be asked about at all — a lock directory that cannot be
+ * created or opened.
  *
  * Distinct from `ConductorBusy` because the two are opposite answers, and
  * reporting an unreachable log as "another conductor holds it" would send
@@ -55,7 +55,7 @@ export class ConductorLock extends Context.Tag("lingtai/cli/ConductorLock")<
 export interface ConductorLockOptions {
   /** The suite's own key, so a test does not fight the operator's daemon. */
   key?: string;
-  /** Recorded as `application_name`, so the next caller is told what has it. */
+  /** Recorded beside the lock, so the next caller is told what has it. */
   name?: string;
 }
 
@@ -68,7 +68,7 @@ export const ConductorLockLive = (
       Effect.tryPromise({
         try: () =>
           acquireDaemonLock({
-            locker: createPostgresLocker(),
+            locker: createFileLocker(),
             name: options.name ?? "lingtai run",
             ...(options.key === undefined ? {} : { key: options.key }),
           }),

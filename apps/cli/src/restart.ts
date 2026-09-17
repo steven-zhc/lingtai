@@ -35,7 +35,7 @@
  *   5. **the start**, which is `lingtai daemon` in this process — or, where
  *      `lingtai service` keeps the daemon, `service start`, confirmed by the
  *      `ConductorStarted` it records and compared with the commit that was
- *      checked (0048). What makes it *never two* is the advisory lock (#93)
+ *      checked (0048). What makes it *never two* is the conductor lock (#93)
  *      and not any sequencing here: if anything got there first, this starts
  *      nothing and exits non-zero, since what won may leave no daemon (0042 §6).
  *
@@ -1222,15 +1222,14 @@ export async function waitForTheLock(
  *
  * Free is not enough under a supervisor: the moment the drained daemon lets go,
  * KeepAlive has started a copy, and that copy reads no request older than
- * itself (#159). So the place in Postgres's queue is taken first, and the wait
+ * itself (#159). So the place in the lock's queue is taken first, and the wait
  * is over when it has become the lock — which a copy then cannot take.
  *
  * Nobody holding the lock while this place is not yet granted is the instant
- * Postgres takes to hand it on, and is still waiting. A place whose connection
- * failed is taken again rather than waited on for ever — granted or not, since
- * Postgres releases an advisory lock with the session that held it, so a lost
- * connection is checked before a grant is believed, and a grant is confirmed
- * on its own connection.
+ * the place takes to ask again, and is still waiting. A place that was lost is
+ * taken again rather than waited on for ever — granted or not, so a lost place
+ * is checked before a grant is believed, and a grant is confirmed before it is
+ * trusted (`LockPlace.confirm`).
  */
 export async function queueForTheLock(
   how: { place?: () => Promise<LockPlace>; holder?: () => Promise<string | null>; pollMs?: number; sayEveryMs?: number } = {},

@@ -2,7 +2,8 @@
 
 **Status** accepted · 2026-09-16 · **supersedes
 [0045](0045-one-team-one-conductor.md)** in whole and
-[0005](0005-config-in-target-repo.md)'s surviving half
+[0005](0005-config-in-target-repo.md)'s surviving half · **§1's `flock(2)`
+superseded by [0052](0052-the-lock-is-sqlite-on-a-file.md)** — Node cannot call it
 
 Each person runs their own Lingtai, on their own machine, against their own log.
 The repository is shared. Lingtai is not.

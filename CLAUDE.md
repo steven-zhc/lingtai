@@ -154,7 +154,8 @@ added one true fact and none of them argued about the row. Spend and the pass
 limits are on `/spend`, one click from the reading.
 
 A daemon is still what takes work unattended, and it is the *only* other
-conductor: `lingtai run` takes the same advisory lock the daemon does (#93), so
+conductor: `lingtai run` takes the same lock the daemon does (#93) — a file under
+`~/.lingtai/locks/` since #193, never Postgres, so
 one conducts at a time and the second is turned away rather than racing for the
 same ticket. Beside a pass already in flight,
 
@@ -231,7 +232,7 @@ The suite is in two halves since #158. `pnpm test` is the tests that need no
 database — 89 files, under 30s, not one connection, plus `apps/release`'s two
 board builds, a binary and `install.sh` run over it (#183, #185, #184, about 35s
 more) — and `pnpm test:db` is the ones that do. The recipe's `build` runs both. What is left in the second half
-asserts Postgres itself: the projections, the advisory locks, `LISTEN`/`NOTIFY`,
+asserts Postgres itself: the projections, `LISTEN`/`NOTIFY`,
 two clients racing. A test that only *records* events gets
 `createMemoryEventStore()` from `@lingtai/event-store/memory`, which is held to
 the same contract as the real store — `packages/event-store/test/contract.ts`

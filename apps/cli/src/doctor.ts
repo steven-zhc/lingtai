@@ -192,14 +192,13 @@ async function pooledConnection(url: string): Promise<CheckResult> {
  * The check ADR 0009 exists to demand.
  *
  * Opening the direct connection and running `select 1` proves nothing — that
- * passes against a transaction pooler, where `LISTEN/NOTIFY` and session-level
- * advisory locks both fail **silently**. So this holds a listener open, waits
- * long enough for a pool to churn, and notifies from a second connection; then
- * takes an advisory lock and asks a *separate statement* whether it is still
- * held.
+ * passes against a transaction pooler, where `LISTEN/NOTIFY` fails
+ * **silently**. So this holds a listener open, waits long enough for a pool to
+ * churn, and notifies from a second connection — the whole event-driven design
+ * depends on the notification.
  *
- * Both halves matter. The merge lane depends on the lock, and the whole
- * event-driven design depends on the notification.
+ * It used to take an advisory lock too, because the merge lane was one. No lock
+ * is in Postgres since #193: every lock is a file (`@lingtai/env/lock`).
  */
 async function directIsSessionMode(url: string, standIn = false): Promise<CheckResult> {
   const name = "postgres: direct connection is session mode";
@@ -232,32 +231,14 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
             ? "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and " +
               "LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL. "
             : "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. ") +
-          "LISTEN/NOTIFY and advisory locks will both fail silently through it (doc/decisions/0009).",
-      };
-    }
-
-    // Advisory lock, held across two statements rather than within one.
-    const key = "hashtext('lingtai:doctor')::bigint";
-    await notifier.query(`select pg_advisory_lock(${key})`);
-    const held = await notifier.query<{ n: string }>(
-      `select count(*)::text as n from pg_locks
-       where locktype = 'advisory' and pid = pg_backend_pid() and objid = (${key})::int`,
-    );
-    await notifier.query(`select pg_advisory_unlock(${key})`);
-
-    if (Number(held.rows[0]?.n ?? "0") === 0) {
-      return {
-        name,
-        status: "fail",
-        detail:
-          "an advisory lock was not still held by the next statement — the merge lane cannot serialise on this connection",
+          "LISTEN/NOTIFY will fail silently through it (doc/decisions/0009).",
       };
     }
 
     return {
       name,
       status: "ok",
-      detail: "cross-connection NOTIFY delivered after a 1.5s pause, and an advisory lock survived a second statement",
+      detail: "cross-connection NOTIFY delivered after a 1.5s pause",
     };
   } catch (err) {
     return { name, status: "fail", detail: (err as Error).message };
@@ -887,10 +868,10 @@ export function describeRefusal(
  * daemon on it, and a lock that is free is the normal state of one without.
  * What would be wrong is not being able to say which.
  */
-async function conductorLock(direct: string): Promise<CheckResult> {
+async function conductorLock(): Promise<CheckResult> {
   let holder: string | null;
   try {
-    holder = await conductorLockHolder({ url: direct });
+    holder = await conductorLockHolder();
   } catch (err) {
     return { name: "conductor: lock", status: "ok", detail: `could not be read — ${(err as Error).message}` };
   }
@@ -1629,7 +1610,7 @@ export async function runDoctor(
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).
     results.push(await passRefusals());
-    results.push(await conductorLock(direct));
+    results.push(await conductorLock());
     results.push(await readableTypes(direct));
     results.push(await orphans());
     results.push(await unconverged(direct));

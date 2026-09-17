@@ -2057,7 +2057,7 @@ export function runOnce(
          * to cost the most.**
          *
          * The lane merged the base in, found it does not apply, aborted, and let
-         * go — `integrate()` returning is what releases the advisory lock and
+         * go — `integrate()` returning is what releases the lane's lock and
          * the lane's own worktree, which are one scope. So nothing below holds
          * the lane while an agent works, and the lane is simply re-entered
          * afterwards. That was the objection that looked fatal to this and was

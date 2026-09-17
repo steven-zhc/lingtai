@@ -21,9 +21,12 @@
  * looked at. A dirty working copy somewhere else cannot affect a merge that does
  * not touch it.
  *
- * **The lane is a session-level advisory lock**, not a file. Two integrations
- * against one base serialise in Postgres, and a process that dies holding the
- * lock drops it when its connection closes — there is nothing to unwind.
+ * **The lane is a lock file** (`@lingtai/env/lock`, #193) — held by this
+ * process, not a pid written down. Two integrations against one base serialise
+ * on it, and a process that dies holding it has it dropped by the kernel —
+ * there is nothing to unwind. It covers one machine, which is the lane's whole
+ * scope since 0046: another person's Lingtai merging to the same base is
+ * GitHub's to refuse, as a push that is not a fast-forward.
  *
  * Both of the things it holds — that lock, and the worktree it cuts to merge in
  * — are `Effect.acquireRelease` pairs inside one `Scope`
@@ -34,11 +37,10 @@
  */
 import { integrationStream } from "@lingtai/domain";
 import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/domain";
-import { directDatabaseUrl } from "@lingtai/env";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { Effect, Either } from "effect";
-import pg from "pg";
 import { stateDir } from "@lingtai/env";
+import { type Locker, createFileLocker } from "@lingtai/env/lock";
 import { RepoFailed, type TokenSource, gitEffect } from "./git.ts";
 import { worktreePath } from "./worktree.ts";
 
@@ -58,8 +60,8 @@ export interface IntegrateOptions {
   home?: string;
   gitEnv?: NodeJS.ProcessEnv;
   store?: EventStore;
-  /** Session-mode connection. The advisory lock needs one; see 0009. */
-  url?: string;
+  /** What holds the lane. This machine's lock files unless a test says otherwise. */
+  locker?: Locker;
   /**
    * Re-run after merging the base in, before merging out. The gates already ran
    * against the agent's head; this is the "does it still work with what landed
@@ -148,39 +150,16 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   return Effect.scoped(
     Effect.gen(function* () {
       // ---- the lane ----------------------------------------------------------
-      // Session mode, because a transaction pooler hands the connection to
-      // someone else between statements and the lock goes with it — silently
-      // (0009).
-      //
-      // Releasing explicitly is tidy; the lock would drop when the connection
-      // closes anyway, which is what makes a crash mid-merge recoverable with
-      // nothing to clean up. What the scope buys is that "closes anyway" no
+      // Releasing explicitly is tidy; the lock would drop when the process
+      // exits anyway, which is what makes a crash mid-merge recoverable with
+      // nothing to clean up. What the scope buys is that "drops anyway" no
       // longer has to mean "the process died".
       const lane = yield* Effect.acquireRelease(
-        Effect.promise(async () => {
-          const client = new pg.Client({
-            connectionString: options.url ?? directDatabaseUrl(),
-            application_name: `lingtai-merge-${options.project}`,
-          });
-          await client.connect();
-          const held = await client.query<{ ok: boolean }>(
-            "select pg_try_advisory_lock(hashtext($1)::bigint) as ok",
-            [key],
-          );
-          return { client, held: held.rows[0]?.ok === true };
-        }),
-        ({ client, held }) =>
-          Effect.promise(async () => {
-            if (held) {
-              await client
-                .query("select pg_advisory_unlock(hashtext($1)::bigint)", [key])
-                .catch(() => {});
-            }
-            await client.end().catch(() => {});
-          }),
+        Effect.promise(() => (options.locker ?? createFileLocker()).tryLock(key, `lingtai-merge-${options.project}`)),
+        (got) => Effect.promise(async () => (got.ok ? got.lock.release() : undefined)),
       );
 
-      if (!lane.held) {
+      if (!lane.ok) {
         // Not a queue: the caller retries. Two integrations against one base must
         // never overlap, and saying so is better than blocking a scheduler thread.
         return yield* refuse("lane-busy", `another integration holds ${key}`);

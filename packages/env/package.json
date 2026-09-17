@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./colour": "./src/colour.ts"
+    "./colour": "./src/colour.ts",
+    "./lock": "./src/lock.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

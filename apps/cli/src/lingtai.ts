@@ -387,7 +387,7 @@ function serviceOptions(): ServiceOptions {
  *
  * The follower used to live in this file, which meant nothing held it unless
  * somebody kept a terminal open. It is in `@lingtai/daemon` now, behind one
- * advisory lock, so this is the command and not the mechanism.
+ * lock, so this is the command and not the mechanism.
  *
  * Losing the lock exits 0. Running this while the service's copy is up is a
  * reasonable thing to do, and answering it with an error would teach people to

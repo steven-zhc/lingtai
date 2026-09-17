@@ -28,8 +28,7 @@ import { labelsFor } from "./labels.ts";
 import { diagnoseRefusal } from "./attribution.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
-import { directDatabaseUrl } from "@lingtai/env";
-import pg from "pg";
+import { createFileLocker } from "@lingtai/env/lock";
 
 /**
  * One decision about a work item at a time: `approve` and `requeue` hold this
@@ -42,26 +41,20 @@ import pg from "pg";
  * queue while the diff it sent back went on to land — onto an item a new run
  * had already claimed. No version check spans two streams and a push.
  *
- * A session-level advisory lock, the same as the merge lane's and the daemon's:
+ * The file lock the merge lane and the daemon take (`@lingtai/env/lock`, #193):
  * whoever arrives second is refused and told why, rather than waiting, and a
- * process that dies holding it releases it with its connection — so a merge
+ * process that dies holding it has it released by the kernel — so a merge
  * interrupted by a crash does not leave the card with a requeue that refuses
- * for ever, which is the dead end #84 is about.
+ * for ever, which is the dead end #84 is about. The board and the CLI deciding
+ * about one item are on one machine, which is all a file lock covers.
  */
 async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
-  const key = `decide:${workItemId}`;
-  const client = new pg.Client({ connectionString: directDatabaseUrl(), application_name: "lingtai-decide" });
-  await client.connect();
+  const got = await createFileLocker().tryLock(`decide:${workItemId}`, "lingtai-decide");
+  if (!got.ok) return busy();
   try {
-    const got = await client.query<{ ok: boolean }>("select pg_try_advisory_lock(hashtext($1)::bigint) as ok", [key]);
-    if (got.rows[0]?.ok !== true) return busy();
-    try {
-      return await act();
-    } finally {
-      await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});
-    }
+    return await act();
   } finally {
-    await client.end().catch(() => {});
+    await got.lock.release();
   }
 }
 
