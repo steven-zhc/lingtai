@@ -9,6 +9,7 @@ import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
 import { Latch, Reveal } from "../../latch.tsx";
+import { Follow } from "../../live.tsx";
 import { RunLog } from "../../run-log.tsx";
 import { Coords, Standing } from "../../standing.tsx";
 
@@ -562,5 +563,15 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const task = await loadTask(decodeURIComponent(id));
   if (!task) notFound();
-  return <TaskBody task={task} />;
+  return (
+    <>
+      {/* Subscribed to the log, so an append re-renders this page and not only
+          the board. Without it a question, the trace's sentence and the answer
+          each waited for a reload, and every comment that said *every append
+          re-renders* was true of `/` alone (#172). On the route and not in
+          `TaskBody`, which a test renders with no router to refresh. */}
+      <Follow />
+      <TaskBody task={task} />
+    </>
+  );
 }

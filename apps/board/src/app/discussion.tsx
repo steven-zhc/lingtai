@@ -12,8 +12,8 @@
  * is unattended and needs a hard bound; a discussion is attended and the person
  * is the control loop. That is only true if the person can see the number, so
  * the running total sits on the box's own rule and updates as the conversation
- * goes — the board re-renders on every append (`live.tsx`), so this needs no
- * poller and no second reducer.
+ * goes — the task page re-renders on every append (`Follow`, in `live.tsx`), so
+ * this needs no poller and no second reducer.
  *
  * **The two outputs are two buttons, and there is no third.** *Use for the next
  * run* appends `PromptEdited`, which the next claim consumes and discards; *Add
@@ -111,6 +111,32 @@ const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
   none: "closed",
 };
 
+/** A question this page sent, and how many turns the fold held when it was sent. */
+export interface Echo {
+  question: string;
+  turns: number;
+}
+
+/**
+ * The question to echo, or null once the fold holds it.
+ *
+ * **The person sees their own words land before the log does** (#172). The
+ * append is what makes a question real, and it is a round trip and then a
+ * re-render away; a box that shows nothing in between reads as a button that did
+ * nothing, and the answer to that is to press it again. So the words are shown
+ * the moment Ask is pressed, and stop being shown the moment the fold has one
+ * more turn than it had then — which is the question, arrived, in its place.
+ * Not matched on its text: the same question asked twice is two turns.
+ */
+export function echoing(discussions: readonly DiscussionView[], echo: Echo | null): string | null {
+  if (echo === null) return null;
+  return turnsIn(discussions) > echo.turns ? null : echo.question;
+}
+
+function turnsIn(discussions: readonly DiscussionView[]): number {
+  return discussions.reduce((n, d) => n + d.turns.length, 0);
+}
+
 /**
  * The sentence above a turn nothing has answered yet, for each state its trace
  * can be in.
@@ -173,7 +199,7 @@ export function traceSays(state: TailState, lines: number, writing: boolean | nu
       );
     case "trouble":
     case "gone":
-      // The follow failed, not the turn. The answer re-renders the board when
+      // The follow failed, not the turn. The answer re-renders the page when
       // it is appended whether or not anything here is following.
       return "this page stopped following the answer as it is written — it still appears here when it lands; reload to follow it again";
     case "off":
@@ -253,7 +279,7 @@ export function Trace({
  *
  * **It is a trace and never the answer** (0034 §8). The answer is
  * `DiscussionAnswered` — with its cost, its `read` list and its proposal — and
- * when that lands the board re-renders and this is gone. What is on screen here
+ * when that lands the page re-renders and this is gone. What is on screen here
  * settles nothing; it says the thing is alive.
  *
  * `awaited`, because the file is *coming*: the board appended the question a
@@ -272,6 +298,25 @@ export function Trace({
 function Thinking({ chatId }: { chatId: string }) {
   const { lines, state, writing } = useLogTail(chatId, true, true);
   return <Trace lines={lines} state={state} writing={writing} />;
+}
+
+/**
+ * A question this page has sent and the fold does not hold yet. See `echoing`.
+ *
+ * Says where it is and nothing else: *asking* while the append is in flight,
+ * *on the log* once it has returned. What happens to it after that is the
+ * turn's own trace, which replaces this the moment the page re-renders.
+ */
+export function Echoed({ question, busy }: { question: string; busy: boolean }) {
+  return (
+    <div className="chatturn" data-echo="">
+      <div className="bubble asked">
+        <p className="chatwho">you</p>
+        <p className="chatq">{question}</p>
+      </div>
+      <p className="chatwait">{busy ? "asking…" : "on the log · waiting for the daemon to answer"}</p>
+    </div>
+  );
 }
 
 export function Discussion({
@@ -296,6 +341,7 @@ export function Discussion({
   const [question, setQuestion] = useState("");
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [echo, setEcho] = useState<Echo | null>(null);
   const [, startTransition] = useTransition();
   const conversation = useRef<HTMLDivElement | null>(null);
 
@@ -303,11 +349,19 @@ export function Discussion({
   // question when there is none open, which is why there is no New button: the
   // box is the New button.
   const open = discussions.find((d) => d.held === null) ?? null;
+  const echoed = echoing(discussions, echo);
 
   /**
    * The reply is at the bottom of its own scroller, and that is where the box
-   * stays: every append re-renders the board (`live.tsx`), so a turn arriving
-   * scrolls to itself rather than waiting to be scrolled to (#132).
+   * stays: every append re-renders the page, so a turn arriving scrolls to
+   * itself rather than waiting to be scrolled to (#132).
+   *
+   * **Which page is the fact that matters.** `/` re-renders on append because it
+   * mounts `Live`, and `/task/<id>` — the only page this pane is on — because
+   * its route mounts `Follow`; both are in `live.tsx`. This comment used to say
+   * *the board*, which was true of `/` and false here, and every reader after it
+   * believed the task page was subscribed when it was not: a question, the
+   * trace's sentence and the answer each waited for a reload (#172).
    *
    * **Keyed on what the scroller holds, not on how many turns there are.** The
    * count does not change when an *answer* lands — the turn was already there,
@@ -327,7 +381,7 @@ export function Discussion({
       (d) =>
         `${d.chatId}:${d.turns.length}:${d.turns.filter((t) => t.answer !== null).length}:${d.held ?? ""}`,
     )
-    .join("|");
+    .join("|") + (echoed === null ? "" : "|echo");
   /** Whether the reader is at the end, so growth follows them and never pulls them back. */
   const atEnd = useRef(true);
   useEffect(() => {
@@ -359,6 +413,8 @@ export function Discussion({
         setQuestion("");
         return;
       }
+      // A refused ask did not happen, so its words come back off the pane.
+      setEcho(null);
       setRefusal(result.detail);
     });
   };
@@ -367,8 +423,9 @@ export function Discussion({
     <div className={quiet ? "chat quiet" : "chat"}>
       <p className="chathead">
         <span className="chatname">discussion</span>
-        {/* Live without a poller: every append re-renders the board
-            (`live.tsx`), so the figure on screen is the figure on the log. */}
+        {/* Live without a poller: every append re-renders this page
+            (`Follow`, in `live.tsx`), so the figure on screen is the figure on
+            the log. */}
         <span className="chatfact">
           {open === null ? closedMeter(discussions) : openMeter(open)}
         </span>
@@ -508,9 +565,20 @@ export function Discussion({
             </div>
           ))}
 
+          {/* A follow-up, echoed in the conversation it continues. */}
+          {echoed !== null && d.chatId === open?.chatId ? (
+            <Echoed question={echoed} busy={busy} />
+          ) : null}
+
           {d.held !== null ? <p className="chatheld">{HELD[d.held]}</p> : null}
         </div>
       ))}
+      {/* A first question opens a conversation the fold does not have yet. */}
+      {echoed !== null && open === null ? (
+        <div className="chatlog">
+          <Echoed question={echoed} busy={busy} />
+        </div>
+      ) : null}
       </div>
 
       <div className="chatask">
@@ -526,7 +594,8 @@ export function Discussion({
           <button
             className={pri}
             disabled={busy || !question.trim()}
-            onClick={() =>
+            onClick={() => {
+              setEcho({ question, turns: turnsIn(discussions) });
               run(() =>
                 askDiscussion({
                   taskId,
@@ -534,8 +603,8 @@ export function Discussion({
                   question,
                   ...(open === null ? {} : { chatId: open.chatId }),
                 }),
-              )
-            }
+              );
+            }}
           >
             {busy ? "asking…" : "Ask"}
           </button>

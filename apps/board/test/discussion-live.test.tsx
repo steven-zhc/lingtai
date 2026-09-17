@@ -24,7 +24,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DiscussionView } from "../src/lib/task.ts";
-import { Discussion, Trace, traceSays } from "../src/app/discussion.tsx";
+import { Discussion, Echoed, Trace, echoing, traceSays } from "../src/app/discussion.tsx";
 import { againAfter, asksAgain, reported, type TailState } from "../src/app/run-log.tsx";
 
 const waiting: DiscussionView = {
@@ -261,5 +261,78 @@ describe("what a reader is handed for each state of the trace", () => {
         expect(said, state).not.toMatch(/or ask again|no answer has been recorded/);
       }
     }
+  });
+});
+
+/**
+ * **Each of these four has a sentence, and until #172 none had been seen**: the
+ * task page never re-rendered between the click and a reload, so the pane went
+ * from nothing to the answer. Now that it follows the log, these are what a
+ * person reads while they wait — one test, all four, so a state that stops
+ * rendering its own sentence is a failure here rather than a surprise there.
+ */
+describe("the four sentences between asking and the answer", () => {
+  const says = (lines: string[], state: TailState, writing: boolean | null = null) => {
+    const html = renderToStaticMarkup(<Trace lines={lines} state={state} writing={writing} />);
+    return { html, said: traceSays(state, lines.length, writing) };
+  };
+
+  it("renders each of them, in the pane, under its own state", () => {
+    const queued = says([], "queued");
+    expect(queued.html).toContain('data-trace="queued"');
+    expect(queued.html).toContain(
+      "no daemon has started on this yet. The question is on the log and is answered when one runs",
+    );
+
+    const started = says([], "reading");
+    expect(started.html).toContain('data-trace="reading"');
+    expect(started.html).toContain("the daemon has started on this — nothing written yet");
+
+    const answering = says(["12:00:01  think", "12:00:02  Read    a.ts", "12:00:03  think"], "reading", true);
+    expect(answering.html).toContain("answering · 3 lines so far");
+
+    const dead = says(["12:00:01  think"], "reading", false);
+    expect(dead.html).toContain("nothing is writing this trace, so nothing is answering this now");
+
+    // Four states, four different sentences: none of them falls through to another's.
+    expect(new Set([queued.said, started.said, answering.said, dead.said]).size).toBe(4);
+  });
+});
+
+/**
+ * **The person sees their own words before the log does** (#172). The append is
+ * a round trip and then a re-render away, and a button that shows nothing in
+ * between is a button pressed twice.
+ */
+describe("the question, echoed until the fold has it", () => {
+  it("shows the words while the fold has no more turns than when they were sent", () => {
+    expect(echoing([], null)).toBeNull();
+    expect(echoing([], { question: "why?", turns: 0 })).toBe("why?");
+    // A follow-up to a chat with one turn: still one turn, still echoed.
+    expect(echoing([waiting], { question: "and then?", turns: 1 })).toBe("and then?");
+  });
+
+  it("stops once the question has arrived in its place, whatever its text", () => {
+    expect(echoing([waiting], { question: "why did attempt 2 not produce a branch?", turns: 0 })).toBeNull();
+    // Counted, not matched: the same words asked twice are two turns, and the
+    // second must not vanish because the first is already there.
+    expect(
+      echoing([waiting], { question: "why did attempt 2 not produce a branch?", turns: 1 }),
+    ).toBe("why did attempt 2 not produce a branch?");
+  });
+
+  it("is the person's bubble, saying where the question is", () => {
+    const asking = renderToStaticMarkup(<Echoed question="is requeue safe?" busy />);
+    expect(asking).toContain('class="bubble asked"');
+    expect(asking).toContain("is requeue safe?");
+    expect(asking).toContain("asking…");
+    const sent = renderToStaticMarkup(<Echoed question="is requeue safe?" busy={false} />);
+    expect(sent).toContain("on the log");
+    // Never a trace: nothing is being followed for a turn the fold does not hold.
+    expect(sent).not.toContain("data-trace");
+  });
+
+  it("shows nothing before anything is asked", () => {
+    expect(render([waiting])).not.toContain("data-echo");
   });
 });

@@ -58,6 +58,15 @@
  * Several tabs each get their own stream, and all of them update. Nothing here
  * coordinates them, because nothing has to: each one is reading the same
  * projection.
+ *
+ * **A route re-renders on append only if it mounts one of the two below**, and
+ * that is a fact about each route rather than about this file. `/` mounts `Live`,
+ * inside `health.tsx`, because the board carries the dot; `/task/<id>` mounts
+ * `Follow`, the subscription without the dot. The only mount used to be the
+ * dot's, so the task page — where the discussion pane is, and nowhere else — sat
+ * on whatever it rendered at load, while every comment about that pane said
+ * *every append re-renders the board* (#172). The subscription and the dot were
+ * two concerns in one component, and only the dot belongs to the board alone.
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
@@ -81,7 +90,12 @@ import type { Health } from "@/lib/health";
  */
 const COALESCE_MS = 250;
 
-export function Live({ code }: { code: CodeNews | null }) {
+/**
+ * The subscription: re-render this route when the log moves, and report what
+ * the stream says about the projection. Shared by `Live` and `Follow`, so there
+ * is one way a page stays current and not two that can drift.
+ */
+function useFollow(): { socket: "connecting" | "open" | "trouble"; health: Health | null } {
   const router = useRouter();
   const [socket, setSocket] = useState<"connecting" | "open" | "trouble">("connecting");
   const [health, setHealth] = useState<Health | null>(null);
@@ -185,6 +199,23 @@ export function Live({ code }: { code: CodeNews | null }) {
     };
   }, [schedule]);
 
+  return { socket, health };
+}
+
+/**
+ * The subscription alone, for a route that has no bar to put a dot in.
+ *
+ * Renders nothing: what it changes is every other thing on the page, one
+ * append later. The task page mounts it, so a question, the sentence saying a
+ * daemon took it and the answer each arrive without a reload (#172).
+ */
+export function Follow() {
+  useFollow();
+  return null;
+}
+
+export function Live({ code }: { code: CodeNews | null }) {
+  const { socket, health } = useFollow();
   const { label, tone, why, title } = bearing(socket, health, code);
   return (
     <>
