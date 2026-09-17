@@ -39,6 +39,8 @@ interface Recorded {
   connected: string[];
   opened: string[];
   boards: number;
+  /** Calls made to ask the App whether it answers. */
+  apps: number;
 }
 
 /** The database's state survives between runs, as a real one would: tables made once are there the next time. */
@@ -47,7 +49,7 @@ function database() {
 }
 
 function world(home: string, script: Script, db = database()): { world: InitWorld; seen: Recorded } {
-  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0 };
+  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0, apps: 0 };
   const answers = [...(script.answers ?? [])];
   let interrupt = script.interruptAt;
   const step = (name: Step) => {
@@ -86,6 +88,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       },
       app: async () => {
         step("app");
+        seen.apps++;
         return script.app ?? { configured: false };
       },
       appeared: async () => {
@@ -201,11 +204,22 @@ describe("lingtai init (#186)", () => {
     const home = freshHome();
     const { world: w, seen } = world(home, { answers: [URL_] });
     expect(await initCommand([], w)).toBe(0);
-    const second = world(home, {});
+    const second = world(home, { app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" } });
     expect(await initCommand([], second.world)).toBe(0);
     // Written by the first run, and still connected to by the second.
     expect(second.seen.connected).toEqual([URL_]);
     expect(seen.connected).toEqual([URL_]);
+    // The App is asked on every run, and only what the call answered is reported.
+    expect(seen.apps).toBe(1);
+    expect(second.seen.apps).toBe(1);
+    expect(seen.lines.join("\n")).toContain("app          none yet");
+    expect(second.seen.lines.join("\n")).toContain("app          lingtai-me, owned by me — it answered");
+
+    // A configured App that does not answer is not reported as answering.
+    const failing = world(home, { app: { configured: true, ok: false, why: "401 Bad credentials" } });
+    expect(await initCommand([], failing.world)).toBe(1);
+    expect(failing.seen.apps).toBe(1);
+    expect(failing.seen.lines.join("\n")).not.toContain("it answered");
   });
 
   describe("a failure returns to the choice", () => {

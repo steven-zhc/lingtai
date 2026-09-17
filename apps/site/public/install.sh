@@ -165,7 +165,9 @@ if [ -n "${LINGTAI_NO_INIT:-}" ]; then
   say "next: lingtai init — the database, the agent and the GitHub App, ending on the board"
 elif [ -t 1 ] && { : < /dev/tty; } 2> /dev/null; then
   say "running lingtai init"
-  "$target" init < /dev/tty
+  # Init stopping — a refusal, or a Ctrl+C — is not the install failing: the
+  # binary and the shim are in place, and init run again continues from its file.
+  "$target" init < /dev/tty || say "lingtai init stopped (exit $?) — lingtai is installed; lingtai init continues where it left off"
 else
   say "next: lingtai init — there is no terminal here to answer its questions, so it was not run"
 fi

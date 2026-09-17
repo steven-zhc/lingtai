@@ -72,6 +72,29 @@ describe("lingtai doctor — environment", () => {
     expect(find(report.results, "postgres").status).toBe("skip");
   });
 
+  it("reads ~/.lingtai/config.yml's database.url when neither variable is set, as databaseUrl does (#186)", async () => {
+    // A pooler URL, so the check fails on its shape and nothing is connected to.
+    const report = await runDoctor(env({}), () => POOLED);
+    const e = find(report.results, "environment");
+    expect(e.detail).toContain("~/.lingtai/config.yml database.url :6543");
+    expect(e.detail).toContain("cannot stand in");
+
+    // The variable wins, and the file is not asked.
+    const set = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }), () => {
+      throw new Error("asked");
+    });
+    expect(find(set.results, "environment").detail).toContain("LINGTAI_DATABASE_URL :6543");
+  });
+
+  it("fails by the file's own complaint when config.yml does not parse", async () => {
+    const report = await runDoctor(env({}), () => {
+      throw new Error("/home/me/.lingtai/config.yml could not be parsed as YAML");
+    });
+    const e = find(report.results, "environment");
+    expect(e.status).toBe("fail");
+    expect(e.detail).toContain("could not be parsed");
+  });
+
   it("does not attempt Postgres once the environment is wrong", async () => {
     const report = await runDoctor(env({}));
     expect(find(report.results, "postgres").status).toBe("skip");

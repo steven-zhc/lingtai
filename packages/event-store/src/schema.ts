@@ -18,6 +18,14 @@
  * and re-running a finished init reports and changes nothing. The one repair
  * made there is the trigger, when it is missing — without it every append is
  * silent and the loop wakes only on the sweep.
+ *
+ * **But only once it is Lingtai's `events`.** A name is not a shape: an
+ * application database — a Supabase project — can have an `events` table of
+ * its own, and the repair's rules would make every UPDATE and DELETE the
+ * application makes on it silently do nothing. So before anything is repaired,
+ * and before a creation commits, `events` and `checkpoints` are compared with
+ * the columns the migrations make, and a table that differs is refused by name
+ * with nothing changed.
  */
 import initial from "../migrations/app/20260831T1721_initial/ops.json" with { type: "json" };
 import dropOutbox from "../migrations/app/20260904T2359_drop_outbox/ops.json" with { type: "json" };
@@ -102,6 +110,61 @@ DROP RULE IF EXISTS escapement_events_no_update ON events;
 DROP RULE IF EXISTS escapement_events_no_delete ON events;
 `;
 
+/**
+ * The columns the migrations make, as `information_schema.columns` names their
+ * types. `pure/schema.test.ts` reads them back out of `ops.json`, so a
+ * migration that changes a column and not this is a failing test.
+ */
+export const SHAPE: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  checkpoints: { last_seq: "bigint", name: "text", updated_at: "timestamp with time zone" },
+  events: {
+    actor: "text",
+    at: "timestamp with time zone",
+    causation: "bigint",
+    data: "jsonb",
+    schema_ver: "integer",
+    seq: "bigint",
+    stream_id: "text",
+    type: "text",
+    version: "integer",
+  },
+};
+
+/** What differs between the tables there and `SHAPE` — empty when they are Lingtai's. */
+async function foreign(client: Queryable): Promise<string[]> {
+  const { rows } = await client.query(
+    `SELECT table_name, column_name, data_type FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = ANY($1)`,
+    [Object.keys(SHAPE)],
+  );
+  const differs: string[] = [];
+  for (const [table, columns] of Object.entries(SHAPE)) {
+    const there = new Map(
+      rows.filter((r) => r["table_name"] === table).map((r) => [String(r["column_name"]), String(r["data_type"])]),
+    );
+    if (there.size === 0) {
+      differs.push(`no table "${table}"`);
+      continue;
+    }
+    for (const [column, type] of Object.entries(columns)) {
+      const found = there.get(column);
+      if (found === undefined) differs.push(`"${table}" has no column ${column}`);
+      else if (found !== type) differs.push(`"${table}".${column} is ${found}, not ${type}`);
+    }
+    for (const column of there.keys()) {
+      if (!(column in columns)) differs.push(`"${table}" has a column ${column} Lingtai does not make`);
+    }
+  }
+  return differs;
+}
+
+function notLingtais(differs: readonly string[]): Error {
+  return new Error(
+    `this database has tables that are not Lingtai's log — ${differs.join("; ")}. Nothing was changed: ` +
+      "give Lingtai a database, or a schema, of its own",
+  );
+}
+
 async function holds(client: Queryable, check: Statement): Promise<boolean> {
   const { rows } = await client.query(check.sql, check.params ?? []);
   return rows[0]?.["result"] === true;
@@ -110,6 +173,8 @@ async function holds(client: Queryable, check: Statement): Promise<boolean> {
 export async function createSchema(client: Queryable): Promise<SchemaOutcome> {
   const { rows } = await client.query(`SELECT to_regclass('"public"."events"') IS NOT NULL AS "result"`);
   if (rows[0]?.["result"] === true) {
+    const differs = await foreign(client);
+    if (differs.length > 0) throw notLingtais(differs);
     const trigger = await client.query(
       `SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'lingtai_events_notify' AND NOT tgisinternal) AS "result"`,
     );
@@ -135,6 +200,9 @@ export async function createSchema(client: Queryable): Promise<SchemaOutcome> {
         applied.push(op.label);
       }
     }
+    // A precheck passes over a table that is already there, so a `checkpoints` of somebody else's is caught here.
+    const differs = await foreign(client);
+    if (differs.length > 0) throw notLingtais(differs);
     await client.query(NOTIFY_SQL);
     await client.query("COMMIT");
   } catch (err) {

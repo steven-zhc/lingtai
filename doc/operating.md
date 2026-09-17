@@ -128,16 +128,17 @@ half needs a reachable database.
 
 ```bash
 pnpm db:init                      # create the tables and sign the database
-pnpm db:bootstrap                 # apply notify.sql, then prove it worked
+pnpm db:bootstrap                 # apply NOTIFY_SQL, then prove it worked
 ```
 
 The test database takes the same two, with `LINGTAI_TEST=1` in front of each
 so they resolve `LINGTAI_TEST_DIRECT_DATABASE_URL` instead.
 
 `db:bootstrap` is not optional and is not Prisma's job. Prisma models tables, not
-triggers, so `notify.sql` carries the two things the schema cannot express: the
-`NOTIFY` trigger every subscriber wakes on, and the rules that make `events`
-append-only in the database rather than by convention. The script then asserts
+triggers, so `NOTIFY_SQL` in `packages/event-store/src/schema.ts` — no longer a
+`.sql` file, so `psql -f` has nothing to read — carries the two things the
+schema cannot express: the `NOTIFY` trigger every subscriber wakes on, and the
+rules that make `events` append-only in the database rather than by convention. The script then asserts
 ten properties, including a **cross-connection** NOTIFY — the check that catches
 a transaction pooler, which drops notifications silently.
 

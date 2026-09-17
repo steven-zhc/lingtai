@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { MIGRATIONS, NOTIFY_SQL, type Queryable, createSchema } from "../src/schema.ts";
+import { MIGRATIONS, NOTIFY_SQL, type Queryable, SHAPE, createSchema } from "../src/schema.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -12,10 +12,18 @@ const here = dirname(fileURLToPath(import.meta.url));
  * all-or-nothing shape; that the SQL itself is right is Prisma's plan, and
  * `pnpm db:bootstrap` proves it against a database.
  */
-function fake(present: { events: boolean; trigger: boolean }) {
+/** `information_schema.columns`'s rows for tables of these shapes. */
+function columns(shape: Record<string, Record<string, string>>) {
+  return Object.entries(shape).flatMap(([table_name, cols]) =>
+    Object.entries(cols).map(([column_name, data_type]) => ({ table_name, column_name, data_type })),
+  );
+}
+
+function fake(present: { events: boolean; trigger: boolean; shape?: Record<string, Record<string, string>> }) {
   const ran: string[] = [];
   const client: Queryable = {
     async query(sql) {
+      if (sql.includes("information_schema.columns")) return { rows: columns(present.shape ?? SHAPE) };
       if (sql.includes(`to_regclass('"public"."events"')`)) return { rows: [{ result: present.events }] };
       if (sql.includes("pg_trigger")) return { rows: [{ result: present.trigger }] };
       // Every precheck says *not there yet*, every postcheck *there now*.
@@ -35,6 +43,62 @@ describe("createSchema (#186)", () => {
       .map((entry) => entry.name)
       .sort();
     expect(MIGRATIONS.map((m) => m.name)).toEqual(planned);
+  });
+
+  it("knows the columns the migrations make — a column changed in ops.json and not in SHAPE is refused", () => {
+    const TYPES: Record<string, string> = {
+      text: "text",
+      jsonb: "jsonb",
+      int8: "bigint",
+      BIGSERIAL: "bigint",
+      int4: "integer",
+      timestamptz: "timestamp with time zone",
+    };
+    const made: Record<string, Record<string, string>> = {};
+    for (const { ops } of MIGRATIONS) {
+      for (const op of ops) {
+        for (const step of op.execute) {
+          const create = /^CREATE TABLE "public"\."(\w+)" \(([\s\S]*)\)$/.exec(step.sql);
+          if (create) {
+            made[create[1]!] = Object.fromEntries(
+              [...create[2]!.matchAll(/^\s*"(\w+)" (\w+)/gm)].map((m) => [m[1]!, TYPES[m[2]!] ?? m[2]!]),
+            );
+          }
+          const drop = /^DROP TABLE "public"\."(\w+)"/.exec(step.sql);
+          if (drop) delete made[drop[1]!];
+        }
+      }
+    }
+    expect(made).toEqual(SHAPE);
+  });
+
+  it("refuses an events table that is not Lingtai's, and applies nothing to it", async () => {
+    // An application's own `events`, and no `checkpoints`: the repair's rules would silence its UPDATEs and DELETEs.
+    const { client, ran } = fake({
+      events: true,
+      trigger: false,
+      shape: { events: { id: "uuid", name: "text", payload: "jsonb", created_at: "timestamp with time zone" } },
+    });
+    await expect(createSchema(client)).rejects.toThrow(/not Lingtai's log.*no table "checkpoints".*Nothing was changed/);
+    expect(ran).toEqual([]);
+  });
+
+  it("refuses a Lingtai events table beside no checkpoints, rather than calling it present", async () => {
+    const { client, ran } = fake({ events: true, trigger: true, shape: { events: SHAPE["events"]! } });
+    await expect(createSchema(client)).rejects.toThrow(`no table "checkpoints"`);
+    expect(ran).toEqual([]);
+  });
+
+  it("rolls back a creation that met somebody else's checkpoints table", async () => {
+    const { client, ran } = fake({
+      events: false,
+      trigger: false,
+      shape: { ...SHAPE, checkpoints: { id: "integer", note: "text" } },
+    });
+    await expect(createSchema(client)).rejects.toThrow("not Lingtai's log");
+    expect(ran.at(-1)).toBe("ROLLBACK");
+    expect(ran).not.toContain(NOTIFY_SQL);
+    expect(ran).not.toContain("COMMIT");
   });
 
   it("creates the tables in one transaction, then the trigger, on an empty database", async () => {

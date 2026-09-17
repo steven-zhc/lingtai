@@ -51,7 +51,7 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
+import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp, machineDatabaseUrl } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
@@ -123,13 +123,24 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
   }
 }
 
-function environment(pooled: string | undefined, direct: string | undefined, standIn = false): CheckResult {
+/**
+ * `source` is where the pooled URL was read: the variable, or — with neither
+ * variable set — `~/.lingtai/config.yml`, where `lingtai init` writes it (#186).
+ */
+export function environment(
+  pooled: string | undefined,
+  direct: string | undefined,
+  standIn = false,
+  source = "LINGTAI_DATABASE_URL",
+): CheckResult {
   if (!pooled || !direct) {
     const missing = [!pooled && "LINGTAI_DATABASE_URL", !direct && "LINGTAI_DIRECT_DATABASE_URL"].filter(Boolean);
     return {
       name: "environment",
       status: "fail",
-      detail: `${missing.join(" and ")} not set — copy .env.example to .env.local at the repo root`,
+      detail:
+        `${missing.join(" and ")} not set, and ~/.lingtai/config.yml names no database.url — ` +
+        "lingtai init writes one, or copy .env.example to .env.local at the repo root",
     };
   }
 
@@ -137,7 +148,7 @@ function environment(pooled: string | undefined, direct: string | undefined, sta
   const d = describeUrl(direct);
   const sameHost = p.host === d.host;
   const detail =
-    `LINGTAI_DATABASE_URL :${p.port} db=${p.database} pgbouncer=${p.pgbouncer} · ` +
+    `${source} :${p.port} db=${p.database} pgbouncer=${p.pgbouncer} · ` +
     (standIn
       ? "LINGTAI_DIRECT_DATABASE_URL unset, the pooled one stands in · "
       : `LINGTAI_DIRECT_DATABASE_URL :${d.port} db=${d.database} pgbouncer=${d.pgbouncer} · `) +
@@ -1562,7 +1573,16 @@ export async function recipeGovernsItsBase(
   return results;
 }
 
-export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<DoctorReport> {
+/**
+ * `machine` reads `database.url` from `~/.lingtai/config.yml`. Asked only when
+ * `LINGTAI_DATABASE_URL` is unset — the order `databaseUrl` reads them in — and
+ * only where the caller hands it in: `doctorReport` does, and a test's own
+ * environment never reaches the operator's file.
+ */
+export async function runDoctor(
+  env: NodeJS.ProcessEnv = process.env,
+  machine: () => string | undefined = () => undefined,
+): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
   results.push({
@@ -1576,12 +1596,23 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
     detail: "every package this command imports loaded under Node's type stripping",
   });
 
-  const pooled = env["LINGTAI_DATABASE_URL"];
+  let fromFile: string | undefined;
+  let unreadable: string | undefined;
+  if (!env["LINGTAI_DATABASE_URL"]) {
+    try {
+      fromFile = machine();
+    } catch (err) {
+      unreadable = (err as Error).message;
+    }
+  }
+  const pooled = env["LINGTAI_DATABASE_URL"] || fromFile;
   // Absent, the pooled one stands in (#176) — the rule `directDatabaseUrl`
   // follows, so the doctor checks the connection the system will actually use.
   const standIn = !env["LINGTAI_DIRECT_DATABASE_URL"];
   const direct = env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
-  const envResult = environment(pooled, direct, standIn && Boolean(pooled));
+  const envResult = unreadable
+    ? { name: "environment", status: "fail" as const, detail: unreadable }
+    : environment(pooled, direct, standIn && Boolean(pooled), fromFile ? "~/.lingtai/config.yml database.url" : undefined);
   results.push(envResult);
 
   if (envResult.status === "ok" && pooled && direct) {
@@ -1653,7 +1684,7 @@ export async function doctorReport(): Promise<DoctorReport> {
   } catch {
     delete env["DIRECT_DATABASE_URL"];
   }
-  return runDoctor(env);
+  return runDoctor(env, () => machineDatabaseUrl(env));
 }
 
 /**

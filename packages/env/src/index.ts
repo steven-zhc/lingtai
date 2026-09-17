@@ -19,6 +19,12 @@ import { parse as parseYaml } from "yaml";
  * Order is priority — dotenv does not overwrite a key that is already set, so
  * the first file to define one wins. A real environment variable beats them all,
  * which is what makes CI and launchd work without a file at all.
+ *
+ * **The database URL has a third source, behind both**: `database.url` in
+ * `~/.lingtai/config.yml`, where `lingtai init` writes the one it verified
+ * (#186). `databaseUrl` and `directUrlIfSet` fall back to it when neither the
+ * environment nor an env file names one — see `machineDatabaseUrl` — so a
+ * command that connects with no variable and no env file is reading that file.
  */
 const here = dirname(fileURLToPath(import.meta.url));
 /**
