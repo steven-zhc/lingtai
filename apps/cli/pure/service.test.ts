@@ -12,7 +12,8 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { readControl, requestShutdownUnlessStanding, withdrawShutdown } from "@lingtai/daemon/control";
+import type { LockPlace } from "@lingtai/daemon";
+import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding, withdrawShutdown } from "@lingtai/daemon/control";
 import { repoRoot } from "@lingtai/env";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -30,6 +31,7 @@ import {
   type Exec,
   type ServiceDrain,
 } from "../src/service.ts";
+import { queueForTheLock } from "../src/restart.ts";
 
 let home: string;
 beforeEach(async () => {
@@ -56,8 +58,8 @@ function supervisor(answers: [string, { status: number; out: string } | (() => {
 }
 
 /**
- * A drain with nothing in flight: the request is appended, nothing holds the
- * lock, and the wait is over on the first ask. `said` is what it was asked, in order.
+ * A drain with nothing in flight: the place in the queue is the lock at once,
+ * and the request is appended. `said` is what it was asked, in order.
  */
 function quietDrain() {
   const said: string[] = [];
@@ -65,7 +67,7 @@ function quietDrain() {
   const drain: ServiceDrain = {
     ask: async (by, reason) => (said.push(`ask ${by} ${reason}`), { asked: true, version: ++version }),
     holding: async () => "nothing in flight",
-    quiet: async () => (said.push("quiet"), "free"),
+    queue: async () => (said.push("queue"), { wait: async () => (said.push("held"), "held"), leave: async () => {} }),
     withdraw: async (by, v) => (
       said.push(`withdraw ${v}`),
       { withdrew: true, version: v + 1, request: { by, reason: "", timeoutMs: null, force: false, version: v } as never }
@@ -250,7 +252,7 @@ describe("restart on macOS", () => {
     const verbs = s.calls.map((c) => c.split(" ").slice(0, 2).join(" "));
     expect(verbs).toEqual(["launchctl print", "launchctl bootout", "launchctl print", "launchctl print", "launchctl print", "launchctl bootstrap"]);
     expect(s.calls.join("\n")).not.toContain("kickstart");
-    expect(d.said).toEqual(["ask human:lingtai service restart: picking up #88", "quiet", "withdraw 1"]);
+    expect(d.said).toEqual(["queue", "ask human:lingtai service restart: picking up #88", "held", "withdraw 1"]);
   });
 
   it("on Linux, is shutdown then start — never systemctl restart, which is the signal", async () => {
@@ -296,17 +298,15 @@ describe("restart on macOS", () => {
     expect(out.join("\n")).toContain("could not read whether a shutdown request stands — connect ECONNREFUSED");
   });
 
-  it("picks up a request its own interrupted wait left standing, rather than refusing it", async () => {
-    let prints = 0;
-    const s = supervisor([
-      ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
-    ]);
-    const { go, err } = command("darwin", s.exec, { shutdown: async () => ({ by: "human:lingtai", reason: "service restart: x" }) });
+  it("refuses a standing request under its own name too — lingtai restart and lingtai shutdown ask as human:$USER as well", async () => {
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    const d = quietDrain();
+    const { go, err } = command("darwin", s.exec, { drain: d.drain, shutdown: async () => ({ by: "human:lingtai", reason: "restarting: deploy" }) });
     await launchdFile();
-    expect(await go("restart")).toBe(0);
-    expect(s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(true);
-    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
-    expect(err.join("\n")).not.toContain("a shutdown request stands");
+    expect(await go("restart")).toBe(1);
+    expect(s.calls).toEqual([]);
+    expect(d.said).toEqual([]);
+    expect(err.join("\n")).toContain("a shutdown request stands — asked by human:lingtai (restarting: deploy)");
   });
 });
 
@@ -319,66 +319,110 @@ describe("restart on macOS", () => {
 describe("shutdown", () => {
   /**
    * A daemon mid-pass, on a real control stream, under a launchd that behaves
-   * as launchd does: `bootout` SIGKILLs whatever is still running. The daemon
-   * reads the stream as the work loop does, finishes its pass a few polls after
-   * it sees a request, and only then lets go of the lock.
+   * as launchd does: KeepAlive starts a copy the moment a daemon exits, and
+   * `bootout` SIGKILLs whatever is still running. Every daemon reads the stream
+   * from its own watermark, as the work loop does since #159, so a copy started
+   * after the request never sees it — and one that wins the lock claims work.
+   *
+   * The lock is Postgres's: one holder, and the sessions blocked in
+   * `pg_advisory_lock` granted it in order on release, before a
+   * `pg_try_advisory_lock` can find it free. The command's wait is the real
+   * `queueForTheLock` over the real `waitForTheLock`; each poll is one step of
+   * the world.
    */
-  function world(passPolls: number) {
+  function world(passPolls: number, during?: (poll: number, store: ReturnType<typeof createMemoryEventStore>) => Promise<void>) {
     const store = createMemoryEventStore();
-    const daemon = { running: true, pass: "in flight" as "in flight" | "finished" | "killed", polls: 0 };
+    const lock = { holder: null as string | null, queue: [] as string[] };
+    const release = (who: string): void => {
+      if (lock.holder === who) lock.holder = lock.queue.shift() ?? null;
+      else lock.queue = lock.queue.filter((q) => q !== who);
+    };
+    type Daemon = { name: string; since: number; running: boolean; pass: "none" | "in flight" | "finished" | "killed"; polls: number };
+    const first: Daemon = { name: "daemon 1", since: 0, running: true, pass: passPolls > 0 ? "in flight" : "none", polls: 0 };
+    lock.holder = first.name;
+    const daemons: Daemon[] = [first];
     const order: string[] = [];
+    let loaded = true;
+    let polls = 0;
+
     const tick = async (): Promise<void> => {
-      if (!daemon.running) return;
-      if ((await readControl(store)).shutdown === null) return;
-      if (daemon.pass === "in flight" && ++daemon.polls >= passPolls) {
-        daemon.pass = "finished";
-        order.push("pass finished");
+      await during?.(++polls, store);
+      for (const d of daemons.filter((x) => x.running)) {
+        if ((await readControl(store, d.since)).shutdown === null) continue;
+        if (d.pass === "in flight" && ++d.polls >= passPolls) {
+          d.pass = "finished";
+          order.push(`${d.name}'s pass finished`);
+        }
+        if (d.pass !== "in flight") {
+          d.running = false;
+          release(d.name);
+          order.push(`${d.name} exited`);
+        }
       }
-      if (daemon.pass === "finished") {
-        daemon.running = false;
-        order.push("lock released");
+      // KeepAlive, with the job past its ThrottleInterval: started again at once.
+      if (loaded && !daemons.some((x) => x.running)) {
+        const d: Daemon = { name: `daemon ${daemons.length + 1}`, since: await controlWatermark(store), running: true, pass: "none", polls: 0 };
+        daemons.push(d);
+        if (lock.holder === null) {
+          lock.holder = d.name;
+          d.pass = "in flight";
+          order.push(`${d.name} claimed work`);
+        } else {
+          // Losing is not an error: it exits 0, and KeepAlive tries again.
+          d.running = false;
+        }
       }
     };
-    let loaded = true;
+
     const s = supervisor([
       ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
       [
         "launchctl bootout",
         () => {
           order.push("bootout");
-          if (daemon.running) {
+          for (const d of daemons.filter((x) => x.running)) {
             // launchd's ExitTimeOut, compressed: the signal, then SIGKILL.
-            if (daemon.pass === "in flight") daemon.pass = "killed";
-            daemon.running = false;
+            if (d.pass === "in flight") d.pass = "killed";
+            d.running = false;
+            release(d.name);
           }
           loaded = false;
           return { status: 0, out: "" };
         },
       ],
     ]);
+    const place = async (): Promise<LockPlace> => {
+      if (lock.holder === null) lock.holder = "command";
+      else lock.queue.push("command");
+      return { held: () => lock.holder === "command", lost: () => null, leave: async () => release("command") };
+    };
     const drain: ServiceDrain = {
       ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
-      holding: async () => (daemon.pass === "in flight" ? "1 in flight: lingtai#174" : "nothing in flight"),
-      quiet: async () => {
-        for (;;) {
-          await tick();
-          if (!daemon.running) return "free";
-        }
-      },
+      holding: async () => (first.pass === "in flight" ? "1 in flight: lingtai#174" : "nothing in flight"),
+      queue: () =>
+        queueForTheLock({
+          place,
+          holder: async () => (await tick(), lock.holder),
+          pollMs: 0,
+        }),
       withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, null, store),
     };
-    return { store, daemon, order, s, drain };
+    return { store, daemons, order, lock, s, drain, stop: () => (loaded = false) };
   }
 
-  it("lets the pass in flight finish before launchd is told anything, then unloads and withdraws its request", async () => {
+  it("lets the pass in flight finish before launchd is told anything, and the copy KeepAlive starts takes no work", async () => {
     const w = world(5);
     const { go, out } = command("darwin", w.s.exec, { drain: w.drain });
     await launchdFile();
     expect(await go("shutdown", "picking", "up", "#88")).toBe(0);
 
-    expect(w.daemon.pass).toBe("finished");
-    expect(w.order).toEqual(["pass finished", "lock released", "bootout"]);
-    // Withdrawn after the unload, so `service start` is not refused over it.
+    expect(w.daemons[0]!.pass).toBe("finished");
+    // The race was run: launchd started a copy between the exit and the unload.
+    expect(w.daemons.length).toBeGreaterThan(1);
+    expect(w.daemons.filter((d) => d.pass === "in flight" || d.pass === "killed")).toEqual([]);
+    expect(w.order).toEqual(["daemon 1's pass finished", "daemon 1 exited", "bootout"]);
+    // Released after the unload, and the request withdrawn, so `service start` is not refused over it.
+    expect(w.lock.holder).toBeNull();
     expect((await readControl(w.store)).shutdown).toBeNull();
     const text = out.join("\n");
     expect(text).toContain("draining — 1 in flight: lingtai#174");
@@ -392,8 +436,11 @@ describe("shutdown", () => {
       [
         "systemctl --user stop",
         () => {
-          if (w.daemon.running && w.daemon.pass === "in flight") w.daemon.pass = "killed";
-          w.daemon.running = false;
+          for (const d of w.daemons.filter((x) => x.running)) {
+            if (d.pass === "in flight") d.pass = "killed";
+            d.running = false;
+          }
+          w.stop();
           return { status: 0, out: "" };
         },
       ],
@@ -401,40 +448,65 @@ describe("shutdown", () => {
     const { go } = command("linux", s.exec, { drain: w.drain });
     await systemdFile();
     expect(await go("shutdown")).toBe(0);
-    expect(w.daemon.pass).toBe("finished");
+    expect(w.daemons[0]!.pass).toBe("finished");
+    expect(w.daemons.filter((d) => d.pass === "in flight" || d.pass === "killed")).toEqual([]);
     expect(s.calls).toContain(`systemctl --user stop ${SYSTEMD_UNIT}`);
   });
 
-  it("is fast on a quiet daemon: the wait is for work, and there is none", async () => {
+  it("is fast on a quiet daemon, and the copy started seconds later takes no work either", async () => {
     const w = world(0);
-    w.daemon.pass = "finished";
     const { go } = command("darwin", w.s.exec, { drain: w.drain });
     await launchdFile();
     const began = Date.now();
     expect(await go("shutdown")).toBe(0);
     expect(Date.now() - began).toBeLessThan(1_000);
-    expect(w.order).toEqual(["lock released", "bootout"]);
+    expect(w.daemons.length).toBeGreaterThan(1);
+    expect(w.order).toEqual(["daemon 1 exited", "bootout"]);
   });
 
-  it("tells the supervisor nothing when the wait is interrupted, and leaves the request standing", async () => {
+  it("tells the supervisor nothing when the wait is interrupted, withdraws its request, and says a new daemon takes work", async () => {
     const w = world(5);
-    const { go, out } = command("darwin", w.s.exec, { drain: { ...w.drain, quiet: async () => "interrupted" } });
+    const { go, out } = command("darwin", w.s.exec, {
+      drain: { ...w.drain, queue: async () => ({ wait: async () => "interrupted", leave: async () => {} }) },
+    });
     await launchdFile();
     expect(await go("shutdown")).toBe(130);
     expect(w.s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(false);
-    expect((await readControl(w.store)).shutdown).not.toBeNull();
-    expect(out.join("\n")).toContain("pnpm lingtai service shutdown again picks the request up");
+    expect((await readControl(w.store)).shutdown).toBeNull();
+    const text = out.join("\n");
+    expect(text).toContain("the supervisor then starts one that takes work");
+    expect(text).toContain("pnpm lingtai service shutdown asks again");
+    expect(text).not.toContain("exits too");
   });
 
-  it("waits on somebody else's standing request and leaves it standing — theirs to lift", async () => {
-    const w = world(2);
-    await requestShutdownUnlessStanding("human:ops", "migrating the database", null, w.store);
-    const { go, out } = command("darwin", w.s.exec, { drain: w.drain });
+  it("refuses a request already standing — anybody's, its own name included — and stops nothing", async () => {
+    for (const by of ["human:ops", "human:lingtai"]) {
+      const w = world(2);
+      await requestShutdownUnlessStanding(by, "migrating the database", null, w.store);
+      const { go, err } = command("darwin", w.s.exec, { drain: w.drain });
+      await launchdFile();
+      expect(await go("shutdown")).toBe(1);
+      expect(w.s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(false);
+      expect((await readControl(w.store)).shutdown?.by).toBe(by);
+      expect(w.lock.holder).toBe("daemon 1");
+      expect(w.lock.queue).toEqual([]);
+      expect(err.join("\n")).toContain(`a shutdown asked by ${by} (migrating the database) is already standing. Nothing was stopped`);
+    }
+  });
+
+  it("does not say nothing was stopped when a request landing during restart's wait refuses the start after the unload", async () => {
+    const w = world(3, async (poll, store) => {
+      // Another person's `lingtai shutdown`, which appends whatever stands.
+      if (poll === 2) await requestShutdown("human:ops", "maintenance", null, store);
+    });
+    const { go, err } = command("darwin", w.s.exec, { drain: w.drain, shutdown: async () => (await readControl(w.store)).shutdown });
     await launchdFile();
-    expect(await go("shutdown")).toBe(0);
-    expect(w.daemon.pass).toBe("finished");
-    expect((await readControl(w.store)).shutdown?.by).toBe("human:ops");
-    expect(out.join("\n")).toContain("a shutdown asked by human:ops (migrating the database) is already standing");
+    expect(await go("restart")).toBe(1);
+    expect(w.s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(true);
+    expect(w.s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
+    const said = err.join("\n");
+    expect(said).toContain("The drain above unloaded the service, and nothing was started");
+    expect(said).not.toContain("Nothing was started or stopped");
   });
 
   it("sends no signal when the request could not be appended", async () => {

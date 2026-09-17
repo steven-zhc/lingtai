@@ -823,14 +823,20 @@ supervisor's own stop is a signal and a deadline — launchd SIGKILLs at its
 default `ExitTimeOut` of 20 seconds, systemd at `TimeoutStopSec`'s 90 — and a
 pass takes up to an hour. `service stop` used to send that signal: the daemon
 began its drain and launchd killed the agent twenty seconds in. So `service
-shutdown` appends the request `lingtai shutdown` appends, waits until nothing
-holds the conductor lock, and only then runs `bootout` or `systemctl --user
-stop`, when there is nothing left to kill. Last, it withdraws its own request,
-so a later `service start` is not refused over it; a request somebody else
-asked for is waited on and left standing. On a quiet daemon the wait is over at
-once. Ctrl+C during it tells the supervisor nothing and leaves the request
-standing — every copy KeepAlive starts reads it and exits — and the next
-`service shutdown` picks it up. `service stop` is gone and says so.
+shutdown` takes a place in the queue for the conductor lock, appends the request
+`lingtai shutdown` appends, waits until the lock is its own, and only then runs
+`bootout` or `systemctl --user stop` — still holding it. The lock and not the
+request is what keeps the supervisor's next copy from work: KeepAlive starts one
+the moment the drained daemon exits, that copy reads nothing appended before it
+started (#159), and Postgres hands a released lock to the session already
+waiting, so the copy loses it and claims nothing. Last, the lock is released and
+the command withdraws its own request, so a later `service start` is not refused
+over it. A request already standing — anybody's, under your own name too — is
+refused and left alone, since the daemon running now may never read it. On a
+quiet daemon the wait is over at once. Ctrl+C during it tells the supervisor
+nothing and withdraws the request; a daemon that had already read it still
+exits after its pass, and the supervisor starts one that takes work, so run
+`service shutdown` again. `service stop` is gone and says so.
 
 `ExitTimeOut` and `TimeoutStopSec` are **deliberately left at their defaults.**
 Set to the wall limit, they would make `bootout`, a logout and a machine

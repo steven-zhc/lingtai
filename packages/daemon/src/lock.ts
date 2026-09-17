@@ -146,3 +146,79 @@ export async function conductorLockHolder(options: AcquireOptions = {}): Promise
     await client.end().catch(() => {});
   }
 }
+
+/** A place in the queue for the conductor lock. See `queueForDaemonLock`. */
+export interface LockPlace {
+  /** Whether the place has become the lock. */
+  held(): boolean;
+  /** Why the place was lost, when the connection holding it failed; null while it stands. */
+  lost(): Error | null;
+  /** Releases the lock when held and leaves the queue when not. Safe to call twice. */
+  leave(): Promise<void>;
+}
+
+/**
+ * Wait in line for the lock rather than race for it (#174).
+ *
+ * `acquireDaemonLock` tries once, and that is right for a conductor. It is
+ * wrong for `lingtai service shutdown`, which has to be the *next* holder: under
+ * launchd's KeepAlive a daemon that drains and exits is started again at once,
+ * and since #159 the copy reads only what is appended after it starts — so it
+ * does not see the drain, and if it wins the lock it takes work that the unload
+ * then kills. A blocking `pg_advisory_lock` is queued inside Postgres, and a
+ * released lock is granted to the waiter before any `pg_try_advisory_lock` can
+ * see it free. Queued before the drain is asked for, the place is ahead of
+ * every copy the supervisor can start.
+ */
+export async function queueForDaemonLock(options: AcquireOptions = {}): Promise<LockPlace> {
+  const url = options.url ?? directDatabaseUrl();
+  const key = options.key ?? DAEMON_LOCK_KEY;
+  const client = new pg.Client({ connectionString: url, application_name: options.name ?? "lingtai" });
+  await client.connect();
+  let pid: number;
+  try {
+    pid = (await client.query<{ pid: number }>("select pg_backend_pid() as pid")).rows[0]!.pid;
+  } catch (err) {
+    await client.end().catch(() => {});
+    throw err;
+  }
+
+  let held = false;
+  let lost: Error | null = null;
+  let leaving: Promise<void> | null = null;
+  client.on("error", (err) => {
+    lost ??= err;
+  });
+  const waiting = client.query("select pg_advisory_lock(hashtext($1)::bigint)", [key]).then(
+    () => {
+      held = true;
+    },
+    (err: Error) => {
+      if (leaving === null) lost ??= err;
+    },
+  );
+
+  return {
+    held: () => held,
+    lost: () => lost,
+    leave() {
+      leaving ??= (async () => {
+        if (!held && lost === null) {
+          // Closing the socket does not take a backend out of a lock queue: it
+          // would be granted the lock and hold it until it next wrote to a
+          // client that is gone. So the wait is cancelled from another session.
+          const cancel = new pg.Client({ connectionString: url, application_name: options.name ?? "lingtai" });
+          await cancel
+            .connect()
+            .then(() => cancel.query("select pg_cancel_backend($1)", [pid]))
+            .catch(() => {})
+            .finally(() => cancel.end().catch(() => {}));
+        }
+        await waiting;
+        if (held) await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});
+        await client.end().catch(() => {});
+      })();
+      return leaving;
+    },
+  };
+}
