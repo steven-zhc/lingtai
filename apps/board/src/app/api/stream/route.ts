@@ -27,7 +27,7 @@
  * A `health` frame goes out on connect, on the keep-alive tick, and shortly
  * after a burst of appends settles.
  */
-import { subscribe } from "@lingtai/event-store";
+import { createPostgresWaker, eventStore, subscribe } from "@lingtai/event-store";
 import { readHealth } from "@/lib/health";
 
 export const dynamic = "force-dynamic";
@@ -122,7 +122,8 @@ export function GET(request: Request): Response {
       try {
         subscription = subscribe({
           fromSeq,
-          name: "lingtai-board",
+          store: eventStore,
+          waker: createPostgresWaker({ name: "lingtai-board" }),
           onEvent: (event) => {
             const frame: Frame = {
               seq: event.seq.toString(),

@@ -9,10 +9,21 @@
  * Every test appends from the **pooled** connection and listens on the
  * **direct** one — two connections, which is the only shape that proves
  * anything (doc/decisions/0009-two-connections.md).
+ *
+ * The waker contract runs here too (#177), against `createPostgresWaker`: what
+ * any waker owes a subscriber is asserted of this one, and what only Postgres
+ * can get wrong — a pooler, a killed backend — is asserted below it.
  */
 import type { Envelope } from "@lingtai/domain";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createDb, createEventStore, type Db, type EventStore, subscribe } from "../src/index.ts";
+import {
+  createDb,
+  createEventStore,
+  createPostgresWaker,
+  type Db,
+  type EventStore,
+  subscribe,
+} from "../src/index.ts";
 import type { Subscription } from "../src/index.ts";
 import {
   cleanupStreams,
@@ -23,6 +34,7 @@ import {
   streamId,
   waitFor,
 } from "./support.ts";
+import { describeWakerContract } from "./wake-contract.ts";
 
 let client: Db;
 let store: EventStore;
@@ -48,12 +60,24 @@ function track(s: Subscription): Subscription {
   return s;
 }
 
+describeWakerContract("postgres", () => ({
+  waker: createPostgresWaker({ name: "lingtai-test-wake-contract" }),
+  store,
+  append: async (title) => (await store.append(streamId(), 0, [discovered(title)]))[0]!,
+  head: currentMaxSeq,
+}));
+
 describe("subscribe", () => {
   it("delivers an append made on a different connection", async () => {
     const seen: Envelope[] = [];
     const from = await currentMaxSeq();
     const sub = track(
-      subscribe({ fromSeq: from, store, onEvent: (e) => void seen.push(e), name: "lingtai-test-live" }),
+      subscribe({
+        fromSeq: from,
+        store,
+        waker: createPostgresWaker({ name: "lingtai-test-live" }),
+        onEvent: (e) => void seen.push(e),
+      }),
     );
     await sub.caughtUp();
 
@@ -78,7 +102,12 @@ describe("subscribe", () => {
 
     const seen: Envelope[] = [];
     const sub = track(
-      subscribe({ fromSeq: from, store, onEvent: (e) => void seen.push(e), name: "lingtai-test-catchup" }),
+      subscribe({
+        fromSeq: from,
+        store,
+        waker: createPostgresWaker({ name: "lingtai-test-catchup" }),
+        onEvent: (e) => void seen.push(e),
+      }),
     );
     await sub.caughtUp();
 
@@ -93,11 +122,14 @@ describe("subscribe", () => {
     const errors: string[] = [];
 
     const from = await currentMaxSeq();
+    // The waker, kept: the backend it listens on is Postgres's fact, and so it
+    // is asked of the waker rather than of the subscription.
+    const waker = createPostgresWaker({ name });
     const sub = track(
       subscribe({
         fromSeq: from,
         store,
-        name,
+        waker,
         onEvent: (e) => void seen.push(e),
         onError: (_e, phase) => void errors.push(phase),
         backoff: { baseMs: 50, capMs: 500 },
@@ -114,7 +146,7 @@ describe("subscribe", () => {
 
     // Pull the connection out from under it. The pid is the listener's own,
     // reported after it connected — see `killBackend` for why not by name.
-    const pid = sub.backendPid;
+    const pid = waker.backendPid;
     expect(pid).toBeTypeOf("number");
     expect(await killBackend(pid!)).toBe(true);
 
@@ -148,7 +180,7 @@ describe("subscribe", () => {
       subscribe({
         fromSeq: from,
         store,
-        name: "lingtai-test-handler",
+        waker: createPostgresWaker({ name: "lingtai-test-handler" }),
         onEvent: (e) => {
           if ((e.data as { title?: string }).title === "boom") throw new Error("handler said no");
         },

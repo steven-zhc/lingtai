@@ -58,7 +58,8 @@ is what 0009 requires, and cross-connection `NOTIFY` and advisory locks both
 work through it, which is the whole point. But two things follow:
 
 - `application_name` cannot be used to find a connection on this deployment.
-  `Subscription.backendPid` exists because of this, and is what the test kills.
+  `Subscription.backendPid` existed because of this, and is what the test kills —
+  since #177 it is `PostgresWaker.backendPid`, off the public subscription type.
 - "Direct" in `DIRECT_DATABASE_URL` means *session mode*, not *unpooled*. Anyone
   reading it as a raw connection to Postgres will be wrong in ways that only
   show up under a pooler's own behaviour.

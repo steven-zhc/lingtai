@@ -20,7 +20,7 @@
 import type { Envelope } from "@lingtai/domain";
 import pg from "pg";
 import { databaseUrl } from "@lingtai/env";
-import { type EventStore, eventStore, type Subscription, subscribe } from "@lingtai/event-store";
+import { type EventStore, createPostgresWaker, eventStore, type Subscription, subscribe } from "@lingtai/event-store";
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from "./shape.ts";
 
 /** SQL access inside the projection's transaction. */
@@ -220,7 +220,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     const sub = subscribe({
       fromSeq,
       store,
-      name: `lingtai-projection-${projection.name}`,
+      waker: createPostgresWaker({ name: `lingtai-projection-${projection.name}` }),
       onBatch: commitBatch,
       batchSize: options.batchSize ?? 500,
       onError: (error, phase) => {

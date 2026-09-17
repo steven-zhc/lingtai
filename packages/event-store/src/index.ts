@@ -21,9 +21,17 @@ export {
  */
 export const eventStore = createEventStore(db);
 export {
-  CHANNEL,
   subscribe,
   type SubscribeOptions,
   type Subscription,
 } from "./subscribe.ts";
+export {
+  CHANNEL,
+  createPostgresWaker,
+  type PostgresWaker,
+  type PostgresWakerOptions,
+  type WakeListener,
+  type WakeSession,
+  type Waker,
+} from "./wake.ts";
 export { parseTimestamptz } from "./timestamptz.ts";

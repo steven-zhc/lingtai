@@ -13,16 +13,17 @@
  *
  * Its own key, so the suite does not fight the operator's daemon.
  */
-import { acquireDaemonLock, conductorLockHolder } from "@lingtai/daemon";
+import { acquireDaemonLock, conductorLockHolder, createPostgresLocker } from "@lingtai/daemon";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.ts";
 
+const locker = createPostgresLocker();
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`;
 
 describe("lingtai run and the conductor lock", () => {
   it("refuses rather than claims while something else holds the lock", async () => {
     const k = key();
-    const held = await acquireDaemonLock({ key: k, name: "lingtai daemon" });
+    const held = await acquireDaemonLock({ locker, key: k, name: "lingtai daemon" });
     expect(held.ok).toBe(true);
     if (!held.ok) return;
 
@@ -66,7 +67,7 @@ describe("lingtai run and the conductor lock", () => {
 
     expect(await conductorLockHolder({ key: k })).toBeNull();
 
-    const after = await acquireDaemonLock({ key: k });
+    const after = await acquireDaemonLock({ locker, key: k });
     expect(after.ok).toBe(true);
     if (after.ok) await after.lock.release();
   }, 60_000);

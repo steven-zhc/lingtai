@@ -24,7 +24,7 @@
  * returns on several paths, and an advisory lock held by a connection nobody
  * closes keeps the next conductor out until the process dies.
  */
-import { DAEMON_LOCK_KEY, acquireDaemonLock } from "@lingtai/daemon";
+import { DAEMON_LOCK_KEY, acquireDaemonLock, createPostgresLocker } from "@lingtai/daemon";
 import { Context, Data, Effect, Layer } from "effect";
 
 /**
@@ -68,6 +68,7 @@ export const ConductorLockLive = (
       Effect.tryPromise({
         try: () =>
           acquireDaemonLock({
+            locker: createPostgresLocker(),
             name: options.name ?? "lingtai run",
             ...(options.key === undefined ? {} : { key: options.key }),
           }),

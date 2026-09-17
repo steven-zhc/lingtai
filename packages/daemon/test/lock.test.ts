@@ -8,22 +8,76 @@
  * Each test uses its own key so the suite does not fight the operator's daemon
  * — or itself.
  */
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { directDatabaseUrl } from "@lingtai/env";
 import { taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { acquireDaemonLock, conductorLockHolder, queueForDaemonLock, startDaemon } from "../src/index.ts";
+import {
+  acquireDaemonLock,
+  conductorLockHolder,
+  createPostgresLocker,
+  queueForDaemonLock,
+  startDaemon,
+} from "../src/index.ts";
+import { describeLockerContract } from "./lock-contract.ts";
 
+const locker = createPostgresLocker();
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`;
+
+/**
+ * A conductor in another process, holding `key` until it is killed. `node`
+ * runs the source unbuilt (0010), so the child takes the lock through the same
+ * `createPostgresLocker` the daemon does — and the URL is handed over rather
+ * than re-read, so the lock it holds is on the log this test asks.
+ */
+async function holdElsewhere(k: string): Promise<{ kill(): Promise<void> }> {
+  const lock = fileURLToPath(new URL("../src/lock.ts", import.meta.url));
+  const script = `
+    const { createPostgresLocker } = await import(${JSON.stringify(lock)});
+    const got = await createPostgresLocker({ url: process.argv[1] }).tryLock(process.argv[2], "lingtai-test-elsewhere");
+    process.stdout.write(got.ok ? "held\\n" : "refused\\n");
+    if (!got.ok) process.exit(1);
+    setInterval(() => {}, 60_000);
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", script, directDatabaseUrl(), k], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let err = "";
+  child.stderr.on("data", (d: Buffer) => void (err += d.toString()));
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  await new Promise<void>((resolve, reject) => {
+    let out = "";
+    child.stdout.on("data", (d: Buffer) => {
+      out += d.toString();
+      if (out.includes("held")) resolve();
+      if (out.includes("refused")) reject(new Error("the other process was refused the lock"));
+    });
+    void exited.then(() => reject(new Error(`the other process exited before it held the lock: ${err}`)));
+  });
+  return {
+    async kill() {
+      child.kill("SIGKILL");
+      await exited;
+    },
+  };
+}
+
+describeLockerContract("postgres", () => ({
+  locker: () => createPostgresLocker(),
+  key,
+  holdElsewhere,
+}));
 
 describe("the daemon lock", () => {
   it("lets the first caller in and turns the second away", async () => {
     const k = key();
-    const first = await acquireDaemonLock({ key: k });
+    const first = await acquireDaemonLock({ locker, key: k });
     expect(first.ok).toBe(true);
 
     try {
-      const second = await acquireDaemonLock({ key: k });
+      const second = await acquireDaemonLock({ locker, key: k });
       // Not an error. Running `lingtai daemon` while launchd's copy is up is a
       // reasonable thing to do; it needs an answer, not a stack trace.
       expect(second.ok).toBe(false);
@@ -34,13 +88,13 @@ describe("the daemon lock", () => {
 
   it("frees the lock on release, with nothing to clean up", async () => {
     const k = key();
-    const first = await acquireDaemonLock({ key: k });
+    const first = await acquireDaemonLock({ locker, key: k });
     expect(first.ok).toBe(true);
     if (first.ok) await first.lock.release();
 
     // Held by the connection, so releasing it leaves no file and no row that a
     // later run has to reason about.
-    const again = await acquireDaemonLock({ key: k });
+    const again = await acquireDaemonLock({ locker, key: k });
     expect(again.ok).toBe(true);
     if (again.ok) await again.lock.release();
   });
@@ -61,7 +115,7 @@ describe("the daemon lock", () => {
     // The failure path releases. A daemon that dies while starting must not
     // keep the next one out — that is an outage produced by a bug in the
     // thing meant to survive bugs.
-    const after = await acquireDaemonLock({ key: k });
+    const after = await acquireDaemonLock({ locker, key: k });
     expect(after.ok).toBe(true);
     if (after.ok) await after.lock.release();
   });
@@ -75,20 +129,20 @@ describe("the daemon lock", () => {
 describe("a place in the queue for the lock", () => {
   it("is handed the lock on release, before a try from anybody else can find it free", async () => {
     const k = key();
-    const daemon = await acquireDaemonLock({ key: k });
+    const daemon = await acquireDaemonLock({ locker, key: k });
     expect(daemon.ok).toBe(true);
     const place = await queueForDaemonLock({ key: k });
     try {
       expect(place.held()).toBe(false);
       if (daemon.ok) await daemon.lock.release();
-      const copy = await acquireDaemonLock({ key: k });
+      const copy = await acquireDaemonLock({ locker, key: k });
       expect(copy.ok).toBe(false);
       await vi.waitFor(() => expect(place.held()).toBe(true));
       expect(await place.confirm()).toBe(true);
     } finally {
       await place.leave();
     }
-    const after = await acquireDaemonLock({ key: k });
+    const after = await acquireDaemonLock({ locker, key: k });
     expect(after.ok).toBe(true);
     if (after.ok) await after.lock.release();
   });
@@ -108,7 +162,7 @@ describe("a place in the queue for the lock", () => {
       }
       expect(await place.confirm()).toBe(false);
       expect(place.lost()).not.toBeNull();
-      const copy = await acquireDaemonLock({ key: k });
+      const copy = await acquireDaemonLock({ locker, key: k });
       expect(copy.ok).toBe(true);
       if (copy.ok) await copy.lock.release();
     } finally {
@@ -118,14 +172,14 @@ describe("a place in the queue for the lock", () => {
 
   it("leaves the queue when it leaves before its turn, so it never holds the lock afterwards", async () => {
     const k = key();
-    const daemon = await acquireDaemonLock({ key: k });
+    const daemon = await acquireDaemonLock({ locker, key: k });
     expect(daemon.ok).toBe(true);
     const place = await queueForDaemonLock({ key: k });
     await place.leave();
     await place.leave();
     expect(place.held()).toBe(false);
     if (daemon.ok) await daemon.lock.release();
-    const next = await acquireDaemonLock({ key: k });
+    const next = await acquireDaemonLock({ locker, key: k });
     expect(next.ok).toBe(true);
     if (next.ok) await next.lock.release();
   });
@@ -140,7 +194,7 @@ describe("a place in the queue for the lock", () => {
 describe("who holds the lock", () => {
   it("throws when the query fails after connecting, rather than saying nobody holds it", async () => {
     const k = key();
-    const held = await acquireDaemonLock({ key: k });
+    const held = await acquireDaemonLock({ locker, key: k });
     expect(held.ok).toBe(true);
     const query = vi.spyOn(pg.Client.prototype, "query").mockImplementation((() =>
       Promise.reject(new Error("terminating connection due to administrator command"))) as never);

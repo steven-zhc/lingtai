@@ -21,6 +21,11 @@
  * nothing to clean up and no stale file to explain. Same mechanism the merge
  * lane already uses, for the same reason.
  *
+ * **The Postgres advisory lock is one `Locker`, not the only one** (#177).
+ * `acquireDaemonLock` takes a locker rather than building a connection, and
+ * `test/lock-contract.ts` is what any locker is held to: one holder, and
+ * released when the holder dies — the two facts #93 and 0027 stand on.
+ *
  * Losing is not an error. The second process exits 0 saying who holds it —
  * `lingtai daemon` while launchd's copy is running is a reasonable thing to do,
  * and greeting it with a stack trace would teach people to ignore stack traces.
@@ -40,6 +45,87 @@ export type LockResult =
   | { ok: true; lock: DaemonLock }
   /** Somebody else holds it. `holder` is their pid and host, when they recorded one. */
   | { ok: false; holder: string | null };
+
+/**
+ * Something that can hold a named lock for this process.
+ *
+ * Two promises, and a locker that breaks either is not a lock: **one holder** —
+ * while a lock is held, every other `tryLock` on its key is refused, from this
+ * process or any other — and **released when the holder dies**, with nothing
+ * left behind for the next one to clean up.
+ */
+export interface Locker {
+  /**
+   * Takes `key` if nobody holds it; never waits. `name` is what the holder
+   * calls itself, reported back to whoever is refused — best effort.
+   */
+  tryLock(key: string, name: string): Promise<LockResult>;
+}
+
+export interface PostgresLockerOptions {
+  /**
+   * Session mode, not the pooler. A transaction-mode connection can hand the
+   * next statement a different backend, and a session lock held by a backend
+   * you no longer have is a lock you cannot release — see ADR 0009. Read when a
+   * lock is tried, not when the locker is made.
+   */
+  url?: string;
+}
+
+/**
+ * A session-level advisory lock, held by a connection of its own — so a killed
+ * holder releases it when its socket closes.
+ */
+export function createPostgresLocker(options: PostgresLockerOptions = {}): Locker {
+  return {
+    async tryLock(key, name) {
+      const client = new pg.Client({
+        connectionString: options.url ?? directDatabaseUrl(),
+        application_name: name,
+      });
+      await client.connect();
+
+      try {
+        const got = await client.query<{ locked: boolean }>(
+          "select pg_try_advisory_lock(hashtext($1)::bigint) as locked",
+          [key],
+        );
+
+        if (!got.rows[0]?.locked) {
+          // Best effort here, and only here: the lock was already refused, so a
+          // failed query costs the holder's name and not the answer.
+          const holder = await holderOf(client, key).catch(() => null);
+          await client.end();
+          return { ok: false, holder };
+        }
+
+        return {
+          ok: true,
+          lock: {
+            async release() {
+              // Ending the connection would release it anyway. Unlocking first
+              // means a conductor that is shutting down cleanly does not depend on
+              // socket teardown timing to let the next one start.
+              await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});
+              await client.end().catch(() => {});
+            },
+          },
+        };
+      } catch (err) {
+        await client.end().catch(() => {});
+        throw err;
+      }
+    },
+  };
+}
+
+export interface AcquireDaemonLockOptions {
+  /** What holds it. `createPostgresLocker()` for this system's own log. */
+  locker: Locker;
+  key?: string;
+  /** Recorded so the next caller — and `lingtai doctor` — gets a name rather than a bare pid. */
+  name?: string;
+}
 
 export interface AcquireOptions {
   /**
@@ -81,44 +167,8 @@ async function holderOf(client: pg.Client, key: string): Promise<string | null> 
   return who.rows[0]?.holder?.trim() ?? null;
 }
 
-export async function acquireDaemonLock(options: AcquireOptions = {}): Promise<LockResult> {
-  const client = new pg.Client({
-    connectionString: options.url ?? directDatabaseUrl(),
-    application_name: options.name ?? "lingtai",
-  });
-  await client.connect();
-
-  try {
-    const key = options.key ?? DAEMON_LOCK_KEY;
-    const got = await client.query<{ locked: boolean }>(
-      "select pg_try_advisory_lock(hashtext($1)::bigint) as locked",
-      [key],
-    );
-
-    if (!got.rows[0]?.locked) {
-      // Best effort here, and only here: the lock was already refused, so a
-      // failed query costs the holder's name and not the answer.
-      const holder = await holderOf(client, key).catch(() => null);
-      await client.end();
-      return { ok: false, holder };
-    }
-
-    return {
-      ok: true,
-      lock: {
-        async release() {
-          // Ending the connection would release it anyway. Unlocking first
-          // means a conductor that is shutting down cleanly does not depend on
-          // socket teardown timing to let the next one start.
-          await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});
-          await client.end().catch(() => {});
-        },
-      },
-    };
-  } catch (err) {
-    await client.end().catch(() => {});
-    throw err;
-  }
+export function acquireDaemonLock(options: AcquireDaemonLockOptions): Promise<LockResult> {
+  return options.locker.tryLock(options.key ?? DAEMON_LOCK_KEY, options.name ?? "lingtai");
 }
 
 /**

@@ -79,7 +79,7 @@
  */
 import { directDatabaseUrl } from "@lingtai/env";
 import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
-import { type EventStore, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
+import { type EventStore, createPostgresWaker, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
 import pg from "pg";
 
 /**
@@ -501,8 +501,13 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
 
       subscription = subscribe({
         fromSeq: from,
-        name: "lingtai-daemon",
-        ...(options.url === undefined ? {} : { url: options.url }),
+        // The process-wide store, not `options.store`: that one is where
+        // failures are recorded, and a test's store is not the log that wakes.
+        store: eventStore,
+        waker: createPostgresWaker({
+          name: "lingtai-daemon",
+          ...(options.url === undefined ? {} : { url: options.url }),
+        }),
         onEvent: (event) => {
           // Before the trigger check: the events worth interrupting somebody
           // for are mostly *not* the ones that wake the conductor. A task being

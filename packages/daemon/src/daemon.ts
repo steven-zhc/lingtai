@@ -35,17 +35,24 @@ import { paint } from "@lingtai/env/colour";
 import type { Projection, ProjectionRunner } from "@lingtai/projector";
 import { ProjectionShapeError, createProjectionRunner } from "@lingtai/projector";
 import { controlWatermark } from "./control.ts";
-import { type AcquireOptions, type DaemonLock, type LockResult, acquireDaemonLock } from "./lock.ts";
+import {
+  type AcquireDaemonLockOptions,
+  type DaemonLock,
+  type Locker,
+  type LockResult,
+  acquireDaemonLock,
+  createPostgresLocker,
+} from "./lock.ts";
 
 export interface DaemonOptions {
   /** Everything the follower keeps current. */
   projections: readonly Projection[];
-  /** Session-mode connection for the lock. Defaults to the configured one. */
-  lockUrl?: string;
+  /** What holds the conductor lock. Defaults to a Postgres advisory lock on the configured log. */
+  locker?: Locker;
   lockKey?: string;
   log?: (line: string) => void;
   /** `acquireDaemonLock`. Replaceable so the order below can be asserted without a database. */
-  acquire?: (options: AcquireOptions) => Promise<LockResult>;
+  acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>;
   /** `controlWatermark`. Replaceable for the same reason. */
   watermark?: () => Promise<number>;
 }
@@ -98,7 +105,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
     // Named, so that a `lingtai run` turned away by this lock — and
     // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
     name: "lingtai daemon",
-    ...(options.lockUrl === undefined ? {} : { url: options.lockUrl }),
+    locker: options.locker ?? createPostgresLocker(),
     ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
   });
   if (!held.ok) return { ok: false, reason: "already-running", holder: held.holder };
