@@ -104,6 +104,7 @@ function run(over: Partial<RunView> = {}): RunView {
     repair: false,
     baseSha: null,
     headSha: null,
+    configHash: null,
     turns: 73,
     costUsd: 7.81,
     durationMs: 700_000,

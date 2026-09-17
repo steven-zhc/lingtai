@@ -58,7 +58,7 @@ import { elapsed, foldProgress, type RunProgress } from "./progress.ts";
 import { type HistoryLine, toLine } from "./history.ts";
 import { outgoingFor, type OutgoingView } from "./prompt.ts";
 import { queuedFor, type QueuedView } from "./queued.ts";
-import { recipeAtHead } from "./recipe.ts";
+import { recipeAtHead, recipeOfRun, type RunRecipe } from "./recipe.ts";
 
 export interface Finding {
   file: string;
@@ -212,6 +212,18 @@ export interface RunView {
   repair: boolean;
   baseSha: string | null;
   headSha: string | null;
+  /**
+   * The recipe this run was given, as `GatesResolved` hashed it. Null where the
+   * stream has no `GatesResolved`, which is a run whose recipe nothing can
+   * prove (#190).
+   */
+  configHash: string | null;
+  /**
+   * The recipe the page shows beside this attempt's gate actions, and whether
+   * it is provably this run's — see `RunRecipe`. Absent where nothing asked:
+   * a fold on its own has no GitHub to ask, and `loadTask` fills it in.
+   */
+  recipe?: RunRecipe;
   /** From `RunFinished`. Null until it lands, and for a run that never got there. */
   turns: number | null;
   costUsd: number | null;
@@ -917,6 +929,7 @@ export function foldRun(
 ): RunView {
   let baseSha: string | null = null;
   let headSha: string | null = null;
+  let configHash: string | null = null;
   let turns: number | null = null;
   let costUsd: number | null = null;
   let durationMs: number | null = null;
@@ -937,6 +950,12 @@ export function foldRun(
       case "RunStarted":
         started = true;
         baseSha = String(d["baseSha"] ?? "") || null;
+        break;
+      // `GatesResolved` and not `RunStarted`, though both carry the hash: the
+      // gates on this page are the ones it named, so it is the one the recipe
+      // beside them has to answer to (#190).
+      case "GatesResolved":
+        configHash = String(d["configHash"] ?? "") || null;
         break;
       case "RunPrompted":
         prompt = {
@@ -1028,6 +1047,7 @@ export function foldRun(
     repair: claim.repair,
     baseSha,
     headSha,
+    configHash,
     turns,
     costUsd,
     durationMs,
@@ -1284,6 +1304,37 @@ async function planFor(project: string): Promise<GatePlan | undefined> {
 }
 
 /**
+ * The recipe each attempt was given, keyed by run — or, where that cannot be
+ * proved, head's, named as head's (#190). See `recipeOfRun`.
+ *
+ * **No round trip per render for a proved run**: the recipe at a base commit
+ * is kept per `(repo, sha)`, which is exact because a commit never changes.
+ * Head's is asked for once however many attempts want it, through
+ * `recipeAtHead`, which is what the board already pays per render.
+ *
+ * Never throws: a project that will not load is every attempt saying so.
+ */
+async function recipesFor(
+  project: string,
+  runs: readonly RunView[],
+): Promise<Map<string, RunRecipe>> {
+  if (runs.length === 0) return new Map();
+  let recipes: RunRecipe[];
+  try {
+    const state = await loadProject(project);
+    if (!state) throw new Error("it is not a registered project");
+    const client = await githubClientFor(state);
+    let head: ReturnType<typeof recipeAtHead> | null = null;
+    const atHead = () => (head ??= recipeAtHead(state, client));
+    recipes = await Promise.all(runs.map((r) => recipeOfRun(r, client, atHead)));
+  } catch (err) {
+    const why = `no recipe could be read for ${project}: ${(err as Error).message}`;
+    recipes = runs.map(() => ({ of: "none", why }));
+  }
+  return new Map(runs.map((r, i) => [r.runId, recipes[i]!]));
+}
+
+/**
  * One task, whole — **or null, which means only that no such ticket exists.**
  *
  * That `null` used to mean *the log has nothing on this stream*, and the route
@@ -1352,7 +1403,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   //
   // `plan` where the item is running: a gate's bound is the recipe's, and only
   // a phase in flight has a denominator to draw. See `planFor`.
-  const [outgoing, queued, plan] = await Promise.all([
+  //
+  // `recipes` wherever there is an attempt to hang an action's command off.
+  const [outgoing, queued, plan, recipes] = await Promise.all([
     standing.state === "blocked" || standing.state === "queued"
       ? outgoingFor({ own, streams, ticket })
       : null,
@@ -1360,6 +1413,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       ? queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused })
       : null,
     standing.state === "running" && ticket !== null ? planFor(ticket.project) : undefined,
+    ticket !== null ? recipesFor(ticket.project, folded) : new Map<string, RunRecipe>(),
   ]);
 
   // The last attempt folded again with what only this function holds. **Only
@@ -1369,14 +1423,18 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
   const last = folded.length - 1;
   const landed = standing.state === "landed";
-  const runs =
+  const runs = (
     last >= 0 && (landed || plan !== undefined)
       ? folded.map((r, i) =>
           i === last
             ? { ...r, progress: foldProgress(streams[i] ?? [], plan, landed) }
             : r,
         )
-      : folded;
+      : folded
+  ).map((r) => {
+    const recipe = recipes.get(r.runId);
+    return recipe ? { ...r, recipe } : r;
+  });
 
   return {
     taskId,

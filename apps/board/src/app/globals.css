@@ -1663,6 +1663,26 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .attempt .point { background: var(--surface-2); }
 .attempt > .empty { margin: 0; }
 
+/* What each gate action ran, under the rail (#190). The provenance line leads
+   because a command whose recipe is unnamed is a claim about a run nobody can
+   check; the commands are closed until asked. */
+.arecipe { margin: 0 0 0.5rem; font-size: 0.75rem; }
+.arecipe .rprov { margin: 0 0 0.35rem; }
+.acts { list-style: none; margin: 0 0 0.35rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.acts > li { display: flex; gap: 0.75rem; align-items: baseline; }
+.actpoint { min-width: 5.5rem; color: var(--muted); }
+.actlist { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.act > summary { padding: 0.05rem 0; }
+.actbound { opacity: 0.75; }
+.actcmd, .arecipe .hdoctext {
+  margin: 0.2rem 0 0.35rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* The five gate points. Every one is listed, including the empty ones — a
    point that is merely omitted looks exactly like one that was configured and
    silently did not run, and only the second is a bug (ADR 0016 §4). */

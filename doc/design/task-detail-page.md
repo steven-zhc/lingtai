@@ -247,3 +247,38 @@ indistinguishable from death, and the answer is to ask again and pay twice.
 alignment: the moves sit under both, so a pane that grows with its content
 pushes the button you are deciding with off the screen — a long conversation
 costing you the decision it was meant to inform.
+
+## Amended 2026-09-16 (`#190`): what an action ran, from the recipe this run got
+
+The rail names every action — `proposed: build, review` — and the page never
+said what `build` *runs*. It does now, **on the action**: under each attempt's
+rail, each action opens on its command and says its bound, with the whole
+recipe one click further.
+
+**Not a fifth record row.** The question is never *show me the recipe*; it is
+*what did `proposed:build` do*, asked while looking at `proposed:build`.
+`RECORD_ROWS` stays four (#152).
+
+**Which recipe is the whole of it.** Head's recipe is what the *next* run gets;
+`GatesResolved.configHash` is which one *this* run got, and
+`.lingtai/config.yaml` moves (`2d3353b` took `pnpm test:db` out of `build` the
+day this was written). So the page reads the recipe at the run's `baseSha` and
+shows it only when it hashes to the run's `configHash`. When it cannot prove
+that — a mismatch, a base it cannot read, a stream with no `GatesResolved` — it
+shows head's recipe **under a sentence saying it is head's and why**, never
+bare. Head's recipe that hashes the same is the same document, and is proved.
+A point the log planned nothing at stays `skipped` and grows no command.
+
+A recipe at a commit is kept per `(repo, sha)` in `lib/recipe.ts`, because a
+base commit never moves: a proved attempt costs no round trip on the renders
+#172's subscription causes.
+
+**After [0046 §3](../decisions/0046-lingtai-is-personal.md).** The recipe leaves
+the repository for `~/.lingtai/<project>/recipe.yml`, and there is no commit to
+read a past recipe at. The read at `baseSha` goes; the hash stays. "Head" becomes
+the file on disk, and the page still proves or refuses it by `configHash` — so a
+run whose hash matches the local file shows it as the run's, and a run whose
+hash does not must say *this run got a different recipe from the one you have,
+and its text is not recoverable*, rather than showing the local file as though
+it were the run's. The fetch was built behind the hash check so #180 removes a
+source, not the feature.

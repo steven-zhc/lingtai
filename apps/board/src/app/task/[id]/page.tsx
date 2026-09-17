@@ -5,6 +5,7 @@ import { inWords } from "@lingtai/conductor/queue";
 import { describeHold } from "@lingtai/projector/task-view";
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from "@/lib/task";
 import { elapsed } from "@/lib/progress";
+import { describeAction } from "@/lib/recipe";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
@@ -263,7 +264,95 @@ export function Attempt({
           <Segs points={run.progress.points} at={null} labels />
         </div>
       )}
+
+      <Actions run={run} />
     </Latch>
+  );
+}
+
+/**
+ * What each of this attempt's gate actions runs, and what bounds it (#190).
+ *
+ * **On the attempt, and not a fifth row of the record.** The question is never
+ * *show me the recipe*; it is *what did `proposed:build` do*, asked while
+ * looking at `proposed:build` — so the command is on the action, one click
+ * open, and the whole document one click further. `RECORD_ROWS` stays four.
+ *
+ * **Which recipe is said before anything from it is.** The one at head is what
+ * the *next* run gets, and `.lingtai/config.yaml` moves; a command drawn under
+ * this attempt's gates with nothing saying whose it is would be confidently
+ * wrong about what ran. So the line leads: proved by this run's hash, or head's
+ * and why this run's could not be had, or nothing and why.
+ *
+ * The names are the log's (`GatesResolved`, through `progress`), and only the
+ * text is the recipe's. A point the log planned nothing at stays `skipped` and
+ * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
+ * rather than borrowing a command from a different action.
+ */
+export function Actions({ run }: { run: RunView }) {
+  const recipe = run.recipe;
+  if (recipe === undefined || run.progress === null) return null;
+  if (recipe.of === "none") {
+    return <p className="empty arecipe">No recipe to show what these actions run: {recipe.why}.</p>;
+  }
+
+  const hash = <span className="mono">recipe {recipe.configHash.slice(0, 12)}</span>;
+  return (
+    <div className="arecipe">
+      {recipe.of === "run" ? (
+        <p className="rprov">
+          {hash} — this run&apos;s own, proved by the hash it recorded
+          {"base" in recipe.at
+            ? `, read at base ${recipe.at.base.slice(0, 7)}`
+            : `, and the same document as the head of ${recipe.at.head}`}
+        </p>
+      ) : (
+        <p className="rprov refusal">
+          Not this run&apos;s recipe: {hash} is the head of {recipe.ref}, which is what the next
+          run gets. Shown because {recipe.why}.
+        </p>
+      )}
+      <ol className="acts">
+        {run.progress.points.map((p) => (
+          <li key={p.point}>
+            <span className="actpoint">{p.point}</span>
+            {p.planned.length === 0 ? (
+              <span className="empty">skipped</span>
+            ) : (
+              <span className="actlist">
+                {p.planned.map((name) => {
+                  const action = recipe.recipe.gates[p.point].find((a) => a.name === name);
+                  if (!action) {
+                    return (
+                      <span key={name} className="act">
+                        <span className="mono">{name}</span>{" "}
+                        <span className="empty">not in this recipe</span>
+                      </span>
+                    );
+                  }
+                  const { does, bound } = describeAction(action);
+                  return (
+                    <details key={name} className="act">
+                      <summary>
+                        <span className="mono">{name}</span> <span className="actbound">{bound}</span>
+                      </summary>
+                      <pre className="actcmd">{does}</pre>
+                    </details>
+                  );
+                })}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+      <details className="aprompt">
+        <summary>
+          <span className="hdocname">the whole recipe</span>
+          <span className="hdocsize">{recipe.of === "run" ? "this run's" : `head of ${recipe.ref}`}</span>
+        </summary>
+        <pre className="hdoctext">{recipe.source}</pre>
+      </details>
+    </div>
   );
 }
 
