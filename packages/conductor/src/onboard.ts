@@ -2,10 +2,10 @@
  * `lingtai add <owner>/<repo>` — the whole of onboarding.
  *
  * Give it a repository slug and permissions; it does the rest. What it does
- * *not* do is take a configuration file: the recipe belongs to the managed
- * repository and is read from its base branch. That split is
- * doc/decisions/0005-config-in-target-repo.md, and it is why this command needs
- * so few arguments.
+ * *not* do is take a configuration file: the recipe is this machine's,
+ * `~/.lingtai/<project>/recipe.yml`, and nothing is read from or written to the
+ * repository for it (0046 §3, #180). `governing` below is the reading from a
+ * branch that 0005 needed, kept for what still reads one.
  *
  * The order matters. Permissions are checked *before* anything is written, so a
  * half-onboarded project is not a state that exists. The failure this guards
@@ -40,8 +40,11 @@ import {
   type ResolvedRecipe,
   baseDivergence,
   parseDuration,
+  recipePath,
+  resolveLocalRecipe,
   resolveRecipe,
 } from "@lingtai/recipe";
+import { signedInHere } from "./projects.ts";
 import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/domain";
 import {
   NotInstalledError,
@@ -192,58 +195,36 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   log("permissions: issues, contents, pull requests write; metadata read");
 
   const client = await createGitHubClient({ auth, owner, repo, installation });
-  const fromDefault = options.base === undefined;
-  const readFrom = options.base?.ref ?? (await client.defaultBranch());
-  // Said *before* the read, not after it. When this is the wrong branch the
-  // failure is otherwise a sentence about a file, and the reader has to work
-  // out for themselves that the branch is the surprising part.
-  log(`reading ${RECIPE_PATH} from ${readFrom}${fromDefault ? " (the repository's default branch)" : ""}`);
+  log(`reading ${recipePath(repo)} — the recipe is this machine's, and nothing is read from the repository (0046 §3)`);
 
   // 3. The recipe, and with it the base — which is the recipe's, not this
-  //    command's. Refused *before* anything is written when the two cannot be
-  //    reconciled, the same way the permissions above are: a project whose rules
-  //    come from one branch and whose merges go to another is not a state that
-  //    exists. It is otherwise created here in silence and only ever paid for by
-  //    a run, which obeys the wrong branch's gates and records nothing amiss.
-  let found: Governing;
+  //    command's. A `--base` a person typed and the file contradicts is refused
+  //    by name rather than overruled (#75); a remembered one is a hint, and the
+  //    file's `repo.base` is adopted over it (#163).
+  let resolved: ResolvedRecipe;
   try {
-    found = await governing(
-      (path, ref) => client.fileAt(path, ref),
-      // Named is a person's flag and nothing else. A base this system
-      // remembered is a hint, and `governing` adopts the recipe's over it
-      // rather than refusing (#163).
-      { ref: readFrom, named: options.base?.named ?? false },
-      `${owner}/${repo}`,
+    resolved = await resolveLocalRecipe(repo, { signedIn: signedInHere });
+  } catch (err) {
+    log((err as Error).message);
+    return 1;
+  }
+  if (options.base?.named && options.base.ref !== resolved.recipe.repo.base) {
+    log(
+      `--base ${options.base.ref}, but ${recipePath(repo)} declares repo.base: ${resolved.recipe.repo.base}. ` +
+        "This command will not overrule either — re-run without --base to take the recipe's, " +
+        "or fix repo.base in the file.",
     );
-  } catch (err: unknown) {
-    if (!(err instanceof RecipeMissingError)) throw err;
-    log(err.message);
-    if (fromDefault) {
-      // The overwhelmingly common cause: a repository whose default branch is
-      // not the branch it merges into. `nextloom-ai-admin`'s default is a
-      // feature branch, and the recipe lives on `develop`.
-      log("");
-      log(`Nothing named a base, so this looked on ${readFrom} — the repository's default branch.`);
-      log("`--base` says which branch to read the recipe *from*; the recipe's own");
-      log("repo.base still says which branch it governs. If the file is elsewhere:");
-      log(`  lingtai add ${owner}/${repo} --base <branch>`);
-    }
     return 1;
   }
-  if (!found.ok) {
-    log(found.refusal);
-    return 1;
-  }
-  const resolved = found.resolved;
-  // Past `governing` these are one branch, and this one is the file's.
+  // Past this point these are one branch, and this one is the file's.
   const base = resolved.recipe.repo.base;
-  log(
-    `base: ${base} — the recipe's repo.base` +
-      (found.adoptedFrom ? `, adopted from the file on ${found.adoptedFrom}` : ""),
-  );
+  log(`base: ${base} — the recipe's repo.base`);
+  for (const [key, from] of Object.entries(resolved.provenance ?? {})) {
+    if (key.startsWith("runtime.")) log(`  ${key.padEnd(24)} ${from}`);
+  }
 
   const fromSha = await client.refSha(base);
-  log(`recipe: ${RECIPE_PATH} at ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`);
+  log(`recipe: ${recipePath(repo)} for ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`);
   // All five points, including the empty ones. Onboarding is the first place a
   // person sees the shape of their workflow, and a point that is not mentioned
   // is exactly the thing that must not be invisible (ADR 0016 §4).
