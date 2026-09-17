@@ -126,6 +126,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0044](decisions/0044-a-close-is-a-terminal-outcome.md) | **A close is a terminal outcome, so `end` runs on it** | accepted; completes #151 |
 | [0045](decisions/0045-one-team-one-conductor.md) | **One team, one conductor, one recipe** | **superseded by [0046](decisions/0046-lingtai-is-personal.md)** |
 | [0046](decisions/0046-lingtai-is-personal.md) | **Lingtai is personal; the repository is the team's** | accepted; supersedes 0045 and 0005's surviving half |
+| [0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md) | **The recipe a run was given is on the log, and nothing resolves from it** | accepted; qualifies 0005 |
 
 ## Experiments
 
