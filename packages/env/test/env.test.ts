@@ -6,11 +6,14 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  databaseUrl,
   directDatabaseUrl,
+  directUrlIfSet,
   envFiles,
   githubApp,
   githubWebhookSecret,
   hasGitHubApp,
+  machineDatabaseUrl,
   resolvePath,
 } from "../src/index.ts";
 
@@ -153,5 +156,35 @@ describe("the App is read from the env file as it is now", () => {
     // `lingtai doctor` reports on the environment it is given (see `githubApp`).
     expect(hasGitHubApp({})).toBe(false);
     expect(envFiles().map((f) => f.split("/").pop())).toEqual([".env.local", ".env"]);
+  });
+});
+
+/**
+ * #186. `lingtai init` writes the URL it verified to `~/.lingtai/config.yml`,
+ * and a URL written where nothing reads it is a choice that did nothing.
+ */
+describe("the machine file's database.url", () => {
+  const URL_ = "postgresql://me:secret@localhost:5432/lingtai";
+
+  it("is read from config.yml under LINGTAI_HOME", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    expect(machineDatabaseUrl({ LINGTAI_HOME: home })).toBeUndefined();
+    await writeFile(join(home, "config.yml"), `runtime:\n  agent: claude-code\ndatabase:\n  url: ${URL_}\n`);
+    expect(machineDatabaseUrl({ LINGTAI_HOME: home })).toBe(URL_);
+  });
+
+  it("refuses a file that does not parse by its path, rather than calling the URL unset", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "database: [unclosed\n");
+    expect(() => machineDatabaseUrl({ LINGTAI_HOME: home })).toThrow(join(home, "config.yml"));
+  });
+
+  it("is never asked for an environment handed in, or for a test — only this process's own", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), `database:\n  url: ${URL_}\n`);
+    expect(() => databaseUrl({ LINGTAI_HOME: home })).toThrow(/LINGTAI_DATABASE_URL is not set.*lingtai init/);
+    expect(directUrlIfSet({ LINGTAI_HOME: home })).toBeUndefined();
+    // This process is a test run, so its own environment never reaches the file.
+    expect(() => databaseUrl({ LINGTAI_HOME: home, VITEST: "true" })).toThrow(/LINGTAI_TEST_DATABASE_URL is not set/);
   });
 });

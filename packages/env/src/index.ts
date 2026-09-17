@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
 
 /**
  * Where configuration values come from, for every package that needs one.
@@ -173,15 +174,57 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
         (was
           ? `${was} is set — it was renamed to ${name} (#63), so that a project's own ` +
             `${was} can never be confused with Lingtai's. Rename the line.`
-          : "Copy .env.example to .env.local at the repo root and fill it in."),
+          : name.includes("DATABASE_URL")
+            ? "lingtai init asks for one and writes it to ~/.lingtai/config.yml; from a checkout, .env.local at the repo root works too."
+            : "Copy .env.example to .env.local at the repo root and fill it in."),
     );
   }
   return v;
 }
 
+/**
+ * `database.url` in `~/.lingtai/config.yml` — where `lingtai init` writes the
+ * one it was given and verified (#186) — or undefined where the file names none.
+ *
+ * **Behind the environment and the env files, never in front of them**: a set
+ * `LINGTAI_DATABASE_URL` wins, as a real variable beats a file everywhere else
+ * here. And **never for a test** — `databaseUrl` and `directUrlIfSet` do not ask
+ * this while `inTest`, because a file on the operator's machine is exactly the
+ * operator's log, and `testUrl` exists to refuse that.
+ *
+ * One URL, not two: 1.0's store has no pooled/direct split (doc/design/1.0.md),
+ * so this stands in for both names. A file that does not parse is refused by
+ * name rather than read as no URL, which would say *not set* about a machine
+ * where somebody plainly set one.
+ */
+export function machineDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string | undefined {
+  const path = join(stateDir(from), "config.yml");
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(text);
+  } catch (err) {
+    throw new Error(`${path} could not be parsed as YAML, so its database.url could not be read: ${(err as Error).message}`);
+  }
+  const database = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["database"] : undefined;
+  const url = database !== null && typeof database === "object" ? (database as Record<string, unknown>)["url"] : undefined;
+  return typeof url === "string" && url !== "" ? url : undefined;
+}
+
+/** The machine file's URL, asked only of this process's own environment and never in a test. */
+function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
+  return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined;
+}
+
 /** Pooled. Ordinary reads and writes. */
 export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
-  return inTest(from) ? testUrl("DATABASE_URL", from) : required(`${PREFIX}DATABASE_URL`, from);
+  if (inTest(from)) return testUrl("DATABASE_URL", from);
+  return optional(`${PREFIX}DATABASE_URL`, from) ?? machineUrl(from) ?? required(`${PREFIX}DATABASE_URL`, from);
 }
 
 /**
@@ -226,7 +269,11 @@ export function directDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string
  * config, the bootstrap script), which read rather than demand.
  */
 export function directUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | undefined {
-  return optional(dbVar("DIRECT_DATABASE_URL", from), from) ?? optional(dbVar("DATABASE_URL", from), from);
+  return (
+    optional(dbVar("DIRECT_DATABASE_URL", from), from) ??
+    optional(dbVar("DATABASE_URL", from), from) ??
+    machineUrl(from)
+  );
 }
 
 /** Set, or undefined. For values whose absence is a legitimate state. */

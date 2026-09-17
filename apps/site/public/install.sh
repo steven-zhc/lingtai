@@ -12,6 +12,7 @@
 #   4. unpacks into ~/.lingtai/versions/<version>/, and runs it once to see that
 #      it does run here
 #   5. points ~/.local/bin/lingtai at it
+#   6. runs lingtai init, where there is a terminal to answer it
 #
 # Run again over an install, it changes only what is different and says which.
 # A version already unpacked is never unpacked over: a process may be running
@@ -19,7 +20,8 @@
 # requests above.
 #
 # LINGTAI_HOME, LINGTAI_BIN_DIR, LINGTAI_VERSION and LINGTAI_RELEASES_URL move
-# where it installs, which version, and where it fetches from.
+# where it installs, which version, and where it fetches from. LINGTAI_NO_INIT
+# stops before init.
 
 set -eu
 
@@ -153,5 +155,17 @@ case ":$PATH:" in
   *) say "$BIN_DIR is not on your PATH — add it to your shell's profile to type lingtai" ;;
 esac
 
-# lingtai init (1.0 step 11) is not built yet; when it is, this runs it.
-say "next: lingtai doctor says what is configured and what is not"
+# ---------------------------------------------------------------------- init --
+
+# The installer runs `lingtai init` (#186), so there is no second command to
+# discover. Its questions are asked of the terminal, which under `curl | sh` is
+# not stdin — stdin is the script — so they are read from /dev/tty, and only
+# when there is one: with nobody to answer, it is named and not run.
+if [ -n "${LINGTAI_NO_INIT:-}" ]; then
+  say "next: lingtai init — the database, the agent and the GitHub App, ending on the board"
+elif [ -t 1 ] && { : < /dev/tty; } 2> /dev/null; then
+  say "running lingtai init"
+  "$target" init < /dev/tty
+else
+  say "next: lingtai init — there is no terminal here to answer its questions, so it was not run"
+fi

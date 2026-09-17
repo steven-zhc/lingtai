@@ -18,7 +18,7 @@
 import pg from "pg";
 import { directDatabaseUrl } from "./env.ts";
 
-/** The channel `sql/notify.sql`'s trigger writes to. */
+/** The channel `NOTIFY_SQL`'s trigger writes to (`schema.ts`). */
 export const CHANNEL = "lingtai";
 
 export interface WakeListener {

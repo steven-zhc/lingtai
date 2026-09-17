@@ -452,6 +452,13 @@ describe("install.sh", () => {
     expect(twice.said).toContain("already runs 1.0.0");
   });
 
+  it("names lingtai init rather than running it where there is no terminal to answer it (#186)", () => {
+    const ran = install("1.0.0");
+    expect(ran.code, ran.said).toBe(0);
+    expect(ran.said).toContain("next: lingtai init — there is no terminal here");
+    expect(ran.said).not.toContain("running lingtai init");
+  });
+
   it("refuses when either artifact does not match its checksum, and unpacks neither", () => {
     publish("1.0.2");
     // The binary matches and the board does not, so a check of only the first passes it.

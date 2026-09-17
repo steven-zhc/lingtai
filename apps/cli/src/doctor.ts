@@ -8,7 +8,7 @@
  *
  * Two rules shape what is in here.
  *
- * **It never writes.** `scripts/bootstrap.mjs` applies `notify.sql` and proves
+ * **It never writes.** `scripts/bootstrap.mjs` applies `NOTIFY_SQL` and proves
  * the append-only rules by trying to break them, which means writing probe rows
  * to the event log. A diagnostic that appends to the system of record is the
  * wrong shape; every check below reads the catalogue instead. Bootstrap stays as

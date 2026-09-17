@@ -74,6 +74,14 @@ const PROJECTIONS = [taskViewProjection, backlogProjection] as const;
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
+  lingtai init                      a bare machine to the board, on the wizard:
+                                git and the agents looked at, a Postgres URL
+                                connected to and its tables made, the agent
+                                chosen, ~/.lingtai/config.yml written. Run it
+                                again to continue, or to see what is set
+    --database-url <url>        instead of being asked
+    --agent <claude-code|codex> instead of being asked, where both are signed in
+    --port <n>                  the board's port. default: 3200
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
     --base <branch>             where to *read the recipe from*, not what the
                                 base is — the recipe's own repo.base says that,
@@ -1139,6 +1147,10 @@ async function main(argv: string[]): Promise<number> {
     case "version":
       console.log(versionLine());
       return 0;
+    // The same: `entry.ts` answers it, since it runs before there is a log to load.
+    case "init":
+      console.error("lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai");
+      return 2;
     case undefined:
     case "help":
     case "--help":

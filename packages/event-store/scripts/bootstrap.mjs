@@ -1,5 +1,5 @@
 /**
- * Applies sql/notify.sql and proves the four properties the schema alone cannot
+ * Applies `NOTIFY_SQL` (src/schema.ts) and proves the four properties the schema alone cannot
  * express. Run after `pnpm db:init`, and again any time you doubt the database.
  *
  *   pnpm --filter @lingtai/event-store db:bootstrap
@@ -8,13 +8,10 @@
  * cross-connection NOTIFY check below fails silently, which is the whole reason
  * that variable exists — see doc/decisions/0009-two-connections.md.
  */
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { dbVar, directUrlIfSet } from "../src/env.ts";
+import { NOTIFY_SQL } from "../src/schema.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
 // `LINGTAI_TEST=1` points this at the test database instead, which is how
 // that one gets its schema.
 // The pooled name stands in when the direct one is absent (#176).
@@ -29,8 +26,8 @@ const checks = [];
 const check = (name, ok, detail = "") => checks.push({ name, ok, detail });
 
 // ---- apply -----------------------------------------------------------------
-await c.query(await readFile(resolve(here, "../sql/notify.sql"), "utf8"));
-check("notify.sql applied", true);
+await c.query(NOTIFY_SQL);
+check("NOTIFY_SQL applied", true);
 
 // ---- shape -----------------------------------------------------------------
 const cols = await c.query(`
