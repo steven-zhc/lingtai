@@ -1,18 +1,20 @@
 /**
- * Resolving a recipe: read it from `origin/<base>`, validate it, hash it.
+ * Resolving a recipe: parse it, validate it, hash it.
  *
- * The governance rule, in one place. Borrowed wholesale from GitHub Actions:
- * **the workflow that judges a change is read from the base branch, not from the
- * branch being judged.** So an agent that edits `.lingtai/config.yaml`
- * changes nothing about the run in flight — the recipe was already snapshotted
- * and its hash recorded in `RunStarted` — the edit shows up in the diff where
- * the `tamper` gate catches it, and it takes effect from the next work item,
- * after a human approves and merges it.
+ * **Where the text comes from is not this file's any more.** A run is governed
+ * by `~/.lingtai/<project>/recipe.yml`, read by `resolveLocalRecipe` in
+ * `local.ts` through `resolveSource` below
+ * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180). Nothing
+ * reads `.lingtai/config.yaml` from a managed repository to run anything, so
+ * editing or merging that file changes no run, and `tamper` has nothing there
+ * to catch.
  *
- * The reading is done by whatever `ReadAtRef` is given, and the only
- * implementation that matters reads through the GitHub API, where "at this ref"
- * is a server-side fact rather than a claim about a local checkout.
- * See doc/decisions/0005-config-in-target-repo.md.
+ * `resolveRecipe` and `ReadAtRef` remain for the readers that still have a
+ * file at a ref in hand: the task page proving a run recorded before the move
+ * against its base commit, the wizard checking the bytes it is about to write,
+ * and tests. 0005's rule — *read from the base branch, never the branch being
+ * judged* — was what made a recipe inside the repository safe; it now holds by
+ * location, because an agent's worktree does not contain `~/.lingtai/`.
  */
 import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";

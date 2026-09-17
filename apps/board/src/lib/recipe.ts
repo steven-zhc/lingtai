@@ -110,13 +110,17 @@ async function recipeAtSha(
  * recipe at `baseSha` and, failing that, against head's — the same document
  * does not stop being the same because it was read from a later commit.
  *
- * **After [0046 §3](../../../../doc/decisions/0046-lingtai-is-personal.md)** the
- * recipe leaves the repository and there is no commit to read a past one at:
- * `recipeAtSha` goes, `atHead` becomes the file on disk, and what is left is
- * the hash — which still says *this run got a different recipe from the one
- * you have*, and the page must then say the run's text is not recoverable
- * rather than showing the local file as though it were the run's. Built this
- * way round so that removes a source and not the feature (#180).
+ * **Since [0046 §3](../../../../doc/decisions/0046-lingtai-is-personal.md)
+ * (#180)** `atHead` is this machine's file, and a run is given that file — not
+ * anything in the repository. `recipeAtSha` still reads `.lingtai/config.yaml`
+ * at the run's base commit, and that is only ever a *candidate*: for a run
+ * recorded before the move it is the document the run was given, and for one
+ * after it a leftover copy that no run obeys. The hash is what decides between
+ * them, never where the text was found — a stale copy that happens to hash the
+ * same *is* the same document, and one that does not is passed over for the
+ * machine's file, proved the same way, or named as `head` with the reason. So
+ * whether a leftover copy exists changes which bytes are shown, never whether
+ * the page claims they are the run's.
  *
  * Never throws.
  */
