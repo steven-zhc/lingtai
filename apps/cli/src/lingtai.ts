@@ -81,7 +81,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 again to continue, or to see what is set
     --database-url <url>        instead of being asked
     --agent <claude-code|codex> instead of being asked, where both are signed in
-    --port <n>                  the board's port. default: 3200
+    --port <n>                  the board's port. default: board.port, or 17820
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
     --base <branch>             where to *read the recipe from*, not what the
                                 base is — the recipe's own repo.base says that,
@@ -1087,12 +1087,11 @@ async function main(argv: string[]): Promise<number> {
     case "daemon":
       return daemonCommand(parseFlags(rest).flags);
     case "service": {
+      // A board.port that is not one refuses the board's half, and never the
+      // conductor's: it must not take away the way to stop the conductor.
       const port = boardPort(process.env);
-      if ("refused" in port) {
-        console.error(port.refused);
-        return 2;
-      }
-      return serviceCommand(rest, { ...serviceOptions(), board: { port: port.port, answers: () => boardAnswers(port.port) } });
+      const board = "refused" in port ? port : { port: port.port, answers: () => boardAnswers(port.port) };
+      return serviceCommand(rest, { ...serviceOptions(), board });
     }
     case "restart": {
       const parsed = parseRestartArgs(rest);

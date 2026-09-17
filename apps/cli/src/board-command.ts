@@ -163,14 +163,21 @@ export async function boardCommand(argv: readonly string[], world: BoardWorld): 
       world.error(paint.fail(`could not ask the supervisor whether it keeps the board — ${job.unread}. Nothing was stopped`));
       return 1;
     }
+    let supervised = false;
     if (job.installed && job.loaded) {
       // A signal would be undone by KeepAlive in thirty seconds.
       world.log(`the supervisor keeps the board (${job.name}) — asking it to stop`);
       if (!(await world.supervisorStop())) return 1;
-      world.log(paint.pass("stopped. lingtai service start brings it back"));
-      return 0;
+      world.log(paint.pass("the supervisor's board is stopped. lingtai service start brings it back"));
+      supervised = true;
     }
+    // Asked after the supervisor, and not instead of it: a terminal's board can
+    // hold the port while the supervisor's waits out its throttle.
     const recorded = readPid(world.env);
+    // The supervisor's own process wrote this file too, and is given the moment its stop takes.
+    if (supervised && recorded) {
+      for (let i = 0; i < STOP_WAIT_POLLS && world.isBoard(recorded.pid); i++) await world.sleep(100);
+    }
     if (recorded && world.isBoard(recorded.pid)) {
       world.signal(recorded.pid);
       for (let i = 0; i < STOP_WAIT_POLLS && world.isBoard(recorded.pid); i++) await world.sleep(100);
@@ -184,12 +191,22 @@ export async function boardCommand(argv: readonly string[], world: BoardWorld): 
     }
     // A file naming a process that is gone, or is no longer a board, is nobody's.
     if (recorded) rmSync(boardPidFile(world.env), { force: true });
-    const now = await world.answers(port);
+    let now = await world.answers(port);
+    for (let i = 0; supervised && now === "board" && i < STOP_WAIT_POLLS; i++) {
+      await world.sleep(100);
+      now = await world.answers(port);
+    }
     if (now === "board") {
-      world.error(paint.fail(`a board answers on ${url}, and neither the supervisor nor lingtai board start here names it — nothing was stopped`));
+      world.error(
+        paint.fail(
+          supervised
+            ? `a board still answers on ${url}, and neither the supervisor nor lingtai board start here names it — it was not stopped`
+            : `a board answers on ${url}, and neither the supervisor nor lingtai board start here names it — nothing was stopped`,
+        ),
+      );
       return 1;
     }
-    world.log(`no board is running on ${port}`);
+    if (!supervised) world.log(`no board is running on ${port}`);
     return 0;
   };
 

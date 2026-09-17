@@ -800,9 +800,12 @@ pnpm lingtai service start
 pnpm lingtai service uninstall   # logs are kept
 ```
 
-**`service` keeps two jobs: the conductor and the board** (#187). Every verb
-does the conductor's half and then the board's, and neither half's outcome
-decides whether the other runs. They are two jobs rather than one process
+**`service` keeps two jobs: the conductor and the board** (#187). `install`
+does the board's half first, once it has checked who owns the checkout — a
+refusal there installs neither — so a conductor refused later still leaves the
+UI up. Every other verb does the conductor's half and then the board's,
+whatever the conductor's came to, except a Ctrl+C during it, which stops there.
+The exit code is the worse of the two. They are two jobs rather than one process
 because they fail differently, and `service status` prints each under its own
 heading for the same reason: one summary saying *running* would hide a board
 that is up beside a conductor launchd respawns every thirty seconds. A board

@@ -145,7 +145,7 @@ export function parsePayload(text: string): NotifyPayload {
     // rather than refused: a notification with a link that may be wrong beats
     // no notification, which is the trade the rest of this file does not make
     // and this one line does.
-    board: typeof body?.board === "string" ? body.board : "http://localhost:3200",
+    board: typeof body?.board === "string" ? body.board : "http://127.0.0.1:17820",
   };
 }
 

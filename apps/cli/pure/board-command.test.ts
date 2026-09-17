@@ -18,7 +18,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function world(script: { answers?: PortAnswer; job?: BoardJob; boards?: number[]; interactive?: boolean } = {}) {
+function world(script: { answers?: PortAnswer; job?: BoardJob; boards?: number[]; interactive?: boolean; supervised?: number } = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const seen = { served: [] as number[], opened: [] as string[], signalled: [] as number[], supervisor: [] as string[], exits: [] as (() => void)[] };
@@ -36,7 +36,7 @@ function world(script: { answers?: PortAnswer; job?: BoardJob; boards?: number[]
     signal: (pid) => (seen.signalled.push(pid), live.delete(pid)),
     onExit: (fn) => seen.exits.push(fn),
     job: () => script.job ?? { installed: false },
-    supervisorStop: async () => (seen.supervisor.push("stop"), true),
+    supervisorStop: async () => (seen.supervisor.push("stop"), script.supervised !== undefined && live.delete(script.supervised), true),
     supervisorStart: async () => (seen.supervisor.push("start"), true),
     sleep: async () => {},
   };
@@ -118,12 +118,29 @@ describe("board start", () => {
 
 describe("board stop", () => {
   it("asks the supervisor when it keeps the board — a signal would be undone by KeepAlive", async () => {
-    const { w, seen } = world({ job: { installed: true, loaded: true, running: true, lines: [], name: "ai.nextloom.lingtai.board" }, boards: [77] });
+    const { w, seen } = world({ job: { installed: true, loaded: true, running: true, lines: [], name: "ai.nextloom.lingtai.board" }, boards: [77], supervised: 77 });
     mkdirSync(home, { recursive: true });
     writeFileSync(boardPidFile(w.env), JSON.stringify({ pid: 77, port: 17820 }));
     expect(await boardCommand(["stop"], w)).toBe(0);
     expect(seen.supervisor).toEqual(["stop"]);
     expect(seen.signalled).toEqual([]);
+  });
+
+  it("stops a terminal's board that holds the port while the supervisor's waits out its throttle — not only the supervisor's", async () => {
+    const job: BoardJob = { installed: true, loaded: true, running: false, lines: [], name: "ai.nextloom.lingtai.board" };
+    const { w, seen } = world({ job, boards: [99] });
+    writeFileSync(boardPidFile(w.env), JSON.stringify({ pid: 99, port: 17820 }));
+    expect(await boardCommand(["stop"], w)).toBe(0);
+    expect(seen.supervisor).toEqual(["stop"]);
+    expect(seen.signalled).toEqual([99]);
+  });
+
+  it("does not say stopped when the supervisor let go and a board it cannot name still answers", async () => {
+    const job: BoardJob = { installed: true, loaded: true, running: false, lines: [], name: "ai.nextloom.lingtai.board" };
+    const { w, err, out } = world({ job, answers: "board" });
+    expect(await boardCommand(["stop"], w)).toBe(1);
+    expect(plain(err)).toContain("a board still answers on http://127.0.0.1:17820");
+    expect(plain(out)).not.toMatch(/^stopped/m);
   });
 
   it("signals the process board start recorded, and nothing a reused pid now names", async () => {

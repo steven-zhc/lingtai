@@ -165,7 +165,7 @@ describe("parsePayload", () => {
       JSON.stringify({ event: { type: "WorkItemBlocked", data: {} }, workItem: { id: "wi-a-1", project: "a", issue: "1" } }),
     );
 
-    expect(parsed.board).toBe("http://localhost:3200");
+    expect(parsed.board).toBe("http://127.0.0.1:17820");
   });
 });
 

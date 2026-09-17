@@ -48,8 +48,11 @@
  *
  * The board is the second: `lingtai board start --no-open` under its own label,
  * so the UI has the lifecycle the conductor has and one command covers both.
- * Every verb does the conductor's half and then the board's, and neither half's
- * outcome decides whether the other runs. **The board's half is never a drain**
+ * `install` does the board's half first, once the checkout's owner is checked —
+ * a refusal there installs neither — so a conductor refused later still leaves
+ * the UI up. Every other verb does the conductor's half and then the board's,
+ * whatever the conductor's came to, except a Ctrl+C during it, which stops
+ * there. The exit is the worse of the two. **The board's half is never a drain**
  * — it has no pass to finish, so `shutdown` stops it and `restart` is stop and
  * start. `status` prints each job under its own heading, because one summary
  * saying *running* would hide a board that is up beside a conductor launchd
@@ -553,11 +556,14 @@ export interface ServiceOptions {
    * The board's job (#187). Absent, every verb is the conductor's alone — which
    * is what `lingtai restart` wants, since it restarts the conductor.
    */
-  board?: {
-    port: number;
-    /** What answers on the port — a start is confirmed by the board, not by the supervisor's exit. */
-    answers: () => Promise<PortAnswer>;
-  };
+  board?:
+    | {
+        port: number;
+        /** What answers on the port — a start is confirmed by the board, not by the supervisor's exit. */
+        answers: () => Promise<PortAnswer>;
+      }
+    /** `board.port` could not be read: the board's half says so, and the conductor's runs regardless. */
+    | { refused: string };
   /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
   by?: string;
   platform?: NodeJS.Platform;
@@ -756,6 +762,11 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           ? [`could not ask — ${boardAnswer.unread}`]
           : boardAnswer.lines;
     for (const l of boardLines.length > 0 ? boardLines : ["loaded, and said nothing about the process"]) log(`  ${l}`);
+    if ("refused" in board) {
+      log("http        (whether a board answers on its port, which loaded does not say)");
+      log(`  could not tell which port — ${board.refused}`);
+      return 1;
+    }
     log(`http        (whether a board answers on ${board.port}, which loaded does not say)`);
     log(`  ${describeAnswer(await board.answers().catch(() => "nothing" as const), board.port)}`);
     return "unread" in answer || (boardAnswer !== null && "unread" in boardAnswer) ? 1 : 0;
@@ -1060,6 +1071,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   /** The board's job loaded if it is not, and confirmed by the board answering — never by the supervisor's exit. */
   const startBoard = async (): Promise<number> => {
     const board = options.board!;
+    if ("refused" in board) {
+      error(`the board was not started — ${board.refused}`);
+      return 1;
+    }
     const answer = askSupervisor(platform, exec, uid, BOARD_JOB);
     if ("unread" in answer) {
       error(`could not ask the supervisor about the board — ${answer.unread}`);
@@ -1119,7 +1134,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     return 0;
   };
 
-  async function installBoard(): Promise<void> {
+  /** The board's half of `install`, and what it came to — which `install`'s exit says beside the conductor's. */
+  async function installBoard(): Promise<number> {
     await mkdir(boardFile.logs, { recursive: true });
     await mkdir(dirname(boardFile.path), { recursive: true });
     await writeFile(boardFile.path, boardFile.content);
@@ -1128,22 +1144,25 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     if (platform === "launchd") {
       // Reloaded, where the conductor's is not: a board has nothing in flight for a signal to kill.
       const answer = askSupervisor(platform, exec, uid, BOARD_JOB);
-      if (!("unread" in answer) && answer.loaded && !(await unload(BOARD_JOB))) return;
+      if (!("unread" in answer) && answer.loaded && !(await unload(BOARD_JOB))) return 1;
     } else {
-      if (!run(["systemctl", "--user", "daemon-reload"])) return;
-      if (!run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT])) return;
-      if ((await stopBoard()) !== 0) return;
+      if (!run(["systemctl", "--user", "daemon-reload"])) return 1;
+      if (!run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT])) return 1;
+      if ((await stopBoard()) !== 0) return 1;
     }
-    await startBoard();
+    const code = await startBoard();
     log("");
+    return code;
   }
 
   const boardHalf = async (): Promise<number> => {
     log("");
     log(`the board — ${platform === "launchd" ? BOARD_LAUNCHD_LABEL : BOARD_SYSTEMD_UNIT}`);
     if (verb !== "uninstall" && !existsSync(boardFile.path)) {
-      error(`${boardFile.path} does not exist — pnpm lingtai service install writes the board's job beside the conductor's`);
-      return 1;
+      // An install from before #187 has the conductor's job and no board's. That is
+      // not a failed start, shutdown or restart of the conductor, so it is not an exit 1.
+      log(`no board job here — ${boardFile.path} does not exist; pnpm lingtai service install writes it beside the conductor's`);
+      return 0;
     }
     switch (verb) {
       case "start":
@@ -1171,6 +1190,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     }
   };
 
+  /** What `install`'s board half came to, when it ran. */
+  let boardInstalled = 0;
+
   /** Everything this command did before there were two jobs, unchanged. */
   const conductor = async (): Promise<number> => {
     switch (verb) {
@@ -1191,7 +1213,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         }
         // The board first: it is quick, and a conductor refused below — a
         // shutdown standing, say — is no reason for the UI not to be up.
-        if (options.board) await installBoard();
+        if (options.board) boardInstalled = await installBoard();
         let started = false;
         await mkdir(file.logs, { recursive: true });
         await mkdir(dirname(file.path), { recursive: true });
@@ -1304,8 +1326,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   };
 
   const conducted = await conductor();
+  // `install` did the board's half inside the conductor's, and its exit is both.
+  if (verb === "install") return conducted === 130 ? conducted : Math.max(conducted, boardInstalled);
   // Interrupted is the person's Ctrl+C, and is not a request to go on to the board.
-  if (!options.board || verb === "status" || verb === "install" || conducted === 130) return conducted;
+  if (!options.board || verb === "status" || conducted === 130) return conducted;
   return Math.max(conducted, await boardHalf());
 }
 

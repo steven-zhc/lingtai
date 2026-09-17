@@ -190,20 +190,30 @@ async function serveSource(next: string, options: BoardOptions): Promise<void> {
     [next, "dev", "--turbopack", "--port", String(options.port), "--hostname", options.host],
     { cwd: dirname(dirname(dirname(dirname(dirname(next))))), stdio: "inherit" },
   );
+  let asked = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
+      asked = true;
       child.kill(signal);
     });
   }
+  let up = false;
+  let gone = false;
   const exited = new Promise<never>((_, reject) => {
     child.once("exit", (code, signal) => {
-      process.exitCode = code ?? 1;
-      reject(new Error(`the board exited ${code ?? signal} before it listened on ${options.host}:${options.port}`));
-      // Once listening, this process has nothing else to do.
-      process.exit(code ?? (signal ? 0 : 1));
+      gone = true;
+      if (!up) {
+        // Rejected and not exited, so the caller says the board did not start and where the port is set.
+        reject(new Error(`the board exited ${code ?? signal} before it listened on ${options.host}:${options.port}`));
+        return;
+      }
+      // Once listening, this process has nothing else to do. A child killed by a
+      // signal nobody here passed on died, and the supervisor is told so.
+      process.exit(code ?? (asked ? 0 : 1));
     });
   });
-  await Promise.race([listening(options.host, options.port), exited]);
+  await Promise.race([listening(options.host, options.port, () => gone), exited]);
+  up = true;
 }
 
 /**
@@ -241,9 +251,11 @@ function portIsFree(host: string, port: number): Promise<void> {
 }
 
 /** Until `host:port` answers. A server that fails to start exits the process. */
-async function listening(host: string, port: number): Promise<void> {
+async function listening(host: string, port: number, gone = (): boolean => false): Promise<void> {
   const deadline = Date.now() + 60_000;
   for (;;) {
+    // A server already gone is not waited on for the rest of the minute.
+    if (gone()) return;
     if (await accepts(host, port)) return;
     if (Date.now() > deadline) throw new Error(`the board never listened on ${host}:${port}`);
     await new Promise((resolve) => setTimeout(resolve, 100));
