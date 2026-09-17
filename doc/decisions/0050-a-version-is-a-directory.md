@@ -29,7 +29,10 @@ it. Nothing but `uninstall` removes a version, and uninstall refuses while any
 process's command line names the shim or anything under `~/.lingtai`, while any
 process works in a directory under it, or while anything holds the conductor
 lock — a daemon started from a checkout names none of those, and its worktrees
-are under `~/.lingtai` all the same.
+are under `~/.lingtai` all the same. Where no log is configured for the copy
+running the uninstall, the lock cannot be asked, so anything under `~/.lingtai`
+but `versions/` is refused too, until the log is named or `--nothing-conducts`
+answers for it.
 
 **2. The shim is the switch.** A new link beside it, renamed over it: a command
 started between the two gets one version or the other. Upgrade moves it forward,

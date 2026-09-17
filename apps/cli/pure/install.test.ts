@@ -270,6 +270,25 @@ describe("lingtai uninstall", () => {
     expect(existsSync(worktree)).toBe(true);
   });
 
+  it("refuses where no log is configured here and a conductor's state is under the home, since the lock was never asked", async () => {
+    await installOld();
+    // A daemon from a checkout, between passes: its recipe and a held item's
+    // worktree are here, nothing runs from them, and this copy has no log.
+    const recipe = join(home, ".lingtai", "lingtai", "recipe.yml");
+    const worktree = join(home, ".lingtai", "worktrees", "lingtai", "run-1");
+    mkdirSync(worktree, { recursive: true });
+    mkdirSync(join(home, ".lingtai", "lingtai"), { recursive: true });
+    writeFileSync(recipe, "gates: {}\n");
+    expect(await installCommand(["uninstall", "--yes"], world())).toBe(1);
+    expect(lines.join("\n")).toContain("no log is configured for this lingtai");
+    expect(existsSync(recipe)).toBe(true);
+    expect(existsSync(worktree)).toBe(true);
+
+    lines = [];
+    expect(await installCommand(["uninstall", "--yes", "--nothing-conducts"], world())).toBe(0);
+    expect(existsSync(join(home, ".lingtai"))).toBe(false);
+  });
+
   it("refuses when the log cannot say whether anything conducts", async () => {
     await installOld();
     const w = world({ conducting: async () => { throw new Error("connection refused"); } });

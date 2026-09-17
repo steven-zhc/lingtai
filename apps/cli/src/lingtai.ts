@@ -210,6 +210,8 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 and the shim, then name what it could not: the
                                 GitHub App, and the log in Postgres
     --yes                       do not ask
+    --nothing-conducts          remove a conductor's state though no log is
+                                configured here to ask the lock
   lingtai help
 
 Projections: ${PROJECTIONS.map((p) => p.name).join(", ")}

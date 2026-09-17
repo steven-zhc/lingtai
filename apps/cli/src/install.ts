@@ -482,8 +482,8 @@ function rollback(argv: readonly string[], world: World): number {
  * goes, and after that nothing can ask GitHub anything as the App.
  */
 async function uninstall(argv: readonly string[], world: World): Promise<number> {
-  const unknown = argv.find((a) => a !== "--yes");
-  if (unknown !== undefined) return refuse(world, `lingtai uninstall [--yes] — no ${unknown}`, 2);
+  const unknown = argv.find((a) => a !== "--yes" && a !== "--nothing-conducts");
+  if (unknown !== undefined) return refuse(world, `lingtai uninstall [--yes] [--nothing-conducts] — no ${unknown}`, 2);
   const paths = installPaths(world.env);
   const user = world.env["HOME"] ?? homedir();
   if (resolve(paths.home) === resolve(user) || resolve(paths.home) === sep) {
@@ -524,9 +524,22 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
     return 1;
   }
+  const log = world.logConfigured();
+  // With no log configured here the lock was not asked, and a null is not a no:
+  // a daemon from a checkout reads the checkout's `.env.local`, not this copy's.
+  // Anything under the home but `versions/` is a conductor's, so it is not removed
+  // on a question nobody could answer.
+  const state = existsSync(paths.home) ? readdirSync(paths.home).filter((name) => name !== "versions") : [];
+  if (!log && state.length > 0 && !argv.includes("--nothing-conducts")) {
+    return refuse(
+      world,
+      `not uninstalling: no log is configured for this lingtai, so whether a daemon started elsewhere conducts on ` +
+        `${state.map((name) => join(paths.home, name)).join(", ")} could not be asked. ` +
+        "LINGTAI_DATABASE_URL=<its log> lingtai uninstall asks the lock; --nothing-conducts answers for it, once you know",
+    );
+  }
 
   const app = await world.app().catch((err: unknown) => ({ unread: (err as Error).message }));
-  const log = world.logConfigured();
 
   const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`;
   if (!argv.includes("--yes") && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
