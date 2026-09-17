@@ -1302,3 +1302,36 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
     expect(did).not.toContain("integrate");
   });
 });
+
+/**
+ * **The agent the recipe resolved to is the one that runs** (#180). A machine
+ * file naming `codex` resolves, `lingtai doctor` prints it, and a conductor
+ * handed `claude-code` must not run that on the ticket and record claude-code.
+ */
+describe("runOnce runs the agent the recipe names, or nothing", () => {
+  it("refuses before the claim when runtime.agent is not the runtime it was handed", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const codex = RECIPE.replace("agent: claude-code", "agent: codex");
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], codex),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "recipe", workItemId: null });
+    expect((result as { detail: string }).detail).toContain("runtime.agent is codex");
+    expect((result as { detail: string }).detail).toContain("this conductor runs claude-code");
+    expect(did).toEqual([]);
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
+  });
+});

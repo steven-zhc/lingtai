@@ -357,6 +357,25 @@ export function runOnce(
     if (divergence) {
       return { ok: false, workItemId: null, runId: null, stage: "recipe", detail: divergence };
     }
+    // The agent the recipe resolved to is the agent that runs, or nothing runs.
+    // `runtime.agent` is named in a file or detected (0046 §3) and printed with
+    // where it came from, so a run handed another runtime would be the silent
+    // pick that rule refuses — and it would record the runtime it was handed,
+    // with nothing anywhere saying the named one was not used. Before the claim,
+    // for the same reason as the refusals around it.
+    if (recipe.runtime.agent !== options.runtime.capabilities.id) {
+      const from = resolved.provenance?.["runtime.agent"];
+      return {
+        ok: false,
+        workItemId: null,
+        runId: null,
+        stage: "recipe",
+        detail:
+          `runtime.agent is ${recipe.runtime.agent}${from ? ` (${from})` : ""}, and this conductor runs ` +
+          `${options.runtime.capabilities.id} — nothing was claimed. Name ${options.runtime.capabilities.id} ` +
+          "there to run with it; no other runtime is dispatched yet",
+      };
+    }
     // Safe now, and only now: past the refusal these two are the same branch.
     const base = recipe.repo.base;
     log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`);
