@@ -52,8 +52,9 @@ session mode against the same database — and when it is unset, `LINGTAI_DATABA
 stands in for it (#176), which is right on a plain Postgres and wrong behind a
 pooler.
 
-Migrations, `LISTEN/NOTIFY` and session-level advisory locks **all require the
-direct one**. Through a transaction pooler a cross-connection `NOTIFY` never
+Migrations and `LISTEN/NOTIFY` **both require the direct one**. No lock is in
+Postgres — every lock is a file under `~/.lingtai/locks` (`@lingtai/env/lock`,
+0052), and none of them touches a connection. Through a transaction pooler a cross-connection `NOTIFY` never
 arrives *and never errors* — the system would look merely slow. Read
 `doc/decisions/0009-two-connections.md` before you touch the store.
 

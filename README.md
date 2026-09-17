@@ -92,7 +92,7 @@ flowchart LR
   P --> AG[agent runs]
   AG --> D{{proposed}}
   D --> M{{merge}}
-  M --> I[integrate<br/>advisory lock]
+  M --> I[integrate<br/>lock file]
   I -->|merged| L[landed]
   L --> E{{end}}
 
@@ -163,8 +163,8 @@ implements them, and a host wires the two together.
 Two hosts assemble them — `apps/cli` and `packages/daemon` — plus `apps/board`,
 which reads the projection and appends decisions. **Every process that appends
 holds a projector while it runs**, so the board follows a run by hand just as it
-follows the daemon. The daemon adds what only a long-lived process can owe: an
-advisory lock, a heartbeat, a repair at startup, and a loop that keeps taking
+follows the daemon. The daemon adds what only a long-lived process can owe: a
+lock file, a heartbeat, a repair at startup, and a loop that keeps taking
 work.
 
 There is **one projection**, `task_view`, rebuilt with

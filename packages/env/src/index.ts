@@ -236,8 +236,9 @@ export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
 /**
  * Session mode, against the same database.
  *
- * Migrations, `LISTEN/NOTIFY` and session-level advisory locks all need a
- * connection that is not handed to someone else between statements. Through a
+ * Migrations and `LISTEN/NOTIFY` both need a connection that is not handed to
+ * someone else between statements. No lock does: every lock is a file
+ * (`./lock.ts`, 0052). Through a
  * transaction pooler each of those fails **silently** — a cross-connection
  * NOTIFY simply never arrives, which would leave the system looking merely slow
  * rather than broken. Measured against Supabase's pooler on 2026-08-31; see

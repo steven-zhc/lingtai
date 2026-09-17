@@ -13,7 +13,7 @@ them and that, measured rather than remembered.
 
 > - **Postgres of its own.** Not a database belonging to a project you manage.
 > - **A GitHub App**, installed on the repository you want managed.
-> - **Node 22+**, `pnpm`, and the agent runtime you intend to use signed in.
+> - **Node 22.13+**, `pnpm`, and the agent runtime you intend to use signed in.
 
 Then, in order:
 
@@ -197,7 +197,7 @@ to guarantee:
 
 | | |
 |---|---|
-| Node 22+ | `engines` says so. Install it or refuse by name — never run and fail later on a syntax error |
+| Node 22.13+ | `engines` says so — `node:sqlite`, which the lock is, is unflagged from there. Install it or refuse by name — never run and fail later on a syntax error |
 | `pnpm` | `packageManager` pins `pnpm@11.9.0` |
 | `git` | the mirror and the worktrees are git |
 | the source | fetched, then `pnpm install` |

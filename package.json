@@ -6,7 +6,7 @@
   "description": "Event-sourced scheduler for autonomous code agents",
   "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "pnpm --filter @lingtai/release build",

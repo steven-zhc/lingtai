@@ -30,7 +30,9 @@ function child(d: string, k: string, body: string): { process: ChildProcess; exi
     const [dir, key] = process.argv.slice(1);
     ${body}
   `;
-  const proc = spawn(process.execPath, ["--input-type=module", "--no-warnings", "-e", script, d, k], {
+  // `--experimental-strip-types`, so the floor `engines` names can import the
+  // source too: types are stripped without a flag only from 22.18.
+  const proc = spawn(process.execPath, ["--input-type=module", "--no-warnings", "--experimental-strip-types", "-e", script, d, k], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   const lines: string[] = [];
@@ -147,6 +149,86 @@ describe("who holds the lock", () => {
     }
     await asking.exited;
     expect(tries).toBeGreaterThan(10);
+  });
+
+  /**
+   * A holder takes the lock and raises its flag as two steps, and gives them
+   * back as two. Whichever order they come in, there must be no step at which
+   * the lock is held and the flag is down: that is `holder` answering *free*
+   * for a lock a try is then refused, which is `lingtai restart` ending its
+   * wait and starting nothing. So every statement the locker runs is stopped
+   * and the two files asked, from connections of the test's own.
+   */
+  it("never reads as free at any step of taking or giving back the lock", async () => {
+    const d = dir();
+    const k = key();
+    const base = join(d, encodeURIComponent(k));
+    const { DatabaseSync } = await import("node:sqlite");
+    const exec = DatabaseSync.prototype.exec;
+    const close = DatabaseSync.prototype.close;
+    const refusedBy = (path: string, begin: string) => {
+      const db = new DatabaseSync(path);
+      try {
+        exec.call(db, begin);
+        exec.call(db, "ROLLBACK");
+        return false;
+      } catch (err) {
+        if (((err as { errcode?: number }).errcode ?? 0) % 256 === 5) return true;
+        throw err;
+      } finally {
+        close.call(db);
+      }
+    };
+    const free: string[] = [];
+    const check = (step: string) => {
+      if (refusedBy(`${base}.lock`, "BEGIN IMMEDIATE") && !refusedBy(`${base}.held`, "BEGIN EXCLUSIVE")) free.push(step);
+    };
+    const onExec = vi.spyOn(DatabaseSync.prototype, "exec").mockImplementation(function (this: InstanceType<typeof DatabaseSync>, sql: string) {
+      check(`before ${sql}`);
+      return exec.call(this, sql);
+    });
+    const onClose = vi.spyOn(DatabaseSync.prototype, "close").mockImplementation(function (this: InstanceType<typeof DatabaseSync>) {
+      check("before a close");
+      return close.call(this);
+    });
+    try {
+      const locker = createFileLocker({ dir: d });
+      const got = await locker.tryLock(k, "lingtai-test");
+      expect(got.ok).toBe(true);
+      if (got.ok) await got.lock.release();
+      const place = await locker.queue(k, "lingtai-test-place");
+      await vi.waitFor(() => expect(place.held()).toBe(true));
+      await place.leave();
+    } finally {
+      onExec.mockRestore();
+      onClose.mockRestore();
+    }
+    expect(free).toEqual([]);
+  });
+
+  /**
+   * The flag's open waits out another process's instant on it. That wait is
+   * SQLite's busy timeout, and the constructor's `timeout` that could set it is
+   * ignored below Node 22.16 — so a holder raising its flag while a probe had
+   * it would be refused, and `tryLock` would throw rather than answer.
+   */
+  it("waits out another process's instant on the flag rather than throwing", async () => {
+    const d = dir();
+    const k = key();
+    const probe = child(
+      d,
+      k,
+      `const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
+       const db = new DatabaseSync(dir + "/" + encodeURIComponent(key) + ".held");
+       db.exec("BEGIN EXCLUSIVE");
+       console.log("in");
+       setTimeout(() => { db.exec("COMMIT"); console.log("out"); }, 750);`,
+    );
+    await vi.waitFor(() => expect(probe.lines).toContain("in"), { timeout: 20_000 });
+    const got = await createFileLocker({ dir: d }).tryLock(k, "lingtai-test");
+    expect(got.ok).toBe(true);
+    if (got.ok) await got.lock.release();
+    await probe.exited;
   });
 
   it("throws when the lock cannot be asked about, rather than saying nobody holds it", async () => {

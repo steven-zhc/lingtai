@@ -6,6 +6,10 @@
 # killed holder, the queue `service shutdown` waits in — run on Linux here, and
 # on a Mac beside it, rather than wherever somebody happens to work.
 #
+# And on two Nodes: the floor `engines` names, where `node:sqlite` first loads
+# without a flag and the constructor's `timeout` does not exist yet, and a
+# current one. The lock written against the second threw on the first.
+#
 # No database: the lock needs none, and `pure/` is the half of the suite that
 # never connects (#158).
 name: lock
@@ -25,13 +29,14 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, macos-15]
+        node: [22.13.0, 26]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: the lock contract, a killed holder, and the queue's order

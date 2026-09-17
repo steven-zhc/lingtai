@@ -14,7 +14,7 @@ Everything here is done once except step 5, which is labelling an issue.
   Lingtai has to keep running while that project is the thing being changed.
 - **A GitHub App**, installed on the repository you want managed. Not a personal
   access token: a fine-grained token can be wrong in a way nothing reports.
-- **Node 22+**, `pnpm`, and the agent runtime you intend to use signed in
+- **Node 22.13+**, `pnpm`, and the agent runtime you intend to use signed in
   (`claude` for Claude Code).
 
 Copy `.env.example` to `.env.local` at the repository root and fill in the two
@@ -165,7 +165,7 @@ prepared           whatever your recipe puts there — usually the install
 agent              writes and commits on agent/<issue>, in that worktree only
 proposed           your gates run; the first refusal wins
 merge              nothing configured, so it does not stop
-integrate          under an advisory lock: merge base in, verify, merge out
+integrate          under a lock file: merge base in, verify, merge out
 end                whatever your recipe puts there
 ```
 

@@ -54,7 +54,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { stateDir } from "./index.ts";
 
 export interface HeldLock {
@@ -149,9 +149,37 @@ const FLAG_WAIT_MS = 5_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Opens a lock file. `waitMs` is SQLite's busy timeout, which blocks the thread: zero, or a flag's instant. */
+/**
+ * `node:sqlite`, loaded when a lock is first asked for rather than when this
+ * file is imported. The CLI imports this at startup — `lingtai doctor` reads the
+ * holder — so on a Node without the module a static import would take every
+ * command down with it, where this fails only the lock, by name. It is
+ * unflagged from 22.13, which is why `engines` says so.
+ */
+function sqlite(): typeof import("node:sqlite") {
+  const mod = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite") | undefined;
+  if (mod === undefined) {
+    throw new Error(`the lock needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`);
+  }
+  return mod;
+}
+
+/**
+ * Opens a lock file. `waitMs` is SQLite's busy timeout, which blocks the thread: zero, or a flag's instant.
+ *
+ * Set with the pragma and not the constructor's `timeout`, which arrived in
+ * 22.16 and before that is ignored without a word — leaving a flag's open to
+ * fail with `SQLITE_BUSY` on another process's probe instead of waiting it out.
+ */
 function open(path: string, waitMs: number): DatabaseSync {
-  return new DatabaseSync(path, { timeout: waitMs });
+  const db = new (sqlite().DatabaseSync)(path);
+  try {
+    db.exec(`PRAGMA busy_timeout = ${Math.trunc(waitMs)}`);
+    return db;
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 }
 
 /** Takes the lock on `path`, or null when somebody holds it. */
@@ -219,43 +247,62 @@ export function createFileLocker(options: FileLockerOptions = {}): FileLocker {
     }
   };
 
-  /** Everything a holder does once the lock is its own: its name, then its flag. */
-  const hold = (p: ReturnType<typeof paths>, lock: DatabaseSync, name: string) => {
-    const inode = statSync(p.lock).ino;
-    // Written before the flag, so a raised flag always has the name of whoever raised it.
-    const tmp = `${p.who}.${process.pid}`;
-    writeFileSync(tmp, `${name} pid ${process.pid} on ${hostname()}\n`);
-    renameSync(tmp, p.who);
+  /**
+   * Takes the lock for `name`: `null` when somebody holds it, `"queued"` when
+   * it was free but somebody is waiting in line and `giveWay` says to let them.
+   *
+   * **The flag goes up before the lock is taken and comes down after it is
+   * given back**, so there is no instant in which the lock is held and `.held`
+   * says nobody is — `holder` would answer *free*, `lingtai restart` would end
+   * its wait on that, and its own try would then be refused by a lock still
+   * held. The flag of a try that is refused is down again at once, which
+   * `holder`'s settle window does not believe. The name is written as soon as
+   * the lock is this process's, well inside that window.
+   */
+  const acquire = (p: ReturnType<typeof paths>, name: string, giveWay: boolean) => {
     const flag = raise(p.held);
-    let released = false;
-    return {
-      inode,
-      release() {
-        if (released) return;
-        released = true;
+    let lock: DatabaseSync | null = null;
+    try {
+      lock = take(p.lock);
+      if (lock === null) {
         giveBack(flag);
+        return null;
+      }
+      // Somebody queued for it: this try was never theirs to win.
+      if (giveWay && raisedNow(p.queue)) {
         giveBack(lock);
-      },
-    };
+        giveBack(flag);
+        return "queued" as const;
+      }
+      const inode = statSync(p.lock).ino;
+      const tmp = `${p.who}.${process.pid}`;
+      writeFileSync(tmp, `${name} pid ${process.pid} on ${hostname()}\n`);
+      renameSync(tmp, p.who);
+      const held: DatabaseSync = lock;
+      let released = false;
+      return {
+        inode,
+        release() {
+          if (released) return;
+          released = true;
+          giveBack(held);
+          giveBack(flag);
+        },
+      };
+    } catch (err) {
+      if (lock !== null) giveBack(lock);
+      giveBack(flag);
+      throw err;
+    }
   };
 
   return {
     async tryLock(key, name) {
       const p = paths(key);
-      const lock = take(p.lock);
-      if (lock === null) return { ok: false, holder: whoIs(p.who) };
-      try {
-        // Somebody queued for it: this try was never theirs to win.
-        if (raisedNow(p.queue)) {
-          giveBack(lock);
-          return { ok: false, holder: "a process waiting in line for it" };
-        }
-        const held = hold(p, lock, name);
-        return { ok: true, lock: { release: async () => held.release() } };
-      } catch (err) {
-        giveBack(lock);
-        throw err;
-      }
+      const held = acquire(p, name, true);
+      if (held === null) return { ok: false, holder: whoIs(p.who) };
+      if (held === "queued") return { ok: false, holder: "a process waiting in line for it" };
+      return { ok: true, lock: { release: async () => held.release() } };
     },
 
     async holder(key) {
@@ -279,7 +326,7 @@ export function createFileLocker(options: FileLockerOptions = {}): FileLocker {
         giveBack(place);
       };
 
-      let held: ReturnType<typeof hold> | null = null;
+      let held: Exclude<ReturnType<typeof acquire>, null | "queued"> | null = null;
       let lost: Error | null = null;
       let leaving = false;
       let timer: NodeJS.Timeout | undefined;
@@ -288,14 +335,9 @@ export function createFileLocker(options: FileLockerOptions = {}): FileLocker {
         timer = undefined;
         if (leaving) return;
         try {
-          const lock = take(p.lock);
-          if (lock !== null) {
-            try {
-              held = hold(p, lock, name);
-            } catch (err) {
-              giveBack(lock);
-              throw err;
-            }
+          const got = acquire(p, name, false);
+          if (got !== null && got !== "queued") {
+            held = got;
             // Lowered only once the lock is this place's, so there is no instant
             // in which the lock is free and the queue looks empty.
             lower();
