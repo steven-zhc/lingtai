@@ -28,7 +28,9 @@ import {
   reconcile,
   requestRun,
   requestShutdown,
+  requestShutdownUnlessStanding,
   resumeConductor,
+  withdrawShutdown,
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
@@ -46,7 +48,7 @@ import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
+import { parseRestartArgs, prepareRestart, startRecorder, startSupervised, waitForTheLock } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -143,10 +145,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 is the checked start
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
-  lingtai service install|start|stop|restart|status|uninstall
+  lingtai service install|start|shutdown [why]|restart [why]|status|uninstall
                                 keep lingtai daemon running: a LaunchAgent on
                                 macOS, a systemd user unit on Linux. No service
-                                manager? run lingtai daemon in the foreground
+                                manager? run lingtai daemon in the foreground.
+                                shutdown drains through the log, waits for the
+                                pass, then unloads; restart is that and start,
+                                unchecked — lingtai restart is the checked one
   lingtai pause <why>               stop the running daemon taking new tickets; a
                                 run in flight finishes. About the daemon that is
                                 running, and gone when it is — but not for
@@ -314,6 +319,14 @@ function serviceOptions(): ServiceOptions {
     pause: async () => {
       const c = await readControl();
       return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
+    },
+    // `lingtai shutdown`'s own append and `lingtai restart`'s own wait (#174):
+    // the supervisor is told only once nothing holds the conductor lock.
+    drain: {
+      ask: (by, reason) => requestShutdownUnlessStanding(by, reason),
+      holding: async () => describeInFlight(await inFlight().catch(() => [])),
+      quiet: (log) => waitForTheLock("draining", null, log),
+      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     },
   };
 }
@@ -1061,7 +1074,7 @@ async function main(argv: string[]): Promise<number> {
       if (kept.kept && (parsed.args.noConduct || parsed.args.noMerge)) {
         console.error(
           `${kept.path} decides how the supervisor starts the daemon, so --no-conduct and --no-merge cannot reach it — ` +
-            "pnpm lingtai service stop, then lingtai restart with them, runs one in this terminal instead",
+            "pnpm lingtai service shutdown, then lingtai restart with them, runs one in this terminal instead",
         );
         return 2;
       }

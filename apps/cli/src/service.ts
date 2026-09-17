@@ -21,6 +21,17 @@
  * the supervisor's own words beside `daemon_status`, the beacon outside the log
  * (#46), and leave the reading to whoever ran it.
  *
+ * ## Stopping it is a drain, and the supervisor is told last (#174)
+ *
+ * The supervisor's own stop is a signal and a deadline: launchd SIGKILLs at its
+ * default `ExitTimeOut`, twenty seconds, and systemd at `TimeoutStopSec`,
+ * ninety. The daemon drains on that signal, and a pass takes up to an hour —
+ * so a `service stop` that sent it killed the agent it claimed to be waiting
+ * for. `service shutdown` appends the request `lingtai shutdown` appends, waits
+ * until nothing holds the conductor lock, and only then unloads, when there is
+ * nothing left for a SIGKILL to take. The daemon's SIGTERM handler still
+ * drains, for whatever else signals it; nothing here depends on it finishing.
+ *
  * ## No service manager is not an error to work around
  *
  * A container, an init that is not systemd (openclaw#14078, #36137): the answer
@@ -37,7 +48,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import type { Asking, Withdrawal } from "@lingtai/daemon";
 import { repoRoot, stateDir } from "@lingtai/env";
+import { WALL_LIMIT } from "./wall-limit.ts";
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
 export const LAUNCHD_LABEL = "ai.nextloom.lingtai.daemon";
@@ -132,6 +145,11 @@ export function launchdPlist(inputs: ServiceInputs): ServiceFile {
   <key>ThrottleInterval</key>
   <integer>30</integer>
 
+  <!-- No ExitTimeOut, deliberately: launchd's 20 seconds stands. Set to the
+       wall limit it would make bootout, logout and machine shutdown block
+       for an hour. The pass is waited for through the log instead —
+       lingtai service shutdown drains first and unloads after (#174). -->
+
   <key>EnvironmentVariables</key>
   <dict>
 ${env}
@@ -208,6 +226,9 @@ Restart=always
 RestartSec=30
 # Signal the daemon, not the agent it detached (0030).
 KillMode=process
+# No TimeoutStopSec, deliberately: systemd's 90s stands. The wall limit here
+# would make logout and machine shutdown block for an hour. The pass is waited
+# for through the log — lingtai service shutdown drains first, stops after (#174).
 StandardOutput=append:${join(logs, "daemon.log")}
 StandardError=append:${join(logs, "daemon.err")}
 
@@ -225,8 +246,8 @@ WantedBy=default.target
 export const NO_SUPERVISOR =
   "no service manager Lingtai knows here — run `lingtai daemon` in the foreground, under whatever supervises this machine. That is a first-class way to run it, not a fallback.";
 
-type Verb = "install" | "start" | "stop" | "restart" | "status" | "uninstall";
-const VERBS: readonly Verb[] = ["install", "start", "stop", "restart", "status", "uninstall"];
+type Verb = "install" | "start" | "shutdown" | "restart" | "status" | "uninstall";
+const VERBS: readonly Verb[] = ["install", "start", "shutdown", "restart", "status", "uninstall"];
 
 export type Exec = (call: string[]) => { status: number; out: string };
 
@@ -290,8 +311,34 @@ export function lingering(exec: Exec, username: string): "yes" | "no" | { unread
   return { unread: `loginctl show-user ${username} exited ${r.status}: ${value || "no output"}` };
 }
 
-/** Longer than launchd's default ExitTimeOut, after which it has SIGKILLed the job anyway. */
+/**
+ * How long to wait for launchd to say the job is gone after `bootout`.
+ *
+ * Longer than launchd's default `ExitTimeOut`, so a job that ignored SIGTERM
+ * has been SIGKILLed by the end of it. That is not a pass lost: `bootout` is
+ * only ever reached once the drain is over and nothing holds the conductor
+ * lock — what it can kill is a copy KeepAlive started into the standing
+ * request, which takes no work.
+ */
 const UNLOAD_WAIT_MS = 60_000;
+
+/**
+ * The drain, through the log — the mechanism that waits for a pass (0030).
+ * Injected, as `liveness` is, so this file loads without a database.
+ */
+export interface ServiceDrain {
+  /** `requestShutdownUnlessStanding`: never appended over a request already standing. */
+  ask: (by: string, reason: string) => Promise<Asking>;
+  /** What is in flight, in words, said before the wait. */
+  holding: () => Promise<string>;
+  /**
+   * Until nothing holds the conductor lock — `waitForTheLock`. Polled, never a
+   * fixed sleep: a quiet daemon reads the request and lets go at once.
+   */
+  quiet: (log: (line: string) => void) => Promise<"free" | "interrupted" | "gave-up">;
+  /** `withdrawShutdown`: the request at `version`, and nothing else. */
+  withdraw: (by: string, version: number, reason: string) => Promise<Withdrawal>;
+}
 
 export interface ServiceOptions {
   /** `daemon_status`, the beacon outside the log (#46). Injected so this file loads without a database. */
@@ -309,6 +356,10 @@ export interface ServiceOptions {
    * `until` is when it lifts by itself (0031 §3), and null for a person's.
    */
   pause?: () => Promise<{ by: string | null; reason: string | null; until?: Date | null } | null>;
+  /** What `shutdown` and `restart` wait on before the supervisor is told anything. */
+  drain: ServiceDrain;
+  /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
+  by?: string;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   root?: string;
@@ -335,7 +386,7 @@ export type Keeper =
  *
  * **Kept means the supervisor would start one again by itself** — the job is
  * loaded under launchd, or the unit is active or restarting under systemd. A
- * file that is on disk after `service stop` is not a keeper: nothing will start
+ * file that is on disk after `service shutdown` is not a keeper: nothing will start
  * from it, and the daemon somebody is restarting is in a terminal.
  *
  * A unit written from another checkout is refused rather than started: the
@@ -386,6 +437,14 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   const which = options.which ?? whichBin;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const verb = args[0] as Verb | undefined;
+  if (args[0] === "stop") {
+    // Gone rather than kept as an alias. It sent the supervisor's signal, and
+    // launchd SIGKILLed the drain that began twenty seconds in (#174); a name
+    // that used to return in seconds and now waits a pass should be chosen.
+    error("lingtai service stop is gone — it was the supervisor's signal, which kills a pass in flight 20 seconds in.");
+    error('pnpm lingtai service shutdown "why" drains through the log, waits for the pass, then unloads.');
+    return 2;
+  }
   if (!verb || !VERBS.includes(verb)) {
     error(`lingtai service ${VERBS.join("|")}`);
     return 2;
@@ -399,6 +458,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   }
 
   const env = options.env ?? process.env;
+  const by = options.by ?? `human:${env["USER"] ?? "operator"}`;
+  const reason = args.slice(1).join(" ").trim() || "no reason given";
   const uid = options.uid ?? process.getuid?.() ?? 0;
   const username = options.username ?? userInfo().username;
   const inputs: ServiceInputs = {
@@ -503,6 +564,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       return false;
     }
     if (!asked) return false;
+    // A `service restart` whose wait was interrupted left its own request
+    // standing; the drain below picks it up rather than refusing it.
+    if (verb === "restart" && asked.by === by) return false;
     error(`a shutdown request stands — asked by ${asked.by} (${asked.reason}) — and a daemon started now reads it and exits,`);
     error("then the supervisor starts it again, and it exits again, until it is lifted. Nothing was started or stopped.");
     // `resume` is the only thing that lifts a shutdown, and it lifts a pause in
@@ -534,7 +598,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       error(`A pause is in force too — ${paused.by ?? "somebody"} (${paused.reason ?? "no reason given"}) — and pnpm lingtai resume lifts it`);
       error("along with the shutdown. To keep it, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status):");
       error(
-        `pnpm lingtai service stop, pnpm lingtai resume, pnpm lingtai pause ${JSON.stringify(paused.reason ?? "why")}, pnpm lingtai service start.`,
+        `pnpm lingtai service shutdown, pnpm lingtai resume, pnpm lingtai pause ${JSON.stringify(paused.reason ?? "why")}, pnpm lingtai service start.`,
       );
       return true;
     }
@@ -547,6 +611,82 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     error("Under a supervisor the shutdown is already the restart: once the daemon it was aimed at has exited");
     error("(pnpm lingtai service status), pnpm lingtai resume, and the supervisor's next start takes work on the code at HEAD.");
     return true;
+  };
+
+  /** The supervisor's start, refused while a shutdown request stands. */
+  const start = async (): Promise<number> => {
+    if (await shutdownStands()) return 1;
+    if (platform === "systemd") return run(["systemctl", "--user", "start", SYSTEMD_UNIT]) ? 0 : 1;
+    const answer = ask();
+    if (!answer) return 1;
+    // `shutdown` unloads, and `kickstart` cannot find a job that is not loaded.
+    // Plain `kickstart` starts a loaded job that is not running and leaves a
+    // running one alone, which is `systemctl start`. A job unloaded and loaded
+    // again, not `kickstart -k`, is also what applies a rewritten plist.
+    const ok = answer.loaded ? run(["launchctl", "kickstart", target]) : run(["launchctl", "bootstrap", `gui/${uid}`, file.path]);
+    return ok ? 0 : 1;
+  };
+
+  /**
+   * The drain, then the supervisor — in that order, and the order is the fix.
+   *
+   * 1. the request, on the log: the daemon finishes the pass in flight, the
+   *    gates and the merge lane with it, and exits.
+   * 2. the wait, until nothing holds the conductor lock. Bounded by the pass —
+   *    by the recipe's runtime.limits — and not by anything here.
+   * 3. the unload, when there is nothing left for its SIGKILL to take. Under
+   *    KeepAlive a copy may have started into the request meanwhile; it takes
+   *    no work, and exits on its own read or on this signal.
+   * 4. the withdrawal of this command's own request, by its version, so the
+   *    next `service start` is not refused over it. Not before the unload: a
+   *    copy the supervisor starts while it stands must read it and exit.
+   */
+  const drain = async (): Promise<number> => {
+    const asked = await options.drain.ask(by, `service ${verb}: ${reason}`).catch((err: unknown) => err as Error);
+    if (asked instanceof Error) {
+      error(`the shutdown could not be asked for — ${asked.message}. Nothing was stopped:`);
+      error("the supervisor's signal would kill a pass in flight, so it is not sent without the drain.");
+      return 1;
+    }
+    // Ours when this command appended it, or when the same person's earlier
+    // `service shutdown` was interrupted and left it — picked up, not refused.
+    const mine = asked.asked ? asked.version : asked.standing.by === by ? asked.standing.version : null;
+    if (!asked.asked) {
+      log(
+        mine !== null
+          ? `a shutdown you asked for is already standing (${asked.standing.reason}) — waiting on that one rather than asking twice`
+          : `a shutdown asked by ${asked.standing.by} (${asked.standing.reason}) is already standing — waiting on it, and leaving it standing`,
+      );
+    }
+    log(`draining — ${await options.drain.holding().catch(() => "what is in flight could not be read")}.`);
+    log(`the pass in flight finishes first: its agent, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`);
+
+    const waited = await options.drain.quiet(log);
+    if (waited !== "free") {
+      log(
+        `${waited === "interrupted" ? "stopped waiting" : "gave up waiting"}, and the supervisor was told nothing. ` +
+          "The shutdown stands, so the daemon finishes its pass and exits, and every copy the supervisor starts exits too — " +
+          "pnpm lingtai service shutdown again picks the request up and unloads, and pnpm lingtai resume lifts it instead.",
+      );
+      return waited === "interrupted" ? 130 : 1;
+    }
+    log("nothing holds the conductor lock — the pass is over");
+
+    if (platform === "launchd") {
+      // Unloaded, not killed: KeepAlive would bring a killed job straight back.
+      if (!(await unload())) return 1;
+    } else if (!run(["systemctl", "--user", "stop", SYSTEMD_UNIT])) {
+      return 1;
+    }
+
+    if (mine === null) return 0;
+    const lifted = await options.drain.withdraw(by, mine, `service ${verb}: unloaded`).catch((err: unknown) => err as Error);
+    if (lifted instanceof Error) {
+      error(`unloaded, and the drain could not be withdrawn — ${lifted.message}. service start refuses while it stands: pnpm lingtai resume lifts it`);
+      return 1;
+    }
+    if (lifted.withdrew) log(`withdrew the drain — nothing supervised is running to read it`);
+    return 0;
   };
 
   switch (verb) {
@@ -624,44 +764,28 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       return code;
     }
 
-    case "start": {
+    case "start":
       if (!installed) return notInstalled();
-      if (await shutdownStands()) return 1;
-      if (platform === "systemd") return run(["systemctl", "--user", "start", SYSTEMD_UNIT]) ? 0 : 1;
-      const answer = ask();
-      if (!answer) return 1;
-      // `stop` unloads, and `kickstart` cannot find a job that is not loaded.
-      // Plain `kickstart` starts a loaded job that is not running and leaves a
-      // running one alone, which is `systemctl start`.
-      const ok = answer.loaded ? run(["launchctl", "kickstart", target]) : run(["launchctl", "bootstrap", `gui/${uid}`, file.path]);
-      return ok ? 0 : 1;
-    }
+      return start();
 
-    case "stop":
+    case "shutdown":
     case "restart": {
       if (!installed) return notInstalled();
       if (verb === "restart" && (await shutdownStands())) return 1;
-      // The supervisor's signal drains the pass as Ctrl+C does, but it waits
-      // seconds, not a pass, before SIGKILL (0030). A shutdown waits for the
-      // pass, and under a supervisor it is a restart by itself once lifted —
-      // so it is offered instead of `restart`, never before it.
-      log(
-        verb === "stop"
-          ? 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` first'
-          : 'the supervisor waits seconds, not a pass, before SIGKILL — to wait for the pass in flight, `pnpm lingtai shutdown "why"` instead, then `pnpm lingtai resume` once that daemon has exited — resume lifts a pause too, so to keep one: `service stop`, `resume`, `pause` again, `service start` (a pause that lifts itself at a time: `resume` after that time instead)',
-      );
-      if (platform === "systemd") return run(["systemctl", "--user", verb, SYSTEMD_UNIT]) ? 0 : 1;
       const answer = ask();
       if (!answer) return 1;
-      // Unloaded, not killed: KeepAlive would bring a killed job straight back.
-      // And for `restart`, unloaded and loaded again rather than `kickstart -k`,
-      // which would reuse the definition launchd already had.
-      if (answer.loaded && !(await unload())) return 1;
-      if (verb === "stop") {
-        if (!answer.loaded) log(`${LAUNCHD_LABEL} was not loaded`);
-        return 0;
+      const kept =
+        platform === "launchd"
+          ? answer.loaded
+          : answer.loaded && !answer.lines.some((l) => l === "ActiveState=inactive" || l === "ActiveState=failed");
+      if (kept) {
+        const drained = await drain();
+        if (drained !== 0) return drained;
+      } else {
+        log(`the supervisor is not running ${platform === "launchd" ? LAUNCHD_LABEL : SYSTEMD_UNIT} — nothing of its to drain`);
       }
-      return run(["launchctl", "bootstrap", `gui/${uid}`, file.path]) ? 0 : 1;
+      if (verb === "shutdown") return 0;
+      return start();
     }
 
     case "uninstall": {
