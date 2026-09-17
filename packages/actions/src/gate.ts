@@ -105,7 +105,15 @@ export interface GateContext {
   recheck?: readonly GateFinding[];
   /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
-   * Only said on the run log, so a slow re-review reads as *round 2*.
+   * Said on the run log, so a slow re-review reads as *round 2*.
+   *
+   * **And part of an `agent` action's session id** (`agent-gate.ts`, #195), so
+   * pass it from any caller that can run a point more than once in one run.
+   * The sha alone does not tell two reviews apart: a fixer that resets to a
+   * commit an earlier round refused puts the point on that sha again. Left
+   * out, both reviews get one session id, and the second either crashes on
+   * `Session ID … is already in use` or resumes the first warm. Only a point
+   * that runs once per run — `prepared` — may leave it absent.
    */
   round?: number;
   /**
