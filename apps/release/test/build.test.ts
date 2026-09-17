@@ -147,8 +147,10 @@ async function fetchWhenUp(board: ChildProcess, url: string, output: () => strin
     try {
       return await fetch(url);
     } catch (err) {
-      if (board.exitCode !== null) {
-        throw new Error(`the board exited ${board.exitCode}:\n${output()}`);
+      // Killed by a signal — as an unsigned binary is at exec on Apple Silicon —
+      // `exitCode` stays null and only `signalCode` says so.
+      if (board.exitCode !== null || board.signalCode !== null) {
+        throw new Error(`the board exited ${board.exitCode ?? board.signalCode}:\n${output()}`);
       }
       if (Date.now() > deadline) throw new Error(`the board never answered ${url}:\n${output()}`, { cause: err });
       await new Promise((resolve) => setTimeout(resolve, 250));

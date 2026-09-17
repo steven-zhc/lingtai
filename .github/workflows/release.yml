@@ -58,6 +58,15 @@ jobs:
             *" ${{ matrix.platform }} (binary,"*) ;;
             *) echo "expected ${{ matrix.platform }}, a binary"; exit 1 ;;
           esac
+          # A tag publishes, so the binary has to say the tag's version: the
+          # version is the root `package.json`'s, compiled in, and nothing else
+          # would notice a tag pushed without bumping it.
+          if [ "${{ github.ref_type }}" = tag ]; then
+            case "$line" in
+              "lingtai ${GITHUB_REF_NAME#v} ${{ matrix.platform }} (binary,"*) ;;
+              *) echo "tag $GITHUB_REF_NAME, but the binary says: $line — set package.json's version to ${GITHUB_REF_NAME#v} and tag again"; exit 1 ;;
+            esac
+          fi
 
       - name: pack
         run: |
