@@ -21,7 +21,6 @@ import {
   describeInFlight,
   inFlight,
   readCodeVersion,
-  controlWatermark,
   readControl,
   readStatus,
   recordStart,
@@ -632,7 +631,12 @@ async function daemonCommand(
   // it began belongs to the daemon before it and not to this one. That is what
   // makes `lingtai start` need nothing lifted first: there is no such thing as
   // a signal standing over a process that did not exist when it was sent.
-  const since = await controlWatermark();
+  //
+  // **Read by `startDaemon`, before the lock** (#174). It used to be read here,
+  // after the lock and the projections, and a `service shutdown` appended in
+  // that gap was below the watermark of the only daemon holding the lock — so
+  // nothing ever obeyed it, and the command waiting for the lock waited for ever.
+  const since = started.since;
 
   if (!("no-conduct" in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere

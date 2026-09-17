@@ -34,7 +34,8 @@
 import { paint } from "@lingtai/env/colour";
 import type { Projection, ProjectionRunner } from "@lingtai/projector";
 import { ProjectionShapeError, createProjectionRunner } from "@lingtai/projector";
-import { type DaemonLock, acquireDaemonLock } from "./lock.ts";
+import { controlWatermark } from "./control.ts";
+import { type AcquireOptions, type DaemonLock, type LockResult, acquireDaemonLock } from "./lock.ts";
 
 export interface DaemonOptions {
   /** Everything the follower keeps current. */
@@ -43,10 +44,23 @@ export interface DaemonOptions {
   lockUrl?: string;
   lockKey?: string;
   log?: (line: string) => void;
+  /** `acquireDaemonLock`. Replaceable so the order below can be asserted without a database. */
+  acquire?: (options: AcquireOptions) => Promise<LockResult>;
+  /** `controlWatermark`. Replaceable for the same reason. */
+  watermark?: () => Promise<number>;
 }
 
 export type DaemonStart =
-  | { ok: true; daemon: Daemon }
+  | {
+      ok: true;
+      daemon: Daemon;
+      /**
+       * Where the control stream stood **before** the lock was taken — the
+       * `since` every signal this daemon obeys is read from (#159). See the
+       * comment at the read.
+       */
+      since: number;
+    }
   /**
    * Another daemon holds the lock. Not an error: running `lingtai daemon` while
    * launchd's copy is up is a reasonable thing to do, and the right answer is
@@ -67,7 +81,20 @@ export type StopReason = "asked" | "projection-failed";
 export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> {
   const log = options.log ?? (() => {});
 
-  const held = await acquireDaemonLock({
+  // **The watermark, then the lock, and never the other way round** (#174). A
+  // daemon ignores every control event at or below its watermark, and a holder
+  // of the lock is what `lingtai service shutdown` and `lingtai restart` wait
+  // on. Read after the lock, a request appended in between — while this was
+  // starting its projections — was invisible to the one process that had to
+  // obey it: it claimed ticket after ticket and the command waiting on it
+  // waited for ever. Read before, anything appended once this holds the lock
+  // is above the watermark by construction. The cost is the other direction —
+  // a request appended in the instant before the lock is obeyed by this daemon
+  // too — and that request was asked while this one was starting, so it is
+  // this one's.
+  const since = await (options.watermark ?? (() => controlWatermark()))();
+
+  const held = await (options.acquire ?? acquireDaemonLock)({
     // Named, so that a `lingtai run` turned away by this lock — and
     // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
     name: "lingtai daemon",
@@ -143,6 +170,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
 
   return {
     ok: true,
+    since,
     daemon: {
       stopped,
       stop: () => shutdown("asked"),

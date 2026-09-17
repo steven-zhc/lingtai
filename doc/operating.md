@@ -831,7 +831,12 @@ the moment the drained daemon exits, that copy reads nothing appended before it
 started (#159), and Postgres hands a released lock to the session already
 waiting, so the copy loses it and claims nothing. Last, the lock is released and
 the command withdraws its own request, so a later `service start` is not refused
-over it. A request already standing — anybody's, under your own name too — is
+over it. The wait ends because whoever holds the lock reads the request: a
+daemon reads its watermark *before* it tries for the lock, so anything appended
+once it holds the lock is above that watermark. Read the other way round, as it
+was, a request that landed while the holder was still starting was below the
+watermark of the one process that had to obey it, and the wait never ended.
+A request already standing — anybody's, under your own name too — is
 refused and left alone, since the daemon running now may never read it. On a
 quiet daemon the wait is over at once. Ctrl+C during it tells the supervisor
 nothing and withdraws the request; a daemon that had already read it still

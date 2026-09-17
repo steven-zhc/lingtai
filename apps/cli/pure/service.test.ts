@@ -362,6 +362,10 @@ describe("shutdown", () => {
         }
       }
       // KeepAlive, with the job past its ThrottleInterval: started again at once.
+      // The watermark before the lock, as `startDaemon` reads them — which is
+      // what makes a request appended after any daemon holds the lock one that
+      // daemon obeys. That order is `packages/daemon/pure/start.test.ts`'s to
+      // pin; here it is only modelled.
       if (loaded && !daemons.some((x) => x.running)) {
         const d: Daemon = { name: `daemon ${daemons.length + 1}`, since: await controlWatermark(store), running: true, pass: "none", polls: 0 };
         daemons.push(d);
