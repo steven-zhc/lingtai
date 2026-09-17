@@ -1053,25 +1053,31 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    Approve row off the top. `Discussion` measures where the pair starts into
    `--pair-top`, and the row ends a rem above the bottom of the first screen, so
    the moves and the input are on it together. Stacked, two rows share that room.
-   The floor is under the old `24rem`, so a page whose head was too tall for
-   that is no worse; until the measure lands, the floor is the height. `vh`
-   first, for a browser without `dvh`. */
+
+   **The floor is the old `24rem`, for every row, stacked or not.** A pane is
+   never shorter than it was before this: the discussion's fixed parts — its
+   head, its padding and an input box grown to its `12rem` bound with the Ask
+   button under it — take about 17.5rem, and a stacked row floored at half the
+   old height hid the button and the conversation both behind the pane's
+   `overflow: hidden` once a few lines were typed. So a head too tall for the
+   room costs a scroll, as it did, and never the button. Until the measure
+   lands, the floor is the height. `vh` first, for a browser without `dvh`. */
 .spair {
   display: grid;
   gap: 0.5rem;
   --pair-top: 100vh;
-  grid-auto-rows: max(11rem, calc((100vh - var(--pair-top) - 1.5rem) / 2));
-  grid-auto-rows: max(11rem, calc((100dvh - var(--pair-top) - 1.5rem) / 2));
+  grid-auto-rows: max(24rem, calc((100vh - var(--pair-top) - 1.5rem) / 2));
+  grid-auto-rows: max(24rem, calc((100dvh - var(--pair-top) - 1.5rem) / 2));
 }
 .spair:has(> :only-child) {
-  grid-auto-rows: max(22rem, calc(100vh - var(--pair-top) - 1rem));
-  grid-auto-rows: max(22rem, calc(100dvh - var(--pair-top) - 1rem));
+  grid-auto-rows: max(24rem, calc(100vh - var(--pair-top) - 1rem));
+  grid-auto-rows: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
 }
 @media (min-width: 64rem) {
   .spair {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-auto-rows: max(22rem, calc(100vh - var(--pair-top) - 1rem));
-    grid-auto-rows: max(22rem, calc(100dvh - var(--pair-top) - 1rem));
+    grid-auto-rows: max(24rem, calc(100vh - var(--pair-top) - 1rem));
+    grid-auto-rows: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
   }
   /* A landed item has no outgoing prompt, and the discussion is then the whole
      of the pair rather than half of it. */

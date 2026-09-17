@@ -439,22 +439,40 @@ describe("the pair's height", () => {
   const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const rem = 16;
   /** What `.spair`'s side-by-side row resolves to, for a head of `top` px. */
-  const row = (viewport: number, top: number) => Math.max(22 * rem, viewport - top - 1 * rem);
+  const row = (viewport: number, top: number) => Math.max(24 * rem, viewport - top - 1 * rem);
+  /** What a stacked row resolves to: two rows share the room, over the same floor. */
+  const stacked = (viewport: number, top: number) => Math.max(24 * rem, (viewport - top - 1.5 * rem) / 2);
 
   it("is bounded by where the pair starts, side by side and stacked", () => {
     const wide = css.slice(css.indexOf("@media (min-width: 64rem)"));
-    expect(wide).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(22rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/);
-    expect(css).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(11rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/);
+    expect(wide).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(24rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/);
+    expect(css).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(24rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/);
     expect(css).not.toMatch(/100d?vh - 6rem/);
   });
 
   it("puts the moves and the input on one screen wherever the old 24rem pair did", () => {
     // Heads of several hundred pixels in a 900px window: the pair ends above the fold.
     for (const top of [300, 420, 516]) expect(top + row(900, top)).toBeLessThanOrEqual(900);
-    // The floor is under the old height, so where it engages 24rem did not fit either.
+    // The floor is the old height, so where it engages 24rem did not fit either.
     for (let top = 0; top < 900; top += 4) {
       if (top + 24 * rem <= 900) expect(top + row(900, top)).toBeLessThanOrEqual(900);
     }
+  });
+
+  it("never makes a pane shorter than the old 24rem, so a grown input box keeps the Ask button in it", () => {
+    // No row in the stylesheet floors below the old height.
+    for (const [, floor] of css.matchAll(/grid-auto-rows:\s*max\((\d+(?:\.\d+)?)rem/g)) {
+      expect(Number(floor)).toBeGreaterThanOrEqual(24);
+    }
+    // 1000×800, stacked, the pair starting at 420px: the discussion's fixed
+    // parts with the input grown to its 12rem bound — padding, border, head,
+    // the two gaps, the box, the gap and the button — still leave room for the
+    // conversation.
+    const pane = stacked(800, 420);
+    const fixed = 17.6 + 2 + 18 + 2 * 8 + 12 * rem + 5.6 + 30;
+    expect(css).toMatch(/\.chatask textarea\s*\{[^}]*max-height:\s*12rem/);
+    expect(pane).toBeGreaterThanOrEqual(24 * rem);
+    expect(pane - fixed).toBeGreaterThan(4 * 0.8 * rem * 1.5);
   });
 
   it("measures from the page, so scrolling does not change it", () => {
