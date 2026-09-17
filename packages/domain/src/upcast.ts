@@ -168,12 +168,26 @@ export const UPCASTERS: UpcastRegistry = {
      */
     1: (data) => ({ ...(data as object), of: 0 }),
   },
-  GatesResolved: { 1: (data) => ({
-    ...(data as object),
-    points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>
-      p.gate === "diff" ? { ...p, gate: "proposed" } : p,
-    ),
-  }) },
+  GatesResolved: {
+    1: (data) => ({
+      ...(data as object),
+      points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>
+        p.gate === "diff" ? { ...p, gate: "proposed" } : p,
+      ),
+    }),
+    /**
+     * 2 → 3: `recipe` was added (0047) — and this step adds **nothing**. Not
+     * null, not `{}`: absent, which is what a reader must already handle for a
+     * run whose stream has no `GatesResolved` at all.
+     *
+     * `FixRequested`'s argument, with *recipe* for *number*: the recipe is read
+     * from the base branch every pass (0005), the one it had then is not the one
+     * it has now, and reading today's back onto a v2 event would be the log
+     * claiming a configuration nobody ran. `configHash` is untouched and still
+     * says which recipe it was; only the body was never recorded.
+     */
+    2: (data) => data,
+  },
   GateRequested: { 1: gatePointRenamed },
   GateStarted: { 1: gatePointRenamed },
   GatePassed: {

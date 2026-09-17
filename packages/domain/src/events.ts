@@ -478,12 +478,30 @@ const gateBase = { gate: GatePoint, action: z.string(), runId: z.string(), onSha
  * gate that *was* configured and did not run is Lingtai's bug. Comparing this
  * to the verdicts that follow is how the second is detectable, and rendering it
  * is how the board shows an empty point as `skipped` rather than omitting it.
+ *
+ * Since v3 it also carries `recipe`, the canonical recipe `configHash` is the
+ * hash of ([ADR 0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md)),
+ * so a past run is explicable after the file has moved and after the recipe has
+ * no commits to read it at. **It is a record, never a source**: nothing in
+ * `conductor`, `recipe` or `actions` reads it back to decide anything — the next
+ * run's recipe is read from the base branch, as ever (0005) — and
+ * `conductor/pure/recorded-recipe.test.ts` holds that line.
  */
 export const GatesResolved = z.object({
   runId: z.string(),
   configHash: z.string(),
   /** Every point, in order, with the ordered action names resolved for it. */
   points: z.array(z.object({ gate: GatePoint, actions: z.array(z.string()) })).length(5),
+  /**
+   * `canonical(recipe)` as an object: parsed, `undefined` dropped, keys sorted —
+   * exactly what `hashRecipe` hashes, so `hashRecipe(recipe) === configHash` and
+   * a reader can verify it without trusting the writer.
+   *
+   * **Absent, not empty, on a v1 or v2 event**: nothing recorded it, and today's
+   * recipe read back onto it would be the log claiming a configuration nobody
+   * ran. Names environment variables and never their values (0021, 0047 §4).
+   */
+  recipe: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -1704,7 +1722,8 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // `GatePoint`, so nine of them move together — a payload whose `gate` is
   // still `diff` would fail the enum rather than pass wrongly, which is why
   // every one of them needs the step and none of them can be skipped.
-  GatesResolved: 2,
+  // 3: added `recipe`, the canonical recipe the run was resolved against (0047).
+  GatesResolved: 3,
   GateRequested: 2,
   GateStarted: 2,
   // 3: added `findings`, the shape `GateFailed` carries, so a minor on a

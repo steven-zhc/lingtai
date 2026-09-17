@@ -150,10 +150,11 @@ import {
 } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
 import { appendEndActions, resolveEndActions } from "./end-point.ts";
+import { gatesResolved } from "./gates-resolved.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 
-import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
+import type { ProjectState } from "@lingtai/domain";
 import { extensionEnv, productionPatterns, runnableEnv } from "@lingtai/agent-env";
 import { stateDir } from "@lingtai/env";
 import type { TokenSource } from "@lingtai/repo";
@@ -1140,14 +1141,7 @@ export function runOnce(
                 {
                   type: "GatesResolved",
                   actor: "conductor",
-                  data: parsePayload("GatesResolved", {
-                    runId,
-                    configHash: resolved.configHash,
-                    points: GATE_POINTS.map((gate) => ({
-                      gate,
-                      actions: recipe.gates[gate].map((a) => a.name),
-                    })),
-                  }),
+                  data: parsePayload("GatesResolved", gatesResolved(runId, resolved)),
                 },
               ]);
 

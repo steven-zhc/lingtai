@@ -74,6 +74,13 @@ export async function loadProjects(store: EventStore = eventStore): Promise<Proj
  * Read from `origin/<base>` every time rather than from anything stored: a
  * snapshot in Lingtai's database would be a second source of truth, and the
  * repository's copy is the one its own commits change.
+ *
+ * **`GatesResolved` does store a recipe, and it is not that snapshot** (0047
+ * §1). It records the recipe a run that is *over* was given, beside the hash it
+ * is verified by — a record, like `baseSha`, and nothing resolves from it. What
+ * this refuses is *deciding* from a copy; reading the log's copy here, or
+ * anywhere in `conductor`, `recipe` or `actions`, would be exactly that, and
+ * `pure/recorded-recipe.test.ts` fails if anything does.
  */
 export async function currentRecipe(
   state: ProjectState,

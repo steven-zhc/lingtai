@@ -257,6 +257,26 @@ describe("the gate point rename", () => {
     expect(up.points[2]!.actions).toEqual(["build", "review"]);
   });
 
+  /**
+   * #191, 0047 §3: the recipe was never recorded on a v1 or v2 event, and the
+   * upcast does not pretend it was. Absent — not null, not `{}` — so a reader
+   * can tell *not recorded* from *recorded, and empty*.
+   */
+  it("adds no recipe to a v1 or v2 GatesResolved, and absent is not empty", () => {
+    const points = ["admit", "prepared", "proposed", "merge", "end"].map((gate) => ({ gate, actions: [] }));
+    const v2 = { runId: "run-01JX", configHash: "abc", points };
+
+    for (const ver of [1, 2]) {
+      const up = parseStoredPayload("GatesResolved", ver, v2);
+      expect("recipe" in up, `v${ver}`).toBe(false);
+      expect(up.recipe).toBeUndefined();
+    }
+
+    const empty = parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, { ...v2, recipe: {} });
+    expect("recipe" in empty).toBe(true);
+    expect(empty.recipe).toEqual({});
+  });
+
   it("moved all nine past v1, and none of them is still there", () => {
     for (const type of [...GATE_CARRYING, "GatesResolved"] as const) {
       expect(SCHEMA_VER[type], `${type} carries a GatePoint and must be past v1`).toBeGreaterThanOrEqual(2);

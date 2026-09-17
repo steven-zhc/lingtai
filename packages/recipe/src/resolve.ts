@@ -80,6 +80,16 @@ function canonical(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
 }
 
+/**
+ * The recipe as `hashRecipe` sees it, as an object rather than a string: what
+ * `GatesResolved` records beside the hash (0047 §2). The body and its hash on
+ * one event is what lets a reader verify the body without trusting the writer —
+ * `hashRecipe` of this is the `configHash` of the recipe it came from.
+ */
+export function canonicalRecipe(recipe: Recipe): Record<string, unknown> {
+  return JSON.parse(canonical(recipe)) as Record<string, unknown>;
+}
+
 export function hashRecipe(recipe: Recipe): string {
   return createHash("sha256").update(canonical(recipe)).digest("hex");
 }
