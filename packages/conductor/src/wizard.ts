@@ -19,9 +19,9 @@
  * promise like that is a shared function — the argument `backingOff` and
  * `passCeiling` are already here for (#100).
  *
- * Then `startOnboarding`: validate, open the pull request, append
+ * Then `startOnboarding`: validate, write the recipe on this machine, append
  * `ProjectOnboardingStarted`. **It is the only write the wizard makes of its
- * own accord** — no branch and no event exist before it — which is `lingtai
+ * own accord** — no file and no event exist before it — which is `lingtai
  * add`'s own rule that *a half-onboarded project is not a state that exists*,
  * inherited by the page.
  *
@@ -41,13 +41,19 @@ import {
   reduceProject,
 } from "@lingtai/domain";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
-import { GitHubError, type GitHubClient } from "@lingtai/github";
+import type { GitHubClient } from "@lingtai/github";
+import { stateDir } from "@lingtai/env";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import {
-  RECIPE_PATH,
   Recipe,
   type Said,
   emitRecipe,
+  machineFiles,
+  machinePath,
   parseDuration,
+  recipePath,
+  resolveLocalRecipe,
   resolveRecipe,
 } from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
@@ -117,8 +123,8 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * **The one place the wizard argues.** With no `gates.proposed` and `merge: []`
  * the whole chain is *an agent writes code, nothing checks it, it lands in the
  * base branch, nobody read it*, and many repositories have no tests. The
- * sentence is said on the last screen and repeated in the pull request body,
- * because those are the two places somebody is deciding.
+ * sentence is said on the last screen, because that is where somebody is
+ * deciding.
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
   if (recipe.gates.merge.length > 0) return null;
@@ -208,23 +214,24 @@ export async function holdAll(options: HoldAllOptions): Promise<HoldAllResult> {
   return result;
 }
 
-/** The recipe as a file, or the reason there will be no pull request. */
+/** The recipe as a file, or the reason nothing will be written. */
 export type Validated = { ok: true; file: string } | { ok: false; refusal: string };
 
 /**
  * The generated recipe, parsed by the system's own parser before anything opens.
  *
- * A pull request that merges and then fails `lingtai add` leaves a bad file on
- * the base branch, where the next thing to read it is a run. So it is parsed
+ * A file written and then refused by `lingtai add` is a bad recipe on this
+ * machine, where the next thing to read it is a run. So it is parsed
  * here, twice over and deliberately:
  *
  * - `Recipe.safeParse` on the value, which is what names the field. `source.kinds`
  *   has `.min(1)`, and *kinds: array must contain at least 1 element* is a
  *   sentence an operator can act on where a stack trace is not.
- * - `resolveRecipe` on the **bytes**, through the same reader `lingtai add`
- *   will use an hour from now. What lands is a file, not a value, and between
+ * - `resolveRecipe` on the **bytes**, through the same parser `lingtai add`
+ *   will use (`startOnboarding` then reads the files it writes back the way
+ *   `add` reads them). What lands is a file, not a value, and between
  *   the two sits `emitRecipe` — a comment in the wrong place or a preset that
- *   will not apply is caught here rather than on the base branch.
+ *   will not apply is caught here rather than by a run.
  */
 export async function validateProposal(recipe: Recipe, said: Said = {}): Promise<Validated> {
   const parsed = Recipe.safeParse(recipe);
@@ -252,204 +259,154 @@ export async function validateProposal(recipe: Recipe, said: Said = {}): Promise
 }
 
 export interface StartOnboardingOptions {
+  /** The repository: its owner and name. Nothing is asked of it and nothing is written to it. */
   client: GitHubClient;
-  /** The recipe the wizard built. Its `repo.base` is the branch the PR targets. */
+  /** The recipe the wizard built. Its `repo.base` is the base the event records. */
   recipe: Recipe;
-  /** The sentences the page showed, by dotted path — the file's comments and the PR body. */
+  /** The sentences the page showed, by dotted path — the file's comments. */
   said?: Said;
   /** Who pressed it — `human:<id>`. */
   by: string;
-  /** The branch the recipe lands on. */
-  branch?: string;
+  /** `stateDir()` unless a test says otherwise. */
+  home?: string;
   store?: EventStore;
 }
 
-export type Started =
-  | { ok: true; pr: { number: number; url: string }; branch: string }
-  | { ok: false; refusal: string };
+export type Started = { ok: true; path: string } | { ok: false; refusal: string };
 
-/** Where the recipe lands. One name, so a second press is refused rather than duplicated. */
-export const ONBOARDING_BRANCH = "lingtai/onboarding";
+async function readIfThere(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
 
 /**
- * The button: validate, open the pull request, record that onboarding started.
+ * The button: validate, write the recipe on this machine, record that
+ * onboarding started.
+ *
+ * **Nothing is written to the repository** (0046 §3, #180). The recipe is
+ * `~/.lingtai/<project>/recipe.yml` and the agent and limits the page chose go
+ * under `projects.<project>.runtime` in `~/.lingtai/config.yml` — the files
+ * `Recheck`'s `lingtai add` reads — so a pending card is finished by pressing
+ * `Recheck`, with no pull request for anybody to merge first. It used to open
+ * one carrying `.lingtai/config.yaml`, which nothing reads any more.
  *
  * **The only write the wizard makes of its own accord** — `Hold all` beside it
- * is the operator's, and it has already run if they pressed it — and the order
- * inside it is `lingtai add`'s rule at a smaller scale: everything that can
- * refuse, refuses before anything is written:
+ * is the operator's — and everything that can refuse, refuses before anything
+ * is written:
  *
  * 1. the stream, because a repository already recorded must not collect a
- *    second `ProjectOnboardingStarted` and a second pull request;
+ *    second `ProjectOnboardingStarted`;
  * 2. the recipe, by `validateProposal` above;
- * 3. the branch, because `git/refs` on a name that exists is a 422 *after* it
- *    has been asked for and tells an operator nothing they can act on.
+ * 3. a recipe already at that path that is not this one, which is a person's
+ *    file and not this button's to overwrite — one that *is* this one is this
+ *    function's own, interrupted before the append, and is picked up;
+ * 4. the machine file, which may already name another runtime for the project;
+ * 5. the bytes, resolved the way `lingtai add` will resolve them.
  *
- * Then the branch, the file and the pull request, and then the event. The event
- * last because it is the thing the board reads: a card offering `Recheck` for a
- * pull request that was never opened is a state nobody can get out of.
- *
- * **Between those two there is a window, and this is the one function that can
- * close it.** The pull request is open and the append has not happened — the
- * database blinked, or a concurrent `lingtai add` moved the stream under the
- * expected version — and the log knows nothing, so the board draws no pending
- * card and offers no `Recheck`. Merging that pull request appends nothing
- * either: only this function does. So the window is closed on the way back in
- * rather than by asking a person to delete a branch — step 3 finishes a pull
- * request **it recognises as this proposal**, the same file against the same
- * base, instead of refusing it; and a failure to append is a refusal that names
- * the open pull request and says which of the two things it is, because only one
- * of them is finished by pressing again (`record`).
- *
- * **The pull request targets `repo.base`, and there is no second base here.**
- * The recipe has to land on the branch it governs — that is 0005 — and the base
- * recorded on the event is a copy of that one value rather than a decision
- * taken beside it (#75). `Recheck` replays it as the hint it is (#163). An
- * adopted pull request is checked against it rather than assumed to agree: the
- * event says where the recipe lands, so a base no pull request targets is a
- * pending card that can never finish.
+ * Then the files, and then the event — last because it is the thing the board
+ * reads, and a card offering `Recheck` for a recipe that was never written is a
+ * state nobody can get out of.
  */
 export async function startOnboarding(options: StartOnboardingOptions): Promise<Started> {
   const { client, recipe } = options;
   const store = options.store ?? eventStore;
+  const home = options.home ?? stateDir();
   const slug = `${client.owner}/${client.repo}`;
   const base = recipe.repo.base;
-  const branch = options.branch ?? ONBOARDING_BRANCH;
   const stream = projectStream(client.repo);
+  const path = recipePath(client.repo, home);
+  const machineFile = machinePath(home);
 
   const existing = await store.read(stream);
   const state = reduceProject(existing);
   if (isRegistered(state)) {
-    return { ok: false, refusal: `${slug} is already registered — its recipe is on ${state.base}` };
+    return { ok: false, refusal: `${slug} is already registered — its recipe is ${path}` };
   }
   if (isPending(state)) {
     return {
       ok: false,
       refusal:
-        `${slug} is already on its way in — onboarding was recorded for it and ${RECIPE_PATH} ` +
-        `has not landed on ${state.base} yet. Merge the pull request that opened it, then press Recheck.`,
+        `${slug} is already on its way in — onboarding was recorded for it, and its recipe is ${path}. ` +
+        "Press Recheck to finish it.",
     };
   }
 
   const validated = await validateProposal(recipe, options.said ?? {});
   if (!validated.ok) return { ok: false, refusal: validated.refusal };
 
-  if (await branchExists(client, branch)) {
-    // A branch of this name with the recipe on it and a pull request open is
-    // not somebody else's work — it is this function's, interrupted between
-    // the pull request and the append. Adopting it is the only way out: the
-    // event is the one thing missing, and nothing but this appends it.
-    //
-    // **It is adopted only when it is this proposal** — the same file, and the
-    // same base — and that is not a formality, because a second press is also
-    // how an operator retries after *changing* the recipe. Adopting whatever is
-    // there would append a base the pull request does not target and tell them
-    // onboarding started with the recipe they just edited, while the pull
-    // request that merges carries the one they replaced; `Recheck` would then
-    // look for the recipe on a branch nothing is landing it on, for ever. So
-    // `validated.file` is compared with what the branch carries rather than
-    // thrown away, and `open.base` with the base about to be recorded.
-    const onBranch = await client.fileAt(RECIPE_PATH, branch);
-    const open = onBranch === null ? null : await openPullRequest(client, branch);
-    if (open === null) {
-      return {
-        ok: false,
-        refusal:
-          `${slug} already has a branch called ${branch} with no onboarding pull request ` +
-          "open on it — delete the branch, then press this again.",
-      };
-    }
-    const differs = [
-      ...(open.base === base ? [] : [`it targets ${open.base} and not ${base}`]),
-      ...(onBranch === validated.file ? [] : [`it carries a different ${RECIPE_PATH}`]),
-    ];
-    if (differs.length > 0) {
-      return {
-        ok: false,
-        refusal:
-          `${slug} already has an onboarding pull request open — ${open.url} — and it is not the one ` +
-          `this would open: ${differs.join(", and ")}. Merging it lands that recipe on ${open.base}, ` +
-          `not this one on ${base}. Press this again without the change to finish it, or close it and ` +
-          `delete ${branch} to open this one instead.`,
-      };
-    }
-    return record({
-      store,
-      stream,
-      expected: existing.length,
-      by: options.by,
-      slug,
-      // Equal to `open.base` by the check just above, so the event records the
-      // branch this pull request actually merges into rather than a second
-      // opinion about it taken from a recipe that may have moved on.
-      base,
-      pr: { number: open.number, url: open.url },
-      branch,
-    });
-  }
-
-  let pr: { number: number; url: string };
+  let files: ReturnType<typeof machineFiles>;
+  let there: string | null;
   try {
-    const sha = await client.refSha(base);
-    await client.request("POST", `/repos/${client.owner}/${client.repo}/git/refs`, {
-      ref: `refs/heads/${branch}`,
-      sha,
+    files = machineFiles({
+      file: validated.file,
+      recipe,
+      project: client.repo,
+      machine: await readIfThere(machineFile),
+      home,
     });
-    await client.request("PUT", `/repos/${client.owner}/${client.repo}/contents/${RECIPE_PATH}`, {
-      message: `feat(lingtai): ${client.repo} is managed by Lingtai`,
-      content: Buffer.from(validated.file, "utf8").toString("base64"),
-      branch,
-    });
-    const opened = await client.request<{ number: number; html_url: string }>(
-      "POST",
-      `/repos/${client.owner}/${client.repo}/pulls`,
-      {
-        title: `Lingtai: ${RECIPE_PATH}`,
-        head: branch,
-        base,
-        body: pullRequestBody(recipe, options.said ?? {}),
-      },
-    );
-    pr = { number: opened.number, url: opened.html_url };
+    there = await readIfThere(path);
   } catch (err) {
-    return { ok: false, refusal: `the pull request was not opened: ${(err as Error).message}` };
+    return { ok: false, refusal: `this machine's files could not be read: ${(err as Error).message}` };
+  }
+  if (!files.ok) return { ok: false, refusal: files.refusal };
+  if (there !== null && there !== files.recipe) {
+    return {
+      ok: false,
+      refusal:
+        `there is already a recipe at ${path}, and it is not the one this page describes. Nothing was ` +
+        "written — edit that file, or delete it and press this again.",
+    };
   }
 
-  return record({
-    store,
-    stream,
-    expected: existing.length,
-    by: options.by,
-    slug,
-    base,
-    pr,
-    branch,
-  });
+  // The bytes, read back the way `lingtai add` reads them — the agent is named
+  // in the machine file now, so nothing is asked what is signed in.
+  const planned = files;
+  try {
+    await resolveLocalRecipe(client.repo, {
+      home,
+      base,
+      signedIn: async () => [],
+      read: async (p) =>
+        p === path ? planned.recipe : p === machineFile ? (planned.machine ?? readIfThere(p)) : readIfThere(p),
+    });
+  } catch (err) {
+    return { ok: false, refusal: (err as Error).message };
+  }
+
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    if (there === null) await writeFile(path, files.recipe);
+    if (files.machine !== null) await writeFile(machineFile, files.machine);
+  } catch (err) {
+    return { ok: false, refusal: `the recipe was not written: ${(err as Error).message}` };
+  }
+
+  return record({ store, stream, expected: existing.length, by: options.by, slug, base, path });
 }
 
 /**
  * The append, and the refusal that keeps its failure recoverable.
  *
  * A throw here — the store unreachable, or a `ConcurrencyError` because
- * something appended to this stream between the read at the top and now — used
- * to leave `startOnboarding` throwing over an open pull request: the operator
- * told onboarding failed, the log empty, so no pending card and no `Recheck`,
- * and the branch check refusing every further press. It is a refusal instead,
- * and it names the pull request, which exists whichever way the append failed.
+ * something appended to this stream between the read at the top and now —
+ * would leave an operator told onboarding failed, with the log empty, so no
+ * pending card and no `Recheck`, over a recipe already written. It is a
+ * refusal instead, and it names the file, which exists whichever way the
+ * append failed.
  *
  * **The two failures do not have the same way out, so they do not get the same
- * sentence.** A store that blinked leaves the stream where the read found it, so
- * pressing again reaches the branch check and the branch check adopts that pull
- * request — *press this again* is true. A `ConcurrencyError` is the stream
- * having moved: a concurrent `lingtai add` or a second press recorded this
- * project, and the next press never reaches the branch check at all — it stops
- * at `isRegistered` or `isPending` and says so without a word about GitHub. To
- * tell that operator to press again is to send them to a refusal that answers a
- * different question and leaves an open pull request nobody has mentioned —
- * one that would put this unreviewed recipe on the base branch if it is merged.
- * So that branch of the refusal says what actually became of the project, says
- * plainly that pressing again will not finish it, and hands back the branch and
- * the pull request as the thing left to decide about.
+ * sentence.** A store that blinked leaves the stream where the read found it,
+ * so pressing again finds the same file, picks it up and appends — *press this
+ * again* is true. A `ConcurrencyError` is the stream having moved: a
+ * concurrent `lingtai add` or a second press recorded this project, and the
+ * next press stops at `isRegistered` or `isPending` without a word about the
+ * file. So that refusal says what became of the project, says plainly that
+ * pressing again will not finish it, and hands back the file as the thing left
+ * to decide about.
  */
 async function record(at: {
   store: EventStore;
@@ -458,8 +415,7 @@ async function record(at: {
   by: string;
   slug: string;
   base: string;
-  pr: { number: number; url: string };
-  branch: string;
+  path: string;
 }): Promise<Started> {
   try {
     await at.store.append(at.stream, at.expected, [
@@ -470,98 +426,21 @@ async function record(at: {
       },
     ]);
   } catch (err) {
-    // The half both refusals share: the pull request is open either way, and it
-    // is the thing an operator has to be handed back before anything else.
-    const named =
-      `${at.slug}'s pull request is open — ${at.pr.url} — and onboarding was not recorded: ` +
-      `${(err as Error).message}.`;
+    const named = `${at.slug}'s recipe is written — ${at.path} — and onboarding was not recorded: ${(err as Error).message}.`;
     if (err instanceof ConcurrencyError) {
       return {
         ok: false,
         refusal:
-          `${named} Something else recorded this project while the wizard was opening it, so pressing ` +
+          `${named} Something else recorded this project while the wizard was writing it, so pressing ` +
           `this again will not finish it — it will say ${at.slug} is already registered, or already on ` +
-          `its way in. The branch ${at.branch} and the pull request on it are still there and nothing ` +
-          `will pick them up: merge it only if you want this recipe on ${at.base}, and otherwise close ` +
-          `it and delete ${at.branch}.`,
+          `its way in. The file is still there, and it is what ${at.slug}'s runs obey once it is ` +
+          `registered: keep it only if you want this recipe, and otherwise edit it or delete it.`,
       };
     }
     return {
       ok: false,
-      refusal:
-        `${named} Press this again; it picks up the pull request on ${at.branch} rather than opening ` +
-        "a second one.",
+      refusal: `${named} Press this again; it picks up the recipe already at ${at.path} rather than writing another.`,
     };
   }
-  return { ok: true, pr: at.pr, branch: at.branch };
-}
-
-/**
- * The open pull request on a branch, or null when there is none.
- *
- * Asked of GitHub rather than remembered, because the state it exists to
- * recognise is the one where nothing was written down.
- *
- * `base` comes back with it for the same reason: the caller is deciding whether
- * this is its own interrupted work, and a pull request's base is the branch the
- * recipe will actually govern — the one fact about it the caller is otherwise
- * guessing from the recipe in hand.
- */
-async function openPullRequest(
-  client: GitHubClient,
-  branch: string,
-): Promise<{ number: number; url: string; base: string } | null> {
-  const head = encodeURIComponent(`${client.owner}:${branch}`);
-  const open = await client.request<{ number: number; html_url: string; base: { ref: string } }[]>(
-    "GET",
-    `/repos/${client.owner}/${client.repo}/pulls?state=open&head=${head}`,
-  );
-  const first = open[0];
-  return first === undefined
-    ? null
-    : { number: first.number, url: first.html_url, base: first.base.ref };
-}
-
-/** Whether a branch is already there. A 404 is the answer, not a failure. */
-async function branchExists(client: GitHubClient, branch: string): Promise<boolean> {
-  try {
-    await client.request("GET", `/repos/${client.owner}/${client.repo}/git/ref/heads/${branch}`);
-    return true;
-  } catch (err) {
-    if (err instanceof GitHubError && err.status === 404) return false;
-    throw err;
-  }
-}
-
-/**
- * What the pull request says, in the sentences the wizard showed.
- *
- * `said` is the same record `emitRecipe` writes into the file as comments, so
- * the diff and the description cannot come to explain the recipe differently —
- * and neither of them is copy invented here. What this adds around them is the
- * two facts a reader of the *pull request* needs and the file does not say:
- * what happens when it merges, and what nothing will read before a diff lands.
- */
-export function pullRequestBody(recipe: Recipe, said: Said = {}): string {
-  const lines = [
-    `Lingtai will read \`${RECIPE_PATH}\` from \`${recipe.repo.base}\` once this merges,`,
-    "and work the issues labelled " +
-      `${recipe.source.kinds.map((k) => `\`${k}\``).join(", ")} — in that order of priority.`,
-    "",
-  ];
-
-  const sentences = Object.entries(said);
-  if (sentences.length > 0) {
-    lines.push("What it sets:", "");
-    for (const [path, sentence] of sentences) {
-      lines.push(`- \`${path}\` — ${sentence.replace(/\s+/g, " ").trim()}`);
-    }
-    lines.push("");
-  }
-
-  const warning = nothingReadsIt(recipe);
-  if (warning !== null) lines.push(`**${warning}**`, "");
-
-  lines.push("Merge this, then press Recheck on the board to finish onboarding.");
-  return lines.join("\n");
+  return { ok: true, path: at.path };
 }

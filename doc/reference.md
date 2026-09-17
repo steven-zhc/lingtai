@@ -77,21 +77,25 @@ configHash !== null`, `configHash` arrives only with a recipe that was read, and
 so *this repository has a recipe* was already the line. `loadProjects()` has
 filtered on it since before pending existed, which is why the daemon needed no
 guard. The board draws a card with `Recheck` on it, and `Recheck` runs
-`lingtai add`'s own path; nothing watches the pull request, by decision
+`lingtai add`'s own path, which reads `~/.lingtai/<project>/recipe.yml`; nothing
+finishes it automatically, by decision
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 
 What appends that first event is `startOnboarding`
 (`packages/conductor/src/wizard.ts`, `#165`), and it is **the only write the
-wizard makes of its own accord**: the recipe is parsed by `resolveRecipe`
-before anything opens, so a file that would fail `lingtai add` on the base
-branch names its bad field instead; then the branch, the file and the pull
-request; then the event. Abandon the page before it and the wizard has left
-nothing of its own accord to clean up. If the append fails over an open pull
-request it names the pull request and says which of two things happened, because
-merging one the log knows nothing about appends nothing: a store that blinked is
-finished by pressing again, since the branch check adopts a pull request that is
-*this* proposal — the same file against the same base — while a stream that moved
-underneath it is not, and that refusal says so and hands back the branch. Beside
+wizard makes of its own accord** — and since `#180` it writes nothing to the
+repository: the recipe is parsed before anything is written, so a file that
+would fail `lingtai add` names its bad field instead; then
+`~/.lingtai/<project>/recipe.yml`, with the page's agent and limits under
+`projects.<project>.runtime` in `~/.lingtai/config.yml`, read back the way `add`
+reads them; then the event. A recipe already at that path that is not this one,
+or a machine file that already names another runtime for the project, is refused
+before anything is written. Abandon the page before it and the wizard has left
+nothing of its own accord to clean up. If the append fails over a written file it
+names the file and says which of two things happened: a store that blinked is
+finished by pressing again, which picks up a file that is *this* recipe, while a
+stream that moved underneath it is not, and that refusal says so and hands back
+the file. Beside
 it `firstPass` is the last screen — `selectRunnable` and
 `passedOver` and no rule of its own, so
 `12 runnable · 18 passed over — excluded-label 14, no-kind 4` is the sentence

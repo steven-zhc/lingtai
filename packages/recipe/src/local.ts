@@ -25,11 +25,12 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { isDeepStrictEqual } from "node:util";
+import { Document, isMap, parse as parseYaml, parseDocument } from "yaml";
 import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
-import { LIMIT_DEFAULTS } from "./recipe.ts";
+import { LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
 
 /** A project's recipe, under `stateDir()`. */
@@ -288,4 +289,74 @@ export async function resolveLocalRecipe(
   };
   for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value} ← ${path}`;
   return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
+}
+
+/** The two files a recipe built elsewhere becomes on this machine, or why it cannot. */
+export type MachineFiles =
+  | {
+      ok: true;
+      /** `recipePath(project)`'s text: the recipe without `runtime.agent` and `runtime.limits`. */
+      recipe: string;
+      /** `machinePath()`'s new text, or null when it already says this and needs no write. */
+      machine: string | null;
+    }
+  | { ok: false; refusal: string };
+
+/**
+ * A whole recipe — the wizard's, with its agent and limits in it — split into
+ * the files `resolveLocalRecipe` reads (0046 §3, #180).
+ *
+ * The agent and the limits the page chose are not dropped: they go under
+ * `projects.<project>.runtime` in the machine file, which is where a choice for
+ * one repository lives, and every other byte of that file is kept. A machine
+ * file that already names a *different* runtime for this project is refused
+ * rather than overwritten — both are a person's recorded choice, and which one
+ * is meant is theirs to say.
+ */
+export function machineFiles(input: {
+  /** The recipe as emitted, comments and all. */
+  file: string;
+  recipe: Recipe;
+  project: string;
+  /** The machine file's current text, or null when there is none. */
+  machine: string | null;
+  home?: string;
+}): MachineFiles {
+  const home = input.home ?? stateDir();
+  const doc = parseDocument(input.file);
+  doc.deleteIn(["runtime", "agent"]);
+  doc.deleteIn(["runtime", "limits"]);
+  const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+
+  const chosen = { agent: input.recipe.runtime.agent, limits: { ...input.recipe.runtime.limits } };
+  const at = ["projects", input.project, "runtime"];
+  const path = machinePath(home);
+
+  if (input.machine === null || input.machine.trim() === "") {
+    const created = new Document({ projects: { [input.project]: { runtime: chosen } } });
+    return { ok: true, recipe, machine: created.toString() };
+  }
+
+  const machine = parseDocument(input.machine);
+  if (machine.errors.length > 0 || !isMap(machine.contents)) {
+    return {
+      ok: false,
+      refusal: `${path} does not parse as a mapping, so ${input.project}'s agent and limits cannot be added to it — fix it and press this again`,
+    };
+  }
+  if (machine.hasIn(at)) {
+    const existing = machine.getIn(at);
+    const json = existing !== null && typeof existing === "object" && "toJSON" in existing
+      ? (existing as { toJSON: () => unknown }).toJSON()
+      : existing;
+    if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };
+    return {
+      ok: false,
+      refusal:
+        `${path} already sets projects.${input.project}.runtime to ${JSON.stringify(json)}, and this page chose ` +
+        `${JSON.stringify(chosen)}. Nothing was written — edit that section, or remove it and press this again`,
+    };
+  }
+  machine.setIn(at, chosen);
+  return { ok: true, recipe, machine: machine.toString() };
 }

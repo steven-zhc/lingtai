@@ -3,9 +3,10 @@
 /**
  * A repository that is on its way in, and the button that finishes it (#163).
  *
- * The wizard ends at a pull request, because the recipe belongs to the managed
- * repository (0005) and has to land there before anything can be read from it.
- * Between those two moments the repository is **recorded and not conducted**:
+ * The wizard ends by writing the recipe on this machine,
+ * `~/.lingtai/<project>/recipe.yml` (0046 §3, #180) — nothing is written to the
+ * repository and there is nothing to merge. Until `Recheck` registers it the
+ * repository is **recorded and not conducted**:
  * `ProjectOnboardingStarted` is on its stream, `loadProjects()` does not return
  * it, and nothing in the system will touch it. That is a real state and it had
  * nowhere to be seen.
@@ -15,12 +16,11 @@
  * the board's claim that every card is a real ticket false, the same argument
  * `QueueProblem` is not a card.
  *
- * **Recheck, and nothing watching.** A page cannot follow a pull request for
- * hours and the daemon does not know repositories it has not onboarded, so
- * *watch the PR and finish automatically* was removed from the design rather
- * than built. Pressing it reads the recipe from the base branch: found, and the
- * project is live; not found, and it says so and changes nothing, so it can be
- * pressed again when the PR lands.
+ * **Recheck, and nothing watching.** The daemon does not know repositories it
+ * has not onboarded, so nothing finishes this automatically. Pressing it reads
+ * the recipe from this machine and checks the App can reach the repository:
+ * found, and the project is live; not found, and it says so and changes
+ * nothing, so it can be pressed again once the file is there.
  *
  * It does not ask "sure?" the way Resume does. Resume moves the whole
  * installation; this reads a file and either registers a repository the
@@ -61,18 +61,19 @@ function PendingCard({ project }: { project: PendingProject }) {
         <span className="proj">{project.owner ? `${project.owner}/` : ""}</span>
         {project.project}
       </span>
-      {/* Held, not failed. Nothing is broken: a recipe has been asked for and
-          has not landed, which is the ordinary shape of this state. */}
+      {/* Held, not failed. Nothing is broken: the project has been asked for
+          and not yet registered, which is the ordinary shape of this state. */}
       <span>
         <span className="chip held" title="recorded, and not conducted — no recipe has been read for it yet">
           pending
         </span>
       </span>
       {/* The one fact `Recheck` acts on, said before it is pressed: which
-          branch is being read. A button whose target is invisible is one
+          file is being read. A button whose target is invisible is one
           nobody can tell has been pointed at the wrong place. */}
       <p className="note">
-        waiting for <code>.lingtai/config.yaml</code> on <strong>{project.base ?? "its base branch"}</strong>
+        reads <code>~/.lingtai/{project.project}/recipe.yml</code> on this machine, for{" "}
+        <strong>{project.base ?? "its base branch"}</strong>
       </p>
       {done ? (
         <p className="decided">{done}</p>

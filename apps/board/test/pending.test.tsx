@@ -88,14 +88,15 @@ describe("the pending card", () => {
   });
 
   /**
-   * The button is pressed against a branch, and which branch is the whole of
-   * what it does. A card that did not say so would be a control nobody could
-   * tell had been pointed at the wrong place.
+   * The button reads a file, and which file is the whole of what it does — the
+   * machine's since #180, never one in the repository. A card that did not say
+   * so would be a control nobody could tell had been pointed at the wrong place.
    */
-  it("says which file on which branch it is waiting for", () => {
+  it("says which file on this machine it reads, and for which branch", () => {
     const out = html();
 
-    expect(out).toContain(".lingtai/config.yaml");
+    expect(out).toContain("~/.lingtai/esctest-arriving/recipe.yml");
+    expect(out).not.toContain(".lingtai/config.yaml");
     expect(out).toContain("develop");
   });
 

@@ -243,8 +243,9 @@ export async function acceptBacklogFinding(input: {
       owner: state.owner!,
       repo: input.project,
     });
-    // Read from the base branch, not trusted from the text box: a kind the
-    // recipe does not list is an issue the queue never sees.
+    // Read from this machine's recipe (#180), the one the queue obeys, not
+    // trusted from the text box: a kind it does not list is an issue the queue
+    // never sees.
     const { recipe } = await currentRecipe(state, client);
     const result = await acceptFinding({
       project: input.project,
@@ -294,16 +295,15 @@ export async function declineBacklogFinding(input: {
  * decided is the conductor, and it has one state.
  */
 /**
- * Finish onboarding a repository whose recipe has landed (#163).
+ * Finish onboarding a repository whose recipe is on this machine (#163, #180).
  *
- * **The existing `lingtai add` path, and not a second one.** The wizard ends at
- * a pull request; the board is a render and cannot follow one, and the daemon
- * does not know repositories it has not onboarded — so nothing watches, and
- * this button is the whole of the second half. It calls `add` with the slug and
- * the base the `ProjectOnboardingStarted` recorded, which checks the
- * installation and its scopes, reads the recipe from that branch, and appends
- * `ProjectConfigured`. Past that the project is registered and every other part
- * of the system treats it as one.
+ * **The existing `lingtai add` path, and not a second one.** The daemon does
+ * not know repositories it has not onboarded, so nothing watches, and this
+ * button is the whole of the second half. It calls `add` with the slug and the
+ * base the `ProjectOnboardingStarted` recorded, which checks the installation
+ * and its scopes, reads `~/.lingtai/<project>/recipe.yml` — never the
+ * repository — and appends `ProjectConfigured`. Past that the project is
+ * registered and every other part of the system treats it as one.
  *
  * **The recorded base is where to look, and never a decision.** It goes through
  * `resumeOnboarding`, which sends it unnamed: the wizard filled it from
@@ -315,7 +315,7 @@ export async function declineBacklogFinding(input: {
  * **Pressable again, because the common answer is "not yet".** A missing recipe
  * is a `RecipeMissingError` that `add` reports and returns 1 on, having written
  * nothing at all — the same refusal a person would get in the terminal, in the
- * same words, naming the file and the branch. Nothing changes and the card
+ * same words, naming the file on this machine. Nothing changes and the card
  * stays exactly where it was.
  *
  * `add` prints its progress, and here that output *is* the answer: the sentence
