@@ -87,6 +87,12 @@ export interface InitWorld {
   app: () => Promise<AppCheck>;
   /** Resolves once an App is configured and answers — written by the board's first screen. */
   appeared: () => Promise<{ slug: string; owner: string }>;
+  /**
+   * A Lingtai board already answering on this port — the machine's own, from
+   * `lingtai board` or the service — as its URL, or null. Asked before one is
+   * started, since a second on the same port is refused.
+   */
+  boardAt: (port: number) => Promise<string | null>;
   /** Serve the board; the process stays up for it. */
   board: (port: number) => Promise<{ url: string } | { refused: string }>;
   /** Open a browser. False when none could be. */
@@ -211,7 +217,9 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   );
 
   // ---- the board, on the wizard ---------------------------------------------
-  const board = await world.board(port);
+  // A board already up is this machine's, and the wizard is on it: a re-run uses it rather than failing on its port.
+  const running = await world.boardAt(port);
+  const board = running !== null ? { url: running } : await world.board(port);
   if ("refused" in board) {
     return refuse(world, `the board did not start — ${board.refused}. Everything chosen above is kept, and lingtai init again continues from here`);
   }
@@ -227,7 +235,11 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     world.log(paint.pass(`app          ${made.slug}, owned by ${made.owner} — it answered`));
     world.log(`next, install it and pick a repository: ${board.url}/setup/repository`);
   }
-  world.log(paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again"));
+  world.log(
+    running !== null
+      ? paint.muted(`the board was already running at ${running} — this started none`)
+      : paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again"),
+  );
   return 0;
 }
 
@@ -459,6 +471,16 @@ export function liveInitWorld(): InitWorld {
         const app = await liveApp();
         if (app.configured && app.ok) return { slug: app.slug, owner: app.owner };
         await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    },
+    boardAt: async (port) => {
+      const url = `http://127.0.0.1:${port}`;
+      try {
+        // The board's own title, so a port some other server holds is not mistaken for it.
+        const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) });
+        return (await res.text()).includes("<title>Lingtai</title>") ? url : null;
+      } catch {
+        return null;
       }
     },
     board: async (port) => {

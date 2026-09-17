@@ -459,6 +459,18 @@ describe("install.sh", () => {
     expect(ran.said).not.toContain("running lingtai init");
   });
 
+  it("does not run lingtai init over a machine that already has a config.yml (#186)", () => {
+    const at = join(home, ".lingtai");
+    mkdirSync(at, { recursive: true });
+    writeFileSync(join(at, "config.yml"), "runtime:\n  agent: claude-code\n");
+    const ran = install("1.0.0");
+    rmSync(join(at, "config.yml"));
+    expect(ran.code, ran.said).toBe(0);
+    expect(ran.said).toContain("not running lingtai init");
+    expect(ran.said).not.toContain("running lingtai init\n");
+    expect(ran.said).not.toContain("there is no terminal here");
+  });
+
   it("refuses when either artifact does not match its checksum, and unpacks neither", () => {
     publish("1.0.2");
     // The binary matches and the board does not, so a check of only the first passes it.

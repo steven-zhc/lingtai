@@ -161,8 +161,14 @@ esac
 # discover. Its questions are asked of the terminal, which under `curl | sh` is
 # not stdin — stdin is the script — so they are read from /dev/tty, and only
 # when there is one: with nobody to answer, it is named and not run.
+#
+# Only where init has never run. Over a machine that has a config.yml the run is
+# an upgrade, and init there would start a board in this process and hold the
+# `curl | sh` open on it, or fail on the port the machine's own board holds.
 if [ -n "${LINGTAI_NO_INIT:-}" ]; then
   say "next: lingtai init — the database, the agent and the GitHub App, ending on the board"
+elif [ -e "$HOME_DIR/config.yml" ]; then
+  say "not running lingtai init — $HOME_DIR/config.yml is already here; lingtai init reports it, or continues where it stopped"
 elif [ -t 1 ] && { : < /dev/tty; } 2> /dev/null; then
   say "running lingtai init"
   # Init stopping — a refusal, or a Ctrl+C — is not the install failing: the

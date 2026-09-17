@@ -29,6 +29,8 @@ interface Script {
   app?: AppCheck;
   git?: string | null;
   board?: { url: string } | { refused: string };
+  /** A board already up on the port. Its port is then taken, so starting another is refused. */
+  running?: string;
   /** Throw from this step, once — the Ctrl+C. */
   interruptAt?: Step;
 }
@@ -95,9 +97,11 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         step("appeared");
         return { slug: "lingtai-me", owner: "me" };
       },
+      boardAt: async () => script.running ?? null,
       board: async () => {
         step("board");
         seen.boards++;
+        if (script.running !== undefined) return { refused: "127.0.0.1:3200 is already in use" };
         return script.board ?? { url: "http://127.0.0.1:3200" };
       },
       open: async (url) => {
@@ -334,8 +338,15 @@ describe("lingtai init (#186)", () => {
     const before = config(home);
     const mtime = statSync(configPath({ LINGTAI_HOME: home })).mtimeMs;
 
-    const again = world(home, { app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" } }, db);
+    // The board is up, as it is on a finished machine, so its port is taken.
+    const again = world(
+      home,
+      { app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" }, running: "http://127.0.0.1:3200" },
+      db,
+    );
     expect(await initCommand([], again.world)).toBe(0);
+    expect(again.seen.boards).toBe(0);
+    expect(again.seen.opened).toEqual(["http://127.0.0.1:3200/setup/repository"]);
 
     expect(again.seen.asked).toEqual([]);
     expect(config(home)).toBe(before);
