@@ -242,6 +242,19 @@ describe("the assignee", () => {
     expect(considerIssue(mine, rule).skip).toBe("assigned-to-me");
   });
 
+  /** With no login, whose an assigned issue is cannot be said — so it is not said to be somebody else's. */
+  it("under `unassigned` with no login, passes over assigned work without naming whose", () => {
+    const rule = as({ take: "unassigned" });
+    expect(considerIssue(nobodys, rule).skip).toBeNull();
+    expect(considerIssue(mine, rule).skip).toBe("assigned");
+    expect(considerIssue(alices, rule).skip).toBe("assigned");
+  });
+
+  it("is checked after blocked-by, so a blocked issue of somebody else's reports the block", () => {
+    const blocked = issue({ number: 185, labels: ["bug"], assignees: ["alice"], dependencies: { blockedBy: 1, totalBlockedBy: 1 } });
+    expect(considerIssue(blocked, as({ login: "bob", take: "mine" })).skip).toBe("blocked-by");
+  });
+
   /** A stale label misinforms and blocks nobody. */
   it("does not read `lingtai:working`, under any setting", () => {
     const working = issue({ number: 184, labels: ["bug", "lingtai:working"] });

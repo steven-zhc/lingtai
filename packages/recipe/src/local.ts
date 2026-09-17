@@ -322,7 +322,10 @@ export async function resolveLocalRecipe(
 export type MachineFiles =
   | {
       ok: true;
-      /** `recipePath(project)`'s text: the recipe without `runtime.agent` and `runtime.limits`. */
+      /**
+       * `recipePath(project)`'s text: the recipe without `runtime.agent`,
+       * `runtime.limits` and `runtime.assignee`, each of which is carried to `machine`.
+       */
       recipe: string;
       /** `machinePath()`'s new text, or null when it already says this and needs no write. */
       machine: string | null;
@@ -335,7 +338,10 @@ export type MachineFiles =
  *
  * The agent and the limits the page chose are not dropped: they go under
  * `projects.<project>.runtime` in the machine file, which is where a choice for
- * one repository lives, and every other byte of that file is kept. A machine
+ * one repository lives, and every other byte of that file is kept. So is the
+ * project's `runtime.assignee` (#181), which the page does not show: an edit to
+ * the agent or the limits replaces the section without dropping whose tickets
+ * this machine takes. One written in the recipe text goes there too. A machine
  * file that already names a *different* runtime for this project is refused
  * rather than overwritten — both are a person's recorded choice, and which one
  * is meant is theirs to say.
@@ -357,18 +363,25 @@ export function machineFiles(input: {
 }): MachineFiles {
   const home = input.home ?? stateDir();
   const doc = parseDocument(input.file);
+  const toJSON = (node: unknown) =>
+    node !== null && typeof node === "object" && "toJSON" in node ? (node as { toJSON: () => unknown }).toJSON() : node;
+  const written = doc.hasIn(["runtime", "assignee"]) ? toJSON(doc.getIn(["runtime", "assignee"])) : undefined;
   // A file already without them — the machine's own, being edited — has no `runtime` to delete from.
   if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
   if (doc.hasIn(["runtime", "limits"])) doc.deleteIn(["runtime", "limits"]);
   if (doc.hasIn(["runtime", "assignee"])) doc.deleteIn(["runtime", "assignee"]);
   const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 
-  const chosen = { agent: input.recipe.runtime.agent, limits: { ...input.recipe.runtime.limits } };
   const at = ["projects", input.project, "runtime"];
   const path = machinePath(home);
+  const choose = (kept: unknown) => ({
+    agent: input.recipe.runtime.agent,
+    limits: { ...input.recipe.runtime.limits },
+    ...(written !== undefined ? { assignee: written } : kept !== undefined ? { assignee: kept } : {}),
+  });
 
   if (input.machine === null || input.machine.trim() === "") {
-    const created = new Document({ projects: { [input.project]: { runtime: chosen } } });
+    const created = new Document({ projects: { [input.project]: { runtime: choose(undefined) } } });
     return { ok: true, recipe, machine: created.toString() };
   }
 
@@ -379,11 +392,12 @@ export function machineFiles(input: {
       refusal: `${path} does not parse as a mapping, so ${input.project}'s agent and limits cannot be added to it — fix it and press this again`,
     };
   }
+  // Not the resolved recipe's assignee: its login may be the machine-wide one,
+  // and copying it into this project's section would stop it following that.
+  const kept = machine.hasIn([...at, "assignee"]) ? toJSON(machine.getIn([...at, "assignee"])) : undefined;
+  const chosen = choose(kept);
   if (machine.hasIn(at)) {
-    const existing = machine.getIn(at);
-    const json = existing !== null && typeof existing === "object" && "toJSON" in existing
-      ? (existing as { toJSON: () => unknown }).toJSON()
-      : existing;
+    const json = toJSON(machine.getIn(at));
     if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };
     if (input.replace) {
       machine.setIn(at, chosen);

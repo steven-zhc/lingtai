@@ -108,6 +108,8 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   "assigned-elsewhere": "it is assigned to somebody else",
   unassigned: "it is assigned to nobody, and this machine takes only its own",
   "assigned-to-me": "it is assigned to you, and this machine takes only unassigned work",
+  // No login to compare with, so it is not said whose it is.
+  assigned: "it is assigned, and this machine takes only unassigned work",
 };
 
 /**

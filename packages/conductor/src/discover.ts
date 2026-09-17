@@ -119,7 +119,12 @@ export type SkipReason =
   /** Assigned to nobody, under `take: mine`. */
   | "unassigned"
   /** Assigned to this machine's own login, under `take: unassigned`. */
-  | "assigned-to-me";
+  | "assigned-to-me"
+  /**
+   * Assigned to somebody, under `take: unassigned` with no login — so whether
+   * it is this machine's own cannot be said, and is not guessed.
+   */
+  | "assigned";
 
 export interface Considered {
   issue: Issue;
@@ -154,7 +159,7 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
 
   if (kindOf(issue, recipe.source.kinds) === null) return { issue, skip: "no-kind" };
 
-  // Last, and deliberately the least permanent of the four. A ticket carrying
+  // After the checks above, and deliberately the least permanent of them. A ticket carrying
   // `agent:hold` is one a person is holding and a ticket of no kind is one this
   // recipe never takes; a blocked one is ordinary work whose turn has not come,
   // and it comes back on its own.
@@ -168,6 +173,8 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   // existed rather than passing everything over — `runnableNow` is what says so.
   if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: "blocked-by" };
 
+  // Last: whose work it is (#181). An issue both blocked and somebody else's
+  // reports `blocked-by`, the reason that clears on its own.
   const assignee = assigneeSkip(issue, recipe.runtime.assignee);
   if (assignee) return { issue, skip: assignee };
 
@@ -196,6 +203,7 @@ export function assigneeSkip(issue: Issue, rule: AssigneeRule | undefined): Skip
     return assignees.length === 0 ? "unassigned" : "assigned-elsewhere";
   }
   if (assignees.length === 0) return null;
+  if (me === undefined) return "assigned";
   return mine ? "assigned-to-me" : "assigned-elsewhere";
 }
 

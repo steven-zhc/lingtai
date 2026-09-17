@@ -9,6 +9,7 @@ import {
   MachineConfigInvalidError,
   RecipeInvalidError,
   RecipeMissingError,
+  machineFiles,
   machinePath,
   recipePath,
   resolveLocalRecipe,
@@ -177,6 +178,47 @@ describe("resolveLocalRecipe", () => {
       await expect(
         resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
       ).rejects.toThrow(/runtime\.assignee: moved to this machine.*config\.yml/);
+    });
+  });
+
+  /** The page edits the agent and limits; the assignee it does not show is kept (#181). */
+  describe("machineFiles and runtime.assignee", () => {
+    const parsed = async (machine: string) => (await resolveLocalRecipe("app", withMachine(machine))).recipe;
+
+    it("keeps the project's assignee when an edit replaces the section", async () => {
+      const before =
+        "projects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        login: bob\n        take: mine\n";
+      const current = await parsed(before);
+      const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
+      const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
+      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
+      const after = await parsed(split.machine);
+      expect(after.runtime.limits.rounds).toBe(3);
+      expect(after.runtime.assignee).toEqual({ login: "bob", take: "mine" });
+    });
+
+    it("does not copy a machine-wide login into the project's section", async () => {
+      const before =
+        "runtime:\n  assignee:\n    login: bob\nprojects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        take: mine\n";
+      const current = await parsed(before);
+      const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
+      const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
+      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
+      expect(split.machine).toMatch(/app:\n\s+runtime:[\s\S]*assignee:\n\s+take: mine\n/);
+      expect(split.machine.match(/login: bob/g)).toHaveLength(1);
+    });
+
+    it("carries one written in the recipe text to the machine file, rather than deleting it", async () => {
+      const split = machineFiles({
+        file: `${RECIPE}runtime:\n  assignee:\n    take: unassigned\n`,
+        recipe: await parsed(""),
+        project: "app",
+        machine: null,
+        home: HOME,
+      });
+      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
+      expect(split.recipe).not.toContain("assignee");
+      expect((await parsed(split.machine)).runtime.assignee).toEqual({ take: "unassigned" });
     });
   });
 
