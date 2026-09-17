@@ -105,33 +105,21 @@ async function liveDrain(reason: string, despiteDoctor: boolean): Promise<Draine
     return { ok: false, code: 1 };
   }
 
-  const holder = await daemon.conductorLockHolder();
-  if (holder === null) {
-    console.log("nothing is conducting — nothing to drain");
-    return { ok: true, after: async () => {} };
-  }
-  const asked = await daemon.requestShutdownUnlessStanding(by, reason);
-  if (!asked.asked && asked.standing.by !== by) {
-    console.log(
-      paint.fail(
-        `not upgrading: a shutdown asked by ${asked.standing.by} — ${asked.standing.reason} — is standing, ` +
-          "and it is theirs to lift. Nothing was asked to stop by this command",
-      ),
-    );
-    return { ok: false, code: 1 };
-  }
-  const version = asked.asked ? asked.version : asked.standing.version;
-  console.log(paint.held(`draining ${holder} — ${daemon.describeInFlight(await daemon.inFlight().catch(() => []))}.`));
-  const waited = await waitForTheLock("draining", null, (line) => console.log(line), {
-    ctrlC: "ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again waits on the same drain.",
+  const { drainForUpgrade } = await import("./upgrade-drain.ts");
+  return drainForUpgrade({
+    by,
+    reason,
+    holder: () => daemon.conductorLockHolder(),
+    control: () => daemon.readControl(),
+    request: (who, why) => daemon.requestShutdownUnlessStanding(who, why),
+    withdraw: (who, version, why) => daemon.withdrawShutdown(who, version, why),
+    inFlight: async () => daemon.describeInFlight(await daemon.inFlight().catch(() => [])),
+    wait: () =>
+      waitForTheLock("draining", null, (line) => console.log(line), {
+        ctrlC: "ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again waits on the same drain.",
+      }),
+    log: (line) => console.log(line),
   });
-  if (waited !== "free") return { ok: false, code: waited === "interrupted" ? 130 : 1 };
-  return {
-    ok: true,
-    after: async () => {
-      await daemon.withdrawShutdown(by, version, `upgraded: ${reason}`);
-    },
-  };
 }
 
 /** The App this machine is configured with, as GitHub reports it — null where none is. */
