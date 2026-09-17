@@ -5,7 +5,7 @@
  * lives or dies by: the reviewer is cold, a finding without a failure scenario
  * is not a finding, and severity is not the reviewer's to soften.
  */
-import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
+import { type RunOutcome, type RunRequest, type Runtime, sessionIdFor } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
 import { parsePayload } from "@lingtai/domain";
 import {
@@ -213,6 +213,62 @@ describe("asking the reviewer again after a fix", () => {
     expect(runtime.seen[1]?.prompt).toContain("Scenarios that must no longer happen");
     expect(runtime.seen[0]?.prompt).not.toContain("Scenarios that must no longer happen");
   });
+
+  /**
+   * #195. A fix round's review reads the whole diff cold, so it takes the
+   * *plain* branch — and that branch was the run alone, so round 2 handed
+   * Claude Code round 1's session id and died in a second with no verdict.
+   * The runtime here refuses a session id twice exactly as the binary does,
+   * so what is asserted is that the second review *judged*, not that two
+   * strings differ.
+   */
+  it("reviews every fix round, each under a session no earlier review used", async () => {
+    const used = new Set<string>();
+    const runtime = reviewer(outcome());
+    runtime.run = async (request) => {
+      runtime.seen.push(request);
+      const session = sessionIdFor(request.runId);
+      if (used.has(session)) {
+        return outcome({
+          exitCode: 1,
+          turns: 0,
+          costUsd: null,
+          failure: { kind: "crash", detail: `Error: Session ID ${session} is already in use.` },
+        });
+      }
+      used.add(session);
+      return outcome({ text: JSON.stringify({ findings: [finding()] }), sessionId: session });
+    };
+    const gate = createAgentGate(
+      { name: "review", prompt: "" },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => "diff --git a/x b/x\n+1",
+        settingsPath: "/tmp/s.json",
+        limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+      },
+    );
+
+    // One run, two rounds: the fixer committed, the point runs again on the
+    // new head with no recheck — the branch #192 died on.
+    const rounds = [
+      await runGatePipeline({ point: "proposed", gates: [gate], context: { ...context, round: 1 }, emit: () => {} }),
+      await runGatePipeline({
+        point: "proposed",
+        gates: [gate],
+        context: { ...context, onSha: "b".repeat(40), round: 2 },
+        emit: () => {},
+      }),
+    ];
+
+    for (const round of rounds) {
+      const [result] = round.results;
+      expect(result?.evidence).not.toMatch(/did not finish/);
+      expect(result?.findings).toHaveLength(1);
+      expect(result?.verdict).toBe("failed");
+    }
+  });
 });
 
 describe("reading the reviewer's answer", () => {
@@ -329,7 +385,7 @@ describe("the gate", () => {
     expect(runtime.seen[0]?.traceTools).toBe(true);
     expect(lines).toEqual([
       "proposed:review | started · agent on aaaaaaa",
-      expect.stringMatching(/^proposed:review \| review  run-abc:review:review · \d+ bytes of diff$/),
+      expect.stringMatching(/^proposed:review \| review  run-abc:review:review:aaaaaaa · \d+ bytes of diff$/),
       "proposed:review | Read    src/x.ts",
       "proposed:review | receipt  success · 7 turns · $0.42 · exit 0",
       expect.stringMatching(/^proposed:review \| passed · after \d+s$/),

@@ -335,9 +335,20 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
       // second review that resumed the first one would be a reviewer asked
       // whether it still agrees with itself, which is the warm-review failure
       // experiment 001 measured, one level up (0038 §2).
+      //
+      // **So both branches carry the commit, not only the recheck.** A fix
+      // round's review reads the whole diff cold and takes the plain branch,
+      // and when that branch was the run alone, round 2 handed Claude Code the
+      // session id round 1 had used: `Session ID … is already in use`, exit 1
+      // in one second, and a pass that ended having never been reviewed
+      // (#195). The crash was the lucky outcome — a runtime that resumed
+      // instead would have been this comment's warm reviewer. A round only
+      // re-runs the point on a new commit, so the sha is what makes each
+      // review its own, and it keeps the id computable from what the log
+      // records (`sessionIdFor`).
       const reviewId =
         recheck.length === 0
-          ? `${context.runId}:review:${spec.name}`
+          ? `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
           : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}`;
       context.log?.note(
         "review",
