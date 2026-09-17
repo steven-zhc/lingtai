@@ -24,14 +24,16 @@
  */
 import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
+  type ClientFor,
   currentRecipe,
   endedWithoutEndActions,
+  githubClientFor,
   landedWithoutGatePoints,
   loadProjects,
   passCeiling,
   projectFilters,
 } from "@lingtai/conductor";
-import { createGitHubClient } from "@lingtai/github";
+import { type GitHubClient, createGitHubClient } from "@lingtai/github";
 import { type Recipe, baseDivergence } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
@@ -1172,6 +1174,25 @@ async function subscribers(url: string): Promise<CheckResult> {
   };
 }
 
+/** A client for a reader that asks GitHub nothing; any question it is asked is a bug, said so. */
+const offlineClient = new Proxy({} as GitHubClient, {
+  get: (_target, key) => {
+    // Not a thenable: an `async` function returning this looks for `then`.
+    if (key === "then" || typeof key === "symbol") return undefined;
+    throw new Error(`no GitHub App configured, so GitHub cannot be asked (${String(key)})`);
+  },
+});
+
+/**
+ * The client `recipe:` resolves with. The recipe is this machine's file (#180),
+ * so no App is needed to check it: without one, the client refuses every
+ * question, nothing in a resolve asks one, and `github: app credentials`
+ * already says the App is missing.
+ */
+export function recipeClientFor(env: NodeJS.ProcessEnv): ClientFor {
+  return hasGitHubApp(env) ? githubClientFor : async () => offlineClient;
+}
+
 /** One line per value, `key  value ← where`, indented under the row. */
 export function provenanceLines(provenance: Readonly<Record<string, string>>): string {
   return Object.entries(provenance)
@@ -1196,16 +1217,6 @@ export function provenanceLines(provenance: Readonly<Record<string, string>>): s
  */
 async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
   const name = "recipe: resolves for every project";
-  if (!hasGitHubApp(env)) {
-    return [
-      {
-        name,
-        status: "skip",
-        detail: "no App configured, and a recipe is read from the repository through the API",
-      },
-    ];
-  }
-
   const projects = await loadProjects().catch(() => null);
   if (projects === null) {
     return [{ name, status: "skip", detail: "the project streams could not be read" }];
@@ -1214,7 +1225,7 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
     return [{ name, status: "ok", detail: "nothing is registered, so no recipe governs anything" }];
   }
 
-  return (await projectFilters(projects)).map((f) =>
+  return (await projectFilters(projects, recipeClientFor(env))).map((f) =>
     f.ok
       ? {
           name: `recipe: ${f.project}`,

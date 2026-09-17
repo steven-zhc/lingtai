@@ -27,6 +27,9 @@ import { describe, expect, it } from "vitest";
 import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
 import { runOnce } from "../src/run-once.ts";
 import { resolveRecipe } from "@lingtai/recipe";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * The two tags, from the plain shape.
@@ -1238,6 +1241,11 @@ describe("runOnce refuses an extension's production value before anything is cla
  * the repository is read for it, so this hands `runOnce` a repository whose
  * every ref carries a disarmed copy, a machine recipe that has the watch, and
  * the diff that deletes it — and the machine's is what holds.
+ *
+ * **Through the default read, not an injected one.** No `recipe` is passed:
+ * the armed copy is a real `recipe.yml` under a `LINGTAI_HOME` this test owns,
+ * so a `runOnce` whose default went back to reading the repository would be
+ * handed the disarmed copy and merge.
  */
 describe("runOnce judges a change by the machine's recipe, not by any file in the repository", () => {
   it("holds a diff that deletes the tamper watch, though the repository's own copy no longer has one", async () => {
@@ -1259,11 +1267,19 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
       fileAt: async (path: string) => (path !== ".lingtai/config.yaml" ? null : RECIPE),
     } as unknown as GitHubClient;
 
-    const result = await once(
-      {
+    // The machine's half: the recipe without `runtime`, and the agent named in
+    // `config.yml` so nothing is asked what is signed in.
+    const lingtaiHome = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await mkdir(join(lingtaiHome, PROJECT));
+    await writeFile(join(lingtaiHome, PROJECT, "recipe.yml"), armed.replace(/^runtime:.*$/m, ""));
+    await writeFile(join(lingtaiHome, "config.yml"), "runtime:\n  agent: claude-code\n  limits: { turns: 10, wall: 2m }\n");
+    const saved = process.env["LINGTAI_HOME"];
+    process.env["LINGTAI_HOME"] = lingtaiHome;
+
+    const result = await Effect.runPromise(
+      runOnce({
         project,
         client,
-        recipe: () => resolveRecipe(async () => armed, "main"),
         runtime,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
@@ -1271,9 +1287,12 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
         merge: true,
         home: "/tmp/fake-home",
         store,
-      },
-      ports,
-    );
+      }).pipe(Effect.provide(withPorts(ports))),
+    ).finally(async () => {
+      if (saved === undefined) delete process.env["LINGTAI_HOME"];
+      else process.env["LINGTAI_HOME"] = saved;
+      await rm(lingtaiHome, { recursive: true, force: true });
+    });
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
     expect(result).toMatchObject({ ok: "held", gate: "proposed" });

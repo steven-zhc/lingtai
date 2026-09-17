@@ -12,7 +12,7 @@ import {
   type SignedIn,
   resolveLocalRecipe,
 } from "@lingtai/recipe";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { type Runtime, createClaudeCodeRuntime, createCodexRuntime } from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
 import type { RuntimeId } from "@lingtai/domain";
 import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
@@ -77,25 +77,39 @@ export async function loadProjects(store: EventStore = eventStore): Promise<Proj
 
 
 /**
- * Which runtimes can sign in here, in the environment a run gets.
+ * Which runtimes are signed in here, in the environment a run gets.
  *
- * Asked only when no file names `runtime.agent`, and remembered once it finds
- * one — a sign-in does not come and go between passes, and `claude auth status`
- * is a process. An empty answer is not remembered, so signing in is seen on the
- * next resolve. Codex has no cheap probe (`codex.ts`), so it is never detected:
- * a machine that wants it names it.
+ * **Every runtime is asked, not only the one that runs today.** Detection is
+ * allowed only when exactly one is signed in (0046 §3), so a probe that could
+ * only ever answer `claude-code` would pick it on a machine signed in to both
+ * and record *the only runtime signed in* — a reason that is false.
+ *
+ * Asked only when no file names `runtime.agent`, and the answer — an empty one
+ * too — is remembered for `ttlMs`. Each probe is a process, and the board
+ * resolves the recipe on every render (#112): an unremembered *none* would
+ * start a `claude auth status` and a `codex login status` per project per
+ * append. A minute is short enough that signing in, or out, is seen on a
+ * later pass without anybody restarting anything.
  */
-let signedInOnce: Promise<readonly RuntimeId[]> | null = null;
-export const signedInHere: SignedIn = () => {
-  signedInOnce ??= (async () => {
-    const runtime = createClaudeCodeRuntime();
-    const status = await runtime.checkAuth?.(runnableEnv({}));
-    const ids: RuntimeId[] = status?.loggedIn ? [runtime.capabilities.id] : [];
-    if (ids.length === 0) signedInOnce = null;
-    return ids;
-  })();
-  return signedInOnce;
-};
+export function signedInProbe(
+  runtimes: readonly Pick<Runtime, "capabilities" | "checkAuth">[],
+  ttlMs = 60_000,
+  now: () => number = Date.now,
+): SignedIn {
+  let kept: { at: number; ids: Promise<readonly RuntimeId[]> } | null = null;
+  return () => {
+    if (kept === null || now() - kept.at >= ttlMs) {
+      const env = runnableEnv({});
+      const ids = Promise.all(
+        runtimes.map(async (r) => ((await r.checkAuth?.(env))?.loggedIn ? [r.capabilities.id] : [])),
+      ).then((found) => found.flat());
+      kept = { at: now(), ids };
+    }
+    return kept.ids;
+  };
+}
+
+export const signedInHere: SignedIn = signedInProbe([createClaudeCodeRuntime(), createCodexRuntime()]);
 
 /**
  * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,

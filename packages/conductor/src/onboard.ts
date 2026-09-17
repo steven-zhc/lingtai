@@ -4,8 +4,11 @@
  * Give it a repository slug and permissions; it does the rest. What it does
  * *not* do is take a configuration file: the recipe is this machine's,
  * `~/.lingtai/<project>/recipe.yml`, and nothing is read from or written to the
- * repository for it (0046 §3, #180). `governing` below is the reading from a
- * branch that 0005 needed, kept for what still reads one.
+ * repository for it (0046 §3, #180).
+ *
+ * **`governing` below has no caller outside its tests.** It is 0005's read from
+ * a branch, and since #180 neither `add` nor the board's `Recheck` reads a
+ * recipe from a branch. Nothing depends on it; it is not a thing to extend.
  *
  * The order matters. Permissions are checked *before* anything is written, so a
  * half-onboarded project is not a state that exists. The failure this guards
@@ -14,17 +17,14 @@
  * nothing anywhere said "wrong scope".
  *
  * The base is not this command's to decide, and `--base` is not a second way of
- * deciding it (#75). There is one irreducible need for a branch from outside the
- * file — **you have to be on a branch to read the file at all** — so `--base`
- * says where to *find* the recipe, and the recipe's own `repo.base` says what
- * the base *is*. Given no flag, this bootstraps from the repository's default
- * branch and adopts the `repo.base` it finds; given a flag the recipe
+ * deciding it (#75). The recipe's own `repo.base` says what the base *is*.
+ * Given no flag, or a remembered base, this adopts it; given a flag the recipe
  * contradicts, it refuses and names both, because a person typed something
  * specific and must not be silently overridden.
  *
  * **In the conductor rather than in the CLI, because it has two callers**
  * (#163). The board's `Recheck` finishes a pending project by reading the
- * recipe from the base branch and appending `ProjectConfigured` — which is
+ * machine's recipe and appending `ProjectConfigured` — which is
  * precisely this function, and a second implementation of it behind a button
  * would be two ways of registering a project, free to disagree about the base,
  * the permissions checked, or what is said when there is still no recipe there.

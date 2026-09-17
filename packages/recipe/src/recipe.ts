@@ -1,20 +1,19 @@
 /**
- * The recipe: `<repo>/.lingtai/config.yaml`, committed to the managed
- * repository and owned by it.
+ * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
+ * `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
+ * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180).
+ * `local.ts` reads it; this file is its schema.
  *
- * It is safe to keep this in the repo the agent is editing because of one rule,
- * borrowed wholesale from GitHub Actions: **the recipe that governs a run is
- * read from `origin/<base>`, never from the agent's branch.** An agent that
- * edits this file changes nothing about the run in flight; the edit shows up in
- * the diff, the `tamper` gate catches it, and it takes effect only after a
- * human approves and merges it.
+ * **It is not in the managed repository any more.** A `.lingtai/config.yaml`
+ * committed there is an ordinary file: nothing reads it to run anything, and
+ * editing it changes nothing. Before #180 it was, and the rule that made that
+ * safe was 0005's — *read from `origin/<base>`, never from the agent's branch*,
+ * with `tamper` catching an edit to it. That rule now holds by location: an
+ * agent's blast radius is its worktree, and `~/.lingtai/` is not in it.
  *
- * Nothing sits above this file. The workflow is the repository's to define,
- * and Lingtai does not second-guess it — what Lingtai owns is *where the file
- * is read from*, and that is the one thing a branch cannot change about the run
- * it is part of.
- *
- * See doc/decisions/0005-config-in-target-repo.md.
+ * Nothing sits above this file. The workflow is the recipe's to define, and
+ * Lingtai does not second-guess it — what Lingtai owns is *where the file is
+ * read from*.
  */
 import { z } from "zod";
 import { Tier, RuntimeId, isEventType, isRetiredEventType } from "@lingtai/domain";

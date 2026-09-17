@@ -13,7 +13,8 @@
  * that Codex could carry it and Claude Code could not — the decision does not
  * wait on the implementation.
  */
-import type { RunOutcome, RunRequest, Runtime, RuntimeCapabilities } from "./runtime.ts";
+import { spawn } from "node:child_process";
+import type { AuthStatus, RunOutcome, RunRequest, Runtime, RuntimeCapabilities } from "./runtime.ts";
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   id: "codex",
@@ -41,13 +42,52 @@ export class CodexNotImplementedError extends Error {
   }
 }
 
-export function createCodexRuntime(): Runtime {
+export function createCodexRuntime(options: { binary?: string } = {}): Runtime {
+  const binary = options.binary ?? "codex";
   return {
     capabilities: CODEX_CAPABILITIES,
     run(_request: RunRequest): Promise<RunOutcome> {
       // Loudly, and naming the issue. A stub that returned a plausible-looking
       // outcome would be worse than one that refuses.
       return Promise.reject(new CodexNotImplementedError());
+    },
+
+    /**
+     * `codex login status`, in the environment a run would get.
+     *
+     * Real, though the adapter is not: which runtimes are signed in decides
+     * whether `runtime.agent` may be detected at all (0046 §3), and a machine
+     * signed in to both must be asked rather than handed the one that happened
+     * to have a probe. The exit code is the answer — 0 `Logged in using …`,
+     * 1 `Not logged in` — and a missing binary is not signed in.
+     */
+    async checkAuth(env: Record<string, string>): Promise<AuthStatus> {
+      return new Promise<AuthStatus>((resolve) => {
+        const child = spawn(binary, ["login", "status"], {
+          env: env as NodeJS.ProcessEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        let out = "";
+        child.stdout.on("data", (c: Buffer) => (out += c.toString()));
+        child.stderr.on("data", (c: Buffer) => (out += c.toString()));
+
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          resolve({ loggedIn: false, method: null, detail: "codex login status did not answer in 20s" });
+        }, 20_000);
+
+        child.on("error", (e) => {
+          clearTimeout(timer);
+          resolve({ loggedIn: false, method: null, detail: e.message });
+        });
+
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          const detail = (out.trim() || "no output").slice(0, 300);
+          resolve({ loggedIn: code === 0, method: null, detail });
+        });
+      });
     },
   };
 }
