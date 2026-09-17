@@ -51,8 +51,8 @@ export function machineEnvFile(): Record<string, string> {
  * Vitest sets `VITEST`; the explicit override exists for anything that runs the
  * suite by another name.
  */
-function inTest(): boolean {
-  return Boolean(process.env["VITEST"] || process.env["LINGTAI_TEST"]);
+function inTest(from: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(from["VITEST"] || from["LINGTAI_TEST"]);
 }
 
 /**
@@ -86,8 +86,8 @@ function inTest(): boolean {
  *
  * is how the test database gets its schema.
  */
-export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL"): string {
-  return inTest() ? `${PREFIX}TEST_${name}` : `${PREFIX}${name}`;
+export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL", from: NodeJS.ProcessEnv = process.env): string {
+  return inTest(from) ? `${PREFIX}TEST_${name}` : `${PREFIX}${name}`;
 }
 
 /**
@@ -142,11 +142,11 @@ function renamedFrom(name: string, from: NodeJS.ProcessEnv): string | null {
   return from[old] ? old : null;
 }
 
-function testUrl(name: string): string {
+function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
   const full = `${PREFIX}TEST_${name}`;
-  const value = optional(full);
+  const value = optional(full, from);
   if (!value) {
-    const was = renamedFrom(full, process.env);
+    const was = renamedFrom(full, from);
     throw new Error(
       `${full} is not set, and the tests will not run against ${PREFIX}${name}. ` +
         (was ? `${was} is set — it was renamed to ${full} (#63). ` : "") +
@@ -159,10 +159,10 @@ function testUrl(name: string): string {
   return value;
 }
 
-function required(name: string): string {
-  const v = process.env[name];
+function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
+  const v = from[name];
   if (!v) {
-    const was = renamedFrom(name, process.env);
+    const was = renamedFrom(name, from);
     throw new Error(
       `${name} is not set. ` +
         (was
@@ -175,8 +175,8 @@ function required(name: string): string {
 }
 
 /** Pooled. Ordinary reads and writes. */
-export function databaseUrl(): string {
-  return inTest() ? testUrl("DATABASE_URL") : required(`${PREFIX}DATABASE_URL`);
+export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
+  return inTest(from) ? testUrl("DATABASE_URL", from) : required(`${PREFIX}DATABASE_URL`, from);
 }
 
 /**
@@ -189,10 +189,39 @@ export function databaseUrl(): string {
  * rather than broken. Measured against Supabase's pooler on 2026-08-31; see
  * doc/decisions/0009-two-connections.md.
  *
- * On a plain Postgres this may be the same string as `databaseUrl()`.
+ * On a plain Postgres this may be the same string as `databaseUrl()`, and then
+ * it need not be written at all: see `directUrlIfSet`. Neither set still
+ * refuses, by the direct name.
  */
-export function directDatabaseUrl(): string {
-  return inTest() ? testUrl("DIRECT_DATABASE_URL") : required(`${PREFIX}DIRECT_DATABASE_URL`);
+export function directDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string {
+  return (
+    directUrlIfSet(from) ??
+    (inTest(from) ? testUrl("DIRECT_DATABASE_URL", from) : required(`${PREFIX}DIRECT_DATABASE_URL`, from))
+  );
+}
+
+/**
+ * The direct URL, or the pooled one standing in for it when the direct one is
+ * absent (#176). Undefined when neither is set.
+ *
+ * Two URLs are Supabase's artifact rather than the architecture's — 0009: "On a
+ * plain Postgres the two may be identical" — so a plain install writes one.
+ * The fallback **only fills a gap**: a set direct URL always wins, because on
+ * Supabase the two genuinely differ, and the pooled one there is exactly the
+ * connection that breaks `LISTEN/NOTIFY` silently. `lingtai doctor`'s session
+ * mode check is what catches a pooled URL standing in where it cannot.
+ *
+ * **The `TEST_` pair falls back the same way, and only within itself.** What
+ * `testUrl` refuses is the operator's log; `LINGTAI_TEST_DATABASE_URL` standing
+ * in for `LINGTAI_TEST_DIRECT_DATABASE_URL` is still the test database, so the
+ * fallback cannot cross that line — `dbVar` picks both names from the same side.
+ * `test-support/teardown.ts` already read the pair this way.
+ *
+ * Exported for the callers that must work with nothing configured (Prisma's
+ * config, the bootstrap script), which read rather than demand.
+ */
+export function directUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | undefined {
+  return optional(dbVar("DIRECT_DATABASE_URL", from), from) ?? optional(dbVar("DATABASE_URL", from), from);
 }
 
 /** Set, or undefined. For values whose absence is a legitimate state. */

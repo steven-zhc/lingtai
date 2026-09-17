@@ -45,12 +45,31 @@ function find<T extends { name: string }>(results: readonly T[], name: string): 
 
 describe("lingtai doctor — environment", () => {
   it("fails, and names which variable, when one is missing", async () => {
+    // The pooled one: the direct one has a stand-in (#176), the pooled one has none.
+    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
+    const e = find(report.results, "environment");
+
+    expect(e.status).toBe("fail");
+    expect(e.detail).toContain("LINGTAI_DATABASE_URL");
+    expect(e.detail).not.toContain("LINGTAI_DIRECT_DATABASE_URL");
+    expect(report.failed).toBeGreaterThan(0);
+  });
+
+  it("names both when neither is set", async () => {
+    const e = find((await runDoctor(env({}))).results, "environment");
+    expect(e.detail).toContain("LINGTAI_DATABASE_URL and LINGTAI_DIRECT_DATABASE_URL");
+  });
+
+  it("refuses a pooled URL standing in for the direct one, and says to set it", async () => {
+    // #176's trap: the fallback only fills a gap, and on Supabase the gap it
+    // fills with the pooler is the connection that loses a NOTIFY silently.
     const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }));
     const e = find(report.results, "environment");
 
     expect(e.status).toBe("fail");
-    expect(e.detail).toContain("LINGTAI_DIRECT_DATABASE_URL");
-    expect(report.failed).toBeGreaterThan(0);
+    expect(e.detail).toContain("cannot stand in");
+    expect(e.detail).toContain("set LINGTAI_DIRECT_DATABASE_URL");
+    expect(find(report.results, "postgres").status).toBe("skip");
   });
 
   it("does not attempt Postgres once the environment is wrong", async () => {

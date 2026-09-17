@@ -119,7 +119,7 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
   }
 }
 
-function environment(pooled: string | undefined, direct: string | undefined): CheckResult {
+function environment(pooled: string | undefined, direct: string | undefined, standIn = false): CheckResult {
   if (!pooled || !direct) {
     const missing = [!pooled && "LINGTAI_DATABASE_URL", !direct && "LINGTAI_DIRECT_DATABASE_URL"].filter(Boolean);
     return {
@@ -134,7 +134,9 @@ function environment(pooled: string | undefined, direct: string | undefined): Ch
   const sameHost = p.host === d.host;
   const detail =
     `LINGTAI_DATABASE_URL :${p.port} db=${p.database} pgbouncer=${p.pgbouncer} · ` +
-    `LINGTAI_DIRECT_DATABASE_URL :${d.port} db=${d.database} pgbouncer=${d.pgbouncer} · ` +
+    (standIn
+      ? "LINGTAI_DIRECT_DATABASE_URL unset, the pooled one stands in · "
+      : `LINGTAI_DIRECT_DATABASE_URL :${d.port} db=${d.database} pgbouncer=${d.pgbouncer} · `) +
     `same host: ${sameHost ? "yes" : "NO"}`;
 
   // Two URLs against different databases is not a configuration this system has
@@ -147,7 +149,9 @@ function environment(pooled: string | undefined, direct: string | undefined): Ch
     return {
       name: "environment",
       status: "fail",
-      detail: `${detail} — LINGTAI_DIRECT_DATABASE_URL still carries pgbouncer=true`,
+      detail: standIn
+        ? `${detail} — LINGTAI_DATABASE_URL carries pgbouncer=true, so it cannot stand in for the direct one: set LINGTAI_DIRECT_DATABASE_URL`
+        : `${detail} — LINGTAI_DIRECT_DATABASE_URL still carries pgbouncer=true`,
     };
   }
   return { name: "environment", status: "ok", detail };
@@ -1532,8 +1536,11 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
   });
 
   const pooled = env["LINGTAI_DATABASE_URL"];
-  const direct = env["LINGTAI_DIRECT_DATABASE_URL"];
-  const envResult = environment(pooled, direct);
+  // Absent, the pooled one stands in (#176) — the rule `directDatabaseUrl`
+  // follows, so the doctor checks the connection the system will actually use.
+  const standIn = !env["LINGTAI_DIRECT_DATABASE_URL"];
+  const direct = env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
+  const envResult = environment(pooled, direct, standIn && Boolean(pooled));
   results.push(envResult);
 
   if (envResult.status === "ok" && pooled && direct) {

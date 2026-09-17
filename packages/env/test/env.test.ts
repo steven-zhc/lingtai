@@ -5,7 +5,14 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { envFiles, githubApp, githubWebhookSecret, hasGitHubApp, resolvePath } from "../src/index.ts";
+import {
+  directDatabaseUrl,
+  envFiles,
+  githubApp,
+  githubWebhookSecret,
+  hasGitHubApp,
+  resolvePath,
+} from "../src/index.ts";
 
 describe("resolvePath", () => {
   /**
@@ -36,6 +43,43 @@ describe("resolvePath", () => {
     expect(fromRoot.endsWith("lingtai-app.pem")).toBe(true);
     expect(fromRoot.startsWith("/")).toBe(true);
     expect(fromRoot).not.toContain("packages/env");
+  });
+});
+
+/**
+ * #176. Two URLs are Supabase's; a plain Postgres writes one. Each case hands
+ * an environment rather than touching `process.env`, which under vitest would
+ * always take the `TEST_` side.
+ */
+describe("the direct URL falls back to the pooled one", () => {
+  const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
+  const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
+
+  it("uses the pooled URL when the direct one is absent", () => {
+    expect(directDatabaseUrl({ LINGTAI_DATABASE_URL: DIRECT })).toBe(DIRECT);
+    // Empty is absent, as it is for every other name here.
+    expect(directDatabaseUrl({ LINGTAI_DATABASE_URL: DIRECT, LINGTAI_DIRECT_DATABASE_URL: "" })).toBe(DIRECT);
+  });
+
+  it("never overrides a direct URL that is set", () => {
+    // On Supabase the two genuinely differ, and the pooled one is the
+    // connection that loses a NOTIFY without saying so.
+    expect(directDatabaseUrl({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT })).toBe(DIRECT);
+  });
+
+  it("refuses by name when neither is set", () => {
+    expect(() => directDatabaseUrl({})).toThrow(/LINGTAI_DIRECT_DATABASE_URL is not set/);
+  });
+
+  it("falls back within the TEST_ pair, and never across to the operator's", () => {
+    const test = { LINGTAI_TEST: "1" };
+    expect(directDatabaseUrl({ ...test, LINGTAI_TEST_DATABASE_URL: DIRECT })).toBe(DIRECT);
+    expect(
+      directDatabaseUrl({ ...test, LINGTAI_TEST_DATABASE_URL: POOLED, LINGTAI_TEST_DIRECT_DATABASE_URL: DIRECT }),
+    ).toBe(DIRECT);
+    expect(() =>
+      directDatabaseUrl({ ...test, LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }),
+    ).toThrow(/LINGTAI_TEST_DIRECT_DATABASE_URL is not set/);
   });
 });
 

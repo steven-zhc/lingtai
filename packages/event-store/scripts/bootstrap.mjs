@@ -12,14 +12,15 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { dbVar } from "../src/env.ts";
+import { dbVar, directUrlIfSet } from "../src/env.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // `LINGTAI_TEST=1` points this at the test database instead, which is how
 // that one gets its schema.
+// The pooled name stands in when the direct one is absent (#176).
 const name = dbVar("DIRECT_DATABASE_URL");
-const url = process.env[name];
-if (!url) throw new Error(`${name} is not set`);
+const url = directUrlIfSet();
+if (!url) throw new Error(`${name} is not set, and neither is ${dbVar("DATABASE_URL")}`);
 
 const c = new pg.Client({ connectionString: url });
 await c.connect();
