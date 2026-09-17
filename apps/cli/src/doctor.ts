@@ -33,7 +33,7 @@ import {
   passCeiling,
   projectFilters,
 } from "@lingtai/conductor";
-import { type GitHubClient, createGitHubClient } from "@lingtai/github";
+import type { GitHubClient } from "@lingtai/github";
 import { type Recipe, baseDivergence } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
@@ -1260,10 +1260,11 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
  * nothing while `#84` ran 172 — and every one of those signals said the bound
  * existed.
  *
- * **The runtime is the one that runs, not the one the recipe names.**
- * `runtime.agent` is declarative and no dispatcher consults it: every run is
- * `createClaudeCodeRuntime()`, so that is whose `enforces` is asked. Reading
- * the recipe's field would answer for a runtime that is never started.
+ * **The runtime is the one that runs, not the one the recipe names.** Every
+ * run is handed `createClaudeCodeRuntime()`, so that is whose `enforces` is
+ * asked; a recipe naming another agent is refused by `runOnce` before its
+ * claim (#180) rather than run on this one. Reading the recipe's field would
+ * answer for a runtime that is never started.
  *
  * Here rather than in the schema: whether a limit binds is a fact about the
  * recipe *and* the adapter, which a field's parse cannot see. A `fail` is how
@@ -1408,19 +1409,14 @@ export function extensionRow(
   };
 }
 
-async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+export async function declaredEnvironment(
+  env: NodeJS.ProcessEnv,
+  load: typeof loadProjects = loadProjects,
+): Promise<CheckResult[]> {
   const name = "env: declared names, and which layer";
-  if (!hasGitHubApp(env)) {
-    return [
-      {
-        name,
-        status: "skip",
-        detail: "no App configured, so no recipe can be read — the required names are the recipe's",
-      },
-    ];
-  }
-
-  const projects = await loadProjects().catch(() => null);
+  // No App is needed: the recipe is this machine's file (#180), and nothing in
+  // this row asks GitHub anything.
+  const projects = await load().catch(() => null);
   if (projects === null) {
     return [{ name, status: "skip", detail: "the project streams could not be read" }];
   }
@@ -1433,12 +1429,7 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
     if (!project.project || !project.owner) continue;
     const label = `env: ${project.project}`;
     try {
-      const client = await createGitHubClient({
-        auth: githubApp(env),
-        owner: project.owner,
-        repo: project.project,
-      });
-      const resolved = await currentRecipe(project, client);
+      const resolved = await currentRecipe(project);
       // Every name either file offers, and which one answered — 0021 makes
       // this load-bearing rather than nice: "the operator is responsible" is
       // only true where the operator can see what is happening. Names only,
@@ -1503,13 +1494,14 @@ async function declaredEnvironment(env: NodeJS.ProcessEnv): Promise<CheckResult[
  * decisions and doctor never writes; which one is meant is a person's answer,
  * given by re-running `lingtai add --base`.
  */
-async function recipeGovernsItsBase(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+export async function recipeGovernsItsBase(
+  env: NodeJS.ProcessEnv,
+  load: typeof loadProjects = loadProjects,
+): Promise<CheckResult[]> {
   const name = "recipe: the rules and the merge target are one branch";
-  if (!hasGitHubApp(env)) {
-    return [{ name, status: "skip", detail: "no App configured, so no recipe can be read to compare" }];
-  }
+  // No App is needed to compare them: the recipe is this machine's file (#180).
 
-  const projects = await loadProjects().catch(() => null);
+  const projects = await load().catch(() => null);
   if (projects === null) {
     return [{ name, status: "skip", detail: "the project streams could not be read" }];
   }
@@ -1522,12 +1514,7 @@ async function recipeGovernsItsBase(env: NodeJS.ProcessEnv): Promise<CheckResult
     if (!project.project || !project.owner) continue;
     const label = `base: ${project.project}`;
     try {
-      const client = await createGitHubClient({
-        auth: githubApp(env),
-        owner: project.owner,
-        repo: project.project,
-      });
-      const resolved = await currentRecipe(project, client);
+      const resolved = await currentRecipe(project);
       const divergence = baseDivergence(resolved, `${project.owner}/${project.project}`);
       results.push(
         divergence

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectState } from "@lingtai/domain";
 import { projectFilter } from "@lingtai/conductor";
-import { recipeClientFor } from "../src/doctor.ts";
+import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase } from "../src/doctor.ts";
 
 const RECIPE = `
 version: 1
@@ -50,5 +50,25 @@ describe("the recipe row, with no App configured", () => {
     expect(filter.kinds).toEqual(["bug"]);
     expect(filter.provenance["runtime.agent"]).toBe(`claude-code ← ${join(home, "config.yml")}`);
     expect(filter.provenance["gates"]).toContain(join(home, "app", "recipe.yml"));
+  });
+
+  /**
+   * The rows under it read the same file, so they run on the same machine
+   * rather than skipping for an App nothing in them asks.
+   */
+  it("checks the declared environment and the base against that same file", async () => {
+    const state = { project: "app", owner: "me", base: "develop" } as ProjectState;
+    const load = async () => [state];
+
+    const envRows = await declaredEnvironment({}, load);
+    expect(envRows.map((r) => r.name)).toContain("env: app");
+    for (const row of envRows) expect(row.detail).not.toContain("no App configured");
+    expect(envRows.find((r) => r.name === "env: app")?.status).toBe("ok");
+
+    const [base] = await recipeGovernsItsBase({}, load);
+    expect(base?.name).toBe("base: app");
+    // Registered against develop, and the machine's recipe says main.
+    expect(base?.status).toBe("fail");
+    expect(base?.detail).toContain("develop");
   });
 });

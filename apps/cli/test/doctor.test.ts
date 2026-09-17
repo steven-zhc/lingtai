@@ -151,18 +151,19 @@ describe("lingtai doctor — the declared environment", () => {
   /**
    * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)
    * that costs nothing: the same question a run asks, answered before any money
-   * is spent. Without an App there is no recipe to read, so it is a skip with a
-   * reason rather than an omission — and the reason is about *this* run, not a
-   * literal about the machine, which is why it is not in `DEFERRED`.
+   * is spent. The recipe is this machine's file since #180, so no App is
+   * needed to read it: with none configured the row still runs — one row per
+   * project, or one saying there is none — rather than skipping for a reason
+   * that is no longer true. `pure/doctor-recipe.test.ts` pins the per-project row.
    */
-  it("is listed, and says why when it cannot read a recipe", async () => {
+  it("is listed, and runs with no App configured", async () => {
     const report = await runDoctor(env({}));
-    const check = find(report.results, "env: declared names, and which layer");
+    const rows = report.results.filter((r) => r.name.startsWith("env:"));
 
-    expect(check.status).toBe("skip");
-    expect(check.detail).toContain("recipe");
-    // Not deferred: it runs whenever a project and an App exist.
-    expect(check.deferred).toBeUndefined();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.detail).not.toContain("no App configured");
+    // Not deferred: it runs whenever a project exists.
+    for (const row of rows) expect(row.deferred).toBeUndefined();
   });
 });
 
@@ -316,20 +317,21 @@ subscribers:
 describe("lingtai doctor — the recipes", () => {
   /**
    * This check was in `DEFERRED` — a permanent skip, on the argument that a
-   * recipe read here would be a different commit's. Both read `origin/<base>`
-   * through the API, and the question is only whether the file that governs the
-   * next run parses at all: it did not, on `main`, for long enough that every
-   * issue in the project sat unpicked with doctor green throughout (#76).
+   * recipe read here would be a different commit's. Both read the same file —
+   * `~/.lingtai/<project>/recipe.yml` since #180 — and the question is only
+   * whether the file that governs the next run parses at all: it did not, on
+   * `main`, for long enough that every issue in the project sat unpicked with
+   * doctor green throughout (#76).
    */
   it("runs, rather than being deferred forever", async () => {
     const report = await runDoctor(env({}));
-    const check = find(report.results, "recipe: resolves for every project");
+    const rows = report.results.filter((r) => r.name.startsWith("recipe: ") && r.name !== "recipe: the rules and the merge target are one branch");
 
-    // Without an App there is nothing to read a recipe through, so it is a skip
-    // about *this* run — not a literal about the installation, which is the
-    // distinction `deferred` marks.
-    expect(check.status).toBe("skip");
-    expect(check.deferred).toBeUndefined();
+    // The recipe is this machine's file, so no App is needed to read it: the
+    // row runs with none configured rather than skipping for one.
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.detail).not.toContain("no App configured");
+    for (const row of rows) expect(row.deferred).toBeUndefined();
     expect(report.results.some((r) => r.name === "recipe: schema")).toBe(false);
   });
 });
