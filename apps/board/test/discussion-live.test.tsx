@@ -477,8 +477,8 @@ describe("the pair's height", () => {
     // ever as a `max-height`.
     const pane = /\.spair\s*>\s*(?:\.outgoing|\.chat|\.plan|:only-child)\b/;
     const decls = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter(([, selector]) => selector.split(",").some((s) => pane.test(s)))
-      .flatMap(([, , body]) =>
+      .filter(([, selector = ""]) => selector.split(",").some((s) => pane.test(s)))
+      .flatMap(([, , body = ""]) =>
         body.split(";").map((d) => d.trim()).filter(Boolean).map((d) => {
           const i = d.indexOf(":");
           return [d.slice(0, i).trim(), d.slice(i + 1).trim()] as const;
