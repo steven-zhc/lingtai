@@ -107,7 +107,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0025](decisions/0025-a-failure-buys-one-agent.md) | **A failure buys one agent, and the person approves a diff** | accepted |
 | [0026](decisions/0026-the-conversion-past-the-seam.md) | **The conversion goes past the seam: `runOnce` and the adapters are Effect** | accepted |
 | [0027](decisions/0027-the-lease-is-deleted.md) | **The lease is deleted: the constraint excludes, the lock proves liveness** | accepted; supersedes 0013's claim-recovery paragraph |
-| [0030](decisions/0030-shutting-down-safely.md) | **Shutting down safely: the boundary is the pass, and the trigger is a command** | accepted; extends 0027 §3 |
+| [0030](decisions/0030-shutting-down-safely.md) | **Shutting down safely: the boundary is the pass, and the trigger is a command** | accepted; §2's *a daemon that is down finds it waiting* superseded by 0048 |
 | [0031](decisions/0031-a-run-that-never-started.md) | **A run that never started is its own outcome, and a quota stops the conductor** | accepted |
 | [0032](decisions/0032-the-page-is-organised-by-attempt.md) | **The task page is organised by attempt, and its control is the prompt** | accepted |
 | [0033](decisions/0033-the-third-kind-of-agent.md) | **The third kind of agent: one that reads, and cannot run** | accepted |
@@ -121,12 +121,13 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) | **The worktree is the whole of a pass, and a refusal never costs it** | accepted; supersedes 0025 §2–§3 and 0038 §4 |
 | [0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) | **`rounds` bound depth; a second ceiling bounds breadth** | accepted; extends 0039 §2–§3, off by default |
 | [0041](decisions/0041-a-gate-that-never-ran.md) | **A gate that never ran has judged nothing, and the same quota stops the conductor** | accepted; extends 0031 to the agent inside a gate |
-| [0042](decisions/0042-the-restart-is-a-command.md) | **The restart is a command, the checks come before the drain, and a start is an event** | accepted; completes 0030 |
+| [0042](decisions/0042-the-restart-is-a-command.md) | **The restart is a command, the checks come before the drain, and a start is an event** | accepted; §8's handoff superseded by 0048 |
 | [0043](decisions/0043-evidence-is-plain-text.md) | **A gate's evidence is plain text, stripped where it is captured** | accepted; closes #156 |
 | [0044](decisions/0044-a-close-is-a-terminal-outcome.md) | **A close is a terminal outcome, so `end` runs on it** | accepted; completes #151 |
 | [0045](decisions/0045-one-team-one-conductor.md) | **One team, one conductor, one recipe** | **superseded by [0046](decisions/0046-lingtai-is-personal.md)** |
 | [0046](decisions/0046-lingtai-is-personal.md) | **Lingtai is personal; the repository is the team's** | accepted; supersedes 0045 and 0005's surviving half |
 | [0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md) | **The recipe a run was given is on the log, and nothing resolves from it** | accepted; qualifies 0005 |
+| [0048](decisions/0048-a-signal-is-aimed-at-one-daemon.md) | **A signal is aimed at one daemon, so the restart hands nothing to the next** | accepted; supersedes 0030 §2's waiting request and 0042 §8's handoff |
 
 ## Experiments
 

@@ -26,7 +26,6 @@ export {
 } from "./work-loop.ts";
 export {
   CONTROL_STREAM,
-  HANDOFF_LAPSES_MS,
   HEARTBEAT_MS,
   STALE_AFTER_MS,
   beat,
@@ -41,7 +40,6 @@ export {
   recordStart,
   startAfter,
   type RecordedStart,
-  type Handoff,
   requestRun,
   requestShutdown,
   requestShutdownUnlessStanding,

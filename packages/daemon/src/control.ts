@@ -40,11 +40,13 @@
  * shutdown killed the agent in the same instant — nothing could wait for a run
  * that was already dead. A signal cannot carry this. An append can.
  *
- * `ConductorResumed` lifts a shutdown request as it lifts a pause, and it has
- * to: the request outlives the daemon it was aimed at, so without something to
- * withdraw it the next daemon to start would read it and stop again.
+ * `ConductorResumed` lifts a shutdown request as it lifts a pause.
  * `ConductorShutdownWithdrawn` lifts one request by its version and nothing
- * else, which is what `lingtai restart` needs (0042).
+ * else, which is what `lingtai restart` and `lingtai service shutdown` need
+ * (0042). Neither is what lets the next daemon start any more: since #159 a
+ * request is read only by a daemon that was running when it was appended, and
+ * the withdrawal keeps what the board and `lingtai status` call *standing* true
+ * ([0048](../../../doc/decisions/0048-a-signal-is-aimed-at-one-daemon.md)).
  *
  * ## The one pause nobody has to lift
  *
@@ -65,7 +67,6 @@ import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-st
 import {
   CONTROL_STREAM,
   type ControlState,
-  type Handoff,
   type ShutdownRequest,
   parsePayload,
   reduceControl,
@@ -79,13 +80,7 @@ import pg from "pg";
 // `conductor` needed to ask whether the conductor is already paused (0031 §3)
 // — `daemon` depends on `conductor`, so the fold could not stay here. What
 // stays here is what it always was: the I/O, and the commands that append.
-export {
-  CONTROL_STREAM,
-  HANDOFF_LAPSES_MS,
-  type ControlState,
-  type Handoff,
-  type ShutdownRequest,
-} from "@lingtai/domain";
+export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from "@lingtai/domain";
 
 /**
  * Folds the control stream. Cheap: it is a handful of events, not a history.
@@ -225,16 +220,14 @@ export async function requestShutdownUnlessStanding(
  * `lingtai restart`. A start that loses the lock appends nothing, because
  * nothing started.
  *
- * It does not withdraw a standing shutdown request, deliberately: a daemon
- * started while one stands reads it and stops again. See `withdrawShutdown`.
+ * It does not withdraw a standing shutdown request, deliberately. See
+ * `withdrawShutdown`.
  */
 export async function recordStart(
   by: string,
   reason: string | null,
   code: CodeVersion,
   store: EventStore = eventStore,
-  /** The withdrawal this start answers, when a supervisor made a restart's start (0042 §8). */
-  handoff: number | null = null,
 ): Promise<void> {
   // Retried on a lost version race, as the two writers below are: nothing about
   // a start depends on what else landed, so a `RunRequested` between the read
@@ -244,7 +237,7 @@ export async function recordStart(
     try {
       await append(
         "ConductorStarted",
-        { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff },
+        { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff: null },
         store,
         at,
       );
@@ -255,24 +248,27 @@ export async function recordStart(
   }
 }
 
-/** What a start after a restart's handoff recorded, as the log has it. */
+/** A `ConductorStarted`, as the log has it. */
 export interface RecordedStart {
   by: string;
   reason: string | null;
   sha: string | null;
   dirty: boolean;
   worker: string;
-  handoff: number | null;
+  /** Where it sits on `ctl-conductor`. */
+  version: number;
   at: Date;
 }
 
 /**
  * The first `ConductorStarted` after `version` on `ctl-conductor`, or null.
  *
- * What `lingtai restart` waits on when a supervisor makes the start: not the
- * beacon, which says a daemon is up and not which start put it there, but the
- * record the new daemon appends — so the restart can say whose start it was and
- * from what commit, or that the one that happened was not the one it handed off.
+ * What a supervisor's start is confirmed by (#167) — `lingtai service start`,
+ * and the supervised `lingtai restart`, which also compares its commit with the
+ * one it checked. Not the beacon, which says a daemon is beating and not which
+ * start put it there, and not the supervisor's exit code, which says the job was
+ * asked for and not that a daemon won the lock and took work: a copy that loses
+ * the lock records nothing and exits 0.
  */
 export async function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
   const found = (await store.read(CONTROL_STREAM)).find((e) => e.type === "ConductorStarted" && e.version > version);
@@ -284,7 +280,7 @@ export async function startAfter(version: number, store: EventStore = eventStore
     sha: typeof d["sha"] === "string" ? d["sha"] : null,
     dirty: d["dirty"] === true,
     worker: typeof d["worker"] === "string" ? d["worker"] : "",
-    handoff: typeof d["handoff"] === "number" ? d["handoff"] : null,
+    version: found.version,
     at: found.at,
   };
 }
@@ -301,10 +297,14 @@ export type Withdrawal =
 /**
  * Lift one drain — the one at `version` — and touch nothing else.
  *
- * `lingtai restart` has to withdraw the request it made: it stands in the
- * stream for ever, so the daemon the command is about to start would read it
- * and stop again. `ConductorResumed` would do that and would also lift a pause,
- * which is somebody else's decision and nothing to do with this restart.
+ * **Still called, and why** (#167): `lingtai restart` and `lingtai service
+ * shutdown` withdraw the request they made once it has done its work. Not so
+ * the next daemon can start — since #159 that daemon never reads a request
+ * older than itself — but because the request otherwise stands in the fold for
+ * ever: the board's chip, `lingtai status` and every refusal that asks *has
+ * somebody asked this system to stop* would go on saying yes about a stop that
+ * finished. `ConductorResumed` would lift it too, and a pause with it, which is
+ * somebody else's decision and nothing to do with this restart.
  *
  * **One append, at the version of the read that decided it.** The first version
  * of this resumed and then re-paused, as two appends: anything that landed
@@ -318,11 +318,6 @@ export async function withdrawShutdown(
   by: string,
   version: number,
   reason: string,
-  /**
-   * The code the restart examined, when a supervisor is to make the start —
-   * so the daemon it starts can record whose restart it was (0042 §8).
-   */
-  handoff: Pick<Handoff, "sha" | "dirty"> | null = null,
   store: EventStore = eventStore,
 ): Promise<Withdrawal> {
   for (let attempt = 0; ; attempt++) {
@@ -331,7 +326,7 @@ export async function withdrawShutdown(
     if (standing === null) return { withdrew: false, standing: null };
     if (standing.version !== version) return { withdrew: false, standing };
     try {
-      const at = await append("ConductorShutdownWithdrawn", { by, version, reason, handoff }, store, events.length);
+      const at = await append("ConductorShutdownWithdrawn", { by, version, reason, handoff: null }, store, events.length);
       return { withdrew: true, request: standing, version: at };
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;

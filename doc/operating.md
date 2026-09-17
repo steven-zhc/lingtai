@@ -697,29 +697,37 @@ The lock held with no fresh beacon is drained too, not just waited on: it is a
 writes are failing, which would otherwise never exit. A lock or a beacon that
 could not be read refuses before anything is asked to stop.
 
-**Under `lingtai service`, the start is the supervisor's.** When launchd has
-the job loaded, or the systemd unit is active, a daemon started in the terminal
-would be a second conductor beside the one it keeps, and the supervised one
-would come back the moment the terminal closed. So `restart` asks first whether
-a supervisor keeps it — refusing, before anything stops, a supervisor it could
-not ask or a unit written from another checkout, since it would check this
-commit and start that one's. It asks the drain even when nothing is conducting,
-waits as above, and withdraws with a **handoff**: who, why, and the commit it
-checked. Then `service start`, and it waits up to 90 seconds for the start to
-be recorded. The supervised daemon that starts next takes the restart's name
-off the handoff only if it is running the commit that was checked, and only
-within five minutes of the withdrawal — a start after that is nobody's restart,
-whoever typed it; on any other commit
-it is recorded as `daemon` and says why, and the restart exits non-zero naming
-what did start. `--no-conduct` and `--no-merge` are refused there, because the
-unit decides how the supervisor starts it. A file left after `service shutdown` is
-not a keeper — nothing starts from it — so that restart runs in the terminal.
+**Under `lingtai service`, the drain and the start are the supervisor's, and
+every refusal is still the restart's** (0048). When launchd has the job loaded,
+or the systemd unit is active, a daemon started in the terminal would be a
+second conductor beside the one it keeps, and the supervised one would come
+back the moment the terminal closed. So `restart` asks first whether a
+supervisor keeps it — refusing, before anything stops, a supervisor it could not
+ask or a unit written from another checkout, since it would check this commit
+and start that one's. Then the same checks as above; `lingtai service
+shutdown`'s drain, which holds the conductor lock through the unload so the copy
+KeepAlive starts cannot take work on code nobody checked; the same checks again
+with nothing supervised running — a refusal there leaves the service unloaded
+and says so; and `service start`. It exits 0 only when the daemon that started
+has recorded `ConductorStarted` on the commit that was checked, and exits
+non-zero naming what did start otherwise. `--no-conduct` and `--no-merge` are
+refused there, because the unit decides how the supervisor starts it. A file
+left after `service shutdown` is not a keeper — nothing starts from it — so that
+restart runs in the terminal.
+
+**`service start`, `service restart` and `service install` wait for the start to
+be recorded**, up to two minutes, because the supervisor exiting 0 says the job
+was asked for and not that a daemon took work: a copy that loses the lock, or
+reads a drain, records nothing and exits 0 for the supervisor to start again.
+No record is exit 1, and the line says so. `apps/cli/src/restart.ts`'s
+`RESTART_GUARDS` is the table of what the terminal and the supervised restart
+each refuse.
 
 A start is now in the log as well as in the beacon — `ConductorStarted`, with
-who, why and the commit. `by` is `human:<you>` for a restart, for the
-supervisor's start that answered your restart's handoff, or for a `lingtai
-daemon` typed at a terminal, and `daemon` for one launchd or systemd started by
-itself — so *who restarted it at 23:06* is a question the log answers. A start
+who, why and the commit. `by` is `human:<you>` for a restart in the
+terminal or a `lingtai start` typed at one, and `daemon` for one launchd or
+systemd started — a supervised restart included, which is recorded as your
+drain and withdrawal, then that start — so *who restarted it at 23:06* is a question the log answers. A start
 into a standing drain is not recorded: it takes nothing and exits, and a
 supervisor repeats it every thirty seconds until the drain is lifted. A beacon
 is one mutable row the next start overwrites, and it never could.

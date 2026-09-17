@@ -1,7 +1,8 @@
 # 0042 — The restart is a command, the checks come before the drain, and a start is an event
 
 **Status** accepted · 2026-09-13 · completes
-[0030](0030-shutting-down-safely.md), which decided the stop and left the start
+[0030](0030-shutting-down-safely.md), which decided the stop and left the start ·
+**§8's handoff superseded by [0048](0048-a-signal-is-aimed-at-one-daemon.md)**
 
 ## Context
 

@@ -1049,15 +1049,15 @@ export const ConductorStarted = z.object({
    */
   worker: z.string(),
   /**
-   * The `ConductorShutdownWithdrawn` this start answers, by its version on
-   * `ctl-conductor`, or null.
+   * Never written since #167, and kept so the starts already on the log parse.
    *
-   * Set only where a supervisor made the start a `lingtai restart` asked for:
-   * the restart drains, withdraws with a handoff naming who, why and the commit
-   * its checks examined, and asks launchd or systemd to start the daemon — so
-   * the process that appends this is not the one somebody typed. It takes `by`
-   * and `reason` from that handoff, and only when the commit it read is the one
-   * that was examined (0042 §8).
+   * It named the `ConductorShutdownWithdrawn` a supervisor's start answered,
+   * when a `lingtai restart` handed its start to launchd or systemd (0042 §8).
+   * Since #159 a daemon folds only what was appended after it started, so the
+   * daemon the supervisor started never read the handoff it was to answer, and
+   * recorded itself as `daemon` with null here. [0048](../../../doc/decisions/0048-a-signal-is-aimed-at-one-daemon.md)
+   * deleted the handoff; the restart now compares this event's `sha` with the
+   * commit it checked instead.
    */
   handoff: z.number().int().positive().nullable().default(null),
 });
@@ -1083,15 +1083,9 @@ export const ConductorShutdownWithdrawn = z.object({
   version: z.number().int().positive(),
   reason: z.string(),
   /**
-   * The code a restart's checks examined, when the start is the supervisor's to
-   * make rather than this process's — or null, when the restart starts the
-   * daemon itself.
-   *
-   * The next conductor to start reads it off the fold and, if it is running
-   * that commit, records the restart's `by` and `reason` on its
-   * `ConductorStarted` rather than `daemon`. Without it, a restart under
-   * launchd would put *daemon started 65b7439* in the log and nobody's name —
-   * 23:06 again, by a longer route (0042 §8).
+   * Never written since #167, and kept so the withdrawals already on the log
+   * parse. It carried the commit a supervised restart checked, for the daemon
+   * the supervisor started — which, since #159, never read it (0048).
    */
   handoff: z
     .object({ sha: z.string().nullable(), dirty: z.boolean() })

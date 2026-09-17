@@ -11,21 +11,31 @@
  * out of existence while the process held that code for the rest of its life
  * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)).
  */
-import type { Identity, ShutdownRequest } from "@lingtai/daemon";
-import { type Envelope, reduceControl } from "@lingtai/domain";
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Identity, RecordedStart, ShutdownRequest } from "@lingtai/daemon";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { describeRefusal } from "../src/doctor.ts";
 import {
+  RESTART_GUARDS,
+  SUPERVISED_ONLY,
   attributeStart,
   gatingFailures,
+  lostTheLock,
   parseRestartArgs,
-  startRecorder,
-  startSupervised,
   planRestart,
+  prepareRestart,
+  restartSupervised,
+  startRecorder,
+  startRefusals,
   waitForTheLock,
   type Before,
+  type RestartArgs,
+  type RestartFacts,
   type Waivers,
 } from "../src/restart.ts";
+import { LAUNCHCTL_NO_SUCH_SERVICE, LAUNCHD_LABEL, serviceCommand, type Exec } from "../src/service.ts";
 
 const pushed: Identity = {
   sha: "2926f2d0f0e2a0b1c2d3e4f5a6b7c8d9e0f1a2b3",
@@ -48,6 +58,7 @@ function before(over: Partial<Before> = {}): Before {
     daemonUp: true,
     shutdown: null,
     loaded: null,
+    startedSince: null,
     ...over,
   };
 }
@@ -232,7 +243,7 @@ describe("a doctor failure whose remedy is the restart", () => {
 });
 
 describe("a drain that is already standing", () => {
-  const asked: ShutdownRequest = { by: "human:ops", reason: "the importer is flaky", timeoutMs: null, version: 7 };
+  const asked: ShutdownRequest = { by: "human:ops", reason: "the importer is flaky", timeoutMs: null, version: 7, force: false };
 
   /**
    * Somebody has asked this system to stop. Restarting over that is this command
@@ -354,101 +365,48 @@ describe("the command line", () => {
 });
 
 /**
- * Whose start the log records (0042 §5, §8). The evening this closes is a start
+ * Whose start the log records (0042 §5). The evening this closes is a start
  * nobody can name; the failure to avoid on the way is a start the log names
- * *wrongly* — a person for launchd's respawn, or a restart for a daemon running
- * a commit that restart never checked.
+ * *wrongly* — a person for launchd's respawn.
  */
 describe("whose start it is", () => {
-  const code = { sha: "2926f2d", dirty: false };
-  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
-  const base = { restart: null, control: { shutdown: null, handoff: null }, code, tty: false, user: "ops" };
+  const base = { restart: null, control: { shutdown: null }, tty: false, user: "ops" };
 
-  it("records nothing for a start into a standing drain, which a supervisor repeats every thirty seconds", () => {
-    const shutdown = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
-    expect(attributeStart({ ...base, control: { shutdown, handoff: null } })).toMatchObject({ record: false });
+  it("records nothing for a start into a standing drain", () => {
+    const shutdown: ShutdownRequest = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3, force: false };
+    expect(attributeStart({ ...base, control: { shutdown } })).toMatchObject({ record: false });
   });
 
-  it("names nobody for a start with no terminal and no handoff, and the typist for one at a terminal", () => {
-    expect(attributeStart(base)).toMatchObject({ record: true, by: "daemon", handoff: null });
-    expect(attributeStart({ ...base, tty: true })).toMatchObject({ record: true, by: "human:ops", handoff: null });
+  it("names nobody for a start with no terminal, and the typist for one at a terminal", () => {
+    expect(attributeStart(base)).toEqual({ record: true, by: "daemon", reason: null });
+    expect(attributeStart({ ...base, tty: true })).toEqual({ record: true, by: "human:ops", reason: null });
   });
 
-  it("gives a supervisor's start the restart's name, when it runs the commit that restart checked", () => {
-    expect(attributeStart({ ...base, control: { shutdown: null, handoff } })).toEqual({
+  it("names the restart that started it in this process", () => {
+    expect(attributeStart({ ...base, restart: { by: "human:steven", reason: "picking up #88" } })).toEqual({
       record: true,
       by: "human:steven",
-      reason: "restarted: picking up #88",
-      handoff: 4,
-      note: null,
-    });
-  });
-
-  it("does not, on another commit — it is `daemon`, says why, and still answers the handoff", () => {
-    const a = attributeStart({ ...base, code: { sha: "582a0f8", dirty: false }, control: { shutdown: null, handoff } });
-    expect(a).toMatchObject({ record: true, by: "daemon", handoff: 4 });
-    expect(a.record && a.reason).toContain("582a0f8");
-  });
-
-  it("does not give a start the restart's name once the handoff has lapsed, even on the checked commit", () => {
-    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
-    const envelopes = [
-      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } },
-      {
-        type: "ConductorShutdownWithdrawn",
-        data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
-      },
-    ].map((e, i) => ({ seq: BigInt(i + 1), streamId: "ctl-conductor", version: i + 1, schemaVer: 1, actor: "human:steven", causation: null, at: withdrawnAt, ...e }) as Envelope);
-    const nextDay = reduceControl(envelopes, new Date("2026-09-14T10:00:00Z"));
-    expect(attributeStart({ ...base, control: nextDay })).toMatchObject({ record: true, by: "daemon", reason: null, handoff: null });
-  });
-
-  it("does not give a typed start the restart's name", () => {
-    expect(attributeStart({ ...base, tty: true, control: { shutdown: null, handoff } })).toMatchObject({
-      by: "human:ops",
-      handoff: null,
+      reason: "picking up #88",
     });
   });
 });
 
-/**
- * The finding against the third fix: the start was attributed off a read at
- * startup and the drain noticed off a later one, so a launchd respawn that saw
- * the restart's drain first and its withdrawal second recorded nothing and took
- * work. The recorder is handed the read that decides, and only that one counts.
- */
 describe("the read a start is recorded from", () => {
-  const code = { sha: "2926f2d", dirty: false };
-  const drain = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3 } as ShutdownRequest;
-  const handoff = { by: "human:steven", reason: "restarted: picking up #88", sha: "2926f2d", dirty: false, version: 4 };
+  const drain: ShutdownRequest = { by: "human:steven", reason: "restarting", timeoutMs: null, version: 3, force: false };
 
-  it("records the handoff off the read that takes work, however many reads a drain stood for before it", async () => {
+  it("records once, off the first read the daemon acts on", async () => {
     const recorded: unknown[] = [];
-    const note = startRecorder({
-      restart: null,
-      code,
-      tty: false,
-      user: "steven",
-      record: async (a) => void recorded.push(a),
-      log: () => {},
-    });
-
-    // The respawn's startup no longer reads the stream for this. The loop's
-    // first check, after the reconcile, reads the withdrawal and takes work —
-    // and that read is the one recorded, with the restart's name.
-    await note({ shutdown: null, handoff });
-    expect(recorded).toEqual([{ record: true, by: "human:steven", reason: "restarted: picking up #88", handoff: 4, note: null }]);
-
-    // Once: every later pass asks again, and records nothing more.
-    await note({ shutdown: null, handoff: null });
-    expect(recorded).toHaveLength(1);
+    const note = startRecorder({ restart: null, tty: false, user: "s", record: async (a) => void recorded.push(a), log: () => {} });
+    await note({ shutdown: null });
+    await note({ shutdown: null });
+    expect(recorded).toEqual([{ record: true, by: "daemon", reason: null }]);
   });
 
   it("records nothing off a read that finds the drain, which is the read the daemon exits on", async () => {
     const recorded: unknown[] = [];
     const lines: string[] = [];
-    const note = startRecorder({ restart: null, code, tty: false, user: "s", record: async (a) => void recorded.push(a), log: (l) => lines.push(l) });
-    await note({ shutdown: drain, handoff: null });
+    const note = startRecorder({ restart: null, tty: false, user: "s", record: async (a) => void recorded.push(a), log: (l) => lines.push(l) });
+    await note({ shutdown: drain });
     expect(recorded).toEqual([]);
     expect(lines.join("\n")).toContain("not recorded as a start");
   });
@@ -457,7 +415,6 @@ describe("the read a start is recorded from", () => {
     const lines: string[] = [];
     const note = startRecorder({
       restart: null,
-      code,
       tty: false,
       user: "s",
       record: async () => {
@@ -465,56 +422,380 @@ describe("the read a start is recorded from", () => {
       },
       log: (l) => lines.push(l),
     });
-    await expect(note({ shutdown: null, handoff: null })).resolves.toBeUndefined();
+    await expect(note({ shutdown: null })).resolves.toBeUndefined();
     expect(lines.join("\n")).toContain("version race");
   });
 });
 
-describe("a start the supervisor makes", () => {
-  const prepared = { by: "human:steven", handedOff: 4, examined: { sha: "2926f2d", dirty: false } };
-  const start = { by: "human:steven", reason: "restarted", sha: "2926f2d", dirty: false, worker: "h:9", handoff: 4, at: new Date() };
+describe("the refusals only a started daemon can be asked", () => {
+  const examined = { sha: pushed.sha, dirty: false };
+  const ops: ShutdownRequest = { by: "human:ops", reason: "moving the database", timeoutMs: null, version: 15, force: false };
 
-  it("succeeds on the recorded start that answered this handoff, and says so", async () => {
-    const lines: string[] = [];
-    let polls = 0;
-    const code = await startSupervised(prepared, {
-      start: async () => 0,
-      recorded: async () => (++polls < 3 ? null : start),
-      pollMs: 1,
-      log: (l) => lines.push(l),
-    });
-    expect(code).toBe(0);
-    expect(lines.join("\n")).toContain("human:steven's restart");
+  it("refuses a daemon running another commit than the one checked", () => {
+    const r = startRefusals({ examined, running: { sha: "c0ffee".padEnd(40, "0"), dirty: false }, standing: null, unreadThrough: 20 });
+    expect(r.map((x) => x.line).join("\n")).toContain("c0ffee0");
   });
 
-  it("fails on a start that was not this one's, naming what did start", async () => {
-    const lines: string[] = [];
-    const code = await startSupervised(prepared, {
-      start: async () => 0,
-      recorded: async () => ({ ...start, by: "daemon", sha: "582a0f8" }),
-      pollMs: 1,
-      log: (l) => lines.push(l),
-    });
-    expect(code).toBe(1);
-    expect(lines.join("\n")).toContain("582a0f8");
+  it("refuses a drain it will never read, and not one it will", () => {
+    expect(startRefusals({ examined, running: examined, standing: ops, unreadThrough: 20 })).toHaveLength(1);
+    expect(startRefusals({ examined, running: examined, standing: ops, unreadThrough: 14 })).toEqual([]);
+    expect(startRefusals({ examined, running: examined, standing: null, unreadThrough: 20 })).toEqual([]);
   });
+});
 
-  it("fails, and says where to look, when nothing is recorded in time", async () => {
-    const code = await startSupervised(prepared, { start: async () => 0, recorded: async () => null, waitMs: 5, pollMs: 1, log: () => {} });
-    expect(code).toBe(1);
+// ------------------------------------------------------------ both paths ----
+
+/**
+ * **Every refusal the terminal path makes, the supervised path makes too** (#167).
+ *
+ * One scene per row of `RESTART_GUARDS`, played through both commands: the
+ * terminal `lingtai restart` (`prepareRestart`, then what `daemonCommand` does
+ * with it) and the supervised one (`restartSupervised`, over the real
+ * `serviceCommand` and a launchd that behaves like one). Nothing here is a
+ * database or a process; everything the commands read is the scene's, and
+ * the scene moves on at the moments the world would — when the drain is over,
+ * and when the supervisor starts the daemon.
+ */
+const BY = `human:${process.env["USER"] ?? "operator"}`;
+const ARGS: RestartArgs = { reason: "picking up #88", timeoutMs: null, dirty: false, despiteDoctor: false, noConduct: false, noMerge: false, force: false };
+const ops = (version: number): ShutdownRequest => ({ by: "human:ops", reason: "moving the database", timeoutMs: null, version, force: false });
+const startOf = (id: Pick<Identity, "sha" | "dirty">, version = 21): RecordedStart => ({
+  by: "daemon",
+  reason: null,
+  sha: id.sha,
+  dirty: id.dirty,
+  worker: "mac:4242",
+  version,
+  at: new Date("2026-09-16T10:00:00Z"),
+});
+
+interface Scene {
+  /** Before anything stops. */
+  identity?: Identity;
+  doctorFailed?: number;
+  holder?: () => Promise<string | null>;
+  daemonUp?: () => Promise<boolean>;
+  shutdown?: ShutdownRequest | null;
+  /** A request somebody else appends between the plan and the ask. */
+  askFinds?: ShutdownRequest;
+  /** Once the drain is over. */
+  after?: { identity?: Identity; shutdown?: ShutdownRequest | null; startedSince?: RecordedStart | null };
+  /** A drain standing when the start is asked for, or one that lands while the supervisor starts it. */
+  atStart?: { standing?: ShutdownRequest; landsDuring?: ShutdownRequest };
+  /** What the daemon that starts runs, when not what was checked — or null, when it takes no work and records nothing. */
+  runs?: Pick<Identity, "sha" | "dirty"> | null;
+}
+
+interface Outcome {
+  code: number;
+  said: string;
+  /** A drain this command asked for was appended. */
+  askedToStop: boolean;
+  /** Something was withdrawn, and which version. */
+  withdrew: number[];
+}
+
+function worldOf(scene: Scene) {
+  const w = {
+    phase: "before" as "before" | "drained" | "started",
+    lines: [] as string[],
+    askedToStop: false,
+    withdrew: [] as number[],
+  };
+  let holderAsks = 0;
+  let drainedReads = 0;
+  const identityNow = (): Identity => (w.phase === "before" ? scene.identity ?? pushed : scene.after?.identity ?? scene.identity ?? pushed);
+  const shutdownNow = (): ShutdownRequest | null => {
+    if (w.phase === "before") return scene.shutdown ?? null;
+    if (w.phase === "started") return scene.atStart?.landsDuring ?? scene.atStart?.standing ?? scene.after?.shutdown ?? null;
+    // The first read after the drain is the checks'; a later one is the start's.
+    return drainedReads++ === 0 ? scene.after?.shutdown ?? null : scene.atStart?.standing ?? scene.after?.shutdown ?? null;
+  };
+  const facts: RestartFacts = {
+    identity: async () => identityNow(),
+    doctor: async () => ({
+      results: Array.from({ length: scene.doctorFailed ?? 0 }, (_, i) => ({ name: `check ${i}`, status: "fail", detail: "red" })),
+    }),
+    holder: async () => {
+      if (holderAsks++ === 0) return (scene.holder ?? (async () => "lingtai daemon pid 5123"))();
+      w.phase = "drained";
+      return null;
+    },
+    daemonUp: scene.daemonUp ?? (async () => true),
+    control: async () => ({ shutdown: shutdownNow() }),
+    inFlight: async () => [],
+    ask: async () => {
+      if (scene.askFinds) return { asked: false, standing: scene.askFinds };
+      w.askedToStop = true;
+      return { asked: true, version: 11 };
+    },
+    withdraw: async (by, version) => {
+      w.withdrew.push(version);
+      return { withdrew: true, version: version + 1, request: { by, reason: "", timeoutMs: null, version, force: false } };
+    },
+    watermark: async () => (w.phase === "before" ? 10 : 20),
+    startAfter: async (version) => {
+      if (version < 20) return w.phase === "before" ? null : scene.after?.startedSince ?? null;
+      if (w.phase !== "started" || scene.runs === null) return null;
+      return startOf(scene.runs ?? identityNow());
+    },
+    pollMs: 1,
+  };
+  const log = (line: string): void => void w.lines.push(line);
+  const outcome = (code: number): Outcome => ({ code, said: w.lines.join("\n"), askedToStop: w.askedToStop, withdrew: w.withdrew });
+  return { w, facts, log, outcome, shutdownNow };
+}
+
+let home: string;
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), "lingtai-restart-"));
+  await mkdir(join(home, "Library/LaunchAgents"), { recursive: true });
+  await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`), "");
+});
+afterEach(async () => {
+  await rm(home, { recursive: true, force: true });
+});
+
+/** `lingtai restart` with nothing supervising: `prepareRestart`, then `daemonCommand`'s part of it. */
+async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome> {
+  const { w, facts, log, outcome } = worldOf(scene);
+  const prepared = await prepareRestart(args, log, facts);
+  if (!prepared.ok) return outcome(prepared.code);
+  w.phase = "started";
+  if (scene.runs === null) return outcome(lostTheLock("lingtai run pid 77", log));
+  const refused = startRefusals({
+    examined: prepared.examined,
+    running: scene.runs ?? prepared.examined,
+    standing: scene.atStart?.standing ?? scene.atStart?.landsDuring ?? null,
+    unreadThrough: 20,
   });
+  for (const r of refused) log(r.line);
+  return outcome(refused.length > 0 ? 1 : 0);
+}
 
-  it("does not wait on a supervisor that refused the start", async () => {
-    let asked = false;
-    const code = await startSupervised(prepared, {
-      start: async () => 1,
-      recorded: async () => {
-        asked = true;
-        return null;
+/** `lingtai restart` under launchd: `restartSupervised` over the real `serviceCommand`. */
+async function supervised(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome> {
+  const { w, facts, log, outcome, shutdownNow } = worldOf(scene);
+  let loaded = true;
+  const exec: Exec = (call) => {
+    const line = call.join(" ");
+    if (line.startsWith("launchctl print")) {
+      return loaded ? { status: 0, out: "\tstate = running\n\tpid = 41\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" };
+    }
+    if (line.startsWith("launchctl bootout")) loaded = false;
+    if (line.startsWith("launchctl bootstrap")) {
+      loaded = true;
+      w.phase = "started";
+    }
+    return { status: 0, out: "" };
+  };
+  const service = (argv: string[]): Promise<number> =>
+    serviceCommand(argv, {
+      liveness: async () => "up",
+      shutdown: async () => shutdownNow(),
+      pause: async () => null,
+      drain: {
+        ask: (by, reason) => facts.ask(by, reason, null, false),
+        holding: async () => "nothing in flight",
+        queue: async () => ({
+          wait: async () => ((w.phase = "drained"), "held"),
+          holds: async () => true,
+          leave: async () => {},
+        }),
+        withdraw: facts.withdraw,
       },
-      log: () => {},
+      started: { watermark: facts.watermark, after: facts.startAfter },
+      by: BY,
+      platform: "darwin",
+      env: { HOME: home, USER: "lingtai" },
+      root: home,
+      uid: process.getuid!(),
+      username: "lingtai",
+      exec,
+      which: (bin) => (bin === "node" ? "/usr/bin/node" : `/usr/bin/${bin}`),
+      sleep: async () => {},
+      log,
+      error: log,
     });
-    expect(code).toBe(1);
-    expect(asked).toBe(false);
+  return outcome(await restartSupervised(args, { service, facts, log }));
+}
+
+type Says = string | { terminal: string; supervised: string };
+
+/** One scene per row, and what each path must say about it. */
+const SCENES: Record<string, { scene: Scene; says: Says; notSays?: string; nothingStopped: boolean }> = {
+  unpushed: {
+    scene: { identity: { ...pushed, sha: "582a0f8".padEnd(40, "a"), pushed: false } },
+    says: "582a0f8 is not reachable from origin/main",
+    nothingStopped: true,
+  },
+  unestablished: {
+    scene: { identity: { ...pushed, pushed: null, unknown: "unknown revision origin/main" } },
+    says: "could not be established against origin/main",
+    nothingStopped: true,
+  },
+  dirty: { scene: { identity: { ...pushed, dirty: true } }, says: "uncommitted changes", nothingStopped: true },
+  doctor: { scene: { doctorFailed: 2 }, says: "lingtai doctor reports 2 failed check(s)", nothingStopped: true },
+  "lock-unread": {
+    scene: {
+      holder: async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+    },
+    says: "who is conducting could not be asked — connect ECONNREFUSED",
+    nothingStopped: true,
+  },
+  "beacon-unread": {
+    scene: {
+      daemonUp: async () => {
+        throw new Error("the pooler restarted");
+      },
+    },
+    says: "whether a daemon is up could not be read — the pooler restarted",
+    nothingStopped: true,
+  },
+  "foreign-drain": { scene: { shutdown: ops(7) }, says: "a shutdown asked by human:ops — moving the database — is already standing", nothingStopped: true },
+  "drain-landed": {
+    scene: { askFinds: ops(12) },
+    says: { terminal: "a shutdown asked by human:ops — moving the database — landed while this was checking", supervised: "a shutdown asked by human:ops (moving the database) is already standing. Nothing was stopped" },
+    nothingStopped: true,
+  },
+  "after-unpushed": {
+    scene: { after: { identity: { ...pushed, pushed: false } } },
+    says: "is not reachable from origin/main",
+    nothingStopped: false,
+  },
+  "after-dirty": { scene: { after: { identity: { ...pushed, dirty: true } } }, says: "uncommitted changes", nothingStopped: false },
+  moved: {
+    scene: { after: { identity: { ...pushed, sha: "b88b88b".padEnd(40, "b") } } },
+    says: "the checkout moved while this waited",
+    nothingStopped: false,
+  },
+  "after-foreign-drain": {
+    scene: { after: { shutdown: ops(15), startedSince: startOf(pushed, 14) } },
+    says: "It may be aimed at the daemon that started since",
+    notSays: "lingtai resume lifts it",
+    nothingStopped: false,
+  },
+  "started-since": {
+    scene: { after: { startedSince: startOf(pushed, 14) } },
+    says: "a daemon started while this waited — daemon started 2926f2d as mac:4242",
+    nothingStopped: false,
+  },
+  "code-at-start": {
+    scene: { runs: { sha: "c0ffee0".padEnd(40, "0"), dirty: false } },
+    says: "2926f2d was checked and c0ffee0 is what the daemon runs",
+    nothingStopped: false,
+  },
+  "drain-at-start": {
+    scene: { atStart: { standing: ops(15) } },
+    says: { terminal: "landed between the checks and the start", supervised: "a shutdown request stands — asked by human:ops (moving the database)" },
+    nothingStopped: false,
+  },
+  "nothing-started": {
+    scene: { runs: null },
+    says: { terminal: "the lock was taken first", supervised: "no daemon recorded one" },
+    nothingStopped: false,
+  },
+};
+
+const PATHS = { terminal, supervised } as const;
+
+describe("the table of refusals", () => {
+  it("has both sides on every row, and a scene for each — a refusal on one path only is this test failing", () => {
+    expect(RESTART_GUARDS.length).toBeGreaterThan(0);
+    for (const row of RESTART_GUARDS) {
+      expect(row.terminal.trim(), `${row.id}: terminal`).not.toBe("");
+      expect(row.supervised.trim(), `${row.id}: supervised`).not.toBe("");
+      expect(SCENES[row.id], `${row.id} has no scene`).toBeDefined();
+    }
+    expect(Object.keys(SCENES).sort()).toEqual(RESTART_GUARDS.map((r) => r.id).sort());
+    expect(new Set(RESTART_GUARDS.map((r) => r.id)).size).toBe(RESTART_GUARDS.length);
+    for (const only of SUPERVISED_ONLY) expect(only.why.trim()).not.toBe("");
+  });
+
+  for (const row of RESTART_GUARDS) {
+    for (const [path, run] of Object.entries(PATHS) as [keyof typeof PATHS, typeof terminal][]) {
+      it(`${row.id} — ${path}: ${row.refusal}`, async () => {
+        const { scene, says, notSays, nothingStopped } = SCENES[row.id]!;
+        const out = await run(scene);
+        expect(out.code, out.said).not.toBe(0);
+        expect(out.said).toContain(typeof says === "string" ? says : says[path]);
+        if (notSays) expect(out.said).not.toContain(notSays);
+        if (nothingStopped) expect(out.askedToStop, "a drain was asked before the refusal").toBe(false);
+        else expect(out.askedToStop, "the scene never reached the drain").toBe(true);
+      });
+    }
+  }
+
+  it("starts on both paths when nothing refuses, and each says so", async () => {
+    const t = await terminal({});
+    expect(t.code, t.said).toBe(0);
+    const s = await supervised({});
+    expect(s.code, s.said).toBe(0);
+    expect(s.said).toContain("restarted 2926f2d as mac:4242 — the commit that was checked");
+    // The drain it asked for is withdrawn on both, by its version.
+    expect(t.withdrew).toEqual([11]);
+    expect(s.withdrew).toEqual([11]);
+  });
+
+  it("waives exactly what the flag names, on both paths", async () => {
+    // Dirty before and after, so the loaded code is what the disk still is.
+    const dirty: Scene = { identity: { ...pushed, dirty: true } };
+    for (const run of [terminal, supervised]) {
+      expect((await run(dirty)).code).toBe(1);
+      const waved = await run(dirty, { ...ARGS, dirty: true });
+      expect(waved.code, waved.said).toBe(0);
+      expect(waved.said).toContain("--dirty: ");
+      expect((await run({ ...dirty, doctorFailed: 1 }, { ...ARGS, dirty: true })).code).toBe(1);
+    }
+  });
+});
+
+/**
+ * The five findings two reviewers made against two attempts at #159, as the
+ * scenes that reproduce them. Each is either impossible by construction or a
+ * refusal — and which is written in 0048.
+ */
+describe("#167's five findings, on the supervised path", () => {
+  /** major 1 — deleted: there is no handoff to skip; the checks after the wait are the terminal path's. */
+  it("a start that takes over a drain already standing still has its code checked after the wait", async () => {
+    const mine = { ...ops(7), by: BY, reason: "restarting: ctrl-c'd yesterday" };
+    const out = await supervised({ shutdown: mine, after: { identity: { ...pushed, pushed: false } } });
+    expect(out.code).toBe(1);
+    expect(out.withdrew[0]).toBe(7);
+    expect(out.said).toContain("is not reachable from origin/main");
+    expect(out.said).not.toContain("restarted ");
+  });
+
+  /** major 2 — guarded: a drain landing during the start is read against the record, and said. */
+  it("a drain that lands while the supervisor starts the daemon is not stepped over in silence", async () => {
+    const out = await supervised({ atStart: { landsDuring: ops(15) } });
+    expect(out.code).toBe(1);
+    expect(out.said).toContain("a daemon started, and it is not the start that was checked");
+    expect(out.said).toContain("landed between the checks and the start");
+  });
+
+  /** major 3 — guarded, and the handoff state that caused it is gone: nothing recorded is exit 1. */
+  it("a start that records nothing is not reported as a success", async () => {
+    const out = await supervised({ runs: null });
+    expect(out.code).toBe(1);
+    expect(out.said).not.toContain("restarted ");
+  });
+
+  /** minor 4 — guarded: the remote is asked again after the wait. */
+  it("a force-push during the drain is refused as the terminal path refuses it", async () => {
+    const scene: Scene = { after: { identity: { ...pushed, pushed: false } } };
+    const [t, s] = [await terminal(scene), await supervised(scene)];
+    expect([t.code, s.code]).toEqual([1, 1]);
+    expect(s.said).not.toContain("launchctl bootstrap");
+  });
+
+  /** minor 5 — guarded: a start recorded since is named, and resume is not advised over it. */
+  it("a refusal after the wait never advises lifting a drain aimed at a daemon that started since", async () => {
+    const out = await supervised({ after: { shutdown: ops(15), startedSince: startOf(pushed, 14) } });
+    expect(out.code).toBe(1);
+    expect(out.said).toContain("a daemon started while this waited");
+    expect(out.said).not.toContain("lingtai resume lifts it");
   });
 });

@@ -34,6 +34,16 @@
  * the unload would kill (a copy reads no request older than itself, #159). The daemon's SIGTERM handler still
  * drains, for whatever else signals it; nothing here depends on it finishing.
  *
+ * ## A start is what the daemon records, not what the supervisor answers (#167)
+ *
+ * `launchctl bootstrap` and `systemctl start` exit 0 when the job was asked
+ * for. The daemon that runs may then lose the conductor lock, or read a drain,
+ * record nothing, and exit 0 — and the supervisor starts it again every thirty
+ * seconds, with the queue idle behind a command that said it succeeded. So
+ * every verb that starts — `start`, `restart`, `install` — waits for the
+ * `ConductorStarted` the daemon appends before its first pass, says which start
+ * it was, and exits non-zero when none arrives.
+ *
  * ## No service manager is not an error to work around
  *
  * A container, an init that is not systemd (openclaw#14078, #36137): the answer
@@ -50,7 +60,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import type { Asking, Withdrawal } from "@lingtai/daemon";
+import type { Asking, RecordedStart, Withdrawal } from "@lingtai/daemon";
 import { repoRoot, stateDir } from "@lingtai/env";
 import { WALL_LIMIT } from "./wall-limit.ts";
 
@@ -335,6 +345,14 @@ const UNLOAD_WAIT_MS = 60_000;
  */
 const IDLE_WAIT_POLLS = 90;
 
+/**
+ * Seconds a start waits for the daemon's `ConductorStarted`. The record lands
+ * after the reconcile, which reads a recipe per project and writes GitHub
+ * labels and crossed fifteen seconds in #144 — so well past that, and past two
+ * of the supervisor's thirty-second restarts.
+ */
+const START_WAIT_POLLS = 120;
+
 /** Whether the supervisor reports a process for the job — not just a job loaded or a restart scheduled. */
 function processRunning(platform: ServicePlatform, lines: readonly string[]): boolean {
   if (platform === "launchd") return lines.some((l) => l === "state = running" || /^pid = [1-9]/.test(l));
@@ -397,6 +415,16 @@ export interface ServiceOptions {
   pause?: () => Promise<{ by: string | null; reason: string | null; until?: Date | null } | null>;
   /** What `shutdown` and `restart` wait on before the supervisor is told anything. */
   drain: ServiceDrain;
+  /**
+   * How a start is confirmed: where `ctl-conductor` is before the supervisor is
+   * asked, and the first `ConductorStarted` after it (`startAfter`). Not
+   * optional — a start that could be confirmed by nothing is the one that
+   * reported success over an idle queue (#167).
+   */
+  started: {
+    watermark: () => Promise<number>;
+    after: (version: number) => Promise<RecordedStart | null>;
+  };
   /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
   by?: string;
   platform?: NodeJS.Platform;
@@ -660,18 +688,53 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     return true;
   };
 
-  /** The supervisor's start, refused while a shutdown request stands. */
+  /**
+   * One supervisor call that starts the daemon, and then the daemon's own word
+   * for it: 0 only once a `ConductorStarted` is on the log after the call.
+   */
+  const startAndConfirm = async (call: string[]): Promise<number> => {
+    const mark = await options.started.watermark().catch((err: unknown) => err as Error);
+    if (!run(call)) return 1;
+    if (mark instanceof Error) {
+      error(`the supervisor was asked to start the daemon, and where the control stream is could not be read — ${mark.message}.`);
+      error("So whether a daemon took work is not known: pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up.");
+      return 1;
+    }
+    log(`waiting for the daemon to record its start — up to ${START_WAIT_POLLS}s, since it records after its reconcile. It is waiting, not hung.`);
+    for (let i = 0; i < START_WAIT_POLLS; i++) {
+      const record = await options.started.after(mark).catch(() => null);
+      if (record !== null) {
+        log(
+          `a daemon recorded its start — ${record.sha ? record.sha.slice(0, 7) : "an unrecorded commit"}` +
+            `${record.dirty ? " (worktree dirty)" : ""} as ${record.worker}, recorded as ${record.by}`,
+        );
+        return 0;
+      }
+      await sleep(1_000);
+    }
+    error(`the supervisor accepted the start, and no daemon recorded one in ${START_WAIT_POLLS}s — so no work is being taken on its account.`);
+    error("A daemon that loses the conductor lock, reads a shutdown, or fails on its way up records nothing, and may exit 0 for the supervisor to start again.");
+    error("pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.");
+    return 1;
+  };
+
+  /** The supervisor's start, refused while a shutdown request stands, and confirmed by the daemon's record. */
   const start = async (unloaded = false): Promise<number> => {
     if (await shutdownStands(unloaded)) return 1;
-    if (platform === "systemd") return run(["systemctl", "--user", "start", SYSTEMD_UNIT]) ? 0 : 1;
     const answer = ask();
     if (!answer) return 1;
+    // A daemon the supervisor is already running is not started again — and is
+    // not a start to wait for, which would be a wait for nothing.
+    if (answer.loaded && processRunning(platform, answer.lines)) {
+      log("the supervisor is already running a daemon, so nothing was started — pnpm lingtai service status says what it is");
+      return 0;
+    }
+    if (platform === "systemd") return startAndConfirm(["systemctl", "--user", "start", SYSTEMD_UNIT]);
     // `shutdown` unloads, and `kickstart` cannot find a job that is not loaded.
     // Plain `kickstart` starts a loaded job that is not running and leaves a
     // running one alone, which is `systemctl start`. A job unloaded and loaded
     // again, not `kickstart -k`, is also what applies a rewritten plist.
-    const ok = answer.loaded ? run(["launchctl", "kickstart", target]) : run(["launchctl", "bootstrap", `gui/${uid}`, file.path]);
-    return ok ? 0 : 1;
+    return startAndConfirm(answer.loaded ? ["launchctl", "kickstart", target] : ["launchctl", "bootstrap", `gui/${uid}`, file.path]);
   };
 
   /**
@@ -857,7 +920,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         } else if (await shutdownStands()) {
           error("the file is written and nothing was loaded");
           return 1;
-        } else if (!run(["launchctl", "bootstrap", `gui/${uid}`, file.path])) {
+        } else if ((await startAndConfirm(["launchctl", "bootstrap", `gui/${uid}`, file.path])) !== 0) {
           return 1;
         } else {
           started = true;
@@ -874,7 +937,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         } else if (await shutdownStands()) {
           error("the unit is written and enabled, and nothing was started");
           return 1;
-        } else if (!run(["systemctl", "--user", "start", SYSTEMD_UNIT])) {
+        } else if ((await startAndConfirm(["systemctl", "--user", "start", SYSTEMD_UNIT])) !== 0) {
           return 1;
         } else {
           started = true;
@@ -889,8 +952,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       log("");
       const code = await report();
-      // Asked the moment after the start, so the beacon may not have beaten yet.
-      if (started) log("a daemon started just now takes a few seconds to beat — pnpm lingtai service status");
+      // After the start's record, so the beacon has had its first beat — but a
+      // beacon is five seconds apart, and the record is what said it started.
+      if (started) log("the beacon above may be one beat behind the start recorded before it — pnpm lingtai service status");
       return code;
     }
 

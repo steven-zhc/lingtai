@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { LockPlace } from "@lingtai/daemon";
+import type { LockPlace, RecordedStart } from "@lingtai/daemon";
 import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding, withdrawShutdown } from "@lingtai/daemon/control";
 import { repoRoot } from "@lingtai/env";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
@@ -76,6 +76,20 @@ function quietDrain() {
   return { drain, said };
 }
 
+/** What a daemon the supervisor started appends before its first pass, when it takes work (#167). */
+const RECORDED: RecordedStart = {
+  by: "daemon",
+  reason: null,
+  sha: "2926f2d0f0e2a0b1c2d3e4f5a6b7c8d9e0f1a2b3",
+  dirty: false,
+  worker: "mac:4242",
+  version: 9,
+  at: new Date("2026-09-16T10:00:00Z"),
+};
+
+/** A start confirmed at once — every test but those about a start nothing recorded. */
+const recordedAtOnce = { watermark: async () => 8, after: async () => RECORDED };
+
 /** Whoever runs the suite, so the checkout `install` stats is theirs. */
 const UID = process.getuid!();
 
@@ -91,6 +105,7 @@ function command(
     root?: string | "default";
     uid?: number;
     drain?: ServiceDrain;
+    started?: { watermark: () => Promise<number>; after: (version: number) => Promise<RecordedStart | null> };
   } = {},
 ) {
   const out: string[] = [];
@@ -101,6 +116,7 @@ function command(
       shutdown: extra.shutdown ?? (async () => null),
       pause: extra.pause ?? (async () => null),
       drain: extra.drain ?? quietDrain().drain,
+      started: extra.started ?? recordedAtOnce,
       by: "human:lingtai",
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
@@ -183,6 +199,7 @@ describe("no service manager", () => {
       liveness: async () => "",
       shutdown: async () => null,
       drain: quietDrain().drain,
+      started: recordedAtOnce,
       platform: "linux",
       env: { HOME: home },
       which: (bin) => (bin === "node" ? NODE : null),
@@ -433,7 +450,7 @@ describe("shutdown", () => {
           holder: async () => (await tick(), lock.holder),
           pollMs: 0,
         }),
-      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, null, store),
+      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, store),
     };
     return { store, daemons, order, lock, s, drain, stop: () => (loaded = false) };
   }
@@ -1081,5 +1098,152 @@ describe("whether a supervisor keeps the daemon, for a restart", () => {
     const { exec } = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }]]);
     const kept = keeper({ platform: "linux", env: env(), root: ROOT, uid: UID, exec, which });
     expect("unread" in kept && kept.unread).toContain("different checkout");
+  });
+});
+
+/**
+ * #167's third finding. `launchctl bootstrap` and `systemctl start` exit 0 when
+ * the job was asked for, and the daemon then lost the lock — or read a drain —
+ * recorded nothing, and exited 0, for the supervisor to start again every thirty
+ * seconds. The queue idled behind a command that had said it succeeded. What
+ * these pin is what the operator is told in exactly that state.
+ */
+describe("a start the daemon never recorded", () => {
+  /** The daemon runs, takes no work, appends nothing, and exits 0 — every time it is started. */
+  const nothingRecorded = { watermark: async () => 8, after: async () => null };
+  const TOOK_WORK = /recorded its start|daemon takes work|taking work|a daemon is running|started \S+ as/;
+
+  it("start on macOS exits 1 and never says work was taken", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, out, err } = command("darwin", s.exec, { started: nothingRecorded });
+    await launchdFile();
+    expect(await go("start")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
+    expect(out.join("\n")).not.toMatch(TOOK_WORK);
+    expect(err.join("\n")).toContain("no daemon recorded one in 120s — so no work is being taken on its account");
+    expect(err.join("\n")).toContain("records nothing, and may exit 0");
+  });
+
+  it("start on Linux exits 1 and never says work was taken", async () => {
+    const s = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=inactive\nMainPID=0\n" }]]);
+    const { go, out, err } = command("linux", s.exec, { started: nothingRecorded });
+    await systemdFile();
+    expect(await go("start")).toBe(1);
+    expect(s.calls).toContain(`systemctl --user start ${SYSTEMD_UNIT}`);
+    expect(out.join("\n")).not.toMatch(TOOK_WORK);
+    expect(err.join("\n")).toContain("no daemon recorded one");
+  });
+
+  it("restart exits 1 after its drain, and says no work is taken", async () => {
+    let prints = 0;
+    const s = supervisor([
+      ["launchctl print", () => (++prints <= 1 ? { status: 0, out: "\tstate = running\n\tpid = 41\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+    ]);
+    const { go, out, err } = command("darwin", s.exec, { started: nothingRecorded });
+    await launchdFile();
+    expect(await go("restart")).toBe(1);
+    expect(out.join("\n")).not.toMatch(TOOK_WORK);
+    expect(err.join("\n")).toContain("no daemon recorded one");
+  });
+
+  it("install exits 1, and prints no report that could be read as a start", async () => {
+    const s = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }],
+      ["loginctl", { status: 0, out: "yes\n" }],
+    ]);
+    const { go, out, err } = command("linux", s.exec, { started: nothingRecorded });
+    expect(await go("install")).toBe(1);
+    expect(out.join("\n")).not.toMatch(TOOK_WORK);
+    expect(err.join("\n")).toContain("no daemon recorded one");
+  });
+
+  it("says which start answered, when one is recorded — and only one after the supervisor was asked", async () => {
+    const asked: number[] = [];
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, out } = command("darwin", s.exec, {
+      started: { watermark: async () => 8, after: async (v) => (asked.push(v), asked.length < 3 ? null : RECORDED) },
+    });
+    await launchdFile();
+    expect(await go("start")).toBe(0);
+    expect(asked.every((v) => v === 8)).toBe(true);
+    expect(out.join("\n")).toContain("a daemon recorded its start — 2926f2d as mac:4242, recorded as daemon");
+  });
+
+  it("does not wait on a start it did not make, over a daemon the supervisor is already running", async () => {
+    let asked = false;
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n\tpid = 41\n" }]]);
+    const { go, out } = command("darwin", s.exec, { started: { watermark: async () => 8, after: async () => ((asked = true), null) } });
+    await launchdFile();
+    expect(await go("start")).toBe(0);
+    expect(asked).toBe(false);
+    expect(s.calls.some((c) => c.includes("kickstart") || c.includes("bootstrap"))).toBe(false);
+    expect(out.join("\n")).toContain("nothing was started");
+  });
+
+  it("does not claim a start it could not confirm, when the control stream cannot be read", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, err } = command("darwin", s.exec, {
+      started: {
+        watermark: async () => {
+          throw new Error("connect ECONNREFUSED");
+        },
+        after: async () => RECORDED,
+      },
+    });
+    await launchdFile();
+    expect(await go("start")).toBe(1);
+    expect(err.join("\n")).toContain("whether a daemon took work is not known");
+  });
+});
+
+/**
+ * The complaint `#159` was opened for: stopping and starting were not one
+ * command each. A shutdown outlived its daemon, so starting again meant
+ * `lingtai resume` first — a command about taking work, used to let a process
+ * stay up. Here it is one command to stop and one to start, and nothing lifted
+ * in between, on a real control stream.
+ */
+describe("one command to stop, one to start", () => {
+  it("service shutdown, then service start — and the start is not refused over the stop", async () => {
+    const store = createMemoryEventStore();
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n\tpid = 41\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+      ["launchctl bootstrap", () => ((loaded = true), { status: 0, out: "" })],
+    ]);
+    const drain: ServiceDrain = {
+      ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
+      holding: async () => "nothing in flight",
+      queue: async () => ({ wait: async () => "held", holds: async () => true, leave: async () => {} }),
+      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, store),
+    };
+    const { go, err } = command("darwin", s.exec, {
+      drain,
+      shutdown: async () => (await readControl(store)).shutdown,
+      started: {
+        watermark: () => controlWatermark(store),
+        // The daemon launchd starts reads where the stream is, and records itself.
+        after: async (v) => {
+          const { recordStart, startAfter } = await import("@lingtai/daemon/control");
+          if ((await startAfter(v, store)) === null) await recordStart("daemon", null, { sha: RECORDED.sha, dirty: false }, store);
+          return startAfter(v, store);
+        },
+      },
+    });
+    await launchdFile();
+
+    expect(await go("shutdown", "for the night")).toBe(0);
+    expect(loaded).toBe(false);
+    expect(await go("start")).toBe(0);
+    expect(loaded).toBe(true);
+    expect(err).toEqual([]);
+    expect((await readControl(store)).shutdown).toBeNull();
+    // Nothing was resumed: the two commands were the whole of it.
+    expect((await store.read("ctl-conductor")).map((e) => e.type)).toEqual([
+      "ConductorShutdownRequested",
+      "ConductorShutdownWithdrawn",
+      "ConductorStarted",
+    ]);
   });
 });

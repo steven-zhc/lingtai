@@ -30,6 +30,8 @@ import {
   requestShutdownUnlessStanding,
   resumeConductor,
   withdrawShutdown,
+  controlWatermark,
+  startAfter,
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
@@ -47,7 +49,7 @@ import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, startSupervised } from "./restart.ts";
+import { parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, startRefusals, restartSupervised, lostTheLock } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -329,6 +331,13 @@ function serviceOptions(): ServiceOptions {
       queue: () => queueForTheLock(),
       withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     },
+    // A supervisor's exit code says the job was asked for, not that a daemon
+    // won the lock and took work — so a start is confirmed by the record the
+    // daemon appends before its first pass (#167).
+    started: {
+      watermark: () => controlWatermark(),
+      after: (version) => startAfter(version),
+    },
   };
 }
 
@@ -364,24 +373,7 @@ async function daemonCommand(
 
   if (!started.ok) {
     const holder = started.holder ? ` (${started.holder})` : "";
-    if (restart) {
-      // The drain finished and something else won the race for the lock. This
-      // cannot say what that something is going to do: a `lingtai run` in a
-      // terminal takes the same lock and exits when its one pass ends, and a
-      // launchd copy spawned before the withdrawal reads the request still
-      // standing and drains straight back out. Saying "it is running" would be
-      // a guess that tells the operator to do nothing — so it says only what is
-      // known, and where the answer is.
-      console.log(
-        paint.held(
-          `the lock was taken first${holder}, and this started nothing. Whether a daemon is conducting ` +
-            `afterwards is not something this process can know — a lingtai run exits when its pass ends, and a ` +
-            `daemon that read the drain before it was withdrawn exits too. lingtai doctor says whether one is up; ` +
-            `if none is, lingtai restart again waits for the lock and starts one.`,
-        ),
-      );
-      return 1;
-    }
+    if (restart) return lostTheLock(started.holder, (line) => console.log(line));
     // A refusal, and deliberately the quietest line the daemon has. Nothing is
     // wrong — red here would be the error that teaches people to ignore errors
     // — and nothing happened, so dim is the honest weight for it.
@@ -409,17 +401,26 @@ async function daemonCommand(
   // daemon when the command was typed, so a `git pull` during an hour's drain
   // changes the disk and not the process — and a `ConductorStarted` naming the
   // disk would be #98 again, with a record saying the opposite.
-  if (restart && (code.sha !== restart.examined.sha || code.dirty !== restart.examined.dirty)) {
-    const said = (v: CodeVersion) => `${v.sha ? v.sha.slice(0, 7) : "an unrecorded commit"}${v.dirty ? " (worktree dirty)" : ""}`;
-    console.log(
-      paint.fail(
-        `the checkout moved between the checks and the start — ${said(restart.examined)} was checked and ` +
-          `${said(code)} is what this would run. Nothing started, and no daemon is running: lingtai restart checks again.`,
-      ),
-    );
-    started.daemon.stop();
-    await started.daemon.stopped;
-    return 1;
+  //
+  // And a drain somebody else asked for between the restart's checks and this
+  // daemon's watermark is one it would never read (#159) — so it would take
+  // work over that stop. Both are `startRefusals`, which the supervised restart
+  // asks of the record its daemon leaves (#167).
+  if (restart) {
+    const refused = startRefusals({
+      examined: restart.examined,
+      running: code,
+      standing: (await readControl().catch(() => null))?.shutdown ?? null,
+      unreadThrough: started.since,
+    });
+    if (refused.length > 0) {
+      console.log(paint.fail("not starting:"));
+      for (const r of refused) console.log(paint.fail(`  · ${r.line}`));
+      console.log(paint.fail("Nothing started, and no daemon is running: lingtai restart checks again."));
+      started.daemon.stop();
+      await started.daemon.stopped;
+      return 1;
+    }
   }
 
   // **Beating from here**, and not from after the reconcile below — which is
@@ -447,8 +448,8 @@ async function daemonCommand(
   // said in the accent that means *look at this*.
   //
   // **A person only where a person's hand is on it**, and whose hand is
-  // `attributeStart`'s to decide: `lingtai restart` here, a restart that handed
-  // its start to launchd or systemd (0042 §8), a terminal, or nobody's.
+  // `attributeStart`'s to decide: `lingtai restart` here, a terminal, or
+  // nobody's — launchd's and systemd's starts included (0048).
   //
   // **Not decided here.** A read taken now and a shutdown noticed after the
   // reconcile are two reads, and a restart's withdrawal can land between them —
@@ -457,10 +458,9 @@ async function daemonCommand(
   // shutdown check, or the `--no-conduct` listener's (`startRecorder`).
   const noteStart = startRecorder({
     restart,
-    code,
     tty: Boolean(process.stdin.isTTY),
     user: process.env["USER"] ?? "operator",
-    record: (a) => recordStart(a.by, a.reason, code, undefined, a.handoff),
+    record: (a) => recordStart(a.by, a.reason, code),
     log: (line) => console.log(line),
   });
 
@@ -1084,17 +1084,23 @@ async function main(argv: string[]): Promise<number> {
         );
         return 2;
       }
+      // Where a supervisor keeps the daemon, the drain and the start are
+      // `lingtai service`'s and every refusal is still the restart's — the same
+      // functions as below, and `RESTART_GUARDS` is the table of both (#167).
+      if (kept.kept) {
+        const options = serviceOptions();
+        const drain = {
+          ...options.drain,
+          ask: (by: string, reason: string) =>
+            requestShutdownUnlessStanding(by, reason, parsed.args.timeoutMs, undefined, parsed.args.force),
+        };
+        return restartSupervised(parsed.args, { service: (argv) => serviceCommand(argv, { ...options, drain }) });
+      }
       // Two halves of one command, and the seam is the only place a daemon is
       // started. `prepareRestart` refuses, drains and waits; everything after
-      // this line is `lingtai daemon`, or the supervisor starting it.
-      const prepared = await prepareRestart(parsed.args, console.log, kept.kept);
+      // this line is `lingtai daemon`.
+      const prepared = await prepareRestart(parsed.args);
       if (!prepared.ok) return prepared.code;
-      if (prepared.handedOff !== null) {
-        return startSupervised(
-          { by: prepared.by, handedOff: prepared.handedOff, examined: prepared.examined },
-          { start: () => serviceCommand(["start"], serviceOptions()) },
-        );
-      }
       const flags: Record<string, string> = {
         ...(parsed.args.noConduct ? { "no-conduct": "" } : {}),
         ...(parsed.args.noMerge ? { "no-merge": "" } : {}),

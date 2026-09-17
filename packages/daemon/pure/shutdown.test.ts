@@ -215,7 +215,7 @@ describe("withdrawing a drain", () => {
   it("lifts the request it names, with one append", async () => {
     const { store, appended } = recording([restarting]);
 
-    const lifted = await withdrawShutdown("human:steven", 1, "restarted", null, store);
+    const lifted = await withdrawShutdown("human:steven", 1, "restarted", store);
 
     expect(lifted.withdrew).toBe(true);
     expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownWithdrawn"]);
@@ -225,7 +225,7 @@ describe("withdrawing a drain", () => {
   it("appends nothing when there was nothing to withdraw", async () => {
     const { store, appended } = recording([]);
 
-    expect(await withdrawShutdown("human:steven", 1, "restarted", null, store)).toEqual({ withdrew: false, standing: null });
+    expect(await withdrawShutdown("human:steven", 1, "restarted", store)).toEqual({ withdrew: false, standing: null });
     expect(appended).toEqual([]);
   });
 
@@ -240,7 +240,7 @@ describe("withdrawing a drain", () => {
     ]);
     before.next = () => held.push({ type: "RunRequested", data: { project: "lingtai", issue: "88", by: "human:ops" } });
 
-    const lifted = await withdrawShutdown("human:steven", 2, "restarted", null, store);
+    const lifted = await withdrawShutdown("human:steven", 2, "restarted", store);
 
     expect(lifted.withdrew).toBe(true);
     expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownWithdrawn"]);
@@ -256,7 +256,7 @@ describe("withdrawing a drain", () => {
     before.next = () =>
       held.push({ type: "ConductorShutdownRequested", data: { by: "human:ops", reason: "moving the database", timeoutMs: null } });
 
-    const lifted = await withdrawShutdown("human:steven", 1, "restarted", null, store);
+    const lifted = await withdrawShutdown("human:steven", 1, "restarted", store);
 
     expect(lifted.withdrew).toBe(false);
     expect(appended).toEqual([]);
@@ -287,7 +287,7 @@ describe("withdrawing a drain", () => {
 
     expect(await requestShutdownUnlessStanding("human:steven", "restarting", 300_000, store)).toEqual({ asked: true, version: 2 });
     expect(appended.map((e) => e.type)).toEqual(["ConductorShutdownRequested"]);
-    expect(await withdrawShutdown("human:steven", 2, "restarted", null, store)).toMatchObject({ withdrew: true });
+    expect(await withdrawShutdown("human:steven", 2, "restarted", store)).toMatchObject({ withdrew: true });
   });
 
   /**
@@ -299,7 +299,7 @@ describe("withdrawing a drain", () => {
     const { store, held, appended, before } = recording([restarting]);
     before.next = () => held.push({ type: "RunRequested", data: { project: "lingtai", issue: "88", by: "human:ops" } });
 
-    await recordStart("human:steven", "restarted", { sha: "2926f2d", dirty: false }, store, 2);
+    await recordStart("human:steven", "restarted", { sha: "2926f2d", dirty: false }, store);
 
     expect(appended.map((e) => e.type)).toEqual(["ConductorStarted"]);
     expect(held.map((e) => e.type)).toEqual(["ConductorShutdownRequested", "RunRequested", "ConductorStarted"]);

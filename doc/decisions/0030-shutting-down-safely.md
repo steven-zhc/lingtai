@@ -1,7 +1,9 @@
 # 0030 — Shutting down safely: the boundary is the pass, and the trigger is a command
 
 **Status** accepted · 2026-09-08 · extends
-[0027](0027-the-lease-is-deleted.md) §3 with what recovery does about a process
+[0027](0027-the-lease-is-deleted.md) §3 with what recovery does about a process ·
+**§2's *a daemon that is down finds the command waiting* superseded by
+[0048](0048-a-signal-is-aimed-at-one-daemon.md)**, which says which parts stand
 
 ## Context
 

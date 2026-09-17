@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import type { Envelope } from "../src/envelope.ts";
 import { Actor } from "../src/envelope.ts";
-import { HANDOFF_LAPSES_MS, reduceControl } from "../src/control.ts";
+import { reduceControl } from "../src/control.ts";
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
@@ -223,54 +223,22 @@ describe("withdrawing one shutdown request", () => {
 });
 
 /**
- * A restart under launchd or systemd hands its start to the supervisor, and the
- * handoff is how the daemon the supervisor starts knows whose restart it is
- * (0042 §8). What matters is when it must **not** be there to be claimed.
+ * The handoff is gone (#167, 0048). It was folded for a daemon the supervisor
+ * started to claim, and since #159 that daemon folds nothing older than itself,
+ * so it never did. What is on the log from before still has to fold.
  */
-describe("a restart's handoff to the supervisor", () => {
+describe("a withdrawal written with a handoff, before #167", () => {
   const asked = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
   const handed = {
     type: "ConductorShutdownWithdrawn",
     data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
   };
+  const started = { type: "ConductorStarted", data: { by: "daemon", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: 2 } };
 
-  it("stands after the withdrawal that carries it, naming who, why, the commit and its own version", () => {
-    expect(reduceControl(log([asked, handed]), NOW).handoff).toEqual({
-      by: "human:steven",
-      reason: "restarted: picking up #88",
-      sha: "2926f2d",
-      dirty: false,
-      version: 2,
-    });
-  });
-
-  it("is ended by the next start, whoever made it, so one the supervisor never acted on is not claimed days later", () => {
-    const started = { type: "ConductorStarted", data: { by: "human:ops", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: null } };
-    expect(reduceControl(log([asked, handed, started]), NOW).handoff).toBeNull();
-  });
-
-  /**
-   * The supervisor refused `service start`, so nothing started and nothing
-   * ended the handoff. A start the next day — somebody else's `service start`
-   * after `reset-failed`, on the same commit — must not be the restart's.
-   */
-  it("lapses when nothing started in time, so a start the next day is nobody's restart", () => {
-    const withdrawnAt = new Date("2026-09-13T23:06:00Z");
-    const events = log([asked, handed]).map((ev, i) => (i === 1 ? { ...ev, at: withdrawnAt } : ev));
-    expect(reduceControl(events, new Date(withdrawnAt.getTime() + 60_000)).handoff).not.toBeNull();
-    expect(reduceControl(events, new Date(withdrawnAt.getTime() + HANDOFF_LAPSES_MS + 1))).toMatchObject({ handoff: null });
-    expect(reduceControl(events, new Date("2026-09-14T09:00:00Z")).handoff).toBeNull();
-  });
-
-  it("is superseded by a newer drain", () => {
-    expect(reduceControl(log([asked, handed, asked]), NOW).handoff).toBeNull();
-  });
-
-  it("is not set by a withdrawal that lifted nothing, nor by one that starts the daemon itself", () => {
-    const stale = { ...handed, data: { ...handed.data, version: 7 } };
-    expect(reduceControl(log([asked, stale]), NOW).handoff).toBeNull();
-    const itself = { ...handed, data: { ...handed.data, handoff: null } };
-    expect(reduceControl(log([asked, itself]), NOW).handoff).toBeNull();
+  it("lifts the request it names, and leaves nothing else in the state", () => {
+    const state = reduceControl(log([asked, handed, started]), NOW);
+    expect(state.shutdown).toBeNull();
+    expect(Object.keys(state).sort()).toEqual(["by", "discussions", "paused", "reason", "requested", "shutdown", "until"]);
   });
 });
 
