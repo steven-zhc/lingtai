@@ -67,7 +67,7 @@ function quietDrain() {
   const drain: ServiceDrain = {
     ask: async (by, reason) => (said.push(`ask ${by} ${reason}`), { asked: true, version: ++version }),
     holding: async () => "nothing in flight",
-    queue: async () => (said.push("queue"), { wait: async () => (said.push("held"), "held"), leave: async () => {} }),
+    queue: async () => (said.push("queue"), { wait: async () => (said.push("held"), "held"), holds: async () => true, leave: async () => {} }),
     withdraw: async (by, v) => (
       said.push(`withdraw ${v}`),
       { withdrew: true, version: v + 1, request: { by, reason: "", timeoutMs: null, force: false, version: v } as never }
@@ -396,7 +396,12 @@ describe("shutdown", () => {
     const place = async (): Promise<LockPlace> => {
       if (lock.holder === null) lock.holder = "command";
       else lock.queue.push("command");
-      return { held: () => lock.holder === "command", lost: () => null, leave: async () => release("command") };
+      return {
+        held: () => lock.holder === "command",
+        lost: () => null,
+        confirm: async () => lock.holder === "command",
+        leave: async () => release("command"),
+      };
     };
     const drain: ServiceDrain = {
       ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
@@ -469,7 +474,7 @@ describe("shutdown", () => {
   it("tells the supervisor nothing when the wait is interrupted, withdraws its request, and says a new daemon takes work", async () => {
     const w = world(5);
     const { go, out } = command("darwin", w.s.exec, {
-      drain: { ...w.drain, queue: async () => ({ wait: async () => "interrupted", leave: async () => {} }) },
+      drain: { ...w.drain, queue: async () => ({ wait: async () => "interrupted", holds: async () => false, leave: async () => {} }) },
     });
     await launchdFile();
     expect(await go("shutdown")).toBe(130);
@@ -479,6 +484,31 @@ describe("shutdown", () => {
     expect(text).toContain("the supervisor then starts one that takes work");
     expect(text).toContain("pnpm lingtai service shutdown asks again");
     expect(text).not.toContain("exits too");
+  });
+
+  it("tells the supervisor nothing while the lock it waited for has gone with its connection, and waits again", async () => {
+    const w = world(0);
+    const said: string[] = [];
+    let waits = 0;
+    const holds = [false, true];
+    const { go, out } = command("darwin", w.s.exec, {
+      drain: {
+        ...w.drain,
+        queue: async () => ({
+          wait: async () => (said.push(`wait ${++waits}`), "held"),
+          holds: async () => {
+            const h = holds.shift()!;
+            said.push(`holds ${h} ${w.s.calls.some((c) => c.startsWith("launchctl bootout")) ? "after" : "before"} bootout`);
+            return h;
+          },
+          leave: async () => {},
+        }),
+      },
+    });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(said).toEqual(["wait 1", "holds false before bootout", "wait 2", "holds true before bootout"]);
+    expect(out.join("\n")).toContain("the conductor lock was lost with its connection before the supervisor was told anything");
   });
 
   it("refuses a request already standing — anybody's, its own name included — and stops nothing", async () => {
@@ -642,6 +672,25 @@ describe("while a shutdown request stands", () => {
     expect(said).toContain(`After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited`);
     expect(said).not.toContain("pnpm lingtai pause");
     expect(said).not.toContain("pnpm lingtai service shutdown");
+    expect(said).not.toContain("the supervisor's next start takes work");
+    expect(said).toContain("then this command again");
+  });
+
+  it("does not promise the supervisor a start after a pause that lifts itself, when service shutdown has unloaded the job", async () => {
+    // `service shutdown`, the conductor's own pause still in force, then
+    // `lingtai shutdown "x"`: `resume` alone starts nothing under an unloaded job.
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const until = new Date("2026-09-13T23:00:00.000Z");
+    const { go, err } = command("darwin", s.exec, {
+      shutdown: async () => ({ by: "human:ops", reason: "x" }),
+      pause: async () => ({ by: "conductor", reason: "account limit", until }),
+    });
+    await launchdFile();
+    expect(await go("start")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
+    const said = err.join("\n");
+    expect(said).not.toContain("the supervisor's next start takes work");
+    expect(said).toContain(`After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then this command again.`);
   });
 });
 
@@ -679,6 +728,47 @@ describe("install, and whose checkout it names", () => {
     expect(err.join("\n")).toContain(`${repoRoot()} is owned by uid ${UID}, not uid ${UID + 1}`);
     expect(s.calls).toEqual([]);
     expect(existsSync(join(home, ".config/systemd/user/lingtai.service"))).toBe(false);
+  });
+});
+
+describe("the place in the queue for the lock", () => {
+  it("is not held once its connection is lost, though the lock had been granted, and is taken again", async () => {
+    // Granted, then the connection dropped: Postgres has let the lock go with it.
+    let taken = 0;
+    let first = true;
+    const place = async (): Promise<LockPlace> => {
+      const mine = ++taken;
+      return {
+        held: () => true,
+        lost: () => (mine === 1 && !first ? new Error("Connection terminated unexpectedly") : null),
+        confirm: async () => mine !== 1,
+        leave: async () => {},
+      };
+    };
+    const lines: string[] = [];
+    const q = await queueForTheLock({ place, holder: async () => "copy", pollMs: 0 });
+    first = false;
+    expect(await q.holds()).toBe(false);
+    expect(await q.wait((l) => lines.push(l))).toBe("held");
+    expect(taken).toBe(2);
+    expect(lines.join("\n")).toContain("Connection terminated unexpectedly");
+    expect(await q.holds()).toBe(true);
+  });
+
+  it("says what ctrl-c does in service shutdown's wait — withdraws the request — never that it leaves it standing", async () => {
+    let asks = 0;
+    const place = async (): Promise<LockPlace> => ({
+      held: () => asks > 2,
+      lost: () => null,
+      confirm: async () => true,
+      leave: async () => {},
+    });
+    const lines: string[] = [];
+    const q = await queueForTheLock({ place, holder: async () => (asks++, "daemon 1"), pollMs: 0, sayEveryMs: 0 });
+    expect(await q.wait((l) => lines.push(l))).toBe("held");
+    const said = lines.join("\n");
+    expect(said).toContain("withdraws this command's request");
+    expect(said).not.toContain("leaves whatever was asked for standing");
   });
 });
 

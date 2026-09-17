@@ -352,6 +352,12 @@ export interface LockQueue {
    * never a fixed sleep: a quiet daemon reads the request and lets go at once.
    */
   wait: (log: (line: string) => void) => Promise<"held" | "interrupted" | "gave-up">;
+  /**
+   * Whether the lock is still this command's, asked on its own connection. A
+   * wait that ended held is not proof a moment later: Postgres releases the
+   * lock with a dropped session, and a copy the supervisor starts can take it.
+   */
+  holds: () => Promise<boolean>;
   /** Releases the lock when held, and leaves the queue when not. Safe to call twice. */
   leave: () => Promise<void>;
 }
@@ -611,8 +617,11 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       error(
         verb === "install" || unloaded
           ? `After ${at}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then pnpm lingtai service start.`
-          : `After ${at}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, and the supervisor's next start takes work.`,
+          : `After ${at}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then this command again.`,
       );
+      // Not "the supervisor's next start takes work": an unloaded job starts
+      // nothing after a resume, and a loaded one is not held down by the request.
+      if (verb !== "install" && !unloaded) error("Under a supervisor that request does not hold the service down: a copy started after it takes work regardless.");
       return true;
     }
     if (paused) {
@@ -695,7 +704,16 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(`draining — ${await options.drain.holding().catch(() => "what is in flight could not be read")}.`);
       log(`the pass in flight finishes first: its agent, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`);
 
-      const waited = await queue.wait(log);
+      let waited = await queue.wait(log);
+      // Asked again right before the supervisor is told: the lock is only worth
+      // anything while its session lasts, and a wait that ended held says
+      // nothing about a connection that dropped since. After `bootout` or
+      // `systemctl stop` the supervisor starts no copy, so this is the last
+      // moment a lost lock could be handed to one.
+      while (waited === "held" && !(await queue.holds().catch(() => false))) {
+        log("the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, and the wait goes on");
+        waited = await queue.wait(log);
+      }
       if (waited !== "held") {
         await queue.leave();
         const lifted = await options.drain.withdraw(by, mine, `service ${verb}: stopped waiting`).catch((err: unknown) => err as Error);
