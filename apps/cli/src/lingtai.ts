@@ -41,6 +41,7 @@ import {
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
+import { builtBoardDir, serveBoard } from "./board.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "@lingtai/conductor/onboard";
@@ -126,6 +127,11 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 stopped system and on a run that is long over.
                                 A landed run has no log: 0034 keeps exactly the
                                 ones still owed an explanation
+  lingtai board                     serve the board pnpm build wrote beside this
+                                CLI, in this process. From the source, there is
+                                none: pnpm --filter @lingtai/board dev
+    --port <n>                  default 3200
+    --dir <path>                a built board somewhere else
   lingtai status [project]          what is runnable, and what is holding the rest
     --all                       include items that have left the queue
                                 and why. Takes nothing and claims nothing.
@@ -994,6 +1000,17 @@ async function main(argv: string[]): Promise<number> {
       process.on("SIGINT", () => detach.abort());
       return attach({ runId, signal: detach.signal });
     }
+    case "board": {
+      const { flags } = parseFlags(rest);
+      const port = Number(flags["port"] ?? 3200);
+      if (!Number.isInteger(port) || port <= 0) {
+        console.error("lingtai board [--port <n>] [--dir <path>]");
+        return 2;
+      }
+      await serveBoard({ dir: flags["dir"] || builtBoardDir(), port, host: "127.0.0.1" });
+      console.log(`board on http://127.0.0.1:${port}`);
+      return 0;
+    }
     case "status": {
       const { positional, flags } = parseFlags(rest);
       return status({ project: positional[0], all: "all" in flags });
@@ -1116,13 +1133,19 @@ async function main(argv: string[]): Promise<number> {
  *
  * The stack is still there for the errors that are bugs rather than refusals;
  * it just has to be asked for.
+ *
+ * A promise and not a top-level `await`: `pnpm build` bundles this file to CJS
+ * for a SEA (#183), and CJS has no top-level `await`.
  */
-try {
-  process.exitCode = await main(process.argv.slice(2));
-} catch (err) {
-  const error = err as Error;
-  console.error(error.message || String(err));
-  if (process.env["LINGTAI_DEBUG"]) console.error(error.stack);
-  else console.error("\n(LINGTAI_DEBUG=1 for the stack)");
-  process.exitCode = 1;
-}
+main(process.argv.slice(2)).then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (err: unknown) => {
+    const error = err as Error;
+    console.error(error.message || String(err));
+    if (process.env["LINGTAI_DEBUG"]) console.error(error.stack);
+    else console.error("\n(LINGTAI_DEBUG=1 for the stack)");
+    process.exitCode = 1;
+  },
+);

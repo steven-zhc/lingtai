@@ -42,6 +42,7 @@ const NOT_OURS: Record<string, string> = {
   HOME: "the operating system's, read to find where a home directory is",
   HOSTNAME: "the operating system's, read to say which machine a daemon is on",
   USER: "the operating system's, read to attribute an approval to a person",
+  PORT: "Next's standalone server.js's, set by `lingtai board` for the server it imports (#183)",
   VITEST: "set by the test runner, not by Lingtai",
 };
 

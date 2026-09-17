@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 /**
  * The two things Next does for this app that a test runner does not.
@@ -17,4 +17,8 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  // `output: "standalone"` copies this app into `.next/standalone`, `test/`
+  // included (#183), and a second copy of every test fails there for want of
+  // the config beside it.
+  test: { exclude: [...configDefaults.exclude, ".next/**"] },
 });
