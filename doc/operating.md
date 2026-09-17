@@ -849,12 +849,19 @@ refuses a `HEAD` the tracking remote does not have, a dirty worktree, and a
 failed `lingtai doctor`, then drains, checks again, and has the supervisor start
 the daemon recorded as yours. `service restart` does none of that — it starts
 whatever the checkout holds — and it is the plumbing for a rewritten unit that
-must be loaded now. A shutdown request outlives the process, so under a
-supervisor every copy it brings back reads it and exits again until it is
-lifted. `service start`, `service restart`, and `service install` over a job
-the supervisor does not have, refuse and exit 1 without starting anything while
-a shutdown request stands, because the daemon they
-started would exit at once and keep doing so behind a command that had said 0.
+must be loaded now.
+
+**Under a supervisor, `lingtai shutdown` does not hold the service down.** A
+daemon reads nothing appended to the control stream before it started (#159),
+so the copy KeepAlive or `Restart=always` brings back after the drained daemon
+exits never sees the request and takes the next ticket at once. To keep the
+service down, `service shutdown`, which unloads it. `service start`, `service
+restart`, and `service install` over a job the supervisor does not have, refuse
+and exit 1 without starting anything while a shutdown request stands — not
+because the daemon they started would exit on it, since it would not, but
+because it would take work over a stop somebody asked for, and lifting that is
+theirs or `resume`'s. A `service restart` that finds one landed during its own
+wait has already unloaded the service, and leaves it so.
 (`install` still writes the file, and after `resume` it is `service start` that
 loads it.)
 

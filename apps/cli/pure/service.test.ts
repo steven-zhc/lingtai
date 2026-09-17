@@ -266,9 +266,9 @@ describe("restart on macOS", () => {
     ]);
   });
 
-  it("starts nothing while a shutdown request stands, which the daemon it started would read and exit on", async () => {
+  it("starts nothing while a shutdown request stands, which the daemon it started would take work over", async () => {
     // `lingtai shutdown "pick up #NN"`, then `service restart`: the request is
-    // still on the control stream, so every copy KeepAlive brings back exits.
+    // still on the control stream, and a daemon started after it never reads it (#159).
     const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
     const { go, out, err } = command("darwin", s.exec, {
       shutdown: async () => ({ by: "steven", reason: "pick up #NN" }),
@@ -279,6 +279,8 @@ describe("restart on macOS", () => {
     const said = err.join("\n");
     expect(said).toContain("a shutdown request stands — asked by steven (pick up #NN)");
     expect(said).toContain("pnpm lingtai resume");
+    expect(said).toContain("a daemon started now would not read it");
+    expect(said).not.toContain("exits again");
     expect(out.join("\n")).not.toContain("shutdown \"why\"` first");
   });
 
@@ -507,6 +509,29 @@ describe("shutdown", () => {
     const said = err.join("\n");
     expect(said).toContain("The drain above unloaded the service, and nothing was started");
     expect(said).not.toContain("Nothing was started or stopped");
+    expect(said).not.toContain("exits again");
+  });
+
+  it("withdraws its own request and lets the lock go when the supervisor does not unload, so nothing is refused over it after", async () => {
+    const w = world(2);
+    const s = supervisor([
+      ["launchctl print", { status: 0, out: "\tstate = running\n" }],
+      ["launchctl bootout", { status: 5, out: "Boot-out failed: 5: Input/output error" }],
+    ]);
+    const { go, err } = command("darwin", s.exec, { drain: w.drain });
+    await launchdFile();
+    expect(await go("shutdown", "x")).toBe(1);
+    expect(w.lock.holder).not.toBe("command");
+    expect(w.lock.queue).toEqual([]);
+    expect((await readControl(w.store)).shutdown).toBeNull();
+    const said = err.join("\n");
+    expect(said).toContain("the supervisor did not stop the service");
+    expect(said).toContain("The request is withdrawn");
+    // And the next `service shutdown` asks its own rather than refusing over this one.
+    const again = command("darwin", s.exec, { drain: w.drain });
+    expect(await again.go("shutdown", "again")).toBe(1);
+    expect(again.err.join("\n")).toContain("the supervisor did not stop the service");
+    expect(again.err.join("\n")).not.toContain("is already standing");
   });
 
   it("sends no signal when the request could not be appended", async () => {

@@ -361,9 +361,9 @@ export interface ServiceOptions {
   liveness: () => Promise<string>;
   /**
    * The shutdown request in force, off the control stream, or null. Injected
-   * for the same reason. A request outlives the daemon it was aimed at, so a
-   * daemon the supervisor starts while one stands reads it and exits — and is
-   * started again, and exits, until `lingtai resume`.
+   * for the same reason. A daemon started while one stands does not read it —
+   * it reads nothing asked before it started (#159) — so it would take work
+   * over a stop somebody asked for, and a start is refused until `lingtai resume`.
    */
   shutdown: () => Promise<{ by: string; reason: string } | null>;
   /**
@@ -563,9 +563,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   };
 
   /**
-   * Whether a daemon started now would stay up. Not when a shutdown request
-   * stands: it would read it on its first pass and exit, the supervisor would
-   * start it again, and a command that returned 0 would leave the queue idle.
+   * Whether a start would override a stop somebody asked for. A daemon started
+   * now reads nothing asked before it started (#159), so it would not exit on a
+   * standing request — it would take work over it, and that is not this
+   * command's to decide.
    * A request that could not be read is said and not treated as none — nor as
    * one, since a restart is often what somebody reaches for when the database
    * is the trouble.
@@ -579,15 +580,15 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       asked = await options.shutdown();
     } catch (err) {
       log(`note  could not read whether a shutdown request stands — ${(err as Error).message}`);
-      log("      if one does, the daemon this starts exits again at once, until: pnpm lingtai resume (which lifts a pause too)");
+      log("      if one does, the daemon this starts takes work over it — it reads nothing asked before it started. pnpm lingtai resume lifts it (a pause too)");
       return false;
     }
     if (!asked) return false;
-    error(`a shutdown request stands — asked by ${asked.by} (${asked.reason}) — and a daemon started now reads it and exits,`);
+    error(`a shutdown request stands — asked by ${asked.by} (${asked.reason}) — and a daemon started now would not read it:`);
     error(
       unloaded
-        ? "then the supervisor starts it again, and it exits again, until it is lifted. The drain above unloaded the service, and nothing was started: nothing supervised runs until pnpm lingtai service start."
-        : "then the supervisor starts it again, and it exits again, until it is lifted. Nothing was started or stopped.",
+        ? "it reads nothing asked before it started (#159), and would take work over that stop. The drain above unloaded the service, and nothing was started: nothing supervised runs until pnpm lingtai service start."
+        : "it reads nothing asked before it started (#159), and would take work over that stop. Nothing was started or stopped.",
     );
     // `resume` is the only thing that lifts a shutdown, and it lifts a pause in
     // the same event — so a pause somebody set on purpose is named here, with
@@ -628,8 +629,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       error("then pnpm lingtai service start, which takes work on the code at HEAD.");
       return true;
     }
-    error("Under a supervisor the shutdown is already the restart: once the daemon it was aimed at has exited");
-    error("(pnpm lingtai service status), pnpm lingtai resume, and the supervisor's next start takes work on the code at HEAD.");
+    error("Under a supervisor that request does not hold the service down: a copy started after it takes work regardless.");
+    error("Once the daemon it was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then this command again.");
     return true;
   };
 
@@ -712,13 +713,25 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       log("this command holds the conductor lock — the pass is over, and nothing the supervisor starts now can take work");
 
-      if (platform === "launchd") {
-        // Unloaded, not killed: KeepAlive would bring a killed job straight back.
-        if (!(await unload())) return 1;
-      } else if (!run(["systemctl", "--user", "stop", SYSTEMD_UNIT])) {
+      // Unloaded, not killed: KeepAlive would bring a killed job straight back.
+      const stopped = platform === "launchd" ? await unload() : run(["systemctl", "--user", "stop", SYSTEMD_UNIT]);
+      await queue.leave();
+      if (!stopped) {
+        // The job is still the supervisor's, so the copy it starts once the lock
+        // is let go takes work, and reads nothing asked before it started. The
+        // request is this command's own, and left standing it would only refuse
+        // the next `service shutdown` and `start` over nothing.
+        const lifted = await options.drain.withdraw(by, mine, `service ${verb}: the supervisor did not stop`).catch((err: unknown) => err as Error);
+        error(
+          "the supervisor did not stop the service, above — it may still be running it, and a daemon it starts takes work. " +
+            (lifted instanceof Error
+              ? `The request could not be withdrawn — ${lifted.message} — and service start and shutdown refuse while it stands: pnpm lingtai resume lifts it.`
+              : lifted.withdrew
+                ? "The request is withdrawn; pnpm lingtai service shutdown asks again."
+                : "pnpm lingtai service shutdown asks again."),
+        );
         return 1;
       }
-      await queue.leave();
 
       const lifted = await options.drain.withdraw(by, mine, `service ${verb}: unloaded`).catch((err: unknown) => err as Error);
       if (lifted instanceof Error) {
