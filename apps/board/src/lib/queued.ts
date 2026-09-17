@@ -34,7 +34,6 @@ import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
-import { recipeAtHead } from "./recipe.ts";
 
 /** One of the five points, and what the recipe runs there. */
 export interface PlannedPoint {
@@ -232,9 +231,7 @@ function refused(problem: string, plan: PlanView | null, paused: boolean): Queue
  * moving* always gets an answer, and "it could not be asked, because …" is one
  * of the answers rather than an exception somebody has to remember to catch.
  *
- * `recipeAtHead` rather than the default resolve, exactly as `askProject` does
- * — same file, same branch, same governance, resolved again only when the
- * branch has moved.
+ * The default resolve, exactly as `askProject` does — the machine's file.
  */
 export async function queuedFor(input: {
   project: string;
@@ -249,7 +246,7 @@ export async function queuedFor(input: {
   const state = await loadProject(project).catch(() => null);
   if (!state) return refused(`${project} is not a registered project`, null, paused);
 
-  const filter = await projectFilter(state, undefined, recipeAtHead);
+  const filter = await projectFilter(state);
   if (!filter.ok) {
     return refused(`the recipe could not be read: ${filter.problem}`, null, paused);
   }

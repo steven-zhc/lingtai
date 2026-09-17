@@ -254,7 +254,9 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
     async checkAuth(env: Record<string, string>): Promise<AuthStatus> {
       return new Promise<AuthStatus>((resolve) => {
         const child = spawn(binary, ["auth", "status"], {
-          env,
+          // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
+          // board reaches this through `currentRecipe`'s sign-in detection.
+          env: env as NodeJS.ProcessEnv,
           stdio: ["ignore", "pipe", "pipe"],
         });
 
@@ -327,7 +329,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           // Filtered, not inherited. The agent gets what the recipe allows plus
           // the hook's wiring, and nothing else — one of the three real
           // boundaries (doc/decisions/0007).
-          env: request.env,
+          env: request.env as NodeJS.ProcessEnv,
           stdio: ["ignore", "pipe", "pipe"],
           // Its own process group
           // ([0030](../../../doc/decisions/0030-shutting-down-safely.md) §3).

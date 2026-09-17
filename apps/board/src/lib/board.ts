@@ -39,7 +39,6 @@ import { loadAllProjects } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/filter";
 import { projectFilter, type GatePlan, type ProjectFilter } from "@lingtai/conductor/filter";
 import { foldProgress, type RunProgress } from "./progress.ts";
-import { recipeAtHead } from "./recipe.ts";
 
 /**
  * Four, not five. `gates` folded into `running` (ADR 0016 §8).
@@ -516,10 +515,9 @@ export type ProjectQueue =
  * down with the one project whose token expired.
  */
 export async function askProject(state: ProjectState): Promise<ProjectQueue> {
-  // `recipeAtHead` rather than the default `currentRecipe`: same file, same
-  // branch, same governance — resolved again only when the branch has moved.
-  // See `recipe.ts` for why that is the board's decision and nobody else's.
-  const filter = await projectFilter(state, undefined, recipeAtHead);
+  // The default `currentRecipe`, the conductor's own read — a local file since
+  // #180, so a render asks GitHub nothing for it.
+  const filter = await projectFilter(state);
   if (!filter.ok) return { state: "unreadable", filter };
   try {
     const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });

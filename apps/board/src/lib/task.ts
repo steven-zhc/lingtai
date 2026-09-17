@@ -47,7 +47,7 @@ import {
   type Envelope,
   type WorkItemLifecycle,
 } from "@lingtai/domain";
-import { loadProject } from "@lingtai/conductor/projects";
+import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
 import { githubClientFor, projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 // For the one distinction a message cannot carry: `status === 404` is GitHub
 // saying the issue is not there, and every other failure is GitHub not saying
@@ -58,7 +58,7 @@ import { elapsed, foldProgress, type RunProgress } from "./progress.ts";
 import { type HistoryLine, toLine } from "./history.ts";
 import { outgoingFor, type OutgoingView } from "./prompt.ts";
 import { queuedFor, type QueuedView } from "./queued.ts";
-import { recipeAtHead, recipeOfRun, type RunRecipe } from "./recipe.ts";
+import { recipeOfRun, type RunRecipe } from "./recipe.ts";
 
 export interface Finding {
   file: string;
@@ -1291,7 +1291,7 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
  * The recipe's gate plan, for the bound a running attempt's phase is measured
  * against — or undefined, which draws the phase with no denominator.
  *
- * `recipeAtHead`, as the board's own `askProject` reads it, so the card and
+ * `currentRecipe`, as the board's own `askProject` reads it, so the card and
  * this page measure one gate against one number. Never throws: a recipe that
  * will not read costs the page its `/ 20m` and nothing else, and no bound is
  * drawn as no denominator rather than as zero.
@@ -1299,7 +1299,7 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
 async function planFor(project: string): Promise<GatePlan | undefined> {
   const state = await loadProject(project).catch(() => null);
   if (!state) return undefined;
-  const filter = await projectFilter(state, undefined, recipeAtHead);
+  const filter = await projectFilter(state);
   return filter.ok ? filter.plan : undefined;
 }
 
@@ -1309,8 +1309,8 @@ async function planFor(project: string): Promise<GatePlan | undefined> {
  *
  * **No round trip per render for a proved run**: the recipe at a base commit
  * is kept per `(repo, sha)`, which is exact because a commit never changes.
- * Head's is asked for once however many attempts want it, through
- * `recipeAtHead`, which is what the board already pays per render.
+ * Head's — the machine's current recipe — is read once however many attempts
+ * want it, through `currentRecipe`.
  *
  * Never throws: a project that will not load is every attempt saying so.
  */
@@ -1324,8 +1324,8 @@ async function recipesFor(
     const state = await loadProject(project);
     if (!state) throw new Error("it is not a registered project");
     const client = await githubClientFor(state);
-    let head: ReturnType<typeof recipeAtHead> | null = null;
-    const atHead = () => (head ??= recipeAtHead(state, client));
+    let head: ReturnType<typeof currentRecipe> | null = null;
+    const atHead = () => (head ??= currentRecipe(state));
     recipes = await Promise.all(runs.map((r) => recipeOfRun(r, client, atHead)));
   } catch (err) {
     const why = `no recipe could be read for ${project}: ${(err as Error).message}`;
