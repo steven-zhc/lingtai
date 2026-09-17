@@ -167,12 +167,12 @@ function tar(out: string, dir: string, entry: string): void {
 }
 
 /**
- * Start `lingtai board` from a build and fetch a page and its stylesheet.
+ * Start `lingtai board start` from a build and fetch a page and its stylesheet.
  */
 async function servesAPage(command: string, args: string[], env: NodeJS.ProcessEnv = childEnv()): Promise<void> {
   const port = await freePort();
 
-  const board = spawn(command, [...args, "board", "--port", String(port)], {
+  const board = spawn(command, [...args, "board", "start", "--port", String(port), "--no-open"], {
     cwd: work,
     env,
     stdio: ["ignore", "pipe", "pipe"],

@@ -68,10 +68,10 @@ export function buildBinary({ dist, output = join(dist, "lingtai"), sign = true 
         // needed to start, and a binary that starts is what this is for.
         useCodeCache: false,
         useSnapshot: false,
-        // `lingtai board` loads `server.js` through vm's main-context loader,
+        // `lingtai board start` loads `server.js` through vm's main-context loader,
         // the one way a SEA's `import()` reaches a file, and Node flags it as
         // experimental on every start. It is the binary's business, not the
-        // person's who typed `lingtai board`.
+        // person's who typed `lingtai board start`.
         execArgv: ["--disable-warning=ExperimentalWarning"],
       }),
     );

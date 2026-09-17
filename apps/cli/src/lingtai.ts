@@ -41,7 +41,7 @@ import {
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
-import { builtBoardDir, serveBoard } from "./board.ts";
+import { boardAnswers, boardPort } from "./board.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "@lingtai/conductor/onboard";
@@ -137,11 +137,19 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 stopped system and on a run that is long over.
                                 A landed run has no log: 0034 keeps exactly the
                                 ones still owed an explanation
-  lingtai board                     serve the board pnpm build wrote beside this
-                                CLI, in this process. From the source, there is
-                                none: pnpm --filter @lingtai/board dev
-    --port <n>                  default 3200
+  lingtai board start               serve the UI in this terminal, print the URL
+                                and open a browser. ctrl-c stops it. The build
+                                beside this CLI, or next dev from a checkout
+    --port <n>                  instead of board.port in ~/.lingtai/config.yml,
+                                whose default is 17820
     --dir <path>                a built board somewhere else
+    --no-open                   no browser
+  lingtai board stop                stop it — whoever keeps it, the supervisor or
+                                a terminal. stop and not shutdown: a board has
+                                no pass to finish, so nothing is waited for
+  lingtai board restart             stop, then start. Checks nothing — unlike
+                                lingtai restart, which is the conductor's
+  lingtai board status              the port, what answers on it, and who keeps it
   lingtai status [project]          what is runnable, and what is holding the rest
     --all                       include items that have left the queue
                                 and why. Takes nothing and claims nothing.
@@ -163,12 +171,15 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
   lingtai service install|start|shutdown [why]|restart [why]|status|uninstall
-                                keep lingtai daemon running: a LaunchAgent on
-                                macOS, a systemd user unit on Linux. No service
-                                manager? run lingtai daemon in the foreground.
-                                shutdown drains through the log, waits for the
-                                pass, then unloads; restart is that and start,
-                                unchecked — lingtai restart is the checked one
+                                keep two jobs running, the conductor and the
+                                board: LaunchAgents on macOS, systemd user units
+                                on Linux. No service manager? run lingtai daemon
+                                and lingtai board start in the foreground.
+                                shutdown drains the conductor through the log,
+                                waits for the pass, then unloads, and stops the
+                                board; restart is that and start, unchecked —
+                                lingtai restart is the checked one, and restarts
+                                the conductor alone. status reports each job
   lingtai pause <why>               stop the running daemon taking new tickets; a
                                 run in flight finishes. About the daemon that is
                                 running, and gone when it is — but not for
@@ -1035,16 +1046,10 @@ async function main(argv: string[]): Promise<number> {
       process.on("SIGINT", () => detach.abort());
       return attach({ runId, signal: detach.signal });
     }
+    // The same: `entry.ts` answers it, since a board needs no log to be served.
     case "board": {
-      const { flags } = parseFlags(rest);
-      const port = Number(flags["port"] ?? 3200);
-      if (!Number.isInteger(port) || port <= 0) {
-        console.error("lingtai board [--port <n>] [--dir <path>]");
-        return 2;
-      }
-      await serveBoard({ dir: flags["dir"] || builtBoardDir(), port, host: "127.0.0.1" });
-      console.log(`board on http://127.0.0.1:${port}`);
-      return 0;
+      const { boardCommand, liveBoardWorld } = await import("./board-command.ts");
+      return boardCommand(rest, liveBoardWorld());
     }
     case "status": {
       const { positional, flags } = parseFlags(rest);
@@ -1081,8 +1086,14 @@ async function main(argv: string[]): Promise<number> {
     // already on disk. `start` is the name; this is the one it used to have.
     case "daemon":
       return daemonCommand(parseFlags(rest).flags);
-    case "service":
-      return serviceCommand(rest, serviceOptions());
+    case "service": {
+      const port = boardPort(process.env);
+      if ("refused" in port) {
+        console.error(port.refused);
+        return 2;
+      }
+      return serviceCommand(rest, { ...serviceOptions(), board: { port: port.port, answers: () => boardAnswers(port.port) } });
+    }
     case "restart": {
       const parsed = parseRestartArgs(rest);
       if (!parsed.ok) {

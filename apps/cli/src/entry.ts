@@ -2,12 +2,12 @@
 /**
  * `lingtai` — the entry, in front of `lingtai.ts`.
  *
- * **Five commands answer before the rest is imported** (#184, #186): `version`,
- * `upgrade`, `rollback`, `uninstall` and `init`. Everything `lingtai.ts` imports
+ * **Six commands answer before the rest is imported** (#184, #186, #187):
+ * `version`, `upgrade`, `rollback`, `uninstall`, `init` and `board`. Everything `lingtai.ts` imports
  * loads `@lingtai/event-store`, whose client is built at module scope and throws
  * without a database URL — which a machine that has only just installed does
  * not have, one being uninstalled may no longer, and `init` is what gives it
- * one. So these are dispatched from here, and every other command is
+ * one — and a board is served, stopped and asked after with no log at all. So these are dispatched from here, and every other command is
  * `lingtai.ts`, unchanged.
  *
  * A dynamic `import()` and not a static one, since a static import is evaluated
@@ -25,6 +25,20 @@ if (argv[0] === "init") {
   // Only once asked: `init.ts` loads the board's server module, and no other command here needs it.
   import("./init.ts")
     .then(({ initCommand, liveInitWorld }) => initCommand(argv.slice(1), liveInitWorld()))
+    .then(
+      (code) => {
+        process.exitCode = code;
+      },
+      (err: unknown) => {
+        const error = err as Error;
+        console.error(error.message || String(err));
+        if (process.env["LINGTAI_DEBUG"]) console.error(error.stack);
+        process.exitCode = 1;
+      },
+    );
+} else if (argv[0] === "board") {
+  import("./board-command.ts")
+    .then(({ boardCommand, liveBoardWorld }) => boardCommand(argv.slice(1), liveBoardWorld()))
     .then(
       (code) => {
         process.exitCode = code;

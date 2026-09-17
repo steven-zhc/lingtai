@@ -39,18 +39,24 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
 import type { ProjectFilter } from "@lingtai/conductor";
 import { type Envelope, type PayloadOf, workItemOf } from "@lingtai/domain";
 import { type EventStore, eventStore } from "@lingtai/event-store";
+import { BOARD_PORT, boardPort, boardUrl } from "./board.ts";
 
 /**
  * The board's address on the one machine this runs on
- * ([0008](../../../doc/decisions/0008-nextjs-board.md)): port 3200, localhost,
- * no authentication.
+ * ([0008](../../../doc/decisions/0008-nextjs-board.md)): localhost, no
+ * authentication, and the port `lingtai board start` serves on — `board.port`
+ * in `~/.lingtai/config.yml`, 17820 by default (#187). A file that cannot be
+ * read gives the default rather than no link: `lingtai board start` refuses that
+ * file by name, which is where it is noticed.
  *
- * A constant rather than a setting, because the deployment it would describe
- * does not exist yet. It is in the payload rather than compiled into the
- * subscriber so that the day it does, one place changes and no extension has to
- * be rewritten.
+ * It is in the payload rather than compiled into the subscriber so that the day
+ * the board has a real address, one place changes and no extension has to be
+ * rewritten.
  */
-export const BOARD_URL = "http://localhost:3200";
+export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
+  const resolved = boardPort(env);
+  return boardUrl("refused" in resolved ? BOARD_PORT : resolved.port);
+}
 
 /**
  * The work item a run is for, off the log.
@@ -223,7 +229,7 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
             const now = await resolve({ project, required: [], allow: declared });
             return runnableEnv(extensionEnv(now.merged, spec.env).values);
           },
-          board: options.board ?? BOARD_URL,
+          board: options.board ?? boardAddress(),
         }),
       });
     }

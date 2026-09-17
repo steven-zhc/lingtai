@@ -4,9 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack -p 3200",
+    "dev": "node ../cli/src/entry.ts board start",
     "build": "next build",
-    "start": "next start -p 3200",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

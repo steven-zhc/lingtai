@@ -135,11 +135,11 @@ as it appears, and runs the merge lane. Leave it running.
 In another terminal, for the board:
 
 ```bash
-pnpm --filter @lingtai/board dev     # http://localhost:3200
+pnpm lingtai board start     # http://127.0.0.1:17820, and opens it
 ```
 
-To install it as a background service instead — a LaunchAgent on macOS, a
-systemd user unit on Linux:
+To install both as background services instead — LaunchAgents on macOS,
+systemd user units on Linux, one job for the daemon and one for the board:
 
 ```bash
 pnpm lingtai service install

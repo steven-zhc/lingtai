@@ -17,7 +17,9 @@ import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessSt
 import { repoRoot } from "@lingtai/env";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PortAnswer } from "../src/board.ts";
 import {
+  BOARD_LAUNCHD_LABEL,
   LAUNCHCTL_NO_SUCH_SERVICE,
   LAUNCHD_LABEL,
   NO_SUPERVISOR,
@@ -106,6 +108,7 @@ function command(
     uid?: number;
     drain?: ServiceDrain;
     started?: { watermark: () => Promise<number>; after: (version: number) => Promise<RecordedStart | null> };
+    board?: { port: number; answers: () => Promise<PortAnswer> };
   } = {},
 ) {
   const out: string[] = [];
@@ -117,6 +120,7 @@ function command(
       pause: extra.pause ?? (async () => null),
       drain: extra.drain ?? quietDrain().drain,
       started: extra.started ?? recordedAtOnce,
+      ...(extra.board ? { board: extra.board } : {}),
       by: "human:lingtai",
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
@@ -1268,5 +1272,80 @@ describe("one command to stop, one to start", () => {
       "ConductorShutdownWithdrawn",
       "ConductorStarted",
     ]);
+  });
+});
+
+describe("two jobs — the conductor and the board (#187)", () => {
+  const conductorPrint = `launchctl print gui/${UID}/${LAUNCHD_LABEL}`;
+  const boardPrint = `launchctl print gui/${UID}/${BOARD_LAUNCHD_LABEL}`;
+
+  it("installs both, and status reports each under its own heading — a board up does not hide a conductor launchd cannot spawn", async () => {
+    let boardLoaded = false;
+    const s = supervisor([
+      [conductorPrint, { status: 0, out: LOADED_BUT_NOT_RUNNING }],
+      [boardPrint, () => (boardLoaded ? { status: 0, out: "\tstate = running\n\tpid = 88\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      [`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${BOARD_LAUNCHD_LABEL}.plist`, () => ((boardLoaded = true), { status: 0, out: "" })],
+    ]);
+    const board = { port: 17820, answers: async (): Promise<PortAnswer> => (boardLoaded ? "board" : "nothing") };
+    const { go, out } = command("darwin", s.exec, { board });
+    expect(await go("install")).toBe(0);
+
+    const plist = await readFile(join(home, "Library/LaunchAgents", `${BOARD_LAUNCHD_LABEL}.plist`), "utf8");
+    expect(plist).toContain("<string>board</string>\n    <string>start</string>\n    <string>--no-open</string>");
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(true);
+    expect(out).toContain("the board answers — http://127.0.0.1:17820");
+
+    out.length = 0;
+    expect(await go("status")).toBe(0);
+    const text = out.join("\n");
+    const conductor = text.slice(text.indexOf("the conductor"), text.indexOf("the board"));
+    const boardPart = text.slice(text.indexOf("the board"));
+    expect(conductor).toContain("  state = spawn scheduled");
+    expect(conductor).toContain("  last seen 3000s ago (pid 41) — not running");
+    expect(boardPart).toContain("  state = running");
+    expect(boardPart).toContain("  http://127.0.0.1:17820 answers, and it is a Lingtai board");
+    expect(text).not.toMatch(/^running$/m);
+  });
+
+  it("shutdown drains the conductor and stops the board — one drain, and no wait for a board with no pass", async () => {
+    let conductorPrints = 0;
+    let boardPrints = 0;
+    const s = supervisor([
+      [conductorPrint, () => (++conductorPrints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      [boardPrint, () => (++boardPrints <= 1 ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+    ]);
+    const d = quietDrain();
+    const { go, out } = command("darwin", s.exec, { drain: d.drain, board: { port: 17820, answers: async () => "nothing" } });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${BOARD_LAUNCHD_LABEL}.plist`), "x");
+    expect(await go("shutdown", "going", "home")).toBe(0);
+    expect(d.said).toEqual(["queue", "ask human:lingtai service shutdown: going home", "held", "withdraw 1"]);
+    expect(s.calls).toContain(`launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`);
+    expect(s.calls).toContain(`launchctl bootout gui/${UID}/${BOARD_LAUNCHD_LABEL}`);
+    // The conductor first: the board is not taken down while a pass is still being waited for.
+    expect(s.calls.indexOf(`launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`)).toBeLessThan(s.calls.indexOf(`launchctl bootout gui/${UID}/${BOARD_LAUNCHD_LABEL}`));
+    expect(out).toContain("stopped the board — it has no pass to finish, so nothing was waited for");
+  });
+
+  it("does not start a supervised board over one a terminal already has on the port, and says so in words", async () => {
+    const s = supervisor([
+      [conductorPrint, { status: 0, out: "\tstate = running\n\tpid = 12\n" }],
+      [boardPrint, { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }],
+    ]);
+    const { go, err } = command("darwin", s.exec, { board: { port: 17820, answers: async () => "board" } });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${BOARD_LAUNCHD_LABEL}.plist`), "x");
+    expect(await go("start")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
+    expect(err.join("\n")).toContain("a board is already on 17820 — http://127.0.0.1:17820");
+  });
+
+  it("without a board, is the conductor alone — which is what lingtai restart asks for", async () => {
+    const s = supervisor([[conductorPrint, { status: 0, out: "\tstate = running\n\tpid = 12\n" }]]);
+    const { go, out } = command("darwin", s.exec);
+    await launchdFile();
+    expect(await go("status")).toBe(0);
+    expect(s.calls.some((c) => c.includes(BOARD_LAUNCHD_LABEL))).toBe(false);
+    expect(out.join("\n")).not.toContain("the board");
   });
 });

@@ -48,7 +48,7 @@ import { runnableEnv } from "@lingtai/agent-env";
 import { stateDir } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { type SchemaOutcome, createSchema } from "@lingtai/event-store/schema";
-import { builtBoardDir, serveBoard } from "./board.ts";
+import { BOARD_PORT, boardAnswers, boardPort, builtBoardDir, serveBoard } from "./board.ts";
 
 // -------------------------------------------------------------- the world --
 
@@ -99,8 +99,7 @@ export interface InitWorld {
   open: (url: string) => Promise<boolean>;
 }
 
-/** `lingtai board`'s default, so the two commands name one address. */
-export const BOARD_PORT = 3200;
+export { BOARD_PORT };
 
 const USAGE = "lingtai init [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]";
 
@@ -170,8 +169,8 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const parsed = parseArgs(argv);
   if ("refused" in parsed) return refuse(world, parsed.refused, 2);
   const { flags } = parsed;
-  const port = flags["port"] === undefined ? BOARD_PORT : Number(flags["port"]);
-  if (!Number.isInteger(port) || port <= 0) return refuse(world, `${USAGE} — --port takes a port number`, 2);
+  const flagged = flags["port"] === undefined ? null : boardPort(world.env, flags["port"]);
+  if (flagged !== null && "refused" in flagged) return refuse(world, `${USAGE} — ${flagged.refused}`, 2);
 
   const home = stateDir(world.env);
   const path = configPath(world.env);
@@ -192,6 +191,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
 
   const config = readConfig(path);
   if ("refused" in config) return refuse(world, config.refused);
+  // `lingtai board start`'s own reading, so the two commands name one address.
+  const resolved = flagged ?? boardPort(world.env);
+  if ("refused" in resolved) return refuse(world, resolved.refused);
+  const port = resolved.port;
 
   // ---- the database ---------------------------------------------------------
   const database = await chooseDatabase(world, config, path, home, flags["database-url"] ?? null);
@@ -238,7 +241,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   world.log(
     running !== null
       ? paint.muted(`the board was already running at ${running} — this started none`)
-      : paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again"),
+      : paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board start starts it again"),
   );
   return 0;
 }
@@ -473,16 +476,7 @@ export function liveInitWorld(): InitWorld {
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     },
-    boardAt: async (port) => {
-      const url = `http://127.0.0.1:${port}`;
-      try {
-        // The board's own title, so a port some other server holds is not mistaken for it.
-        const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) });
-        return (await res.text()).includes("<title>Lingtai</title>") ? url : null;
-      } catch {
-        return null;
-      }
-    },
+    boardAt: async (port) => ((await boardAnswers(port)) === "board" ? `http://127.0.0.1:${port}` : null),
     board: async (port) => {
       const host = "127.0.0.1";
       try {

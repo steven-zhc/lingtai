@@ -305,9 +305,9 @@ be clear of anything common, below both ranges. `18789` is OpenClaw's, `27017`
 MongoDB's, `26257` CockroachDB's, `19999` Netdata's.
 
 **Defaults are in code and require no configuration.**
-`~/.lingtai/config.yaml` may override, and need not exist. The port is
-`apps/board/package.json`'s `next dev -p 3200` today, which is the wrong place:
-somebody who installed Lingtai does not edit its `package.json`.
+`~/.lingtai/config.yml` may override (`board.port`), and need not exist. The
+port was `apps/board/package.json`'s `next dev -p 3200` until #187, which was
+the wrong place: somebody who installed Lingtai does not edit its `package.json`.
 
 ### The daemon binds nothing, and that is the design
 

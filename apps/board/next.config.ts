@@ -26,6 +26,10 @@ const config: NextConfig = {
   // is random — so two builds of one commit were two layouts. `pnpm build`
   // passes the commit; `next build` alone keeps the default.
   generateBuildId: () => process.env["LINGTAI_BUILD_ID"] ?? null,
+  // `next dev` otherwise writes AGENTS.md and CLAUDE.md into apps/board on every
+  // start. The supervised board runs `next dev` from the checkout (#187), and a
+  // checkout it dirtied is one `lingtai restart` refuses.
+  agentRules: false,
 };
 
 export default config;
