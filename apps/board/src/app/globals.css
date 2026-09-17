@@ -1034,7 +1034,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    `minmax(0, 1fr)` rather than `1fr`: both boxes hold a `pre` of a composed
    prompt, and a grid track whose minimum is its content would be as wide as the
    longest line in it and push the other column off the page. */
-/* **One row height, the viewport's, and each pane scrolls inside it** (#173).
+/* **One row height, bounded by the viewport, and each pane scrolls inside it**
+   (#173, #192).
 
    What the bound protects now is the box you type in and the button you send
    with. A pane that grew with its content would put the discussion's input
@@ -1054,6 +1055,15 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    `--pair-top`, and the row ends a rem above the bottom of the first screen, so
    the moves and the input are on it together. Stacked, two rows share that room.
 
+   **The room is a ceiling, not a target** (#192). The row is as tall as what is
+   in it — `minmax(24rem, auto)` — and each pane's `max-height` is the room, so
+   the row is `clamp(24rem, content, room)`. It was `max(24rem, room)`, a floor
+   with no ceiling: at 1440×2387 that was an 1843px box round 328px of prompt,
+   with the Ask button 1500px under the conversation it belongs to. A laptop
+   never shows it — at 892px the room is under the floor and the floor wins. A
+   long conversation still reaches the room and scrolls inside it; an empty one
+   sits on the floor.
+
    **The floor is the old `24rem`, for every row, stacked or not.** A pane is
    never shorter than it was before this: the discussion's fixed parts — its
    head, its padding and an input box grown to its `12rem` bound with the Ask
@@ -1061,31 +1071,42 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    old height hid the button and the conversation both behind the pane's
    `overflow: hidden` once a few lines were typed. So a head too tall for the
    room costs a scroll, as it did, and never the button. Until the measure
-   lands, the floor is the height. `vh` first, for a browser without `dvh`. */
+   lands, the floor is the ceiling. `vh` first, for a browser without `dvh`. */
 .spair {
   display: grid;
   gap: 0.5rem;
   --pair-top: 100vh;
-  grid-auto-rows: max(24rem, calc((100vh - var(--pair-top) - 1.5rem) / 2));
-  grid-auto-rows: max(24rem, calc((100dvh - var(--pair-top) - 1.5rem) / 2));
+  grid-auto-rows: minmax(24rem, auto);
 }
-.spair:has(> :only-child) {
-  grid-auto-rows: max(24rem, calc(100vh - var(--pair-top) - 1rem));
-  grid-auto-rows: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
+.spair > .outgoing,
+.spair > .chat,
+.spair > .plan {
+  max-height: max(24rem, calc((100vh - var(--pair-top) - 1.5rem) / 2));
+  max-height: max(24rem, calc((100dvh - var(--pair-top) - 1.5rem) / 2));
+}
+.spair > :only-child {
+  max-height: max(24rem, calc(100vh - var(--pair-top) - 1rem));
+  max-height: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
 }
 @media (min-width: 64rem) {
   .spair {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-auto-rows: max(24rem, calc(100vh - var(--pair-top) - 1rem));
-    grid-auto-rows: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
+  }
+  .spair > .outgoing,
+  .spair > .chat,
+  .spair > .plan {
+    max-height: max(24rem, calc(100vh - var(--pair-top) - 1rem));
+    max-height: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
   }
   /* A landed item has no outgoing prompt, and the discussion is then the whole
      of the pair rather than half of it. */
   .spair > :only-child { grid-column: 1 / -1; }
 }
-/* The frames are the grid's cells and never their content's size. `min-height:
-   0` on both is what lets a flex child scroll rather than push: without it a
-   `pre` reports its whole content as its minimum and the box grows anyway. */
+/* The frames fill the row and never grow past the room. `min-height: 0` on both
+   is what lets a flex child scroll rather than push: without it a `pre` reports
+   its whole content as its minimum and the box grows anyway. The row sizes to
+   the panes' content before `height: 100%` resolves, so the content still
+   counts — bounded by the `max-height` above. */
 .spair > .outgoing,
 .spair > .chat,
 .spair > .plan {

@@ -438,16 +438,34 @@ describe("the keys in the input box", () => {
 describe("the pair's height", () => {
   const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const rem = 16;
-  /** What `.spair`'s side-by-side row resolves to, for a head of `top` px. */
-  const row = (viewport: number, top: number) => Math.max(24 * rem, viewport - top - 1 * rem);
+  /** The room under the moves, side by side: the ceiling, floored at the old 24rem. */
+  const room = (viewport: number, top: number) => Math.max(24 * rem, viewport - top - 1 * rem);
+  /** What `.spair`'s side-by-side row resolves to, for a head of `top` px and panes of `content` px (#192). */
+  const row = (viewport: number, top: number, content = Infinity) =>
+    Math.min(Math.max(24 * rem, content), room(viewport, top));
   /** What a stacked row resolves to: two rows share the room, over the same floor. */
   const stacked = (viewport: number, top: number) => Math.max(24 * rem, (viewport - top - 1.5 * rem) / 2);
 
   it("is bounded by where the pair starts, side by side and stacked", () => {
     const wide = css.slice(css.indexOf("@media (min-width: 64rem)"));
-    expect(wide).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(24rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/);
-    expect(css).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(24rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/);
+    expect(wide).toMatch(/\.spair > \.chat,\s*\.spair > \.plan\s*\{[^}]*max-height:\s*max\(24rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/);
+    expect(css).toMatch(/\.spair > \.chat,\s*\.spair > \.plan\s*\{[^}]*max-height:\s*max\(24rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/);
     expect(css).not.toMatch(/100d?vh - 6rem/);
+  });
+
+  it("takes the room as a ceiling and not a target, so a tall window holds the content and not the viewport", () => {
+    // The row is the content's, floored — never the room itself (#192).
+    expect(css).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*minmax\(24rem, auto\)/);
+    expect(css).not.toMatch(/grid-auto-rows:\s*max\(/);
+    // 1440×2387, the pair at 528px: 328px of prompt was an 1843px box.
+    expect(room(2387, 528)).toBe(1843);
+    expect(row(2387, 528, 328)).toBe(24 * rem);
+    expect(row(2387, 528, 900)).toBe(900);
+    // A long conversation still takes the room, and scrolls inside it.
+    expect(row(2387, 528, 8000)).toBe(1843);
+    // 1440×892 is unchanged: the room is under the floor, and the floor wins.
+    expect(row(892, 528, 328)).toBe(24 * rem);
+    expect(row(892, 528, 8000)).toBe(24 * rem);
   });
 
   it("puts the moves and the input on one screen wherever the old 24rem pair did", () => {
@@ -461,7 +479,9 @@ describe("the pair's height", () => {
 
   it("never makes a pane shorter than the old 24rem, so a grown input box keeps the Ask button in it", () => {
     // No row in the stylesheet floors below the old height.
-    for (const [, floor] of css.matchAll(/grid-auto-rows:\s*max\((\d+(?:\.\d+)?)rem/g)) {
+    const floors = [...css.matchAll(/(?:grid-auto-rows:\s*minmax|max-height:\s*max)\((\d+(?:\.\d+)?)rem/g)];
+    expect(floors.length).toBeGreaterThanOrEqual(4);
+    for (const [, floor] of floors) {
       expect(Number(floor)).toBeGreaterThanOrEqual(24);
     }
     // 1000×800, stacked, the pair starting at 420px: the discussion's fixed
