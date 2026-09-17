@@ -53,6 +53,7 @@
  */
 import { useEffect, useRef, useState, useTransition } from "react";
 import { askDiscussion, concludeChat } from "./actions.ts";
+import { useFollowing } from "./live.tsx";
 import { useLogTail, type TailState } from "./run-log.tsx";
 import type { DiscussionView } from "@/lib/task";
 
@@ -169,8 +170,25 @@ function turnsIn(discussions: readonly DiscussionView[]): number {
  * on screen is what a daemon wrote before it stopped. Null, before the route has
  * said, keeps the ordinary sentence rather than accusing a daemon that may be
  * writing.
+ *
+ * **And nothing is said to appear here once the page has stopped following the
+ * log.** Every sentence but a live trace's promises the answer shows up on its
+ * own, and that is the page's subscription (`Follow`) and not the trace's. With
+ * `following` false the answer lands on the log and nothing re-renders, so the
+ * sentence says to reload rather than to wait (#172).
  */
-export function traceSays(state: TailState, lines: number, writing: boolean | null = null): string {
+export function traceSays(
+  state: TailState,
+  lines: number,
+  writing: boolean | null = null,
+  following = true,
+): string {
+  if (!following && state !== "reading") {
+    return (
+      "this page stopped following the log, so the answer will not appear here on its own — reload to see it. " +
+      "The question is on the log, and asking again would buy a second one"
+    );
+  }
   switch (state) {
     case "reading":
       if (writing === false) {
@@ -199,8 +217,9 @@ export function traceSays(state: TailState, lines: number, writing: boolean | nu
       );
     case "trouble":
     case "gone":
-      // The follow failed, not the turn. The answer re-renders the page when
-      // it is appended whether or not anything here is following.
+      // The trace's follow failed, not the turn and not the page's. The answer
+      // re-renders the page when it is appended whether or not anything here is
+      // tailing the trace; a page that stopped following is handled above.
       return "this page stopped following the answer as it is written — it still appears here when it lands; reload to follow it again";
     case "off":
     case "waiting":
@@ -219,11 +238,14 @@ export function Trace({
   lines,
   state,
   writing = null,
+  following = true,
 }: {
   lines: readonly string[];
   state: TailState;
   /** Whether the file's writer is still touching it, as the route last said. See `traceSays`. */
   writing?: boolean | null;
+  /** Whether the page still re-renders on append. See `traceSays`. */
+  following?: boolean;
 }) {
   const tail = useRef<HTMLDivElement | null>(null);
 
@@ -244,7 +266,7 @@ export function Trace({
   return (
     <>
       <p className="chatwait" data-trace={state}>
-        {traceSays(state, lines.length, writing)}
+        {traceSays(state, lines.length, writing, following)}
       </p>
       {lines.length > 0 ? (
         <div className="chattrace" ref={tail}>
@@ -297,7 +319,8 @@ export function Trace({
  */
 function Thinking({ chatId }: { chatId: string }) {
   const { lines, state, writing } = useLogTail(chatId, true, true);
-  return <Trace lines={lines} state={state} writing={writing} />;
+  const following = useFollowing();
+  return <Trace lines={lines} state={state} writing={writing} following={following} />;
 }
 
 /**
@@ -305,16 +328,32 @@ function Thinking({ chatId }: { chatId: string }) {
  *
  * Says where it is and nothing else: *asking* while the append is in flight,
  * *on the log* once it has returned. What happens to it after that is the
- * turn's own trace, which replaces this the moment the page re-renders.
+ * turn's own trace, which replaces this the moment the page re-renders — and
+ * when the page has stopped following the log that moment never comes, so it
+ * says to reload instead of to wait.
  */
-export function Echoed({ question, busy }: { question: string; busy: boolean }) {
+export function Echoed({
+  question,
+  busy,
+  following = true,
+}: {
+  question: string;
+  busy: boolean;
+  following?: boolean;
+}) {
   return (
     <div className="chatturn" data-echo="">
       <div className="bubble asked">
         <p className="chatwho">you</p>
         <p className="chatq">{question}</p>
       </div>
-      <p className="chatwait">{busy ? "asking…" : "on the log · waiting for the daemon to answer"}</p>
+      <p className="chatwait">
+        {busy
+          ? "asking…"
+          : following
+            ? "on the log · waiting for the daemon to answer"
+            : "on the log · this page stopped following it — reload to see the answer"}
+      </p>
     </div>
   );
 }
@@ -342,6 +381,7 @@ export function Discussion({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo | null>(null);
+  const following = useFollowing();
   const [, startTransition] = useTransition();
   const conversation = useRef<HTMLDivElement | null>(null);
 
@@ -567,7 +607,7 @@ export function Discussion({
 
           {/* A follow-up, echoed in the conversation it continues. */}
           {echoed !== null && d.chatId === open?.chatId ? (
-            <Echoed question={echoed} busy={busy} />
+            <Echoed question={echoed} busy={busy} following={following} />
           ) : null}
 
           {d.held !== null ? <p className="chatheld">{HELD[d.held]}</p> : null}
@@ -576,7 +616,7 @@ export function Discussion({
       {/* A first question opens a conversation the fold does not have yet. */}
       {echoed !== null && open === null ? (
         <div className="chatlog">
-          <Echoed question={echoed} busy={busy} />
+          <Echoed question={echoed} busy={busy} following={following} />
         </div>
       ) : null}
       </div>

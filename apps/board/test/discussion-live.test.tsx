@@ -336,3 +336,34 @@ describe("the question, echoed until the fold has it", () => {
     expect(render([waiting])).not.toContain("data-echo");
   });
 });
+
+/**
+ * **A page that stopped following the log says so** (#172's review). The echo
+ * and every sentence but a live trace's promise the answer arrives on its own,
+ * and that is the page's subscription — so with the stream down they say to
+ * reload, where they used to keep saying to wait.
+ */
+describe("the pane, once the page has stopped following the log", () => {
+  const states: TailState[] = ["queued", "waiting", "off", "gone", "trouble", "removed", "landed", "did not land"];
+
+  it("promises nothing appears on its own, in any state that did", () => {
+    for (const state of states) {
+      expect(traceSays(state, 0, null, true)).not.toContain("reload to see it");
+      const said = traceSays(state, 0, null, false);
+      expect(said).toContain("stopped following the log");
+      expect(said).toContain("reload to see it");
+      expect(said).not.toMatch(/appears here when/);
+      expect(renderToStaticMarkup(<Trace lines={[]} state={state} following={false} />)).toContain(
+        "reload to see it",
+      );
+    }
+    // A trace being written is still the trace, and makes no claim about the page.
+    expect(traceSays("reading", 3, true, false)).toBe("answering · 3 lines so far");
+  });
+
+  it("the echo says to reload rather than to wait", () => {
+    const stopped = renderToStaticMarkup(<Echoed question="is requeue safe?" busy={false} following={false} />);
+    expect(stopped).toContain("reload to see the answer");
+    expect(stopped).not.toContain("waiting for the daemon to answer");
+  });
+});

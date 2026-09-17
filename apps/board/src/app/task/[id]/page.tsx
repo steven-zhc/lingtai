@@ -9,7 +9,7 @@ import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
 import { Latch, Reveal } from "../../latch.tsx";
-import { Follow } from "../../live.tsx";
+import { Follow, Following } from "../../live.tsx";
 import { RunLog } from "../../run-log.tsx";
 import { Coords, Standing } from "../../standing.tsx";
 
@@ -517,6 +517,8 @@ export function TaskBody({ task }: { task: TaskDetail }) {
         <span className="sep" />
         {/* Rank 8: one muted line, each identifier once. */}
         <Coords standing={task.standing} taskId={task.taskId} queued={task.queued} />
+        {/* Nothing while the page follows the log; the sentence when it stopped. */}
+        <Following />
       </div>
 
       {/* Every `#attempt-N` on this page points into the record's closed
@@ -569,9 +571,11 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           the board. Without it a question, the trace's sentence and the answer
           each waited for a reload, and every comment that said *every append
           re-renders* was true of `/` alone (#172). On the route and not in
-          `TaskBody`, which a test renders with no router to refresh. */}
-      <Follow />
-      <TaskBody task={task} />
+          `TaskBody`, which a test renders with no router to refresh; what
+          `TaskBody` reads of it, it reads through context. */}
+      <Follow>
+        <TaskBody task={task} />
+      </Follow>
     </>
   );
 }

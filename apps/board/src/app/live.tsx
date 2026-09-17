@@ -69,8 +69,17 @@
  * two concerns in one component, and only the dot belongs to the board alone.
  */
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { bearing, type CodeNews } from "@/lib/bearing";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import { bearing, type Bearing, type CodeNews } from "@/lib/bearing";
 import type { Health } from "@/lib/health";
 
 /**
@@ -202,16 +211,64 @@ function useFollow(): { socket: "connecting" | "open" | "trouble"; health: Healt
   return { socket, health };
 }
 
+/** What `Follow` hears, for what is under it. Null outside one. */
+const Followed = createContext<ReturnType<typeof useFollow> | null>(null);
+
 /**
- * The subscription alone, for a route that has no bar to put a dot in.
+ * The subscription alone, for a route that has no dot of its own.
  *
- * Renders nothing: what it changes is every other thing on the page, one
+ * Renders what it wraps: what it changes is every other thing on the page, one
  * append later. The task page mounts it, so a question, the sentence saying a
  * daemon took it and the answer each arrive without a reload (#172).
+ *
+ * **A follow that stopped is said, not swallowed** — the failure #64 is about.
+ * The page under it reads what the stream says through `Following` and
+ * `useFollowing`, so a dropped stream is on the bar and in the pane that was
+ * promising an answer would appear.
  */
-export function Follow() {
-  useFollow();
-  return null;
+export function Follow({ children }: { children: ReactNode }) {
+  const followed = useFollow();
+  return <Followed.Provider value={followed}>{children}</Followed.Provider>;
+}
+
+/**
+ * Whether the page is still being re-rendered on append. True outside a
+ * `Follow` — a render nothing subscribes, like a test's, has no stream to lose.
+ */
+export function useFollowing(): boolean {
+  return useContext(Followed)?.socket !== "trouble";
+}
+
+/** `bearing` with no code, or null unless it warns. Pure, for `Following`. */
+export function warning(
+  socket: "connecting" | "open" | "trouble",
+  health: Health | null,
+): Bearing | null {
+  const said = bearing(socket, health, null);
+  return said.tone === "warn" ? said : null;
+}
+
+/**
+ * The dot, on a bar that is not the board's, and only when something is wrong.
+ *
+ * Green and silent is the ordinary case there too, and the currency of the
+ * daemon's code is the board's to say, so this is `bearing` with no code and
+ * nothing unless it warns: the stream down, the projection unreadable, or a log
+ * nobody is folding.
+ */
+export function Following() {
+  const followed = useContext(Followed);
+  const said = followed === null ? null : warning(followed.socket, followed.health);
+  if (said === null) return null;
+  const { label, tone, why, title } = said;
+  return (
+    <>
+      <span className={`dot ${tone}`} role="img" aria-label={label} title={title} />
+      <span className="why" title={title}>
+        {why}
+      </span>
+    </>
+  );
 }
 
 export function Live({ code }: { code: CodeNews | null }) {

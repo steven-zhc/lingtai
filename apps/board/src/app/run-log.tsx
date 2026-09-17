@@ -125,7 +125,8 @@ export function reported(state: TailState, awaited: boolean, asks: number): Tail
  * before it opens its own. A follower that stopped at `removed` sat on that
  * leftover's deletion for the whole of the new answer and never saw its trace.
  * So it asks again — the turn being on screen at all means no answer has been
- * folded, and when one is, the board re-renders and this follower is gone.
+ * folded, and when one is, the task page re-renders (`Follow`, in `live.tsx` —
+ * not the board's `Live`, which only `/` mounts) and this follower is gone.
  */
 export function asksAgain(state: TailState, awaited: boolean): boolean {
   if (!awaited) return false;
