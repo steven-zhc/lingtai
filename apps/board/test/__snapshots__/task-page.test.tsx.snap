@@ -15,7 +15,7 @@ exports[`a running task > is arranged with the live log where a refusal would be
 "coords: wi-lingtai-147 since 2026-09-14 08:40 UTC from attempt 1 of 1 ↓
 state: running 20m
 subject: #147 ↗ the reviewer crashes on a reused session id
-why: run log not reading
+why: admit prepared proposed merge end agent 4h33m run log not reading
 so-what: an agent is working
 pair: discussion reads the log, the ticket and the code — it cannot run anything Ask
 record: findings · files · attempts · ticket"

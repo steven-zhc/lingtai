@@ -9,6 +9,7 @@ import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
 import { Latch, Reveal } from "../../latch.tsx";
+import { Segs } from "../../rail.tsx";
 import { Follow, Following } from "../../live.tsx";
 import { RunLog } from "../../run-log.tsx";
 import { Coords, Standing } from "../../standing.tsx";
@@ -247,33 +248,21 @@ export function Attempt({
           configured and silently did not run, and only one of those is our bug
           (ADR 0016 §4). Under the attempt, because a gate runs once per
           attempt: attempt 1's failing `proposed` and attempt 2's have nothing
-          to do with each other and used to sit in one list. */}
-      <ol className="points">
-        {run.points.map((p) => (
-          <li key={p.point} className={p.skipped ? "point skipped" : "point"}>
-            <span className="mono name">{p.point}</span>
-            {p.skipped ? (
-              <span className="pill">skipped</span>
-            ) : (
-              <span className="actions">
-                {p.planned.length > 0 ? p.planned.join(", ") : "—"}
-                {p.planned.length > p.verdicts.length ? (
-                  // Planned but no verdict. Either it is still running, or it
-                  // did not run — and the second is the one worth seeing.
-                  //
-                  // Not amber. Amber is "a human is being waited on" and since
-                  // #103 there is one on this page that means it; a second use
-                  // for "worth seeing" is the dilution the layout notes forbid,
-                  // and a gate with no verdict is waiting on nobody.
-                  <span className="pill" title="planned, no verdict yet">
-                    {p.planned.length - p.verdicts.length} pending
-                  </span>
-                ) : null}
-              </span>
-            )}
-          </li>
-        ))}
-      </ol>
+          to do with each other and used to sit in one list.
+
+          **The card's segments, and no longer a list of its own** (#189). The
+          list was a set of equal rows off a fold with no `running` and no
+          `never-ran`, so it printed `N pending` for both — and its comment
+          named the second as the one worth seeing. Labelled, with nothing lit:
+          where a run in flight is *now* is rank 2's to say, and this is the
+          record. */}
+      {run.progress === null ? (
+        <p className="empty">Nothing is on this attempt's stream, so no point has been reached.</p>
+      ) : (
+        <div className="seq aseq">
+          <Segs points={run.progress.points} at={null} labels />
+        </div>
+      )}
     </Latch>
   );
 }
@@ -545,6 +534,9 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // has none, and the block states the state without offering a move.
           issue={issueNumber}
           queued={task.queued}
+          // The attempt the state names, which for a running item is the run
+          // in flight — the one `loadTask` folded with the recipe's bounds.
+          progress={task.runs.find((r) => r.runId === task.standing.runId)?.progress ?? null}
           // The one thing a 404 used to be standing in for: nothing in the log
           // and no answer from GitHub is *I cannot tell*, and a page that said
           // "it does not exist" was making a claim Lingtai is not in a position

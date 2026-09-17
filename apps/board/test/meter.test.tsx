@@ -113,7 +113,7 @@ function run(over: Partial<RunView> = {}): RunView {
     prompt: null,
     awaitingSha: null,
     gates: [],
-    points: [],
+    progress: null,
     ...over,
   };
 }

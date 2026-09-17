@@ -1657,7 +1657,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   gap: 0.2rem;
 }
 .flist li { display: flex; gap: 0.5rem; align-items: baseline; }
-.attempt .points { margin-bottom: 0.5rem; }
+.attempt .aseq { margin-bottom: 0.5rem; }
 /* Inside an attempt the point sits on the card's own surface, so it needs the
    step down the board's cards get rather than a second border of its own. */
 .attempt .point { background: var(--surface-2); }

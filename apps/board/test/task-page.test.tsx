@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
+import type { GatePlan } from "@lingtai/conductor/filter";
 import {
   foldRun,
   standingOf,
@@ -260,6 +261,116 @@ describe("a running task", () => {
     const loud = page({ ...blocked(), discussions: [talk] });
     expect(loud).toMatch(BRASS);
     expect(loud.replace(/btn pri/g, "")).toMatch(/class="chat"[^>]*>[\s\S]*chatcannot/);
+  });
+});
+
+/**
+ * The rail, on the page about the one run (#189).
+ *
+ * The card said which point a run was at, how long it had been there and what
+ * bounded it; the page listed the five points off a fold with no `running` and
+ * no `never-ran`, inside a closed row, and lit nothing. These assert the reading
+ * is here, from the same `Rail`, and that the record's segments can say the one
+ * state the old list could not.
+ */
+describe("the rail on the task page", () => {
+  const PLAN: GatePlan = new Map([
+    ["proposed", [{ name: "build", budgetMs: 20 * 60_000 }, { name: "review", budgetMs: null }]],
+  ]) as unknown as GatePlan;
+
+  const resolved = e(RUN, "GatesResolved", {
+    points: [
+      { gate: "prepared", actions: ["install"] },
+      { gate: "admit", actions: [] },
+      { gate: "proposed", actions: ["build", "review"] },
+      { gate: "merge", actions: [] },
+      { gate: "end", actions: [] },
+    ],
+  }, "2026-09-14T08:40:00Z");
+
+  function building(plan?: GatePlan): TaskDetail {
+    const run = foldRun(
+      claim,
+      1,
+      [
+        e(RUN, "RunStarted", { baseSha: BASE }, "2026-09-14T08:40:00Z"),
+        resolved,
+        e(RUN, "GatePassed", { gate: "prepared", action: "install" }, "2026-09-14T08:41:00Z"),
+        e(RUN, "RunFinished", { turns: 9, durationMs: 600_000, costUsd: 1, exitCode: 0 }, "2026-09-14T08:50:00Z"),
+        e(RUN, "GateStarted", { gate: "proposed", action: "build" }, "2026-09-14T08:57:26Z"),
+      ],
+      { plan },
+    );
+    return task([e(ITEM, "WorkItemClaimed", { runId: RUN }, "2026-09-14T08:40:00Z")], [run]);
+  }
+
+  const why = (html: string) =>
+    html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'));
+  const record = (html: string) => html.slice(html.indexOf('data-rank="record"'));
+
+  it("says which point, the action, the elapsed and the bound at rank 2, with nothing expanded", () => {
+    const html = page(building(PLAN));
+    const rank = why(html);
+    // The rail is the card's own: the same classes, drawn by the same `Rail`.
+    expect(rank).toContain('class="seq"');
+    expect(rank).toMatch(/class="slab l-at">proposed</);
+    expect(rank).toMatch(/class="snow"[^>]*>build 2m34s \/ 20m</);
+    // At rank 2 and not inside a disclosure: nothing before it on the page is
+    // a closed `<details>` it could be hiding in.
+    const before = html.slice(0, html.indexOf('class="seq"'));
+    expect(before).not.toMatch(/<details(?![^>]*open)/);
+  });
+
+  it("draws no denominator where nothing bounds the phase, and never a zero", () => {
+    const rank = why(page(building()));
+    expect(rank).toMatch(/class="snow"[^>]*>build 2m34s</);
+    expect(rank).not.toContain(" / ");
+  });
+
+  it("draws proposed's build and review as two cells, half done", () => {
+    const rank = why(page(building(PLAN)));
+    const proposed = rank.match(/<li class="seg s-running"[^>]*><span class="sbar">((?:<span class="scell[^"]*"><\/span>)+)<\/span>/);
+    expect(proposed?.[1]).toBe('<span class="scell t-run"></span><span class="scell t-pending"></span>');
+  });
+
+  it("is the board's own Rail, imported by both routes and defined in neither", () => {
+    const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+    for (const route of ["../src/app/page.tsx", "../src/app/task/[id]/page.tsx", "../src/app/standing.tsx"]) {
+      expect(read(route)).not.toMatch(/function (Rail|Segs)\b/);
+    }
+    expect(read("../src/app/page.tsx")).toContain('from "./rail.tsx"');
+    expect(read("../src/app/task/[id]/page.tsx")).toContain('from "../../rail.tsx"');
+    expect(read("../src/app/rail.tsx")).toMatch(/export function Rail\b/);
+  });
+
+  it("is not drawn at rank 2 when the item is not running", () => {
+    expect(why(page(blocked()))).not.toContain('class="seq"');
+  });
+
+  it("draws a configured point that never ran as never-ran on a landed item, apart from pending", () => {
+    const events = [
+      e(RUN, "RunStarted", { baseSha: BASE }),
+      resolved,
+      e(RUN, "GatePassed", { gate: "prepared", action: "install" }),
+      e(RUN, "RunFinished", { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
+    ];
+    const own = [
+      e(ITEM, "WorkItemClaimed", { runId: RUN }, "2026-09-14T04:00:00Z"),
+      e(ITEM, "WorkItemLanded", { mergeCommit: HEAD, base: "main" }, "2026-09-14T04:30:00Z"),
+    ];
+    // `over` is what `loadTask` passes for the attempt that landed.
+    const landed = task(own, [foldRun(claim, 1, events, { over: true })]);
+    expect(landed.standing.state).toBe("landed");
+    const html = record(page(landed));
+    expect(html).toContain('class="seg s-never-ran"');
+    expect(html).toMatch(/<li class="seg s-never-ran"[^>]*title="proposed: build, review — configured and did not run/);
+    expect(html).not.toMatch(/\d+ pending/);
+
+    // And the same stream on an item that did not land is only not reached yet:
+    // `over` is the whole of the difference.
+    const midway = record(page(task(own.slice(0, 1), [foldRun(claim, 1, events)])));
+    expect(midway).not.toContain("s-never-ran");
+    expect(midway).toContain('class="seg s-pending"');
   });
 });
 

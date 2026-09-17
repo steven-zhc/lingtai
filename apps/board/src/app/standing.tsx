@@ -11,6 +11,8 @@ import { Close, Decide, Requeue, RunNow, Send } from "./decide.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Outgoing } from "./outgoing.tsx";
 import { Plan } from "./plan.tsx";
+import type { RunProgress } from "@/lib/progress";
+import { Rail } from "./rail.tsx";
 import { FollowedLog } from "./run-log.tsx";
 
 /**
@@ -110,6 +112,7 @@ export function Standing({
   outgoing,
   queued,
   unknown,
+  progress = null,
 }: {
   standing: StandingView;
   /**
@@ -148,6 +151,19 @@ export function Standing({
    * is not one Lingtai is in a position to say.
    */
   unknown?: string | null;
+  /**
+   * Where the run in flight has got to — the board's rail, drawn at rank 2 of
+   * a running item and nowhere else in this block.
+   *
+   * **The card said it and the page could not** (#189): which point, how long
+   * it has been there, and what bounds it, on the page about that one run. It
+   * was a list of the five points inside a closed attempt, off a fold with no
+   * state for *running*, so nothing was lit and `N pending` covered both *not
+   * reached* and *never ran*. The same `Rail` the card draws, from the same
+   * fold, and its clock ticks here because `Follow` re-renders on an append
+   * (#172). Null for a run with nothing on its stream yet.
+   */
+  progress?: RunProgress | null;
 }) {
   const held = describeHold(standing);
   const acting = project !== null && issue !== null;
@@ -263,6 +279,14 @@ export function Standing({
 
         {/* ---- rank 2: why it stopped, or what it is doing ------------------ */}
         <div className="swhy" data-rank="why">
+          {/* Above the log, because it is the answer the log is the detail of:
+              *proposed, build 2m34s / 20m* is read in a glance, and the tail
+              under it is what that build is printing. `live`, because the
+              state is `running` — the lane's word, which is what `Rail` asks
+              for rather than its own guess. */}
+          {standing.state === "running" && progress !== null ? (
+            <Rail progress={progress} live />
+          ) : null}
           {/* The run in flight, following (#152). The `RunLog` the attempt row
               had, moved and not changed — latched open, tailing, pinned to its
               last line — and told so by its class, which is the slot's size and

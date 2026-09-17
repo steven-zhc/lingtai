@@ -42,23 +42,23 @@ import {
   emptyWorkItem,
   reduceControl,
   CONTROL_STREAM,
-  GATE_POINTS,
   parseWorkItemStream,
   type BlockDiagnosis,
   type Envelope,
   type WorkItemLifecycle,
 } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
-import { githubClientFor } from "@lingtai/conductor/filter";
+import { githubClientFor, projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 // For the one distinction a message cannot carry: `status === 404` is GitHub
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubError } from "@lingtai/github";
 import { issueUrl } from "./board.ts";
-import { elapsed } from "./progress.ts";
+import { elapsed, foldProgress, type RunProgress } from "./progress.ts";
 import { type HistoryLine, toLine } from "./history.ts";
 import { outgoingFor, type OutgoingView } from "./prompt.ts";
 import { queuedFor, type QueuedView } from "./queued.ts";
+import { recipeAtHead } from "./recipe.ts";
 
 export interface Finding {
   file: string;
@@ -79,23 +79,6 @@ export interface GateVerdict {
   current: boolean;
   evidence: string | null;
   findings: Finding[];
-}
-
-/**
- * One of the five points, and what happened there *on one attempt*.
- *
- * `skipped` is a first-class state and not an absence. ADR 0016 §4 rests on it:
- * a gate nobody configured does not run, and that is the user's decision — but
- * it has to be *shown*, because a point that is merely omitted is
- * indistinguishable from one that was configured and silently did not run. That
- * second case is Lingtai's bug, and this is where it becomes visible.
- */
-export interface PointView {
-  point: string;
-  /** Empty when nothing was configured. */
-  planned: string[];
-  verdicts: GateVerdict[];
-  skipped: boolean;
 }
 
 /**
@@ -249,8 +232,22 @@ export interface RunView {
    */
   awaitingSha: string | null;
   gates: GateVerdict[];
-  /** All five, in loop order, including the ones nothing was configured at. */
-  points: PointView[];
+  /**
+   * Where this attempt got to, as the board's rail reads it — all five points,
+   * one verdict per action, and the phase in flight with its bound. Null for a
+   * claim whose stream is empty: there is no start to measure from.
+   *
+   * **`progress.ts`'s fold, and not one of this file's.** This used to be
+   * `points: PointView[]`, a second fold over the same events that had
+   * `skipped`, *has verdicts* and *fewer verdicts than planned* — and so no
+   * `running` and no `never-ran`. It cited 0016 §4 and could not keep it: a
+   * point configured and never run arrived as `N pending`, the word for *not
+   * reached yet* (#189). With the rail on this page `PointView` had no reader
+   * left that `RunProgress` does not serve better, so it went rather than
+   * stayed a second opinion — two folds over one stream is how they came
+   * apart.
+   */
+  progress: RunProgress | null;
 }
 
 /**
@@ -906,7 +903,18 @@ export function claimsOf(own: readonly Envelope[]): Claim[] {
  * been seen — a verdict recorded before a force-push is stale, and which ones
  * those are is not knowable while still reading.
  */
-export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[]): RunView {
+export function foldRun(
+  claim: Claim,
+  attempt: number,
+  run: readonly Envelope[],
+  /**
+   * `foldProgress`'s two arguments, which only the caller can hold: the
+   * recipe's plan, for the bound on a gate in flight, and whether **this**
+   * attempt is the one that landed — the whole difference between `pending`
+   * and `never-ran`. Neither is on the run's own stream. See `loadTask`.
+   */
+  { plan, over = false }: { plan?: GatePlan; over?: boolean } = {},
+): RunView {
   let baseSha: string | null = null;
   let headSha: string | null = null;
   let turns: number | null = null;
@@ -1011,18 +1019,7 @@ export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[])
     g.current = headSha === null || sha === null || sha === headSha;
   }
 
-  // The plan the conductor wrote down when this run started. Without it the
-  // attempt could only show points that reported, which is exactly the omission
-  // ADR 0016 §4 forbids.
-  const resolved = run.find((e) => e.type === "GatesResolved");
-  const plan = (resolved?.data as { points?: { gate: string; actions: string[] }[] } | undefined)?.points;
-
   const all = [...gates.values()];
-  const points: PointView[] = GATE_POINTS.map((point) => {
-    const planned = plan?.find((p) => p.gate === point)?.actions ?? [];
-    const verdicts = all.filter((g) => g.gate.startsWith(`${point}:`));
-    return { point, planned, verdicts, skipped: planned.length === 0 && verdicts.length === 0 };
-  });
 
   return {
     runId: claim.runId,
@@ -1040,7 +1037,9 @@ export function foldRun(claim: Claim, attempt: number, run: readonly Envelope[])
     prompt,
     awaitingSha,
     gates: all,
-    points,
+    // The plan the conductor wrote down when this run started is read inside
+    // the fold, and so are the states 0016 §4 needs kept apart.
+    progress: foldProgress(run, plan, over),
   };
 }
 
@@ -1269,6 +1268,22 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
 }
 
 /**
+ * The recipe's gate plan, for the bound a running attempt's phase is measured
+ * against — or undefined, which draws the phase with no denominator.
+ *
+ * `recipeAtHead`, as the board's own `askProject` reads it, so the card and
+ * this page measure one gate against one number. Never throws: a recipe that
+ * will not read costs the page its `/ 20m` and nothing else, and no bound is
+ * drawn as no denominator rather than as zero.
+ */
+async function planFor(project: string): Promise<GatePlan | undefined> {
+  const state = await loadProject(project).catch(() => null);
+  if (!state) return undefined;
+  const filter = await projectFilter(state, undefined, recipeAtHead);
+  return filter.ok ? filter.plan : undefined;
+}
+
+/**
  * One task, whole — **or null, which means only that no such ticket exists.**
  *
  * That `null` used to mean *the log has nothing on this stream*, and the route
@@ -1316,15 +1331,15 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // been asked rather than before. See `exists`.
   if (!exists(own, ticket)) return null;
 
-  const runs = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []));
-  const attempts = new Map(runs.map((r) => [r.runId, r.attempt]));
+  const folded = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []));
+  const attempts = new Map(folded.map((r) => [r.runId, r.attempt]));
 
   const conductor = reduceControl(control);
   const chats = chatIdsFor(conductor.discussions, own, taskId);
   const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))));
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held));
 
-  const standing = standingOf(own, runs);
+  const standing = standingOf(own, folded);
   // Together, because neither is an argument to the other: one is a file read
   // and a recipe fetch, the other a recipe fetch and a question put to GitHub,
   // and a page that waited for the sum would pay for both round trips end to
@@ -1334,14 +1349,34 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // is possible: a run in flight has been handed its prompt already and a
   // landed item will never be handed another (0032 §5). `queued` where the item
   // is queued, which is the one state that is not in the log at all.
-  const [outgoing, queued] = await Promise.all([
+  //
+  // `plan` where the item is running: a gate's bound is the recipe's, and only
+  // a phase in flight has a denominator to draw. See `planFor`.
+  const [outgoing, queued, plan] = await Promise.all([
     standing.state === "blocked" || standing.state === "queued"
       ? outgoingFor({ own, streams, ticket })
       : null,
     standing.state === "queued" && ticket !== null
       ? queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused })
       : null,
+    standing.state === "running" && ticket !== null ? planFor(ticket.project) : undefined,
   ]);
+
+  // The last attempt folded again with what only this function holds. **Only
+  // the last**, and `over` only where the item landed: an earlier attempt was
+  // released or refused, and its later points recorded nothing because nothing
+  // should have run in them — the same line `RailCandidate.over` holds, and
+  // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
+  const last = folded.length - 1;
+  const landed = standing.state === "landed";
+  const runs =
+    last >= 0 && (landed || plan !== undefined)
+      ? folded.map((r, i) =>
+          i === last
+            ? { ...r, progress: foldProgress(streams[i] ?? [], plan, landed) }
+            : r,
+        )
+      : folded;
 
   return {
     taskId,

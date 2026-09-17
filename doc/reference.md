@@ -607,11 +607,14 @@ says an issue should look like against what GitHub says it does.
 
 ### where `skipped` is rendered
 
-The task page lists **all five points**, always, marking an empty one `skipped`
-rather than leaving it out — `PointView` in `apps/board/src/lib/task.ts`, built
-by folding `GatesResolved` against the verdicts that followed. A point with more
-planned actions than verdicts shows a `pending` count, which is where
-"configured but did not run" becomes visible.
+The board and the task page draw **all five points**, always, marking an empty
+one `skipped` rather than leaving it out — `Segs` in `apps/board/src/app/rail.tsx`,
+over `foldProgress` in `apps/board/src/lib/progress.ts`, which folds
+`GatesResolved` against the verdicts that followed. A point not reached yet is
+`pending`; one configured, recorded nothing, on an item that landed is
+`never-ran`, hatched in the fail colour — that is where "configured but did not
+run" becomes visible. It used to be a `pending` count off a second fold,
+`PointView`, which could not tell the two apart (#189).
 
 `lingtai add` prints the same five at onboarding. Neither surface omits a point.
 

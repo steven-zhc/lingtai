@@ -3,7 +3,7 @@
 **Status** built · 2026-09-16 · `#170` · a picture at
 `claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d`
 
-What is in `apps/board/src/app/page.tsx` is `Segs` and `Rail`; what holds the
+What is in `apps/board/src/app/rail.tsx` is `Segs` and `Rail`; what holds the
 line is `apps/board/test/rail.test.tsx`, which counts the objects on a running
 card and reads the geometry out of `globals.css` rather than out of itself.
 
@@ -71,8 +71,29 @@ The first two are sequences and were drawn as sets. That is the whole of it.
 order — the five points, the rounds, anything added later that runs one way —
 gets a form that shows the order. Anything that does not stays a pill.
 
-It is in the code beside `Rail` in `apps/board/src/app/page.tsx`, where the next
+It is in the code beside `Rail` in `apps/board/src/app/rail.tsx`, where the next
 point-shaped thing would be added, and so where the argument has to be made.
+
+## Which surfaces draw it
+
+**Two, from one file** (`#189`). `rail.tsx` is imported by both routes and
+defined in neither:
+
+| surface | what it draws | fed by |
+|---|---|---|
+| the board, a Running or Waiting card | `Rail` — the segments, the five names, the one sentence | `laneProgress`, cut by `railCandidates` |
+| the board, a Landed row drawn open | `Segs`, unlabelled — scanned for the hatch | the same |
+| the task page, rank 2 of a **running** item | `Rail`, live — which point, the action, its elapsed and its bound | `loadTask`, the run in flight folded with the recipe's plan |
+| the task page, under every attempt in the record | `Segs`, labelled, nothing lit | `foldRun`, with `over` only on the attempt that landed |
+
+It was the board's alone for a day. The task page listed the points off
+`task.ts`'s own `PointView` — a second fold over the same events, with no
+`running` and no `never-ran` — so it lit nothing and printed `N pending` for a
+point that had been configured and never ran, while quoting 0016 §4 beside it.
+`PointView` is gone rather than kept beside `RunProgress`: once the rail was on
+the page nothing read it that the other fold did not serve better, and two folds
+over one stream is how the two surfaces came to disagree. A third surface
+imports `rail.tsx` and reads `foldProgress`; it does not grow a list.
 
 ## Why the bar cannot be "filled means done"
 
@@ -214,7 +235,8 @@ is the one this design already got wrong once.
 - [`the-bar.md`](the-bar.md) — the same disease one surface along, and the rule
   it left behind: *a chip is not free, and the row is the unit*.
 - [`task-detail-page.md`](task-detail-page.md) — the other place a run is
-  described. Its ranks are `#132`'s and `#152`'s and this does not touch them.
+  described. Its ranks are `#132`'s and `#152`'s; `#189` put the rail inside
+  rank 2 of a running item, above the log, and added no rank.
 - [0016 §4](../decisions/0016-the-settled-model.md) — a configured point that
   silently does not run is Lingtai's bug.
 - [0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) — rounds

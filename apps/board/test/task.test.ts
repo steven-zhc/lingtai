@@ -173,8 +173,9 @@ describe("one attempt", () => {
       e(RUN_1, "GatesResolved", { points: [{ gate: "proposed", actions: ["build"] }] }),
     ]);
 
-    expect(run.points).toHaveLength(5);
-    expect(run.points.filter((p) => p.skipped)).toHaveLength(4);
+    // `progress.ts`'s fold, which is the one the rail reads (#189).
+    expect(run.progress?.points).toHaveLength(5);
+    expect(run.progress?.points.filter((p) => p.state === "skipped")).toHaveLength(4);
   });
 });
 
