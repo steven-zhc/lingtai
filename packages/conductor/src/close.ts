@@ -55,6 +55,7 @@ import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { currentRecipe } from "./projects.ts";
+import type { ResolvedRecipe } from "@lingtai/recipe";
 
 export interface CloseOutcome {
   ok: boolean;
@@ -76,7 +77,7 @@ export async function close(options: {
    * The project as Lingtai has it onboarded, and a client on its repository.
    *
    * Both, or neither. Together they are what lets the `end` point run: the
-   * recipe is read from the base branch through the client, resolved against
+   * recipe is read from this machine, resolved against
    * the `closed` outcome, and carried out on the same client afterwards.
    *
    * **Omitting them closes without resolving `end`**, and is for a caller that
@@ -87,6 +88,8 @@ export async function close(options: {
    */
   state?: ProjectState;
   client?: GitHubClient;
+  /** The recipe whose `end` point runs. `currentRecipe` — the machine's file — unless a test says otherwise. */
+  recipe?: () => Promise<ResolvedRecipe>;
   store?: EventStore;
 }): Promise<CloseOutcome> {
   const store = options.store ?? eventStore;
@@ -114,7 +117,8 @@ export async function close(options: {
   let end: readonly GateAction[] = [];
   if (options.state && options.client) {
     try {
-      end = (await currentRecipe(options.state, options.client)).recipe.gates.end;
+      const state = options.state;
+      end = (await (options.recipe ?? (() => currentRecipe(state)))()).recipe.gates.end;
     } catch (err) {
       return {
         ok: false,

@@ -6,7 +6,15 @@
  * stops being true it becomes one, which costs a truncate and a replay.
  */
 import { PROJECT_STREAM_PREFIX, projectStream } from "@lingtai/domain";
-import { type ResolvedRecipe, resolveRecipe } from "@lingtai/recipe";
+import {
+  type LocalRecipeOptions,
+  type ResolvedRecipe,
+  type SignedIn,
+  resolveLocalRecipe,
+} from "@lingtai/recipe";
+import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { runnableEnv } from "@lingtai/agent-env";
+import type { RuntimeId } from "@lingtai/domain";
 import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
 import { databaseUrl } from "@lingtai/env";
 import type { GitHubClient } from "@lingtai/github";
@@ -69,11 +77,41 @@ export async function loadProjects(store: EventStore = eventStore): Promise<Proj
 
 
 /**
- * The recipe governing this project's next run.
+ * Which runtimes can sign in here, in the environment a run gets.
  *
- * Read from `origin/<base>` every time rather than from anything stored: a
- * snapshot in Lingtai's database would be a second source of truth, and the
- * repository's copy is the one its own commits change.
+ * Asked only when no file names `runtime.agent`, and remembered once it finds
+ * one — a sign-in does not come and go between passes, and `claude auth status`
+ * is a process. An empty answer is not remembered, so signing in is seen on the
+ * next resolve. Codex has no cheap probe (`codex.ts`), so it is never detected:
+ * a machine that wants it names it.
+ */
+let signedInOnce: Promise<readonly RuntimeId[]> | null = null;
+export const signedInHere: SignedIn = () => {
+  signedInOnce ??= (async () => {
+    const runtime = createClaudeCodeRuntime();
+    const status = await runtime.checkAuth?.(runnableEnv({}));
+    const ids: RuntimeId[] = status?.loggedIn ? [runtime.capabilities.id] : [];
+    if (ids.length === 0) signedInOnce = null;
+    return ids;
+  })();
+  return signedInOnce;
+};
+
+/**
+ * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,
+ * with `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
+ * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180).
+ *
+ * Read from the file every time rather than from anything stored: a snapshot
+ * in Lingtai's database would be a second source of truth. No request is made
+ * and nothing is read from the repository — an agent's blast radius is its
+ * worktree, and this file is not in it, which is what 0005's *read from the
+ * base branch* used to buy. `client` is unused and kept so every caller that
+ * conducts still passes through the one `RecipeFor` shape.
+ *
+ * `base` becomes `ref`: the file has no branch of its own, so the branch this
+ * project was registered against stands in, and `baseDivergence` still
+ * compares it with the recipe's `repo.base`.
  *
  * **`GatesResolved` does store a recipe, and it is not that snapshot** (0047
  * §1). It records the recipe a run that is *over* was given, beside the hash it
@@ -84,11 +122,14 @@ export async function loadProjects(store: EventStore = eventStore): Promise<Proj
  */
 export async function currentRecipe(
   state: ProjectState,
-  client: GitHubClient,
+  _client?: GitHubClient,
   base?: string,
+  options: Omit<LocalRecipeOptions, "base" | "signedIn"> & { signedIn?: SignedIn } = {},
 ): Promise<ResolvedRecipe> {
-  // Recorded base first; GitHub's default branch only when a project predates
-  // it being recorded.
-  const ref = base ?? state.base ?? (await client.defaultBranch());
-  return resolveRecipe((path, r) => client.fileAt(path, r), ref);
+  if (!state.project) throw new Error("no repository name recorded — re-run lingtai add");
+  return resolveLocalRecipe(state.project, {
+    ...options,
+    base: base ?? state.base ?? null,
+    signedIn: options.signedIn ?? signedInHere,
+  });
 }

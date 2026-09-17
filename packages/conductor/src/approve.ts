@@ -17,7 +17,8 @@
  * vocabularies for one idea. What is here is what makes `--no-merge`
  * mean something before then.
  */
-import { type GateAction, resolveRecipe } from "@lingtai/recipe";
+import { type GateAction, type ResolvedRecipe, resolveLocalRecipe } from "@lingtai/recipe";
+import { signedInHere } from "./projects.ts";
 import { parsePayload, reduceRun, reduceWorkItem, type RunState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
@@ -101,6 +102,8 @@ export interface ApproveOptions {
   issue: number;
   base: string;
   client: GitHubClient;
+  /** The recipe whose `end` point runs. The machine's file unless a test says otherwise. */
+  recipe?: () => Promise<ResolvedRecipe>;
   /** Recorded on the approval. A waiver is never anonymous, and neither is this. */
   by: string;
   /**
@@ -237,8 +240,9 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
   // the recipe is what the conductor does and a projection may not, so the plan
   // has to be resolved here and written down.
   //
-  // From origin/<base>, the same rule every other read of a recipe follows
-  // (0005) — never from the agent's branch, which is the thing being judged.
+  // From this machine's `~/.lingtai/<project>/recipe.yml`, the read every other
+  // command makes (0046 §3) — never from the agent's branch, which is the thing
+  // being judged, and now never from the repository at all.
   // Before the approval is recorded, so an unreadable recipe refuses without
   // merging rather than landing a change whose `end` point silently could not
   // run. That silence is the defect this is fixing.
@@ -249,7 +253,10 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
   // needs nothing from the recipe but the point it has to resolve.
   let end: readonly GateAction[];
   try {
-    const recipe = await resolveRecipe((p, r) => options.client.fileAt(p, r), options.base);
+    const recipe = await (
+      options.recipe ??
+      (() => resolveLocalRecipe(options.project, { base: options.base, signedIn: signedInHere }))
+    )();
     end = recipe.recipe.gates.end;
   } catch (err) {
     return {

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { applyWorkItem, reduceWorkItem, type Envelope } from "@lingtai/domain";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { RECIPE_PATH } from "@lingtai/recipe";
+import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { close } from "../src/close.ts";
 
 const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString();
@@ -166,6 +166,9 @@ describe("closing runs the end point", () => {
       reason: "over-built for the need",
       state: { name: "lingtai", owner: "steven-zhc", base: "main" },
       client: g,
+      // The recipe through the fake GitHub, so a `null` one still refuses the
+      // way an unreadable file does; where it is read from is `local.test.ts`'s.
+      recipe: () => resolveRecipe((p, r) => g.fileAt(p, r), "main"),
       store: s,
     }) as unknown as Parameters<typeof close>[0];
 

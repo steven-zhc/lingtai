@@ -26,6 +26,7 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
 import { runOnce } from "../src/run-once.ts";
+import { resolveRecipe } from "@lingtai/recipe";
 
 /**
  * The two tags, from the plain shape.
@@ -39,7 +40,15 @@ const withPorts = (ports: RunPorts) =>
   Layer.merge(Layer.succeed(Repo, ports.repo), Layer.succeed(AgentHost, ports.agent));
 
 const once = (options: Parameters<typeof runOnce>[0], ports: RunPorts) =>
-  Effect.runPromise(runOnce(options).pipe(Effect.provide(withPorts(ports))));
+  Effect.runPromise(
+    runOnce({
+      // The recipe through the fake GitHub's `fileAt`, so each test keeps the
+      // recipe it wrote. Where a real run reads it from is `local.test.ts`'s.
+      recipe: () =>
+        resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? "main"),
+      ...options,
+    }).pipe(Effect.provide(withPorts(ports))),
+  );
 
 const PROJECT = "purecheck";
 
@@ -1221,17 +1230,17 @@ describe("runOnce refuses an extension's production value before anything is cla
 });
 
 /**
- * **An agent cannot weaken its own gates in one merge** (#31), asserted where
- * the recipe is actually resolved.
+ * The governance rule, at the point where it bites: which recipe judges a
+ * change is decided where the recipe is resolved.
  *
  * `packages/actions/test/tamper-watch.test.ts` proves the watch holds when it is
- * read from `main`, but it picks `main` itself. Which ref governs the run is the
- * conductor's decision (0005), so this hands `runOnce` a GitHub whose base has
- * the watch and whose every other ref has the agent's disarmed copy, lets the
- * run merge if nothing holds it, and shows it the diff that deletes the watch.
+ * in the recipe. Since 0046 §3 the recipe is this machine's file and nothing in
+ * the repository is read for it, so this hands `runOnce` a repository whose
+ * every ref carries a disarmed copy, a machine recipe that has the watch, and
+ * the diff that deletes it — and the machine's is what holds.
  */
-describe("runOnce judges a change by the recipe on its base, not the branch it is judging", () => {
-  it("holds a diff that deletes the tamper watch, though the branch's own recipe no longer has one", async () => {
+describe("runOnce judges a change by the machine's recipe, not by any file in the repository", () => {
+  it("holds a diff that deletes the tamper watch, though the repository's own copy no longer has one", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const ports = fakePorts(did, store, true);
@@ -1245,17 +1254,16 @@ describe("runOnce judges a change by the recipe on its base, not the branch it i
       "gates: {}",
       'gates:\n  proposed:\n    - name: tamper\n      watch: [".lingtai/config.yaml", "packages/actions/**"]\n      then: request-approval',
     );
-    const disarmed = RECIPE;
     const client = {
-      ...fakeGitHub([], armed),
-      fileAt: async (path: string, ref: string) =>
-        path !== ".lingtai/config.yaml" ? null : ref === "main" ? armed : disarmed,
+      ...fakeGitHub([], RECIPE),
+      fileAt: async (path: string) => (path !== ".lingtai/config.yaml" ? null : RECIPE),
     } as unknown as GitHubClient;
 
     const result = await once(
       {
         project,
         client,
+        recipe: () => resolveRecipe(async () => armed, "main"),
         runtime,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
@@ -1269,7 +1277,7 @@ describe("runOnce judges a change by the recipe on its base, not the branch it i
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
     expect(result).toMatchObject({ ok: "held", gate: "proposed" });
-    // Held by the base's watch, which the branch's recipe does not have.
+    // Held by the machine's watch, which the repository's copy does not have.
     const asked = (await store.read(result.runId)).filter((e) => e.type === "ApprovalRequested");
     expect(asked.map((e) => e.data)).toMatchObject([{ gate: "proposed", action: "tamper" }]);
     expect(did).not.toContain("integrate");

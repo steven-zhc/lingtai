@@ -5,8 +5,8 @@
  * its own tests and its own reasons. What is here is the *order*, and the order
  * is the part that has to be right:
  *
- *   resolve the recipe from origin/<base>   never from the agent's branch, and
- *                                           it must name that branch as its own
+ *   resolve the recipe from ~/.lingtai/     never from the repository, and it
+ *                                           must name the registered base as its own
  *   resolve the environment                 a declared name with no value
  *                                           refuses here, before the money
  *   discover, claim                         the constraint decides the race
@@ -105,6 +105,7 @@
  * intention.
  */
 import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/recipe";
+import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
   type GateFinding,
@@ -182,6 +183,8 @@ export const changedFilesArgs = (baseSha: string): string[] => [
 export interface RunOnceOptions {
   project: ProjectState;
   client: GitHubClient;
+  /** The recipe this run obeys. `currentRecipe` — the machine's file — unless a test says otherwise. */
+  recipe?: () => Promise<ResolvedRecipe>;
   runtime: Runtime;
   /** The issue to work. Phase 1 nominates by number rather than taking the queue. */
   issue: number;
@@ -325,21 +328,16 @@ export function runOnce(
         await store.append(stream, at, events);
       });
 
-    // ---- 1. the recipe, from the base branch --------------------------------
-    // The base recorded at `lingtai add`, not the repository's default branch. Those
-    // are the same only by convention, and `nextloom-ai-admin`'s default is a
-    // feature branch — reading the rules from one branch while merging into
-    // another is exactly the confusion 0005 exists to prevent.
+    // ---- 1. the recipe, from this machine -----------------------------------
+    // `~/.lingtai/<project>/recipe.yml` (0046 §3, #180), the same read every
+    // other command that conducts makes. Its `ref` is the base recorded at
+    // `lingtai add`, and the divergence check below still holds the recipe's
+    // `repo.base` to it.
     const recipeAt: Either.Either<ResolvedRecipe, string> = yield* Effect.either(
       Effect.tryPromise({
-        try: async () => {
-          const from = options.project.base ?? (await options.client.defaultBranch());
-          return await (
-            await import("@lingtai/recipe")
-          ).resolveRecipe((p, r) => options.client.fileAt(p, r), from);
-        },
-        // Refusing here is the point of 0005: an unreadable or non-compliant recipe
-        // must stop the run rather than fall back to a default.
+        try: () => (options.recipe ?? (() => currentRecipe(options.project, options.client)))(),
+        // An unreadable or non-compliant recipe must stop the run rather than
+        // fall back to a default.
         catch: (err) => (err as Error).message,
       }),
     );

@@ -14,7 +14,8 @@
 import type { ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { describe, expect, it } from "vitest";
-import { describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
+import { type RecipeFor, describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
+import { resolveRecipe } from "@lingtai/recipe";
 
 const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
 
@@ -44,6 +45,13 @@ runtime:
   agent: claude-code
 `;
 
+/**
+ * The recipe through the client's `fileAt`, so each test keeps the file it
+ * wrote. Where a conductor reads it from is `local.test.ts`'s; what is under
+ * test here is what a resolved recipe reduces to.
+ */
+const fromFile: RecipeFor = (state, c) => resolveRecipe((p, r) => c.fileAt(p, r), state.base ?? "main");
+
 /** Answers one file at one ref, and nothing else. */
 function client(file: string | null): GitHubClient {
   return {
@@ -55,7 +63,7 @@ function client(file: string | null): GitHubClient {
 
 describe("projectFilter", () => {
   it("reduces a resolved recipe to what it takes, in priority order", async () => {
-    const filter = await projectFilter(project, async () => client(RECIPE));
+    const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
 
     expect(filter.ok).toBe(true);
     if (!filter.ok) return;
@@ -79,7 +87,7 @@ describe("projectFilter", () => {
    * (ADR 0016 §4).
    */
   it("carries every point's actions with the timeouts already numbers", async () => {
-    const filter = await projectFilter(project, async () => client(RECIPE));
+    const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
 
     expect(filter.ok).toBe(true);
     if (!filter.ok) return;
@@ -98,6 +106,7 @@ describe("projectFilter", () => {
   it("takes the backoff from the recipe, in milliseconds", async () => {
     const filter = await projectFilter(project, async () =>
       client(RECIPE.replace("exclude:", "backoff: 15m\n  exclude:")),
+      fromFile,
     );
 
     expect(filter.ok).toBe(true);
@@ -113,6 +122,7 @@ describe("projectFilter", () => {
   it("refuses a backoff that is not a positive duration", async () => {
     const filter = await projectFilter(project, async () =>
       client(RECIPE.replace("exclude:", "backoff: 0s\n  exclude:")),
+      fromFile,
     );
 
     expect(filter.ok).toBe(false);
@@ -127,7 +137,7 @@ describe("projectFilter", () => {
    * returned queue saw a project with no work.
    */
   it("answers with the reason rather than throwing, when the recipe will not parse", async () => {
-    const filter = await projectFilter(project, async () => client("version: 1\nrepo: {}\n"));
+    const filter = await projectFilter(project, async () => client("version: 1\nrepo: {}\n"), fromFile);
 
     expect(filter.ok).toBe(false);
     if (filter.ok) return;
@@ -138,7 +148,7 @@ describe("projectFilter", () => {
   });
 
   it("says so when there is no recipe at all", async () => {
-    const filter = await projectFilter(project, async () => client(null));
+    const filter = await projectFilter(project, async () => client(null), fromFile);
 
     expect(filter.ok).toBe(false);
     if (filter.ok) return;
@@ -146,9 +156,13 @@ describe("projectFilter", () => {
   });
 
   it("says so when the project cannot be reached, in the same shape", async () => {
-    const filter = await projectFilter(project, async () => {
-      throw new Error("no owner recorded — re-run lingtai add to record it");
-    });
+    const filter = await projectFilter(
+      project,
+      async () => {
+        throw new Error("no owner recorded — re-run lingtai add to record it");
+      },
+      fromFile,
+    );
 
     expect(filter).toEqual({
       project: "lingtai",
@@ -160,7 +174,7 @@ describe("projectFilter", () => {
 
 describe("describeFilter", () => {
   it("names the recipe, what it picks up and excludes, what a pass costs and when it retries", async () => {
-    const filter = await projectFilter(project, async () => client(RECIPE));
+    const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
     const lines = describeFilter(filter);
 
     expect(lines).toHaveLength(5);
@@ -186,7 +200,7 @@ describe("describeFilter", () => {
    * confusion #76 records.
    */
   it("gives a project whose recipe will not resolve its own line, loudly", async () => {
-    const filter = await projectFilter(project, async () => client("nope: 1\n"));
+    const filter = await projectFilter(project, async () => client("nope: 1\n"), fromFile);
     const lines = describeFilter(filter);
 
     expect(lines).toHaveLength(2);
