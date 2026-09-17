@@ -1,22 +1,20 @@
-# How Lingtai works on Lingtai.
+# How Lingtai works on Lingtai — and, since #180, not where Lingtai reads it from.
 #
-# Read from origin/main, never from the branch an agent is working on. That rule
-# ([0005](../doc/decisions/0005-config-in-target-repo.md)) is what makes it safe
-# to keep this file in the repository the agent edits: an agent that changes it
-# changes nothing about the run in flight.
+# **Nothing reads this file to run anything any more.** The recipe is this
+# machine's (0046 §3): `~/.lingtai/lingtai/recipe.yml`, and `runtime.agent` and
+# `runtime.limits` are `~/.lingtai/config.yml`'s. A recipe that still carries
+# either is refused by name, and a `gates:` key in the machine file is refused
+# by name, so moving this means one `cp` and cutting the two runtime blocks
+# below into the machine file:
 #
-# It matters more here than anywhere else, because here the agent is editing the
-# conductor that is running it. Three different versions of this code are in play
-# during a run and it is worth being explicit about which is which:
+#   ~/.lingtai/lingtai/recipe.yml   everything here but runtime.agent and runtime.limits
+#   ~/.lingtai/config.yml           runtime:
+#                                     agent: claude-code
+#                                     limits: { turns: 150, wall: 1h, rounds: 3, restarts: 1 }
 #
-#   the running conductor   ~/workspace/lingtai, modules already loaded — OLD
-#   the agent's worktree    ~/.lingtai/worktrees/lingtai/<runId>       — NEW
-#   the mirror              ~/.lingtai/repos/lingtai.git @ origin/main — BASE
-#
-# So the machinery judging the change is the old code, and the thing being
-# judged is the new code. That is the same separation GitHub Actions gets by
-# reading a workflow from the base branch, and here it is free: the process was
-# already running before the change existed.
+# It stays in the repository as the record of *why* each value is what it is,
+# and because tests read it as this repository's own recipe. An agent that
+# edits it changes nothing about any run.
 version: 1
 
 repo:

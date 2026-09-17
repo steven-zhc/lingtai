@@ -2,8 +2,9 @@
 
 A `watch:` action at `proposed` that holds a diff for a person when it touches
 the machinery that judges diffs. Built by `#31`, live in
-`packages/actions/src/watch-gate.ts`, and **off in this repository's own recipe**
-— see *Why it is off here* below.
+`packages/actions/src/watch-gate.ts`, and **not in this repository's recipe —
+because it has lost its subject, not because it was switched off.** See *It lost
+its subject* below.
 
 ## What it does
 
@@ -52,21 +53,29 @@ the kind of check this project names as its own bug.
 Put it **last** at `proposed`, so a person is only ever asked about a change that
 everything else already passed.
 
-## Why this is not circular
+## It lost its subject
 
-The watch list lives in `.lingtai/config.yaml`, inside the repository the agent
-is editing — which looks like leaving the key under the doormat.
+This watch existed to stop an agent weakening its own gates in one merge, and
+its central path was `.lingtai/config.yaml` — the recipe, inside the repository
+the agent was editing. 0005 made that sound by reading the recipe from
+`origin/<base>`, so the deletion showed up in the diff and was itself held.
 
-What makes it sound is [0005](decisions/0005-config-in-target-repo.md): **the
-recipe governing a run is read from `origin/<base>`, never from the agent's
-branch.** An agent that deletes the watch changes nothing about the run in
-flight. The deletion appears in the diff; the deletion is itself a change to a
-watched file; the diff is held. The attack — *disarm the watch and edit the
-conductor under it, in one merge* — cannot be written down.
+**Since [0046](decisions/0046-lingtai-is-personal.md) §4 and #180 the recipe is
+not in the repository.** It is `~/.lingtai/<project>/recipe.yml`, with the
+agent and the limits in `~/.lingtai/config.yml`, and nothing reads a recipe
+from the repository at all. An agent's blast radius is its worktree, and
+`~/.lingtai/` is not in it — so the attack this watch guarded, *disarm the gate
+and edit under it in one merge*, has nothing to be written against. A
+`.lingtai/config.yaml` in a repository is now an ordinary file.
 
-That the conductor reads the recipe from the base and not from the branch it is
-judging is asserted in `packages/conductor/pure/run-once.test.ts`, *judges a
-change by the recipe on its base*.
+That is a different fact from *switched off*, and the difference is why the
+capability and its list stay: a managed repository may still hold things worth
+watching — the packages that load the gates, the lockfile, a `tsconfig` — and
+deleting a control is a different decision from removing what it guarded.
+
+That the run obeys the machine's recipe and not any copy in the repository is
+asserted in `packages/conductor/pure/run-once.test.ts`, *judges a change by the
+machine's recipe, not by any file in the repository*.
 
 ## The list is kept correct by something other than the list
 
@@ -79,7 +88,7 @@ So a new dependency, or a renamed package, breaks the build until the watch
 covers it. **`apps/board` is in there for a specific reason**: a hold is only as
 sound as the thing that records the decision lifting it.
 
-## Why it is off here
+## Why it was off here, before it lost its subject
 
 `#31` landed on 2026-09-12 and within one night held six consecutive items at
 `proposed`, every one of them with `build=passed review=passed`. Nothing was

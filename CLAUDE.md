@@ -114,8 +114,10 @@ and `main` here is `proposed` — the build and the cold reviewer — and neithe
 a person. `merge: []` means nothing holds at the merge point; `proposed` holds
 nothing for a *person* either.
 
-`tamper` (#31) is built, tested, and **deliberately not wired in this
-repository**. It watches a workspace package the conductor or the CLI loads, the
+`tamper` (#31) is built, tested, and **has lost its subject**: since #180 the
+recipe is `~/.lingtai/<project>/recipe.yml`, outside every worktree, so there is
+no gate file in the repository for an agent to weaken (0046 §4). Before that it
+was **deliberately not wired in this repository**. It watches a workspace package the conductor or the CLI loads, the
 board, a `package.json`, the lockfile, the workspace file, a `tsconfig`, a
 vitest config, or `.lingtai/config.yaml` itself — so that an agent cannot weaken
 its own gates in one merge. Within one night of being switched on it held six
@@ -125,10 +127,10 @@ watched path and self-hosting became supervised-by-default. This repository is
 choosing machine time over review time while it learns what the loop does
 unattended.
 
-The block that turns it back on is [doc/tamper-watch.md](doc/tamper-watch.md),
-and `packages/actions/test/tamper-watch.test.ts` reads the list *from that file*
-— because the recipe does not carry it — so the list stays correct while it is
-off. **A managed repository that is not Lingtai should almost certainly have it
+The block is [doc/tamper-watch.md](doc/tamper-watch.md), and
+`packages/actions/test/tamper-watch.test.ts` reads the list *from that file* —
+because the recipe does not carry it — so the capability and its list stay
+correct though what they guarded has moved out of reach. **A managed repository that is not Lingtai should almost certainly have it
 on**: there a watched path is rare, and a hold means something.
 
 The board follows a bare `lingtai run` live: **every process that appends holds
