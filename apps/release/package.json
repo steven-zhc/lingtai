@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node src/build.ts",
+    "binary": "node src/binary.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

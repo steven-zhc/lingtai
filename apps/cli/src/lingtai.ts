@@ -58,6 +58,7 @@ import { pauseCommand } from "./pause.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { status } from "./status.ts";
+import { versionLine } from "./version.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
 import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
 
@@ -195,7 +196,8 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai projection lag            how far each projection is behind the log
   lingtai projection rebuild <name> drop the table, reset the checkpoint, replay
   lingtai help
-  lingtai version
+  lingtai version                   the version, and which artifact: platform,
+                                binary or script, and the Node running it
 
 Projections: ${PROJECTIONS.map((p) => p.name).join(", ")}
 `;
@@ -1108,7 +1110,7 @@ async function main(argv: string[]): Promise<number> {
     case "projection":
       return projectionCommand(rest);
     case "version":
-      console.log("lingtai 0.0.0");
+      console.log(versionLine());
       return 0;
     case undefined:
     case "help":

@@ -127,8 +127,9 @@ export function layout(dir: string, prefix = ""): string[] {
  * The CLI, as one CommonJS file.
  *
  * Three things the source relies on that CJS does not have, each given back:
- * `import.meta.url`, `.filename` and `.dirname` are this file's own, which is
- * what every module in it would have said about itself had it not been bundled.
+ * `import.meta.url`, `.filename` and `.dirname` are this file's own — or the
+ * binary's, once it is one — which is what every module in it would have said
+ * about itself had it not been bundled.
  */
 async function bundleCli(root: string, out: string): Promise<void> {
   await esbuild({
@@ -138,11 +139,21 @@ async function bundleCli(root: string, out: string): Promise<void> {
     platform: "node",
     format: "cjs",
     target: "node22",
-    banner: { js: 'var __import_meta_url = require("node:url").pathToFileURL(__filename).href;' },
+    // Inside a SEA (#185) `__filename` is the path this file had on the machine
+    // that built the binary, carried into it verbatim — so `board/` and
+    // `.env.local` would be looked for in the build's checkout. The binary is
+    // the file that is running, so there it is `process.execPath`.
+    banner: {
+      js: [
+        'var __lingtai_filename = require("node:sea").isSea() ? process.execPath : __filename;',
+        'var __lingtai_dirname = require("node:path").dirname(__lingtai_filename);',
+        'var __import_meta_url = require("node:url").pathToFileURL(__lingtai_filename).href;',
+      ].join("\n"),
+    },
     define: {
       "import.meta.url": "__import_meta_url",
-      "import.meta.filename": "__filename",
-      "import.meta.dirname": "__dirname",
+      "import.meta.filename": "__lingtai_filename",
+      "import.meta.dirname": "__lingtai_dirname",
       // `@lingtai/env` finds `.env.local` relative to itself; bundled, that is
       // `dist/`, one directory below the checkout rather than three.
       LINGTAI_BUNDLED: "true",

@@ -129,6 +129,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md) | **The recipe a run was given is on the log, and nothing resolves from it** | accepted; qualifies 0005 |
 | [0048](decisions/0048-a-signal-is-aimed-at-one-daemon.md) | **A signal is aimed at one daemon, so the restart hands nothing to the next** | accepted; supersedes 0030 §2's waiting request and 0042 §8's handoff |
 | [0049](decisions/0049-the-publishable-unit-is-dist.md) | **The publishable unit is `dist/`, and both workspace manifests stay private** | accepted; qualifies 0010 for distribution, and 0035's *built by `pnpm build`* |
+| [0050](decisions/0050-the-binary-is-a-sea-signed-ad-hoc.md) | **The binary is a SEA built on its own platform, signed ad hoc, and run before it is published** | accepted; builds on 0049 |
 
 ## Experiments
 

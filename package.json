@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "pnpm --filter @lingtai/release build",
+    "binary": "pnpm --filter @lingtai/release binary",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",
     "lingtai": "node apps/cli/src/lingtai.ts",

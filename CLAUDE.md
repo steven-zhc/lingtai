@@ -229,7 +229,7 @@ fold.
 
 The suite is in two halves since #158. `pnpm test` is the tests that need no
 database — 87 files, under 30s, not one connection, plus `apps/release`'s two
-board builds (#183, about 15s more) — and `pnpm test:db` is the
+board builds and a binary (#183, #185, about 25s more) — and `pnpm test:db` is the
 ones that do. The recipe's `build` runs both. What is left in the second half
 asserts Postgres itself: the projections, the advisory locks, `LISTEN`/`NOTIFY`,
 two clients racing. A test that only *records* events gets

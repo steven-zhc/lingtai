@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
+import { isSea } from "node:sea";
 import { pathToFileURL } from "node:url";
+import { constants, Script } from "node:vm";
 
 /**
  * The built board, served from this process (#183).
@@ -26,6 +28,8 @@ export function boardEntry(dir: string): string {
  * `board/` beside `apps/cli/src`, and `serveBoard` says so by name.
  */
 export function builtBoardDir(self: string = import.meta.filename): string {
+  // Bundled, `import.meta.filename` is the bundle's — or the binary's, which
+  // `apps/release/src/build.ts` makes it inside a SEA.
   return join(dirname(self), "board");
 }
 
@@ -59,8 +63,26 @@ export async function serveBoard(options: BoardOptions): Promise<void> {
   await portIsFree(options.host, options.port);
   process.env["PORT"] = String(options.port);
   process.env["HOSTNAME"] = options.host;
-  await import(pathToFileURL(entry).href);
+  await importFile(pathToFileURL(entry).href);
   await listening(options.host, options.port);
+}
+
+/**
+ * `import()`, from wherever this is running.
+ *
+ * **Inside a SEA (#185) a plain `import()` only reaches built-in modules** — the
+ * embedder's loader answers `No such built-in module: file:///…/server.js` — so
+ * there it is compiled in a script that asks for the main context's default
+ * loader, which reads the file system as `node lingtai.cjs` does. Still an
+ * `import()`, never a `require()`. The option is experimental in Node, and
+ * `apps/release/src/binary.ts` turns that warning off in the binary.
+ */
+function importFile(url: string): Promise<unknown> {
+  if (!isSea()) return import(url);
+  const load = new Script("(url) => import(url)", {
+    importModuleDynamically: constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+  }).runInThisContext() as (url: string) => Promise<unknown>;
+  return load(url);
 }
 
 function portIsFree(host: string, port: number): Promise<void> {
