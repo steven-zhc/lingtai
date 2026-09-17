@@ -318,7 +318,8 @@ export function lingering(exec: Exec, username: string): "yes" | "no" | { unread
  *
  * Longer than launchd's default `ExitTimeOut`, so a job that ignored SIGTERM
  * has been SIGKILLed by the end of it. That is not a pass lost: `bootout` is
- * only ever reached while `service shutdown` itself holds the conductor lock.
+ * only ever reached after a drain has left this command holding the conductor
+ * lock — `service shutdown`, `restart` and `uninstall` each drain first.
  * A copy KeepAlive started after the drained daemon exited reads nothing
  * appended before it started (#159), so it is not the request that keeps it
  * from work — it is that it cannot take the lock, and a daemon that loses the
@@ -350,8 +351,9 @@ export interface LockQueue {
   /**
    * Until this command holds the conductor lock — `waitForTheLock`. Polled,
    * never a fixed sleep: a quiet daemon reads the request and lets go at once.
+   * `retaken` runs each time a place lost with its connection is taken again.
    */
-  wait: (log: (line: string) => void) => Promise<"held" | "interrupted" | "gave-up">;
+  wait: (log: (line: string) => void, retaken?: () => Promise<void>) => Promise<"held" | "interrupted" | "gave-up">;
   /**
    * Whether the lock is still this command's, asked on its own connection. A
    * wait that ended held is not proof a moment later: Postgres releases the
@@ -700,19 +702,31 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         error("pnpm lingtai resume lifts it (a pause too); pnpm lingtai service shutdown then asks its own.");
         return 1;
       }
-      const mine = asked.version;
+      let mine = asked.version;
       log(`draining — ${await options.drain.holding().catch(() => "what is in flight could not be read")}.`);
       log(`the pass in flight finishes first: its agent, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`);
 
-      let waited = await queue.wait(log);
+      // A lock gone with its connection can be taken, in the gap, by a copy the
+      // supervisor started after `mine` — which never reads it, and would take
+      // work while this waited for ever. So the request is withdrawn and asked
+      // again once the place is taken again: whatever holds the lock then read
+      // its watermark before that append, and obeys it.
+      const askAgain = async (): Promise<void> => {
+        const lifted = await options.drain.withdraw(by, mine, `service ${verb}: asked again, the lock was lost with its connection`);
+        if (!lifted.withdrew) return;
+        const again = await options.drain.ask(by, `service ${verb}: ${reason}`);
+        if (!again.asked) throw new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`);
+        mine = again.version;
+      };
+      let waited = await queue.wait(log, askAgain);
       // Asked again right before the supervisor is told: the lock is only worth
       // anything while its session lasts, and a wait that ended held says
       // nothing about a connection that dropped since. After `bootout` or
       // `systemctl stop` the supervisor starts no copy, so this is the last
       // moment a lost lock could be handed to one.
       while (waited === "held" && !(await queue.holds().catch(() => false))) {
-        log("the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, and the wait goes on");
-        waited = await queue.wait(log);
+        log("the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on");
+        waited = await queue.wait(log, askAgain);
       }
       if (waited !== "held") {
         await queue.leave();
@@ -866,9 +880,16 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       const answer = ask();
       if (!answer) return 1;
       if (answer.loaded) {
-        const ok =
-          platform === "launchd" ? await unload() : run(["systemctl", "--user", "disable", "--now", SYSTEMD_UNIT]);
-        if (!ok) return 1;
+        // Drained first, as `shutdown` is (#174): `bootout` or `disable --now`
+        // on its own is the supervisor's signal, and kills a pass in flight.
+        const kept =
+          platform === "launchd" || !answer.lines.some((l) => l === "ActiveState=inactive" || l === "ActiveState=failed");
+        if (kept) {
+          const drained = await drain();
+          if (drained !== 0) return drained;
+        }
+        // The drain unloaded a launchd job; a systemd unit is stopped and still enabled.
+        if (platform === "systemd" && !run(["systemctl", "--user", "disable", "--now", SYSTEMD_UNIT])) return 1;
       }
       if (!installed) {
         log(`nothing at ${file.path}${answer.loaded ? ", and the job it named is unloaded" : ""}`);

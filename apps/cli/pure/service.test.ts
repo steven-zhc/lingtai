@@ -332,7 +332,12 @@ describe("shutdown", () => {
    * `queueForTheLock` over the real `waitForTheLock`; each poll is one step of
    * the world.
    */
-  function world(passPolls: number, during?: (poll: number, store: ReturnType<typeof createMemoryEventStore>) => Promise<void>) {
+  function world(
+    passPolls: number,
+    during?: (poll: number, store: ReturnType<typeof createMemoryEventStore>) => Promise<void>,
+    /** The command's connection drops once, the moment after the lock is granted to it — and the world moves on while it goes. */
+    dropOnce = false,
+  ) {
     const store = createMemoryEventStore();
     const lock = { holder: null as string | null, queue: [] as string[] };
     const release = (who: string): void => {
@@ -400,11 +405,23 @@ describe("shutdown", () => {
     const place = async (): Promise<LockPlace> => {
       if (lock.holder === null) lock.holder = "command";
       else lock.queue.push("command");
+      let lost: Error | null = null;
       return {
         held: () => lock.holder === "command",
-        lost: () => null,
-        confirm: async () => lock.holder === "command",
-        leave: async () => release("command"),
+        lost: () => lost,
+        confirm: async () => {
+          if (dropOnce && lost === null && lock.holder === "command") {
+            // `confirm`'s ten seconds run out, and Postgres lets the lock go with the session.
+            dropOnce = false;
+            lost = new Error("the connection holding the lock did not answer in 10s");
+            release("command");
+            await tick();
+          }
+          return lost === null && lock.holder === "command";
+        },
+        leave: async () => {
+          if (lost === null) release("command");
+        },
       };
     };
     const drain: ServiceDrain = {
@@ -513,6 +530,50 @@ describe("shutdown", () => {
     expect(await go("shutdown")).toBe(0);
     expect(said).toEqual(["wait 1", "holds false before bootout", "wait 2", "holds true before bootout"]);
     expect(out.join("\n")).toContain("the conductor lock was lost with its connection before the supervisor was told anything");
+  });
+
+  it("asks again when the lock goes with its connection and a copy takes it, so the copy finishes its pass and the wait ends", async () => {
+    const w = world(3, undefined, true);
+    const { go, out } = command("darwin", w.s.exec, { drain: w.drain });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(w.order).toEqual([
+      "daemon 1's pass finished",
+      "daemon 1 exited",
+      "daemon 3 claimed work",
+      "daemon 3's pass finished",
+      "daemon 3 exited",
+      "bootout",
+    ]);
+    expect(w.daemons.filter((d) => d.pass === "in flight" || d.pass === "killed")).toEqual([]);
+    expect(w.lock.holder).toBeNull();
+    expect((await readControl(w.store)).shutdown).toBeNull();
+    expect(out.join("\n")).toContain("could not ask who holds the lock — the place in the queue for the lock was lost");
+  });
+
+  it("uninstall drains before it unloads, so the pass in flight is not killed", async () => {
+    const w = world(5);
+    const { go } = command("darwin", w.s.exec, { drain: w.drain });
+    await launchdFile();
+    expect(await go("uninstall")).toBe(0);
+    expect(w.daemons[0]!.pass).toBe("finished");
+    expect(w.daemons.filter((d) => d.pass === "in flight" || d.pass === "killed")).toEqual([]);
+    expect(w.order).toEqual(["daemon 1's pass finished", "daemon 1 exited", "bootout"]);
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(false);
+  });
+
+  it("uninstall on Linux stops through the drain, then disables", async () => {
+    const s = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }]]);
+    const d = quietDrain();
+    const { go } = command("linux", s.exec, { drain: d.drain });
+    await systemdFile();
+    expect(await go("uninstall")).toBe(0);
+    expect(d.said).toEqual(["queue", "ask human:lingtai service uninstall: no reason given", "held", "withdraw 1"]);
+    expect(s.calls.filter((c) => !c.startsWith("systemctl --user show"))).toEqual([
+      `systemctl --user stop ${SYSTEMD_UNIT}`,
+      `systemctl --user disable --now ${SYSTEMD_UNIT}`,
+      "systemctl --user daemon-reload",
+    ]);
   });
 
   it("refuses a request already standing — anybody's, its own name included — and stops nothing", async () => {

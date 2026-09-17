@@ -718,7 +718,7 @@ export async function waitForTheLock(
 export async function queueForTheLock(
   how: { place?: () => Promise<LockPlace>; holder?: () => Promise<string | null>; pollMs?: number; sayEveryMs?: number } = {},
 ): Promise<{
-  wait: (log: (line: string) => void) => Promise<"held" | "interrupted" | "gave-up">;
+  wait: (log: (line: string) => void, retaken?: () => Promise<void>) => Promise<"held" | "interrupted" | "gave-up">;
   holds: () => Promise<boolean>;
   leave: () => Promise<void>;
 }> {
@@ -727,7 +727,7 @@ export async function queueForTheLock(
   let place = await take();
   const holds = async (): Promise<boolean> => place.lost() === null && place.held() && (await place.confirm());
   return {
-    wait: async (log) => {
+    wait: async (log, retaken) => {
       const waited = await waitForTheLock("draining", null, log, {
         ask: async () => {
           if (await holds()) return null;
@@ -735,7 +735,14 @@ export async function queueForTheLock(
           if (lost !== null) {
             await place.leave();
             place = await take();
-            throw new Error(`the place in the queue for the lock was lost (${lost.message}) and was taken again`);
+            // Whoever took the lock in the gap may be a copy started after the
+            // request, which never reads it — so the caller asks again, after
+            // the new place, where whatever holds the lock does read it.
+            const again = await (retaken ?? (async () => {}))().then(
+              () => "",
+              (err: unknown) => `, and asking for the drain again failed — ${(err as Error).message}`,
+            );
+            throw new Error(`the place in the queue for the lock was lost (${lost.message}) and was taken again${again}`);
           }
           return (await holder()) ?? "nobody, while the lock is handed to this command";
         },

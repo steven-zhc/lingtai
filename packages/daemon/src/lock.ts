@@ -234,11 +234,18 @@ export async function queueForDaemonLock(options: AcquireOptions = {}): Promise<
           // would be granted the lock and hold it until it next wrote to a
           // client that is gone. So the wait is cancelled from another session.
           const cancel = new pg.Client({ connectionString: url, application_name: options.name ?? "lingtai" });
-          await cancel
+          const cancelled = await cancel
             .connect()
-            .then(() => cancel.query("select pg_cancel_backend($1)", [pid]))
-            .catch(() => {})
+            .then(() => cancel.query<{ ok: boolean }>("select pg_cancel_backend($1) as ok", [pid]))
+            .then((r) => r.rows[0]?.ok === true)
+            .catch(() => false)
             .finally(() => cancel.end().catch(() => {}));
+          // Not cancelled — no second connection to be had — and `waiting`
+          // settles only on a grant, which may be a whole pass away. So the
+          // socket is closed instead: the query fails here at once, and a
+          // backend still queued lets the lock go when it writes the grant to a
+          // client that is gone — a moment, not a pass.
+          if (!cancelled) await client.end().catch(() => {});
         }
         await waiting;
         if (held) await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]).catch(() => {});

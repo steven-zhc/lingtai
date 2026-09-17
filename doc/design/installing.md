@@ -260,7 +260,7 @@ lingtai board stop
 lingtai board restart
 lingtai board status
 
-lingtai service install|start|stop|restart|status|uninstall     both jobs
+lingtai service install|start|shutdown [why]|restart [why]|status|uninstall     both jobs
 ```
 
 **The conductor gets `shutdown`; the board gets `stop`, and the difference is
