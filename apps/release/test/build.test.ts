@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -53,13 +53,13 @@ describe("pnpm build", () => {
 
   it("serves a page from the built board, started by the bundled CLI", async () => {
     const port = await freePort();
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      // Refused at once: the setup page renders without the log, and nothing
-      // here may reach the operator's or the test database.
-      LINGTAI_DATABASE_URL: "postgres://127.0.0.1:1/none",
-      LINGTAI_HOME: join(work, "home"),
-    };
+    // The URL is in `.env.local` beside the build and nowhere else, as it is in
+    // a checkout that ran `pnpm build`: the bundle has to find the file itself.
+    // Refused at once: the setup page renders without the log, and nothing
+    // here may reach the operator's or the test database.
+    writeFileSync(join(work, ".env.local"), "LINGTAI_DATABASE_URL=postgres://127.0.0.1:1/none\n");
+    const env: NodeJS.ProcessEnv = { ...process.env, LINGTAI_HOME: join(work, "home") };
+    delete env["LINGTAI_DATABASE_URL"];
     delete env["NODE_ENV"];
     for (const name of Object.keys(env)) if (name.startsWith("VITEST")) delete env[name];
 

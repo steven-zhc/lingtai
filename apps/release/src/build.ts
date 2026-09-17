@@ -43,8 +43,10 @@ function buildBoard(root: string, out: string): void {
   const app = join(root, "apps", "board");
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    // Both the build and every run of it read this: a fixed id makes two builds
-    // of one commit one layout, which the random default does not.
+    // Read by `next build` alone, which writes it to `.next/BUILD_ID`; the
+    // standalone server reads that file, so a run of the board never needs this.
+    // A fixed id makes two builds of one commit one layout, which the random
+    // default does not.
     LINGTAI_BUILD_ID: commit(root),
     // Collecting page data imports `@lingtai/event-store`, whose `db.ts` builds a
     // client at module scope and throws without a URL. Nothing connects during
@@ -141,6 +143,9 @@ async function bundleCli(root: string, out: string): Promise<void> {
       "import.meta.url": "__import_meta_url",
       "import.meta.filename": "__filename",
       "import.meta.dirname": "__dirname",
+      // `@lingtai/env` finds `.env.local` relative to itself; bundled, that is
+      // `dist/`, one directory below the checkout rather than three.
+      LINGTAI_BUNDLED: "true",
     },
     legalComments: "none",
     logLevel: "error",

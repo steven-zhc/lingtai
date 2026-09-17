@@ -20,8 +20,13 @@ import { fileURLToPath } from "node:url";
  * which is what makes CI and launchd work without a file at all.
  */
 const here = dirname(fileURLToPath(import.meta.url));
-/** `packages/env/src` → the repository root. */
-const root = resolve(here, "../../..");
+/**
+ * `packages/env/src` → the repository root. Bundled, `import.meta.url` is
+ * `dist/lingtai.cjs`'s, and the root is one directory up (#183):
+ * `apps/release/src/build.ts` defines `LINGTAI_BUNDLED`, and the source never does.
+ */
+declare const LINGTAI_BUNDLED: boolean | undefined;
+const root = resolve(here, typeof LINGTAI_BUNDLED === "undefined" ? "../../.." : "..");
 
 const loaded = config({
   path: [resolve(root, ".env.local"), resolve(root, ".env")],

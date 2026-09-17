@@ -1,6 +1,7 @@
 # 0035 — The site is a projection of this repository, and its hero is the real board
 
-**Status** accepted · 2026-09-09
+**Status** accepted · 2026-09-09 · **the site is no longer built by `pnpm build`
+([0049](0049-the-publishable-unit-is-dist.md)); it is `pnpm --filter @lingtai/site build`**
 
 ## Context
 

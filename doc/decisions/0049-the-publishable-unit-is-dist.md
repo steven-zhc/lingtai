@@ -1,6 +1,7 @@
 # 0049 — The publishable unit is `dist/`, and both workspace manifests stay private
 
-**Status** accepted · 2026-09-17 · qualifies [0010](0010-source-runs-unbuilt.md) for distribution only
+**Status** accepted · 2026-09-17 · qualifies [0010](0010-source-runs-unbuilt.md) for distribution only ·
+qualifies [0035](0035-the-site-is-a-projection.md)'s *built by `pnpm build`*
 
 ## Context
 
@@ -55,13 +56,16 @@ under `.next/static/` and random by default; `pnpm build` sets it to the commit.
 ## Consequences
 
 - `pnpm build` no longer runs every package's `build`. The hook binary is
-  `pnpm --filter @lingtai/hook build`, as `doc/operating.md` already said.
+  `pnpm --filter @lingtai/hook build`, as `doc/operating.md` already said, and
+  the site's static export is `pnpm --filter @lingtai/site build` — which
+  qualifies 0035's *built by `pnpm build` like everything else*.
 - `pnpm test` now includes two board builds (`apps/release`), about 15s warm.
-- The bundle's `import.meta.url` is the bundle's own, so `@lingtai/env` looks
-  for `.env.local` three directories above `lingtai.cjs`. That is the checkout
-  layout, not the installed one: where a shipped CLI reads its configuration is
-  the installer's question (`~/.lingtai/config.yml`, 1.0 step 9), and nothing
-  here answers it.
+- The bundle's `import.meta.url` is the bundle's own, so the build tells
+  `@lingtai/env` it is bundled and it looks for `.env.local` one directory above
+  `lingtai.cjs` — the checkout root when `dist/` is the one `pnpm build` wrote.
+  The test starts the bundle with the URL only in that file. Where an installed
+  CLI reads its configuration is the installer's question
+  (`~/.lingtai/config.yml`, 1.0 step 9), and nothing here answers it.
 - Next copies the whole of `apps/board` — `src/` and `test/` too — into
   `standalone`, because Turbopack warns that dynamic filesystem reads trace the
   whole project. Harmless, and a size to trim later.
