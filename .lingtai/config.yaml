@@ -85,9 +85,12 @@ env:
   # LINGTAI_* name, so a project whose own file is missing a line gets an
   # *absent* value — which `required` refuses loudly — instead of silently
   # inheriting Lingtai's.
+  #
+  # Only the pooled name, since #176: an absent LINGTAI_TEST_DIRECT_DATABASE_URL
+  # is LINGTAI_TEST_DATABASE_URL, so one test database needs one line. Set, the
+  # direct one still reaches the agent and still wins.
   required:
     - LINGTAI_TEST_DATABASE_URL
-    - LINGTAI_TEST_DIRECT_DATABASE_URL
 
   # Host segments a value is refused for, whatever reaches the agent from either
   # file (#51) — on top of `prod` and `production`, which a recipe cannot remove.

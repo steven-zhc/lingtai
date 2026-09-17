@@ -186,7 +186,7 @@ async function pooledConnection(url: string): Promise<CheckResult> {
  * Both halves matter. The merge lane depends on the lock, and the whole
  * event-driven design depends on the notification.
  */
-async function directIsSessionMode(url: string): Promise<CheckResult> {
+async function directIsSessionMode(url: string, standIn = false): Promise<CheckResult> {
   const name = "postgres: direct connection is session mode";
   const listener = new pg.Client({ connectionString: url, application_name: "lingtai-doctor" });
   const notifier = new pg.Client({ connectionString: url, application_name: "lingtai-doctor" });
@@ -213,7 +213,10 @@ async function directIsSessionMode(url: string): Promise<CheckResult> {
         name,
         status: "fail",
         detail:
-          "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. " +
+          (standIn
+            ? "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and " +
+              "LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL. "
+            : "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. ") +
           "LISTEN/NOTIFY and advisory locks will both fail silently through it (doc/decisions/0009).",
       };
     }
@@ -1545,7 +1548,7 @@ export async function runDoctor(env: NodeJS.ProcessEnv = process.env): Promise<D
 
   if (envResult.status === "ok" && pooled && direct) {
     results.push(await pooledConnection(pooled));
-    results.push(await directIsSessionMode(direct));
+    results.push(await directIsSessionMode(direct, standIn));
     results.push(...(await schema(direct)));
     results.push(await projections(pooled));
     results.push(await projectionShapes(pooled));

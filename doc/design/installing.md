@@ -56,16 +56,18 @@ nothing to get out of step with it.
 
 ### The Postgres lane is one URL, not two
 
-`directDatabaseUrl()` is `required()` today and throws when unset, so a person
-must supply both. [0009](../decisions/0009-two-connections.md) already licenses
+`directDatabaseUrl()` was `required()` and threw when unset, so a person had
+to supply both. [0009](../decisions/0009-two-connections.md) already licensed
 the fix in its own text:
 
 > On Supabase the second is the same host and credentials on port 5432 with the
 > `pgbouncer` flag dropped. **On a plain Postgres the two may be identical.**
 
-Two URLs are a Supabase artifact, not an architectural requirement. `DIRECT`
-should fall back to `DATABASE_URL` when absent. **This stands on its own** — it
-halves the Postgres install whether or not SQLite is ever built.
+Two URLs are a Supabase artifact, not an architectural requirement. **Done in
+#176:** an absent `DIRECT` is `DATABASE_URL`, a set one wins, the `TEST_` pair
+falls back within itself, and `lingtai doctor` refuses a pooled URL standing in.
+It stands on its own — it halves the Postgres install whether or not SQLite is
+ever built.
 
 ### What SQLite has to replace, and it is less than it looks
 

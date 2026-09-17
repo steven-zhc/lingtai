@@ -70,18 +70,21 @@ pnpm typecheck
 `.env.local` lives at the repo root and is gitignored. A real environment
 variable beats it, which is what makes CI and launchd work with no file at all.
 
-**Two connection strings, one database.** `LINGTAI_DATABASE_URL` is pooled, for
-ordinary queries; `LINGTAI_DIRECT_DATABASE_URL` is session mode, for migrations, `LISTEN/NOTIFY`
-and advisory locks. A transaction pooler breaks all three, and breaks them
-without erroring — see [ADR 0009](decisions/0009-two-connections.md).
+**One database, and on a plain Postgres one connection string** (#176).
+`LINGTAI_DATABASE_URL` is for ordinary queries; `LINGTAI_DIRECT_DATABASE_URL` is session mode, for migrations, `LISTEN/NOTIFY`
+and advisory locks. Unset, the direct one is `LINGTAI_DATABASE_URL`; set, it
+wins. It is needed only when the first goes through a transaction pooler —
+Supabase's, PgBouncer — which breaks all three, and breaks them without
+erroring; `lingtai doctor` refuses a pooled URL standing in. See
+[ADR 0009](decisions/0009-two-connections.md).
 
 The event store must be **its own database**, not one belonging to a managed
 project — Lingtai has to keep running while a managed project is the thing
 being changed.
 
-**The tests need a third and fourth string, and refuse to run without them.**
-`LINGTAI_TEST_DATABASE_URL` and `LINGTAI_TEST_DIRECT_DATABASE_URL` point at a *different*
-database. The suite is not mocked — it appends real events, runs real
+**The tests need their own string, and refuse to run without it.**
+`LINGTAI_TEST_DATABASE_URL`, and `LINGTAI_TEST_DIRECT_DATABASE_URL` behind a pooler, point at a *different*
+database — the pair falls back within itself, never to the operator's. The suite is not mocked — it appends real events, runs real
 projections and takes real advisory locks — so pointed at your own log it
 leaves work items and board cards behind. It did: twenty-four cards from ten
 throwaway `esctest*` projects, and none from a real one. Cleaning that up is

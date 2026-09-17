@@ -19,12 +19,18 @@
  * ## Why this cannot hit the real log
  *
  * Two independent checks, because one is a typo away from nothing. The test
- * flag must be set, *and* the resolved connection string must differ from the
- * one resolved without it. If someone points LINGTAI_TEST_DATABASE_URL at their own
+ * flag must be set, *and* no connection string the test side resolves may be
+ * one the operator's side resolves. If someone points LINGTAI_TEST_DATABASE_URL at their own
  * database, the second check is what refuses.
+ *
+ * Every string on each side, pooled and direct, rather than the direct pair
+ * alone: since #176 an absent direct URL is the pooled one, so the test side's
+ * direct string can be the operator's *pooled* one while the operator's direct
+ * string is a different spelling of the same database. Compared direct against
+ * direct, that passed and truncated the real log.
  */
 import pg from "pg";
-import { directDatabaseUrl } from "@lingtai/event-store";
+import { databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
 
 if (!process.env["LINGTAI_TEST"] && !process.env["VITEST"]) {
   console.error("refusing: set LINGTAI_TEST=1 to say which database you mean");
@@ -33,17 +39,28 @@ if (!process.env["LINGTAI_TEST"] && !process.env["VITEST"]) {
 
 const testUrl = directDatabaseUrl();
 
-delete process.env["LINGTAI_TEST"];
-delete process.env["VITEST"];
-let mainUrl = null;
-try {
-  mainUrl = directDatabaseUrl();
-} catch {
-  // No main database configured at all. Nothing to collide with.
+/** Every string a side resolves, pooled and direct; one that throws is absent. */
+function resolved(env) {
+  const urls = new Set();
+  for (const read of [databaseUrl, directDatabaseUrl]) {
+    try {
+      urls.add(read(env));
+    } catch {
+      // Not configured on this side. Nothing to collide with.
+    }
+  }
+  return urls;
 }
 
-if (mainUrl && mainUrl === testUrl) {
-  console.error("refusing: LINGTAI_TEST_DIRECT_DATABASE_URL resolves to the same database as LINGTAI_DIRECT_DATABASE_URL");
+const testSide = resolved(process.env);
+const operatorSide = resolved({ ...process.env, LINGTAI_TEST: "", VITEST: "" });
+const collision = [...testSide].find((url) => operatorSide.has(url));
+
+if (collision) {
+  console.error(
+    "refusing: a connection string the test log resolves to (LINGTAI_TEST_DATABASE_URL, or LINGTAI_TEST_DIRECT_DATABASE_URL " +
+      "or its stand-in) is one the operator's log resolves to (LINGTAI_DATABASE_URL or LINGTAI_DIRECT_DATABASE_URL)",
+  );
   process.exit(2);
 }
 

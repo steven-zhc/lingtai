@@ -45,10 +45,12 @@ some were amended after #6 closed.
 - Query API: `db.orm.public.Event.where({...}).first()`.
 - Versions are pinned to exact prereleases on purpose. Do not widen them to ranges.
 
-**2. There are two connection strings, and using the wrong one fails silently.**
+**2. There can be two connection strings, and using the wrong one fails silently.**
 
-`LINGTAI_DATABASE_URL` is a pooled transaction-mode connection. `LINGTAI_DIRECT_DATABASE_URL` is
-session mode against the same database.
+`LINGTAI_DATABASE_URL` may be a pooled transaction-mode connection. `LINGTAI_DIRECT_DATABASE_URL` is
+session mode against the same database — and when it is unset, `LINGTAI_DATABASE_URL`
+stands in for it (#176), which is right on a plain Postgres and wrong behind a
+pooler.
 
 Migrations, `LISTEN/NOTIFY` and session-level advisory locks **all require the
 direct one**. Through a transaction pooler a cross-connection `NOTIFY` never
