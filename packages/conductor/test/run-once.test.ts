@@ -33,14 +33,14 @@ import { Effect } from "effect";
 import {
   PortsLive,
   appendEndActions,
-  approve,
+  approve as approveAt,
   renderPrompt,
   requeue,
   runOnce,
   runQueue,
   waive,
 } from "../src/index.ts";
-import type { GateAction, Recipe } from "@lingtai/recipe";
+import { type GateAction, type Recipe, resolveRecipe } from "@lingtai/recipe";
 import type { ProjectState } from "@lingtai/domain";
 
 const exec = promisify(execFile);
@@ -55,7 +55,20 @@ const exec = promisify(execFile);
  * them being two lines.
  */
 const once = (options: Parameters<typeof runOnce>[0]) =>
-  Effect.runPromise(runOnce(options).pipe(Effect.provide(PortsLive)));
+  Effect.runPromise(
+    runOnce({
+      // The recipe through the fake GitHub's `fileAt`, so each test keeps the
+      // recipe it wrote. Where a real run reads it from is `local.test.ts`'s (#180).
+      recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? "main"),
+      ...options,
+    }).pipe(Effect.provide(PortsLive)),
+  );
+/** `approve`, with its `end` point read through the fake GitHub like `once`'s recipe. */
+const approve = (options: Parameters<typeof approveAt>[0]) =>
+  approveAt({
+    recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.base),
+    ...options,
+  });
 const queue = (options: Parameters<typeof runQueue>[0]) =>
   Effect.runPromise(runQueue(options).pipe(Effect.provide(PortsLive)));
 const here = dirname(fileURLToPath(import.meta.url));
