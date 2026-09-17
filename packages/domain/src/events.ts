@@ -1395,17 +1395,18 @@ export const PromptEdited = z.object({
  * the line between registered and not, and pending is the other side of a line
  * that has been there all along ([0022](../../../doc/decisions/0022-the-seams.md)).
  *
- * The wizard ends at a pull request, and a pull request is not a thing a page
- * can wait on: the board is a render and the daemon does not know repositories
- * it has not onboarded. So this event is what the wizard leaves behind, and
- * `Recheck` on the card is what finishes it — *watch the PR and finish
- * automatically* was removed rather than built.
+ * The wizard ends on this machine: it writes `~/.lingtai/<project>/recipe.yml`
+ * and nothing to the repository, so there is no pull request and nothing to
+ * merge (0046 §3, #182). Pending waits for `Recheck` on the board's card, which
+ * is what finishes it: the board is a render and the daemon does not know
+ * repositories it has not onboarded, so nothing finishes it automatically.
  *
  * `slug` is `owner/repo` as it was given, because the owner is what a later
  * `lingtai add` has to be told and the repository name alone cannot be reached.
- * `base` is where the recipe is expected to land, and it is the branch
- * `Recheck` reads: the same decision `ProjectConfigured.base` records, made
- * before there was a file to copy it from.
+ * `base` is the wizard's reading of the default branch, and only a hint to
+ * `add`: `Recheck` passes it unnamed (`resumeOnboarding`), so a recipe that
+ * declares another branch is adopted. **Neither `Recheck` nor anything else
+ * reads the repository's `base` for a recipe** — the recipe is the machine's.
  *
  * `by` is `human:<id>`, as every decision here is recorded
  * ([0007](../../../doc/decisions/0007-dual-runtime.md)). It is an OS username today and
@@ -1415,7 +1416,7 @@ export const PromptEdited = z.object({
 export const ProjectOnboardingStarted = z.object({
   /** `owner/repo`, as the wizard was given it. */
   slug: z.string(),
-  /** The branch the recipe is expected on, and the one `Recheck` reads. */
+  /** The default branch the wizard saw — a hint to `add`, never where a recipe is read from. */
   base: z.string(),
   /** Who asked for it — `human:<id>`. */
   by: z.string(),

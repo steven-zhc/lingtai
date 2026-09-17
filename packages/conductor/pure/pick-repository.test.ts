@@ -115,6 +115,12 @@ describe("listRepositories", () => {
       ["fresh", null],
     ]);
     expect(choose(picker, "steven-zhc/lingtai")).toMatchObject({ ok: false, why: /already onboarded/ });
+    // Pending waits for Recheck (#182): the recipe is on this machine and
+    // nothing is written to the repository, so there is no pull request to go
+    // looking for.
+    const pending = choose(picker, "steven-zhc/admin");
+    expect(pending).toMatchObject({ ok: false, why: /Recheck on the board's pending card/ });
+    expect(!pending.ok && pending.why).not.toMatch(/pull request|landed|merge/i);
   });
 
   it("is an empty list with an install link carrying a state when nothing is installed", async () => {

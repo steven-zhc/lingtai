@@ -44,7 +44,9 @@ import {
 export interface ListedRepository extends VisibleRepository {
   slug: string;
   /**
-   * `registered` has a recipe, `pending` is waiting on its recipe PR (#163),
+   * `registered` has a recipe, `pending` is recorded and waiting for `Recheck` on
+   * the board's pending card (#163, #182) — its recipe is already on this machine,
+   * and nothing is written to the repository, so there is no pull request —
    * null is offered. A repository that is either of the first two is shown and
    * never offered — a second onboarding of it is a second stream's worth of
    * confusion about one repository.
@@ -209,7 +211,7 @@ export function choose(picker: Picker, input: string): Choice {
           found.onboarded === "registered"
             ? `${found.slug} is already onboarded.`
             : found.onboarded === "pending"
-              ? `${found.slug} is already on its way in — its recipe pull request has not landed yet.`
+              ? `${found.slug} is already on its way in — its recipe is on this machine, and it is waiting for Recheck on the board's pending card to register it.`
               : found.onboarded === "taken"
                 ? taken(found)
                 : unrecorded(found),

@@ -243,7 +243,7 @@ function Listed({
                   </>
                 ) : r.onboarded !== null ? (
                   <>
-                    <code>{r.slug}</code> — {r.onboarded === "registered" ? "already onboarded" : "onboarding, recipe pending"}
+                    <code>{r.slug}</code> — {r.onboarded === "registered" ? "already onboarded" : "onboarding — press Recheck on the board's pending card"}
                   </>
                 ) : logUnanswered !== null || gaps.length > 0 ? (
                   <code>{r.slug}</code>
