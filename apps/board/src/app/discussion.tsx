@@ -40,9 +40,11 @@
  *
  * **The box has one height, and the viewport sets it** (#173). The conversation
  * scrolls in `.chatscroll` with the input box under it (#132), so however long
- * the exchange runs, the box you type in is on the screen. It was a fixed
- * `24rem` while the moves sat under the pair; they are above it now (#152), and
- * the cap read the conversation through a ten-line slot for nothing.
+ * the exchange runs, the box you type in is on the screen — the room left
+ * under the moves, so they and the input are on one screen together (see
+ * `pairTop`). It was a fixed `24rem` while the moves sat under the pair; they are
+ * above it now (#152), and the cap read the conversation through a ten-line slot
+ * for nothing.
  * `Enter` asks and `Shift+Enter` is a newline — see `onAskKey`.
  *
  * **Turns, not a transcript** (#152): a bubble each, with who said it, pinned
@@ -367,10 +369,17 @@ export function Echoed({
  * money**: while `asking…` the fold does not have the conversation yet, so
  * `open` is null and an `askDiscussion` without a `chatId` opens a second
  * discussion and buys a second agent. An `Enter` that finishes an IME
- * composition is the composition's, not a question.
+ * composition is the composition's, not a question — and Safari says so only
+ * by `keyCode` 229, firing that keydown with `isComposing` already false, so
+ * both are read.
  */
 export function canAsk(busy: boolean, question: string): boolean {
   return !busy && question.trim() !== "";
+}
+
+/** The pair's top edge on the page rather than in the window, so scrolling does not move it. */
+export function pairTop(rectTop: number, scrollY: number): number {
+  return Math.round(rectTop + scrollY);
 }
 
 export function onAskKey(
@@ -378,13 +387,14 @@ export function onAskKey(
     key: string;
     shiftKey: boolean;
     isComposing?: boolean;
+    keyCode?: number;
     preventDefault: () => void;
   },
   busy: boolean,
   question: string,
   ask: () => void,
 ): void {
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
   // Never a newline, whether or not it asks: a busy box that took the Enter as
   // text would send it with the next question.
   event.preventDefault();
@@ -476,6 +486,30 @@ export function Discussion({
     return () => follow.disconnect();
   }, [shown]);
 
+  /**
+   * Where the pair starts, handed to `.spair` as `--pair-top` (#173). The pair
+   * sits under the bar, the state, the subject, the why and the moves, so a row
+   * as tall as the viewport would put this box's input under the fold and the
+   * moves above it off the top the moment you scrolled to type. The row is the
+   * room *under* the moves instead, and CSS alone cannot know how tall they are.
+   * Measured again when anything on the page changes size.
+   */
+  const root = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const pair = root.current?.closest<HTMLElement>(".spair");
+    if (!pair) return;
+    const measure = () =>
+      pair.style.setProperty("--pair-top", `${pairTop(pair.getBoundingClientRect().top, window.scrollY)}px`);
+    measure();
+    window.addEventListener("resize", measure);
+    const page = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    page?.observe(document.body);
+    return () => {
+      window.removeEventListener("resize", measure);
+      page?.disconnect();
+    };
+  }, []);
+
   const input = useRef<HTMLTextAreaElement | null>(null);
   // Grows with what is typed, to the bound `.chatask textarea` sets, and then
   // scrolls in itself — so a long question takes room from the conversation
@@ -516,7 +550,7 @@ export function Discussion({
   };
 
   return (
-    <div className={quiet ? "chat quiet" : "chat"}>
+    <div ref={root} className={quiet ? "chat quiet" : "chat"}>
       <p className="chathead">
         <span className="chatname">discussion</span>
         {/* Live without a poller: every append re-renders this page
@@ -689,6 +723,7 @@ export function Discussion({
                 key: e.key,
                 shiftKey: e.shiftKey,
                 isComposing: e.nativeEvent.isComposing,
+                keyCode: e.nativeEvent.keyCode,
                 preventDefault: () => e.preventDefault(),
               },
               busy,

@@ -1045,18 +1045,33 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 
    It was `24rem` (#132), for a row of moves that sat under both boxes. #152
    moved the moves above them, and the cap stayed to protect nothing, reading a
-   conversation through ten lines with a screen empty under it. The viewport
-   less the head of the page is the bound, with a floor so a short window still
-   has a conversation in it. `vh` first, for a browser without `dvh`. */
+   conversation through ten lines with a screen empty under it.
+
+   **The bound is the room under the moves, not the viewport.** The pair starts
+   below the bar, the state, the subject, the why and the moves; a row a whole
+   viewport tall put the input under the fold, and scrolling down to it took the
+   Approve row off the top. `Discussion` measures where the pair starts into
+   `--pair-top`, and the row ends a rem above the bottom of the first screen, so
+   the moves and the input are on it together. Stacked, two rows share that room.
+   The floor is under the old `24rem`, so a page whose head was too tall for
+   that is no worse; until the measure lands, the floor is the height. `vh`
+   first, for a browser without `dvh`. */
 .spair {
   display: grid;
   gap: 0.5rem;
-  grid-auto-rows: max(22rem, calc(100vh - 6rem));
-  grid-auto-rows: max(22rem, calc(100dvh - 6rem));
+  --pair-top: 100vh;
+  grid-auto-rows: max(11rem, calc((100vh - var(--pair-top) - 1.5rem) / 2));
+  grid-auto-rows: max(11rem, calc((100dvh - var(--pair-top) - 1.5rem) / 2));
+}
+.spair:has(> :only-child) {
+  grid-auto-rows: max(22rem, calc(100vh - var(--pair-top) - 1rem));
+  grid-auto-rows: max(22rem, calc(100dvh - var(--pair-top) - 1rem));
 }
 @media (min-width: 64rem) {
   .spair {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: max(22rem, calc(100vh - var(--pair-top) - 1rem));
+    grid-auto-rows: max(22rem, calc(100dvh - var(--pair-top) - 1rem));
   }
   /* A landed item has no outgoing prompt, and the discussion is then the whole
      of the pair rather than half of it. */

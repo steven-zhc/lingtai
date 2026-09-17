@@ -4,7 +4,7 @@
  * Two things, and the second is the one that costs money. The box has **one
  * height**, with the conversation scrolling inside it and the input box under
  * it — so a long conversation never pushes the box you ask the next question in
- * off the screen (#132, and the viewport's height since #173). And a turn with no answer
+ * off the screen (#132, and the room under the moves since #173). And a turn with no answer
  * yet **follows the chat's own log** rather than saying nothing until the agent
  * exits: that is the defect
  * [0034](../../../doc/decisions/0034-the-run-log.md) opens with, solved for
@@ -20,10 +20,11 @@
  * these are the three things a follower can be holding and the three sentences
  * a reader is handed for them, asserted directly.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DiscussionView } from "../src/lib/task.ts";
-import { Discussion, Echoed, Trace, canAsk, echoing, onAskKey, traceSays } from "../src/app/discussion.tsx";
+import { Discussion, Echoed, Trace, canAsk, echoing, onAskKey, pairTop, traceSays } from "../src/app/discussion.tsx";
 import { againAfter, asksAgain, reported, type TailState } from "../src/app/run-log.tsx";
 
 const waiting: DiscussionView = {
@@ -375,7 +376,10 @@ describe("the pane, once the page has stopped following the log", () => {
  * agent paid for. No DOM here, so the handler is asserted on what it is handed.
  */
 describe("the keys in the input box", () => {
-  const press = (key: string, extra: { shiftKey?: boolean; isComposing?: boolean } = {}) => {
+  const press = (
+    key: string,
+    extra: { shiftKey?: boolean; isComposing?: boolean; keyCode?: number } = {},
+  ) => {
     const preventDefault = vi.fn();
     return { event: { key, shiftKey: false, ...extra, preventDefault }, preventDefault };
   };
@@ -402,6 +406,9 @@ describe("the keys in the input box", () => {
     for (const { event, preventDefault } of [
       press("Enter", { shiftKey: true }),
       press("Enter", { isComposing: true }),
+      // Safari: the Enter that commits a pinyin or kana candidate arrives with
+      // `isComposing` false, and says it is the composition's only by 229.
+      press("Enter", { isComposing: false, keyCode: 229 }),
       press("a"),
     ]) {
       onAskKey(event, false, "why no branch?", ask);
@@ -419,4 +426,39 @@ describe("the keys in the input box", () => {
     expect(canAsk(false, "why?")).toBe(true);
   });
 
+});
+
+/**
+ * The pair's height is the room under the moves, not the viewport (#173). A row
+ * a whole viewport tall sat under the bar, the state and the moves, so at
+ * 1440×900 the input was below the fold and scrolling to it took Approve off the
+ * top. No layout engine here, so the arithmetic the stylesheet does is done on
+ * the numbers it is handed.
+ */
+describe("the pair's height", () => {
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const rem = 16;
+  /** What `.spair`'s side-by-side row resolves to, for a head of `top` px. */
+  const row = (viewport: number, top: number) => Math.max(22 * rem, viewport - top - 1 * rem);
+
+  it("is bounded by where the pair starts, side by side and stacked", () => {
+    const wide = css.slice(css.indexOf("@media (min-width: 64rem)"));
+    expect(wide).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(22rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/);
+    expect(css).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*max\(11rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/);
+    expect(css).not.toMatch(/100d?vh - 6rem/);
+  });
+
+  it("puts the moves and the input on one screen wherever the old 24rem pair did", () => {
+    // Heads of several hundred pixels in a 900px window: the pair ends above the fold.
+    for (const top of [300, 420, 516]) expect(top + row(900, top)).toBeLessThanOrEqual(900);
+    // The floor is under the old height, so where it engages 24rem did not fit either.
+    for (let top = 0; top < 900; top += 4) {
+      if (top + 24 * rem <= 900) expect(top + row(900, top)).toBeLessThanOrEqual(900);
+    }
+  });
+
+  it("measures from the page, so scrolling does not change it", () => {
+    expect(pairTop(420, 0)).toBe(420);
+    expect(pairTop(-180, 600)).toBe(420);
+  });
 });
