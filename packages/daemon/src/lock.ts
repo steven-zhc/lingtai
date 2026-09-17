@@ -146,3 +146,149 @@ export async function conductorLockHolder(options: AcquireOptions = {}): Promise
     await client.end().catch(() => {});
   }
 }
+
+/** How long `leave` waits on any one write to its connection before it tears the socket down instead. */
+const LEAVE_MS = 5_000;
+
+/** Settled, failed, or still pending after `ms` — never waited on past that. */
+async function within(p: Promise<unknown>, ms: number): Promise<"done" | "timed out"> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<"timed out">((resolve) => {
+    timer = setTimeout(() => resolve("timed out"), ms);
+  });
+  try {
+    return await Promise.race([p.then(() => "done" as const, () => "done" as const), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Closes the socket without the goodbye `end()` sends and waits on, which a
+ * half-open connection never acknowledges. Postgres releases whatever the
+ * session held when it notices, as it does for a killed process.
+ */
+function destroy(client: pg.Client): void {
+  (client as unknown as { connection?: { stream?: { destroy?: () => void } } }).connection?.stream?.destroy?.();
+}
+
+/** A place in the queue for the conductor lock. See `queueForDaemonLock`. */
+export interface LockPlace {
+  /** Whether the place has become the lock. */
+  held(): boolean;
+  /** Why the place was lost, when the connection holding it failed; null while it stands. */
+  lost(): Error | null;
+  /**
+   * Whether the lock is still held, asked on the connection that holds it. A
+   * dropped connection is not always reported until it is written to, and
+   * Postgres has released the lock with the session by then.
+   */
+  confirm(): Promise<boolean>;
+  /** Releases the lock when held and leaves the queue when not. Safe to call twice. */
+  leave(): Promise<void>;
+}
+
+/**
+ * Wait in line for the lock rather than race for it (#174).
+ *
+ * `acquireDaemonLock` tries once, and that is right for a conductor. It is
+ * wrong for `lingtai service shutdown`, which has to be the *next* holder: under
+ * launchd's KeepAlive a daemon that drains and exits is started again at once,
+ * and since #159 the copy reads only what is appended after it starts — so it
+ * does not see the drain, and if it wins the lock it takes work that the unload
+ * then kills. A blocking `pg_advisory_lock` is queued inside Postgres, and a
+ * released lock is granted to the waiter before any `pg_try_advisory_lock` can
+ * see it free. Queued before the drain is asked for, the place is ahead of
+ * every copy the supervisor can start.
+ */
+export async function queueForDaemonLock(options: AcquireOptions = {}): Promise<LockPlace> {
+  const url = options.url ?? directDatabaseUrl();
+  const key = options.key ?? DAEMON_LOCK_KEY;
+  // A connect that does not answer is failed rather than waited on: a place is
+  // taken again inside a wait that reads ctrl-c only between asks.
+  const client = new pg.Client({ connectionString: url, application_name: options.name ?? "lingtai", connectionTimeoutMillis: 10_000 });
+  await client.connect();
+  let pid: number;
+  try {
+    pid = (await client.query<{ pid: number }>("select pg_backend_pid() as pid")).rows[0]!.pid;
+  } catch (err) {
+    await client.end().catch(() => {});
+    throw err;
+  }
+
+  let held = false;
+  let lost: Error | null = null;
+  let leaving: Promise<void> | null = null;
+  client.on("error", (err) => {
+    lost ??= err;
+  });
+  const waiting = client.query("select pg_advisory_lock(hashtext($1)::bigint)", [key]).then(
+    () => {
+      held = true;
+    },
+    (err: Error) => {
+      if (leaving === null) lost ??= err;
+    },
+  );
+
+  return {
+    held: () => held,
+    lost: () => lost,
+    async confirm() {
+      if (!held || lost !== null || leaving !== null) return false;
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        const asked = client.query<{ held: boolean }>(
+          "select exists(select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and granted) as held",
+        );
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("the connection holding the lock did not answer in 10s")), 10_000);
+        });
+        const still = (await Promise.race([asked, timeout])).rows[0]?.held === true;
+        if (!still) lost ??= new Error("the lock is no longer held on its connection");
+        return still;
+      } catch (err) {
+        lost ??= err as Error;
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    leave() {
+      leaving ??= (async () => {
+        if (!held && lost === null) {
+          // Closing the socket does not take a backend out of a lock queue: it
+          // would be granted the lock and hold it until it next wrote to a
+          // client that is gone. So the wait is cancelled from another session.
+          const cancel = new pg.Client({ connectionString: url, application_name: options.name ?? "lingtai", connectionTimeoutMillis: 10_000 });
+          const cancelled = await cancel
+            .connect()
+            .then(() => cancel.query<{ ok: boolean }>("select pg_cancel_backend($1) as ok", [pid]))
+            .then((r) => r.rows[0]?.ok === true)
+            .catch(() => false)
+            .finally(() => cancel.end().catch(() => {}));
+          // Not cancelled — no second connection to be had — and `waiting`
+          // settles only on a grant, which may be a whole pass away. So the
+          // socket is closed instead: the query fails here at once, and a
+          // backend still queued lets the lock go when it writes the grant to a
+          // client that is gone — a moment, not a pass.
+          if (!cancelled && (await within(client.end(), LEAVE_MS)) === "timed out") destroy(client);
+        }
+        await waiting;
+        // Not on a connection already lost: the session is gone and its lock
+        // with it, or the socket is half-open and nothing written to it settles
+        // until TCP gives up — minutes, in which the caller's wait says nothing
+        // and a ctrl-c is never read. So a lost connection is torn down, and
+        // an unlock that does not answer in time is treated as one.
+        if (held && lost === null) {
+          const unlocked = await within(client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]), LEAVE_MS);
+          if (unlocked === "timed out") lost = new Error(`the connection holding the lock did not answer in ${LEAVE_MS / 1000}s`);
+        }
+        if (lost !== null) destroy(client);
+        await within(client.end(), LEAVE_MS);
+        destroy(client);
+      })();
+      return leaving;
+    },
+  };
+}

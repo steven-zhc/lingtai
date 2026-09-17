@@ -21,14 +21,15 @@ import {
   describeInFlight,
   inFlight,
   readCodeVersion,
-  controlWatermark,
   readControl,
   readStatus,
   recordStart,
   reconcile,
   requestRun,
   requestShutdown,
+  requestShutdownUnlessStanding,
   resumeConductor,
+  withdrawShutdown,
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
@@ -46,7 +47,7 @@ import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
 import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { parseRestartArgs, prepareRestart, startRecorder, startSupervised } from "./restart.ts";
+import { parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, startSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
@@ -143,10 +144,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 is the checked start
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
-  lingtai service install|start|stop|restart|status|uninstall
+  lingtai service install|start|shutdown [why]|restart [why]|status|uninstall
                                 keep lingtai daemon running: a LaunchAgent on
                                 macOS, a systemd user unit on Linux. No service
-                                manager? run lingtai daemon in the foreground
+                                manager? run lingtai daemon in the foreground.
+                                shutdown drains through the log, waits for the
+                                pass, then unloads; restart is that and start,
+                                unchecked — lingtai restart is the checked one
   lingtai pause <why>               stop the running daemon taking new tickets; a
                                 run in flight finishes. About the daemon that is
                                 running, and gone when it is — but not for
@@ -314,6 +318,16 @@ function serviceOptions(): ServiceOptions {
     pause: async () => {
       const c = await readControl();
       return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
+    },
+    // `lingtai shutdown`'s own append and a wait on the lock (#174): the
+    // supervisor is told only once this command holds the conductor lock.
+    drain: {
+      ask: (by, reason) => requestShutdownUnlessStanding(by, reason),
+      // Not caught here: a read that failed is not "nothing is in flight", and
+      // `service shutdown` says it could not be read.
+      holding: async () => describeInFlight(await inFlight()),
+      queue: () => queueForTheLock(),
+      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     },
   };
 }
@@ -619,7 +633,12 @@ async function daemonCommand(
   // it began belongs to the daemon before it and not to this one. That is what
   // makes `lingtai start` need nothing lifted first: there is no such thing as
   // a signal standing over a process that did not exist when it was sent.
-  const since = await controlWatermark();
+  //
+  // **Read by `startDaemon`, before the lock** (#174). It used to be read here,
+  // after the lock and the projections, and a `service shutdown` appended in
+  // that gap was below the watermark of the only daemon holding the lock — so
+  // nothing ever obeyed it, and the command waiting for the lock waited for ever.
+  const since = started.since;
 
   if (!("no-conduct" in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere
@@ -1061,7 +1080,7 @@ async function main(argv: string[]): Promise<number> {
       if (kept.kept && (parsed.args.noConduct || parsed.args.noMerge)) {
         console.error(
           `${kept.path} decides how the supervisor starts the daemon, so --no-conduct and --no-merge cannot reach it — ` +
-            "pnpm lingtai service stop, then lingtai restart with them, runs one in this terminal instead",
+            "pnpm lingtai service shutdown, then lingtai restart with them, runs one in this terminal instead",
         );
         return 2;
       }

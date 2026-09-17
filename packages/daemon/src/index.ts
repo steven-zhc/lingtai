@@ -2,8 +2,10 @@ export {
   DAEMON_LOCK_KEY,
   acquireDaemonLock,
   conductorLockHolder,
+  queueForDaemonLock,
   type AcquireOptions,
   type DaemonLock,
+  type LockPlace,
   type LockResult,
 } from "./lock.ts";
 export {
