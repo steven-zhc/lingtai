@@ -323,7 +323,9 @@ function serviceOptions(): ServiceOptions {
     // supervisor is told only once this command holds the conductor lock.
     drain: {
       ask: (by, reason) => requestShutdownUnlessStanding(by, reason),
-      holding: async () => describeInFlight(await inFlight().catch(() => [])),
+      // Not caught here: a read that failed is not "nothing is in flight", and
+      // `service shutdown` says it could not be read.
+      holding: async () => describeInFlight(await inFlight()),
       queue: () => queueForTheLock(),
       withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     },

@@ -639,6 +639,64 @@ describe("shutdown", () => {
     expect(err.join("\n")).toContain("connect ECONNREFUSED");
   });
 
+  it("stops a job crash-looping on a database it cannot reach, between two of its starts, without the drain", async () => {
+    // The project is paused: every copy KeepAlive starts fails to connect, and
+    // so does the place in the lock's queue. Nothing can hold the lock.
+    let booted = false;
+    let prints = 0;
+    const s = supervisor([
+      ["launchctl print", () => (booted ? { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" } : { status: 0, out: ++prints % 3 === 2 ? "\tstate = running\n\tpid = 812\n" : LOADED_BUT_NOT_RUNNING })],
+      ["launchctl bootout", () => ((booted = true), { status: 0, out: "" })],
+    ]);
+    for (const verb of ["shutdown", "uninstall"]) {
+      booted = false;
+      prints = 0;
+      const drain = { ...quietDrain().drain, queue: async () => Promise.reject(new Error("connect ECONNREFUSED 10.0.0.1:5432")) };
+      const { go, out } = command("darwin", s.exec, { drain });
+      await launchdFile();
+      expect(await go(verb, "db is down")).toBe(0);
+      expect(booted).toBe(true);
+      expect(out.join("\n")).toContain("the supervisor has no daemon running");
+    }
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(false);
+  });
+
+  it("does the same under systemd while the unit waits to restart", async () => {
+    const s = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=activating\nSubState=auto-restart\nMainPID=0\n" }],
+    ]);
+    const drain = { ...quietDrain().drain, queue: async () => Promise.reject(new Error("password authentication failed")) };
+    const { go } = command("linux", s.exec, { drain });
+    await systemdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(s.calls).toContain(`systemctl --user stop ${SYSTEMD_UNIT}`);
+  });
+
+  it("stops nothing when the lock cannot be queued for and a daemon stays running, and names the supervisor's own stop", async () => {
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n\tpid = 41\n" }]]);
+    const drain = { ...quietDrain().drain, queue: async () => Promise.reject(new Error("connect ETIMEDOUT")) };
+    const { go, err } = command("darwin", s.exec, { drain });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootout"))).toBe(false);
+    expect(err.join("\n")).toContain("Nothing was stopped");
+    expect(err.join("\n")).toContain(`launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`);
+  });
+
+  it("says what is in flight could not be read, never that nothing is", async () => {
+    let booted = false;
+    const s = supervisor([
+      ["launchctl print", () => (booted ? { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" } : { status: 0, out: "\tstate = running\n" })],
+      ["launchctl bootout", () => ((booted = true), { status: 0, out: "" })],
+    ]);
+    const drain = { ...quietDrain().drain, holding: async () => Promise.reject(new Error("statement timeout")) };
+    const { go, out } = command("darwin", s.exec, { drain });
+    await launchdFile();
+    expect(await go("shutdown")).toBe(0);
+    expect(out.join("\n")).toContain("draining — what is in flight could not be read");
+    expect(out.join("\n")).not.toContain("nothing in flight");
+  });
+
   it("asks for no drain when the supervisor is not running the job", async () => {
     const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
     const d = quietDrain();

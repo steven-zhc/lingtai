@@ -328,6 +328,21 @@ export function lingering(exec: Exec, username: string): "yes" | "no" | { unread
 const UNLOAD_WAIT_MS = 60_000;
 
 /**
+ * Seconds `service shutdown` watches the supervisor for a moment with no daemon
+ * running, when the database the drain goes through cannot be reached. Longer
+ * than two of the 30-second restarts either supervisor is given, so a copy that
+ * crash-loops on the connection is seen between two starts.
+ */
+const IDLE_WAIT_POLLS = 90;
+
+/** Whether the supervisor reports a process for the job — not just a job loaded or a restart scheduled. */
+function processRunning(platform: ServicePlatform, lines: readonly string[]): boolean {
+  if (platform === "launchd") return lines.some((l) => l === "state = running" || /^pid = [1-9]/.test(l));
+  const pid = lines.find((l) => l.startsWith("MainPID="))?.slice("MainPID=".length);
+  return pid === undefined ? lines.includes("SubState=running") : pid !== "0";
+}
+
+/**
  * The drain, through the log — the mechanism that waits for a pass (0030).
  * Injected, as `liveness` is, so this file loads without a database.
  */
@@ -682,8 +697,35 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   const drain = async (): Promise<number> => {
     const queue = await options.drain.queue().catch((err: unknown) => err as Error);
     if (queue instanceof Error) {
-      error(`the conductor lock could not be queued for — ${queue.message}. Nothing was stopped:`);
-      error("without a place in its queue, the copy the supervisor starts after the drain could take work that the unload kills.");
+      // The database is what the drain goes through, and it is also what a
+      // daemon needs to hold the lock or claim anything. So when it cannot be
+      // reached — a paused project, a wrong URL, and the supervisor restarting
+      // copy after copy that fails to connect — the supervisor is asked instead
+      // whether a process is running at all. A moment with none is a moment
+      // with no pass for its signal to kill, and the unload goes ahead then.
+      log(`the conductor lock could not be queued for — ${queue.message}.`);
+      log(`asking the supervisor whether a daemon is running, for up to ${IDLE_WAIT_POLLS}s: with none, there is no pass to drain`);
+      for (let i = 0; i < IDLE_WAIT_POLLS; i++) {
+        const now = ask();
+        if (!now) return 1;
+        if (!now.loaded) {
+          log(`the supervisor no longer has ${platform === "launchd" ? LAUNCHD_LABEL : SYSTEMD_UNIT} loaded — nothing to drain or unload`);
+          return 0;
+        }
+        if (!processRunning(platform, now.lines)) {
+          log("the supervisor has no daemon running, so nothing holds the conductor lock or a pass — stopped without the drain");
+          const stopped = platform === "launchd" ? await unload() : run(["systemctl", "--user", "stop", SYSTEMD_UNIT]);
+          return stopped ? 0 : 1;
+        }
+        await sleep(1_000);
+      }
+      error(`a daemon stayed running for ${IDLE_WAIT_POLLS}s while the conductor lock could not be queued for. Nothing was stopped:`);
+      error("it may be in a pass the supervisor's signal would kill, and without a place in the lock's queue the copy started after a drain could take work that the unload kills.");
+      error(
+        platform === "launchd"
+          ? `To stop it regardless, and kill whatever it is running: launchctl bootout ${target}`
+          : `To stop it regardless, and kill whatever it is running: systemctl --user stop ${SYSTEMD_UNIT}`,
+      );
       return 1;
     }
     try {
