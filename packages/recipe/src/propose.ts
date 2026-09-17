@@ -324,6 +324,13 @@ export async function proposeRecipe(
       : null;
   if (runtime === null) {
     refusals.push("no agent runtime is signed in on this machine — `lingtai doctor` says which is missing");
+  } else if (signedIn.length > 1) {
+    // Proposed, and never silently: 0046 §3's rule for `runtime.agent` is that
+    // more than one signed in is a question, and a proposal is where it is asked.
+    refusals.push(
+      `${signedIn.join(" and ")} are all signed in on this machine — ${runtime} is proposed, ` +
+        "and which one runs is a question for a person",
+    );
   }
 
   const recipe = Recipe.parse({

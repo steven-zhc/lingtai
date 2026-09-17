@@ -29,10 +29,11 @@ export class RecipeMissingError extends Error {
   override readonly name = "RecipeMissingError";
   readonly ref: string;
 
-  constructor(ref: string) {
+  constructor(ref: string, message?: string) {
     super(
-      `no ${RECIPE_PATH} on ${ref}. Add one and commit it to that branch — ` +
-        "a recipe on the agent's branch is not read, by design.",
+      message ??
+        `no ${RECIPE_PATH} on ${ref}. Add one and commit it to that branch — ` +
+          "a recipe on the agent's branch is not read, by design.",
     );
     this.ref = ref;
   }
@@ -43,8 +44,8 @@ export class RecipeInvalidError extends Error {
   /** Each problem as `path: message`, so a fix does not need a schema reading. */
   readonly problems: readonly string[];
 
-  constructor(ref: string, problems: readonly string[]) {
-    super(`${RECIPE_PATH} on ${ref} is not valid:\n  ${problems.join("\n  ")}`);
+  constructor(ref: string, problems: readonly string[], where = `${RECIPE_PATH} on ${ref}`) {
+    super(`${where} is not valid:\n  ${problems.join("\n  ")}`);
     this.problems = problems;
   }
 }
@@ -68,6 +69,12 @@ export interface ResolvedRecipe {
   tier: Recipe["runtime"]["tier"];
   /** Which preset it extended, if any. Provenance; not part of the hash. */
   preset: string | null;
+  /**
+   * Where each value a person might ask about came from — the recipe file, the
+   * machine file, detection or a default — keyed by its path in the recipe.
+   * Only a recipe read from this machine has one (`resolveLocalRecipe`).
+   */
+  provenance?: Readonly<Record<string, string>>;
 }
 
 /** Stable JSON: keys sorted at every level, so the hash does not depend on order. */
@@ -107,12 +114,33 @@ export async function resolveRecipe(
 ): Promise<ResolvedRecipe> {
   const source = await read(RECIPE_PATH, ref);
   if (source === null) throw new RecipeMissingError(ref);
+  return resolveSource(source, ref, `${RECIPE_PATH} on ${ref}`);
+}
 
+/**
+ * The half of `resolveRecipe` that does not care where the text came from.
+ *
+ * `where` is how a refusal names the file; `shape` runs on the parsed YAML
+ * before the preset and may refuse keys by name or fill fields in — which is
+ * how `resolveLocalRecipe` puts the machine's `runtime.agent` and
+ * `runtime.limits` into a recipe that may not carry them itself.
+ */
+export function resolveSource(
+  source: string,
+  ref: string,
+  where: string,
+  shape: (raw: Record<string, unknown>) => string[] = () => [],
+): ResolvedRecipe {
   let raw: unknown;
   try {
     raw = parseYaml(source);
   } catch (err) {
-    throw new RecipeInvalidError(ref, [`could not be parsed as YAML: ${(err as Error).message}`]);
+    throw new RecipeInvalidError(ref, [`could not be parsed as YAML: ${(err as Error).message}`], where);
+  }
+
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const refused = shape(raw as Record<string, unknown>);
+    if (refused.length > 0) throw new RecipeInvalidError(ref, refused, where);
   }
 
   // Preset first, then validation: a preset can satisfy a required field the
@@ -121,17 +149,18 @@ export async function resolveRecipe(
   try {
     applied = applyPreset(raw);
   } catch (err) {
-    throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`]);
+    throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`], where);
   }
 
   const retired = retiredKeys(applied.recipe);
-  if (retired.length > 0) throw new RecipeInvalidError(ref, retired);
+  if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where);
 
   const parsed = Recipe.safeParse(applied.recipe);
   if (!parsed.success) {
     throw new RecipeInvalidError(
       ref,
       parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      where,
     );
   }
 
