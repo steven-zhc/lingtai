@@ -634,10 +634,18 @@ export async function waitForTheLock(
   giveUpAfterMs: number | null,
   log: (line: string) => void,
   /** How the lock is asked about, and how often. Replaceable so a test need not own a database. */
-  how: { ask?: () => Promise<string | null>; pollMs?: number } = {},
+  how: {
+    ask?: () => Promise<string | null>;
+    pollMs?: number;
+    sayEveryMs?: number;
+    /** What Ctrl+C does, in the repeated line — the caller's to say, since it is the caller that acts on it. */
+    ctrlC?: string;
+  } = {},
 ): Promise<"free" | "interrupted" | "gave-up"> {
   const ask = how.ask ?? (() => conductorLockHolder());
   const pollMs = how.pollMs ?? POLL_MS;
+  const sayEveryMs = how.sayEveryMs ?? SAY_EVERY_MS;
+  const ctrlC = how.ctrlC ?? "ctrl-c stops waiting and leaves whatever was asked for standing.";
   const began = Date.now();
   let said = began;
   let interrupted = false;
@@ -672,13 +680,13 @@ export async function waitForTheLock(
       if (interrupted) return "interrupted";
       if (giveUpAfterMs !== null && Date.now() - began > giveUpAfterMs) return "gave-up";
 
-      if (Date.now() - said >= SAY_EVERY_MS) {
+      if (Date.now() - said >= sayEveryMs) {
         said = Date.now();
         const held = await inFlight().catch(() => []);
         log(
           paint.muted(
             `still ${doing} after ${Math.round((Date.now() - began) / 1000)}s — ${describeInFlight(held)}. ` +
-              `ctrl-c stops waiting and leaves whatever was asked for standing.`,
+              ctrlC,
           ),
         );
       }
@@ -702,20 +710,28 @@ export async function waitForTheLock(
  *
  * Nobody holding the lock while this place is not yet granted is the instant
  * Postgres takes to hand it on, and is still waiting. A place whose connection
- * failed is taken again rather than waited on for ever.
+ * failed is taken again rather than waited on for ever — granted or not, since
+ * Postgres releases an advisory lock with the session that held it, so a lost
+ * connection is checked before a grant is believed, and a grant is confirmed
+ * on its own connection.
  */
 export async function queueForTheLock(
-  how: { place?: () => Promise<LockPlace>; holder?: () => Promise<string | null>; pollMs?: number } = {},
-): Promise<{ wait: (log: (line: string) => void) => Promise<"held" | "interrupted" | "gave-up">; leave: () => Promise<void> }> {
+  how: { place?: () => Promise<LockPlace>; holder?: () => Promise<string | null>; pollMs?: number; sayEveryMs?: number } = {},
+): Promise<{
+  wait: (log: (line: string) => void) => Promise<"held" | "interrupted" | "gave-up">;
+  holds: () => Promise<boolean>;
+  leave: () => Promise<void>;
+}> {
   const take = how.place ?? (() => queueForDaemonLock({ name: "lingtai-service-shutdown" }));
   const holder = how.holder ?? (() => conductorLockHolder());
   let place = await take();
+  const holds = async (): Promise<boolean> => place.lost() === null && place.held() && (await place.confirm());
   return {
     wait: async (log) => {
       const waited = await waitForTheLock("draining", null, log, {
         ask: async () => {
-          if (place.held()) return null;
-          const lost = place.lost();
+          if (await holds()) return null;
+          const lost = place.lost() ?? (place.held() ? new Error("the lock is no longer held on its connection") : null);
           if (lost !== null) {
             await place.leave();
             place = await take();
@@ -723,10 +739,13 @@ export async function queueForTheLock(
           }
           return (await holder()) ?? "nobody, while the lock is handed to this command";
         },
+        ctrlC: "ctrl-c stops waiting, withdraws this command's request, and tells the supervisor nothing — a daemon that already read it still exits after its pass, and the supervisor then starts one that takes work.",
         ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
+        ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
       });
       return waited === "free" ? "held" : waited;
     },
+    holds,
     leave: () => place.leave(),
   };
 }

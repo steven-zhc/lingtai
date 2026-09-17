@@ -153,6 +153,12 @@ export interface LockPlace {
   held(): boolean;
   /** Why the place was lost, when the connection holding it failed; null while it stands. */
   lost(): Error | null;
+  /**
+   * Whether the lock is still held, asked on the connection that holds it. A
+   * dropped connection is not always reported until it is written to, and
+   * Postgres has released the lock with the session by then.
+   */
+  confirm(): Promise<boolean>;
   /** Releases the lock when held and leaves the queue when not. Safe to call twice. */
   leave(): Promise<void>;
 }
@@ -201,6 +207,26 @@ export async function queueForDaemonLock(options: AcquireOptions = {}): Promise<
   return {
     held: () => held,
     lost: () => lost,
+    async confirm() {
+      if (!held || lost !== null || leaving !== null) return false;
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        const asked = client.query<{ held: boolean }>(
+          "select exists(select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and granted) as held",
+        );
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("the connection holding the lock did not answer in 10s")), 10_000);
+        });
+        const still = (await Promise.race([asked, timeout])).rows[0]?.held === true;
+        if (!still) lost ??= new Error("the lock is no longer held on its connection");
+        return still;
+      } catch (err) {
+        lost ??= err as Error;
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     leave() {
       leaving ??= (async () => {
         if (!held && lost === null) {

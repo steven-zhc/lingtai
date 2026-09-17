@@ -84,12 +84,36 @@ describe("a place in the queue for the lock", () => {
       const copy = await acquireDaemonLock({ key: k });
       expect(copy.ok).toBe(false);
       await vi.waitFor(() => expect(place.held()).toBe(true));
+      expect(await place.confirm()).toBe(true);
     } finally {
       await place.leave();
     }
     const after = await acquireDaemonLock({ key: k });
     expect(after.ok).toBe(true);
     if (after.ok) await after.lock.release();
+  });
+
+  it("does not confirm a lock its connection no longer holds, though it was granted", async () => {
+    const k = key();
+    const place = await queueForDaemonLock({ key: k, name: "lingtai-test-dropped" });
+    try {
+      await vi.waitFor(() => expect(place.held()).toBe(true));
+      // The session ends from outside, as a dropped connection does: Postgres releases the lock with it.
+      const admin = new pg.Client({ connectionString: directDatabaseUrl() });
+      await admin.connect();
+      try {
+        await admin.query("select pg_terminate_backend(pid) from pg_stat_activity where application_name = 'lingtai-test-dropped'");
+      } finally {
+        await admin.end();
+      }
+      expect(await place.confirm()).toBe(false);
+      expect(place.lost()).not.toBeNull();
+      const copy = await acquireDaemonLock({ key: k });
+      expect(copy.ok).toBe(true);
+      if (copy.ok) await copy.lock.release();
+    } finally {
+      await place.leave();
+    }
   });
 
   it("leaves the queue when it leaves before its turn, so it never holds the lock afterwards", async () => {
