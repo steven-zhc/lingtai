@@ -57,6 +57,7 @@ import { requeueCommand } from "./requeue.ts";
 import { pauseCommand } from "./pause.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
+import { releaseCheck } from "./install.ts";
 import { status } from "./status.ts";
 import { versionLine } from "./version.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
@@ -195,15 +196,39 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai now <project> --issue <n> ask for one ahead of the queue
   lingtai projection lag            how far each projection is behind the log
   lingtai projection rebuild <name> drop the table, reset the checkpoint, replay
-  lingtai help
   lingtai version                   the version, and which artifact: platform,
                                 binary or script, and the Node running it
+  lingtai upgrade                   fetch the newest release from GitHub Releases,
+                                check its checksums, unpack it beside this one
+                                in ~/.lingtai/versions, drain what conducts,
+                                then move ~/.local/bin/lingtai. Starts nothing.
+                                With lingtai doctor, the one request to the
+                                network this tool makes on its own account
+    --despite-doctor            upgrade in spite of failed doctor checks
+  lingtai rollback [<version>]      point ~/.local/bin/lingtai at an older version
+                                still in ~/.lingtai/versions — the newest one
+                                below the current, unless named
+  lingtai uninstall                 ask once, remove everything under ~/.lingtai
+                                and the shim, then name what it could not: the
+                                GitHub App, and the log in Postgres
+    --yes                       do not ask
+    --nothing-conducts          remove a conductor's state though no log is
+                                configured here to ask the lock
+  lingtai help
 
 Projections: ${PROJECTIONS.map((p) => p.name).join(", ")}
 `;
 
 async function doctor(): Promise<number> {
   const report = await doctorReport();
+  // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
+  // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
+  // and a restart is neither.
+  const release = await releaseCheck({ fetch, env: process.env, self: import.meta.filename });
+  report.results.push(release);
+  if (release.status === "ok") report.ok++;
+  else if (release.status === "warn") report.warned++;
+  else report.skipped++;
   console.log(formatReport(report));
   // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
   // does not refuse on the same number: a failure marked `restartAnswers` exits
@@ -1109,6 +1134,8 @@ async function main(argv: string[]): Promise<number> {
       return controlCommand("now", rest);
     case "projection":
       return projectionCommand(rest);
+    // `entry.ts` answers this before the log is loaded; here for a process
+    // started from this file, as a service's plist starts it.
     case "version":
       console.log(versionLine());
       return 0;

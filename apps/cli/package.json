@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "lingtai": "./src/lingtai.ts"
+    "lingtai": "./src/entry.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

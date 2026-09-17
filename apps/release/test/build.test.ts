@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +25,10 @@ import { buildRelease, layout, nativeFiles } from "../src/build.ts";
  * binary that works, and CI runs this file on each of the four platforms. It
  * needs `node --build-sea`, so on an older Node those tests are skipped and say
  * why in their names.
+ *
+ * Then `install.sh` over that binary, packed as a tag publishes it (#184): the
+ * installed copy is the one that has to serve the board, after the shim has
+ * moved forward and back.
  */
 const work = mkdtempSync(join(tmpdir(), "lingtai-release-"));
 const first = join(work, "first");
@@ -99,15 +104,77 @@ describe(`pnpm binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"
   );
 });
 
+describe(`install.sh over the binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"}`, () => {
+  it.runIf(sea)("installs it, and after an upgrade and a rollback the older directory still serves the board", async () => {
+    const workspace = JSON.parse(readFileSync(join(import.meta.dirname, "../../../package.json"), "utf8"));
+    const version: string = workspace.version;
+    const platform = platformName();
+    if (!existsSync(join(first, "lingtai"))) buildBinary({ dist: first });
+
+    // As `.github/workflows/release.yml` packs and sums them.
+    const releases = join(work, "releases");
+    const publish = (v: string, lingtaiDir: string) => {
+      const dir = join(releases, `v${v}`);
+      mkdirSync(dir, { recursive: true });
+      tar(join(dir, `lingtai-${platform}.tar.gz`), lingtaiDir, "lingtai");
+      tar(join(dir, "board.tar.gz"), first, "board");
+      const sum = (name: string) => `${createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")}  ${name}`;
+      writeFileSync(join(dir, "SHA256SUMS"), `${sum(`lingtai-${platform}.tar.gz`)}\n${sum("board.tar.gz")}\n`);
+    };
+    publish(version, first);
+    // A newer release to upgrade to: the binary cannot be rebuilt at another
+    // version here, so it is a script that says one.
+    const [major, minor, patch] = version.split(/[.-]/).map(Number);
+    const newer = `${major}.${minor}.${patch! + 1}`;
+    const fake = join(work, "fake-newer");
+    mkdirSync(fake, { recursive: true });
+    writeFileSync(join(fake, "lingtai"), `#!/bin/sh\necho "lingtai ${newer} ${platform} (script)"\n`);
+    chmodSync(join(fake, "lingtai"), 0o755);
+    publish(newer, fake);
+
+    const user = join(work, "user");
+    const env: NodeJS.ProcessEnv = { ...childEnv(), HOME: user, LINGTAI_RELEASES_URL: `file://${releases}` };
+    delete env["LINGTAI_HOME"];
+    delete env["LINGTAI_BIN_DIR"];
+    const installer = join(import.meta.dirname, "..", "..", "site", "public", "install.sh");
+    const install = (v: string) => {
+      const ran = spawnSync("sh", [installer], { env: { ...env, LINGTAI_VERSION: v }, cwd: work, encoding: "utf8" });
+      expect(ran.status, `${ran.stdout}${ran.stderr}`).toBe(0);
+    };
+    const shim = join(user, ".local", "bin", "lingtai");
+    const says = () => spawnSync(shim, ["version"], { env, cwd: work, encoding: "utf8" }).stdout.trim();
+
+    install(version);
+    expect(says()).toContain(`lingtai ${version} ${platform} (binary,`);
+    install(newer);
+    expect(says()).toContain(`lingtai ${newer} `);
+
+    // The older binary, run by its own path, moves the shim back to the newest below.
+    const old = join(user, ".lingtai", "versions", version, "lingtai");
+    const back = spawnSync(old, ["rollback"], { env, cwd: work, encoding: "utf8" });
+    expect(back.status, `${back.stdout}${back.stderr}`).toBe(0);
+    expect(says()).toContain(`lingtai ${version} ${platform} (binary,`);
+
+    // Installed, `.env.local` is looked for one directory above the binary.
+    writeFileSync(join(user, ".lingtai", "versions", ".env.local"), "LINGTAI_DATABASE_URL=postgres://127.0.0.1:1/none\n");
+    await servesAPage(shim, [], env);
+  });
+});
+
+function tar(out: string, dir: string, entry: string): void {
+  const ran = spawnSync("tar", ["-czf", out, "-C", dir, entry], { encoding: "utf8", env: { ...process.env, COPYFILE_DISABLE: "1" } });
+  expect(ran.status, ran.stderr).toBe(0);
+}
+
 /**
  * Start `lingtai board` from a build and fetch a page and its stylesheet.
  */
-async function servesAPage(command: string, args: string[]): Promise<void> {
+async function servesAPage(command: string, args: string[], env: NodeJS.ProcessEnv = childEnv()): Promise<void> {
   const port = await freePort();
 
   const board = spawn(command, [...args, "board", "--port", String(port)], {
     cwd: work,
-    env: childEnv(),
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   boards.push(board);

@@ -13,7 +13,7 @@
     "binary": "pnpm --filter @lingtai/release binary",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",
-    "lingtai": "node apps/cli/src/lingtai.ts",
+    "lingtai": "node apps/cli/src/entry.ts",
     "contract:emit": "pnpm --filter @lingtai/event-store contract:emit",
     "db:plan": "pnpm --filter @lingtai/event-store db:plan",
     "db:init": "pnpm --filter @lingtai/event-store db:init",
