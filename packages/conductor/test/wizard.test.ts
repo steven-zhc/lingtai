@@ -366,7 +366,7 @@ describe("the recipe the button writes", () => {
   /**
    * **The file `Recheck` reads, and nothing in the repository** (#180). The
    * press writes `~/.lingtai/<project>/recipe.yml` and the page's agent and
-   * limits into the machine file, and `resolveLocalRecipe` — what `lingtai add`
+   * limits in that same file, and `resolveLocalRecipe` — what `lingtai add`
    * calls — reads back exactly the recipe the page built. So a pending card
    * has a recipe to find, and no pull request exists to wait for.
    */
@@ -381,8 +381,9 @@ describe("the recipe the button writes", () => {
     expect(calls).toEqual([]);
 
     const written = await readFile(recipePath(project, home), "utf8");
-    expect(written).not.toMatch(/^\s+agent:/m);
-    expect(written).not.toMatch(/^\s+limits:/m);
+    expect(written).toMatch(/^\s+agent:/m);
+    expect(written).toMatch(/^\s+limits:/m);
+    expect(await readdir(home)).not.toContain("config.yml");
     const resolved = await resolveLocalRecipe(project, {
       home,
       signedIn: async () => {
@@ -390,7 +391,7 @@ describe("the recipe the button writes", () => {
       },
     });
     expect(resolved.recipe).toEqual(recipe);
-    expect(resolved.provenance?.["runtime.agent"]).toContain(`projects.${project}`);
+    expect(resolved.provenance?.["runtime.agent"]).toContain(recipePath(project, home));
 
     const state = reduceProject(await store.read(projectStream(project)));
     expect(state.base).toBe("develop");
@@ -398,10 +399,10 @@ describe("the recipe the button writes", () => {
   });
 
   /** The machine file keeps everything it already said. */
-  it("adds the project's runtime to a machine file without disturbing the rest of it", async () => {
+  it("writes project runtime in its recipe without disturbing machine settings", async () => {
     const project = fresh();
     const home = await machine();
-    const before = "# mine\nruntime:\n  agent: codex\nprojects:\n  other:\n    runtime:\n      limits: { rounds: 1 }\n";
+    const before = "# mine\nboard:\n  port: 3200\nruntime:\n  assignee: {login: alice, take: both}\n";
     await writeFile(machinePath(home), before);
 
     const started = await startOnboarding({
@@ -414,9 +415,7 @@ describe("the recipe the button writes", () => {
 
     expect(started.ok).toBe(true);
     const after = await readFile(machinePath(home), "utf8");
-    expect(after).toContain("# mine");
-    expect(after).toContain("agent: codex");
-    expect(after).toContain("rounds: 1");
+    expect(after).toBe(before);
     const resolved = await resolveLocalRecipe(project, { home, signedIn: async () => [] });
     expect(resolved.recipe.runtime.agent).toBe("claude-code");
   });

@@ -2,12 +2,13 @@
 /**
  * `lingtai` — the entry, in front of `lingtai.ts`.
  *
- * **Five commands answer before the rest is imported** (#184, #186): `version`,
- * `upgrade`, `rollback`, `uninstall` and `init`. Everything `lingtai.ts` imports
+ * Install/init commands and migration help answer before the rest is imported
+ * (#184, #186, #201). Everything `lingtai.ts` imports
  * loads `@lingtai/event-store`, whose client is built at module scope and throws
  * without a database URL — which a machine that has only just installed does
  * not have, one being uninstalled may no longer, and `init` is what gives it
- * one. So these are dispatched from here, and every other command is
+ * one. Migration loads registration only once preview/apply is requested.
+ * These are dispatched from here, and every other command is
  * `lingtai.ts`, unchanged.
  *
  * A dynamic `import()` and not a static one, since a static import is evaluated
@@ -21,7 +22,14 @@ import { INSTALL_COMMANDS, installCommand, runningFrom, type AppFacts, type Drai
 
 const argv = process.argv.slice(2);
 
-if (argv[0] === "init") {
+if (argv[0] === "migrate-runtime" || (argv[0] === "upgrade" && argv.includes("--migrate-runtime"))) {
+  import("./migrate-runtime.ts")
+    .then(({ migrateRuntimeCommand, liveMigrationWorld }) => migrateRuntimeCommand(
+      argv.slice(1).filter((a) => a !== "--migrate-runtime"), liveMigrationWorld()))
+    .then((code) => { process.exitCode = code; }, (error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1;
+    });
+} else if (argv[0] === "init") {
   // Only once asked: `init.ts` loads the board's server module, and no other command here needs it.
   import("./init.ts")
     .then(({ initCommand, liveInitWorld }) => initCommand(argv.slice(1), liveInitWorld()))

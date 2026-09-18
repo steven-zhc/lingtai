@@ -1,7 +1,7 @@
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
- * role-specific agent/model/limits in the recipe (0053). `local.ts` still
- * reads old machine runtime fields until the explicit migration (#201).
+ * role-specific agent/model/limits in the recipe (0053). `local.ts` refuses
+ * old machine runtime fields until the explicit migration (#201).
  * `local.ts` reads it; this file is its schema.
  *
  * **It is not in the managed repository any more.** A `.lingtai/config.yaml`

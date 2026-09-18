@@ -193,8 +193,7 @@ export function nothingChecks(base: string): string {
  * written, where, and what is still to happen.
  *
  * **Where is this machine, and never the repository** (0046 §3). The recipe is
- * the file the button wrote; the agent and limits live beside every other
- * project's in the machine file; and the repository is named only to say that
+ * the file the button wrote, including its agent and limits; the repository is named only to say that
  * nothing went to it.
  *
  * **What is left is `Recheck`, and never "install the App".** The button only
@@ -205,10 +204,8 @@ export function nothingChecks(base: string): string {
  * installation's permissions and the recipe, and that is what is named.
  */
 export function onboardingWritten(slug: string, path: string): string {
-  const project = slug.slice(slug.lastIndexOf("/") + 1);
   return (
-    `Written on this machine: the recipe is ${path}, and the agent and limits are ` +
-    `projects.${project}.runtime in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
+    `Written on this machine: the recipe, including its agent and limits, is ${path}. Nothing was written to ${slug}. ` +
     "Onboarding is recorded — press Recheck on the board's pending card to register it: it " +
     `checks the GitHub App's permissions on ${slug} and reads that recipe.`
   );

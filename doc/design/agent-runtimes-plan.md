@@ -24,4 +24,6 @@ GitHub 的 native sub-issues 表达归属，native blocked-by 表达依赖。以
 
 现有 #196 是调度任务的外部前置依赖，复用其无审查结论的失败语义；#195、#197 的修复需要保留，但不重复建票。#34、#160、#188 的更广范围不纳入此 epic。
 
+#201 的命令、迁移边界与恢复协议见 [Runtime migration contract](runtime-migration-contract.md)。
+
 每张 ticket 包含面向人的四行 Summary、面向 agent 的实现契约与代码证据，以及可验证的 Done when。验收必须包括 macOS/Linux 的真实进程、权限与 worktree 行为；单靠配置或 mock 不算完成。

@@ -10,8 +10,8 @@
  *
  * **Onboarding ends by writing, on this machine** (0046 §3, #180). A new recipe
  * goes through `startOnboarding` — parsed by the system's own parser on the
- * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's agent and
- * limits under `projects.<project>.runtime` in `~/.lingtai/config.yml`, and
+ * bytes, written to `~/.lingtai/<project>/recipe.yml` with its agent and
+ * limits, and
  * `ProjectOnboardingStarted` appended — so the board draws a pending card whose
  * `Recheck` reads exactly that file. Nothing is written to the repository.
  *
@@ -32,7 +32,6 @@ import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
 import {
   Recipe,
-  declaresProjectRuntime,
   editRecipe,
   hashRecipe,
   machineFiles,
@@ -46,7 +45,7 @@ import { actor } from "../../../lib/actor.ts";
 export type Finished =
   | {
       ok: true;
-      /** The project recipe; legacy runtime placement is retained until #201. */
+      /** The project recipe, including agent and limits. */
       file: string;
       path: string;
       /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
@@ -109,9 +108,8 @@ export async function finishWizard(input: {
  * written whole, and where that still does not, nothing is offered.
  *
  * Recipes declaring project runtime choices keep those choices in the recipe
- * (0053). Legacy recipes retain the machine write path until #201 migrates
- * them. Neither an unrelated edit nor changing agent moves a project choice
- * back to the legacy file. Machine-owned assignees are not emitted.
+ * (0053). Legacy machine runtime fields require explicit migration first.
+ * Machine-owned assignees are not emitted.
  */
 export async function editExisting(
   existing: string,
@@ -119,22 +117,16 @@ export async function editExisting(
   at: { project: string; current: Recipe; machine: string | null; home?: string },
 ): Promise<Finished> {
   const ref = state.draft.base;
-  let declaration: Record<string, unknown> = {};
   const defaults = (raw: Record<string, unknown>): string[] => {
     if (raw["runtime"] === undefined) raw["runtime"] = {};
     return [];
   };
-  const { recipe } = resolveSource(existing, ref, recipePath(at.project, at.home), (raw) => {
-    declaration = raw;
-    return defaults(raw);
-  });
-  const projectRuntime = declaresProjectRuntime(declaration);
+  const { recipe } = resolveSource(existing, ref, recipePath(at.project, at.home), defaults);
   const drafted = Recipe.parse(applyDraft(at.current, state));
   const after = Recipe.parse({
     ...drafted,
     runtime: {
       ...drafted.runtime,
-      ...(projectRuntime ? {} : { agent: recipe.runtime.agent, limits: recipe.runtime.limits }),
       assignee: recipe.runtime.assignee,
     },
   });
@@ -157,27 +149,22 @@ export async function editExisting(
     }
   }
 
-  const runtime = projectRuntime ? [] : changesFrom(at.current, drafted)
-    .filter((c) => c.path[0] === "runtime" && (c.path[1] === "agent" || c.path[1] === "limits"));
-  let machine: string | null = null;
-  if (runtime.length > 0) {
-    const split = machineFiles({
-      file,
-      recipe: drafted,
-      project: at.project,
-      machine: at.machine,
-      ...(at.home === undefined ? {} : { home: at.home }),
-      replace: true,
-    });
-    if (!split.ok) return { ok: false, refusals: [split.refusal] };
-    machine = split.machine;
-  }
+  const split = machineFiles({
+    file,
+    recipe: drafted,
+    project: at.project,
+    machine: at.machine,
+    ...(at.home === undefined ? {} : { home: at.home }),
+    replace: true,
+  });
+  if (!split.ok) return { ok: false, refusals: [split.refusal] };
+  if (!describes(split.recipe)) return { ok: false, refusals: ["project runtime changes would not read back as the recipe this page describes"] };
   return {
     ok: true,
-    file,
+    file: split.recipe,
     path: recipePath(at.project, at.home),
-    machine,
-    changed: [...changes, ...runtime].map((c) => c.path.join(".")),
+    machine: split.machine,
+    changed: changes.map((c) => c.path.join(".")),
     written: false,
   };
 }

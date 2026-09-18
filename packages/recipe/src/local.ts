@@ -3,11 +3,9 @@
  * half beside it in `~/.lingtai/config.yml`
  * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3).
  *
- * 0053 puts agent and limits in the project recipe. Until #201 migrates old
- * files, recipes without those choices retain the old machine fallback.
- * Writing new recipe choices alongside legacy machine choices refuses with a
- * migration message; neither source silently overrides the other. Assignees
- * remain machine-owned.
+ * 0053 puts agent and limits in the project recipe. Legacy machine choices
+ * require the explicit all-project migration (#201); they never remain a
+ * second source for dispatch. Assignees remain machine-owned.
  *
  * Nothing here makes a request. The file is read on every resolve, as the
  * branch was, so an edit reaches the next run and a daemon holds nothing stale.
@@ -25,9 +23,9 @@ import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
-import { RecipeInvalidError, RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
+import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
 import type { RuntimeFieldSource } from "./runtimes.ts";
-import { applyPreset, declaresProjectRuntime } from "./presets.ts";
+import { applyPreset } from "./presets.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -39,7 +37,7 @@ export function machinePath(home: string = stateDir()): string {
   return join(home, "config.yml");
 }
 
-/** The limits a machine may set. Every key optional: an absent one is the default, and says so. */
+/** Legacy machine limits remain parseable for explicit migration only. */
 const MachineLimits = z.strictObject({
   turns: z.number().int().positive().optional(),
   wall: z.string().optional(),
@@ -48,7 +46,7 @@ const MachineLimits = z.strictObject({
 });
 
 /**
- * `runtime` in the machine file: the agent and the limits, and nothing else.
+ * Machine-owned assignees, plus agent/limits accepted only for migration.
  * Strict, so `tier`, `prompt` or `budget` written here is refused rather than
  * dropped — those are about how this repository's work is run and stay in the
  * recipe.
@@ -75,10 +73,29 @@ const MachineRuntime = z.strictObject({
  */
 export const MachineConfig = z.object({
   runtime: MachineRuntime.optional(),
-  /** Per project, over the machine-wide `runtime`: a person may want a different agent for one repository. */
+  /** Scoped assignees and legacy choices awaiting migration. */
   projects: z.record(z.string(), z.strictObject({ runtime: MachineRuntime.optional() })).optional(),
 });
 export type MachineConfig = z.infer<typeof MachineConfig>;
+
+/** Kept parseable solely for preview/apply; never accepted by a new dispatch. */
+export function legacyRuntimeFields(machine: MachineConfig): string[] {
+  const fields: string[] = [];
+  const collect = (at: string, runtime: MachineConfig["runtime"]) => {
+    for (const key of ["agent", "limits"] as const) if (runtime?.[key] !== undefined) fields.push(`${at}.${key}`);
+  };
+  collect("runtime", machine.runtime);
+  for (const [project, scoped] of Object.entries(machine.projects ?? {})) collect(`projects.${project}.runtime`, scoped.runtime);
+  return fields;
+}
+
+export class RuntimeMigrationRequired extends Error {
+  override readonly name = "RuntimeMigrationRequired";
+  constructor(path: string, fields: readonly string[]) {
+    super(`runtime: unresolved migration sources in ${path} (${fields.join(", ")}) coexist with recipe runtime ownership — ` +
+      "migrate with `lingtai migrate-runtime` (preview), then `lingtai migrate-runtime --apply`; nothing was overridden");
+  }
+}
 
 /** Which runtimes are signed in on this machine. Asked only when no file names one. */
 export type SignedIn = () => Promise<readonly RuntimeId[]>;
@@ -234,6 +251,14 @@ export async function resolveLocalRecipe(
   }
 
   const machine = parseMachineConfig(await read(machineFile), machineFile, project, home);
+  const legacy = legacyRuntimeFields(machine);
+  if (legacy.length > 0) throw new RuntimeMigrationRequired(machineFile, legacy);
+  const manifestPath = join(home, "migrations", "runtime-v1.json");
+  const manifest = await read(manifestPath);
+  if (manifest !== null) {
+    const pending = z.object({ version: z.literal(1), complete: z.boolean(), projects: z.array(z.string()) }).parse(JSON.parse(manifest));
+    if (!pending.complete) throw new RuntimeMigrationRequired(manifestPath, [`unfinished migration for projects: ${pending.projects.join(", ")}`]);
+  }
   const scoped = machine.projects?.[project]?.runtime;
   const shared = machine.runtime;
   const scopedAt = `${machineFile} (projects.${project})`;
@@ -255,33 +280,19 @@ export async function resolveLocalRecipe(
     return [];
   });
   const declaredRuntime = (applyPreset(declaration).recipe as { runtime: Record<string, unknown> }).runtime;
-  const ownsRuntime = declaresProjectRuntime(declaration);
   const declaredAgent = "agent" in declaredRuntime;
   const projectAgentFrom = "agent" in own ? path : `preset:${preview.preset}`;
-  const legacyRuntime = scoped?.agent !== undefined || shared?.agent !== undefined
-    || scoped?.limits !== undefined || shared?.limits !== undefined;
-  if (ownsRuntime && legacyRuntime) {
-    throw new RecipeInvalidError(options.base ?? path, [
-      `runtime: recipe agent/limits and legacy runtime fields in ${machineFile} coexist — ` +
-        "migrate the machine choices to every affected project recipe (#201); nothing was overridden",
-    ], path);
-  }
-
   const named = declaredAgent
     ? { agent: preview.recipe.runtime.agent, from: projectAgentFrom }
-    : scoped?.agent
-    ? { agent: scoped.agent, from: scopedAt }
-    : shared?.agent
-      ? { agent: shared.agent, from: machineFile }
-      : null;
+    : null;
   const agent = await resolveAgent(named, options.signedIn, path);
-  // A detected/legacy agent is not an explicit recipe override that resets
+  // A detected agent is not an explicit recipe override that resets
   // model inheritance. Materialise a model-only preset before injecting it.
   const inheritedModel = !declaredAgent && own["model"] === undefined ? preview.recipe.runtime.model : undefined;
 
   const origins = new Map<string, RuntimeFieldSource>();
   origins.set("runtime.agent", {
-    kind: declaredAgent ? "agent" in own ? "configured" : "preset" : named ? "legacy-machine" : "detected",
+    kind: declaredAgent ? "agent" in own ? "configured" : "preset" : "detected",
     path: "runtime.agent", location: agent.from,
   });
   if (inheritedModel !== undefined) {
@@ -294,15 +305,13 @@ export async function resolveLocalRecipe(
   const declaredLimits = (declaredRuntime["limits"] ?? {}) as Partial<Recipe["runtime"]["limits"]>;
   const ownLimits = (own["limits"] ?? {}) as Partial<Recipe["runtime"]["limits"]>;
   for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
-    const value = ownsRuntime ? declaredLimits[key] : scoped?.limits?.[key] ?? shared?.limits?.[key];
+    const value = declaredLimits[key];
     const from =
-      ownsRuntime && value !== undefined ? ownLimits[key] !== undefined ? path : `preset:${preview.preset}`
-        : !ownsRuntime && scoped?.limits?.[key] !== undefined ? scopedAt
-          : !ownsRuntime && shared?.limits?.[key] !== undefined ? machineFile : "default";
+      value !== undefined ? ownLimits[key] !== undefined ? path : `preset:${preview.preset}` : "default";
     if (value !== undefined) {
       limits[key] = value;
       origins.set(`runtime.limits.${key}`, {
-        kind: ownsRuntime ? ownLimits[key] !== undefined ? "configured" : "preset" : "legacy-machine",
+        kind: ownLimits[key] !== undefined ? "configured" : "preset",
         path: `runtime.limits.${key}`, location: from,
       });
     }
@@ -377,8 +386,7 @@ export type MachineFiles =
   | {
       ok: true;
       /**
-       * `recipePath(project)`'s text: the recipe without `runtime.agent`,
-       * `runtime.limits` and `runtime.assignee`, each of which is carried to `machine`.
+       * Project-owned agent and limits stay here; only assignee moves to `machine`.
        */
       recipe: string;
       /** `machinePath()`'s new text, or null when it already says this and needs no write. */
@@ -387,18 +395,10 @@ export type MachineFiles =
   | { ok: false; refusal: string };
 
 /**
- * A whole recipe — the wizard's, with its agent and limits in it — split into
- * the files `resolveLocalRecipe` reads (0046 §3, #180).
- *
- * The agent and the limits the page chose are not dropped: they go under
- * `projects.<project>.runtime` in the machine file, which is where a choice for
- * one repository lives, and every other byte of that file is kept. So is the
- * project's `runtime.assignee` (#181), which the page does not show: an edit to
- * the agent or the limits replaces the section without dropping whose tickets
- * this machine takes. One written in the recipe text goes there too. A machine
- * file that already names a *different* runtime for this project is refused
- * rather than overwritten — both are a person's recorded choice, and which one
- * is meant is theirs to say.
+ * Materialize wizard choices in the project recipe (0053). Assignee remains
+ * machine-owned (0046 §3, #181); an explicit assignee in generated text is moved
+ * there without changing any other machine fields. Legacy agent/limits require
+ * the all-project migration before onboarding or edits can write either file.
  */
 export function machineFiles(input: {
   /** The recipe as emitted, comments and all. */
@@ -409,61 +409,40 @@ export function machineFiles(input: {
   machine: string | null;
   home?: string;
   /**
-   * Set the project's section even when it already says something else. For
+   * Set the project's assignee even when it already says something else. For
    * an edit a person made to that very section on a page showing its current
    * value — never for a first onboarding, which must not overwrite a choice.
    */
   replace?: boolean;
 }): MachineFiles {
   const home = input.home ?? stateDir();
-  const doc = parseDocument(input.file);
-  const toJSON = (node: unknown) =>
-    node !== null && typeof node === "object" && "toJSON" in node ? (node as { toJSON: () => unknown }).toJSON() : node;
-  const written = doc.hasIn(["runtime", "assignee"]) ? toJSON(doc.getIn(["runtime", "assignee"])) : undefined;
-  // A file already without them — the machine's own, being edited — has no `runtime` to delete from.
-  if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
-  if (doc.hasIn(["runtime", "limits"])) doc.deleteIn(["runtime", "limits"]);
-  if (doc.hasIn(["runtime", "assignee"])) doc.deleteIn(["runtime", "assignee"]);
-  const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
-
-  const at = ["projects", input.project, "runtime"];
   const path = machinePath(home);
-  const choose = (kept: unknown) => ({
-    agent: input.recipe.runtime.agent,
-    limits: { ...input.recipe.runtime.limits },
-    ...(written !== undefined ? { assignee: written } : kept !== undefined ? { assignee: kept } : {}),
-  });
-
-  if (input.machine === null || input.machine.trim() === "") {
-    const created = new Document({ projects: { [input.project]: { runtime: choose(undefined) } } });
-    return { ok: true, recipe, machine: created.toString() };
+  const config = parseMachineConfig(input.machine, path, input.project, home);
+  const legacy = legacyRuntimeFields(config);
+  if (legacy.length) return { ok: false, refusal: new RuntimeMigrationRequired(path, legacy).message };
+  const doc = parseDocument(input.file);
+  if (doc.errors.length || !isMap(doc.contents)) return { ok: false, refusal: "recipe must parse as a YAML mapping" };
+  const written = doc.getIn(["runtime", "assignee"]);
+  if (written !== undefined) doc.deleteIn(["runtime", "assignee"]);
+  const declared = (applyPreset(doc.toJS()).recipe as { runtime?: { agent?: RuntimeId; limits?: Record<string, unknown> } }).runtime;
+  // Making a detected agent explicit must not discard a preset's model.
+  if (declared?.agent === undefined && input.recipe.runtime.model !== undefined) {
+    doc.setIn(["runtime", "model"], input.recipe.runtime.model);
   }
-
-  const machine = parseDocument(input.machine);
-  if (machine.errors.length > 0 || !isMap(machine.contents)) {
-    return {
-      ok: false,
-      refusal: `${path} does not parse as a mapping, so ${input.project}'s agent and limits cannot be added to it — fix it and press this again`,
-    };
+  if (declared?.agent !== input.recipe.runtime.agent) doc.setIn(["runtime", "agent"], input.recipe.runtime.agent);
+  for (const [key, value] of Object.entries(input.recipe.runtime.limits)) {
+    if (!isDeepStrictEqual(declared?.limits?.[key], value)) doc.setIn(["runtime", "limits", key], value);
   }
-  // Not the resolved recipe's assignee: its login may be the machine-wide one,
-  // and copying it into this project's section would stop it following that.
-  const kept = machine.hasIn([...at, "assignee"]) ? toJSON(machine.getIn([...at, "assignee"])) : undefined;
-  const chosen = choose(kept);
-  if (machine.hasIn(at)) {
-    const json = toJSON(machine.getIn(at));
-    if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };
-    if (input.replace) {
-      machine.setIn(at, chosen);
-      return { ok: true, recipe, machine: machine.toString() };
-    }
-    return {
-      ok: false,
-      refusal:
-        `${path} already sets projects.${input.project}.runtime to ${JSON.stringify(json)}, and this page chose ` +
-        `${JSON.stringify(chosen)}. Nothing was written — edit that section, or remove it and press this again`,
-    };
+  const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  if (written === undefined) return { ok: true, recipe, machine: null };
+  const machine = input.machine === null ? new Document({}) : parseDocument(input.machine);
+  const at = ["projects", input.project, "runtime", "assignee"];
+  const kept = machine.getIn(at);
+  const json = (node: unknown) => node && typeof node === "object" && "toJSON" in node ? (node as { toJSON(): unknown }).toJSON() : node;
+  if (kept !== undefined && !isDeepStrictEqual(json(kept), json(written)) && !input.replace) {
+    return { ok: false, refusal: `${path}: projects.${input.project}.runtime.assignee already differs; nothing was written` };
   }
-  machine.setIn(at, chosen);
+  if (isDeepStrictEqual(json(kept), json(written))) return { ok: true, recipe, machine: null };
+  machine.setIn(at, json(written));
   return { ok: true, recipe, machine: machine.toString() };
 }
