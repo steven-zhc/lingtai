@@ -34,6 +34,7 @@
  * they cannot.
  */
 import type { GateAction, Recipe, RecipeChange } from "@lingtai/recipe";
+import { LIMIT_DEFAULTS, projectLimits } from "@lingtai/recipe/limits";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
 
@@ -130,7 +131,7 @@ export interface Check {
 }
 
 export interface Limits {
-  turns: number;
+  turns: number | null;
   wall: string;
   rounds: number;
   restarts: number;
@@ -143,7 +144,9 @@ export interface Draft {
   exclude: string[];
   checks: Check[];
   envRequired: string[];
-  agent: "claude-code" | "codex";
+  agent: "claude-code" | "codex" | null;
+  /** Keep defaults out of saved YAML unless the operator actually configured them. */
+  configuredLimits: { turns: boolean; wall: boolean };
   closeOnLand: boolean;
   personApproves: boolean;
   limits: Limits;
@@ -232,6 +235,10 @@ export function onboardState(input: {
   scripts: readonly ScannedScript[];
   labels: readonly string[];
   doubts?: readonly string[];
+  /** Explicit null means the scan did not choose an agent. */
+  agent?: "claude-code" | "codex" | null;
+  /** Explicit actions are retained intact; only scan-generated builds are aggregated. */
+  proposedFromScan?: boolean;
 }): WizardState {
   const { recipe } = input;
   const picked = recipe.gates.proposed.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
@@ -239,12 +246,21 @@ export function onboardState(input: {
     ...picked.flatMap((run) => input.scripts.filter((s) => s.guessed && s.run === run)),
     ...input.scripts.filter((s) => !(s.guessed && picked.includes(s.run))),
   ];
-  const checks = ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run) }));
+  const checks: Check[] = input.proposedFromScan
+    ? ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run) }))
+    : [
+        ...recipe.gates.proposed.map((action, index) => ({
+          id: `${index}:${action.name}`, label: "run" in action ? `${action.name} — ${action.run}` : action.name,
+          ticked: true, action,
+        })),
+        ...input.scripts.filter((s) => !picked.includes(s.run))
+          .map((s) => ({ id: s.run, label: s.run, ticked: false })),
+      ];
   const noChecksFound = recipe.gates.proposed.length === 0;
   return {
     mode: "onboard",
     slug: input.slug,
-    draft: { ...fromRecipe(recipe, checks), personApproves: noChecksFound },
+    draft: { ...fromRecipe(recipe, checks), ...(input.agent !== undefined ? { agent: input.agent } : {}), personApproves: noChecksFound },
     kindOptions: union(recipe.source.kinds, input.labels),
     excludeOptions: union(recipe.source.exclude, input.labels),
     editing: null,
@@ -294,7 +310,7 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
 }
 
 function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
-  const { turns, wall, rounds, restarts } = recipe.runtime.limits;
+  const { turns, wall, rounds, restarts } = projectLimits(recipe);
   return {
     base: recipe.repo.base,
     submodules: recipe.repo.submodules,
@@ -303,6 +319,7 @@ function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
     checks,
     envRequired: [...recipe.env.required],
     agent: recipe.runtime.agent === "codex" ? "codex" : "claude-code",
+    configuredLimits: { turns: recipe.runtime.limits.turns !== undefined, wall: recipe.runtime.limits.wall !== undefined },
     closeOnLand: recipe.gates.end.some(closesOnLand),
     personApproves: recipe.gates.merge.some((a) => "human" in a),
     limits: { turns, wall, rounds, restarts },
@@ -352,8 +369,13 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
         settled: state.settled.includes(move.decision) ? state.settled : [...state.settled, move.decision],
         reopened: null,
       };
-    case "set":
-      return { ...state, draft: { ...draft, ...move.draft } };
+    case "set": {
+      const agent = move.draft.agent;
+      const turns = agent !== undefined && !draft.configuredLimits.turns
+        ? agent === "codex" ? null : LIMIT_DEFAULTS.turns
+        : draft.limits.turns;
+      return { ...state, draft: { ...draft, ...move.draft, limits: { ...draft.limits, turns } } };
+    }
     case "kind": {
       const on = draft.kinds.includes(move.label);
       if (on && (move.add || draft.kinds.length === 1)) return state;
@@ -395,7 +417,11 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
     case "env":
       return { ...state, draft: { ...draft, envRequired: [...new Set(move.names.filter(Boolean))] } };
     case "limit":
-      return { ...state, draft: { ...draft, limits: { ...draft.limits, [move.key]: move.value } } };
+      return { ...state, draft: { ...draft,
+        configuredLimits: move.key === "turns" || move.key === "wall"
+          ? { ...draft.configuredLimits, [move.key]: true } : draft.configuredLimits,
+        limits: { ...draft.limits, [move.key]: move.value },
+      } };
   }
 }
 
@@ -448,9 +474,11 @@ export function limitsSentence(limits: Limits): { ok: true; sentence: string } |
   } catch (err) {
     return { ok: false, refusal: (err as Error).message };
   }
-  if (wallMs <= 0) return { ok: false, refusal: `wall must be longer than nothing, not ${limits.wall}` };
+  if (!Number.isFinite(wallMs) || wallMs <= 0) return { ok: false, refusal: `wall must be positive and finite, not ${limits.wall}` };
   for (const key of ["turns", "rounds", "restarts"] as const) {
     const n = limits[key];
+    if (key === "turns" && n === null) continue;
+    if (n === null) return { ok: false, refusal: `${key} must be a whole number, not null` };
     if (!Number.isInteger(n) || n < (key === "turns" ? 1 : 0)) {
       return { ok: false, refusal: `${key} must be a whole number${key === "turns" ? " above 0" : ""}, not ${n}` };
     }
@@ -503,7 +531,7 @@ export function fastLine(draft: Draft, row: FastRowId): string {
     case "env.required":
       return draft.envRequired.length === 0 ? "nothing" : draft.envRequired.join(", ");
     case "runtime.agent":
-      return draft.agent;
+      return draft.agent ?? "choose an agent";
     case "gates.end":
       return draft.closeOnLand ? "close the issue" : "leave the issue open";
   }
@@ -513,7 +541,7 @@ export function fastLine(draft: Draft, row: FastRowId): string {
 export function settledLine(draft: Draft, decision: DecisionId): string {
   if (decision === "gates.merge") return draft.personApproves ? "a person approves" : "nobody approves";
   const { turns, wall, rounds, restarts } = draft.limits;
-  return `${turns} turns · ${wall} · ${rounds} rounds · ${restarts} restarts`;
+  return `${turns === null ? "no turns limit" : `${turns} turns`} · ${wall} · ${rounds} rounds · ${restarts} restarts`;
 }
 
 /**
@@ -522,6 +550,7 @@ export function settledLine(draft: Draft, decision: DecisionId): string {
  */
 export function finishRefusals(state: WizardState): string[] {
   const refusals: string[] = [];
+  if (state.draft.agent === null) refusals.push("runtime.agent: choose an agent explicitly for this project.");
   if (state.draft.kinds.length === 0) {
     refusals.push("source.kinds is empty — no issue would ever be work. Tick at least one kind.");
   }
@@ -544,12 +573,12 @@ export function finishRefusals(state: WizardState): string[] {
 export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
   const { draft } = state;
   const ticked = draft.checks.filter((c) => c.ticked);
-  const proposed: GateAction[] =
-    state.mode === "update"
-      ? ticked.flatMap((c) => (c.action === undefined ? [] : [c.action]))
-      : ticked.length === 0
-        ? []
-        : [{ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] }];
+  const scanned = ticked.filter((c) => c.action === undefined);
+  const proposed: GateAction[] = [
+    ...ticked.flatMap((c) => c.action === undefined ? [] : [c.action]),
+    ...(state.mode === "onboard" && scanned.length > 0
+      ? [{ name: "build", run: scanned.map((c) => c.label).join(" && "), timeout: "20m", env: [] }] : []),
+  ];
 
   const humans = recipe.gates.merge.filter((a) => "human" in a);
   const merge = draft.personApproves
@@ -572,8 +601,12 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
     gates: { ...recipe.gates, proposed, merge, end },
     runtime: {
       ...recipe.runtime,
-      agent: draft.agent,
-      limits: { ...recipe.runtime.limits, ...draft.limits },
+      agent: draft.agent ?? recipe.runtime.agent,
+      model: draft.agent !== recipe.runtime.agent ? undefined : recipe.runtime.model,
+      limits: { ...recipe.runtime.limits, ...draft.limits,
+        turns: draft.configuredLimits.turns ? draft.limits.turns ?? undefined : undefined,
+        wall: draft.configuredLimits.wall ? draft.limits.wall : undefined,
+      },
     },
   };
 }
@@ -587,6 +620,7 @@ const PATHS: readonly (readonly string[])[] = [
   ["gates", "proposed"],
   ["env", "required"],
   ["runtime", "agent"],
+  ["runtime", "model"],
   ["gates", "end"],
   ["gates", "merge"],
   ["runtime", "limits", "turns"],

@@ -6,13 +6,16 @@ import { describe, expect, it } from "vitest";
 import {
   AgentUnresolvedError,
   LIMIT_DEFAULTS,
+  PRESETS,
   MachineConfigInvalidError,
   RecipeInvalidError,
   RecipeMissingError,
   machineFiles,
   machinePath,
   recipePath,
+  projectLimits,
   resolveLocalRecipe,
+  resolveSource,
 } from "../src/index.ts";
 
 const HOME = "/home/me/.lingtai";
@@ -48,6 +51,63 @@ const withMachine = (machine: string | undefined, signedIn = signed("claude-code
 });
 
 describe("resolveLocalRecipe", () => {
+  describe("preset runtime choices", () => {
+    it.each([
+      { signedIn: [] }, { signedIn: ["claude-code"] }, { signedIn: ["claude-code", "codex"] },
+    ] as const)(
+      "retains preset agent/model and sources regardless of signed-in runtimes: $signedIn",
+      async ({ signedIn }) => {
+        PRESETS["local-runtime-test"] = {
+          runtime: { agent: "codex", model: "preset-model", limits: { turns: 9, wall: "1h" } },
+        };
+        try {
+          const source = `${RECIPE}extends: local-runtime-test\nruntime: {}\n`;
+          const path = recipePath("app", HOME);
+          const pure = resolveSource(source, "main", path);
+          let detected = false;
+          const local = await resolveLocalRecipe("app", {
+            home: HOME, read: files({ [path]: source }),
+            signedIn: async () => { detected = true; return signedIn; },
+          });
+          expect(detected).toBe(false);
+          expect(local.runtimes?.development).toEqual(pure.runtimes?.development);
+          expect(local.configHash).toBe(pure.configHash);
+          expect(local.provenance?.["runtime.agent"]).toBe("codex ← preset:local-runtime-test");
+          expect(local.provenance?.["runtime.limits.wall"]).toBe("1h ← preset:local-runtime-test");
+        } finally { delete PRESETS["local-runtime-test"]; }
+      },
+    );
+
+    it("refuses preset choices alongside legacy machine choices", async () => {
+      PRESETS["local-runtime-test"] = { runtime: { agent: "codex" } };
+      try {
+        await expect(resolveLocalRecipe("app", {
+          home: HOME, signedIn: signed(), read: files({
+            [recipePath("app", HOME)]: `${RECIPE}extends: local-runtime-test\n`,
+            [machinePath(HOME)]: "runtime: {agent: claude-code}\n",
+          }),
+        })).rejects.toThrow(/runtime:.*coexist.*migrate/);
+      } finally { delete PRESETS["local-runtime-test"]; }
+    });
+
+    it("retains a preset model when the inherited agent comes from login detection", async () => {
+      PRESETS["local-runtime-test"] = { runtime: { model: "preset-model" } };
+      try {
+        const path = recipePath("app", HOME);
+        const local = await resolveLocalRecipe("app", {
+          home: HOME, signedIn: signed("codex"),
+          read: files({ [path]: `${RECIPE}extends: local-runtime-test\n` }),
+        });
+        expect(local.runtimes?.development).toMatchObject({
+          agent: "codex", model: "preset-model",
+          provenance: {
+            agent: { kind: "detected" }, model: { kind: "preset", path: "runtime.model", location: "preset:local-runtime-test" },
+          },
+        });
+      } finally { delete PRESETS["local-runtime-test"]; }
+    });
+  });
+
   it("reads ~/.lingtai/<project>/recipe.yml, with no request", async () => {
     const resolved = await resolveLocalRecipe("app", withMachine(undefined));
     expect(recipePath("app", HOME)).toBe(`${HOME}/app/recipe.yml`);
@@ -88,6 +148,7 @@ describe("resolveLocalRecipe", () => {
       const resolved = await resolveLocalRecipe("app", withMachine(undefined, signed("codex")));
       expect(resolved.recipe.runtime.agent).toBe("codex");
       expect(resolved.provenance?.["runtime.agent"]).toContain("detected");
+      expect(resolved.runtimes?.development.provenance.agent.kind).toBe("detected");
     });
 
     it("is asked for, never picked, when more than one is signed in", async () => {
@@ -123,7 +184,9 @@ describe("resolveLocalRecipe", () => {
         "app",
         withMachine("runtime:\n  limits:\n    rounds: 3\nprojects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n"),
       );
-      expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3, wall: "1h" });
+      expect(projectLimits(resolved.recipe)).toEqual({ ...LIMIT_DEFAULTS, rounds: 3, wall: "1h" });
+      expect(resolved.recipe.runtime.limits.turns).toBeUndefined();
+      expect(resolved.runtimes?.development.provenance["limits.wall"]).toMatchObject({ kind: "legacy-machine" });
       expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${HOME}/config.yml`);
       expect(resolved.provenance?.["runtime.limits.wall"]).toContain("projects.app");
       expect(resolved.provenance?.["runtime.limits.turns"]).toBe(`${LIMIT_DEFAULTS.turns} ← default`);
@@ -246,15 +309,40 @@ describe("resolveLocalRecipe", () => {
       ).rejects.toThrow(MachineConfigInvalidError);
     });
 
-    it("runtime.agent or runtime.limits in the recipe names the machine file", async () => {
+    it("accepts project agent/model/limits without asking detection", async () => {
+      const path = recipePath("app", HOME);
       const read = files({
-        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n  limits:\n    turns: 5\n`,
+        [path]: `${RECIPE}runtime:\n  agent: codex\n  model: requested-model\n  limits:\n    wall: 20m\n`,
       });
-      const resolving = resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
-      await expect(resolving).rejects.toThrow(RecipeInvalidError);
-      await expect(
-        resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
-      ).rejects.toThrow(/runtime\.limits: moved to this machine.*config\.yml/);
+      const resolved = await resolveLocalRecipe("app", {
+        home: HOME, read,
+        signedIn: async () => { throw new Error("an explicit recipe choice must not be detected"); },
+      });
+      expect(resolved.runtimes?.development).toMatchObject({
+        agent: "codex", model: "requested-model", limits: { turns: null, wall: "20m" },
+        provenance: { agent: { kind: "configured", path: "runtime.agent", location: path } },
+      });
+    });
+
+    it("refuses coexisting recipe and legacy machine runtime choices until migration", async () => {
+      for (const machine of ["runtime:\n  agent: codex\n", "runtime:\n  limits: {turns: 5}\n"]) {
+        const read = files({
+          [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n`,
+          [machinePath(HOME)]: machine,
+        });
+        await expect(resolveLocalRecipe("app", { home: HOME, read, signedIn: signed() }))
+          .rejects.toThrow(/runtime:.*coexist.*migrate/);
+      }
+    });
+
+    it("refuses malformed recipe choices before detection can mask them", async () => {
+      let detected = false;
+      await expect(resolveLocalRecipe("app", {
+        home: HOME,
+        read: files({ [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: typo\n` }),
+        signedIn: async () => { detected = true; return ["claude-code"]; },
+      })).rejects.toThrow(/runtime.agent/);
+      expect(detected).toBe(false);
     });
   });
 });

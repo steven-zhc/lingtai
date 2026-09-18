@@ -17,6 +17,7 @@
 import type { RuntimeId } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import { Recipe } from "./recipe.ts";
+import type { z } from "zod";
 
 /**
  * The part of `@lingtai/github`'s client this reads through — structurally, so
@@ -58,9 +59,19 @@ export interface Proposal {
   recipe: Recipe;
   found: Found;
   refusals: string[];
+  /** A legacy-valid draft is not a selected agent. The wizard must ask explicitly. */
+  requiresAgentChoice: boolean;
+  /** Only scan-generated build actions may be rebuilt from script selections. */
+  proposedFromScan: boolean;
 }
 
 export interface ProposeOptions {
+  /** An explicit project choice wins over login detection and is retained verbatim. */
+  runtime?: z.input<typeof Recipe>["runtime"];
+  development?: Recipe["development"];
+  discussion?: Recipe["discussion"];
+  /** Explicit gate arrays replace the scan's proposal, retaining individual reviewers. */
+  gates?: z.input<typeof Recipe>["gates"];
   /**
    * The runtimes signed in on this machine, as `lingtai doctor`'s
    * `runtime: signed in` detects them. Passed in so this stays one answer about
@@ -128,6 +139,9 @@ export async function proposeRecipe(
 ): Promise<Proposal> {
   const m = /^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)$/.exec(slug.trim());
   if (!m) throw new Error(`"${slug}" is not owner/repo`);
+  // Validate before filling a missing choice: null/unknown agents cannot be
+  // replaced by detection, and arbitrary runtime arguments cannot be dropped.
+  if (options.runtime !== undefined) Recipe.shape.runtime.parse(options.runtime);
   const repoPath = `/repos/${m[1]}/${m[2]}`;
   const get = <T>(path: string) => client.request<T>("GET", `${repoPath}${path}`);
   const refusals: string[] = [];
@@ -316,21 +330,12 @@ export async function proposeRecipe(
   const plantAt = `${exampleDirs.length === 1 ? exampleDirs[0] : ""}.env.local`;
 
   // --- runtime.agent --------------------------------------------------------
-  const signedIn = options.signedIn ?? [];
-  const runtime: RuntimeId | null = signedIn.includes("claude-code")
-    ? "claude-code"
-    : signedIn.includes("codex")
-      ? "codex"
-      : null;
+  const signedIn = [...new Set(options.signedIn ?? [])];
+  const runtime: RuntimeId | null = options.runtime?.agent ?? (signedIn.length === 1 ? signedIn[0]! : null);
   if (runtime === null) {
-    refusals.push("no agent runtime is signed in on this machine — `lingtai doctor` says which is missing");
-  } else if (signedIn.length > 1) {
-    // Proposed, and never silently: 0046 §3's rule for `runtime.agent` is that
-    // more than one signed in is a question, and a proposal is where it is asked.
-    refusals.push(
-      `${signedIn.join(" and ")} are all signed in on this machine — ${runtime} is proposed, ` +
-        "and which one runs is a question for a person",
-    );
+    refusals.push(signedIn.length > 1
+      ? `${signedIn.join(" and ")} are all signed in — choose runtime.agent explicitly for this project`
+      : "no agent runtime is signed in on this machine — `lingtai doctor` says which is missing");
   }
 
   const recipe = Recipe.parse({
@@ -338,17 +343,21 @@ export async function proposeRecipe(
     repo: { base, submodules },
     source: { kinds: kinds.length > 0 ? kinds : [...PROPOSED_KINDS], exclude: [...PROPOSED_EXCLUDE] },
     env: { required, plantAt },
-    gates: {
+    gates: options.gates ?? {
       proposed,
       end: [{ name: "close the ticket", when: "landed", close: true }],
     },
-    runtime: { agent: runtime ?? "claude-code" },
+    runtime: { ...options.runtime, agent: runtime ?? "claude-code" },
+    ...(options.development !== undefined ? { development: options.development } : {}),
+    ...(options.discussion !== undefined ? { discussion: options.discussion } : {}),
   });
 
   return {
     recipe,
     found: { defaultBranch: base, submodules, labels, packageManager, scripts, envExamples, runtime },
     refusals,
+    requiresAgentChoice: runtime === null,
+    proposedFromScan: options.gates === undefined,
   };
 }
 

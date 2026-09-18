@@ -34,6 +34,7 @@ const start = (r: Recipe) =>
     recipe: r,
     scripts: r.gates.proposed.length === 0 ? [] : [{ dir: "", name: "test", run: "pnpm test", guessed: true }],
     labels: ["bug", "question"],
+    proposedFromScan: true,
   });
 
 const html = (state: WizardState, r: Recipe) =>
@@ -238,6 +239,89 @@ describe("an edit to a recipe that extends a preset", () => {
     });
     expect(resolved.recipe.runtime.limits.turns).toBe(7);
     expect(resolved.recipe.gates).toEqual(recipe.gates);
+  });
+});
+
+describe("an edit to project runtime choices (0053)", () => {
+  it("keeps preset runtime ownership and sources through a wizard save", async () => {
+    PRESETS["wizard-runtime-test"] = { runtime: { agent: "codex", model: "preset-model", limits: { wall: "1h" } } };
+    try {
+      const home = "/home/me/.lingtai";
+      const file = "version: 1\nextends: wizard-runtime-test\nrepo: {base: main}\nsource: {kinds: [feature]}\nenv: {plantAt: .env}\ngates: {proposed: [{name: review, agent: Check correctness}]}\n";
+      const read = (source: string) => async (path: string) => path === recipePath("shop", home) ? source : null;
+      const current = (await resolveLocalRecipe("shop", { home, signedIn: async () => [], read: read(file) })).recipe;
+      const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+        type: "limit", key: "rounds", value: 3,
+      });
+      const finished = await editExisting(file, state, { project: "shop", current, machine: null, home });
+      if (!finished.ok) throw new Error(finished.refusals.join("; "));
+      expect(finished.machine).toBeNull();
+      const saved = await resolveLocalRecipe("shop", { home, signedIn: async () => [], read: read(finished.file) });
+      expect(saved.recipe.runtime.limits.rounds).toBe(3);
+      expect(saved.runtimes?.development).toMatchObject({
+        agent: "codex", model: "preset-model", limits: { turns: null, wall: "1h" },
+        provenance: { agent: { kind: "preset" }, model: { kind: "preset" }, "limits.wall": { kind: "preset" } },
+      });
+      expect(saved.recipe.gates).toEqual(current.gates);
+    } finally { delete PRESETS["wizard-runtime-test"]; }
+  });
+
+  it("keeps a legacy recipe without a preset editable and leaves implicit limits out of saved files", async () => {
+    const home = "/home/me/.lingtai";
+    const file = "version: 1\nrepo: {base: main}\nsource: {kinds: [feature]}\nenv: {plantAt: .env}\ngates: {proposed: [{name: build, run: pnpm test}]}\n";
+    const current = (await resolveLocalRecipe("shop", { home, signedIn: async () => ["claude-code"],
+      read: async (path) => path === recipePath("shop", home) ? file : null,
+    })).recipe;
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+      type: "limit", key: "rounds", value: 3,
+    });
+    const finished = await editExisting(file, state, { project: "shop", current, machine: null, home });
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.file).toBe(file);
+    expect(finished.machine).toContain("rounds: 3");
+    expect(finished.machine).not.toMatch(/turns:|wall:/);
+  });
+
+  it("keeps choices in the recipe, resets the former model and preserves roles and machine assignees", async () => {
+    const home = "/home/me/.lingtai";
+    const file = `version: 1
+repo: {base: main}
+source: {kinds: [feature]}
+env: {plantAt: .env}
+# The project default
+runtime: {agent: codex, model: old-model, limits: {wall: 1h}}
+development:
+  runtime: {agent: codex}
+discussion:
+  runtime: {agent: claude-code}
+gates:
+  proposed:
+    - name: review
+      agent: Review prompt
+      runtime: {agent: claude-code, limits: {turns: 10}}
+`;
+    const machine = "runtime:\n  assignee: {login: bob, take: mine}\n";
+    const current = (await resolveLocalRecipe("shop", { home, signedIn: async () => [],
+      read: async (path) => path === recipePath("shop", home) ? file : machine,
+    })).recipe;
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+      type: "set", draft: { agent: "claude-code" },
+    });
+    const finished = await editExisting(file, state, { project: "shop", current, machine, home });
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.machine).toBeNull();
+    expect(finished.file).toContain("# The project default");
+    const resolved = await resolveLocalRecipe("shop", { home, signedIn: async () => [],
+      read: async (path) => path === recipePath("shop", home) ? finished.file : machine,
+    });
+    expect(resolved.recipe.runtime.agent).toBe("claude-code");
+    expect(resolved.recipe.runtime.model).toBeUndefined();
+    expect(resolved.recipe.runtime.limits.turns).toBeUndefined();
+    expect(resolved.recipe.runtime.assignee).toEqual({ login: "bob", take: "mine" });
+    expect(resolved.recipe.development).toEqual(current.development);
+    expect(resolved.recipe.discussion).toEqual(current.discussion);
+    expect(resolved.recipe.gates).toEqual(current.gates);
+    expect(resolved.runtimes!.development.agent).toBe("codex");
   });
 });
 

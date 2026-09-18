@@ -47,6 +47,49 @@ function fakeClient(slug: string, fixture: Fixture): RepositoryReader & { calls:
 const pkg = (scripts: Record<string, string>, name = "x") => JSON.stringify({ name, scripts });
 
 describe("proposeRecipe", () => {
+  it("requires a project choice when both agents are signed in, rather than preferring one", async () => {
+    const proposal = await proposeRecipe("acme/app", fakeClient("acme/app", { files: {} }), {
+      signedIn: ["claude-code", "codex"],
+    });
+    expect(proposal.found.runtime).toBeNull();
+    expect(proposal.requiresAgentChoice).toBe(true);
+    expect(proposal.proposedFromScan).toBe(true);
+    expect(proposal.refusals.join("\n")).toContain("choose runtime.agent explicitly");
+  });
+
+  it("retains an explicit project choice and role declarations despite login detection", async () => {
+    const proposal = await proposeRecipe("acme/app", fakeClient("acme/app", { files: {} }), {
+      signedIn: ["claude-code", "codex"],
+      runtime: { agent: "codex", model: "requested-model", limits: { wall: "1h", rounds: 3 } },
+      development: { runtime: { model: "development-model" } },
+      discussion: { runtime: { agent: "claude-code", limits: { turns: 10 } } },
+      gates: { proposed: [{ name: "review", agent: "Review prompt", runtime: { agent: "claude-code", model: "review-model", limits: { turns: 7 } } }] },
+    });
+    expect(proposal.requiresAgentChoice).toBe(false);
+    expect(proposal.proposedFromScan).toBe(false);
+    expect(proposal.found.runtime).toBe("codex");
+    expect(proposal.recipe.runtime).toMatchObject({ agent: "codex", model: "requested-model", limits: { wall: "1h", rounds: 3 } });
+    expect(proposal.recipe.runtime.limits.turns).toBeUndefined();
+    expect(proposal.recipe.development).toEqual({ runtime: { model: "development-model" } });
+    expect(proposal.recipe.discussion).toEqual({ runtime: { agent: "claude-code", limits: { turns: 10 } } });
+    expect(proposal.recipe.gates.proposed).toEqual([{ name: "review", agent: "Review prompt", runtime: { agent: "claude-code", model: "review-model", limits: { turns: 7 } } }]);
+  });
+
+  it("counts each signed-in agent once", async () => {
+    const proposal = await proposeRecipe("acme/app", fakeClient("acme/app", { files: {} }), {
+      signedIn: ["codex", "codex"],
+    });
+    expect(proposal.found.runtime).toBe("codex");
+    expect(proposal.requiresAgentChoice).toBe(false);
+  });
+
+  it("does not replace an invalid explicit agent with the one detected", async () => {
+    const client = fakeClient("acme/app", { files: {} });
+    await expect(proposeRecipe("acme/app", client, {
+      signedIn: ["claude-code"], runtime: { agent: null } as never,
+    })).rejects.toThrow();
+    expect(client.calls).toEqual([]);
+  });
   it("fills every fast row from the repository, and the recipe passes Recipe.parse", async () => {
     const client = fakeClient("acme/app", {
       base: "develop",

@@ -187,6 +187,8 @@ describe("only a code this process asked for", () => {
       state: begun.state,
       by: "human:s",
       fetch: conversion({ message: "Not Found" }, 422),
+      // Read an empty test target, never the operator's checkout .env.local.
+      envFile: (await workspace()).envFile,
       store: createMemoryEventStore(),
       env: {},
     });

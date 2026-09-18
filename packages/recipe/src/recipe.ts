@@ -1,7 +1,7 @@
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
- * `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
- * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180).
+ * role-specific agent/model/limits in the recipe (0053). `local.ts` still
+ * reads old machine runtime fields until the explicit migration (#201).
  * `local.ts` reads it; this file is its schema.
  *
  * **It is not in the managed repository any more.** A `.lingtai/config.yaml`
@@ -19,6 +19,22 @@ import { z } from "zod";
 import { Tier, RuntimeId, isEventType, isRetiredEventType } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import { parseDuration } from "./duration.ts";
+
+/** Existing development/review defaults; role resolution applies them, not YAML emission. */
+import { LIMIT_DEFAULTS } from "./limits.ts";
+export { LIMIT_DEFAULTS };
+
+const ModelName = z.string().trim().min(1, "model must name a model, or be omitted for the agent default");
+const Wall = z.string().refine(positiveDuration, "expected a positive, finite duration like 15m or 2h");
+
+/** A role may choose execution, but cannot change pass depth, breadth or containment. */
+export const RuntimeOverride = z.strictObject({
+  agent: RuntimeId.optional(),
+  model: ModelName.optional(),
+  limits: z.strictObject({ turns: z.number().int().positive().optional(), wall: Wall.optional() }).optional(),
+});
+export type RuntimeOverride = z.infer<typeof RuntimeOverride>;
+const RoleConfiguration = z.strictObject({ runtime: RuntimeOverride.optional() });
 
 /**
  * The names an **extension** may read, declared beside the extension itself
@@ -95,27 +111,31 @@ export const GateAction = z.union([
    * which is why it is the only kind carrying one: `agent`, `watch` and `human`
    * are the core's own and run in the core's own process.
    */
-  z.object({
+  z.strictObject({
     name: z.string(),
     run: z.string(),
+    runtime: z.never().optional(),
     timeout: z.string().default("15m"),
     env: ExtensionEnvNames,
   }),
   /** A cold reviewer, given the diff and this prompt. */
-  z.object({
+  z.strictObject({
     name: z.string(),
     agent: z.string(),
+    runtime: RuntimeOverride.optional(),
   }),
   /** Globs against the diff's file list; a match holds or fails. */
-  z.object({
+  z.strictObject({
     name: z.string(),
     watch: z.array(z.string()).min(1),
+    runtime: z.never().optional(),
     then: z.enum(["request-approval", "fail"]).default("request-approval"),
   }),
   /** Waits for a person. The string is the question they are asked. */
-  z.object({
+  z.strictObject({
     name: z.string(),
     human: z.string(),
+    runtime: z.never().optional(),
   }),
   /**
    * Closes the issue. Only meaningful at `end`, which is the one point that
@@ -131,15 +151,17 @@ export const GateAction = z.union([
    * append a terminal and leave the GitHub issue open, so somebody still had
    * to run `gh issue close` by hand afterwards.
    */
-  z.object({
+  z.strictObject({
     name: z.string(),
     close: z.literal(true),
+    runtime: z.never().optional(),
     when: z.enum(["landed", "blocked", "failed", "closed", "any"]).default("landed"),
   }),
   /** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
-  z.object({
+  z.strictObject({
     name: z.string(),
     labels: z.array(z.string()),
+    runtime: z.never().optional(),
     when: z.enum(["landed", "blocked", "failed", "closed", "any"]).default("any"),
   }),
 ]);
@@ -291,7 +313,7 @@ export const AssigneeRule = z
   });
 export type AssigneeRule = z.infer<typeof AssigneeRule>;
 
-export const Recipe = z.object({
+export const Recipe = z.strictObject({
   version: z.literal(1),
   /** Pulls install/build/test defaults from a preset shipped with Lingtai. */
   extends: z.string().optional(),
@@ -489,8 +511,12 @@ export const Recipe = z.object({
    */
   subscribers: z.array(Subscriber).default([]),
 
-  runtime: z.object({
+  development: RoleConfiguration.optional(),
+  discussion: RoleConfiguration.optional(),
+
+  runtime: z.strictObject({
     agent: RuntimeId.default("claude-code"),
+    model: ModelName.optional(),
     /**
      * How contained the runtime must be. `run-once` refuses to dispatch when the
      * runtime cannot meet it, which is the whole of the enforcement.
@@ -518,9 +544,11 @@ export const Recipe = z.object({
      * them, so nothing else writes the product down.
      */
     limits: z
-      .object({
-        turns: z.number().int().positive().default(300),
-        wall: z.string().default("2h"),
+      .strictObject({
+        // Absence must survive parsing and emission: a Claude default is not
+        // an explicit project limit to inherit into a Codex role (0053).
+        turns: z.number().int().positive().optional(),
+        wall: Wall.optional(),
         /**
          * How many times a pass sends the agent back, carrying what refused it.
          *
@@ -551,7 +579,7 @@ export const Recipe = z.object({
          * Lingtai's *own* failures never reach it, in code (`whoseFailure`): no
          * recipe can make an agent able to fix a database it cannot reach.
          */
-        rounds: z.number().int().nonnegative().default(2),
+        rounds: z.number().int().nonnegative().default(LIMIT_DEFAULTS.rounds),
         /**
          * How many times a spent `rounds` ceiling starts the work over instead
          * of asking a person — a fresh pass, from a worktree cut off the base.
@@ -586,17 +614,17 @@ export const Recipe = z.object({
          * *the work is still there* is a fact rather than an assumption
          * (0039 §2). See `decideRestart`.
          */
-        restarts: z.number().int().nonnegative().default(0),
+        restarts: z.number().int().nonnegative().default(LIMIT_DEFAULTS.restarts),
       })
-      .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
+      .default({ rounds: LIMIT_DEFAULTS.rounds, restarts: LIMIT_DEFAULTS.restarts }),
     /**
      * Which issues this machine takes, by their assignee
      * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §2, #181).
      *
      * **The machine's, never the recipe file's**: `resolveLocalRecipe` puts it
      * here from `~/.lingtai/config.yml` and refuses it written in the recipe,
-     * as it does `agent` and `limits`. Whether one person's Lingtai leaves a
-     * colleague's tickets alone is that person's setting, not the repository's.
+     * while agent/model/limits are project choices (0053). Whether one person's
+     * Lingtai leaves a colleague's tickets alone is that person's setting.
      *
      * **Optional, and absent is `both`** — every ticket, assigned or not, which
      * is how the queue behaved before an assignee was read and what somebody
@@ -625,7 +653,7 @@ export const Recipe = z.object({
      * says nothing renders exactly the prompt it rendered before.
      */
     budget: z
-      .object({
+      .strictObject({
         /** Characters of one earlier failure's output quoted verbatim into the next prompt. */
         evidence: z.number().int().positive().default(2_000),
         /** Rows the attempt table names before it says "and N earlier". */
@@ -650,20 +678,11 @@ export type Recipe = z.infer<typeof Recipe>;
 
 export { formatDuration, parseDuration } from "./duration.ts";
 
-/**
- * What a recipe that says nothing about limits gets.
- *
- * Exported so that a sentence about the default can be **generated from the
- * default** — `apps/cli`'s drain names a number it cannot read from any one
- * project's recipe, and naming it by hand is how it came to say one `wall` when
- * the fix loop had already made that false.
- */
-export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined);
-
 /** `parseDuration`, as a predicate: for a schema, where throwing is the wrong shape. */
 function positiveDuration(text: string): boolean {
   try {
-    return parseDuration(text) > 0;
+    const ms = parseDuration(text);
+    return Number.isFinite(ms) && ms > 0;
   } catch {
     return false;
   }

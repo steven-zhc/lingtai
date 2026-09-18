@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { Recipe, editRecipe, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, editRecipe, emitRecipe, resolveRecipe, resolveSource } from "@lingtai/recipe";
 import { passCeiling } from "../src/filter.ts";
 import {
   type WizardState,
@@ -45,9 +45,82 @@ const SCRIPTS = [
 ];
 
 const fresh = (recipe = scanned()): WizardState =>
-  onboardState({ slug: "acme/shop", recipe, scripts: SCRIPTS, labels: ["bug", "feature", "question"] });
+  onboardState({ slug: "acme/shop", recipe, scripts: SCRIPTS, labels: ["bug", "feature", "question"], proposedFromScan: true });
 
 const play = (state: WizardState, ...moves: Parameters<typeof wizardReducer>[1][]) => moves.reduce(wizardReducer, state);
+
+describe("role declarations survive the wizard", () => {
+  const configured = () => Recipe.parse({
+    ...scanned(),
+    runtime: { agent: "claude-code", model: "project-model" },
+    development: { runtime: { agent: "codex" } },
+    discussion: { runtime: { model: "discussion-model" } },
+    gates: { proposed: [{ name: "review", agent: "Review prompt", runtime: { agent: "claude-code", model: "review-model" } }] },
+  });
+
+  it("keeps development, discussion and individual review choices in update and onboarding data", () => {
+    const before = configured();
+    for (const state of [updateState({ slug: "acme/shop", recipe: before }), onboardState({ slug: "acme/shop", recipe: before, scripts: SCRIPTS, labels: [] })]) {
+      const after = applyDraft(before, state);
+      expect(after.development).toEqual(before.development);
+      expect(after.discussion).toEqual(before.discussion);
+      expect(after.gates.proposed.find((action) => "agent" in action)).toEqual(before.gates.proposed[0]);
+      expect(after.runtime.model).toBe("project-model");
+      expect(after.runtime.limits.turns).toBeUndefined();
+    }
+  });
+
+  it("requires an explicit answer when the proposal could not choose an agent", () => {
+    const state = onboardState({ slug: "acme/shop", recipe: scanned(), scripts: SCRIPTS, labels: [], agent: null });
+    expect(fastLine(state.draft, "runtime.agent")).toContain("choose an agent");
+    expect(finishRefusals(state)).toContain("runtime.agent: choose an agent explicitly for this project.");
+    const selected = play(state, { type: "set", draft: { agent: "codex" } });
+    expect(selected.draft.limits.turns).toBeNull();
+    expect(finishRefusals(selected).join("\n")).not.toContain("choose an agent");
+  });
+
+  it("removes the former model by a YAML edit when switching agent and leaves implicit turns absent", () => {
+    const before = configured();
+    const state = play(updateState({ slug: "acme/shop", recipe: before }), { type: "set", draft: { agent: "codex" } });
+    const after = applyDraft(before, state);
+    const edited = editRecipe(emitRecipe(before), changesFrom(before, after));
+    const resolved = resolveSource(edited, "main", "test");
+    expect(resolved.recipe.runtime.agent).toBe("codex");
+    expect(resolved.recipe.runtime.model).toBeUndefined();
+    expect(resolved.recipe.runtime.limits.turns).toBeUndefined();
+    expect(resolved.runtimes!.development.model).toBeNull();
+    expect(resolved.runtimes!.development.limits.turns).toBeNull();
+    expect(resolved.recipe.gates.proposed).toEqual(before.gates.proposed);
+  });
+
+  it("retains an explicit turn declaration across an agent switch", () => {
+    const before = configured();
+    before.runtime.limits.turns = 150;
+    const state = play(updateState({ slug: "acme/shop", recipe: before }), { type: "set", draft: { agent: "codex" } });
+    expect(state.draft.limits.turns).toBe(150);
+    expect(applyDraft(before, state).runtime.limits.turns).toBe(150);
+  });
+
+  it("round-trips explicit mixed gates with their order, credentials and timeouts", () => {
+    const before = scanned([
+      { name: "first review", agent: "Check correctness", runtime: { agent: "codex", model: "review-model" } },
+      { name: "verification", run: "pnpm test", timeout: "1m", env: ["API_TOKEN"] },
+      { name: "second review", agent: "Check failures", runtime: { agent: "claude-code", limits: { wall: "3m" } } },
+      { name: "custom verification", run: "make verify", timeout: "7m", env: ["OTHER_TOKEN"] },
+    ]);
+    const state = onboardState({ slug: "acme/shop", recipe: before, scripts: SCRIPTS, labels: [] });
+    expect(applyDraft(before, state).gates.proposed).toEqual(before.gates.proposed);
+    expect(state.draft.checks.filter((check) => check.ticked)).toHaveLength(4);
+    const removed = play(state, { type: "check", id: state.draft.checks[1]!.id });
+    expect(applyDraft(before, removed).gates.proposed).toEqual([
+      before.gates.proposed[0], ...before.gates.proposed.slice(2),
+    ]);
+    const added = play(state, { type: "check", id: "pnpm typecheck" });
+    expect(applyDraft(before, added).gates.proposed).toEqual([
+      ...before.gates.proposed, { name: "build", run: "pnpm typecheck", timeout: "20m", env: [] },
+    ]);
+  });
+});
 
 describe("the collapse", () => {
   it("shows one open question at a time, and an answered one collapses to a settled line", () => {

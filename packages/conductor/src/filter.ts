@@ -19,7 +19,7 @@
 import { GATE_POINTS, type GatePoint, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
+import { parseDuration, projectLimits, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
 import { passCeiling } from "./ceiling.ts";
 import { currentRecipe } from "./projects.ts";
 
@@ -118,7 +118,7 @@ export type ProjectFilter =
        * that make it live in one place. `wallMs` is parsed here so no caller
        * reads a duration string.
        */
-      limits: { rounds: number; restarts: number; turns: number; wall: string; wallMs: number };
+      limits: { rounds: number; restarts: number; turns: number | null; wall: string; wallMs: number };
       /**
        * How long a failed attempt keeps its own ticket out of the queue,
        * `source.backoff` in milliseconds
@@ -195,6 +195,7 @@ export async function projectFilter(
   try {
     const client = await clientFor(state);
     const resolved = await recipeFor(state, client);
+    const limits = projectLimits(resolved.recipe);
     return {
       project,
       ok: true,
@@ -204,11 +205,8 @@ export async function projectFilter(
       kinds: resolved.recipe.source.kinds,
       exclude: resolved.recipe.source.exclude,
       limits: {
-        rounds: resolved.recipe.runtime.limits.rounds,
-        restarts: resolved.recipe.runtime.limits.restarts,
-        turns: resolved.recipe.runtime.limits.turns,
-        wall: resolved.recipe.runtime.limits.wall,
-        wallMs: parseDuration(resolved.recipe.runtime.limits.wall),
+        ...limits,
+        wallMs: parseDuration(limits.wall),
       },
       backoffMs: parseDuration(resolved.recipe.source.backoff),
       plan: gatePlan(resolved.recipe),

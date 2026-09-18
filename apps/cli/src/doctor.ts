@@ -36,7 +36,7 @@ import {
   projectFilters,
 } from "@lingtai/conductor";
 import type { GitHubClient } from "@lingtai/github";
-import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
+import { type Recipe, baseDivergence, machinePath, projectLimits } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1296,12 +1296,14 @@ export function limitsRow(
   capabilities: RuntimeCapabilities = createClaudeCodeRuntime().capabilities,
 ): CheckResult {
   const name = `runtime: ${project} limits`;
+  const limits = projectLimits(recipe);
+  const active = RUN_LIMITS.filter((limit) => limit !== "turns" || limits.turns !== null);
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
-    turns: String(recipe.runtime.limits.turns),
-    wall: recipe.runtime.limits.wall,
+    turns: String(limits.turns),
+    wall: limits.wall,
   };
-  const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
-  const detail = RUN_LIMITS.map(
+  const ignored = active.filter((limit) => !capabilities.enforces.includes(limit));
+  const detail = active.map(
     (limit) =>
       `${limit} ${declared[limit]} ← ${
         capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : "not applied"
