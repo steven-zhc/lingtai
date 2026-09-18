@@ -5,6 +5,7 @@ export * from "./propose.ts";
 export * from "./resolve.ts";
 export * from "./runtimes.ts";
 export * from "./local.ts";
+export * from "./migrate-runtime.ts";
 export {
   BadWatchPatternError,
   compileWatch,

@@ -215,29 +215,29 @@ describe("an edit to a recipe that extends a preset", () => {
 
   /**
    * **What the page shows is what the machine reads** (#180). A limit changed
-   * on the page goes into `~/.lingtai/config.yml`, never into the recipe file —
-   * a recipe carrying `runtime.limits` is refused at the path it is read from.
+   * on the page goes into the project recipe. Machine assignees stay in config.
    * Read back the way a run reads it, the two files are the recipe the page
    * describes.
    */
-  it("keeps the agent and the limits out of the recipe file, and puts them in the machine file", async () => {
+  it("keeps agent and limits in the recipe without changing machine assignees", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
-    const machineBefore = "# mine\nprojects:\n  shop:\n    runtime:\n      agent: claude-code\n";
+    const machineBefore = "# mine\nprojects:\n  shop:\n    runtime:\n      assignee: {login: bob, take: mine}\n";
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
 
     const finished = await editExisting(FILE, state, on(recipe, machineBefore));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
     expect(finished.path).toBe(recipePath("shop", HOME));
-    expect(finished.file).not.toMatch(/^\s*(agent|limits|turns):/m);
-    expect(finished.machine).toContain("# mine");
+    expect(finished.file).toContain("turns: 7");
+    expect(finished.machine).toBeNull();
 
     const resolved = await resolveLocalRecipe("shop", {
       home: HOME,
       signedIn: async () => [],
       read: async (path) =>
-        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? finished.machine : null,
+        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? machineBefore : null,
     });
     expect(resolved.recipe.runtime.limits.turns).toBe(7);
+    expect(resolved.recipe.runtime.assignee).toEqual({login: "bob", take: "mine"});
     expect(resolved.recipe.gates).toEqual(recipe.gates);
   });
 });
@@ -277,9 +277,9 @@ describe("an edit to project runtime choices (0053)", () => {
     });
     const finished = await editExisting(file, state, { project: "shop", current, machine: null, home });
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
-    expect(finished.file).toBe(file);
-    expect(finished.machine).toContain("rounds: 3");
-    expect(finished.machine).not.toMatch(/turns:|wall:/);
+    expect(finished.machine).toBeNull();
+    expect(finished.file).toContain("rounds: 3");
+    expect(finished.file).not.toMatch(/turns:|wall:/);
   });
 
   it("keeps choices in the recipe, resets the former model and preserves roles and machine assignees", async () => {
@@ -302,7 +302,7 @@ gates:
 `;
     const machine = "runtime:\n  assignee: {login: bob, take: mine}\n";
     const current = (await resolveLocalRecipe("shop", { home, signedIn: async () => [],
-      read: async (path) => path === recipePath("shop", home) ? file : machine,
+      read: async (path) => path === recipePath("shop", home) ? file : path === machinePath(home) ? machine : null,
     })).recipe;
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
       type: "set", draft: { agent: "claude-code" },
@@ -312,7 +312,7 @@ gates:
     expect(finished.machine).toBeNull();
     expect(finished.file).toContain("# The project default");
     const resolved = await resolveLocalRecipe("shop", { home, signedIn: async () => [],
-      read: async (path) => path === recipePath("shop", home) ? finished.file : machine,
+      read: async (path) => path === recipePath("shop", home) ? finished.file : path === machinePath(home) ? machine : null,
     });
     expect(resolved.recipe.runtime.agent).toBe("claude-code");
     expect(resolved.recipe.runtime.model).toBeUndefined();

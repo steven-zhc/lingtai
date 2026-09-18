@@ -114,7 +114,7 @@ export const signedInHere: SignedIn = signedInProbe([createClaudeCodeRuntime(), 
 /**
  * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,
  * with per-role runtime choices in that recipe (0053). Legacy machine agent
- * and limits remain a fallback until #201 migrates them.
+ * and limits require the explicit all-project migration (#201).
  *
  * Read from the file every time rather than from anything stored: a snapshot
  * in Lingtai's database would be a second source of truth. No request is made

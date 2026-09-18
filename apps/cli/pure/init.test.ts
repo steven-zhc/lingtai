@@ -139,7 +139,7 @@ describe("lingtai init (#186)", () => {
 
     expect(await initCommand([], w)).toBe(0);
 
-    expect(config(home)).toBe(`database:\n  url: ${URL_}\nruntime:\n  agent: claude-code\n`);
+    expect(config(home)).toBe(`database:\n  url: ${URL_}\n`);
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600);
     expect(seen.opened).toEqual(["http://127.0.0.1:3200/setup/github-app"]);
     expect(seen.lines.join("\n")).toContain("lingtai-me, owned by me — it answered");
@@ -171,14 +171,13 @@ describe("lingtai init (#186)", () => {
         const second = world(home, { runtimes, answers: [URL_, "codex"] }, db);
         expect(await initCommand([], second.world)).toBe(0);
 
-        expect(config(home)).toBe(`database:\n  url: ${URL_}\nruntime:\n  agent: codex\n`);
+        expect(config(home)).toBe(`database:\n  url: ${URL_}\n`);
         expect(second.seen.opened).toEqual(["http://127.0.0.1:3200/setup/github-app"]);
 
-        // What the first run settled, the second does not ask again.
+        // Machine choices survive. Project agent choices are never written here.
         const settledDatabase = STEPS.indexOf(at) > STEPS.indexOf("database");
-        const settledAgent = STEPS.indexOf(at) > STEPS.indexOf("ask:agent");
         expect(second.seen.asked.includes("ask:database")).toBe(!settledDatabase);
-        expect(second.seen.asked.includes("ask:agent")).toBe(!settledAgent);
+        expect(second.seen.asked.includes("ask:agent")).toBe(true);
       });
     }
   });
@@ -270,7 +269,7 @@ describe("lingtai init (#186)", () => {
 
       const chosen = world(home, { runtimes, answers: ["1"] });
       expect(await initCommand([], chosen.world)).toBe(0);
-      expect(config(home)).toContain("agent: claude-code");
+      expect(config(home)).toContain("agent: codex"); // Legacy source is retained until explicit migration.
     });
   });
 
@@ -286,7 +285,8 @@ describe("lingtai init (#186)", () => {
     const flagged = world(home, { runtimes });
     expect(await initCommand(["--agent", "codex"], flagged.world)).toBe(0);
     expect(flagged.seen.asked).toEqual([]);
-    expect(config(home)).toContain("agent: codex");
+    expect(config(home)).not.toContain("agent");
+    expect(flagged.seen.lines.join("\n")).toContain("save the project choice in its recipe");
   });
 
   it("refuses by name when no runtime is signed in, and writes no agent", async () => {
@@ -328,7 +328,7 @@ describe("lingtai init (#186)", () => {
     expect(await initCommand([], w)).toBe(0);
     expect(seen.asked).toEqual([]);
     expect(seen.connected).toEqual([URL_]);
-    expect(config(home)).toBe("runtime:\n  agent: claude-code\n");
+    expect(config(home)).toBeNull();
   });
 
   it("re-running a finished init reports the state and changes nothing", async () => {
@@ -353,7 +353,7 @@ describe("lingtai init (#186)", () => {
     expect(statSync(configPath({ LINGTAI_HOME: home })).mtimeMs).toBe(mtime);
     const said = again.seen.lines.join("\n");
     expect(said).toContain("tables present");
-    expect(said).toContain("claude-code ← ");
+    expect(said).toContain("claude-code · detected");
     expect(said).toContain("lingtai-me, owned by me");
   });
 

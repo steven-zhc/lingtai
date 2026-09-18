@@ -182,7 +182,7 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
             {finished.machine === null ? null : (
               <>
                 <p className="note">
-                  The agent and the limits are this machine&apos;s, not the recipe&apos;s — <code>~/.lingtai/config.yml</code>{" "}
+                  Assignee choices are this machine&apos;s — <code>~/.lingtai/config.yml</code>{" "}
                   with this change:
                 </p>
                 <pre className="wz-file">{finished.machine}</pre>

@@ -18,6 +18,7 @@ version: 1
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
+runtime: { agent: claude-code }
 gates:
   proposed:
     - { name: build, run: "true" }
@@ -31,7 +32,6 @@ describe("the recipe row, with no App configured", () => {
     home = await mkdtemp(join(tmpdir(), "lingtai-doctor-"));
     await mkdir(join(home, "app"));
     await writeFile(join(home, "app", "recipe.yml"), RECIPE);
-    await writeFile(join(home, "config.yml"), "runtime:\n  agent: claude-code\n");
     saved = process.env["LINGTAI_HOME"];
     process.env["LINGTAI_HOME"] = home;
   });
@@ -48,7 +48,7 @@ describe("the recipe row, with no App configured", () => {
 
     if (!filter.ok) throw new Error(filter.problem);
     expect(filter.kinds).toEqual(["bug"]);
-    expect(filter.provenance["runtime.agent"]).toBe(`claude-code ← ${join(home, "config.yml")}`);
+    expect(filter.provenance["runtime.agent"]).toBe(`claude-code ← ${join(home, "app", "recipe.yml")}`);
     expect(filter.provenance["gates"]).toContain(join(home, "app", "recipe.yml"));
   });
 
@@ -58,7 +58,7 @@ describe("the recipe row, with no App configured", () => {
    * fail in that refusal's words, not an ok that prints `codex` (#180).
    */
   it("fails when runtime.agent names a runtime this conductor does not dispatch", async () => {
-    await writeFile(join(home, "config.yml"), "runtime:\n  agent: codex\n");
+    await writeFile(join(home, "app", "recipe.yml"), RECIPE.replace("agent: claude-code", "agent: codex"));
     const state = { project: "app", owner: "me", base: "main" } as ProjectState;
     const filter = await projectFilter(state, recipeClientFor({}));
 
@@ -67,7 +67,7 @@ describe("the recipe row, with no App configured", () => {
     expect(row.detail).toContain("runtime.agent is codex");
     expect(row.detail).toContain("this conductor runs claude-code");
 
-    await writeFile(join(home, "config.yml"), "runtime:\n  agent: claude-code\n");
+    await writeFile(join(home, "app", "recipe.yml"), RECIPE);
     expect(recipeRow(await projectFilter(state, recipeClientFor({})), "claude-code").status).toBe("ok");
   });
 

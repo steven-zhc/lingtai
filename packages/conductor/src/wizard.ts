@@ -288,8 +288,7 @@ async function readIfThere(path: string): Promise<string | null> {
  * onboarding started.
  *
  * **Nothing is written to the repository** (0046 §3, #180). The recipe is
- * `~/.lingtai/<project>/recipe.yml` and the agent and limits the page chose go
- * under `projects.<project>.runtime` in `~/.lingtai/config.yml` — the files
+ * `~/.lingtai/<project>/recipe.yml`, including the agent and limits — the files
  * `Recheck`'s `lingtai add` reads — so a pending card is finished by pressing
  * `Recheck`, with no pull request for anybody to merge first. It used to open
  * one carrying `.lingtai/config.yaml`, which nothing reads any more.
@@ -304,7 +303,7 @@ async function readIfThere(path: string): Promise<string | null> {
  * 3. a recipe already at that path that is not this one, which is a person's
  *    file and not this button's to overwrite — one that *is* this one is this
  *    function's own, interrupted before the append, and is picked up;
- * 4. the machine file, which may already name another runtime for the project;
+ * 4. the machine file, whose legacy runtime fields require migration first;
  * 5. the bytes, resolved the way `lingtai add` will resolve them.
  *
  * Then the files, and then the event — last because it is the thing the board
@@ -363,7 +362,7 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   }
 
   // The bytes, read back the way `lingtai add` reads them — the agent is named
-  // in the machine file now, so nothing is asked what is signed in.
+  // in the project recipe, so nothing is asked what is signed in.
   const planned = files;
   try {
     await resolveLocalRecipe(client.repo, {

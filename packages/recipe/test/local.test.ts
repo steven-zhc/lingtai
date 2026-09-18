@@ -129,19 +129,17 @@ describe("resolveLocalRecipe", () => {
     it("is the one the file names, even with two signed in", async () => {
       const resolved = await resolveLocalRecipe(
         "app",
-        withMachine("runtime:\n  agent: codex\n", signed("claude-code", "codex")),
+        { home: HOME, signedIn: signed("claude-code", "codex"), read: files({ [recipePath("app", HOME)]: `${RECIPE}runtime: {agent: codex}\n` }) },
       );
       expect(resolved.recipe.runtime.agent).toBe("codex");
-      expect(resolved.provenance?.["runtime.agent"]).toBe(`codex ← ${HOME}/config.yml`);
+      expect(resolved.provenance?.["runtime.agent"]).toBe(`codex ← ${HOME}/app/recipe.yml`);
     });
 
-    it("is the project's over the machine's", async () => {
-      const resolved = await resolveLocalRecipe(
+    it("refuses every legacy source instead of silently choosing one", async () => {
+      await expect(resolveLocalRecipe(
         "app",
         withMachine("runtime:\n  agent: claude-code\nprojects:\n  app:\n    runtime:\n      agent: codex\n"),
-      );
-      expect(resolved.recipe.runtime.agent).toBe("codex");
-      expect(resolved.provenance?.["runtime.agent"]).toContain("projects.app");
+      )).rejects.toThrow(/runtime.agent, projects.app.runtime.agent/);
     });
 
     it("is the only one signed in, when nothing names one — and says it was detected", async () => {
@@ -169,32 +167,32 @@ describe("resolveLocalRecipe", () => {
       let asked = false;
       await resolveLocalRecipe(
         "app",
-        withMachine("runtime:\n  agent: claude-code\n", async () => {
+        { home: HOME, read: files({ [recipePath("app", HOME)]: `${RECIPE}runtime: {agent: claude-code}\n` }), signedIn: async () => {
           asked = true;
           return [];
-        }),
+        } },
       );
       expect(asked).toBe(false);
     });
   });
 
   describe("runtime.limits", () => {
-    it("comes from the machine, key by key, and each says where from", async () => {
+    it("comes from the recipe and each says where from", async () => {
       const resolved = await resolveLocalRecipe(
         "app",
-        withMachine("runtime:\n  limits:\n    rounds: 3\nprojects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n"),
+        { home: HOME, signedIn: signed("claude-code"), read: files({ [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits: {rounds: 3, wall: 1h}\n` }) },
       );
       expect(projectLimits(resolved.recipe)).toEqual({ ...LIMIT_DEFAULTS, rounds: 3, wall: "1h" });
       expect(resolved.recipe.runtime.limits.turns).toBeUndefined();
-      expect(resolved.runtimes?.development.provenance["limits.wall"]).toMatchObject({ kind: "legacy-machine" });
-      expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${HOME}/config.yml`);
-      expect(resolved.provenance?.["runtime.limits.wall"]).toContain("projects.app");
+      expect(resolved.runtimes?.development.provenance["limits.wall"]).toMatchObject({ kind: "configured" });
+      expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${HOME}/app/recipe.yml`);
+      expect(resolved.provenance?.["runtime.limits.wall"]).toContain("app/recipe.yml");
       expect(resolved.provenance?.["runtime.limits.turns"]).toBe(`${LIMIT_DEFAULTS.turns} ← default`);
     });
 
     it("changes the hash, because a run under other limits is another run", async () => {
       const a = await resolveLocalRecipe("app", withMachine(undefined));
-      const b = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
+      const b = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read: files({ [recipePath("app", HOME)]: `${RECIPE}runtime: {limits: {turns: 10}}\n` }) });
       expect(a.configHash).not.toBe(b.configHash);
     });
   });
@@ -250,25 +248,26 @@ describe("resolveLocalRecipe", () => {
 
     it("keeps the project's assignee when an edit replaces the section", async () => {
       const before =
-        "projects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        login: bob\n        take: mine\n";
+        "projects:\n  app:\n    runtime:\n      assignee:\n        login: bob\n        take: mine\n";
       const current = await parsed(before);
       const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
       const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
-      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
-      const after = await parsed(split.machine);
-      expect(after.runtime.limits.rounds).toBe(3);
-      expect(after.runtime.assignee).toEqual({ login: "bob", take: "mine" });
+      if (!split.ok) throw new Error(split.refusal);
+      expect(split.machine).toBeNull();
+      const after = await resolveLocalRecipe("app", { home: HOME, signedIn: signed(), read: files({ [machinePath(HOME)]: before, [recipePath("app", HOME)]: split.recipe }) });
+      expect(after.recipe.runtime.limits.rounds).toBe(3);
+      expect(after.recipe.runtime.assignee).toEqual({ login: "bob", take: "mine" });
     });
 
     it("does not copy a machine-wide login into the project's section", async () => {
       const before =
-        "runtime:\n  assignee:\n    login: bob\nprojects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        take: mine\n";
+        "runtime:\n  assignee:\n    login: bob\nprojects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n";
       const current = await parsed(before);
       const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
       const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
-      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
-      expect(split.machine).toMatch(/app:\n\s+runtime:[\s\S]*assignee:\n\s+take: mine\n/);
-      expect(split.machine.match(/login: bob/g)).toHaveLength(1);
+      if (!split.ok) throw new Error(split.refusal);
+      expect(split.machine).toBeNull();
+      expect(split.recipe).not.toContain("assignee");
     });
 
     it("carries one written in the recipe text to the machine file, rather than deleting it", async () => {

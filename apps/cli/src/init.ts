@@ -9,15 +9,16 @@
  *   App        one already configured is verified by a real call
  *   board      started here, and a browser opened on the wizard's first screen
  *
- * **Resuming is not a mode.** Each choice is written to `~/.lingtai/config.yml`
+ * **Resuming is not a mode.** Machine choices are written to `~/.lingtai/config.yml`
  * the moment it is made and verified, and every run begins by reading what is
  * already there — so an interrupted init continues where it stopped, and a
  * finished one reports and changes nothing, by the same code path. There is no
  * progress file to disagree with the configuration it describes.
  *
  * **Nothing is written before its choice.** The URL is written after the
- * connection answered and the tables exist, the agent after it was chosen, and
- * the App's key by the board's own page (`@lingtai/conductor/create-app`), which
+ * connection answered and the tables exist; agent availability is checked but
+ * its project choice is saved by the wizard in the recipe. The App's key is
+ * written by the board's own page (`@lingtai/conductor/create-app`), which
  * is GitHub's manifest flow: the one step here that is a person on somebody
  * else's page.
  *
@@ -198,7 +199,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   if (database !== null) return database;
 
   // ---- the agent ------------------------------------------------------------
-  const agent = await chooseAgent(world, config, path, home, runtimes, flags["agent"] ?? null);
+  const agent = await chooseAgent(world, config, path, runtimes, flags["agent"] ?? null);
   if (agent !== null) return agent;
 
   // ---- the App --------------------------------------------------------------
@@ -335,7 +336,6 @@ async function chooseAgent(
   world: InitWorld,
   config: Document,
   path: string,
-  home: string,
   runtimes: readonly RuntimeFound[],
   flag: string | null,
 ): Promise<number | null> {
@@ -344,18 +344,18 @@ async function chooseAgent(
 
   if (typeof named === "string" && (flag === null || flag === named)) {
     if ((signedIn as string[]).includes(named)) {
-      world.log(paint.pass(`agent        ${named} ← ${path} · signed in`));
+      world.log(paint.pass(`agent        ${named} ← ${path} · signed in; legacy machine choice requires lingtai migrate-runtime before scheduling`));
       return null;
     }
     world.log(paint.fail(`agent        ${named} ← ${path} is not signed in — ${detailOf(runtimes, named)}`));
     // Back to the choice, and asked even when one other is signed in: that one is not what was written.
-    return ask(world, config, path, home, runtimes, signedIn, null);
+    return ask(world, runtimes, signedIn, null);
   }
 
   if (signedIn.length === 1 && (flag === null || flag === signedIn[0])) {
-    return write(world, config, path, home, signedIn[0]!, "detected — the only runtime signed in");
+    return available(world, signedIn[0]!, "detected — the only runtime signed in");
   }
-  return ask(world, config, path, home, runtimes, signedIn, flag);
+  return ask(world, runtimes, signedIn, flag);
 }
 
 function detailOf(runtimes: readonly RuntimeFound[], id: string): string {
@@ -366,9 +366,6 @@ function detailOf(runtimes: readonly RuntimeFound[], id: string): string {
 
 async function ask(
   world: InitWorld,
-  config: Document,
-  path: string,
-  home: string,
   runtimes: readonly RuntimeFound[],
   signedIn: readonly RuntimeName[],
   flag: string | null,
@@ -384,33 +381,30 @@ async function ask(
     );
   }
   if (flag !== null) {
-    if ((signedIn as string[]).includes(flag)) return write(world, config, path, home, flag as RuntimeName, "--agent");
+    if ((signedIn as string[]).includes(flag)) return available(world, flag as RuntimeName, "--agent");
     world.log(paint.fail(`--agent ${flag} is not signed in here — ${detailOf(runtimes, flag)}`));
   }
   for (;;) {
     const options = signedIn.map((id, i) => `${i + 1}) ${id}`).join("  ");
-    const answer = await world.ask(paint.signal(`${signedIn.join(" and ")} can run here — which one? ${options}: `));
+    const answer = await world.ask(paint.signal(`${signedIn.join(" and ")} can run here — which runtime should init verify? ${options} (project selection is saved in its recipe): `));
     if (answer === null) {
       return refuse(world, `nobody is at a terminal to choose — ${USAGE}. Lingtai does not pick one silently; nothing was written`);
     }
     const trimmed = answer.trim();
     const picked = signedIn.find((id, i) => trimmed === id || trimmed === String(i + 1));
-    if (picked !== undefined) return write(world, config, path, home, picked, "chosen");
+    if (picked !== undefined) return available(world, picked, "checked");
     world.log(paint.fail(`"${trimmed}" is not one of ${signedIn.join(", ")}`));
   }
 }
 
-function write(
+function available(
   world: InitWorld,
-  config: Document,
-  path: string,
-  home: string,
   agent: RuntimeName,
   why: string,
 ): null {
-  config.setIn(["runtime", "agent"], agent);
-  writeConfig(path, config, home);
-  world.log(paint.pass(`agent        ${agent} → ${path} · ${why}`));
+  // Availability is machine information; selection belongs to each project
+  // recipe. The project wizard owns that write, never a new global default.
+  world.log(paint.pass(`agent        ${agent} · ${why} · available; save the project choice in its recipe`));
   return null;
 }
 
