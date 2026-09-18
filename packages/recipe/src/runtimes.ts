@@ -7,19 +7,13 @@
  * its adapter/host must refuse a limit it cannot enforce before claiming work.
  */
 import { createHash } from "node:crypto";
-import type { GatePoint, RuntimeId, Tier } from "@lingtai/domain";
+import type { GatePoint, RuntimeId, Tier, RuntimeFieldSource } from "@lingtai/domain";
+export type { RuntimeFieldSource } from "@lingtai/domain";
 import type { Recipe, RuntimeOverride } from "./recipe.ts";
 import { roleLimits } from "./limits.ts";
 export { projectLimits } from "./limits.ts";
 
 export type RuntimeRole = "development" | "review" | "discussion";
-export interface RuntimeFieldSource {
-  kind: "configured" | "preset" | "legacy-machine" | "detected" | "default" | "agent-default" | "absent";
-  /** Recipe path, never a guessed model name or a machine login. */
-  path: string | null;
-  /** File or preset supplying the field, when resolving source bytes. */
-  location?: string;
-}
 export type RuntimeSources = ReadonlyMap<string, RuntimeFieldSource>;
 type RuntimeDefaults = { runtime: Pick<Recipe["runtime"], "agent" | "model" | "tier" | "limits"> };
 

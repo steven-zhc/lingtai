@@ -326,6 +326,7 @@ export const Invocation = z.object({
 export type Invocation = z.infer<typeof Invocation>;
 
 export const RunStarted = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   workItemId: z.string(),
   runtime: RuntimeId,
   model: z.string(),
@@ -370,6 +371,7 @@ export const RunStarted = z.object({
  * the log's no-delete rule forbids in any case.
  */
 export const RunPrompted = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   promptVersion: z.string(),
   bytes: z.number().int(),
   /**
@@ -400,6 +402,7 @@ export const RunProducedDiff = z.object({
 export const RunProposedCompletion = z.object({ headSha: z.string() });
 
 export const RunFinished = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   exitCode: z.number().int(),
   turns: z.number().int(),
   durationMs: z.number().int(),
@@ -442,7 +445,100 @@ export const RUN_FAILURE_KINDS = [
 
 export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];
 
+/** One call, including calls nested inside a run or a chat (#200). */
+export const AgentRole = z.enum(["development", "fix", "review", "discussion"]);
+export type AgentRole = z.infer<typeof AgentRole>;
+export const InvocationId = z.string().regex(/^[\w.-]+$/);
+export const RuntimeFieldSource = z.object({
+  kind: z.enum(["configured", "preset", "legacy-machine", "detected", "default", "agent-default", "absent"]),
+  path: z.string().nullable(),
+  location: z.string().optional(),
+});
+export type RuntimeFieldSource = z.infer<typeof RuntimeFieldSource>;
+export const InvocationConfiguration = z.object({
+  agent: RuntimeId,
+  model: z.string().min(1).nullable(),
+  modelSelection: z.enum(["requested", "agent-default"]),
+  requiredTier: Tier,
+  limits: z.object({ turns: z.number().int().positive().nullable(), wall: z.string(), wallMs: z.number().int().positive() }),
+  provenance: z.object({
+    agent: RuntimeFieldSource, model: RuntimeFieldSource, tier: RuntimeFieldSource,
+    "limits.turns": RuntimeFieldSource, "limits.wall": RuntimeFieldSource,
+  }),
+  configHash: z.string().regex(/^[a-f0-9]{64}$/),
+}).refine((c) => (c.model === null) === (c.modelSelection === "agent-default"), "model selection must match the requested model");
+export type InvocationConfiguration = z.infer<typeof InvocationConfiguration>;
+export const InvocationOwnership = z.object({
+  project: z.string().min(1), workItemId: z.string().min(1),
+  runId: z.string().min(1).nullable(), chatId: z.string().min(1).nullable(),
+  role: AgentRole, gatePoint: GatePoint.nullable(), action: z.string().min(1).nullable(),
+  fixRound: z.number().int().positive().nullable(),
+}).superRefine((o, ctx) => {
+  const valid = o.role === "discussion"
+    ? o.chatId !== null && o.gatePoint === null && o.action === null && o.fixRound === null
+    : o.runId !== null && o.chatId === null && (o.role === "development"
+      ? o.gatePoint === null && o.action === null && o.fixRound === null
+      : o.gatePoint !== null && o.action !== null && (o.role === "fix" ? o.fixRound !== null : true));
+  if (!valid) ctx.addIssue({ code: "custom", message: "ownership does not identify this role's run, gate, fix round or chat" });
+  if (!o.workItemId.startsWith(`wi-${o.project}-`)) ctx.addIssue({ code: "custom", path: ["workItemId"], message: "work item belongs to a different project" });
+});
+export type InvocationOwnership = z.infer<typeof InvocationOwnership>;
+/** Actual mechanisms, not a copy of the requested tier. */
+export const InvocationContainment = z.object({
+  tier: Tier, mechanism: z.string().min(1),
+  filesystemSandbox: z.boolean(), commands: z.boolean(), fileChanges: z.boolean(),
+});
+export type InvocationContainment = z.infer<typeof InvocationContainment>;
+export const InvocationUsage = z.object({
+  turns: z.number().int().nonnegative().nullable(),
+  turnUnit: z.enum(["claude-agentic-turn", "codex-protocol-turn"]).nullable(),
+  inputTokens: z.number().int().nonnegative().nullable(), outputTokens: z.number().int().nonnegative().nullable(),
+  cachedInputTokens: z.number().int().nonnegative().nullable(),
+}).refine((u) => (u.turns === null) === (u.turnUnit === null), "turn count needs its native unit");
+export type InvocationUsage = z.infer<typeof InvocationUsage>;
+export const InvocationObservation = z.object({
+  observedModel: z.string().min(1).nullable(), sessionId: z.string().min(1).nullable(), threadId: z.string().min(1).nullable(),
+  usage: InvocationUsage.nullable(),
+  execution: z.object({ processStarted: z.boolean().nullable(), receiptReceived: z.boolean().nullable() }),
+});
+export type InvocationObservation = z.infer<typeof InvocationObservation>;
+export const InvocationFailure = z.object({
+  kind: z.enum([...RUN_FAILURE_KINDS, "configuration", "unsupported", "interrupted"]), detail: z.string().min(1),
+});
+export const AgentInvocationStarted = z.object({
+  invocationId: InvocationId, ...InvocationOwnership.shape,
+  configuration: InvocationConfiguration, containment: InvocationContainment,
+  cwd: z.string().min(1), onSha: z.string().regex(/^[a-f0-9]{40}$|^[a-f0-9]{64}$/).nullable(),
+  startedAt: z.iso.datetime(),
+}).superRefine((s, ctx) => {
+  const ownership = InvocationOwnership.safeParse(s);
+  if (!ownership.success) for (const issue of ownership.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  if (s.role === "review" && s.onSha === null) ctx.addIssue({ code: "custom", path: ["onSha"], message: "review requires a full immutable SHA" });
+  const rank = { open: 0, guarded: 1, sandboxed: 2 };
+  if (rank[s.containment.tier] < rank[s.configuration.requiredTier]) {
+    ctx.addIssue({ code: "custom", path: ["containment"], message: "actual containment cannot downgrade the required tier" });
+  }
+  if (s.containment.tier === "sandboxed" && !s.containment.filesystemSandbox) {
+    ctx.addIssue({ code: "custom", path: ["containment"], message: "sandboxed containment needs an actual filesystem sandbox" });
+  }
+  if (s.role === "discussion" && (s.containment.commands || s.containment.fileChanges)) {
+    ctx.addIssue({ code: "custom", path: ["containment"], message: "discussion cannot execute commands or change files" });
+  }
+});
+export type AgentInvocationStarted = z.infer<typeof AgentInvocationStarted>;
+export const AgentInvocationFinished = z.object({
+  invocationId: InvocationId, finishedAt: z.iso.datetime(),
+  state: z.enum(["succeeded", "failed", "interrupted"]),
+  ...InvocationObservation.shape,
+  exitCode: z.number().int().nullable(), durationMs: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative().nullable(), failure: InvocationFailure.nullable(),
+  /** Native final body; flow events separately interpret findings or an answer. */
+  text: z.string().nullable(),
+}).refine((f) => (f.state === "succeeded") === (f.failure === null), "only a successful invocation has no failure");
+export type AgentInvocationFinished = z.infer<typeof AgentInvocationFinished>;
+
 export const RunFailed = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   kind: z.enum(RUN_FAILURE_KINDS),
   detail: z.string(),
 });
@@ -537,8 +633,8 @@ export const EndActionsResolved = z.object({
   ),
 });
 
-export const GateRequested = z.object(gateBase);
-export const GateStarted = z.object(gateBase);
+export const GateRequested = z.object({ ...gateBase, invocationId: z.string().min(1).nullable().optional() });
+export const GateStarted = z.object({ ...gateBase, invocationId: z.string().min(1).nullable().optional() });
 /**
  * One finding, as a reviewer reported it.
  *
@@ -571,12 +667,14 @@ export type Finding = z.infer<typeof Finding>;
  * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
  */
 export const GatePassed = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   ...gateBase,
   evidence: z.string(),
   findings: z.array(Finding),
 });
 
 export const GateFailed = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   ...gateBase,
   evidence: z.string(),
   findings: z.array(Finding),
@@ -606,7 +704,7 @@ export const GateFailed = z.object({
  * 2 because ADR 0018 renamed `diff` to `proposed`; nothing ever wrote one of
  * these with the old name, so there is nothing to upcast.
  */
-export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
+export const GateNeverRan = z.object({ ...gateBase, detail: z.string(), invocationId: z.string().min(1).nullable().optional() });
 
 /** Humans need an escape hatch. It is recorded, never silent. */
 export const GateWaived = z.object({ ...gateBase, by: z.string(), reason: z.string() });
@@ -787,6 +885,7 @@ export const RepairDeclined = z.object({
  * *text* go away, and this is what it cannot make go away.
  */
 export const FixRequested = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   /** The run whose review refused. The fixer runs inside it. */
   runId: z.string(),
   /** 1-based, against `runtime.limits.rounds` (0039 §3 — `repair.fix` is gone). */
@@ -818,6 +917,7 @@ export const FixRequested = z.object({
  * whose commit the re-review then refused.
  */
 export const FixApplied = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   runId: z.string(),
   round: z.number().int().positive(),
   /** The head after the fixer committed, or null when it committed nothing. */
@@ -1258,6 +1358,7 @@ export const DiscussionRequested = z.object({
  * spot cannot be hidden by an answer that does not mention it.
  */
 export const DiscussionAsked = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   workItemId: z.string(),
   attempt: z.number().int().nullable(),
   by: z.string(),
@@ -1286,6 +1387,7 @@ export const DiscussionAsked = z.object({
  * what cost `#89` two attempts.
  */
 export const DiscussionAnswered = z.object({
+  invocationId: z.string().min(1).nullable().optional(),
   text: z.string(),
   /** `main:packages/agent/src/claude-code.ts` — every file served, in order. */
   read: z.array(z.string()),
@@ -1616,6 +1718,8 @@ export const PluginFailed = z.object({
 // -------------------------------------------------------------- registry ----
 
 export const EVENTS = {
+  AgentInvocationStarted,
+  AgentInvocationFinished,
   WorkItemDiscovered,
   WorkItemClaimed,
   WorkItemReleased,
@@ -1690,6 +1794,13 @@ export type PayloadOf<T extends EventType> = z.infer<(typeof EVENTS)[T]>;
  * on is listed here, and the same commit adds its upcaster in `upcast.ts`.
  */
 const BUMPED: Partial<Record<EventType, number>> = {
+  // #200: process facts may link to the one durable accounting record.
+  RunFinished: 2,
+  RunFailed: 2,
+  FixApplied: 2,
+  DiscussionAsked: 2,
+  DiscussionAnswered: 2,
+  GateNeverRan: 2,
   // 2: added `owner`. 3: added `base`. See ProjectConfigured above.
   ProjectConfigured: 3,
   // 2: added `title` and `kind`, because the queue left the log. 3: dropped
@@ -1702,9 +1813,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   WorkItemBlocked: 2,
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
-  RunStarted: 2,
+  RunStarted: 3,
   // 2: carries the prompt text and not only its length (#88). See above.
-  RunPrompted: 2,
+  RunPrompted: 3,
   // 2: added `hash` and `basedOn`, so an edit says which number it contributed
   // to the next run's `promptVersion` and what it was a change to (#104).
   PromptEdited: 2,
@@ -1712,19 +1823,19 @@ const BUMPED: Partial<Record<EventType, number>> = {
   Reconciled: 2,
   // 2: added `of` — the `rounds` ceiling the round is counted against, so a
   // fold can say *round 2 of 3* without reading a recipe (`#146`).
-  FixRequested: 2,
+  FixRequested: 3,
   // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carry a
   // `GatePoint`, so nine of them move together — a payload whose `gate` is
   // still `diff` would fail the enum rather than pass wrongly, which is why
   // every one of them needs the step and none of them can be skipped.
   // 3: added `recipe`, the canonical recipe the run was resolved against (0047).
   GatesResolved: 3,
-  GateRequested: 2,
-  GateStarted: 2,
+  GateRequested: 3,
+  GateStarted: 3,
   // 3: added `findings`, the shape `GateFailed` carries, so a minor on a
   // passing review is structured rather than prose inside `evidence` (#135).
-  GatePassed: 3,
-  GateFailed: 2,
+  GatePassed: 4,
+  GateFailed: 3,
   GateWaived: 2,
   ApprovalRequested: 2,
   ApprovalGranted: 2,

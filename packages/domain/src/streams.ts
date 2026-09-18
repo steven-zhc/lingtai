@@ -35,6 +35,11 @@ export function parseWorkItemStream(id: string): { project: string; issue: strin
 
 export const CHAT_STREAM_PREFIX = "chat-";
 
+/** One agent call; separate from run/chat streams so concurrent roles cannot collide. */
+export function invocationStream(invocationId: string): string {
+  return `inv-${invocationId}`;
+}
+
 /**
  * `chat-{id}` — one discussion about one work item, whole.
  *

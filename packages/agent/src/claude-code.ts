@@ -38,6 +38,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
+import { UNKNOWN_OBSERVATION, type InvocationRuntime, type InvocationRequest } from "./invocation.ts";
+import { prepareClaudeInvocation, supportsClaudeInvocation } from "./claude-invocation.ts";
 import type {
   AuthStatus,
   Invocable,
@@ -48,7 +50,7 @@ import type {
   Spawned,
 } from "./runtime.ts";
 import { claudeCodeAuth } from "./auth.ts";
-import { neverStarted } from "./runtime.ts";
+import { claudeCodeNeverStarted } from "./runtime.ts";
 import { observedCall } from "./hook-socket.ts";
 import { NO_RUN_LOG } from "./run-log.ts";
 
@@ -124,6 +126,7 @@ interface ClaudeResult {
   session_id?: string;
   subtype?: string;
   result?: string;
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number };
 }
 
 /**
@@ -233,11 +236,22 @@ export interface ClaudeCodeOptions {
   permissionMode?: PermissionMode;
 }
 
-export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtime {
+export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtime & InvocationRuntime {
   const binary = options.binary ?? "claude";
   const permissionMode: PermissionMode = options.permissionMode ?? "bypassPermissions";
 
   return {
+    id: "claude-code",
+    supports: supportsClaudeInvocation,
+    prepare(request: InvocationRequest) {
+      return prepareClaudeInvocation(request, (legacyRequest, discussion) => createClaudeCodeRuntime({
+        ...options,
+        permissionMode: discussion ? "default" : permissionMode,
+        // An attended reader has no native tools, MCP servers or skills. Caller
+        // extra flags cannot re-enable them or bypass this role's permissions.
+        extraArgs: discussion ? ["--safe-mode", "--tools", "", "--strict-mcp-config", "--disable-slash-commands"] : options.extraArgs,
+      }).run(legacyRequest));
+    },
     capabilities: CLAUDE_CODE_CAPABILITIES,
 
     /** `claude auth status` — `auth.ts`, which loads nothing but `node:child_process`. */
@@ -256,6 +270,11 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
     async run(request: RunRequest): Promise<RunOutcome> {
       const sessionId = sessionIdFor(request.runId);
       const started = Date.now();
+      if (request.signal?.aborted) return {
+        exitCode: null, turns: 0, durationMs: 0, costUsd: null, text: null, sessionId,
+        failure: { kind: "aborted", detail: "the conductor aborted before spawning the run" },
+        observation: { ...UNKNOWN_OBSERVATION, execution: { processStarted: false, receiptReceived: false } },
+      };
       // A run with no log writes to the one that is not there, so there is no
       // `?.` on the hot path (0034 §1).
       const trace = request.log ?? NO_RUN_LOG;
@@ -299,12 +318,58 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         let stdout = "";
         let stderr = "";
         let settled = false;
+        let processStarted = false;
+        let observedModel: string | null = null;
+        let observedSessionId: string | null = null;
+        let cancellation: { kind: "timeout" | "aborted"; detail: string } | null = null;
+        let hard: ReturnType<typeof setTimeout> | undefined;
+        const stop = (signal: NodeJS.Signals) => {
+          try {
+            if (child.pid && process.platform !== "win32") process.kill(-child.pid, signal);
+            else child.kill(signal);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill(signal);
+          }
+        };
+        child.once("spawn", () => { processStarted = true; });
+        // A verification child can keep stdout open after the CLI exits. Stop
+        // the owned group at exit rather than waiting for those pipes to close.
+        child.once("exit", () => { stop("SIGKILL"); });
+        const reap = async (): Promise<string | null> => {
+          if (!child.pid || process.platform === "win32") return null;
+          const group = -child.pid;
+          const deadline = Date.now() + 5_000;
+          let detail = `owned process group ${child.pid} still exists after 5000ms of cleanup`;
+          while (true) {
+            try {
+              process.kill(group, "SIGKILL");
+              process.kill(group, 0);
+            } catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (code === "ESRCH") return null;
+              detail = `cannot clean up owned process group ${child.pid}: ${error instanceof Error ? error.message : String(error)}`;
+              // Darwin can report EPERM for an empty group while its final
+              // member is being reaped. Require ESRCH, with a bounded retry;
+              // a persistent permission failure must not become success.
+              if (code !== "EPERM") return detail;
+            }
+            if (Date.now() >= deadline) return detail;
+            await new Promise<void>((done) => setTimeout(done, 10));
+          }
+        };
 
         // Whole lines only. A chunk boundary falls anywhere, and half a JSON
         // object traced as prose would be both unreadable and a lie about what
         // the agent said. What is left when the process dies mid-line is
         // dropped: it is the partial-stream case, and a fragment is not a fact.
         const stream = lineReader((line) => {
+          try {
+            const message = JSON.parse(line);
+            const model = message.type === "assistant" ? message.message?.model
+              : message.type === "system" && message.subtype === "init" ? message.model : null;
+            if (typeof model === "string" && model.length > 0) observedModel = model;
+            if (typeof message.session_id === "string" && message.session_id.length > 0) observedSessionId = message.session_id;
+          } catch { /* A broken line supplies no observation. */ }
           for (const [label, detail] of traceOf(line, { tools: request.traceTools === true })) {
             trace.note(label, detail);
           }
@@ -326,33 +391,47 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         });
         child.stderr.on("data", (c: Buffer) => {
           const text = errText.write(c);
-          stderr += text;
+          stderr = (stderr + text).slice(-RECEIPT_TAIL_CHARS);
           errors(text);
         });
 
-        const finish = (outcome: RunOutcome) => {
+        const finish = async (outcome: RunOutcome) => {
           if (settled) return;
           settled = true;
           clearTimeout(wall);
+          clearTimeout(hard);
           request.signal?.removeEventListener("abort", onAbort);
-          resolve(outcome);
+          const receipt = parseResult(stdout);
+          const count = (n: unknown): number | null => typeof n === "number" && Number.isInteger(n) && n >= 0 ? n : null;
+          const turns = count(receipt?.num_turns);
+          const usage = receipt?.usage;
+          const nativeDetail = outcome.failure
+            ? cancellation ? outcome.failure.detail : receipt?.result || stderr.trim() || stdout.trim() || outcome.failure.detail : undefined;
+          const cleanupDetail = await reap();
+          const failure = cleanupDetail
+            ? { kind: outcome.failure?.kind ?? "crash" as const,
+              detail: [outcome.failure?.detail, cleanupDetail].filter(Boolean).join("\n") }
+            : outcome.failure;
+          resolve({ ...outcome, failure, originalFailureDetail: failure
+            ? [nativeDetail, cleanupDetail].filter(Boolean).join("\n") : undefined,
+            observation: { observedModel,
+              sessionId: typeof receipt?.session_id === "string" && receipt.session_id.length > 0 ? receipt.session_id : observedSessionId,
+              threadId: null,
+              usage: turns !== null || usage ? { turns, turnUnit: turns === null ? null : "claude-agentic-turn",
+                inputTokens: count(usage?.input_tokens), outputTokens: count(usage?.output_tokens),
+                cachedInputTokens: count(usage?.cache_read_input_tokens) } : null,
+              execution: { processStarted, receiptReceived: receipt !== null } },
+          });
         };
 
         const kill = (kind: "timeout" | "aborted", detail: string) => {
-          child.kill("SIGTERM");
+          if (cancellation || settled) return;
+          cancellation = { kind, detail };
+          stop("SIGTERM");
           // A SIGTERM the agent ignores must not become a hang. The event is the
           // point; a process that will not die is a detail for the next line.
-          const hard = setTimeout(() => child.kill("SIGKILL"), 5_000);
+          hard = setTimeout(() => stop("SIGKILL"), 5_000);
           hard.unref?.();
-          finish({
-            exitCode: null,
-            turns: 0,
-            durationMs: Date.now() - started,
-            costUsd: null,
-            text: null,
-            failure: { kind, detail },
-            sessionId,
-          });
         };
 
         const wall = setTimeout(
@@ -381,6 +460,11 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           const durationMs = parsed?.duration_ms ?? Date.now() - started;
           const turns = parsed?.num_turns ?? 0;
           const costUsd = parsed?.total_cost_usd ?? null;
+          if (cancellation) {
+            finish({ exitCode: code, turns, durationMs: Date.now() - started, costUsd,
+              text: parsed?.result ?? null, failure: cancellation, sessionId });
+            return;
+          }
 
           // The last line of the log is how it ended, in the runtime's own
           // words — `subtype` included, which only `error_max_turns` is read
@@ -448,7 +532,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
               // the wall's receipt is subtype `success` and exits 1 (0041).
               kind:
                 parsed &&
-                neverStarted({
+                claudeCodeNeverStarted({
                   turns,
                   costUsd,
                   isError: parsed.is_error === true || (code !== null && code !== 0),
@@ -503,6 +587,16 @@ function receiptIn(line: string): ClaudeResult | null {
   } catch {
     return null;
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  if (parsed.type === undefined && parsed.is_error === undefined && parsed.num_turns === undefined && parsed.subtype === undefined) return null;
+  // An invalid counter is not a receipt that spent zero. It must not throw in
+  // the close handler (and leave a call permanently waiting for an outcome).
+  for (const value of [parsed.num_turns, parsed.duration_ms, parsed.total_cost_usd]) {
+    if (value != null && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) return null;
+  }
+  if (parsed.num_turns != null && !Number.isInteger(parsed.num_turns)) return null;
+  if (parsed.result != null && typeof parsed.result !== "string") return null;
+  if (parsed.is_error != null && typeof parsed.is_error !== "boolean") return null;
   return parsed.type === undefined || parsed.type === "result" ? parsed : null;
 }
 
@@ -634,13 +728,19 @@ export function traceOf(
  */
 function lineReader(onLine: (line: string) => void): (chunk: string) => void {
   let pending = "";
+  let discarded = false;
   return (chunk: string) => {
     pending += chunk;
     let nl = pending.indexOf("\n");
     while (nl >= 0) {
-      onLine(pending.slice(0, nl));
+      if (!discarded && nl <= RECEIPT_TAIL_CHARS) onLine(pending.slice(0, nl));
+      discarded = false;
       pending = pending.slice(nl + 1);
       nl = pending.indexOf("\n");
+    }
+    if (pending.length > RECEIPT_TAIL_CHARS) {
+      pending = "";
+      discarded = true;
     }
   };
 }

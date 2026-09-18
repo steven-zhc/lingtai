@@ -23,7 +23,7 @@
  * `AgentHostFailed` — and `serve` can ask for a `Scope`, which is how the
  * socket's close stopped being something `runOnce` had to remember.
  */
-import { Context, type Effect, type Scope } from "effect";
+import { Context, Data, type Effect, type Scope } from "effect";
 import type { AgentEnv } from "@lingtai/agent-env";
 import type {
   AgentHostFailed,
@@ -33,6 +33,8 @@ import type {
   OpenRunLogOptions,
   RenderOptions,
   RunLog,
+  InvocationRuntime,
+  RuntimeSelection,
 } from "@lingtai/agent";
 import type {
   GitRunOptions,
@@ -147,4 +149,22 @@ export class Repo extends Context.Tag("@lingtai/conductor/Repo")<Repo, RepoPort>
 export class AgentHost extends Context.Tag("@lingtai/conductor/AgentHost")<
   AgentHost,
   AgentHostPort
+>() {}
+
+export class RuntimeSelectionRefused extends Data.TaggedError("RuntimeSelectionRefused")<{
+  agent: RuntimeSelection["configuration"]["agent"];
+  role: RuntimeSelection["role"];
+  detail: string;
+}> {
+  override get message() {
+    return this.detail;
+  }
+}
+
+/** Conductor owns the slot; agent adapters/live wiring own the available implementations. */
+export interface RuntimeSelectorPort {
+  select(selection: RuntimeSelection): Effect.Effect<InvocationRuntime, RuntimeSelectionRefused>;
+}
+export class AgentRuntimes extends Context.Tag("@lingtai/conductor/AgentRuntimes")<
+  AgentRuntimes, RuntimeSelectorPort
 >() {}

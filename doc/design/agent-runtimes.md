@@ -265,6 +265,9 @@ Claude Code 的执行轮数不是同一单位；分别记录，无法获得可�
 
 ## 6. 事件、日志和费用
 
+#200 的接口、事件版本、恢复与费用兼容边界见
+[Agent invocation 开发契约](agent-invocation-contract.md)。生产流程接入仍按第 8 节分步实施。
+
 每次实际 agent 调用需要一个唯一 `invocationId`，归属于开发 run、fix round、
 门禁或者 discussion answer。统一调用记录至少包含：
 

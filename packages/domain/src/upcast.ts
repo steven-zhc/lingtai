@@ -19,6 +19,9 @@
  */
 import { type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from "./events.ts";
 
+/** Old calls recorded no invocation identity. Never resolve today's recipe. */
+const invocationUnlinked: Upcaster = (data) => ({ ...(data as object), invocationId: null });
+
 /** Takes a payload at version *n* and returns it at version *n + 1*. */
 export type Upcaster = (data: unknown) => unknown;
 
@@ -129,6 +132,7 @@ export const UPCASTERS: UpcastRegistry = {
      * would be worse than the gap.
      */
     1: (data) => ({ ...(data as object), invocation: null }),
+    2: invocationUnlinked,
   },
   RunPrompted: {
     /**
@@ -139,6 +143,7 @@ export const UPCASTERS: UpcastRegistry = {
      * always answered.
      */
     1: (data) => ({ ...(data as object), prompt: null }),
+    2: invocationUnlinked,
   },
   PromptEdited: {
     /**
@@ -167,6 +172,7 @@ export const UPCASTERS: UpcastRegistry = {
      * the log claiming a bound nobody applied.
      */
     1: (data) => ({ ...(data as object), of: 0 }),
+    2: invocationUnlinked,
   },
   GatesResolved: {
     1: (data) => ({
@@ -188,8 +194,8 @@ export const UPCASTERS: UpcastRegistry = {
      */
     2: (data) => data,
   },
-  GateRequested: { 1: gatePointRenamed },
-  GateStarted: { 1: gatePointRenamed },
+  GateRequested: { 1: gatePointRenamed, 2: invocationUnlinked },
+  GateStarted: { 1: gatePointRenamed, 2: invocationUnlinked },
   GatePassed: {
     1: gatePointRenamed,
     /**
@@ -200,8 +206,15 @@ export const UPCASTERS: UpcastRegistry = {
      * as such. Empty says *none recorded here*; the prose still says the rest.
      */
     2: (data) => ({ ...(data as object), findings: [] }),
+    3: invocationUnlinked,
   },
-  GateFailed: { 1: gatePointRenamed },
+  GateFailed: { 1: gatePointRenamed, 2: invocationUnlinked },
+  RunFinished: { 1: invocationUnlinked },
+  RunFailed: { 1: invocationUnlinked },
+  FixApplied: { 1: invocationUnlinked },
+  GateNeverRan: { 1: invocationUnlinked },
+  DiscussionAsked: { 1: invocationUnlinked },
+  DiscussionAnswered: { 1: invocationUnlinked },
   GateWaived: { 1: gatePointRenamed },
   ApprovalRequested: { 1: gatePointRenamed },
   ApprovalGranted: { 1: gatePointRenamed },
