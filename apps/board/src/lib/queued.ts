@@ -29,7 +29,8 @@
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { GATE_POINTS, retiredRepairPending, type Envelope } from "@lingtai/domain";
+import { GATE_POINTS, retiredRepairPending, type Envelope, type RuntimeId, type Tier } from "@lingtai/domain";
+import { projectLimits, type Recipe } from "@lingtai/recipe";
 import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
@@ -64,7 +65,7 @@ export interface PlanView {
   /** All five, in loop order, including the ones nothing is configured at. */
   points: PlannedPoint[];
   /** `runtime.limits.turns`. */
-  turns: number;
+  turns: number | null;
   /** `runtime.limits.wall`, in the recipe's own words rather than milliseconds. */
   wall: string;
   /** `runtime.tier` — how contained the run must be (0007). */
@@ -174,17 +175,19 @@ export interface QueuedView {
 export function planOf(
   plan: GatePlan,
   runtime: {
-    limits: { turns: number; wall: string; rounds: number; restarts: number };
-    tier: string;
+    agent?: RuntimeId;
+    limits: Recipe["runtime"]["limits"];
+    tier: Tier;
   },
 ): PlanView {
+  const limits = projectLimits({ runtime: { ...runtime, agent: runtime.agent ?? "claude-code" } });
   return {
     points: GATE_POINTS.map((point) => {
       const actions = (plan.get(point) ?? []).map((a) => a.name);
       return { point, actions, skipped: actions.length === 0 };
     }),
-    turns: runtime.limits.turns,
-    wall: runtime.limits.wall,
+    turns: limits.turns,
+    wall: limits.wall,
     tier: runtime.tier,
     rounds: runtime.limits.rounds,
     restarts: runtime.limits.restarts,

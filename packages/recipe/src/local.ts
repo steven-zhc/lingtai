@@ -3,17 +3,11 @@
  * half beside it in `~/.lingtai/config.yml`
  * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3).
  *
- * **The repository holds facts about itself; everything else is mine.** So the
- * recipe keeps `repo`, `source`, `env`, `gates` and `subscribers` — what this
- * repository needs and how I want its work judged — and the two fields that
- * were facts about a machine sitting in a file about a project move out of it:
- *
- * - `runtime.agent`, because which CLI is installed and signed in is a fact
- *   about this machine. **It moves; it does not go** — 0007 supports two
- *   runtimes, both can be signed in at once, and a choice nobody wrote down is
- *   the default this is here to refuse.
- * - `runtime.limits`, because more rounds does not lower quality — the gates
- *   decide that. It costs more money, and that is the spender's call.
+ * 0053 puts agent and limits in the project recipe. Until #201 migrates old
+ * files, recipes without those choices retain the old machine fallback.
+ * Writing new recipe choices alongside legacy machine choices refuses with a
+ * migration message; neither source silently overrides the other. Assignees
+ * remain machine-owned.
  *
  * Nothing here makes a request. The file is read on every resolve, as the
  * branch was, so an edit reaches the next run and a daemon holds nothing stale.
@@ -31,7 +25,9 @@ import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
-import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
+import { RecipeInvalidError, RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
+import type { RuntimeFieldSource } from "./runtimes.ts";
+import { applyPreset, declaresProjectRuntime } from "./presets.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -242,23 +238,75 @@ export async function resolveLocalRecipe(
   const shared = machine.runtime;
   const scopedAt = `${machineFile} (projects.${project})`;
 
-  const named = scoped?.agent
+  let own: Record<string, unknown> = {};
+  let declaration: Record<string, unknown> = {};
+  // Validate source choices before login detection. In particular, a malformed
+  // agent/limits or runtime block must not be replaced by a detected default.
+  const preview = resolveSource(source, options.base ?? path, path, (raw) => {
+    declaration = raw;
+    if (raw["runtime"] === undefined) raw["runtime"] = {};
+    const runtime = raw["runtime"];
+    if (runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)) {
+      own = runtime as Record<string, unknown>;
+      if ("assignee" in own) return [
+        `runtime.assignee: moved to this machine (0046 §3) — write it in ${machineFile}, under runtime`,
+      ];
+    }
+    return [];
+  });
+  const declaredRuntime = (applyPreset(declaration).recipe as { runtime: Record<string, unknown> }).runtime;
+  const ownsRuntime = declaresProjectRuntime(declaration);
+  const declaredAgent = "agent" in declaredRuntime;
+  const projectAgentFrom = "agent" in own ? path : `preset:${preview.preset}`;
+  const legacyRuntime = scoped?.agent !== undefined || shared?.agent !== undefined
+    || scoped?.limits !== undefined || shared?.limits !== undefined;
+  if (ownsRuntime && legacyRuntime) {
+    throw new RecipeInvalidError(options.base ?? path, [
+      `runtime: recipe agent/limits and legacy runtime fields in ${machineFile} coexist — ` +
+        "migrate the machine choices to every affected project recipe (#201); nothing was overridden",
+    ], path);
+  }
+
+  const named = declaredAgent
+    ? { agent: preview.recipe.runtime.agent, from: projectAgentFrom }
+    : scoped?.agent
     ? { agent: scoped.agent, from: scopedAt }
     : shared?.agent
       ? { agent: shared.agent, from: machineFile }
       : null;
-  const agent = await resolveAgent(named, options.signedIn, machineFile);
+  const agent = await resolveAgent(named, options.signedIn, path);
+  // A detected/legacy agent is not an explicit recipe override that resets
+  // model inheritance. Materialise a model-only preset before injecting it.
+  const inheritedModel = !declaredAgent && own["model"] === undefined ? preview.recipe.runtime.model : undefined;
 
+  const origins = new Map<string, RuntimeFieldSource>();
+  origins.set("runtime.agent", {
+    kind: declaredAgent ? "agent" in own ? "configured" : "preset" : named ? "legacy-machine" : "detected",
+    path: "runtime.agent", location: agent.from,
+  });
+  if (inheritedModel !== undefined) {
+    origins.set("runtime.model", { kind: "preset", path: "runtime.model", location: `preset:${preview.preset}` });
+  }
   const provenance: Record<string, string> = {
     "runtime.agent": `${agent.agent} ← ${agent.from}`,
   };
   const limits: Record<string, unknown> = {};
+  const declaredLimits = (declaredRuntime["limits"] ?? {}) as Partial<Recipe["runtime"]["limits"]>;
+  const ownLimits = (own["limits"] ?? {}) as Partial<Recipe["runtime"]["limits"]>;
   for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
-    const value = scoped?.limits?.[key] ?? shared?.limits?.[key];
+    const value = ownsRuntime ? declaredLimits[key] : scoped?.limits?.[key] ?? shared?.limits?.[key];
     const from =
-      scoped?.limits?.[key] !== undefined ? scopedAt : shared?.limits?.[key] !== undefined ? machineFile : "default";
-    limits[key] = value ?? LIMIT_DEFAULTS[key];
-    provenance[`runtime.limits.${key}`] = `${limits[key]} ← ${from}`;
+      ownsRuntime && value !== undefined ? ownLimits[key] !== undefined ? path : `preset:${preview.preset}`
+        : !ownsRuntime && scoped?.limits?.[key] !== undefined ? scopedAt
+          : !ownsRuntime && shared?.limits?.[key] !== undefined ? machineFile : "default";
+    if (value !== undefined) {
+      limits[key] = value;
+      origins.set(`runtime.limits.${key}`, {
+        kind: ownsRuntime ? ownLimits[key] !== undefined ? "configured" : "preset" : "legacy-machine",
+        path: `runtime.limits.${key}`, location: from,
+      });
+    }
+    provenance[`runtime.limits.${key}`] = `${value ?? (key === "turns" && agent.agent === "codex" ? "(none)" : LIMIT_DEFAULTS[key])} ← ${from}`;
   }
 
   // Absent unless the machine said something, so a machine that has not heard
@@ -288,7 +336,7 @@ export async function resolveLocalRecipe(
       runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {};
-    for (const key of ["agent", "limits", "assignee"]) {
+    for (const key of ["assignee"]) {
       if (key in own) {
         refused.push(
           `runtime.${key}: moved to this machine (0046 §3) — write it in ${machineFile}, ` +
@@ -297,9 +345,15 @@ export async function resolveLocalRecipe(
       }
     }
     if (refused.length > 0) return refused;
-    raw["runtime"] = { ...own, agent: agent.agent, limits, ...(assignee ? { assignee } : {}) };
+    // Leave a preset's agent inherited: injecting it as an own declaration
+    // would reset its model in applyPreset, even when the agent stays the same.
+    raw["runtime"] = {
+      ...own, ...(!declaredAgent ? { agent: agent.agent } : {}),
+      ...(inheritedModel !== undefined ? { model: inheritedModel } : {}),
+      limits, ...(assignee ? { assignee } : {}),
+    };
     return [];
-  });
+  }, origins);
 
   // What stays the repository's facts, from the recipe file — said with its
   // value, so the doctor prints the resolved recipe rather than a list of names.

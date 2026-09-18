@@ -104,7 +104,7 @@
  * recorded about where a scope *starts*, kept here as a test rather than as an
  * intention.
  */
-import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/recipe";
+import { type ResolvedRecipe, baseDivergence, parseDuration, projectLimits, resolveRuntimes, resolveRuntime } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
@@ -391,6 +391,22 @@ export function runOnce(
         detail: `${wrongAgent} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; no other runtime is dispatched yet`,
       };
     }
+    const projectDefault = resolveRuntime(recipe, "development");
+    const roles = resolved.runtimes ?? resolveRuntimes(recipe);
+    const unboundRole = [
+      { path: "development.runtime", runtime: roles.development },
+      ...roles.reviews.map((review) => ({ path: `gates.${review.point}.${review.index}.runtime`, runtime: review.runtime })),
+    ].find((role) => role.runtime.configHash !== projectDefault.configHash || role.runtime.model !== null);
+    if (unboundRole) {
+      return { ok: false, workItemId: null, runId: null, stage: "recipe",
+        detail: `${unboundRole.runtime.model !== null ? unboundRole.runtime.provenance.model.path : unboundRole.path}: role-specific dispatch/model selection is not implemented yet (#200/#204) — nothing was claimed` };
+    }
+    const appliedLimits = projectLimits(recipe);
+    if (appliedLimits.turns === null) {
+      return { ok: false, workItemId: null, runId: null, stage: "recipe",
+        detail: "runtime.limits.turns: this dispatch path requires a turns-capable runtime until #200/#204 — nothing was claimed" };
+    }
+    const runtimeLimits = { ...appliedLimits, turns: appliedLimits.turns };
     // Safe now, and only now: past the refusal these two are the same branch.
     const base = recipe.repo.base;
     log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`);
@@ -934,8 +950,8 @@ export function runOnce(
           // a hook it could not reach and was refused before it read a line.
           settingsPath: reviewSettingsPath,
           limits: {
-            turns: recipe.runtime.limits.turns,
-            wallMs: parseDuration(recipe.runtime.limits.wall),
+            turns: runtimeLimits.turns,
+            wallMs: parseDuration(runtimeLimits.wall),
             diffBytes: recipe.runtime.budget.diff,
           },
         },
@@ -1117,8 +1133,8 @@ export function runOnce(
                * them is that they are what was actually in force.
                */
               const limits = {
-                turns: recipe.runtime.limits.turns,
-                wallMs: parseDuration(recipe.runtime.limits.wall),
+                turns: runtimeLimits.turns,
+                wallMs: parseDuration(runtimeLimits.wall),
               };
               const agentEnv = runnableEnv({ ...env.values, ...wiring.env });
 
@@ -1302,7 +1318,7 @@ export function runOnce(
                       needs: "acknowledgement",
                       diagnosis: {
                         what:
-                          `the run reached the recipe's turn limit (${recipe.runtime.limits.turns}) and was stopped: ` +
+                          `the run reached the recipe's turn limit (${runtimeLimits.turns}) and was stopped: ` +
                           `${said(detail)}. The limit is a scope alarm — the ticket asks ` +
                           `for more than one run should do.`,
                         done: null,
@@ -1719,8 +1735,8 @@ export function runOnce(
                 traceTools: true,
                 env: runnableEnv(env.values),
                 limits: {
-                  turns: recipe.runtime.limits.turns,
-                  wallMs: parseDuration(recipe.runtime.limits.wall),
+                  turns: runtimeLimits.turns,
+                  wallMs: parseDuration(runtimeLimits.wall),
                 },
                 signal: fixAbort.signal,
               })

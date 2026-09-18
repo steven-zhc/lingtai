@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { applyPreset } from "./presets.ts";
 import { Recipe } from "./recipe.ts";
+import { resolveRuntimes, type ResolvedRuntimes, type RuntimeSources, type RuntimeFieldSource } from "./runtimes.ts";
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = ".lingtai/config.yaml";
@@ -54,6 +55,8 @@ export class RecipeInvalidError extends Error {
 
 export interface ResolvedRecipe {
   recipe: Recipe;
+  /** Current source resolutions include this; legacy recorded/manual values may not. */
+  runtimes?: ResolvedRuntimes;
   /**
    * Hash of the *resolved* recipe, canonically serialised.
    *
@@ -124,14 +127,16 @@ export async function resolveRecipe(
  *
  * `where` is how a refusal names the file; `shape` runs on the parsed YAML
  * before the preset and may refuse keys by name or fill fields in — which is
- * how `resolveLocalRecipe` puts the machine's `runtime.agent` and
- * `runtime.limits` into a recipe that may not carry them itself.
+ * how `resolveLocalRecipe` supplies a detected agent or the temporary legacy
+ * machine fallback to a recipe that has not declared its own choices.
  */
 export function resolveSource(
   source: string,
   ref: string,
   where: string,
   shape: (raw: Record<string, unknown>) => string[] = () => [],
+  /** Origins supplied by the temporary local machine/detection bridge. */
+  origins?: RuntimeSources,
 ): ResolvedRecipe {
   let raw: unknown;
   try {
@@ -145,6 +150,7 @@ export function resolveSource(
     if (refused.length > 0) throw new RecipeInvalidError(ref, refused, where);
   }
 
+  const declared = suppliedPaths(raw);
   // Preset first, then validation: a preset can satisfy a required field the
   // recipe omits, which is the point of having one.
   let applied;
@@ -161,15 +167,23 @@ export function resolveSource(
   if (!parsed.success) {
     throw new RecipeInvalidError(
       ref,
-      parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      recipeProblems(parsed.error.issues),
       where,
     );
   }
 
   // The resolved form is what gets hashed, so the preset is inside the hash and
   // a preset change is a configuration change.
+  const sources = new Map<string, RuntimeFieldSource>();
+  for (const path of suppliedPaths(applied.recipe)) {
+    sources.set(path, origins?.get(path) ?? {
+      kind: declared.has(path) ? "configured" : "preset", path,
+      location: declared.has(path) ? where : `preset:${applied.preset}`,
+    });
+  }
   return {
     recipe: parsed.data,
+    runtimes: resolveRuntimes(parsed.data, sources),
     configHash: hashRecipe(parsed.data),
     ref,
     source,
@@ -178,12 +192,43 @@ export function resolveSource(
   };
 }
 
+/** Include unknown keys and prefix Zod's relative nested union paths. */
+interface RecipeProblem {
+  path: readonly PropertyKey[];
+  message: string;
+  code: string;
+  keys?: string[];
+  errors?: RecipeProblem[][];
+}
+export function recipeProblems(issues: readonly RecipeProblem[], prefix: readonly PropertyKey[] = []): string[] {
+  return [...new Set(issues.flatMap((issue) => {
+    const path = [...prefix, ...issue.path];
+    if (issue.code === "invalid_union" && issue.errors) return recipeProblems(issue.errors.flat(), path);
+    if (issue.code === "unrecognized_keys" && issue.keys) {
+      return issue.keys.map((key) => `${[...path, key].join(".")}: unrecognized field`);
+    }
+    return [`${path.join(".") || "(root)"}: ${issue.message}`];
+  }))];
+}
+
+/** Presets and the local legacy bridge have already supplied their configured values. */
+function suppliedPaths(value: unknown, at = ""): Set<string> {
+  const out = new Set<string>();
+  if (value === null || typeof value !== "object") return out;
+  for (const [key, child] of Object.entries(value)) {
+    const path = at ? `${at}.${key}` : key;
+    out.add(path);
+    for (const nested of suppliedPaths(child, path)) out.add(nested);
+  }
+  return out;
+}
+
 /**
  * Keys that used to mean something and now mean nothing, refused by name.
  *
- * `Recipe` is `z.object` and not `z.strictObject`, so a key it no longer knows
- * is **silently dropped** — and a repository that wrote `repair.maxAttempts: 3`
- * would go on running with `rounds`' default while its own file said otherwise.
+ * Unknown fields are refused by the schema. Retired keys get a more useful
+ * explanation here: a recipe that still writes `repair.maxAttempts: 3` needs
+ * the replacement named rather than just an unknown-field error.
  * That is the failure this project keeps finding under another name: a setting
  * present, believed, and not connected to anything.
  *

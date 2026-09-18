@@ -320,7 +320,7 @@ function decisionEditor(state: WizardState, decision: DecisionId, act: (m: Wizar
       <input
         type={key === "wall" ? "text" : "number"}
         min={key === "turns" ? 1 : 0}
-        value={draft.limits[key]}
+        value={draft.limits[key] ?? ""}
         onChange={(e) =>
           act({ type: "limit", key, value: key === "wall" ? e.target.value : Number(e.target.value) })
         }

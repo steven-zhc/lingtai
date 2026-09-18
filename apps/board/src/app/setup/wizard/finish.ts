@@ -32,12 +32,13 @@ import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
 import {
   Recipe,
+  declaresProjectRuntime,
   editRecipe,
   hashRecipe,
   machineFiles,
   machinePath,
   recipePath,
-  resolveRecipe,
+  resolveSource,
 } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
@@ -45,7 +46,7 @@ import { actor } from "../../../lib/actor.ts";
 export type Finished =
   | {
       ok: true;
-      /** `path`'s text — never with `runtime.agent` or `runtime.limits` in it. */
+      /** The project recipe; legacy runtime placement is retained until #201. */
       file: string;
       path: string;
       /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
@@ -107,10 +108,10 @@ export async function finishWizard(input: {
  * and must describe the recipe the page does; where it does not, the gates are
  * written whole, and where that still does not, nothing is offered.
  *
- * **`runtime.agent` and `runtime.limits` are never written into it** (#180): a
- * recipe carrying either is refused at the path it is read from. They are
- * compared with `current` — what the machine resolved them to — and a change to
- * them is the machine file with `projects.<project>.runtime` set, beside it.
+ * Recipes declaring project runtime choices keep those choices in the recipe
+ * (0053). Legacy recipes retain the machine write path until #201 migrates
+ * them. Neither an unrelated edit nor changing agent moves a project choice
+ * back to the legacy file. Machine-owned assignees are not emitted.
  */
 export async function editExisting(
   existing: string,
@@ -118,22 +119,34 @@ export async function editExisting(
   at: { project: string; current: Recipe; machine: string | null; home?: string },
 ): Promise<Finished> {
   const ref = state.draft.base;
-  const { recipe } = await resolveRecipe(async () => existing, ref);
+  let declaration: Record<string, unknown> = {};
+  const defaults = (raw: Record<string, unknown>): string[] => {
+    if (raw["runtime"] === undefined) raw["runtime"] = {};
+    return [];
+  };
+  const { recipe } = resolveSource(existing, ref, recipePath(at.project, at.home), (raw) => {
+    declaration = raw;
+    return defaults(raw);
+  });
+  const projectRuntime = declaresProjectRuntime(declaration);
   const drafted = Recipe.parse(applyDraft(at.current, state));
-  // The file's half: everything the page changed but the machine's two fields.
   const after = Recipe.parse({
     ...drafted,
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: recipe.runtime.limits },
+    runtime: {
+      ...drafted.runtime,
+      ...(projectRuntime ? {} : { agent: recipe.runtime.agent, limits: recipe.runtime.limits }),
+      assignee: recipe.runtime.assignee,
+    },
   });
-  const describes = async (file: string) =>
-    (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
+  const describes = (file: string) =>
+    resolveSource(file, ref, recipePath(at.project, at.home), defaults).configHash === hashRecipe(after);
 
   let changes = changesFrom(recipe, after);
   let file = editRecipe(existing, changes);
-  if (!(await describes(file))) {
+  if (!describes(file)) {
     changes = wholeGates(changes, after);
     file = editRecipe(existing, changes);
-    if (!(await describes(file))) {
+    if (!describes(file)) {
       return {
         ok: false,
         refusals: [
@@ -144,7 +157,8 @@ export async function editExisting(
     }
   }
 
-  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime");
+  const runtime = projectRuntime ? [] : changesFrom(at.current, drafted)
+    .filter((c) => c.path[0] === "runtime" && (c.path[1] === "agent" || c.path[1] === "limits"));
   let machine: string | null = null;
   if (runtime.length > 0) {
     const split = machineFiles({

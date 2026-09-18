@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./duration": "./src/duration.ts"
+    "./duration": "./src/duration.ts",
+    "./limits": "./src/limits.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

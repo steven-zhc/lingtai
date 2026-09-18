@@ -17,7 +17,9 @@ import type { Recipe } from "./recipe.ts";
 export type Preset = {
   repo?: Partial<Recipe["repo"]>;
   gates?: Recipe["gates"];
-  runtime?: Partial<Recipe["runtime"]>;
+  runtime?: Omit<Partial<Recipe["runtime"]>, "limits"> & { limits?: Partial<Recipe["runtime"]["limits"]> };
+  development?: Recipe["development"];
+  discussion?: Recipe["discussion"];
 };
 
 export const PRESETS: Record<string, Preset> = {
@@ -70,7 +72,8 @@ export const PRESETS: Record<string, Preset> = {
       merge: [],
       end: [],
     },
-    runtime: { agent: "claude-code" },
+    // Supply the legacy schema container without choosing an agent for a toolchain.
+    runtime: {},
   },
 };
 
@@ -91,9 +94,9 @@ export interface PresetApplied {
 /**
  * Applies a preset underneath a parsed recipe.
  *
- * Shallow per section, and arrays replace rather than concatenate. A recipe that
- * lists gates means *those* gates; silently appending the preset's would be a
- * way to acquire a gate nobody wrote down, and the merge rule you cannot predict
+ * Shallow per section, with runtime limits inherited by field. Arrays replace
+ * rather than concatenate. A recipe that lists gates means *those* gates;
+ * silently appending the preset's would acquire a gate nobody wrote down, and the merge rule you cannot predict
  * is worse than the one you have to restate.
  *
  * Runs against the raw object before validation, so a preset can satisfy a
@@ -119,8 +122,18 @@ export function applyPreset(raw: unknown): PresetApplied {
     const own = recipe[key];
     if (!base) return own;
     if (own === undefined) return { ...base };
-    if (own === null || typeof own !== "object") return own;
-    return { ...base, ...(own as object) };
+    if (own === null || typeof own !== "object" || Array.isArray(own)) return own;
+    const merged = { ...base, ...(own as Record<string, unknown>) } as Record<string, unknown>;
+    if (key === "runtime") {
+      const value = own as Record<string, unknown>;
+      if ("agent" in value && !("model" in value)) delete merged["model"];
+      const baseLimits = (base as Record<string, unknown>)["limits"];
+      const ownLimits = value["limits"];
+      if (baseLimits && ownLimits && typeof ownLimits === "object" && !Array.isArray(ownLimits)) {
+        merged["limits"] = { ...(baseLimits as object), ...ownLimits };
+      }
+    }
+    return merged;
   };
 
   const { extends: _dropped, ...rest } = recipe;
@@ -129,11 +142,24 @@ export function applyPreset(raw: unknown): PresetApplied {
       ...rest,
       repo: section("repo"),
       runtime: section("runtime"),
+      ...(recipe["development"] !== undefined || preset.development !== undefined
+        ? { development: recipe["development"] !== undefined ? recipe["development"] : preset.development } : {}),
+      ...(recipe["discussion"] !== undefined || preset.discussion !== undefined
+        ? { discussion: recipe["discussion"] !== undefined ? recipe["discussion"] : preset.discussion } : {}),
       // Arrays replace rather than concatenate, for both of these. A recipe
       // that lists its own steps means *those* steps; silently appending the
       // preset's would be a way to acquire work nobody wrote down.
-      gates: recipe["gates"] ?? preset.gates,
+      gates: recipe["gates"] !== undefined ? recipe["gates"] : preset.gates,
     },
     preset: name,
   };
+}
+
+/** Project-owned choices include preset declarations, but never schema defaults. */
+export function declaresProjectRuntime(raw: unknown): boolean {
+  const { recipe } = applyPreset(raw);
+  if (recipe === null || typeof recipe !== "object" || Array.isArray(recipe)) return false;
+  const runtime = (recipe as Record<string, unknown>)["runtime"];
+  return runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
+    && ("agent" in runtime || "limits" in runtime);
 }

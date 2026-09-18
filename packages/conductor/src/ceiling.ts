@@ -36,16 +36,18 @@ import { formatDuration } from "@lingtai/recipe/duration";
 export function passCeiling(limits: {
   rounds: number;
   restarts: number;
-  turns: number;
+  turns: number | null;
   wall: string;
   wallMs: number;
 }): string {
+  const turnText = limits.turns === null ? "" : `, ${limits.turns} turns`;
+  const perRun = limits.turns === null ? limits.wall : `${limits.wall} and ${limits.turns} turns`;
   const pass =
     limits.rounds === 0
-      ? `one agent run — ${limits.wall}, ${limits.turns} turns`
+      ? `one agent run — ${limits.wall}${turnText}`
       : `up to ${limits.rounds + 1} agent runs — the work, then ${limits.rounds} round(s) ` +
-        `back to the agent carrying what refused it. ${limits.wall} and ${limits.turns} ` +
-        `turns each, so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}`;
+        `back to the agent carrying what refused it. ${perRun} ` +
+        `each, so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}`;
 
   // **Said whether it buys anything or not**, like a `skipped` gate point and
   // like `rounds: 0` below it: a default that spends money has to be auditable

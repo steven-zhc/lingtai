@@ -429,6 +429,40 @@ function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
 }
 
 describe("runOnce, with no world to run in", () => {
+  it.each([
+    [RECIPE + "development:\n  runtime: {agent: codex}\n", "development.runtime"],
+    [RECIPE + "development:\n  runtime: {limits: {wall: 5m}}\n", "development.runtime"],
+    [REVIEWED.replace("      agent: look for races", "      agent: look for races\n      runtime: {agent: codex}"), "gates.proposed.0.runtime"],
+    [RECIPE.replace("agent: claude-code,", "agent: claude-code, model: requested-model,"), "runtime.model"],
+  ])("refuses an unsupported new binding before claiming work: %s", async (recipe, path) => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const result = await once({ project, client: fakeGitHub(said, recipe), runtime, issue: 7,
+      hookBinary: "/tmp/fake/lingtai-hook", prompt: "fix {{issue}}", merge: false, home: "/tmp/fake-home", store,
+    }, fakePorts(did, store));
+    expect(result).toMatchObject({ ok: false, stage: "recipe", workItemId: null, runId: null });
+    expect(result.ok === false && result.detail).toContain(path);
+    expect(store.streams.size).toBe(0);
+    expect(did).toEqual([]);
+    expect(said).toEqual([]);
+  });
+
+  it("still dispatches the existing Claude defaults without declaring them in the recipe", async () => {
+    const store = memoryStore();
+    const requests: { turns: number; wallMs: number }[] = [];
+    const recipe = RECIPE.replace(
+      "runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }",
+      "runtime: { agent: claude-code }",
+    );
+    const result = await once({ project, client: fakeGitHub([], recipe),
+      runtime: { ...runtime, run: async (request) => { requests.push(request.limits); return runtime.run(request); } },
+      issue: 7, hookBinary: "/tmp/fake/lingtai-hook", prompt: "fix {{issue}}", merge: false, home: "/tmp/fake-home", store,
+    }, fakePorts([], store));
+    expect(result.ok).toBe("held");
+    expect(requests).toContainEqual({ turns: 300, wallMs: 7_200_000 });
+  });
+
   it("holds at the merge, appends what it decided, and takes the worktree down", async () => {
     const store = memoryStore();
     const did: string[] = [];

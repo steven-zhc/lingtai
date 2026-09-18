@@ -41,6 +41,7 @@ import {
   type ResolvedRecipe,
   baseDivergence,
   parseDuration,
+  projectLimits,
   recipePath,
   resolveLocalRecipe,
   resolveRecipe,
@@ -328,9 +329,10 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // a reader everything except the thing being decided: what one pass of this
   // project can cost. One sentence, from `passCeiling`, so this line and the
   // drain's cannot say different things about the same recipe.
+  const limits = projectLimits(resolved.recipe);
   log(`  ${"a pass".padEnd(9)} ${passCeiling({
-    ...resolved.recipe.runtime.limits,
-    wallMs: parseDuration(resolved.recipe.runtime.limits.wall),
+    ...limits,
+    wallMs: parseDuration(limits.wall),
   })}`);
   log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${resolved.recipe.source.kinds.join(" > ")}`);
 

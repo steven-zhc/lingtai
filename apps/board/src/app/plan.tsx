@@ -46,7 +46,7 @@ import type { PlanView } from "@/lib/queued";
  */
 function limits(plan: PlanView): string {
   return [
-    `${plan.turns} turns`,
+    ...(plan.turns === null ? [] : [`${plan.turns} turns`]),
     plan.wall,
     plan.tier,
     plan.rounds === 0 ? "no rounds" : `${plan.rounds} round(s) back`,

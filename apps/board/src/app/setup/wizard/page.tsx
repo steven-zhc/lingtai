@@ -81,6 +81,8 @@ async function load(input: string): Promise<Loaded> {
         scripts: proposal.found.scripts,
         labels: proposal.found.labels,
         doubts: proposal.refusals,
+        agent: proposal.found.runtime,
+        proposedFromScan: proposal.proposedFromScan,
       }),
       recipe: proposal.recipe,
       existing: null,
