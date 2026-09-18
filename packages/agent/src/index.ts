@@ -16,6 +16,7 @@ export {
   meetsTier,
   missingForTier,
   neverStarted,
+  claudeCodeNeverStarted,
   type AuthStatus,
   type Invocable,
   type RunLimit,
@@ -25,6 +26,7 @@ export {
   type RuntimeCapabilities,
   type Spawned,
 } from "./runtime.ts";
+export * from "./invocation.ts";
 export {
   CLAUDE_CODE_CAPABILITIES,
   PROMPT_ELIDED,

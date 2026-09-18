@@ -17,6 +17,9 @@ import {
   serveHookServer,
   smokeTestFailClosedEffect,
   writeHookWiringEffect,
+  createClaudeCodeRuntime,
+  type InvocationRuntime,
+  type ClaudeCodeOptions,
 } from "@lingtai/agent";
 import { resolveAgentEnv } from "@lingtai/agent-env";
 import {
@@ -26,7 +29,7 @@ import {
   removeWorktreeEffect,
 } from "@lingtai/repo";
 import { Effect, Layer } from "effect";
-import { AgentHost, Repo, type RunPorts } from "./ports.ts";
+import { AgentHost, Repo, AgentRuntimes, RuntimeSelectionRefused, type RuntimeSelectorPort, type RunPorts } from "./ports.ts";
 
 export function livePorts(): RunPorts {
   return {
@@ -72,3 +75,25 @@ export const AgentHostLive = Layer.succeed(AgentHost, livePorts().agent);
 
 /** Both, for a host that wants the real world and no choices. */
 export const PortsLive = Layer.merge(RepoLive, AgentHostLive);
+
+/** No fallback. Codex remains absent until #202 supplies a verified adapter. */
+export function liveRuntimeSelector(
+  runtimes: readonly InvocationRuntime[] = [createClaudeCodeRuntime()],
+): RuntimeSelectorPort {
+  const adapters = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
+  return {
+    select: (selection) => Effect.try({
+      try: () => {
+        const runtime = adapters.get(selection.configuration.agent);
+        if (!runtime) throw new Error(`agent ${selection.configuration.agent} has no installed invocation adapter`);
+        runtime.supports(selection);
+        return runtime;
+      },
+      catch: (error) => new RuntimeSelectionRefused({ agent: selection.configuration.agent,
+        role: selection.role, detail: error instanceof Error ? error.message : String(error) }),
+    }),
+  };
+}
+
+export const AgentRuntimesLive = (options: ClaudeCodeOptions = {}) =>
+  Layer.succeed(AgentRuntimes, liveRuntimeSelector([createClaudeCodeRuntime(options)]));

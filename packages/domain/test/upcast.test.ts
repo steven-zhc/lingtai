@@ -146,16 +146,16 @@ describe("the prompt and the invocation", () => {
     // Null, not a reconstruction. The argv of a run that happened in August is
     // not recoverable from a payload that never held it, and a plausible guess
     // at "what command did we run" is worse than the gap.
-    expect(parseStoredPayload("RunStarted", 1, v1)).toEqual({ ...v1, invocation: null });
+    expect(parseStoredPayload("RunStarted", 1, v1)).toEqual({ ...v1, invocation: null, invocationId: null });
   });
 
   it("walks a v1 RunPrompted up, keeping its length and admitting it has no text", () => {
     // #59's, verbatim: a template name and a byte count.
     const v1 = { promptVersion: "ticket@1911", bytes: 4593 };
-    expect(parseStoredPayload("RunPrompted", 1, v1)).toEqual({ ...v1, prompt: null });
+    expect(parseStoredPayload("RunPrompted", 1, v1)).toEqual({ ...v1, prompt: null, invocationId: null });
   });
 
-  it("leaves a v2 of either alone", () => {
+  it("preserves v2 content and adds only the absent invocation link", () => {
     const invocation = {
       command: "claude",
       args: ["-p", "<prompt: recorded as RunPrompted>"],
@@ -172,10 +172,10 @@ describe("the prompt and the invocation", () => {
       worktree: "/tmp/wt",
       invocation,
     };
-    expect(parseStoredPayload("RunStarted", 2, started)).toEqual(started);
+    expect(parseStoredPayload("RunStarted", 2, started)).toEqual({ ...started, invocationId: null });
 
     const prompted = { promptVersion: "ticket@12", bytes: 12, prompt: "do the thing" };
-    expect(parseStoredPayload("RunPrompted", 2, prompted)).toEqual(prompted);
+    expect(parseStoredPayload("RunPrompted", 2, prompted)).toEqual({ ...prompted, invocationId: null });
   });
 });
 
@@ -221,7 +221,10 @@ describe("the gate point rename", () => {
 
   /** What a later step adds on the way up; the rename touches nothing else. */
   const later: Partial<Record<(typeof GATE_CARRYING)[number], object>> = {
-    GatePassed: { findings: [] },
+    GateRequested: { invocationId: null },
+    GateStarted: { invocationId: null },
+    GatePassed: { findings: [], invocationId: null },
+    GateFailed: { invocationId: null },
   };
 
   it.each(GATE_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
@@ -302,10 +305,10 @@ describe("a pass with findings", () => {
   };
 
   it("walks a v2 GatePassed up with an empty findings array and its prose intact", () => {
-    expect(parseStoredPayload("GatePassed", 2, v2)).toEqual({ ...v2, findings: [] });
+    expect(parseStoredPayload("GatePassed", 2, v2)).toEqual({ ...v2, findings: [], invocationId: null });
   });
 
-  it("leaves a v3 GatePassed and its findings alone", () => {
+  it("preserves v3 GatePassed findings and adds only the absent invocation link", () => {
     const v3 = {
       ...v2,
       findings: [
@@ -318,11 +321,11 @@ describe("a pass with findings", () => {
         },
       ],
     };
-    expect(parseStoredPayload("GatePassed", 3, v3)).toEqual(v3);
+    expect(parseStoredPayload("GatePassed", 3, v3)).toEqual({ ...v3, invocationId: null });
   });
 
-  it("is at v3", () => {
-    expect(SCHEMA_VER.GatePassed).toBe(3);
+  it("is at v4", () => {
+    expect(SCHEMA_VER.GatePassed).toBe(4);
   });
 });
 

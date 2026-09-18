@@ -1,14 +1,9 @@
 /**
- * One interface, two implementations — one of which is a stub, on purpose.
+ * The legacy run interface. Role-aware calls use InvocationRuntime (#200).
  *
- * The contract is the **intersection** of what Claude Code and Codex CLI both
- * have: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`.
- * Claude Code's extra three (`SessionEnd`, `PreCompact`, `Notification`) are
- * bonus signal — better when present, never required, and the adapter works
- * without them. Both runtimes are designed for from day one because retrofitting
- * this interface later is a refactor; only `claude-code` is implemented, because
- * writing the second adapter before the first interface has survived real use is
- * guessing at the wrong abstractions.
+ * Kept until #204/#205 connect the process flows. Its settings path and numeric
+ * turn count describe the implemented Claude Code adapter. The Codex stub's
+ * hook/capability declarations are historical assumptions, not verified support.
  *
  * **Containment is Lingtai's responsibility, not the runtime's.** Codex ships
  * a filesystem sandbox and Claude Code does not, and a project's safety level
@@ -18,6 +13,7 @@
  * never silently downgrades. See doc/decisions/0007-dual-runtime.md.
  */
 import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
+import type { InvocationObservation } from "@lingtai/domain";
 import type { RunTrace } from "./run-log.ts";
 
 /**
@@ -145,6 +141,10 @@ export type Invocable = Omit<RunRequest, "prompt" | "signal">;
 
 /** What the adapter knows when the process is gone. */
 export interface RunOutcome {
+  /** Native evidence for the role-aware interface. Legacy callers may omit it. */
+  observation?: InvocationObservation;
+  /** Full native failure detail; the legacy receipt keeps its old display cap. */
+  originalFailureDetail?: string;
   exitCode: number | null;
   turns: number;
   durationMs: number;
@@ -168,7 +168,7 @@ export interface RunOutcome {
 }
 
 /**
- * Whether a receipt describes a run that failed to **begin** rather than to
+ * Whether a Claude Code receipt describes a run that failed to **begin** rather than to
  * finish ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1).
  *
  * Three facts and nothing else: **at most one turn, zero cost, an error**. Not one
@@ -200,13 +200,16 @@ export interface RunOutcome {
  * answering for itself. A second turn would need a model to have replied, so
  * the bound stays at one.
  */
-export function neverStarted(receipt: {
+export function claudeCodeNeverStarted(receipt: {
   turns: number;
   costUsd: number | null;
   isError: boolean;
 }): boolean {
   return receipt.isError && receipt.turns <= 1 && (receipt.costUsd ?? 0) === 0;
 }
+
+/** @deprecated Claude Code receipts only. Codex null cost is not evidence of no execution. */
+export const neverStarted = claudeCodeNeverStarted;
 
 /**
  * Whether the runtime can authenticate **in a given environment**.
