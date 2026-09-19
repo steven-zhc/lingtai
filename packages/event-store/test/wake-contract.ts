@@ -2,12 +2,13 @@
  * What a `Waker` is, stated once and run against every implementation (#177).
  *
  * The pattern is `contract.ts`'s, and so is the reason: a second waker held to
- * nothing is worth nothing. It is written while Postgres's is the only one, so
- * that the SQLite store arrives to a list it has to pass rather than one drawn
- * around whatever it happens to do.
+ * nothing is worth nothing. It was written while Postgres's was the only one,
+ * so that the SQLite store arrived to a list it had to pass rather than one
+ * drawn around whatever it happens to do.
  *
  * - `test/subscribe.test.ts` runs it against `createPostgresWaker`, where a
  *   database is available.
+ * - `pure/sqlite.test.ts` runs it against `createPollingWaker` (#178).
  * - `pure/wake.test.ts` runs it against a waker rung by hand beside the
  *   in-memory store — which proves the contract asks nothing of Postgres, not
  *   that any real store wakes.

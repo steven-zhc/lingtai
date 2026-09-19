@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src", "test", "test-support", "prisma.config.ts"]
+  // `pure` is in here for the reason `conductor`'s is: the half of the suite
+  // that needs no database is still the code this package ships against, and a
+  // test `tsc` never reads is a test that can go stale without saying so.
+  // `pure/sqlite.test.ts` is the whole of what holds the SQLite store to the
+  // contracts (#178), and it was invisible here until this line.
+  "include": ["src", "test", "test-support", "pure", "prisma.config.ts"]
 }

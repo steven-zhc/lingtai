@@ -35,3 +35,10 @@ export {
   type Waker,
 } from "./wake.ts";
 export { parseTimestamptz } from "./timestamptz.ts";
+export {
+  createPollingWaker,
+  createSqliteEventStore,
+  openSqliteLog,
+  POLL_MS,
+  type PollingWakerOptions,
+} from "./sqlite.ts";

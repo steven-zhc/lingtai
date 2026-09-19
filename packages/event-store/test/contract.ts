@@ -12,6 +12,9 @@
  *   really exists and really raises.
  * - `pure/memory.test.ts` runs it against `createMemoryEventStore`, where none
  *   is. That run is what says the fake answers the same way.
+ * - `pure/sqlite.test.ts` runs it against `createSqliteEventStore` (#178), a
+ *   real store in a file, where its own `UNIQUE (stream_id, version)` is what
+ *   raises.
  *
  * A behaviour only one of them has is a failing test rather than a silent
  * divergence — which is the whole of the argument for moving a test off the

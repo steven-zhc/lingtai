@@ -8,7 +8,8 @@
     "./test-support": "./test/support.ts",
     "./memory": "./test/memory.ts",
     "./store": "./src/event-store.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./sqlite": "./src/sqlite.ts"
   },
   "scripts": {
     "contract:emit": "prisma contract emit",

@@ -177,6 +177,16 @@ function isVersionConflict(err: unknown): boolean {
 }
 
 function toEnvelope(row: EventRow): Envelope {
+  return decodeRow(row, parseTimestamptz(row.at));
+}
+
+/**
+ * A stored row → an `Envelope`, upcast and validated. Exported for a second
+ * store (#178): how a row is read back is the log's rule and not Postgres's, so
+ * the SQLite store calls this rather than a copy of it. `at` is parsed by the
+ * caller, because what a timestamp looks like in storage is the store's.
+ */
+export function decodeRow(row: Omit<EventRow, "at">, at: Date): Envelope {
   if (!isEventType(row.type)) throw new UnknownEventTypeError(row.type, "read");
 
   let data: unknown;
@@ -202,8 +212,42 @@ function toEnvelope(row: EventRow): Envelope {
     data,
     actor: row.actor,
     causation: row.causation,
-    at: parseTimestamptz(row.at),
+    at,
   };
+}
+
+/**
+ * What `append` checks before anything is written, and the rows it would write.
+ *
+ * Throws on a bad stream id, a bad expected version, an unknown or retired
+ * type, a bad actor or a payload the schema refuses — so a batch cannot fail
+ * halfway through validation with rows already in the log. Shared with the
+ * SQLite store (#178) for the reason `decodeRow` is.
+ */
+export function prepareAppend(streamId: string, expectedVersion: number, events: readonly ToAppend[]) {
+  StreamId.parse(streamId);
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    throw new RangeError(
+      `expectedVersion must be a non-negative integer, got ${expectedVersion}`,
+    );
+  }
+  return events.map((e, i) => {
+    if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, "append");
+    if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type);
+    Actor.parse(e.actor);
+    return {
+      streamId,
+      version: expectedVersion + 1 + i,
+      type: e.type,
+      schemaVer: e.schemaVer ?? SCHEMA_VER[e.type],
+      // The payload column's own input type, taken from the emitted
+      // contract rather than hand-written, so a codec change breaks here
+      // rather than at runtime. A zod-parsed payload is plain JSON.
+      data: parsePayload(e.type, e.data) as CodecTypes["pg/jsonb@1"]["input"],
+      actor: e.actor,
+      causation: e.causation ?? null,
+    };
+  });
 }
 
 // ------------------------------------------------------------------- store ----
@@ -239,34 +283,11 @@ export interface EventStore {
 export function createEventStore(client: Db): EventStore {
   return {
     async append(streamId, expectedVersion, events) {
-      StreamId.parse(streamId);
-      if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
-        throw new RangeError(
-          `expectedVersion must be a non-negative integer, got ${expectedVersion}`,
-        );
-      }
-      if (events.length === 0) return [];
-
       // Validate everything before opening a transaction. A rejected payload
       // should cost nothing and, more importantly, a batch must not be able to
       // fail halfway through validation with rows already written.
-      const rows = events.map((e, i) => {
-        if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, "append");
-        if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type);
-        Actor.parse(e.actor);
-        return {
-          streamId,
-          version: expectedVersion + 1 + i,
-          type: e.type,
-          schemaVer: e.schemaVer ?? SCHEMA_VER[e.type],
-          // The payload column's own input type, taken from the emitted
-          // contract rather than hand-written, so a codec change breaks here
-          // rather than at runtime. A zod-parsed payload is plain JSON.
-          data: parsePayload(e.type, e.data) as CodecTypes["pg/jsonb@1"]["input"],
-          actor: e.actor,
-          causation: e.causation ?? null,
-        };
-      });
+      const rows = prepareAppend(streamId, expectedVersion, events);
+      if (rows.length === 0) return [];
 
       try {
         return await client.transaction(async (tx) => {
