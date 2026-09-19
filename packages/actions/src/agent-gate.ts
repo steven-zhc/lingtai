@@ -335,10 +335,25 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
       // second review that resumed the first one would be a reviewer asked
       // whether it still agrees with itself, which is the warm-review failure
       // experiment 001 measured, one level up (0038 §2).
-      const reviewId =
-        recheck.length === 0
-          ? `${context.runId}:review:${spec.name}`
-          : `${context.runId}:review:${spec.name}:recheck:${context.onSha.slice(0, 7)}`;
+      //
+      // **So the commit is in it on every path, and not only when findings
+      // travelled** (`#195`). This read `${context.runId}:review:${spec.name}`
+      // whenever `recheck` was empty — which is every fix round bought by a
+      // refusal that carried no findings, a red build or an unreadable answer.
+      // Round 2 then handed Claude Code round 1's session id, and the binary
+      // refuses one it has already been given: `Session ID ... is already in
+      // use`, one second, no receipt, the round spent, the diff never read
+      // (`run-9e510ffc`, `wi-lingtai-192`). **The crash was the lucky
+      // outcome** — a runtime that resumed instead would have produced the
+      // warm review the paragraph above exists to prevent, silently.
+      //
+      // A function of what the log already records — the run and the commit —
+      // so a transcript is still findable from a verdict, which is
+      // `sessionIdFor`'s whole reason. The head moves every round a fix is
+      // bought for (`run-once.ts` only continues the loop when the fixer
+      // committed), so the commit is what makes each round's review a
+      // different reviewer.
+      const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`;
       context.log?.note(
         "review",
         `${reviewId} · ${diff.length} bytes of diff` +

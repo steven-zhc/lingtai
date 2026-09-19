@@ -289,8 +289,9 @@ const quotaRuntime: Runtime = {
  * that agent had never once run.
  *
  * Told apart by the run id, exactly as the reviewer's own comment says it must
- * be: `agent-gate.ts` runs under `${runId}:review:${name}` so that the session
- * id derived from it cannot resume the implementer's.
+ * be: `agent-gate.ts` runs under `${runId}:review:${name}:${sha}` so that the
+ * session id derived from it cannot resume the implementer's — nor, since
+ * `#195`, the previous round's reviewer's.
  */
 const reviewerAtTheWall: Runtime = {
   ...runtime,

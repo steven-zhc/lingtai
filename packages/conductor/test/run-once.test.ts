@@ -1135,6 +1135,135 @@ printf '%s\\n' '${receipt()}'
     expect(log.stdout).not.toContain("deliver the log");
   }, 240_000);
 
+  /**
+   * **The round the review id forgot** (`#195`).
+   *
+   * The test above is the refusal that carries findings, and findings were the
+   * only path whose review id carried the commit. This is the other one: a
+   * review whose answer cannot be read refuses with *no* findings, buys a round
+   * on its output, and the round after it asks the reviewer again with nothing
+   * to recheck — so `agent-gate.ts` took the branch that named only the run,
+   * and handed Claude Code the session id round 1 had already used. The binary
+   * refuses one it has seen before, so the second review died in one second
+   * with no receipt, the round was spent answering a crash, and `wi-lingtai-192`
+   * reached a person carrying no verdict about its diff at all.
+   *
+   * The stand-in refuses a repeated `--session-id` exactly as the binary does —
+   * that line on stderr, exit 1, nothing on the stream — so this test fails the
+   * way the run failed rather than the way a mock was told to.
+   *
+   * **What it asserts is that the second review produced a verdict**, and that
+   * the verdict is what landed the diff. Two ids that differ and a review that
+   * never ran is the bug wearing the fix's clothes.
+   */
+  it("gives every round's review a session of its own, so the second round is reviewed at all", async () => {
+    const other = { ...issue, number: 195 };
+    created.add(workItemStream(PROJECT, 195));
+
+    const receipt = (over: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        is_error: false,
+        num_turns: 4,
+        duration_ms: 1234,
+        total_cost_usd: 0.11,
+        ...over,
+      });
+
+    // Every session id this run hands out, in order — the agent's, the
+    // reviewer's, the fixer's, the reviewer's again.
+    const sessions = join(root, "195-sessions.txt");
+    const reviewed = join(root, "195-reviews.txt");
+
+    const agent = join(root, "agent-195.sh");
+    await writeFile(
+      agent,
+      `#!/bin/sh
+set -e
+# The id as the binary reads it: by name, not by position.
+sid=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--session-id" ]; then sid="$a"; fi
+  prev="$a"
+done
+if [ -f ${sessions} ] && grep -q "^$sid$" ${sessions}; then
+  # Claude Code's own refusal, and its shape: stderr, exit 1, no receipt.
+  echo "Error: Session ID $sid is already in use." >&2
+  exit 1
+fi
+echo "$sid" >> ${sessions}
+
+case "$2" in
+  *"You are reviewing a change you did not write"*)
+    echo "$sid" >> ${reviewed}
+    if [ -f ${reviewed}.first ]; then
+      printf '%s\n' '${receipt({ result: JSON.stringify({ findings: [] }) })}'
+    else
+      : > ${reviewed}.first
+      # An answer no parser can read. It refuses — a diff nobody assessed is
+      # not a green gate — and it refuses with **no findings**, so nothing
+      # travels to the next round's review.
+      printf '%s\n' '${receipt({ result: "I had a look and it all seems fine to me." })}'
+    fi
+    exit 0
+    ;;
+  *"you are the fix"*)
+    echo 'export const deliver = 2;' > src/deliver.ts
+    git add -A
+    git -c user.name=fixer -c user.email=f@example.invalid commit -qm 'answer the review'
+    printf '%s\n' '${receipt()}'
+    exit 0
+    ;;
+esac
+mkdir -p src
+echo 'export const deliver = 1;' > src/deliver.ts
+git add -A
+git -c user.name=agent -c user.email=a@example.invalid commit -qm 'deliver the log'
+printf '%s\n' '${receipt()}'
+`,
+    );
+    await chmod(agent, 0o755);
+
+    const result = await once({
+      ...options(agent),
+      issue: 195,
+      client: fakeClient({
+        recipe: REVIEWING_RECIPE,
+        getIssue: async () => other,
+        listOpenIssues: async () => [other],
+      }),
+    });
+
+    // It landed, and what landed is the commit the second review passed.
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (result.ok !== true) return;
+    created.add(result.runId);
+
+    const run = await store.read(result.runId);
+    const verdicts = run.filter(
+      (e) =>
+        (e.type === "GateFailed" || e.type === "GatePassed" || e.type === "GateNeverRan") &&
+        (e.data as { action: string }).action === "review",
+    );
+    // **Two reviews, two verdicts.** Before the fix the second was a crash with
+    // no receipt, which the pipeline recorded as this diff being refused.
+    expect(verdicts.map((e) => e.type)).toEqual(["GateFailed", "GatePassed"]);
+    expect(verdicts.map((e) => JSON.stringify(e.data)).join("\n")).not.toContain("already in use");
+    // And two reviewers, neither resuming the other: the stand-in would have
+    // refused a repeat rather than answering twice.
+    const ids = (await readFile(reviewed, "utf8")).split("\n").filter(Boolean);
+    expect(new Set(ids).size).toBe(2);
+
+    // The round that used to be spent on the crash was bought by a refusal
+    // carrying no findings — the branch `recheck` cannot cover.
+    const bought = run.filter((e) => e.type === "FixRequested");
+    expect(bought).toHaveLength(1);
+    expect(bought[0]!.data).toMatchObject({ round: 1, action: "review", findings: [] });
+
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).toContain("answer the review");
+  }, 240_000);
+
   it("reads the recipe from the recorded base, not the default branch", async () => {
     let askedFor: string[] = [];
     const result = await once({

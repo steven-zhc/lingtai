@@ -6,6 +6,7 @@
  * is not a finding, and severity is not the reviewer's to soften.
  */
 import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
+import { sessionIdFor } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
 import { parsePayload } from "@lingtai/domain";
 import {
@@ -213,6 +214,65 @@ describe("asking the reviewer again after a fix", () => {
     expect(runtime.seen[1]?.prompt).toContain("Scenarios that must no longer happen");
     expect(runtime.seen[0]?.prompt).not.toContain("Scenarios that must no longer happen");
   });
+
+  /**
+   * **The round the id forgot** (`#195`).
+   *
+   * The test above sends findings, and findings were the only path that carried
+   * the commit. A refusal that has none — a red build, an answer that would not
+   * parse, a reviewer that did not finish — buys a round all the same and sends
+   * `recheck` empty, and that round's review used to run under the id round 1
+   * had already used. Claude Code refuses a `--session-id` it has been given
+   * before, so it died in one second with no receipt, the round was spent, and
+   * `wi-lingtai-192` reached a person with no verdict about its diff at all.
+   *
+   * The runtime here refuses a repeat the way the binary does, through the same
+   * `sessionIdFor` the adapter derives it with — so what is pinned is the UUID
+   * and not the shape of the string it is made from.
+   *
+   * **And the assertion is that the second review produced a verdict**, not
+   * that the two ids differ: two ids that differ and a review that never ran is
+   * the bug, wearing the fix's clothes.
+   */
+  it("reviews the round after a refusal that carried no findings, under a session of its own", async () => {
+    const taken = new Set<string>();
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+    runtime.run = async (request) => {
+      runtime.seen.push(request);
+      const session = sessionIdFor(request.runId);
+      if (taken.has(session)) {
+        // `run-9e510ffc`, verbatim: one second, exit 1, nothing on the stream.
+        return outcome({
+          exitCode: 1,
+          turns: 0,
+          costUsd: null,
+          text: null,
+          failure: { kind: "crash", detail: `Error: Session ID ${session} is already in use.` },
+        });
+      }
+      taken.add(session);
+      return outcome({ text: '{"findings":[]}' });
+    };
+    const gate = createAgentGate(
+      { name: "review", prompt: "" },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => "a diff",
+        settingsPath: "/tmp/s.json",
+        limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+      },
+    );
+
+    // One run, two rounds. The head moves because a round is only bought when
+    // the fixer committed, and nothing else about the context changes.
+    const first = await gate.run({ ...context, onSha: "a".repeat(40) });
+    const second = await gate.run({ ...context, onSha: "b".repeat(40), round: 2 });
+
+    expect(first.verdict).toBe("passed");
+    expect(second.verdict).toBe("passed");
+    expect(second.evidence).not.toContain("already in use");
+  });
 });
 
 describe("reading the reviewer's answer", () => {
@@ -329,7 +389,7 @@ describe("the gate", () => {
     expect(runtime.seen[0]?.traceTools).toBe(true);
     expect(lines).toEqual([
       "proposed:review | started · agent on aaaaaaa",
-      expect.stringMatching(/^proposed:review \| review  run-abc:review:review · \d+ bytes of diff$/),
+      expect.stringMatching(/^proposed:review \| review  run-abc:review:review:aaaaaaa · \d+ bytes of diff$/),
       "proposed:review | Read    src/x.ts",
       "proposed:review | receipt  success · 7 turns · $0.42 · exit 0",
       expect.stringMatching(/^proposed:review \| passed · after \d+s$/),
