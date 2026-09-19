@@ -135,6 +135,7 @@ import {
   diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
+  fixStopOf,
   unfixedQuestion,
 } from "./fix.ts";
 import { armBranch, decideRestart, restartReason } from "./restart.ts";
@@ -1808,12 +1809,21 @@ export function runOnce(
             // disagreed*. `stop` carries the same branch up to where a person
             // reads first; `why` below is unchanged, because the evidence under
             // the headline was never the thing that was wrong.
+            //
+            // **And the branch is three ways, not two.** `fixStopOf` reads the
+            // kind against a total record rather than treating everything that
+            // is not a decline as a crash: `out-of-turns` is the repository's
+            // failure (`attribution.ts`), and the block a page above answers a
+            // whole run ending that way with *narrow or split the ticket — a
+            // retry buys another run to the same limit*. A card here telling a
+            // person the opposite is the same ticket read twice and answered
+            // both ways.
             return {
               kind: "declined" as const,
               round: decision.round,
               on: decision.on,
               stop: (fixed.failure
-                ? { ended: "crashed", failure: `${fixed.failure.kind}: ${fixed.failure.detail}` }
+                ? fixStopOf(fixed.failure)
                 : { ended: "declined" }) satisfies FixStop,
               why: fixed.failure
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
@@ -2428,6 +2438,13 @@ export function runOnce(
         // Blocked rather than released, the same as a refusal — a question for
         // a person belongs in "Waiting on you", not back in the queue where
         // another run could claim it and throw the question away.
+        //
+        // **`stop` rides the spread** (`#197`), which is why this line did not
+        // change when the sentence it produces did. It is the first thing a
+        // person sees — the GitHub comment, the board's note, `lingtai status`
+        // — so a line still saying *two agents disagreed* over a card headlined
+        // *a fixing agent did not finish* is the two readings contradicting
+        // each other, and the one they read first winning.
         const question = unresolved
           ? unresolved.on === "findings"
             ? disagreementQuestion({ ...unresolved, branch, base, restarts: arms.length })

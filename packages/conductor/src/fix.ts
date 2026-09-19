@@ -58,7 +58,7 @@
  * nobody can check.
  */
 import type { GateFinding } from "@lingtai/actions";
-import type { BlockDiagnosis } from "@lingtai/domain";
+import type { BlockDiagnosis, RunFailureKind } from "@lingtai/domain";
 
 /**
  * What a refusal handed the fixer, and which of the two shapes it is.
@@ -103,12 +103,22 @@ export type FixRule = "no-criterion" | "no-rounds" | "spent";
  * the sentence underneath and, until `#197`, for nothing else.
  *
  * **The headline is the thing that needed this** (`#197`). A person shown a
- * blocked item reads one sentence and acts on it, and the five endings ask for
- * five different actions: adjudicate, send it again, read the objection, look at
- * the reviewer, raise the ceiling. `#187` ended on a rate limit two minutes
- * before it reset and opened with *This is a judgement, not a broken build*,
- * which is the one thing it was not — the round answering those findings never
- * finished, so nothing had been decided for anybody to adjudicate.
+ * blocked item reads one sentence and acts on it, and the endings ask for
+ * different actions: adjudicate, send it again, narrow the ticket, read the
+ * objection, look at the reviewer, raise the ceiling. `#187` ended on a rate
+ * limit two minutes before it reset and opened with *This is a judgement, not a
+ * broken build*, which is the one thing it was not — the round answering those
+ * findings never finished, so nothing had been decided for anybody to
+ * adjudicate.
+ *
+ * **The ending is not the failure kind, it is the move it implies.** The
+ * runtime's five kinds collapse to two here and the line between them is
+ * `attribution.ts`'s `RUN_OWNER`: `crash`, `timeout` and `aborted` are Lingtai's
+ * and the ticket is coming back, so the remedy is to send it again;
+ * `out-of-turns` is the *repository's* and the remedy is the opposite one, which
+ * is why it is its own ending rather than a sixth way of saying *crashed*.
+ * (`never-started` never arrives — `run-once.ts` stands the conductor down on it
+ * before the loop can block.)
  *
  * Carried rather than matched out of `why` for `FixRule`'s own reason: a
  * sentence written for a card must not be load-bearing somewhere it cannot be
@@ -118,13 +128,63 @@ export type FixStop =
   /** `decideFix` bought no further round, and this is the rule that refused. */
   | { ended: FixRule }
   /**
-   * A round ran and its agent did not finish. `failure` is the outcome's
-   * `kind: detail`, so the headline can name what killed it rather than only
-   * that something did.
+   * A round ran and something that is not the ticket stopped its agent —
+   * `crash`, `timeout`, `aborted`. `failure` is the outcome's `kind: detail`, so
+   * the headline can name what stopped it rather than only that something did,
+   * and so that *crashed* is never asserted of a run the wall clock ended.
    */
   | { ended: "crashed"; failure: string }
+  /**
+   * A round ran and its agent reached the recipe's turn limit.
+   *
+   * Its own ending because it is the one run failure this repository calls the
+   * **repository's** (`attribution.ts`'s `RUN_OWNER`), and because the sentence
+   * it has already decided on is the negation of the crash's: *the ticket was
+   * scoped wrong — which no retry of the same ticket answers* (`run-once.ts`'s
+   * `out-of-turns` block, `#89`). Told to send it again, a person buys another
+   * run to the same limit.
+   */
+  | { ended: "out-of-turns"; failure: string }
   /** A round ran and its agent objected by committing nothing (0039 §5). */
   | { ended: "declined" };
+
+/**
+ * Which ending each of the runtime's failure kinds is.
+ *
+ * **A total record rather than "everything that is not `never-started`"**, for
+ * `RUN_OWNER`'s reason and with `#197` as the receipt for what a default costs:
+ * `out-of-turns` was flattened into the crash's ending, and the card told a
+ * person to send again a ticket this repository had already decided sending
+ * again does not answer. A seventh `RunFailureKind` will not compile until
+ * somebody says which sentence it gets.
+ *
+ * Read the rows against `attribution.ts`'s `RUN_OWNER`: the four Lingtai owns
+ * are the ones the queue answers by running it again, and the one the
+ * repository owns is the one it does not.
+ *
+ * `never-started` has a row because the record is total; it never arrives,
+ * because `run-once.ts` stands the conductor down on it before the fix loop can
+ * block anything.
+ */
+const STOP_OF: Record<RunFailureKind, "crashed" | "out-of-turns"> = {
+  crash: "crashed",
+  timeout: "crashed",
+  aborted: "crashed",
+  "no-commits": "crashed",
+  "never-started": "crashed",
+  "out-of-turns": "out-of-turns",
+};
+
+/**
+ * What a fixing round's failure ended the loop as.
+ *
+ * `failure` stays `kind: detail` — the kind is carried in the words a person
+ * reads rather than beside them, so no headline has to name a kind itself and
+ * none of them can name the wrong one.
+ */
+export function fixStopOf(failure: { kind: RunFailureKind; detail: string }): FixStop {
+  return { ended: STOP_OF[failure.kind], failure: `${failure.kind}: ${failure.detail}` };
+}
 
 export type FixDecision =
   | { fix: true; round: number; on: FixOn }
@@ -550,8 +610,8 @@ export function declineWhy(text: string | null): string {
   return `${body}. It said: ${clipped}`;
 }
 
-/** How much of a crashed agent's failure a headline can carry. */
-const CRASH_CHARS = 200;
+/** How much of an unfinished agent's failure a headline can carry. */
+const FAILURE_CHARS = 200;
 
 /**
  * The failure, short enough to sit in a first sentence.
@@ -560,11 +620,14 @@ const CRASH_CHARS = 200;
  * than under it, and a headline a reader has to scroll is not one. The
  * untruncated failure is still in `done`, which `run-once.ts` composes and
  * `#197` was careful not to touch.
+ *
+ * It arrives as `kind: detail`, so the kind is in the headline by construction
+ * and no sentence around it has to name one.
  */
-function clipCrash(failure: string): string {
+function clipFailure(failure: string, chars: number = FAILURE_CHARS): string {
   const said = failure.trim();
   if (said === "") return "it said nothing about why";
-  return said.length > CRASH_CHARS ? `${said.slice(0, CRASH_CHARS)}…` : said;
+  return said.length > chars ? `${said.slice(0, chars)}…` : said;
 }
 
 /**
@@ -589,10 +652,14 @@ function clipCrash(failure: string): string {
  * killed and a fixer that objected. `#187` ended on a rate limit two minutes
  * before it reset, and a person who read its headline and acted on it
  * adjudicated two findings whose answer had been half-written when the process
- * died. So `stop` decides the first sentence, and the four endings say four
- * different things because they ask for four different actions — adjudicate,
- * send it again, read the objection, look at the reviewer. The rest of the card
- * is untouched by which one it is: `done` and `raw` carry the same evidence they
+ * died. So `stop` decides the first sentence, and the five endings say five
+ * different things because they ask for five different actions — adjudicate,
+ * send it again, narrow the ticket, read the objection, look at the reviewer.
+ * **Two of those are opposites and the fifth is why they are told apart**: a
+ * fixer the wall clock or a quota stopped is sent again, a fixer that spent the
+ * recipe's turns is not, and the headline that says *send it again* to the
+ * second buys another run to the same limit (`#89`). The rest of the card is
+ * untouched by which one it is: `done` and `raw` carry the same evidence they
  * did, because a reading that hides what it was made from is worse than the
  * output (#83) and the headline is a reading.
  *
@@ -646,43 +713,85 @@ export function diagnoseDisagreement(input: {
   const refused =
     `The \`${input.action}\` reviewer refused it with ${count(input.findings)} ` +
     `(worst: ${worst})`;
-  return {
-    what:
-      (input.stop.ended === "crashed"
-        ? // **Not a judgement, and the word must not appear** (`#197`). Nothing
-          // was decided: the round answering the findings died before it could
-          // commit, so what is in front of a person is the same refusal that was
-          // already being answered. Sending it again is the whole remedy, and it
-          // is not one a person has to think about.
-          `A fixing agent crashed on ${at}, so nothing here was decided. ${refused}, ` +
-          `and the agent sent to answer them did not finish — ${clipCrash(input.stop.failure)}. ` +
+  /**
+   * The first sentence, which is the ending's to write.
+   *
+   * **A `switch` and not a chain of ternaries** (`#197`). The defect this
+   * function was refused for was an ending with no arm of its own falling
+   * through to the ceiling's sentence — `out-of-turns` was told *send it
+   * again*, which this repository had already decided answers nothing. Written
+   * this way a seventh `FixStop` does not compile until somebody has written
+   * the sentence for it, which is `RUN_OWNER`'s own argument one level up.
+   */
+  const headline = ((): string => {
+    switch (input.stop.ended) {
+      case "crashed":
+        // **Not a judgement, and the word must not appear.** Nothing was
+        // decided: the round answering the findings was stopped before it could
+        // commit, so what is in front of a person is the same refusal that was
+        // already being answered. Sending it again is the whole remedy, and it
+        // is not one a person has to think about.
+        //
+        // *Did not finish* rather than *crashed*, because `timeout` and
+        // `aborted` arrive here too and a headline reading "crashed …
+        // — timeout: the 2h wall" contradicts itself inside one sentence. The
+        // kind is in `failure`, which says it exactly once and correctly.
+        return (
+          `A fixing agent did not finish on ${at}, so nothing here was decided. ${refused}, ` +
+          `and the agent sent to answer them was stopped — ${clipFailure(input.stop.failure)}. ` +
           `This is infrastructure and not your call: the round that was answering ` +
           `those findings never got to commit, so the fix is to send it again.`
-        : input.stop.ended === "declined"
-          ? // An argument, and the one ending where the thing to read first is
-            // not the findings. The objection is in `done` verbatim, via
-            // `declineWhy` — this only has to stop a person adjudicating before
-            // they have read it.
-            `The fixing agent declined ${at}, and its objection is what to read first. ` +
-            `${refused}, and the agent sent to answer them changed nothing and said why ` +
-            `instead. That is an argument and not a broken build — weigh what it said ` +
-            `against the findings before deciding anything.`
-          : input.stop.ended === "no-criterion"
-            ? // The reviewer is the subject here, not the diff. Describing the
-              // change at all would point a person at code that was never
-              // examined against a criterion, because there was not one.
-              `The \`${input.action}\` reviewer refused ${at} with ${count(input.findings)} ` +
-              `(worst: ${worst}), and no agent was bought to answer them: not one finding ` +
-              `carries a failure scenario, so there is nothing a fixer could be asked to ` +
-              `make stop happening. The reviewer is what to look at here, not the diff — ` +
-              `an opinion is not something this loop can act on, and nothing was changed in ` +
-              `answer to it.`
-            : // `spent` and `no-rounds`: the ceiling, which is the only ending
-              // where two agents really did look at this and disagree. Byte for
-              // byte the sentence it has always been — the common case must not
-              // get worse to fix the others.
-              `Two agents disagreed about ${at}. ${refused}, and it is still refused. ` +
-              `This is a judgement, not a broken build.`) +
+        );
+      case "out-of-turns":
+        // **The one ending where sending it again is the wrong move**, and the
+        // repository decided that before this function existed: `RUN_OWNER`
+        // calls the turn limit the repository's failure, and `run-once.ts`
+        // blocks a whole run that ends this way with *narrow or split the ticket
+        // first; requeued as written, it buys another run to the same limit*.
+        // Nothing was adjudicated, and nothing crashed either.
+        return (
+          `A fixing agent ran out of turns on ${at}, so nothing here was decided. ${refused}, ` +
+          `and the agent sent to answer them spent the recipe's whole turn budget without ` +
+          `committing — ${clipFailure(input.stop.failure)}. The limit is a scope alarm: ` +
+          `requeued as written this buys another round to the same limit, so what answers ` +
+          `it is narrowing or splitting the ticket.`
+        );
+      case "declined":
+        // An argument, and the one ending where the thing to read first is not
+        // the findings. The objection is in `done` verbatim, via `declineWhy` —
+        // this only has to stop a person adjudicating before they have read it.
+        return (
+          `The fixing agent declined ${at}, and its objection is what to read first. ` +
+          `${refused}, and the agent sent to answer them changed nothing and said why ` +
+          `instead. That is an argument and not a broken build — weigh what it said ` +
+          `against the findings before deciding anything.`
+        );
+      case "no-criterion":
+        // The reviewer is the subject here, not the diff. Describing the change
+        // at all would point a person at code that was never examined against a
+        // criterion, because there was not one.
+        return (
+          `The \`${input.action}\` reviewer refused ${at} with ${count(input.findings)} ` +
+          `(worst: ${worst}), and no agent was bought to answer them: not one finding ` +
+          `carries a failure scenario, so there is nothing a fixer could be asked to ` +
+          `make stop happening. The reviewer is what to look at here, not the diff — ` +
+          `an opinion is not something this loop can act on, and nothing was changed in ` +
+          `answer to it.`
+        );
+      case "no-rounds":
+      case "spent":
+        // The ceiling, which is the only ending where two agents really did look
+        // at this and disagree. Byte for byte the sentence it has always been —
+        // the common case must not get worse to fix the others.
+        return (
+          `Two agents disagreed about ${at}. ${refused}, and it is still refused. ` +
+          `This is a judgement, not a broken build.`
+        );
+    }
+  })();
+  return {
+    what:
+      headline +
       (earlier.length === 0
         ? ""
         : // **Not "refused for the same reason"**, which is the thing nothing
@@ -786,11 +895,13 @@ function withArms(
  *
  * **Except when it did not check again** (`#197`). *It ran again and said the
  * same thing* is the claim this sentence is worth reading for, and it is false
- * of the two endings where the round produced no commit: a fixer that crashed
- * and a fixer that objected both leave the point having run once. So `stop`
- * decides this headline too, for the same reason it decides the sibling's —
- * `#176` and `#177` ended on a full disk and arrived under a sentence asserting
- * a check had been re-run.
+ * of the three endings where the round produced no commit: a fixer that was
+ * stopped, a fixer that spent the recipe's turns and a fixer that objected all
+ * leave the point having run once. So `stop` decides this headline too, for the
+ * same reason it decides the sibling's — `#176` and `#177` ended on a full disk
+ * and arrived under a sentence asserting a check had been re-run. And the turn
+ * limit is kept off *send it again* here for the reason it is kept off it there:
+ * that is the one ending the repository owns (`RUN_OWNER`).
  *
  * No recommendation, for `diagnoseRefusal`'s reason: merging over a red build is
  * a call only a person makes, and a default here would be making it for them.
@@ -819,23 +930,55 @@ export function diagnoseUnfixed(input: {
 }): BlockDiagnosis {
   const earlier = input.earlier ?? [];
   const at = `${input.branch} at ${input.headSha.slice(0, 7)}`;
+  /**
+   * The first sentence, which is the ending's to write — a `switch` for
+   * `diagnoseDisagreement`'s reason (`#197`), so that an ending with no arm of
+   * its own cannot inherit a claim that is false of it.
+   */
+  const headline = ((): string => {
+    switch (input.stop.ended) {
+      case "crashed":
+        // Nothing was re-run and nothing was decided. The remedy is the same one
+        // a stopped reviewer's is, and it is not a person's judgement. The kind
+        // is `failure`'s to name — `timeout` and `aborted` land here too.
+        return (
+          `\`${input.action}\` refuses ${at}, and this pass stopped on an agent that did ` +
+          `not finish rather than on the check. The agent sent to make it green was ` +
+          `stopped — ${clipFailure(input.stop.failure)}, so nothing was run again and ` +
+          `nothing was decided. This is infrastructure and not your call: send it again.`
+        );
+      case "out-of-turns":
+        // Not re-run either, and the opposite remedy: the turn limit is the
+        // repository's failure, so *send it again* costs another full budget and
+        // answers nothing (`RUN_OWNER`, `run-once.ts`'s own block).
+        return (
+          `\`${input.action}\` refuses ${at}, and this pass stopped on the recipe's turn ` +
+          `limit rather than on the check. The agent sent to make it green spent its whole ` +
+          `budget without committing — ${clipFailure(input.stop.failure)}, so nothing was ` +
+          `run again. The limit is a scope alarm: requeued as written this buys another ` +
+          `round to the same limit, so what answers it is narrowing or splitting the ticket.`
+        );
+      case "declined":
+        return (
+          `\`${input.action}\` refuses ${at}, and the fixing agent declined it — it ` +
+          `changed nothing and said why instead. That is an argument and not a check ` +
+          `that stayed red: the point has run once, and what it printed is below ` +
+          `next to the objection.`
+        );
+      case "no-criterion":
+      case "no-rounds":
+      case "spent":
+        // Byte for byte the sentence it has always been.
+        return (
+          `\`${input.action}\` still refuses ${at}. ` +
+          "This is a check that failed and stayed failed, not a judgement: whatever it " +
+          "runs, it ran again and said the same thing."
+        );
+    }
+  })();
   return {
     what:
-      (input.stop.ended === "crashed"
-        ? // Nothing was re-run and nothing was decided. The remedy is the same
-          // one a crashed reviewer's is, and it is not a person's judgement.
-          `\`${input.action}\` refuses ${at}, and this pass stopped on a crashed agent ` +
-          `rather than on the check. The agent sent to make it green did not finish — ` +
-          `${clipCrash(input.stop.failure)}, so nothing was run again and nothing was ` +
-          `decided. This is infrastructure and not your call: send it again.`
-        : input.stop.ended === "declined"
-          ? `\`${input.action}\` refuses ${at}, and the fixing agent declined it — it ` +
-            `changed nothing and said why instead. That is an argument and not a check ` +
-            `that stayed red: the point has run once, and what it printed is below ` +
-            `next to the objection.`
-          : `\`${input.action}\` still refuses ${at}. ` +
-            "This is a check that failed and stayed failed, not a judgement: whatever it " +
-            "runs, it ran again and said the same thing.") +
+      headline +
       (earlier.length === 0
         ? ""
         : ` It is approach ${earlier.length + 1}: ${earlier.length} earlier one(s) were ` +
@@ -857,19 +1000,65 @@ export function diagnoseUnfixed(input: {
   };
 }
 
-/** The card's one line, for a command that stayed red. */
+/**
+ * How much of the failure the one line can carry.
+ *
+ * Far shorter than a headline's, because this is the whole of what a GitHub
+ * notification, `lingtai status` and the board's note show: a line that wraps is
+ * a line nobody finishes.
+ */
+const QUESTION_CHARS = 80;
+
+/**
+ * **The one line says what stopped the pass too** (`#197`).
+ *
+ * The headline is the second thing a person reads. This is the first — it is the
+ * GitHub comment they are notified with, the board's note and the line
+ * `lingtai status` prints — and for the whole of `#197`'s first draft it went on
+ * saying *two agents disagreed* over a card whose own headline said a fixing
+ * agent had been killed. A reading that contradicts the reading above it is
+ * worse than either.
+ *
+ * So both functions below take the same `stop`, and each ending gets the line
+ * its headline has. Exhaustively, and by `switch` rather than by falling
+ * through: the ending this repository got wrong once was the one that had no
+ * row of its own.
+ */
 export function unfixedQuestion(input: {
   action: string;
   branch: string;
   base: string;
   rounds: number;
+  /** What ended the loop, which is what the line is about (`#197`). */
+  stop: FixStop;
   /** Approaches already abandoned. Absent or zero on every card today. */
   restarts?: number;
 }): string {
-  return (
-    `${input.action} still refuses ${input.branch} into ${input.base} after ` +
-    `${input.rounds} fix round(s)${armSuffix(input.restarts)}`
-  );
+  const where = `${input.branch} into ${input.base}`;
+  const spent = `${input.rounds} fix round(s)${armSuffix(input.restarts)}`;
+  switch (input.stop.ended) {
+    case "crashed":
+      return (
+        `${input.action} refuses ${where} and the fixing agent did not finish after ` +
+        `${spent}, so it was never re-run: ${clipFailure(input.stop.failure, QUESTION_CHARS)}`
+      );
+    case "out-of-turns":
+      return (
+        `${input.action} refuses ${where} and the fixing agent ran out of turns after ` +
+        `${spent}, so it was never re-run: the ticket needs narrowing, not a retry`
+      );
+    case "declined":
+      return (
+        `${input.action} refuses ${where} and the fixing agent declined after ${spent}: ` +
+        "it changed nothing and said why instead"
+      );
+    case "no-criterion":
+    case "no-rounds":
+    case "spent":
+      // The one line it has always been, byte for byte, for the endings where
+      // the point really did run again and say the same thing.
+      return `${input.action} still refuses ${where} after ${spent}`;
+  }
 }
 
 /** The card's one line. Says what it is rather than which gate said it. */
@@ -879,15 +1068,47 @@ export function disagreementQuestion(input: {
   base: string;
   findings: readonly GateFinding[];
   rounds: number;
+  /** What ended the loop, which is what the line is about (`#197`). */
+  stop: FixStop;
   /** Approaches already abandoned. Absent or zero on every card today. */
   restarts?: number;
 }): string {
-  return (
-    `two agents disagreed about ${input.branch} into ${input.base}: the ` +
-    `${input.action} reviewer still refuses it after ${input.rounds} fix round(s)` +
-    `${armSuffix(input.restarts)}, ` +
-    `with ${count(input.findings)} (worst: ${severest(input.findings)})`
-  );
+  const where = `${input.branch} into ${input.base}`;
+  const spent = `${input.rounds} fix round(s)${armSuffix(input.restarts)}`;
+  const scored = `${count(input.findings)} (worst: ${severest(input.findings)})`;
+  switch (input.stop.ended) {
+    case "crashed":
+      return (
+        `a fixing agent did not finish on ${where} after ${spent}, so the ` +
+        `${input.action} reviewer's ${scored} are unanswered: ` +
+        clipFailure(input.stop.failure, QUESTION_CHARS)
+      );
+    case "out-of-turns":
+      return (
+        `a fixing agent ran out of turns on ${where} after ${spent}, so the ` +
+        `${input.action} reviewer's ${scored} are unanswered: the ticket needs ` +
+        "narrowing, not a retry"
+      );
+    case "declined":
+      return (
+        `a fixing agent declined ${where} after ${spent}: the ${input.action} ` +
+        `reviewer's ${scored} stand, and it said why rather than answering them`
+      );
+    case "no-criterion":
+      return (
+        `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
+        "scenario, so no fixing agent was bought"
+      );
+    case "no-rounds":
+    case "spent":
+      // Byte for byte the line it has always been: the ceiling is the only
+      // ending where two agents did look at this and did not agree.
+      return (
+        `two agents disagreed about ${where}: the ` +
+        `${input.action} reviewer still refuses it after ${spent}, ` +
+        `with ${scored}`
+      );
+  }
 }
 
 /**

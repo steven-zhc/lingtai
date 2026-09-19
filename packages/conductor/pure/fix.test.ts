@@ -26,7 +26,9 @@ import {
   diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
+  fixStopOf,
   quoteFindings,
+  unfixedQuestion,
 } from "../src/fix.ts";
 
 const SCENARIO =
@@ -364,6 +366,7 @@ describe("what a person is shown when the rounds are over", () => {
       base: "main",
       findings: [finding({ severity: "major" }), finding()],
       rounds: 1,
+      stop: { ended: "spent" },
     });
 
     expect(question).toContain("two agents disagreed about agent/123 into main");
@@ -379,16 +382,22 @@ describe("what a person is shown when the rounds are over", () => {
  * **The headline says what stopped the pass** (`#197`).
  *
  * Five endings reach these two functions and they ask a person for five
- * different things — adjudicate, send it again, read the objection, look at the
- * reviewer, raise the ceiling — and for a year all five opened with *This is a
- * judgement, not a broken build*. `#187` ended on a rate limit two minutes
+ * different things — adjudicate, send it again, narrow the ticket, read the
+ * objection, look at the reviewer — and for a year all five opened with *This is
+ * a judgement, not a broken build*. `#187` ended on a rate limit two minutes
  * before it reset: the fixer had made four edits and was writing tests when it
  * died, and the page opened by asking a person to adjudicate two findings whose
  * answer was half-written.
  *
  * So these assert the *claim* each headline makes and not that the strings
- * differ. The load-bearing one is the crash: it must never say judgement,
- * because a person who reads that word acts on it.
+ * differ. Two are load-bearing. The crash must never say judgement, because a
+ * person who reads that word acts on it — and **`out-of-turns` must never say
+ * *send it again*, because a person who reads that acts on it too**, and this
+ * repository has already decided what it costs: `RUN_OWNER` calls the turn
+ * limit the repository's own failure and `run-once.ts` blocks a whole run on it
+ * with *narrow or split the ticket first; requeued as written, it buys another
+ * run to the same limit* (`#89`). The two remedies are opposites, so one
+ * sentence for both is worse than no sentence.
  */
 describe("the headline says what stopped the pass", () => {
   const card = (stop: FixStop) =>
@@ -416,12 +425,78 @@ describe("the headline says what stopped the pass", () => {
 
     expect(crashed.what).not.toMatch(/judgement/i);
     expect(crashed.what).not.toMatch(/two agents disagreed/i);
-    expect(crashed.what).toContain("crashed");
-    expect(crashed.what).toContain("session limit");
+    expect(crashed.what).toContain("did not finish");
+    expect(crashed.what).toContain("crash: You've hit your session limit");
     // And says what to do, because there is exactly one thing and it is not a
     // decision: the round answering the findings never committed.
     expect(crashed.what).toMatch(/send it again/i);
     expect(crashed.what).toMatch(/infrastructure and not your call/i);
+  });
+
+  /**
+   * **The kind is said once, by the only thing that knows it.** `timeout` and
+   * `aborted` reach the same ending as `crash` because they imply the same
+   * move, and the first draft of this spent that on a sentence reading
+   * *crashed … — timeout: the 2h wall reached*, which contradicts itself
+   * between one dash and the next. A reader deciding whether to look at the
+   * machine or the clock is being told both.
+   */
+  it("does not call a timeout a crash, because the same ending carries three kinds", () => {
+    const walled = card({ ended: "crashed", failure: "timeout: the 2h wall reached" });
+
+    expect(walled.what).not.toMatch(/crash/i);
+    expect(walled.what).toContain("timeout: the 2h wall reached");
+    expect(walled.what).toMatch(/send it again/i);
+  });
+
+  /**
+   * **The ending this round of `#197` exists for.** `out-of-turns` was landing
+   * in the crash's arm, so the card opened by calling the agent crashed and
+   * closed by telling a person to send it again. Both halves are refuted by
+   * code that was already there: `attribution.ts`'s `RUN_OWNER` marks the turn
+   * limit the *repository's* failure, and `run-once.ts` blocks a whole run that
+   * ends this way with *narrow or split the ticket first; requeued as written,
+   * it buys another run to the same limit*. A person who followed the headline
+   * bought a second 300-turn budget that ended the same way.
+   */
+  it("never tells a person to re-send a ticket that spent the turn limit", () => {
+    const overspent = card({
+      ended: "out-of-turns",
+      failure: "out-of-turns: 300 turns, and the recipe allows 300 · $4.10",
+    });
+
+    // The two sentences the crash's arm would have produced, and neither is true.
+    expect(overspent.what).not.toMatch(/send it again/i);
+    expect(overspent.what).not.toMatch(/crash/i);
+    // Nor is the one the ceiling's arm would have produced.
+    expect(overspent.what).not.toMatch(/judgement/i);
+    expect(overspent.what).not.toMatch(/two agents disagreed/i);
+    // What is true, in the words `run-once.ts` already blocks a run with.
+    expect(overspent.what).toMatch(/ran out of turns/i);
+    expect(overspent.what).toMatch(/scope alarm/i);
+    expect(overspent.what).toMatch(/narrowing or splitting the ticket/i);
+    expect(overspent.what).toContain("out-of-turns: 300 turns, and the recipe allows 300");
+  });
+
+  /**
+   * The record that decides it, read row by row — because the defect above was
+   * not a sentence, it was *everything that is not `never-started` is a crash*.
+   * A seventh `RunFailureKind` fails to compile here rather than silently
+   * inheriting the wrong remedy.
+   */
+  it("reads the ending off the failure kind, and the turn limit is its own", () => {
+    expect(fixStopOf({ kind: "out-of-turns", detail: "300 turns" })).toEqual({
+      ended: "out-of-turns",
+      failure: "out-of-turns: 300 turns",
+    });
+    for (const kind of ["crash", "timeout", "aborted", "no-commits"] as const) {
+      expect(fixStopOf({ kind, detail: "why" }).ended).toBe("crashed");
+    }
+    // And the kind survives into the sentence rather than being replaced by it.
+    expect(fixStopOf({ kind: "timeout", detail: "the 2h wall reached" }).ended).toBe("crashed");
+    expect(card(fixStopOf({ kind: "timeout", detail: "the 2h wall reached" })).what).toContain(
+      "timeout: the 2h wall reached",
+    );
   });
 
   /** Clipped, because this one sits inside the first sentence a person reads. */
@@ -507,9 +582,21 @@ describe("the headline says what stopped the pass", () => {
       const crashed = red({ ended: "crashed", failure: "crash: ENOSPC: no space left on device" });
 
       expect(crashed.what).not.toMatch(/ran again and said the same thing/i);
-      expect(crashed.what).toContain("crashed agent");
+      expect(crashed.what).toContain("did not finish");
       expect(crashed.what).toContain("ENOSPC");
       expect(crashed.what).toMatch(/send it again/i);
+    });
+
+    /** The same opposite, in the red check's words. */
+    it("does not tell a person to re-send a check whose fixer spent the turn limit", () => {
+      const overspent = red({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+
+      expect(overspent.what).not.toMatch(/ran again and said the same thing/i);
+      expect(overspent.what).not.toMatch(/send it again/i);
+      expect(overspent.what).not.toMatch(/crash/i);
+      expect(overspent.what).toMatch(/turn limit/i);
+      expect(overspent.what).toMatch(/narrowing or splitting the ticket/i);
+      expect(overspent.what).toContain("out-of-turns: 300 turns");
     });
 
     it("does not claim it ran again when the fixer declined either", () => {
@@ -526,6 +613,106 @@ describe("the headline says what stopped the pass", () => {
           "stayed failed, not a judgement: whatever it runs, it ran again and said the " +
           "same thing.",
       );
+    });
+  });
+
+  /**
+   * **And the line above the headline says it too.**
+   *
+   * `question` is what a person is actually notified with — the GitHub comment,
+   * the board's note, the line `lingtai status` prints — so it is read *before*
+   * the card, and for the whole of `#197`'s first draft it went on saying *two
+   * agents disagreed* over a headline saying a fixing agent had been killed. Of
+   * two readings that contradict each other, the one a person acts on is the one
+   * they reach first.
+   *
+   * `run-once.ts` passes `stop` by spreading `unresolved`, so these are what
+   * pins the line: nothing at that call site would fail if these functions
+   * stopped reading it.
+   */
+  describe("and so does the one line a person is notified with", () => {
+    const line = (stop: FixStop) =>
+      disagreementQuestion({
+        action: "review",
+        branch: "agent/187",
+        base: "main",
+        findings: [finding(), finding({ severity: "major" })],
+        rounds: 2,
+        stop,
+      });
+
+    it("does not say two agents disagreed when one of them never answered", () => {
+      const crashed = line({ ended: "crashed", failure: "crash: session limit" });
+      const overspent = line({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+      const declined = line({ ended: "declined" });
+      const opinion = line({ ended: "no-criterion" });
+
+      for (const said of [crashed, overspent, declined, opinion]) {
+        expect(said).not.toMatch(/two agents disagreed/i);
+      }
+      expect(crashed).toMatch(/did not finish/i);
+      expect(crashed).toContain("crash: session limit");
+      expect(declined).toMatch(/declined/i);
+      expect(opinion).toMatch(/no failure scenario/i);
+    });
+
+    /** The same opposite remedies, at the same length. */
+    it("keeps the turn limit off a retry on the one line too", () => {
+      const overspent = line({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+
+      expect(overspent).toMatch(/ran out of turns/i);
+      expect(overspent).toMatch(/needs narrowing, not a retry/i);
+      expect(overspent).not.toMatch(/crash/i);
+    });
+
+    /**
+     * Clipped harder than the headline: this is a whole GitHub comment body and
+     * a `lingtai status` row, so a five-thousand-character quota message would
+     * be the whole of both.
+     */
+    it("clips the failure to a line rather than a paragraph", () => {
+      const crashed = line({ ended: "crashed", failure: `crash: ${"z".repeat(5_000)}` });
+
+      expect(crashed).toContain("…");
+      expect(crashed.length).toBeLessThan(260);
+    });
+
+    /** Byte for byte, both halves, for the ending that really was a disagreement. */
+    it("leaves the ceiling's line exactly as it was", () => {
+      expect(line({ ended: "spent" })).toBe(
+        "two agents disagreed about agent/187 into main: the review reviewer still " +
+          "refuses it after 2 fix round(s), with 2 findings (worst: blocker)",
+      );
+      expect(line({ ended: "no-rounds" })).toBe(line({ ended: "spent" }));
+      expect(
+        unfixedQuestion({
+          action: "build",
+          branch: "agent/176",
+          base: "main",
+          rounds: 1,
+          stop: { ended: "spent" },
+        }),
+      ).toBe("build still refuses agent/176 into main after 1 fix round(s)");
+    });
+
+    /** The red check's line has the same three endings to tell apart. */
+    it("says what stopped a red check's pass, on its one line", () => {
+      const red = (stop: FixStop) =>
+        unfixedQuestion({
+          action: "build",
+          branch: "agent/176",
+          base: "main",
+          rounds: 1,
+          stop,
+        });
+
+      expect(red({ ended: "crashed", failure: "crash: ENOSPC" })).toMatch(
+        /did not finish.*never re-run.*crash: ENOSPC/,
+      );
+      expect(red({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" })).toMatch(
+        /ran out of turns.*needs narrowing, not a retry/,
+      );
+      expect(red({ ended: "declined" })).toMatch(/declined.*said why instead/);
     });
   });
 });
@@ -619,6 +806,7 @@ describe("what a person is shown when the restarts are over too", () => {
         findings: [finding()],
         rounds: 3,
         restarts: 2,
+        stop: { ended: "spent" },
       }),
     ).toContain("after 3 fix round(s) and 2 restart(s)");
   });
