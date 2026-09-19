@@ -19,9 +19,11 @@
 import { describe, expect, it } from "vitest";
 import type { GateFinding } from "@lingtai/actions";
 import {
+  type FixStop,
   decideFix,
   declineWhy,
   diagnoseDisagreement,
+  diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
   quoteFindings,
@@ -305,6 +307,7 @@ describe("what a person is shown when the rounds are over", () => {
     findings: [finding()],
     rounds: 1,
     why: "the ceiling of 1 fix round(s) for this item is spent, and the review still refuses",
+    stop: { ended: "spent" },
   });
 
   /**
@@ -348,6 +351,7 @@ describe("what a person is shown when the rounds are over", () => {
       findings: [finding()],
       rounds: 0,
       why: "this project's recipe buys no rounds of fix-and-re-review (repair.fix: 0)",
+      stop: { ended: "no-rounds" },
     });
 
     expect(none.done).toContain("No fixing agent ran");
@@ -368,6 +372,161 @@ describe("what a person is shown when the rounds are over", () => {
     // And says nothing about restarts, because there have been none. A card on
     // a project that leaves `restarts` at zero reads exactly as it did.
     expect(question).not.toContain("restart");
+  });
+});
+
+/**
+ * **The headline says what stopped the pass** (`#197`).
+ *
+ * Five endings reach these two functions and they ask a person for five
+ * different things — adjudicate, send it again, read the objection, look at the
+ * reviewer, raise the ceiling — and for a year all five opened with *This is a
+ * judgement, not a broken build*. `#187` ended on a rate limit two minutes
+ * before it reset: the fixer had made four edits and was writing tests when it
+ * died, and the page opened by asking a person to adjudicate two findings whose
+ * answer was half-written.
+ *
+ * So these assert the *claim* each headline makes and not that the strings
+ * differ. The load-bearing one is the crash: it must never say judgement,
+ * because a person who reads that word acts on it.
+ */
+describe("the headline says what stopped the pass", () => {
+  const card = (stop: FixStop) =>
+    diagnoseDisagreement({
+      action: "review",
+      branch: "agent/187",
+      base: "main",
+      headSha: "a7663f9000000000",
+      findings: [finding(), finding({ severity: "major" })],
+      rounds: 2,
+      why: "the fixing agent did not finish (crash: it broke), so there is nothing new to read",
+      stop,
+    });
+
+  /**
+   * `#187` itself. The word is the whole of the defect: it is what a person
+   * reads, and acting on it means adjudicating a disagreement that never
+   * happened.
+   */
+  it("never calls a crash a judgement, and names what killed the agent", () => {
+    const crashed = card({
+      ended: "crashed",
+      failure: "crash: You've hit your session limit · resets 4:20am (America/Chicago)",
+    });
+
+    expect(crashed.what).not.toMatch(/judgement/i);
+    expect(crashed.what).not.toMatch(/two agents disagreed/i);
+    expect(crashed.what).toContain("crashed");
+    expect(crashed.what).toContain("session limit");
+    // And says what to do, because there is exactly one thing and it is not a
+    // decision: the round answering the findings never committed.
+    expect(crashed.what).toMatch(/send it again/i);
+    expect(crashed.what).toMatch(/infrastructure and not your call/i);
+  });
+
+  /** Clipped, because this one sits inside the first sentence a person reads. */
+  it("clips a long failure rather than making the headline scroll", () => {
+    const crashed = card({ ended: "crashed", failure: `crash: ${"z".repeat(5_000)}` });
+
+    expect(crashed.what).toContain("…");
+    expect(crashed.what.length).toBeLessThan(700);
+  });
+
+  /**
+   * An argument, and the one ending where the findings are not what to read
+   * first. 0039 §5's point, carried all the way to the headline.
+   */
+  it("opens a decline with the decline, and points at the objection", () => {
+    const declined = card({ ended: "declined" });
+
+    expect(declined.what).toMatch(/declined/i);
+    expect(declined.what).toMatch(/objection is what to read first/i);
+    expect(declined.what).not.toMatch(/two agents disagreed/i);
+    expect(declined.what).not.toMatch(/broken build\.$/);
+  });
+
+  /** The reviewer is the subject. Describing the diff would point at the wrong thing. */
+  it("says the reviewer produced nothing actionable, rather than describing the diff", () => {
+    const opinion = card({ ended: "no-criterion" });
+
+    expect(opinion.what).toMatch(/no failure scenario|carries a failure scenario/i);
+    expect(opinion.what).toMatch(/reviewer is what to look at here, not the diff/i);
+    expect(opinion.what).not.toMatch(/judgement/i);
+  });
+
+  /**
+   * **The common case, byte for byte.** Fixing the other four must not cost the
+   * one that was right: a real disagreement is the only ending where two agents
+   * looked at this and did not agree.
+   */
+  it("leaves a real disagreement exactly as it was", () => {
+    const spent = card({ ended: "spent" });
+    const noRounds = card({ ended: "no-rounds" });
+
+    expect(spent.what).toBe(
+      "Two agents disagreed about agent/187 at a7663f9. The `review` reviewer refused it " +
+        "with 2 findings (worst: blocker), and it is still refused. This is a judgement, " +
+        "not a broken build.",
+    );
+    expect(noRounds.what).toBe(spent.what);
+  });
+
+  /**
+   * The evidence under the headline is untouched by which ending it is (#83).
+   * The headline is a reading; `done` and `raw` are what it was made from, and
+   * `run-once.ts` was already composing the true sentence in `why`.
+   */
+  it("changes only the headline — done and raw are the same whatever stopped it", () => {
+    const crashed = card({ ended: "crashed", failure: "crash: it broke" });
+    const spent = card({ ended: "spent" });
+
+    expect(crashed.done).toBe(spent.done);
+    expect(crashed.raw).toBe(spent.raw);
+    expect(crashed.done).toContain("the fixing agent did not finish (crash: it broke)");
+    expect(crashed.raw).toContain(SCENARIO.split("\n")[0]!);
+  });
+
+  /**
+   * The sibling has the same defect in its own words: *it ran again and said
+   * the same thing* is false of a round that produced no commit. `#176` and
+   * `#177` ended on a full disk and arrived under exactly that sentence.
+   */
+  describe("and a red check says the same, in its own words", () => {
+    const red = (stop: FixStop) =>
+      diagnoseUnfixed({
+        action: "build",
+        branch: "agent/176",
+        headSha: "deadbee0000000",
+        evidence: "ENOSPC: no space left on device",
+        rounds: 1,
+        why: "the fixing agent did not finish (crash: ENOSPC), so nothing new was produced",
+        stop,
+      });
+
+    it("does not claim the check ran again when the fixer crashed", () => {
+      const crashed = red({ ended: "crashed", failure: "crash: ENOSPC: no space left on device" });
+
+      expect(crashed.what).not.toMatch(/ran again and said the same thing/i);
+      expect(crashed.what).toContain("crashed agent");
+      expect(crashed.what).toContain("ENOSPC");
+      expect(crashed.what).toMatch(/send it again/i);
+    });
+
+    it("does not claim it ran again when the fixer declined either", () => {
+      const declined = red({ ended: "declined" });
+
+      expect(declined.what).toMatch(/declined/i);
+      expect(declined.what).not.toMatch(/ran again and said the same thing/i);
+      expect(declined.what).toMatch(/argument and not a check\s+that stayed red/i);
+    });
+
+    it("leaves a check that really did stay red exactly as it was", () => {
+      expect(red({ ended: "spent" }).what).toBe(
+        "`build` still refuses agent/176 at deadbee. This is a check that failed and " +
+          "stayed failed, not a judgement: whatever it runs, it ran again and said the " +
+          "same thing.",
+      );
+    });
   });
 });
 
@@ -412,6 +571,7 @@ describe("what a person is shown when the restarts are over too", () => {
     findings: [finding()],
     rounds: 3,
     why: "the ceiling of 2 restart(s) for this item is spent, and the review reviewer still refuses",
+    stop: { ended: "spent" },
     earlier: [earlier],
   });
 
@@ -441,6 +601,7 @@ describe("what a person is shown when the restarts are over too", () => {
       findings: [finding()],
       rounds: 3,
       why: "the ceiling of 3 round(s) for this pass is spent, and the review action still refuses",
+      stop: { ended: "spent" },
     });
 
     // 0040 §4 read all the way down to the bytes: no headings, no framing,

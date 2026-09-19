@@ -127,6 +127,7 @@ import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { diagnoseRefusal } from "./attribution.ts";
 import {
   type FixOn,
+  type FixStop,
   type RestartArm,
   decideFix,
   declineWhy,
@@ -1499,6 +1500,17 @@ export function runOnce(
         rounds: number;
         why: string;
         /**
+         * Which of the five endings this is, for the headline a person reads
+         * first (`#197`).
+         *
+         * Beside `why` rather than instead of it, and beside `exhausted` rather
+         * than derived from it: `why` is the sentence under the headline and
+         * `exhausted` is the two-way question `decideRestart` asks about money.
+         * Neither can say *a rate limit killed the fixer* — which is what a
+         * person has to be told before they are asked to adjudicate anything.
+         */
+        stop: FixStop;
+        /**
          * Whether the **ceiling** is what stopped the rounds, as opposed to an
          * agent declining or a refusal carrying no criterion.
          *
@@ -1639,6 +1651,10 @@ export function runOnce(
               round: rounds,
               why: decision.why,
               on: refusal.on ?? (refusal.findings.length > 0 ? ("findings" as const) : ("output" as const)),
+              // The rule, carried whole rather than flattened into `exhausted`
+              // below: two of its three values are the same answer about money
+              // and three different sentences to a person (`#197`).
+              stop: { ended: decision.rule } satisfies FixStop,
               // The ceiling, or the recipe declining to have one — both mean
               // *nothing more patches this diff in place*, which is the
               // question `decideRestart` asks. `no-criterion` does not: a gate
@@ -1785,10 +1801,20 @@ export function runOnce(
             // produced nothing and meant nothing by it. One sentence for both
             // would tell a person "the fixing agent committed nothing" about a
             // process that was killed.
+            //
+            // **And the distinction now reaches the headline** (`#197`). It was
+            // made here and spent on `why`, which lands three sentences into the
+            // second paragraph of a card whose first sentence said *two agents
+            // disagreed*. `stop` carries the same branch up to where a person
+            // reads first; `why` below is unchanged, because the evidence under
+            // the headline was never the thing that was wrong.
             return {
               kind: "declined" as const,
               round: decision.round,
               on: decision.on,
+              stop: (fixed.failure
+                ? { ended: "crashed", failure: `${fixed.failure.kind}: ${fixed.failure.detail}` }
+                : { ended: "declined" }) satisfies FixStop,
               why: fixed.failure
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                   "so there is nothing new for the review to read"
@@ -1936,6 +1962,7 @@ export function runOnce(
               evidence: refused.evidence,
               rounds: bought.round,
               why: bought.why,
+              stop: bought.stop,
               exhausted: bought.exhausted,
             };
             // The work is going to a person, so the person has to be able to
@@ -2100,6 +2127,7 @@ export function runOnce(
             evidence: paths,
             rounds: bought.round,
             why: bought.why,
+            stop: bought.stop,
             exhausted: bought.exhausted,
           };
         }
