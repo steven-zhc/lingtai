@@ -176,10 +176,14 @@ export const SERVER_KILL_MS = 5_000;
  * by hand. On Linux the unit's `KillMode=control-group` would catch that; macOS
  * has no kill scope of that kind, so the escalation is here, where both
  * platforms get it.
+ *
+ * **It answers whether there was one**, because the escalation it schedules is
+ * a timer and a caller that then exits destroys it: Ctrl+C is where that goes
+ * wrong, and the answer is what lets that handler leave the exit to the child.
  */
-export function stopServer(after: number = SERVER_KILL_MS): void {
+export function stopServer(after: number = SERVER_KILL_MS): boolean {
   const child = server;
-  if (!child) return;
+  if (!child) return false;
   child.kill("SIGTERM");
   const blunt = setTimeout(() => {
     // `server` is nulled by the child's own `exit`, so this fires only on a
@@ -187,8 +191,10 @@ export function stopServer(after: number = SERVER_KILL_MS): void {
     if (server === child) child.kill("SIGKILL");
   }, after);
   // Never a reason on its own to stay alive: the child's handle is what keeps
-  // this process up, and an unref'd timer still fires while it does.
+  // this process up, and an unref'd timer still fires while it does. It does
+  // not survive `process.exit`, which is why the caller is told there is one.
   blunt.unref();
+  return true;
 }
 
 /**
@@ -375,8 +381,13 @@ export interface BoardWorld {
   place?: BoardPlace | { missing: string };
   /** Serves it, and resolves once the port is answered. */
   serve?: (options: BoardOptions) => Promise<void>;
-  /** `stopServer`, injected so a test can watch the failed start take its child with it. */
-  stopServing?: () => void;
+  /**
+   * `stopServer`, injected so a test can watch the failed start take its child
+   * with it — and so the Ctrl+C path can be given a deadline shorter than the
+   * five seconds a real wedged Turbopack gets. `true` where there was a
+   * development server to stop, as `stopServer` answers.
+   */
+  stopServing?: () => boolean;
   /** Whether anything answers on `host:port` — which is not whether it is a board. */
   answers?: (host: string, port: number) => Promise<boolean>;
   /** Open a browser. False when none could be. */
@@ -392,6 +403,11 @@ export interface BoardWorld {
   host?: string;
   /** What runs when Ctrl+C reaches a board this command is serving. */
   onInterrupt?: (stop: () => void) => void;
+  /**
+   * `process.exit`, injected only by the test of that Ctrl+C: a handler that
+   * exits when it should not would take the runner with it rather than fail.
+   */
+  exit?: (code: number) => void;
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
   error?: (line: string) => void;
@@ -630,13 +646,22 @@ export async function boardCommand(args: string[], world: BoardWorld = {}): Prom
       // The development server, where there is one. A Ctrl+C at this terminal
       // reached it too — it is in the group — but `kill -INT` at this pid does
       // not, and an orphaned server would hold the port with no lock naming it.
-      // `kill(2)` is delivered here and not when the child next runs, so the
-      // exit below does not race it.
-      stopServer();
+      const stopping = (world.stopServing ?? stopServer)();
       // The kernel would drop the lock a moment later anyway; given up by name
-      // so the next `board start` is never refused by one on its way out.
+      // so the next `board start` is never refused by one on its way out — and
+      // where there is a server it is now awaited rather than raced, since this
+      // process outlives the handler.
       void serving?.release();
-      process.exit(0);
+      // **`process.exit` here is the orphan `SERVER_KILL_MS` exists to
+      // prevent.** `stopServer` SIGTERMs the child and schedules the SIGKILL on
+      // a timer; `process.exit` is immediate and synchronous, so a handler that
+      // called it in the same tick destroyed that timer, and a Turbopack wedged
+      // on shutdown survived, kept the port, and was named by no lock — reached
+      // through the documented Ctrl+C rather than through `kill -9`. So where
+      // there is a server, the child's own `exit` ends this process
+      // (`serveFromSource`), and this returns and waits. With none — the built
+      // board, loaded here — nothing else would ever exit, so this does.
+      if (!stopping) (world.exit ?? ((code: number) => process.exit(code)))(0);
     });
     return 0;
   };

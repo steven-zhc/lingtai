@@ -139,6 +139,55 @@ net.createServer((s) => s.end()).listen(port, "127.0.0.1");
   it("gets its deadline inside board stop's, so stop never has to advise that kill -9", () => {
     expect(SERVER_KILL_MS).toBeLessThan(STOP_WAIT_MS);
   });
+
+  /**
+   * The same child, reached through **Ctrl+C** — the path `board stop`'s
+   * SIGTERM does not take, and the one the escalation used to be lost on.
+   *
+   * The handler called `stopServer()` and `process.exit(0)` in the same tick.
+   * `process.exit` is immediate and synchronous, so the SIGKILL timer scheduled
+   * one line earlier died with the process: a Turbopack wedged on shutdown was
+   * left LISTENing, reparented, and named by no lock. `board status` then said
+   * `serving: nobody` beside a port that answers, `board stop` refused to
+   * signal it, and every `board start` — each thirty-second supervisor respawn
+   * included — was refused by it, recovered only by finding the pid by hand.
+   * So the handler leaves the exit to the child, which is what keeps the timer.
+   */
+  it("is SIGKILLed by the ctrl-c handler too, which does not exit before the escalation it scheduled", async () => {
+    const port = await freePort();
+    const home = mkdtempSync(join(tmpdir(), "lingtai-board-int-"));
+    dirs.push(home);
+    const locker = createFileLocker({ dir: home });
+    const exits: number[] = [];
+    const exited: number[] = [];
+    const interrupts: (() => void)[] = [];
+
+    expect(
+      await boardCommand(["start", "--port", String(port), "--no-open"], {
+        env: { LINGTAI_HOME: home },
+        host: "127.0.0.1",
+        locker,
+        place: { source: deafNext() },
+        serve: (o) => serveBoard({ ...o, onServerExit: (c) => exits.push(c) }),
+        // The real one, on a deadline a test may wait through.
+        stopServing: () => stopServer(50),
+        onInterrupt: (stop) => void interrupts.push(stop),
+        exit: (code) => void exited.push(code),
+      }),
+    ).toBe(0);
+    expect(await answers(port)).toBe(true);
+
+    interrupts[0]!();
+    // The whole finding: nothing exited here. The child's own `exit` is what
+    // ends this process, and that is what leaves the timer alive to fire.
+    expect(exited).toEqual([]);
+    for (let i = 0; i < 200 && exits.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(exits).toEqual([1]);
+    expect(await answers(port)).toBe(false);
+    // And the lock went with it by name, rather than being dropped by the
+    // kernel at an exit that no longer happens here.
+    expect(await locker.holder(BOARD_LOCK)).toBe(null);
+  }, 15_000);
 });
 
 /**
@@ -356,7 +405,7 @@ describe("the board's lifecycle", () => {
       serve: async () => {
         throw new Error("the board never listened on 127.0.0.1:17820");
       },
-      stopServing: () => stopped.push("SIGTERM"),
+      stopServing: () => (stopped.push("SIGTERM"), true),
     });
     expect(await go()).toBe(1);
     expect(err.join("\n")).toContain("the board never listened on 127.0.0.1:17820");
