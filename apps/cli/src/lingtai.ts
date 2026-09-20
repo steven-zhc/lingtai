@@ -513,7 +513,22 @@ function liveBoardWorld(): BoardWorld {
         socket.once("error", () => resolve(false));
       }),
     locker: createFileLocker(),
-    keeper: () => keeper({}, BOARD_JOB),
+    // The supervisor's job is `lingtai board start --no-open` with no `--port`
+    // (`BOARD_JOB.argv`), so the board it keeps is on `boardPort()` and on no
+    // other. A `--port` that names a different one is a board of this
+    // terminal's, and the supervisor keeps nothing there — asked without the
+    // port, `board stop --port 18080` booted out the job serving 17820 and
+    // reported that as the stop of the board it was given (#187). A port that
+    // could not be read at all is one no job is serving either.
+    keeper: (port) => {
+      let supervised: number;
+      try {
+        supervised = boardPort();
+      } catch {
+        return { kept: false };
+      }
+      return port === supervised ? keeper({}, BOARD_JOB) : { kept: false };
+    },
     exec: (call) => {
       const r = spawnSync(call[0]!, call.slice(1), { encoding: "utf8" });
       if (r.error) return { status: 127, out: r.error.message };

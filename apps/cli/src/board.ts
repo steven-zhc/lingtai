@@ -274,8 +274,18 @@ export interface BoardWorld {
   /** Whether *anything* holds the port, which a board that is still starting also does. */
   bound: (port: number) => Promise<boolean>;
   locker: Pick<FileLocker, "tryLock" | "holder">;
-  /** Whether a supervisor keeps the board's job — `keeper(…, BOARD_JOB)`. */
-  keeper: () => Keeper;
+  /**
+   * Whether a supervisor keeps a board **on this port** — `keeper(…,
+   * BOARD_JOB)`, asked only where the job would be serving the port named.
+   *
+   * **The port is the argument, and that is the whole of it.** The job runs
+   * `lingtai board start --no-open` with no `--port`, so the board a supervisor
+   * keeps is on `boardPort()` and on no other. Asked without the port, a
+   * `board stop --port 18080` beside a supervised board on 17820 answered
+   * *kept*, booted the 17820 job out, reported it stopped, and left the board
+   * that was named on the command line running (#187).
+   */
+  keeper: (port: number) => Keeper;
   exec: Exec;
   serve: (options: BoardOptions) => Promise<void>;
   open: (url: string) => Promise<boolean>;
@@ -448,7 +458,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
     const until = world.now() + UNLOAD_WAIT_MS;
     for (let i = 0; i < GONE_POLLS; i++) {
       if (i > 0 && world.now() >= until) break;
-      const kept = world.keeper();
+      const kept = world.keeper(command.port);
       if ("unread" in kept) {
         error(`the supervisor was asked to stop the board's job, and whether it has could not be read — ${kept.unread}`);
         return false;
@@ -485,7 +495,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
   };
 
   const stop = async (): Promise<number> => {
-    const kept = world.keeper();
+    const kept = world.keeper(command.port);
     if ("unread" in kept) {
       error(`${kept.unread}. Nothing was signalled: a board the supervisor keeps comes back in thirty seconds, and a`);
       error("signal sent without knowing that leaves two of them racing for the port");
@@ -559,7 +569,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
         at instanceof Error ? `could not be asked — ${at.message}` : at === null ? `nothing answers on ${url}` : `answers on ${at}`
       }`,
     );
-    const kept = world.keeper();
+    const kept = world.keeper(command.port);
     log(
       `supervisor  ${
         "unread" in kept ? kept.unread : kept.kept ? `${kept.platform} keeps it (${kept.path})` : "none keeps it — a board here is a terminal's"
@@ -577,7 +587,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
     case "status":
       return status();
     case "restart": {
-      const kept = world.keeper();
+      const kept = world.keeper(command.port);
       if ("unread" in kept) {
         error(`${kept.unread}. Nothing was stopped or started`);
         return 1;

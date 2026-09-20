@@ -986,8 +986,24 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
    * The supervisor's stop for the board job — a signal, and that is the whole
    * of it. There is no drain: nothing is in flight to lose, and a verb that
    * waited would be `shutdown` wearing the board's name.
+   *
+   * **`why` says the reason there is no board to find** (#187). A `board.port`
+   * that is not a port number holds up nothing of the conductor's, so it is
+   * never a refusal here — and `shutdown` is a verb whose whole output is
+   * otherwise the conductor's, which left the one place an operator meets that
+   * typo saying nothing about it: the board was reported merely absent, and the
+   * file read as fine. It is the caller's flag rather than this file's, because
+   * `restart` says the same reason at its start leg and one reason is said
+   * once. Said or not, the job is stopped exactly as it would have been: an
+   * install from when the port still read leaves one behind, and that is the
+   * supervisor's to boot out either way.
    */
-  const stopBoard = async (): Promise<number> => {
+  const stopBoard = async (why: boolean): Promise<number> => {
+    const missing = why ? options.board.missing() : null;
+    if (missing !== null) {
+      log(missing.why);
+      for (const line of missing.remedy) log(`      ${line}`);
+    }
     const answer = askJob(BOARD_JOB);
     if (!answer) return 1;
     if (!answer.loaded) {
@@ -1529,7 +1545,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // having through it. On the way up `start` may still refuse over a
       // request that landed during the wait, and its refusal says *nothing was
       // started* — which a board started first would make false.
-      const boardStopped = await stopBoard();
+      // Why there is no board to stop is said here for `shutdown`, which ends
+      // at this leg; `restart` says the same reason at its start leg below.
+      const boardStopped = await stopBoard(verb === "shutdown");
       // The drain finished; the board's job is its own answer, and never the
       // drain's. `lingtai restart` reads this number as *did the conductor
       // stop*, so a board the supervisor would not bootout exits
@@ -1545,7 +1563,17 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // The conductor drained, unloaded, started and recorded it; both numbers
       // left are the board's, and one exit says that rather than reading like a
       // restart that failed.
-      return boardStarted !== 0 || boardStopped !== 0 ? START_BOARD_ONLY : 0;
+      //
+      // **Which of the two, though.** doc/operating.md gives 3 and 4 their own
+      // sentences — *the board's job would not stop* and *the board did not
+      // come up* — and one number for both said the second where the first had
+      // happened: a `bootout` refused mid-start leaves the board running and
+      // answering, and the start that follows finds the job loaded with a live
+      // pid and succeeds, so an operator reading 4 against that table went
+      // looking for a board that was up the whole time. The start's failure
+      // wins where both failed, because it is the end state: nothing came up.
+      if (boardStarted !== 0) return START_BOARD_ONLY;
+      return boardStopped !== 0 ? SHUTDOWN_BOARD_ONLY : 0;
     }
 
     case "uninstall": {

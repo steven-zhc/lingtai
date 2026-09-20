@@ -178,9 +178,12 @@ function world(
       },
       holder: async () => holder,
     },
-    keeper: () => {
+    // The supervised job runs `board start` with no `--port`, so the board it
+    // keeps is on this machine's port and on no other — which is what
+    // `liveBoardWorld`'s keeper answers, and what this stands in for.
+    keeper: (port) => {
       keeperAsks++;
-      if (!over.kept) return { kept: false } as Keeper;
+      if (!over.kept || port !== PORT) return { kept: false } as Keeper;
       if (!booted) return KEPT;
       return asksSinceBootout++ < (over.jobGoesAfter ?? 0) ? KEPT : ({ kept: false } as Keeper);
     },
@@ -314,6 +317,26 @@ describe("lingtai board stop", () => {
    * the dying process had not dropped. So the supervisor is asked until it says
    * the job is gone.
    */
+  /**
+   * `--port`, beside a supervised board on another one (#187).
+   *
+   * The supervisor's job is `board start --no-open` with no `--port`, so the
+   * board it keeps is on this machine's port and no other. Asked without the
+   * port at all, `stop` answered *kept* for `--port 18080` beside a supervised
+   * board on 17820: it ran `launchctl bootout` on the 17820 job, waited for it
+   * to go, and printed *stopped the board's job* — while the board named on
+   * the command line was still running and still holding `board:18080`, and
+   * the one nobody had named was down until the next `service start`.
+   */
+  it("stops the board the port names, and boots out no supervised job that is serving another", async () => {
+    const w = world({ holder: "board on 18080 pid 500 on mac", kept: true });
+    expect(await w.go("stop", { port: 18080 })).toBe(0);
+    expect(w.calls).toEqual([]);
+    expect(w.signalled).toEqual([500]);
+    expect(w.out.join("\n")).toContain("stopped the board on 18080 — pid 500");
+    expect(w.out.join("\n")).not.toContain("stopped the board's job");
+  });
+
   it("says stopped only once the supervisor says the job is gone, and not when bootout returns", async () => {
     const w = world({ holder: `board on ${PORT} pid 500 on mac`, kept: true, jobGoesAfter: 3 });
     expect(await w.go("stop")).toBe(0);
@@ -431,6 +454,17 @@ describe("lingtai board restart", () => {
     expect(w.err.join("\n")).toContain(`${BOARD_WAIT_MS / 1000}s after the restart`);
   });
 
+  it("is stop then start for a port the supervised job is not serving, and kickstarts nothing", async () => {
+    // `kickstart -k` on the 17820 job, then 75s of polling 18080 for a board
+    // nothing had restarted, then exit 1 (#187).
+    let served = 0;
+    const w = world({ holder: "board on 18080 pid 500 on mac", kept: true, serve: async () => void served++ });
+    expect(await w.go("restart", { port: 18080 })).toBe(0);
+    expect(w.calls).toEqual([]);
+    expect(w.signalled).toEqual([500]);
+    expect(served).toBe(1);
+  });
+
   it("is stop then start where nothing keeps it", async () => {
     let served = 0;
     const w = world({ holder: `board on ${PORT} pid 500 on mac`, serve: async () => void served++ });
@@ -459,6 +493,15 @@ describe("lingtai board status", () => {
     expect(said).toContain(`answering   answers on ${URL}`);
     expect(said).toContain("supervisor  launchd keeps it");
     expect(said).toContain(`port        ${PORT}, set in board.port`);
+  });
+
+  it("says nothing keeps a port the supervised job is not serving, rather than naming that job's plist", async () => {
+    const w = world({ holder: "board on 18080 pid 500 on mac", kept: true });
+    expect(await w.go("status", { port: 18080 })).toBe(0);
+    const said = w.out.join("\n");
+    expect(said).toContain("supervisor  none keeps it — a board here is a terminal's");
+    expect(said).not.toContain("board.plist");
+    expect(said).toContain("port        18080");
   });
 
   it("says a board nothing holds the lock for, and a lock that could not be read, apart", async () => {

@@ -1555,6 +1555,34 @@ describe("two jobs", () => {
   });
 
   /**
+   * Where an operator meets a `board.port` that is not a port number (#187).
+   *
+   * It holds up nothing of the conductor's, by design — the drain runs, the
+   * unload runs — and that left `shutdown` saying nothing whatever about it:
+   * the board was reported merely absent, so the one sentence that names the
+   * typo was never printed and the file read as fine. doc/operating.md
+   * promises it here, beside the board it could not find.
+   */
+  it("shutdown says the port that could not be read, beside the board job it could not find", async () => {
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n\tpid = 77\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+    ]);
+    const d = quietDrain();
+    const why = '~/.lingtai/config.yml sets board.port to "8o80", which is not a port number, so no port was read';
+    const { go, out } = command("darwin", s.exec, { drain: d.drain, boardMissing: why, board: async () => null });
+    await launchdFile();
+    // Not a refusal: the conductor is what the verb was about, and it drained.
+    expect(await go("shutdown", "moving the database")).toBe(0);
+    expect(d.said).toEqual(["queue", "ask human:lingtai service shutdown: moving the database", "held", "withdraw 1"]);
+    const said = out.join("\n");
+    expect(said).toContain(why);
+    expect(said).toContain("pnpm build writes the board");
+    expect(said).toContain(`the supervisor is not running ${BOARD_LAUNCHD_LABEL} — nothing of its to stop`);
+  });
+
+  /**
    * A board job that would not stop, under a drain that finished.
    *
    * The two legs report through one number, and `lingtai restart` reads that
@@ -1581,6 +1609,38 @@ describe("two jobs", () => {
     expect(loaded).toBe(false);
     // And the board's refusal is the board's, named as the board's job.
     expect(err.join("\n")).toContain(`the supervisor did not stop ${BOARD_LAUNCHD_LABEL}`);
+  });
+
+  /**
+   * The same refusal under `restart`, and **which number it is** (#187).
+   *
+   * `launchctl bootout` answers `Boot-out failed: 36: Operation now in
+   * progress` for a job mid-start, and the board goes on answering — so the
+   * start that follows finds the job loaded with a live pid and succeeds. One
+   * number for both legs made that `START_BOARD_ONLY`, which doc/operating.md
+   * defines as *the board did not come up*: an operator reading the exit
+   * against that table went looking for a board that was up on 17820 the whole
+   * time and had never been down.
+   */
+  it("restart exits as the board's stop where its job would not stop, and not as a board that never came up", async () => {
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n\tpid = 77\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+      ["launchctl bootstrap", () => ((loaded = true), { status: 0, out: "" })],
+    ]);
+    const d = quietDrain();
+    const { go, out, err } = command("darwin", s.exec, { drain: d.drain, boardLoaded: true, boardWontStop: true });
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("restart", "picking up #88")).toBe(SHUTDOWN_BOARD_ONLY);
+    expect(SHUTDOWN_BOARD_ONLY).not.toBe(START_BOARD_ONLY);
+    // The conductor did every leg of its own.
+    expect(out.join("\n")).toContain("a daemon recorded its start");
+    // The board's job is the one that did not stop, and it is up — which is
+    // the whole reason the exit must not say it never came up.
+    expect(err.join("\n")).toContain(`the supervisor did not stop ${BOARD_LAUNCHD_LABEL}`);
+    expect(out.join("\n")).toContain("the supervisor has a process for the board's job");
   });
 
   it("uninstall removes the board's job too, after a daemon whose own file was already gone", async () => {
