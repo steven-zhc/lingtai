@@ -252,6 +252,8 @@ itself.** `apps/cli/src/service.ts:12` is the reason:
 conductor to avoid supervising two would be the CLI taking on exactly the role
 that file declines.
 
+Built in #187; `doc/operating.md` is the reference, and this is the reasoning.
+
 ```
 lingtai start                   conduct, foreground
 lingtai shutdown [why]          drain, then stop            0030
@@ -280,9 +282,15 @@ and two jobs make it sharper. One summary saying *running* would hide a board
 that is up beside a conductor `launchd` respawns every thirty seconds.
 
 **`board start` on a port already held says so in words.** The conductor has the
-advisory lock for this (`#93`); the board has nothing, so the failure would be a
-bare `EADDRINUSE`. It should read: *a board is already on 17820 —
-http://127.0.0.1:17820*, and name where the port is set.
+advisory lock for this (`#93`); the board had nothing, so the failure would be a
+bare `EADDRINUSE`. It reads: *a board is already on 17820 —
+http://127.0.0.1:17820*, the holder beside it, and where the port is set.
+
+The board takes a lock too, in the end — the file locker of `#193`, keyed by
+port — because *which process is serving the board* is a question `stop` and
+`status` both have to answer and nothing else on this machine could. A lock the
+kernel drops with its holder is the one mechanism here that leaves nothing
+stale behind.
 
 ## Ports: one, reserved as two, and not higher
 
@@ -304,10 +312,13 @@ harder to diagnose than a fixed clash. `10000–32767` is the band: high enough 
 be clear of anything common, below both ranges. `18789` is OpenClaw's, `27017`
 MongoDB's, `26257` CockroachDB's, `19999` Netdata's.
 
-**Defaults are in code and require no configuration.**
-`~/.lingtai/config.yaml` may override, and need not exist. The port is
-`apps/board/package.json`'s `next dev -p 3200` today, which is the wrong place:
-somebody who installed Lingtai does not edit its `package.json`.
+**Defaults are in code and require no configuration.** Built in #187:
+`BOARD_PORT` and `RESERVED_PORT` are in `packages/env/src/index.ts`, and
+`board.port` in `~/.lingtai/config.yml` overrides the first and need not exist.
+The port used to be `apps/board/package.json`'s `next dev -p 3200`, which is
+the wrong place: somebody who installed Lingtai does not edit its
+`package.json`. ([0008](../decisions/0008-nextjs-board.md) named 3200 when the
+board was only ever `pnpm dev`.)
 
 ### The daemon binds nothing, and that is the design
 
@@ -326,7 +337,9 @@ is nothing to `curl`.
 needed, has an obvious home instead of being scattered. **Binding it today with
 no use would be a port the next reader has to explain**, and the two ways that
 ends — inventing a purpose, or deleting it — are both worse than an empty line
-in this table.
+in this table. `packages/env/test/board-port.test.ts` reads every package's
+`src` and fails if any mention of the number is anything but prose, so the
+sentence above stays true rather than merely having been true.
 
 ### The one consequence of two processes, named rather than fixed
 

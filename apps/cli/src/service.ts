@@ -1,11 +1,29 @@
 /**
- * `lingtai service` — the supervisor around `lingtai daemon`, per platform (#50).
+ * `lingtai service` — the supervisor around the two processes, per platform
+ * (#50, #187).
  *
- * `lingtai daemon` is the process and stays exactly what it was: a foreground
- * process that runs until it is told to stop. This file writes the thing that
- * keeps it running — a LaunchAgent on macOS, a systemd **user** unit on Linux —
- * and passes start, stop and status through to it. It replaces
- * `scripts/launchd.sh`, and installs under the same label.
+ * `lingtai daemon` and `lingtai board start` are the processes and stay exactly
+ * what they were: foreground processes that run until they are told to stop.
+ * This file writes the things that keep them running — a LaunchAgent each on
+ * macOS, a systemd **user** unit each on Linux — and passes start, stop and
+ * status through to them. It replaces `scripts/launchd.sh`, and installs the
+ * daemon under the same label.
+ *
+ * ## Two jobs, and the CLI does not become a supervisor (#187)
+ *
+ * `launchd` supervises two jobs as easily as one, so there are two: `JOBS`, and
+ * `Job` is everything that differs between them. Merging the board into the
+ * daemon to avoid supervising two would be this file taking on exactly the role
+ * the next paragraph declines.
+ *
+ * **Each job is reported on its own.** One summary saying *running* would hide
+ * a board that is up beside a conductor launchd respawns every thirty seconds,
+ * which is the failure two jobs make likelier rather than rarer.
+ *
+ * **The board gets `stop` and never `shutdown`.** `shutdown` here means *finish
+ * the pass in flight*, and waits as long as `runtime.limits.wall`. A board has
+ * no pass to finish, so a verb that waited for one would make somebody wait for
+ * nothing — or believe the conductor was draining when it was not.
  *
  * ## Thin, and it says only what it was told
  *
@@ -68,7 +86,101 @@ import { WALL_LIMIT } from "./wall-limit.ts";
 export const LAUNCHD_LABEL = "ai.nextloom.lingtai.daemon";
 export const SYSTEMD_UNIT = "lingtai.service";
 
+/** The board's, beside it (#187). A second job, never a second definition of the first. */
+export const BOARD_LAUNCHD_LABEL = "ai.nextloom.lingtai.board";
+export const BOARD_SYSTEMD_UNIT = "lingtai-board.service";
+
 export type ServicePlatform = "launchd" | "systemd";
+
+/**
+ * One of the two jobs this installs (#187), and everything that differs
+ * between them.
+ *
+ * **A field rather than a shared comment block.** The daemon's file says why
+ * `KillMode=process` and why no `TimeoutStopSec` — both about the agent it
+ * detaches and the pass it drains — and neither is true of the board, which
+ * serves in its own process and has nothing to finish. A generated file is the
+ * first thing anybody reads when a job did not come back, so each one carries
+ * its own reasons or none.
+ */
+export interface Job {
+  id: "daemon" | "board";
+  /** launchd's label. */
+  label: string;
+  /** systemd's unit file name. */
+  unit: string;
+  /** What `lingtai.ts` is asked to do. */
+  argv: readonly string[];
+  /** `<logs>/<log>.log` and `.err`. */
+  log: string;
+  /** systemd's `Description=`, and what `service status` calls this job. */
+  what: string;
+  /**
+   * Why the supervisor's own stop timeout is left at its default, in each
+   * supervisor's own words. Both are true of the daemon and neither is true of
+   * the board, so the text is the job's rather than the file's.
+   */
+  stopNote: { launchd: readonly string[]; systemd: readonly string[] };
+  /** systemd's `KillMode=`, or null to leave the default, with why either way. */
+  kill: { mode: string; why: string } | null;
+}
+
+export const DAEMON_JOB: Job = {
+  id: "daemon",
+  label: LAUNCHD_LABEL,
+  unit: SYSTEMD_UNIT,
+  argv: ["daemon"],
+  log: "daemon",
+  what: "Lingtai daemon",
+  stopNote: {
+    launchd: [
+      "No ExitTimeOut, deliberately: launchd's 20 seconds stands. Set to the",
+      "wall limit it would make bootout, logout and machine shutdown block",
+      "for an hour. The pass is waited for through the log instead —",
+      "lingtai service shutdown drains first and unloads after (#174).",
+    ],
+    systemd: [
+      "No TimeoutStopSec, deliberately: systemd's 90s stands. The wall limit here",
+      "would make logout and machine shutdown block for an hour. The pass is waited",
+      "for through the log — lingtai service shutdown drains first, stops after (#174).",
+    ],
+  },
+  // The default kills the whole cgroup, agent included. 0030 put the agent in
+  // its own process group so the signal that begins a drain does not kill the
+  // run being drained; launchd signals only the daemon, and this is systemd
+  // doing the same.
+  kill: { mode: "process", why: "Signal the daemon, not the agent it detached (0030)." },
+};
+
+export const BOARD_JOB: Job = {
+  id: "board",
+  label: BOARD_LAUNCHD_LABEL,
+  unit: BOARD_SYSTEMD_UNIT,
+  // `--no-open`: nobody is at a browser when launchd starts this at login, and
+  // a job that crash-loops would open a tab every thirty seconds.
+  argv: ["board", "start", "--no-open"],
+  log: "board",
+  what: "Lingtai board",
+  stopNote: {
+    launchd: [
+      "No ExitTimeOut: launchd's 20 seconds is far more than this needs. The",
+      "board serves in this process and detaches nothing, so there is no pass to",
+      "finish and no drain to wait for — which is why the board gets stop and",
+      "not shutdown (#187).",
+    ],
+    systemd: [
+      "No TimeoutStopSec: systemd's 90s is far more than this needs. The board serves",
+      "in this process and detaches nothing, so there is no pass to finish and no drain",
+      "to wait for — which is why the board gets stop and not shutdown (#187).",
+    ],
+  },
+  // Nothing to spare from the signal: `lingtai board start` serves the built
+  // board inside its own process, so the default group kill takes the server
+  // and nothing else.
+  kill: null,
+};
+
+export const JOBS: readonly Job[] = [DAEMON_JOB, BOARD_JOB];
 
 export interface ServiceInputs {
   /** Absolute path to `node`. */
@@ -122,23 +234,25 @@ function xml(text: string): string {
 }
 
 /** The LaunchAgent `scripts/launchd.sh` wrote, plus `LINGTAI_HOME` when it is set. */
-export function launchdPlist(inputs: ServiceInputs): ServiceFile {
+export function launchdPlist(inputs: ServiceInputs, job: Job = DAEMON_JOB): ServiceFile {
   const logs = join(stateDir(inputs.env), "logs");
   const env = Object.entries(serviceEnv(inputs))
     .map(([k, v]) => `    <key>${k}</key>\n    <string>${xml(v)}</string>`)
+    .join("\n");
+  const argv = [join(inputs.root, "apps/cli/src/lingtai.ts"), ...job.argv]
+    .map((a) => `    <string>${xml(a)}</string>`)
     .join("\n");
   const content = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>${LAUNCHD_LABEL}</string>
+  <string>${job.label}</string>
 
   <key>ProgramArguments</key>
   <array>
     <string>${xml(inputs.node)}</string>
-    <string>${xml(join(inputs.root, "apps/cli/src/lingtai.ts"))}</string>
-    <string>daemon</string>
+${argv}
   </array>
 
   <key>WorkingDirectory</key>
@@ -157,10 +271,7 @@ export function launchdPlist(inputs: ServiceInputs): ServiceFile {
   <key>ThrottleInterval</key>
   <integer>30</integer>
 
-  <!-- No ExitTimeOut, deliberately: launchd's 20 seconds stands. Set to the
-       wall limit it would make bootout, logout and machine shutdown block
-       for an hour. The pass is waited for through the log instead —
-       lingtai service shutdown drains first and unloads after (#174). -->
+  <!-- ${job.stopNote.launchd.join("\n       ")} -->
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -168,15 +279,15 @@ ${env}
   </dict>
 
   <key>StandardOutPath</key>
-  <string>${xml(join(logs, "daemon.log"))}</string>
+  <string>${xml(join(logs, `${job.log}.log`))}</string>
   <key>StandardErrorPath</key>
-  <string>${xml(join(logs, "daemon.err"))}</string>
+  <string>${xml(join(logs, `${job.log}.err`))}</string>
 </dict>
 </plist>
 `;
   return {
     platform: "launchd",
-    path: join(home(inputs.env), "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+    path: join(home(inputs.env), "Library/LaunchAgents", `${job.label}.plist`),
     content,
     logs,
   };
@@ -197,13 +308,12 @@ const UNIT_UNSAFE = /[\s"'\\%$;]/;
  * - `Restart=always` is `KeepAlive`, and `RestartSec=30` is `ThrottleInterval`.
  *   `StartLimitIntervalSec=0` because launchd never gives up on a KeepAlive job
  *   and systemd, by default, does after five quick failures.
- * - `KillMode=process`, because the default kills the whole cgroup, agent
- *   included. 0030 put the agent in its own process group so the signal that
- *   begins a drain does not kill the run being drained; launchd signals only
- *   the daemon, and this is systemd doing the same.
+ * - `KillMode=` is the job's, with its reason — `process` for the daemon,
+ *   because the default kills the whole cgroup and the agent 0030 detached with
+ *   it, and systemd's own default for the board, which detaches nothing.
  * - `WantedBy=default.target` is `RunAtLoad`: up when the user's manager is.
  */
-export function systemdUnit(inputs: ServiceInputs): ServiceFile {
+export function systemdUnit(inputs: ServiceInputs, job: Job = DAEMON_JOB): ServiceFile {
   const logs = join(stateDir(inputs.env), "logs");
   const vars = serviceEnv(inputs);
   const unsafe = [
@@ -221,13 +331,13 @@ export function systemdUnit(inputs: ServiceInputs): ServiceFile {
   const content = `# Generated by \`lingtai service install\`. The absolute paths are this machine's —
 # regenerate rather than edit, and never commit it.
 [Unit]
-Description=Lingtai daemon
+Description=${job.what}
 After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=${inputs.node} ${join(inputs.root, "apps/cli/src/lingtai.ts")} daemon
+ExecStart=${[inputs.node, join(inputs.root, "apps/cli/src/lingtai.ts"), ...job.argv].join(" ")}
 WorkingDirectory=${inputs.root}
 ${Object.entries(vars)
   .map(([k, v]) => `Environment=${k}=${v}`)
@@ -236,20 +346,16 @@ ${Object.entries(vars)
 Restart=always
 # launchd's ThrottleInterval.
 RestartSec=30
-# Signal the daemon, not the agent it detached (0030).
-KillMode=process
-# No TimeoutStopSec, deliberately: systemd's 90s stands. The wall limit here
-# would make logout and machine shutdown block for an hour. The pass is waited
-# for through the log — lingtai service shutdown drains first, stops after (#174).
-StandardOutput=append:${join(logs, "daemon.log")}
-StandardError=append:${join(logs, "daemon.err")}
+${job.kill ? `# ${job.kill.why}\nKillMode=${job.kill.mode}\n` : ""}# ${job.stopNote.systemd.join("\n# ")}
+StandardOutput=append:${join(logs, `${job.log}.log`)}
+StandardError=append:${join(logs, `${job.log}.err`)}
 
 [Install]
 WantedBy=default.target
 `;
   return {
     platform: "systemd",
-    path: join(home(inputs.env), ".config/systemd/user", SYSTEMD_UNIT),
+    path: join(home(inputs.env), ".config/systemd/user", job.unit),
     content,
     logs,
   };
@@ -289,9 +395,9 @@ export const LAUNCHCTL_NO_SUCH_SERVICE = 113;
  */
 type Supervised = { loaded: boolean; lines: string[] } | { unread: string };
 
-export function askSupervisor(platform: ServicePlatform, exec: Exec, uid: number): Supervised {
+export function askSupervisor(platform: ServicePlatform, exec: Exec, uid: number, job: Job = DAEMON_JOB): Supervised {
   if (platform === "launchd") {
-    const r = exec(["launchctl", "print", `gui/${uid}/${LAUNCHD_LABEL}`]);
+    const r = exec(["launchctl", "print", `gui/${uid}/${job.label}`]);
     if (r.status === LAUNCHCTL_NO_SUCH_SERVICE) return { loaded: false, lines: ["not loaded"] };
     if (r.status !== 0) return { unread: `launchctl print exited ${r.status}: ${r.out.trim() || "no output"}` };
     const lines = r.out
@@ -304,7 +410,7 @@ export function askSupervisor(platform: ServicePlatform, exec: Exec, uid: number
     "systemctl",
     "--user",
     "show",
-    SYSTEMD_UNIT,
+    job.unit,
     "--property=LoadState,ActiveState,SubState,MainPID,NRestarts,ExecMainStatus",
   ]);
   if (r.status !== 0) return { unread: `systemctl --user show exited ${r.status}: ${r.out.trim() || "no output"}` };
@@ -344,6 +450,14 @@ const UNLOAD_WAIT_MS = 60_000;
  * crash-loops on the connection is seen between two starts.
  */
 const IDLE_WAIT_POLLS = 90;
+
+/**
+ * Seconds a start waits for the board to answer. Next's standalone server binds
+ * in a second or two on a warm machine; this is long enough for a cold one and
+ * past two of the supervisor's thirty-second restarts, and far short of the
+ * daemon's, which waits on a reconcile that talks to GitHub.
+ */
+const BOARD_WAIT_POLLS = 75;
 
 /**
  * Seconds a start waits for the daemon's `ConductorStarted`. The record lands
@@ -425,6 +539,19 @@ export interface ServiceOptions {
     watermark: () => Promise<number>;
     after: (version: number) => Promise<RecordedStart | null>;
   };
+  /**
+   * The board job's own two facts, beside the daemon's (#187): where it should
+   * answer, and whether a Lingtai board does. Injected for the reason `liveness`
+   * is — this file holds no HTTP client and loads without a board.
+   *
+   * **`answering` is the board's `ConductorStarted`.** A job launchd has loaded
+   * is not a UI anybody can open, exactly as a loaded daemon is not a daemon
+   * taking work, so no verb here concludes the second from the first.
+   */
+  board: {
+    url: string;
+    answering: () => Promise<string | null>;
+  };
   /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
   by?: string;
   platform?: NodeJS.Platform;
@@ -439,22 +566,22 @@ export interface ServiceOptions {
   error?: (line: string) => void;
 }
 
-/** Whether launchd or systemd keeps a daemon here, as `lingtai restart` needs to know it (0042 §8). */
+/** Whether launchd or systemd keeps a job here, as `lingtai restart` needs to know it (0042 §8). */
 export type Keeper =
   /** No supervisor has the job, or none exists here: whoever restarts starts it. */
   | { kept: false }
   /** The supervisor has it, and it runs this checkout. The start is the supervisor's. */
-  | { kept: true; platform: ServicePlatform; path: string }
+  | { kept: true; platform: ServicePlatform; path: string; uid: number }
   /** It could not be told, or the unit runs a different checkout. Refused before anything stops. */
   | { unread: string };
 
 /**
- * Whether a supervisor keeps the daemon, asked before a restart stops anything.
+ * Whether a supervisor keeps `job`, asked before a restart stops anything.
  *
  * **Kept means the supervisor would start one again by itself** — the job is
  * loaded under launchd, or the unit is active or restarting under systemd. A
  * file that is on disk after `service shutdown` is not a keeper: nothing will start
- * from it, and the daemon somebody is restarting is in a terminal.
+ * from it, and the process somebody is restarting is in a terminal.
  *
  * A unit written from another checkout is refused rather than started: the
  * restart would check this checkout's commit and the supervisor would start
@@ -462,15 +589,17 @@ export type Keeper =
  */
 export function keeper(
   options: Pick<ServiceOptions, "platform" | "env" | "root" | "uid" | "exec" | "which"> = {},
+  job: Job = DAEMON_JOB,
 ): Keeper {
   const platform = platformFor(options.platform ?? process.platform);
   const which = options.which ?? whichBin;
   if (!platform || !which(platform === "launchd" ? "launchctl" : "systemctl")) return { kept: false };
   const env = options.env ?? process.env;
   const root = options.root ?? repoRoot();
+  const uid = options.uid ?? process.getuid?.() ?? 0;
   let path: string;
   try {
-    path = (platform === "launchd" ? launchdPlist : systemdUnit)({ node: "node", root, env }).path;
+    path = (platform === "launchd" ? launchdPlist : systemdUnit)({ node: "node", root, env }, job).path;
   } catch {
     // A HOME-less environment, or a checkout path systemd cannot carry: `service
     // install` refuses both, so nothing was installed from here to keep it.
@@ -478,8 +607,8 @@ export function keeper(
   }
   if (!existsSync(path)) return { kept: false };
 
-  const answer = askSupervisor(platform, options.exec ?? execCall, options.uid ?? process.getuid?.() ?? 0);
-  if ("unread" in answer) return { unread: `could not ask the supervisor whether it keeps the daemon — ${answer.unread}` };
+  const answer = askSupervisor(platform, options.exec ?? execCall, uid, job);
+  if ("unread" in answer) return { unread: `could not ask the supervisor whether it keeps the ${job.id} — ${answer.unread}` };
   const kept =
     platform === "launchd"
       ? answer.loaded
@@ -494,7 +623,7 @@ export function keeper(
         "the supervisor would start that one's. Restart from that checkout, or pnpm lingtai service install from this one",
     };
   }
-  return { kept: true, platform, path };
+  return { kept: true, platform, path, uid };
 }
 
 export async function serviceCommand(args: string[], options: ServiceOptions): Promise<number> {
@@ -537,14 +666,19 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     root: options.root ?? repoRoot(),
     env,
   };
+  const fileFor = (job: Job): ServiceFile => (platform === "launchd" ? launchdPlist(inputs, job) : systemdUnit(inputs, job));
   let file: ServiceFile;
+  let boardFile: ServiceFile;
   try {
-    file = platform === "launchd" ? launchdPlist(inputs) : systemdUnit(inputs);
+    file = fileFor(DAEMON_JOB);
+    boardFile = fileFor(BOARD_JOB);
   } catch (err) {
     error((err as Error).message);
     return 1;
   }
   const target = `gui/${uid}/${LAUNCHD_LABEL}`;
+  const boardTarget = `gui/${uid}/${BOARD_JOB.label}`;
+  const named = (job: Job): string => (platform === "launchd" ? job.label : job.unit);
 
   const noUserManager = (out: string): void => {
     if (platform === "systemd" && /bus|XDG_RUNTIME_DIR/i.test(out)) {
@@ -564,37 +698,43 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   };
 
   /** The supervisor's answer, or null with the reason on stderr — never guessed as "not loaded". */
-  const ask = (): { loaded: boolean; lines: string[] } | null => {
-    const answer = askSupervisor(platform, exec, uid);
+  const askJob = (job: Job): { loaded: boolean; lines: string[] } | null => {
+    const answer = askSupervisor(platform, exec, uid, job);
     if ("unread" in answer) {
-      error(`could not ask the supervisor about the service — ${answer.unread}`);
+      error(
+        job.id === "daemon"
+          ? `could not ask the supervisor about the service — ${answer.unread}`
+          : `could not ask the supervisor about the board's job — ${answer.unread}`,
+      );
       noUserManager(answer.unread);
       return null;
     }
     return answer;
   };
+  const ask = () => askJob(DAEMON_JOB);
 
   /**
    * `bootout` returns while the job is still going, and a `bootstrap` in that
    * window fails — so wait until launchd says it is gone.
    */
-  const unload = async (): Promise<boolean> => {
-    if (!run(["launchctl", "bootout", target])) return false;
+  const unloadJob = async (job: Job): Promise<boolean> => {
+    if (!run(["launchctl", "bootout", `gui/${uid}/${job.label}`])) return false;
     const until = Date.now() + UNLOAD_WAIT_MS;
     for (;;) {
-      const answer = askSupervisor(platform, exec, uid);
+      const answer = askSupervisor(platform, exec, uid, job);
       if ("loaded" in answer && !answer.loaded) return true;
       if (Date.now() > until) {
         error(
           "unread" in answer
-            ? `could not ask launchd whether ${LAUNCHD_LABEL} unloaded — ${answer.unread}`
-            : `${LAUNCHD_LABEL} is still loaded ${UNLOAD_WAIT_MS / 1000}s after bootout`,
+            ? `could not ask launchd whether ${job.label} unloaded — ${answer.unread}`
+            : `${job.label} is still loaded ${UNLOAD_WAIT_MS / 1000}s after bootout`,
         );
         return false;
       }
       await sleep(500);
     }
   };
+  const unload = () => unloadJob(DAEMON_JOB);
 
   /** Two answers to two questions, neither folded into the other. */
   const report = async (): Promise<number> => {
@@ -611,6 +751,139 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   const notInstalled = (): number => {
     error(`${file.path} does not exist — pnpm lingtai service install`);
     return 1;
+  };
+
+  // ------------------------------------------------------------ the board --
+  //
+  // The second job (#187), and everything below is deliberately shorter than
+  // the daemon's. The board takes no place in the conductor lock's queue,
+  // claims no ticket and finishes no pass, so its stop is the supervisor's
+  // signal and nothing waits on the log for it — which is why it is `stop` and
+  // never `shutdown`. (It does hold a lock of its own, per port, so that
+  // `lingtai board stop` has a pid to signal; nothing here reads it.)
+
+  const boardInstalled = (): boolean => existsSync(boardFile.path);
+
+  /** Whether a Lingtai board answers where it should — the board's own word, not the supervisor's. */
+  const boardAnswers = async (): Promise<string | null | { unread: string }> => {
+    try {
+      return await options.board.answering();
+    } catch (err) {
+      return { unread: (err as Error).message };
+    }
+  };
+
+  /** Waits for a board to answer after a start. False when none did, having said so. */
+  const confirmBoard = async (): Promise<boolean> => {
+    log(`waiting for the board to answer on ${options.board.url} — up to ${BOARD_WAIT_POLLS}s. It is waiting, not hung.`);
+    let unread: string | null = null;
+    for (let i = 0; i < BOARD_WAIT_POLLS; i++) {
+      const asked = await boardAnswers();
+      if (typeof asked === "string") {
+        log(`the board answers on ${asked}`);
+        return true;
+      }
+      unread = asked === null ? null : asked.unread;
+      await sleep(1_000);
+    }
+    error(
+      unread === null
+        ? `the supervisor accepted the board's start, and nothing answered on ${options.board.url} in ${BOARD_WAIT_POLLS}s — so the UI is not up on its account.`
+        : `the supervisor accepted the board's start, and ${options.board.url} could not be asked whether a board answers — ${unread}.`,
+    );
+    error(`${join(boardFile.logs, `${BOARD_JOB.log}.err`)} is what the job wrote; a port somebody else holds is named there in words.`);
+    return false;
+  };
+
+  /** The supervisor's start for the board job, then the board's own answer. */
+  const startBoard = async (): Promise<number> => {
+    if (!boardInstalled()) {
+      // An install from before the board had a job (#187), and not a failure of
+      // whatever verb is running: the daemon it was really about did start.
+      log(`no board job at ${boardFile.path}, so nothing was started for the board — pnpm lingtai service install writes one`);
+      return 0;
+    }
+    const answer = askJob(BOARD_JOB);
+    if (!answer) return 1;
+    if (answer.loaded && processRunning(platform, answer.lines)) {
+      // Not started again, and not confirmed either — the same rule the daemon's
+      // start follows. A process the supervisor is running may be failing to
+      // bind, and `service status` is where that shows.
+      log("the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers");
+      return 0;
+    }
+    if (platform === "systemd") {
+      if (!run(["systemctl", "--user", "start", BOARD_SYSTEMD_UNIT])) return 1;
+    } else if (!run(answer.loaded ? ["launchctl", "kickstart", boardTarget] : ["launchctl", "bootstrap", `gui/${uid}`, boardFile.path])) {
+      return 1;
+    }
+    return (await confirmBoard()) ? 0 : 1;
+  };
+
+  /**
+   * The supervisor's stop for the board job — a signal, and that is the whole
+   * of it. There is no drain: nothing is in flight to lose, and a verb that
+   * waited would be `shutdown` wearing the board's name.
+   */
+  const stopBoard = async (): Promise<number> => {
+    const answer = askJob(BOARD_JOB);
+    if (!answer) return 1;
+    if (!answer.loaded) {
+      log(`the supervisor is not running ${named(BOARD_JOB)} — nothing of its to stop`);
+      return 0;
+    }
+    const stopped = platform === "launchd" ? await unloadJob(BOARD_JOB) : run(["systemctl", "--user", "stop", BOARD_SYSTEMD_UNIT]);
+    if (!stopped) {
+      error(`the supervisor did not stop ${named(BOARD_JOB)} — the board may still be answering on ${options.board.url}`);
+      return 1;
+    }
+    log(`stopped ${named(BOARD_JOB)}`);
+    return 0;
+  };
+
+  /**
+   * One job stopped, unloaded and removed. `drains` is the daemon's alone: it
+   * is the one with a pass in flight, and `bootout` on its own would kill it
+   * (#174). The board has nothing to finish, so its own stop is the signal.
+   */
+  const uninstallJob = async (job: Job, jobFile: ServiceFile, drains: boolean): Promise<number> => {
+    const answer = askJob(job);
+    if (!answer) return 1;
+    let code = 0;
+    if (answer.loaded) {
+      const kept =
+        platform === "launchd" || !answer.lines.some((l) => l === "ActiveState=inactive" || l === "ActiveState=failed");
+      if (kept && drains) {
+        const drained = await drain();
+        if (drained !== 0) return drained;
+      } else if (kept && platform === "launchd" && !(await unloadJob(job))) {
+        error(`${job.label} is still loaded — ${jobFile.path} is left in place, since removing it would leave a job nothing can name`);
+        return 1;
+      }
+      // The drain, or the unload above, took a launchd job; a systemd unit is
+      // stopped and still enabled.
+      if (platform === "systemd" && !run(["systemctl", "--user", "disable", "--now", job.unit])) code = 1;
+    }
+    if (!existsSync(jobFile.path)) {
+      log(`nothing at ${jobFile.path}${answer.loaded ? ", and the job it named is unloaded" : ""}`);
+      return code;
+    }
+    await rm(jobFile.path, { force: true });
+    if (platform === "systemd" && !run(["systemctl", "--user", "daemon-reload"])) code = 1;
+    log(`removed ${jobFile.path} (logs kept in ${jobFile.logs})`);
+    return code;
+  };
+
+  /** The board's two answers, beside the daemon's two and folded into neither. */
+  const reportBoard = async (): Promise<number> => {
+    log(`supervisor  (${platform === "launchd" ? `launchctl, ${boardTarget}` : `systemctl --user, ${BOARD_SYSTEMD_UNIT}`})`);
+    const answer = askSupervisor(platform, exec, uid, BOARD_JOB);
+    const lines = "unread" in answer ? [`could not ask — ${answer.unread}`] : answer.lines;
+    for (const l of lines.length > 0 ? lines : ["loaded, and said nothing about the process"]) log(`  ${l}`);
+    log(`board       (${options.board.url} — whether a board answers there, which loaded does not say)`);
+    const asked = await boardAnswers();
+    log(`  ${typeof asked === "string" ? `answers on ${asked}` : asked === null ? "nothing answers" : `could not ask — ${asked.unread}`}`);
+    return "unread" in answer ? 1 : 0;
   };
 
   /**
@@ -904,8 +1177,17 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   };
 
   switch (verb) {
-    case "status":
-      return report();
+    case "status": {
+      // Two jobs, two reports, and never one summary: a board that is up beside
+      // a conductor launchd respawns every thirty seconds is the exact state a
+      // single word for both would hide.
+      log("the conductor");
+      const daemon = await report();
+      log("");
+      log("the board");
+      const board = await reportBoard();
+      return daemon !== 0 ? daemon : board;
+    }
 
     case "install": {
       // The checkout is `repoRoot()` — wherever this command was run from, not
@@ -922,14 +1204,19 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       let started = false;
       await mkdir(file.logs, { recursive: true });
       await mkdir(dirname(file.path), { recursive: true });
+      // Both files before either job is touched: under systemd one
+      // `daemon-reload` then has both units to read, and a refusal below leaves
+      // two files written and nothing loaded, which is what it says.
       await writeFile(file.path, file.content);
+      await writeFile(boardFile.path, boardFile.content);
       log(`wrote ${file.path}`);
-      log(`logs  ${join(file.logs, "daemon.log")}`);
+      log(`wrote ${boardFile.path}`);
+      log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)} and ${join(boardFile.logs, `${BOARD_JOB.log}.log`)}`);
 
       if (platform === "launchd") {
         const before = ask();
         if (!before) {
-          error("the file is written and nothing was loaded");
+          error("the files are written and nothing was loaded");
           return 1;
         }
         if (before.loaded) {
@@ -939,7 +1226,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           log(`note  launchd already had ${LAUNCHD_LABEL} loaded, and keeps using the definition it loaded,`);
           log("      respawns included, until: pnpm lingtai service restart");
         } else if (await shutdownStands()) {
-          error("the file is written and nothing was loaded");
+          error("the files are written and nothing was loaded");
           return 1;
         } else if ((await startAndConfirm(["launchctl", "bootstrap", `gui/${uid}`, file.path])) !== 0) {
           return 1;
@@ -956,7 +1243,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           log("note  systemd has reloaded the unit, and the process it already had keeps the one it started with");
           log("      until its next start: pnpm lingtai service restart");
         } else if (await shutdownStands()) {
-          error("the unit is written and enabled, and nothing was started");
+          error("the units are written, the daemon's is enabled, and nothing was started");
           return 1;
         } else if ((await startAndConfirm(["systemctl", "--user", "start", SYSTEMD_UNIT])) !== 0) {
           return 1;
@@ -971,17 +1258,36 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           log(`note  could not read whether lingering is on — ${linger.unread}. Without it the daemon stops at ${username}'s last logout`);
         }
       }
+
+      // The board's job, after the daemon's and never instead of it: everything
+      // above refuses by returning, and each of those refusals says that nothing
+      // was loaded — which a board loaded first would make false.
+      //
+      // Not refused over a standing shutdown, either: that request is the
+      // conductor's, and a UI takes no work over anybody's stop.
+      if (platform === "systemd" && !run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT])) return 1;
+      const boardCode = await startBoard();
+
       log("");
+      log("the conductor");
       const code = await report();
       // After the start's record, so the beacon has had its first beat — but a
       // beacon is five seconds apart, and the record is what said it started.
       if (started) log("the beacon above may be one beat behind the start recorded before it — pnpm lingtai service status");
-      return code;
+      log("");
+      log("the board");
+      const boardReport = await reportBoard();
+      return code !== 0 ? code : boardCode !== 0 ? boardCode : boardReport;
     }
 
-    case "start":
+    case "start": {
       if (!installed) return notInstalled();
-      return start();
+      const daemon = await start();
+      // Both, and the worst answer wins: a `service start` that exited 0 over a
+      // board nobody can open is the claim #167 took out of the daemon's start.
+      const board = await startBoard();
+      return daemon !== 0 ? daemon : board;
+    }
 
     case "shutdown":
     case "restart": {
@@ -999,33 +1305,33 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       } else {
         log(`the supervisor is not running ${platform === "launchd" ? LAUNCHD_LABEL : SYSTEMD_UNIT} — nothing of its to drain`);
       }
-      if (verb === "shutdown") return 0;
-      return start(kept);
+      // The board goes last, both ways, and the order is the daemon's refusals.
+      // On the way down the UI is what watches the drain, and it is worth
+      // having through it. On the way up `start` may still refuse over a
+      // request that landed during the wait, and its refusal says *nothing was
+      // started* — which a board started first would make false.
+      const boardStopped = await stopBoard();
+      if (verb === "shutdown") return boardStopped;
+      const daemonStarted = await start(kept);
+      if (daemonStarted !== 0) return daemonStarted;
+      const boardStarted = await startBoard();
+      return boardStarted !== 0 ? boardStarted : boardStopped;
     }
 
     case "uninstall": {
-      const answer = ask();
-      if (!answer) return 1;
-      if (answer.loaded) {
-        // Drained first, as `shutdown` is (#174): `bootout` or `disable --now`
-        // on its own is the supervisor's signal, and kills a pass in flight.
-        const kept =
-          platform === "launchd" || !answer.lines.some((l) => l === "ActiveState=inactive" || l === "ActiveState=failed");
-        if (kept) {
-          const drained = await drain();
-          if (drained !== 0) return drained;
-        }
-        // The drain unloaded a launchd job; a systemd unit is stopped and still enabled.
-        if (platform === "systemd" && !run(["systemctl", "--user", "disable", "--now", SYSTEMD_UNIT])) return 1;
-      }
-      if (!installed) {
-        log(`nothing at ${file.path}${answer.loaded ? ", and the job it named is unloaded" : ""}`);
-        return 0;
-      }
-      await rm(file.path, { force: true });
-      if (platform === "systemd" && !run(["systemctl", "--user", "daemon-reload"])) return 1;
-      log(`removed ${file.path} (logs kept in ${file.logs})`);
-      return 0;
+      /**
+       * **Both legs run, whatever either answers, and the worst is returned.**
+       * Every other verb stops at its first refusal; this one must not. A
+       * `service uninstall` that gave up at the daemon — because its file was
+       * already gone, or its unload failed — used to exit 0 with the board's job
+       * still loaded and its plist still on disk, and launchd went on starting a
+       * board at every login under a command that reported success. The whole
+       * point of the verb is that nothing is left behind, so nothing is skipped
+       * and anything that could not be removed is named.
+       */
+      const daemonGone = await uninstallJob(DAEMON_JOB, file, true);
+      const boardGone = await uninstallJob(BOARD_JOB, boardFile, false);
+      return daemonGone !== 0 ? daemonGone : boardGone;
     }
   }
 }

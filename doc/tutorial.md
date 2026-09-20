@@ -135,8 +135,12 @@ as it appears, and runs the merge lane. Leave it running.
 In another terminal, for the board:
 
 ```bash
-pnpm --filter @lingtai/board dev     # http://localhost:3200
+pnpm lingtai board start             # http://127.0.0.1:17820
 ```
+
+From a checkout with no `pnpm build` behind it there is no built board beside
+the CLI, and that command says so; `pnpm --filter @lingtai/board dev` serves
+the same port from the source.
 
 To install it as a background service instead — a LaunchAgent on macOS, a
 systemd user unit on Linux:

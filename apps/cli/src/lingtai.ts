@@ -10,6 +10,11 @@
  * the repository root — see `packages/event-store/src/env.ts`. Never read
  * `process.env` for a connection string directly.
  */
+import { spawn, spawnSync } from "node:child_process";
+import { connect } from "node:net";
+import { hostname } from "node:os";
+import { boardPort, boardUrl } from "@lingtai/env";
+import { createFileLocker } from "@lingtai/env/lock";
 import { createProjectionRunner, projectionLag } from "@lingtai/projector";
 import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
 import { backlogProjection, taskViewProjection } from "@lingtai/projector";
@@ -41,7 +46,9 @@ import {
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
-import { builtBoardDir, serveBoard } from "./board.ts";
+import { configPath } from "./init.ts";
+import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from "./service.ts";
+import { boardCommand, builtBoardDir, parseBoardArgs, serveBoard, type BoardWorld } from "./board.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "@lingtai/conductor/onboard";
@@ -56,7 +63,6 @@ import { envCommand } from "./env.ts";
 import { requeueCommand } from "./requeue.ts";
 import { pauseCommand } from "./pause.ts";
 import { run as runOnceCommand } from "./run.ts";
-import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { releaseCheck } from "./install.ts";
 import { status } from "./status.ts";
 import { versionLine } from "./version.ts";
@@ -81,7 +87,8 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 again to continue, or to see what is set
     --database-url <url>        instead of being asked
     --agent <claude-code|codex> instead of being asked, where both are signed in
-    --port <n>                  the board's port. default: 3200
+    --port <n>                  the board's port, for this run. default: 17820,
+                                or board.port in ~/.lingtai/config.yml
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
     --base <branch>             where to *read the recipe from*, not what the
                                 base is — the recipe's own repo.base says that,
@@ -137,11 +144,29 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 stopped system and on a run that is long over.
                                 A landed run has no log: 0034 keeps exactly the
                                 ones still owed an explanation
-  lingtai board                     serve the board pnpm build wrote beside this
-                                CLI, in this process. From the source, there is
-                                none: pnpm --filter @lingtai/board dev
-    --port <n>                  default 3200
+  lingtai board start               serve the board pnpm build wrote beside this
+                                CLI, in this process: the URL is printed and a
+                                browser opened, and ctrl-c stops it. A port
+                                somebody already holds is said in words. From
+                                the source there is no built board:
+                                pnpm --filter @lingtai/board dev
+    --port <n>                  default 17820, or board.port in
+                                ~/.lingtai/config.yml
     --dir <path>                a built board somewhere else
+    --no-open                   no browser — what the service's job passes
+  lingtai board stop                stop the board this machine is running. Not
+                                shutdown: that means finish the pass in flight
+                                and waits for it, and a board has no pass to
+                                finish. Where a supervisor keeps the board, this
+                                is its stop and the board stays stopped until
+                                lingtai service start
+  lingtai board restart             stop, then start. Unlike lingtai restart it
+                                refuses nothing first — no commit to check, no
+                                worktree, no doctor: a UI at the wrong commit
+                                costs a reload
+  lingtai board status              who serves it, whether a board answers, and
+                                whether a supervisor keeps one — three facts,
+                                none concluded from another
   lingtai status [project]          what is runnable, and what is holding the rest
     --all                       include items that have left the queue
                                 and why. Takes nothing and claims nothing.
@@ -163,12 +188,19 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --no-conduct                projections only, take nothing
     --no-merge                  as for lingtai run
   lingtai service install|start|shutdown [why]|restart [why]|status|uninstall
-                                keep lingtai daemon running: a LaunchAgent on
-                                macOS, a systemd user unit on Linux. No service
-                                manager? run lingtai daemon in the foreground.
-                                shutdown drains through the log, waits for the
-                                pass, then unloads; restart is that and start,
-                                unchecked — lingtai restart is the checked one
+                                keep both processes running — the daemon and the
+                                board, two jobs: a LaunchAgent each on macOS, a
+                                systemd user unit each on Linux. No service
+                                manager? run lingtai daemon and lingtai board
+                                start in the foreground.
+                                shutdown drains the conductor through the log,
+                                waits for the pass, unloads it, and then stops
+                                the board, which has nothing to drain; restart
+                                is that and start, unchecked — lingtai restart
+                                is the checked one.
+                                status reports each job on its own: one word for
+                                both would hide a board that is up beside a
+                                conductor launchd respawns every thirty seconds
   lingtai pause <why>               stop the running daemon taking new tickets; a
                                 run in flight finishes. About the daemon that is
                                 running, and gone when it is — but not for
@@ -352,6 +384,9 @@ async function projectionCommand(args: string[]): Promise<number> {
 /** What `lingtai service` reads off the log, shared with the restart that starts through it. */
 function serviceOptions(): ServiceOptions {
   return {
+    // The board's job, beside the daemon's (#187). `answering` is the board's
+    // own word for being up, which a job the supervisor has loaded is not.
+    board: { url: boardUrl(), answering: () => boardAnswering(boardPort()) },
     // A read that throws, so a beacon that could not be read says so.
     // Doctor folds that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
@@ -379,6 +414,72 @@ function serviceOptions(): ServiceOptions {
       watermark: () => controlWatermark(),
       after: (version) => startAfter(version),
     },
+  };
+}
+
+/**
+ * Whether a **Lingtai** board answers on `port`, as its own page says so.
+ *
+ * The title and not a 200: a port some other server holds answers too, and
+ * calling that one a board is how `board stop` ends up signalling somebody
+ * else's process. `lingtai init` asks the same question the same way.
+ */
+async function boardAnswering(port: number): Promise<string | null> {
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) });
+    return (await res.text()).includes("<title>Lingtai</title>") ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function liveBoardWorld(): BoardWorld {
+  return {
+    host: "127.0.0.1",
+    hostname: hostname(),
+    answering: boardAnswering,
+    bound: (port) =>
+      new Promise<boolean>((resolve) => {
+        const socket = connect(port, "127.0.0.1");
+        socket.once("connect", () => {
+          socket.destroy();
+          resolve(true);
+        });
+        socket.once("error", () => resolve(false));
+      }),
+    locker: createFileLocker(),
+    keeper: () => keeper({}, BOARD_JOB),
+    exec: (call) => {
+      const r = spawnSync(call[0]!, call.slice(1), { encoding: "utf8" });
+      if (r.error) return { status: 127, out: r.error.message };
+      return { status: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+    },
+    serve: serveBoard,
+    open: (url) =>
+      new Promise((resolve) => {
+        const opener = process.platform === "darwin" ? "open" : "xdg-open";
+        const child = spawn(opener, [url], { stdio: "ignore", detached: true });
+        child.once("error", () => resolve(false));
+        child.once("spawn", () => {
+          child.unref();
+          resolve(true);
+        });
+      }),
+    // `kill` with no signal would only ask whether it exists; SIGTERM is the
+    // stop, and a board installs no handler that could swallow it.
+    signal: (pid) => {
+      try {
+        process.kill(pid, "SIGTERM");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    whereThePortIsSet: `board.port in ${configPath(process.env)}, or --port for this one run`,
+    log: (line) => console.log(line),
+    error: (line) => console.error(line),
   };
 }
 
@@ -1036,15 +1137,22 @@ async function main(argv: string[]): Promise<number> {
       return attach({ runId, signal: detach.signal });
     }
     case "board": {
-      const { flags } = parseFlags(rest);
-      const port = Number(flags["port"] ?? 3200);
-      if (!Number.isInteger(port) || port <= 0) {
-        console.error("lingtai board [--port <n>] [--dir <path>]");
+      const parsed = parseBoardArgs(rest);
+      if ("refused" in parsed) {
+        console.error(parsed.refused);
         return 2;
       }
-      await serveBoard({ dir: flags["dir"] || builtBoardDir(), port, host: "127.0.0.1" });
-      console.log(`board on http://127.0.0.1:${port}`);
-      return 0;
+      // `--port` is this run's; without it the machine file's, and without that
+      // 17820 (#187). A file that does not parse is refused by name here rather
+      // than serving on a port nobody chose.
+      let port: number;
+      try {
+        port = parsed.port ?? boardPort();
+      } catch (err) {
+        console.error((err as Error).message);
+        return 1;
+      }
+      return boardCommand({ ...parsed, port, dir: parsed.dir ?? builtBoardDir() }, liveBoardWorld());
     }
     case "status": {
       const { positional, flags } = parseFlags(rest);

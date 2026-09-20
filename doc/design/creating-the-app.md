@@ -201,8 +201,8 @@ than an error.
 ## Webhooks: say it rather than pre-fill a URL that cannot work
 
 `hook_attributes.url` is where GitHub will post `issues`. Lingtai's
-receiver is `apps/board/src/app/api/webhook/route.ts` — and on `localhost:3200`
-**GitHub cannot reach it**.
+receiver is `apps/board/src/app/api/webhook/route.ts` — and on loopback
+(`127.0.0.1:17820`, #187) **GitHub cannot reach it**.
 
 Two honest options, and not a third:
 

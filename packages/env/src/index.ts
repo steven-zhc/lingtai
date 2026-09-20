@@ -227,6 +227,79 @@ function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
   return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined;
 }
 
+/**
+ * The board's port (#187). `17820`, and no configuration is required to get it.
+ *
+ * **Here rather than in `apps/board/package.json`**, which held it as
+ * `next dev -p 3200` until now: somebody who installed Lingtai has no
+ * `package.json` to edit, and the CLI, the service files and the URL in a
+ * notification each need the same number. One constant, read by all of them.
+ *
+ * **Not higher.** macOS hands out `49152–65535` as ephemeral ports and Linux
+ * `32768–60999`, so a default in either range is one the kernel also gives to
+ * other processes — it would collide at random, intermittently, and mostly not
+ * at all, which is harder to find than a fixed clash. `10000–32767` is the band.
+ */
+export const BOARD_PORT = 17820;
+
+/**
+ * Reserved, and **bound by nothing**.
+ *
+ * The daemon listens on no port at all: everything reaches it through the log
+ * (0014, 0022), its hook socket is a unix socket path and its liveness beacon
+ * is a file (#46). So there is one listener here, and `17821` is kept beside it
+ * for the second one — the board's GitHub webhook receiver moving to the
+ * daemon, if it ever does (doc/design/installing.md).
+ *
+ * It is reserved rather than bound because **a port with no use is a port the
+ * next reader has to explain**, and the two ways that ends — inventing a
+ * purpose for it, or deleting it — are both worse than a number written down.
+ * `packages/env/test/board-port.test.ts` fails if anything starts listening on it.
+ */
+export const RESERVED_PORT = 17821;
+
+/**
+ * `board.port` in `~/.lingtai/config.yml`, or undefined where the file names
+ * none — the same third source, and the same rules, as `machineDatabaseUrl`.
+ *
+ * The file need not exist. A value that is not a port number is refused by name
+ * rather than ignored, which would serve the board on 17820 and say nothing
+ * about the number somebody plainly wrote down.
+ */
+export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number | undefined {
+  const path = join(stateDir(from), "config.yml");
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(text);
+  } catch (err) {
+    throw new Error(`${path} could not be parsed as YAML, so its board.port could not be read: ${(err as Error).message}`);
+  }
+  const board = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["board"] : undefined;
+  const port = board !== null && typeof board === "object" ? (board as Record<string, unknown>)["port"] : undefined;
+  if (port === undefined || port === null) return undefined;
+  const n = typeof port === "number" ? port : Number(port);
+  if (!Number.isInteger(n) || n <= 0 || n > 65535) {
+    throw new Error(`${path} sets board.port to ${JSON.stringify(port)}, which is not a port number — ${BOARD_PORT} is the default`);
+  }
+  return n;
+}
+
+/** The port the board is served on and linked to: the file's, else `BOARD_PORT`. */
+export function boardPort(from: NodeJS.ProcessEnv = process.env): number {
+  return machineBoardPort(from) ?? BOARD_PORT;
+}
+
+/** Where the board answers, for a link somebody clicks. Loopback: 0008 gave it no authentication. */
+export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
+  return `http://127.0.0.1:${boardPort(from)}`;
+}
+
 /** Pooled. Ordinary reads and writes. */
 export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
   if (inTest(from)) return testUrl("DATABASE_URL", from);

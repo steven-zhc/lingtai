@@ -565,8 +565,12 @@ than degrading:
 
 ```bash
 pnpm --filter @lingtai/hook build      # the hook binary; not committed
-pnpm --filter @lingtai/board dev       # the board, on :3200
+pnpm lingtai board start               # the board, on :17820
 ```
+
+From a checkout with no `pnpm build` behind it there is no built board to
+serve, and `board start` says so: `pnpm --filter @lingtai/board dev` is the
+one to run there, on the same port.
 
 The board is a reader. It renders `task_view` and issues control events; it
 never holds a run, which is why restarting it or closing the tab costs nothing
@@ -780,9 +784,74 @@ made is worse than none.
 you click it. Without it `osascript` still delivers one and writes the link into
 the message, because it cannot open a URL itself.
 
+### The board's lifecycle
+
+The UI has the same four verbs the conductor has, and one of them is
+deliberately a different word (#187):
+
+```bash
+pnpm lingtai board start      # serve it here; prints the URL, opens a browser
+pnpm lingtai board stop       # stop the one this machine is running
+pnpm lingtai board restart    # stop, then start
+pnpm lingtai board status     # who serves it, whether it answers, who keeps it
+```
+
+`start` serves in this terminal and **ctrl-c stops it**; `--no-open` leaves the
+browser alone, which is what the supervisor's job passes. `--port <n>` serves
+this one run somewhere else.
+
+**The board gets `stop`, not `shutdown`.** `shutdown` means *finish the pass in
+flight*, and waits as long as `runtime.limits.wall` — an hour here. A board has
+no pass to finish, so a verb that waited for one would make you wait for
+nothing, or read as though the conductor were draining when it was not.
+`lingtai board shutdown` does not exist and says so by name.
+
+**`board restart` refuses nothing first.** `lingtai restart` checks a `HEAD` the
+tracking remote does not have, a dirty worktree and a red `lingtai doctor`
+before it drains, because a daemon holds the code it started with for hours
+(0042). A board at the wrong commit costs a reload, so `board restart` is
+stop-then-start and claims nothing more.
+
+**A port somebody already holds is said in words**, never as a bare
+`EADDRINUSE`: *a board is already on 17820 — http://127.0.0.1:17820*, the
+holder beside it, and where the port is set. A board this machine is serving
+holds a file lock under `~/.lingtai/locks/` — the same locker the conductor,
+the merge lane and a decision take (#193) — named for its port, and the
+holder's name carries its pid, which is what `stop` signals and `status`
+reports. Something else on the port is named as something else: it holds no
+lock of ours and nothing here signals it.
+
+**Where a supervisor keeps the board, `stop` and `restart` are its calls.** A
+signal sent here would be respawned thirty seconds later, behind whatever took
+the port meanwhile, so `board stop` runs the supervisor's own stop and the
+board stays down until `lingtai service start`.
+
+#### The port
+
+`17820`, and **no configuration is required to get it**. It is in
+`packages/env/src/index.ts` and not in `apps/board/package.json`, where it used
+to live as `next dev -p 3200`: somebody who installed Lingtai has no
+`package.json` to edit. `~/.lingtai/config.yml` overrides it and need not
+exist:
+
+```yaml
+board:
+  port: 18080
+```
+
+`17821` is **reserved and bound by nothing** — the daemon listens on nothing at
+all, and a second listener, if one is ever needed, has an obvious home instead
+of being scattered. `packages/env/test/board-port.test.ts` fails if anything
+starts listening on it.
+
+Higher is not safer: macOS hands out `49152–65535` as ephemeral ports and Linux
+`32768–60999`, so a default in either range would collide at random,
+intermittently, and mostly not at all — harder to find than a fixed clash.
+
 ### Keep it running
 
-**No service manager? Run `lingtai daemon` in the foreground.** A container, a
+**No service manager? Run `lingtai daemon` and `lingtai board start` in the
+foreground.** A container, a
 Linux whose init is not systemd, a box with no user session: `pnpm lingtai
 daemon` under whatever supervises that machine is a first-class way to run
 Lingtai, not a debug mode, and it needs nothing else from this section.
@@ -792,21 +861,51 @@ Where there is one, let it keep the daemon up across logout, sleep, reboots and
 crashes:
 
 ```bash
-pnpm lingtai service install     # write the file for this platform, and load it
-pnpm lingtai service status      # the supervisor's answer, then the beacon's
-pnpm lingtai service shutdown "why"  # drain through the log, wait for the pass, then unload
+pnpm lingtai service install     # write both files for this platform, and load them
+pnpm lingtai service status      # each job's own answers — never one word for both
+pnpm lingtai service shutdown "why"  # drain the conductor, then stop the board
 pnpm lingtai service restart "why"   # that, then start — unchecked; see below
 pnpm lingtai service start
-pnpm lingtai service uninstall   # logs are kept
+pnpm lingtai service uninstall   # both jobs; logs are kept
 ```
+
+**It installs two jobs** (#187), because there are two processes and `launchd`
+supervises two as easily as one. Merging the board into the daemon to avoid
+supervising two would be the CLI taking on the supervisor's role, which
+`apps/cli/src/service.ts` declines by design.
 
 | | macOS | Linux |
 |---|---|---|
 | supervisor | launchd, `launchctl` | systemd **user** manager, `systemctl --user` |
-| file | `~/Library/LaunchAgents/ai.nextloom.lingtai.daemon.plist` | `~/.config/systemd/user/lingtai.service` |
+| the conductor | `~/Library/LaunchAgents/ai.nextloom.lingtai.daemon.plist` | `~/.config/systemd/user/lingtai.service` |
+| the board | `~/Library/LaunchAgents/ai.nextloom.lingtai.board.plist` | `~/.config/systemd/user/lingtai-board.service` |
 | always up | `KeepAlive` | `Restart=always` |
 | crash-loop spacing | `ThrottleInterval` 30 | `RestartSec=30`, `StartLimitIntervalSec=0` |
-| logs | `$LINGTAI_HOME/logs/daemon.log`, `daemon.err` | the same two files |
+| logs | `$LINGTAI_HOME/logs/daemon.log`, `board.log` and the `.err` beside each | the same four files |
+
+**`service status` reports each job on its own**, and the conductor's two
+answers stay two: one summary saying *running* would hide a board that is up
+beside a conductor launchd respawns every thirty seconds. The board's own
+second answer is whether a board **answers** on the port — a job the supervisor
+has loaded is not a UI anybody can open, exactly as a loaded daemon is not a
+daemon taking work.
+
+The board's two files carry none of the daemon's reasons. It detaches no agent,
+so its systemd unit leaves `KillMode` at the default; it finishes no pass, so
+neither file argues about a stop timeout. A generated file is the first thing
+anybody reads when a job did not come back, and the daemon's reasons would be
+false there.
+
+**The board is last, both ways.** `service shutdown` drains the conductor and
+then stops the board — the UI is what watches a drain, and it is worth having
+through it — and `service restart` and `service start` bring the conductor up
+first, because the conductor's start is the one that can still refuse over a
+shutdown request, and its refusal says *nothing was started*. There is no drain
+for the board either way: nothing is in flight to lose.
+
+An install from before the board had a job is named and passed over, not
+refused: `service start` and `service restart` say *no board job … pnpm lingtai
+service install writes one* and get on with the conductor.
 
 **`KeepAlive` and `Restart=always` are the same rule**: the daemon is a thing
 that is always supposed to be up, so there is no start button that matters.
@@ -874,6 +973,20 @@ failed `lingtai doctor`, then drains, checks again, and has the supervisor start
 the daemon recorded as yours. `service restart` does none of that — it starts
 whatever the checkout holds — and it is the plumbing for a rewritten unit that
 must be loaded now.
+
+So the three restarts differ in what they refuse before they act, and in what
+they cover:
+
+| | refuses first | covers |
+|---|---|---|
+| `lingtai restart "why"` | an unpushed `HEAD`, a dirty worktree, a red `doctor` | the conductor |
+| `lingtai service restart "why"` | nothing | both jobs |
+| `lingtai board restart` | nothing | the board |
+
+`lingtai restart` under a supervisor delegates the drain and the start to
+`lingtai service restart` and keeps every refusal as its own (`RESTART_GUARDS`
+in `apps/cli/src/restart.ts`), so the row above is about the checks and not
+about which process does the work.
 
 **Under a supervisor, `lingtai shutdown` does not hold the service down.** A
 daemon reads nothing appended to the control stream before it started (#159),
@@ -995,7 +1108,7 @@ reads.
 
 ### Decide, on the board
 
-Open <http://localhost:3200>. The card is in **Waiting on you** — title, state,
+Open <http://127.0.0.1:17820>. The card is in **Waiting on you** — title, state,
 cost, gate counts — and Approve and Back to the queue are on it, because
 deciding is what the board is for. Reject and Waive are gone (`#150`): neither
 moved the card, and approving over a gate that still refuses now waives it, with

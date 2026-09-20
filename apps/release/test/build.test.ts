@@ -172,7 +172,9 @@ function tar(out: string, dir: string, entry: string): void {
 async function servesAPage(command: string, args: string[], env: NodeJS.ProcessEnv = childEnv()): Promise<void> {
   const port = await freePort();
 
-  const board = spawn(command, [...args, "board", "--port", String(port)], {
+  // `--no-open`: `lingtai board start` opens a browser (#187), and a gate that
+  // opened two tabs every run would be its own bug report.
+  const board = spawn(command, [...args, "board", "--port", String(port), "--no-open"], {
     cwd: work,
     env,
     stdio: ["ignore", "pipe", "pipe"],

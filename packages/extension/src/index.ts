@@ -145,7 +145,14 @@ export function parsePayload(text: string): NotifyPayload {
     // rather than refused: a notification with a link that may be wrong beats
     // no notification, which is the trade the rest of this file does not make
     // and this one line does.
-    board: typeof body?.board === "string" ? body.board : "http://localhost:3200",
+    //
+    // Written out rather than read from `@lingtai/env`'s `BOARD_PORT`, which is
+    // where the port is decided (#187): this package has no dependencies on
+    // purpose — an extension runs from a checkout nobody reinstalled — and one
+    // import would be the workspace symlink that breaks it there. The daemon
+    // sends the real address in the payload, so this is only reached by a
+    // payload that carries none.
+    board: typeof body?.board === "string" ? body.board : "http://127.0.0.1:17820",
   };
 }
 

@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { isSea } from "node:sea";
 import { pathToFileURL } from "node:url";
 import { constants, Script } from "node:vm";
+import type { FileLocker, HeldLock } from "@lingtai/env/lock";
+import { BOARD_JOB, type Exec, type Keeper } from "./service.ts";
 
 /**
  * The built board, served from this process (#183).
@@ -116,5 +118,369 @@ async function listening(host: string, port: number): Promise<void> {
     if (up) return;
     if (Date.now() > deadline) throw new Error(`the board never listened on ${host}:${port}`);
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+// ---------------------------------------------------------- the lifecycle --
+
+/**
+ * `lingtai board start|stop|restart|status` (#187) — the UI's lifecycle, beside
+ * the conductor's.
+ *
+ * ## `stop`, and deliberately not `shutdown`
+ *
+ * `lingtai shutdown` means *finish the pass in flight*, and waits as long as
+ * `runtime.limits.wall` — an hour here. **A board has no pass to finish.**
+ * Giving it the same verb would make somebody wait for nothing, or believe the
+ * conductor was draining when it was not. So the board stops at once, and the
+ * word for it is `stop`.
+ *
+ * The same for `restart`: `lingtai restart` refuses a `HEAD` the tracking
+ * remote does not have, a dirty worktree and a red `lingtai doctor` before it
+ * drains (0042). `lingtai board restart` is stop-then-start and claims nothing
+ * more — there is nothing to lose by restarting a UI at the wrong commit.
+ *
+ * ## Which board, and how it is stopped
+ *
+ * There is no log to send a request down, so the board is found the way
+ * everything else on this machine is found: **the file lock under
+ * `~/.lingtai/locks/` (#193)**, the same locker the conductor, the merge lane
+ * and a decision take. `board start` holds `board` while it serves, and the
+ * holder's name carries its pid and host — so `stop` has something to signal
+ * and `status` has something to report, and a killed board leaves nothing
+ * behind, because the kernel drops a file lock with the process.
+ *
+ * **The supervisor is asked first, and that is the whole of the race.** A board
+ * launchd keeps would be signalled here and respawned thirty seconds later,
+ * behind whatever this terminal started in the meantime — so when a supervisor
+ * keeps the job, `stop` and `restart` are its calls and not a signal of ours.
+ * `start` needs no such check: a supervised board holds the lock, and a second
+ * one is refused by it in words.
+ */
+export type BoardVerb = "start" | "stop" | "restart" | "status";
+const VERBS: readonly BoardVerb[] = ["start", "stop", "restart", "status"];
+
+/**
+ * The lock `board start` holds while it serves, **one per port**.
+ *
+ * The port and not the word `board`, because the port is what a second board
+ * would collide over: two on different ports share nothing and are refused by
+ * nothing, and `apps/release/test/build.test.ts` starts exactly that pair.
+ * `stop` and `status` take a port too, so all three name the same lock.
+ */
+export function boardLock(port: number): string {
+  return `board:${port}`;
+}
+
+/**
+ * How long `stop` waits for a signalled board to let the lock go, and
+ * `restart` for one to answer again: ten seconds either way.
+ *
+ * Counted in polls rather than measured against the clock, so the wait is the
+ * injected `sleep`'s and a test that makes it a no-op does not sit here for ten
+ * real seconds.
+ */
+const STOP_POLL_MS = 100;
+const STOP_POLLS = 100;
+const ANSWER_POLL_MS = 250;
+const ANSWER_POLLS = 40;
+
+/** What was typed. `port` and `dir` are null where nothing was, and the caller resolves them. */
+export interface BoardArgs {
+  verb: BoardVerb;
+  port: number | null;
+  dir: string | null;
+  /** False under a supervisor, which has nobody at a browser (`BOARD_JOB.argv`). */
+  open: boolean;
+}
+
+/** What `boardCommand` runs: the same, with the port and the directory decided. */
+export interface BoardCommand extends BoardArgs {
+  port: number;
+  dir: string;
+}
+
+export interface BoardWorld {
+  host: string;
+  /** This machine's name, as the lock records it — so a holder elsewhere is not signalled here. */
+  hostname: string;
+  /** Whether a Lingtai board answers on this port — its URL, or null. Never "is the port bound". */
+  answering: (port: number) => Promise<string | null>;
+  /** Whether *anything* holds the port, which a board that is still starting also does. */
+  bound: (port: number) => Promise<boolean>;
+  locker: Pick<FileLocker, "tryLock" | "holder">;
+  /** Whether a supervisor keeps the board's job — `keeper(…, BOARD_JOB)`. */
+  keeper: () => Keeper;
+  exec: Exec;
+  serve: (options: BoardOptions) => Promise<void>;
+  open: (url: string) => Promise<boolean>;
+  /** SIGTERM to `pid`. False when there is no such process to signal. */
+  signal: (pid: number) => boolean;
+  sleep: (ms: number) => Promise<void>;
+  /** Where the port is set, said wherever the port is the trouble. */
+  whereThePortIsSet: string;
+  log: (line: string) => void;
+  error: (line: string) => void;
+}
+
+/**
+ * The lock, held for as long as this process serves.
+ *
+ * Module scope and not a local: a `HeldLock` dropped on the floor is a SQLite
+ * handle nothing references, and the lock it stands for is not this process's
+ * to lose to a collector.
+ */
+let held: HeldLock | null = null;
+
+export function parseBoardArgs(args: readonly string[]): BoardArgs | { refused: string } {
+  const usage = "lingtai board start|stop|restart|status [--port <n>] [--dir <path>] [--no-open]";
+  const rest = [...args];
+  // `lingtai board` on its own is `start`, which is what it did before it had
+  // verbs (#183) and what the wizard's last line still tells people to run.
+  const first = rest[0];
+  if (first === "shutdown") {
+    return {
+      refused:
+        "lingtai board shutdown does not exist — shutdown means finish the pass in flight, and waits as long as the " +
+        "wall limit for it. A board has no pass to finish: pnpm lingtai board stop, which returns at once",
+    };
+  }
+  const named = first !== undefined && !first.startsWith("-");
+  const verb = (named ? first : "start") as BoardVerb;
+  if (named) rest.shift();
+  if (!VERBS.includes(verb)) return { refused: `${usage} — no ${verb}` };
+  const out: { port?: number; dir?: string; open: boolean } = { open: true };
+  for (let i = 0; i < rest.length; i++) {
+    const name = rest[i]!;
+    if (name === "--no-open") {
+      out.open = false;
+      continue;
+    }
+    const value = rest[i + 1];
+    if (name === "--port") {
+      if (value === undefined) return { refused: `${usage} — --port takes a port number` };
+      const port = Number(value);
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) return { refused: `${usage} — --port takes a port number` };
+      out.port = port;
+      i++;
+      continue;
+    }
+    if (name === "--dir") {
+      if (value === undefined) return { refused: `${usage} — --dir takes a path` };
+      out.dir = value;
+      i++;
+      continue;
+    }
+    return { refused: `${usage} — no ${name}` };
+  }
+  return { verb, port: out.port ?? null, dir: out.dir ?? null, open: out.open };
+}
+
+/** The pid in a lock holder's name — `board on 17820 pid 500 on host` — with the host it is on. */
+export function holdingProcess(holder: string): { pid: number; host: string } | null {
+  const said = /\bpid (\d+) on (\S+)/.exec(holder);
+  return said ? { pid: Number(said[1]), host: said[2]! } : null;
+}
+
+export async function boardCommand(command: BoardCommand, world: BoardWorld): Promise<number> {
+  const { log, error } = world;
+  const url = `http://${world.host}:${command.port}`;
+
+  /** Where the port is set, said at every refusal the port causes. */
+  const sayWhereThePortIsSet = (): void => error(`the port is ${world.whereThePortIsSet}`);
+
+  /** Whoever holds the board lock, or null. Throws are the caller's: *unread* is not *nobody*. */
+  const holder = (): Promise<string | null> => world.locker.holder(boardLock(command.port));
+
+  const start = async (): Promise<number> => {
+    const taken = await world.locker.tryLock(boardLock(command.port), `board on ${command.port}`);
+    if (!taken.ok) {
+      // The sentence the ticket asked for, and the holder beside it: a second
+      // board on this machine is the ordinary case, not a bare EADDRINUSE.
+      error(`a board is already on ${command.port} — ${url}`);
+      error(`  held by ${taken.holder ?? "a holder that has not named itself"}`);
+      sayWhereThePortIsSet();
+      return 1;
+    }
+    held = taken.lock;
+    // The lock says nothing about the port: something that is not a board of
+    // this machine's can hold it, and Next would exit(1) on its own EADDRINUSE
+    // long after `serveBoard` resolved.
+    if (await world.bound(command.port)) {
+      const answers = await world.answering(command.port).catch(() => null);
+      error(
+        answers === null
+          ? `${world.host}:${command.port} is held by something that is not a Lingtai board — nothing was started`
+          : `a board is already on ${command.port} — ${answers}. It is not this machine's, since no lock names it`,
+      );
+      sayWhereThePortIsSet();
+      await held.release();
+      held = null;
+      return 1;
+    }
+    try {
+      await world.serve({ dir: command.dir, port: command.port, host: world.host });
+    } catch (err) {
+      await held.release();
+      held = null;
+      error((err as Error).message);
+      return 1;
+    }
+    log(`board on ${url}`);
+    if (command.open && !(await world.open(url))) log(`no browser could be opened here — open ${url}`);
+    log("it serves in this terminal — ctrl-c stops it. Under lingtai service it is a job: pnpm lingtai board stop");
+    return 0;
+  };
+
+  /**
+   * The supervisor's own stop or restart, when it keeps the board's job. One
+   * call each, printed first — this file wraps no more of a service manager
+   * than `service.ts` does.
+   */
+  const throughSupervisor = async (kept: Extract<Keeper, { kept: true }>, what: "stop" | "restart"): Promise<number> => {
+    const call =
+      kept.platform === "launchd"
+        ? what === "stop"
+          ? ["launchctl", "bootout", `gui/${kept.uid}/${BOARD_JOB.label}`]
+          : ["launchctl", "kickstart", "-k", `gui/${kept.uid}/${BOARD_JOB.label}`]
+        : ["systemctl", "--user", what === "stop" ? "stop" : "restart", BOARD_JOB.unit];
+    log(`${kept.platform} keeps the board (${kept.path}), so this is its call and not a signal of ours —`);
+    log(`$ ${call.join(" ")}`);
+    const r = world.exec(call);
+    if (r.status !== 0) {
+      if (r.out.trim()) error(r.out.trim());
+      error(`the supervisor refused to ${what} the board's job — pnpm lingtai service status says what it has`);
+      return 1;
+    }
+    if (what === "stop") {
+      log("stopped the board's job. It stays stopped: pnpm lingtai service start starts it again with the conductor");
+      return 0;
+    }
+    return (await answers()) ? 0 : 1;
+  };
+
+  /** Whether a board answers again after a restart, waited for rather than assumed. */
+  const answers = async (): Promise<boolean> => {
+    for (let i = 0; i < ANSWER_POLLS; i++) {
+      const at = await world.answering(command.port).catch(() => null);
+      if (at !== null) {
+        log(`the board answers on ${at}`);
+        return true;
+      }
+      await world.sleep(ANSWER_POLL_MS);
+    }
+    error(
+      `nothing answers on ${url} ${(ANSWER_POLLS * ANSWER_POLL_MS) / 1000}s after the restart — ` +
+        "pnpm lingtai service status says what the supervisor has",
+    );
+    return false;
+  };
+
+  const stop = async (): Promise<number> => {
+    const kept = world.keeper();
+    if ("unread" in kept) {
+      error(`${kept.unread}. Nothing was signalled: a board the supervisor keeps comes back in thirty seconds, and a`);
+      error("signal sent without knowing that leaves two of them racing for the port");
+      return 1;
+    }
+    if (kept.kept) return throughSupervisor(kept, "stop");
+
+    let who: string | null;
+    try {
+      who = await holder();
+    } catch (err) {
+      error(`the board lock could not be read — ${(err as Error).message}. Nothing was signalled`);
+      return 1;
+    }
+    if (who === null) {
+      const at = await world.answering(command.port).catch(() => null);
+      log(
+        at === null
+          ? "no board of this machine's is running, and nothing answers on the port — there was nothing to stop"
+          : `no board of this machine's is running, and something answers on ${at} — this signalled nothing, since no lock names it`,
+      );
+      return 0;
+    }
+    const process_ = holdingProcess(who);
+    if (process_ === null) {
+      error(`the board lock is held by ${who}, which names no pid — this signalled nothing`);
+      return 1;
+    }
+    if (process_.host !== world.hostname) {
+      error(`the board lock is held by ${who}, on another machine — a signal from here would reach a different process`);
+      return 1;
+    }
+    if (!world.signal(process_.pid)) {
+      error(`pid ${process_.pid} holds the board lock and is not there to signal — ${who}`);
+      return 1;
+    }
+    for (let i = 0; i < STOP_POLLS; i++) {
+      let now: string | null;
+      try {
+        now = await holder();
+      } catch (err) {
+        error(`signalled pid ${process_.pid}, and the lock could not be read afterwards — ${(err as Error).message}`);
+        return 1;
+      }
+      if (now === null) {
+        log(`stopped the board on ${command.port} — pid ${process_.pid}`);
+        return 0;
+      }
+      await world.sleep(STOP_POLL_MS);
+    }
+    error(
+      `pid ${process_.pid} still holds the board lock ${(STOP_POLLS * STOP_POLL_MS) / 1000}s after SIGTERM — ` +
+        `kill -9 ${process_.pid} is the blunt way, and it takes the server with it: the board serves in that process`,
+    );
+    return 1;
+  };
+
+  const status = async (): Promise<number> => {
+    // Three facts, none concluded from another: who serves it, whether a board
+    // answers, and whether anything would start one again by itself.
+    let who: string;
+    try {
+      who = (await holder()) ?? "nobody — no board of this machine's holds the lock";
+    } catch (err) {
+      who = `could not be read — ${(err as Error).message}`;
+    }
+    log(`serving     ${who}`);
+    const at = await world.answering(command.port).catch((err: unknown) => err as Error);
+    log(
+      `answering   ${
+        at instanceof Error ? `could not be asked — ${at.message}` : at === null ? `nothing answers on ${url}` : `answers on ${at}`
+      }`,
+    );
+    const kept = world.keeper();
+    log(
+      `supervisor  ${
+        "unread" in kept ? kept.unread : kept.kept ? `${kept.platform} keeps it (${kept.path})` : "none keeps it — a board here is a terminal's"
+      }`,
+    );
+    log(`port        ${command.port}, set in ${world.whereThePortIsSet}`);
+    return 0;
+  };
+
+  switch (command.verb) {
+    case "start":
+      return start();
+    case "stop":
+      return stop();
+    case "status":
+      return status();
+    case "restart": {
+      const kept = world.keeper();
+      if ("unread" in kept) {
+        error(`${kept.unread}. Nothing was stopped or started`);
+        return 1;
+      }
+      // One call, not stop-then-start: this terminal racing the supervisor's
+      // respawn for the port is how a `board restart` ends with launchd
+      // crash-looping a job behind a board that goes when the terminal closes.
+      if (kept.kept) return throughSupervisor(kept, "restart");
+      const stopped = await stop();
+      if (stopped !== 0) return stopped;
+      return start();
+    }
   }
 }

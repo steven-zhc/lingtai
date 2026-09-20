@@ -38,19 +38,23 @@ import { runnableEnv, extensionEnv, resolveAgentEnv } from "@lingtai/agent-env";
 import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from "@lingtai/actions";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { type Envelope, type PayloadOf, workItemOf } from "@lingtai/domain";
+import { boardUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 
 /**
  * The board's address on the one machine this runs on
- * ([0008](../../../doc/decisions/0008-nextjs-board.md)): port 3200, localhost,
- * no authentication.
+ * ([0008](../../../doc/decisions/0008-nextjs-board.md)): loopback, no
+ * authentication, and the port `@lingtai/env`'s `boardPort` answers — 17820
+ * unless `~/.lingtai/config.yml` says otherwise (#187).
  *
- * A constant rather than a setting, because the deployment it would describe
- * does not exist yet. It is in the payload rather than compiled into the
- * subscriber so that the day it does, one place changes and no extension has to
- * be rewritten.
+ * Read per build rather than frozen at import, so a daemon restarted after the
+ * port changed links to the board that is actually there. It is in the payload
+ * rather than compiled into the subscriber so that an extension never has to be
+ * rewritten when it moves.
  */
-export const BOARD_URL = "http://localhost:3200";
+export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
+  return boardUrl(env);
+}
 
 /**
  * The work item a run is for, off the log.
@@ -223,7 +227,7 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
             const now = await resolve({ project, required: [], allow: declared });
             return runnableEnv(extensionEnv(now.merged, spec.env).values);
           },
-          board: options.board ?? BOARD_URL,
+          board: options.board ?? boardAddress(),
         }),
       });
     }

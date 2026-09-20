@@ -45,10 +45,11 @@ import { join } from "node:path";
 import { Document, isMap, parseDocument } from "yaml";
 import { claudeCodeAuth, codexAuth } from "@lingtai/agent/auth";
 import { runnableEnv } from "@lingtai/agent-env";
-import { stateDir } from "@lingtai/env";
+import { boardPort, stateDir } from "@lingtai/env";
+import { createFileLocker, type HeldLock } from "@lingtai/env/lock";
 import { paint } from "@lingtai/env/colour";
 import { type SchemaOutcome, createSchema } from "@lingtai/event-store/schema";
-import { builtBoardDir, serveBoard } from "./board.ts";
+import { boardLock, builtBoardDir, serveBoard } from "./board.ts";
 
 // -------------------------------------------------------------- the world --
 
@@ -98,9 +99,6 @@ export interface InitWorld {
   /** Open a browser. False when none could be. */
   open: (url: string) => Promise<boolean>;
 }
-
-/** `lingtai board`'s default, so the two commands name one address. */
-export const BOARD_PORT = 3200;
 
 const USAGE = "lingtai init [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]";
 
@@ -170,8 +168,8 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const parsed = parseArgs(argv);
   if ("refused" in parsed) return refuse(world, parsed.refused, 2);
   const { flags } = parsed;
-  const port = flags["port"] === undefined ? BOARD_PORT : Number(flags["port"]);
-  if (!Number.isInteger(port) || port <= 0) return refuse(world, `${USAGE} — --port takes a port number`, 2);
+  const asked = flags["port"] === undefined ? null : Number(flags["port"]);
+  if (asked !== null && (!Number.isInteger(asked) || asked <= 0)) return refuse(world, `${USAGE} — --port takes a port number`, 2);
 
   const home = stateDir(world.env);
   const path = configPath(world.env);
@@ -217,6 +215,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   );
 
   // ---- the board, on the wizard ---------------------------------------------
+  // The port is decided here and not at the top: `board.port` is read out of
+  // the same file `readConfig` above refuses by name, and a file that does not
+  // parse should say so once, in its own words, rather than through the port.
+  const port = asked ?? boardPort(world.env);
   // A board already up is this machine's, and the wizard is on it: a re-run uses it rather than failing on its port.
   const running = await world.boardAt(port);
   const board = running !== null ? { url: running } : await world.board(port);
@@ -416,6 +418,9 @@ function write(
 
 // ------------------------------------------------------------- live world --
 
+/** The board lock this process holds while `lingtai init` serves one. See `board` below. */
+let kept: HeldLock | null = null;
+
 export function liveInitWorld(): InitWorld {
   return {
     env: process.env,
@@ -485,9 +490,21 @@ export function liveInitWorld(): InitWorld {
     },
     board: async (port) => {
       const host = "127.0.0.1";
+      // The same lock `lingtai board start` takes (#187), and for the same
+      // reason: a board this process serves and no lock names is one that
+      // `lingtai board status` calls nobody's and `lingtai board stop` cannot
+      // stop. Held for as long as this process serves — `kept` is module scope
+      // so nothing collects the handle out from under the lock.
+      const taken = await createFileLocker().tryLock(boardLock(port), `board on ${port}`);
+      if (!taken.ok) {
+        return { refused: `a board is already on ${port} — held by ${taken.holder ?? "a holder that has not named itself"}` };
+      }
+      kept = taken.lock;
       try {
         await serveBoard({ dir: builtBoardDir(), port, host });
       } catch (err) {
+        await kept.release();
+        kept = null;
         return { refused: (err as Error).message };
       }
       return { url: `http://${host}:${port}` };
