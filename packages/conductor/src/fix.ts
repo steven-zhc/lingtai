@@ -747,6 +747,27 @@ export function diagnoseDisagreement(input: {
     `The \`${input.action}\` reviewer refused it with ${count(input.findings)} ` +
     `(worst: ${worst})`;
   /**
+   * What the reviewer has already decided, which is what *nothing here was
+   * decided* is a claim about (`#197`).
+   *
+   * **`rounds` is read and not assumed.** On the two endings below it is the
+   * number of the round that produced nothing, so each of the rounds before it
+   * did commit and the reviewer read and refused what each one produced —
+   * `runtime.limits.rounds` defaults to 2, so a fixer killed in round 2 sits
+   * behind a diff this reviewer has already judged, and `#187` itself is that
+   * shape. *Nothing was decided* is then false, and false in the direction that
+   * costs: it invites a person to treat a refusal nothing has argued with as
+   * one two agents have been round twice.
+   *
+   * What is true of every one of them is that the findings below are the ones
+   * nothing answered, which is the sentence both arms keep.
+   */
+  const undecided =
+    input.rounds <= 1
+      ? "so nothing here was decided"
+      : `so nothing new was decided: the reviewer refused ${input.rounds} diffs here ` +
+        "and the round answering the last produced nothing";
+  /**
    * The first sentence, which is the ending's to write.
    *
    * **A `switch` and not a chain of ternaries** (`#197`). The defect this
@@ -759,7 +780,7 @@ export function diagnoseDisagreement(input: {
   const headline = ((): string => {
     switch (input.stop.ended) {
       case "crashed":
-        // **Not a judgement, and the word must not appear.** Nothing was
+        // **Not a judgement, and the word must not appear.** Nothing new was
         // decided: the round answering the findings was stopped before it could
         // commit, so what is in front of a person is the same refusal that was
         // already being answered. Sending it again is the whole remedy, and it
@@ -770,7 +791,7 @@ export function diagnoseDisagreement(input: {
         // — timeout: the 2h wall" contradicts itself inside one sentence. The
         // kind is in `failure`, which says it exactly once and correctly.
         return (
-          `A fixing agent did not finish on ${at}, so nothing here was decided. ${refused}, ` +
+          `A fixing agent did not finish on ${at}, ${undecided}. ${refused}, ` +
           `and the agent sent to answer them was stopped — ${clipFailure(input.stop.failure)}. ` +
           `This is infrastructure and not your call: the round that was answering ` +
           `those findings never got to commit, so the fix is to send it again.`
@@ -783,7 +804,7 @@ export function diagnoseDisagreement(input: {
         // first; requeued as written, it buys another run to the same limit*.
         // Nothing was adjudicated, and nothing crashed either.
         return (
-          `A fixing agent ran out of turns on ${at}, so nothing here was decided. ${refused}, ` +
+          `A fixing agent ran out of turns on ${at}, ${undecided}. ${refused}, ` +
           `and the agent sent to answer them spent the recipe's whole turn budget without ` +
           `committing — ${clipFailure(input.stop.failure)}. The limit is a scope alarm: ` +
           `requeued as written this buys another round to the same limit, so what answers ` +
@@ -976,6 +997,27 @@ export function diagnoseUnfixed(input: {
   const earlier = input.earlier ?? [];
   const at = `${input.branch} at ${input.headSha.slice(0, 7)}`;
   /**
+   * How many times the point actually ran, which is what *nothing was run
+   * again* is a claim about (`#197`).
+   *
+   * **`rounds` is read and not assumed**, for the reason `undecided` above is:
+   * on the three endings whose last round produced nothing, `rounds` is that
+   * round's number, so each round before it committed and the action ran on
+   * what it produced. `runtime.limits.rounds` defaults to 2, so a fixer that
+   * dies in round 2 stands behind one diff this action has already refused —
+   * two red results on two different diffs, which `done` two fields below says
+   * outright. Only the *last* of them is untested, and telling a person none of
+   * them were is worse than saying nothing: one red result and two are worth
+   * different amounts to somebody deciding whether to merge over it, and this
+   * headline exists to say which it is.
+   */
+  const ran = Math.max(1, input.rounds);
+  const notAgain =
+    ran === 1
+      ? "nothing was run again"
+      : `this last result was not re-checked — \`${input.action}\` ran ${ran} times in ` +
+        `all, on ${ran} different diffs, and refused every one`;
+  /**
    * The first sentence, which is the ending's to write — a `switch` for
    * `diagnoseDisagreement`'s reason (`#197`), so that an ending with no arm of
    * its own cannot inherit a claim that is false of it.
@@ -983,14 +1025,16 @@ export function diagnoseUnfixed(input: {
   const headline = ((): string => {
     switch (input.stop.ended) {
       case "crashed":
-        // Nothing was re-run and nothing was decided. The remedy is the same one
-        // a stopped reviewer's is, and it is not a person's judgement. The kind
-        // is `failure`'s to name — `timeout` and `aborted` land here too.
+        // The last result was not re-run and nothing new was decided. The remedy
+        // is the same one a stopped reviewer's is, and it is not a person's
+        // judgement. The kind is `failure`'s to name — `timeout` and `aborted`
+        // land here too. How much was re-run is `notAgain`'s: this arm is
+        // reached in round 2 as readily as in round 1.
         return (
           `\`${input.action}\` refuses ${at}, and this pass stopped on an agent that did ` +
           `not finish rather than on the check. The agent sent to make it green was ` +
-          `stopped — ${clipFailure(input.stop.failure)}, so nothing was run again and ` +
-          `nothing was decided. This is infrastructure and not your call: send it again.`
+          `stopped — ${clipFailure(input.stop.failure)}, so nothing new was decided and ` +
+          `${notAgain}. This is infrastructure and not your call: send it again.`
         );
       case "out-of-turns":
         // Not re-run either, and the opposite remedy: the turn limit is the
@@ -999,16 +1043,19 @@ export function diagnoseUnfixed(input: {
         return (
           `\`${input.action}\` refuses ${at}, and this pass stopped on the recipe's turn ` +
           `limit rather than on the check. The agent sent to make it green spent its whole ` +
-          `budget without committing — ${clipFailure(input.stop.failure)}, so nothing was ` +
-          `run again. The limit is a scope alarm: requeued as written this buys another ` +
+          `budget without committing — ${clipFailure(input.stop.failure)}, so ${notAgain}. ` +
+          `The limit is a scope alarm: requeued as written this buys another ` +
           `round to the same limit, so what answers it is narrowing or splitting the ticket.`
         );
       case "declined":
         return (
           `\`${input.action}\` refuses ${at}, and the fixing agent declined it — it ` +
           `changed nothing and said why instead. That is an argument and not a check ` +
-          `that stayed red: the point has run once, and what it printed is below ` +
-          `next to the objection.`
+          `that stayed red: ${
+            ran === 1
+              ? "the point has run once"
+              : `the point has run ${ran} times and its last result was not re-checked`
+          }, and what it printed is below next to the objection.`
         );
       case "no-rounds":
         // It failed once and was never run again, for the same reason as the
@@ -1102,16 +1149,23 @@ export function unfixedQuestion(input: {
 }): string {
   const where = `${input.branch} into ${input.base}`;
   const spent = `${input.rounds} fix round(s)${armSuffix(input.restarts)}`;
+  // *Never re-run* is a claim about a count, and the count is in `rounds`
+  // (`#197`): on these endings it is the round that produced nothing, so the
+  // rounds before it each committed and the action ran on each of their diffs.
+  // What is true however many there were is that the **last** result is the one
+  // nothing re-checked, which is the whole of what this line has room for.
+  const notAgain =
+    input.rounds <= 1 ? "so it was never re-run" : "so its last result was not re-checked";
   switch (input.stop.ended) {
     case "crashed":
       return (
         `${input.action} refuses ${where} and the fixing agent did not finish after ` +
-        `${spent}, so it was never re-run: ${clipFailure(input.stop.failure, QUESTION_CHARS)}`
+        `${spent}, ${notAgain}: ${clipFailure(input.stop.failure, QUESTION_CHARS)}`
       );
     case "out-of-turns":
       return (
         `${input.action} refuses ${where} and the fixing agent ran out of turns after ` +
-        `${spent}, so it was never re-run: the ticket needs narrowing, not a retry`
+        `${spent}, ${notAgain}: the ticket needs narrowing, not a retry`
       );
     case "declined":
       return (
@@ -1119,9 +1173,12 @@ export function unfixedQuestion(input: {
         "it changed nothing and said why instead"
       );
     case "no-rounds":
-      return `${input.action} refuses ${where} and this recipe buys no fix round`;
+      return (
+        `${input.action} refuses ${where} and this recipe buys no fix round` +
+        afterArms(input.restarts)
+      );
     case "no-criterion":
-      return `${input.action} refuses ${where} and printed nothing to fix`;
+      return `${input.action} refuses ${where} and printed nothing to fix${afterArms(input.restarts)}`;
     case "spent":
       // The one line it has always been, byte for byte, for the ending where
       // the point really did run again and say the same thing.
@@ -1165,12 +1222,12 @@ export function disagreementQuestion(input: {
     case "no-criterion":
       return (
         `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
-        "scenario, so no fixing agent was bought"
+        `scenario, so no fixing agent was bought${afterArms(input.restarts)}`
       );
     case "no-rounds":
       return (
         `the ${input.action} reviewer refuses ${where} with ${scored}, and this ` +
-        "recipe buys no fix round, so nothing answered it"
+        `recipe buys no fix round, so nothing answered it${afterArms(input.restarts)}`
       );
     case "spent":
       // Byte for byte the line it has always been: the ceiling is the only
@@ -1245,6 +1302,25 @@ export function mergeAnywayBecause(input: {
  */
 function armSuffix(restarts: number | undefined): string {
   return restarts === undefined || restarts === 0 ? "" : ` and ${restarts} restart(s)`;
+}
+
+/**
+ * *, after 2 restart(s)* — the same fact, for the lines that name no round
+ * count to hang `armSuffix` off.
+ *
+ * **Two of them, and they are exactly the ones a restart can have happened
+ * on** (`#197`). `no-rounds` and `no-criterion` are the endings that buy no
+ * round, so they have no *N fix round(s)* to append to — and `rounds: 0` beside
+ * a non-zero `restarts` is the configuration `decideFix`'s own comment calls
+ * legible, *never patch, start over twice*, where `no-rounds` is the **only**
+ * ending reachable. A line that drops the count there drops it in the one place
+ * it was ever going to be printed, which is 0040 §3 lost at the last step: the
+ * fact a reader would act differently on is not how red this diff is, it is
+ * that two approaches were started over and thrown away, so what is in doubt
+ * may be the ticket.
+ */
+function afterArms(restarts: number | undefined): string {
+  return restarts === undefined || restarts === 0 ? "" : `, after ${restarts} restart(s)`;
 }
 
 /** The findings, whole — severity, place, claim and scenario, nothing dropped. */

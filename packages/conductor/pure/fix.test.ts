@@ -532,6 +532,47 @@ describe("the headline says what stopped the pass", () => {
   });
 
   /**
+   * **And how much was decided is read off `rounds`, not assumed.**
+   *
+   * `runtime.limits.rounds` is 2 by default (`recipe.ts`), so *`review` refuses
+   * A; round 1 commits B; `review` refuses B; round 2's fixer is killed* is the
+   * ordinary shape — and `#187`'s own, which ended on a rate limit in a second
+   * round. Over it *nothing here was decided* is false twice: the reviewer read
+   * two diffs and refused both, which is what `done` in the same card says
+   * outright. A reader who believes the headline treats a refusal two agents
+   * have been round twice as one nothing has argued with.
+   */
+  it("does not say nothing was decided where an earlier round was reviewed", () => {
+    const after = (rounds: number, stop: FixStop) =>
+      diagnoseDisagreement({
+        action: "review",
+        branch: "agent/187",
+        base: "main",
+        headSha: "a7663f9000000000",
+        findings: [finding(), finding({ severity: "major" })],
+        rounds,
+        why: "the fixing agent did not finish (crash: it broke), so there is nothing new to read",
+        stop,
+      }).what;
+
+    // Round 1's fixer was the first thing bought: one review, one refusal, and
+    // nothing decided is the whole truth.
+    expect(after(1, { ended: "crashed", failure: "crash: session limit" })).toContain(
+      "so nothing here was decided",
+    );
+    // Round 2's was not, and the two endings that say this make the same claim.
+    for (const stop of [
+      { ended: "crashed", failure: "crash: session limit" },
+      { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
+    ] satisfies FixStop[]) {
+      const twice = after(2, stop);
+
+      expect(twice).not.toContain("so nothing here was decided");
+      expect(twice).toContain("the reviewer refused 2 diffs here");
+    }
+  });
+
+  /**
    * **The common case, byte for byte.** Fixing the other four must not cost the
    * one that was right: a real disagreement is the only ending where two agents
    * looked at this and did not agree.
@@ -684,6 +725,53 @@ describe("the headline says what stopped the pass", () => {
       expect(none.what).toMatch(/buys no round of fix-and-recheck/i);
     });
 
+    /**
+     * **And *nothing was run again* is a count, which `rounds` holds.**
+     *
+     * `build` refuses A; round 1 commits B; the loop re-runs the pipeline and
+     * `build` refuses B — a second `GateFailed` on the log; round 2's fixer is
+     * killed. The point ran twice, on two different diffs, and said the same
+     * thing both times, which is what `done` prints three lines under this
+     * headline. Calling that one untested result is worth money to a person
+     * deciding whether to merge over it: one red result and two are not the
+     * same evidence.
+     */
+    it("says how many diffs the check refused when a later round was stopped", () => {
+      const after = (rounds: number, stop: FixStop) =>
+        diagnoseUnfixed({
+          action: "build",
+          branch: "agent/176",
+          headSha: "deadbee0000000",
+          evidence: "ENOSPC: no space left on device",
+          rounds,
+          why: "the fixing agent did not finish (crash: ENOSPC), so nothing new was produced",
+          stop,
+        }).what;
+
+      // Round 1 — the first thing bought, so nothing was re-run and the
+      // sentence is the absolute one.
+      expect(after(1, { ended: "crashed", failure: "crash: ENOSPC" })).toContain(
+        "and nothing was run again",
+      );
+      expect(after(1, { ended: "declined" })).toContain("the point has run once");
+
+      // Round 2 — two results, and only the last of them untested.
+      for (const stop of [
+        { ended: "crashed", failure: "crash: ENOSPC" },
+        { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
+      ] satisfies FixStop[]) {
+        const twice = after(2, stop);
+
+        expect(twice).not.toContain("nothing was run again");
+        expect(twice).toContain("`build` ran 2 times in all, on 2 different diffs");
+      }
+      expect(after(2, { ended: "declined" })).toContain("the point has run 2 times");
+      expect(after(2, { ended: "declined" })).not.toContain("has run once");
+      // The ceiling reads nothing off it, because there every round committed
+      // and *it ran again and said the same thing* is true at any count.
+      expect(after(2, { ended: "spent" })).toBe(after(1, { ended: "spent" }));
+    });
+
     it("leaves a check that really did stay red exactly as it was", () => {
       expect(red({ ended: "spent" }).what).toBe(
         "`build` still refuses agent/176 at deadbee. This is a check that failed and " +
@@ -792,6 +880,81 @@ describe("the headline says what stopped the pass", () => {
         /ran out of turns.*needs narrowing, not a retry/,
       );
       expect(red({ ended: "declined" })).toMatch(/declined.*said why instead/);
+    });
+
+    /**
+     * **And *never re-run* is a count here too.** This is the line a person is
+     * notified with, so it is the one that most needs not to say a check went
+     * untested when it went red twice on two diffs. At the default ceiling of
+     * two, a fixer killed in round 2 sits behind one commit the action already
+     * judged.
+     */
+    it("does not say a check was never re-run when a later round was stopped", () => {
+      const after = (rounds: number, stop: FixStop) =>
+        unfixedQuestion({ action: "build", branch: "agent/176", base: "main", rounds, stop });
+
+      expect(after(1, { ended: "crashed", failure: "crash: ENOSPC" })).toContain(
+        "so it was never re-run",
+      );
+      for (const stop of [
+        { ended: "crashed", failure: "crash: ENOSPC" },
+        { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
+      ] satisfies FixStop[]) {
+        const twice = after(2, stop);
+
+        expect(twice).not.toContain("never re-run");
+        expect(twice).toContain("so its last result was not re-checked");
+      }
+    });
+
+    /**
+     * **And the abandoned approaches are still counted where they are the only
+     * thing that happened** (0040 §3).
+     *
+     * `rounds: 0` beside `restarts: 2` is the pairing `decideFix`'s own comment
+     * calls legible — *never patch, start over twice* — and it is the one
+     * configuration where `no-rounds` is the ending every block gets. These two
+     * arms name no round count, so there is no *N fix round(s)* for `armSuffix`
+     * to sit behind, and dropping it there drops the fact in the only place it
+     * was ever going to be printed: that two approaches were started over and
+     * thrown away, so what is in doubt may be the ticket and not this diff.
+     */
+    it("still says how many approaches were abandoned where no round was bought", () => {
+      for (const stop of [{ ended: "no-rounds" }, { ended: "no-criterion" }] satisfies FixStop[]) {
+        expect(
+          unfixedQuestion({
+            action: "build",
+            branch: "agent/176",
+            base: "main",
+            rounds: 0,
+            restarts: 2,
+            stop,
+          }),
+        ).toContain("after 2 restart(s)");
+        expect(
+          disagreementQuestion({
+            action: "review",
+            branch: "agent/187",
+            base: "main",
+            findings: [finding({ severity: "major" })],
+            rounds: 0,
+            restarts: 2,
+            stop,
+          }),
+        ).toContain("after 2 restart(s)");
+      }
+      // And nothing at all on a project that buys no restart, which is every
+      // one today: the line reads exactly as it did.
+      expect(line({ ended: "no-rounds" })).not.toContain("restart");
+      expect(
+        unfixedQuestion({
+          action: "build",
+          branch: "agent/176",
+          base: "main",
+          rounds: 0,
+          stop: { ended: "no-rounds" },
+        }),
+      ).toBe("build refuses agent/176 into main and this recipe buys no fix round");
     });
   });
 
