@@ -137,6 +137,7 @@ import {
   fixBrief,
   fixStopOf,
   mergeAnywayBecause,
+  stopAction,
   stopNeeds,
   unfixedQuestion,
 } from "./fix.ts";
@@ -1474,6 +1475,31 @@ export function runOnce(
       let head = firstHead;
       let rounds = 0;
       /**
+       * How many diffs each action has refused in this pass.
+       *
+       * **`rounds` cannot answer this, and a card that asked it of `rounds`
+       * overstated the evidence** (`#197`). One ceiling means one counter, and
+       * the paragraph above is why that is honest about *money* — but it makes
+       * `rounds` useless as a count of what any one action said. `build`
+       * refuses A, a round fixes it, `review` refuses B, that round's fixer is
+       * killed: `rounds` is 2 and each of the two points has refused exactly
+       * once. The card read 2 and told a person `build` "ran 2 times in all, on
+       * 2 different diffs, and refused every one" — two red results where there
+       * is one, in the direction that makes somebody readier to merge over it.
+       *
+       * So the count the sentences need is kept per action, incremented where a
+       * refusal is actually taken in hand — one per pipeline refusal and one
+       * per conflict the lane could not apply. A conflict the base moved out
+       * from under is not counted, because no agent was bought and the lane is
+       * simply re-entered.
+       */
+      const refusals = new Map<string, number>();
+      const refusedAgain = (action: string): number => {
+        const soFar = (refusals.get(action) ?? 0) + 1;
+        refusals.set(action, soFar);
+        return soFar;
+      };
+      /**
        * What origin last had for this branch, as far as this pass knows.
        *
        * Starts as what it had when the worktree was cut and moves to whatever
@@ -1501,6 +1527,16 @@ export function runOnce(
         findings: readonly GateFinding[];
         evidence: string;
         rounds: number;
+        /**
+         * How many diffs **this action** refused, off the tally above (`#197`).
+         *
+         * Beside `rounds` rather than instead of it: they answer two questions
+         * and a card asks both. *How much was bought* is the budget and belongs
+         * to the pass; *how often did this point say no* is this action's, and
+         * reading the first for the second is what made a card claim two red
+         * results where there was one.
+         */
+        refusals: number;
         why: string;
         /**
          * Which of the five endings this is, for the headline a person reads
@@ -1955,6 +1991,10 @@ export function runOnce(
           // verdict says what is meant. It carries the findings, which is why
           // `PipelineResult.results` does.
           const refused = pipeline.results.filter((r) => r.verdict === "failed").at(-1)!;
+          // Counted here and not below, because this is where *this action said
+          // no about this diff* is a fact — whatever the loop then decides to
+          // buy, or not to.
+          const refusedDiffs = refusedAgain(refused.gate);
           const bought = yield* buyRound({
             action: refused.gate,
             findings: refused.findings,
@@ -1973,6 +2013,7 @@ export function runOnce(
               findings: refused.findings,
               evidence: refused.evidence,
               rounds: bought.round,
+              refusals: refusedDiffs,
               why: bought.why,
               stop: bought.stop,
               exhausted: bought.exhausted,
@@ -2119,6 +2160,10 @@ export function runOnce(
           continue;
         }
 
+        // A conflict the lane could not apply, which is one refusal by `merge`.
+        // The `paths === null` return above is not one: the base moved again
+        // and it merges, so nothing refused anything.
+        const refusedDiffs = refusedAgain("merge");
         const bought = yield* buyRound({
           action: "merge",
           findings: [],
@@ -2138,6 +2183,7 @@ export function runOnce(
             findings: [],
             evidence: paths,
             rounds: bought.round,
+            refusals: refusedDiffs,
             why: bought.why,
             stop: bought.stop,
             exhausted: bought.exhausted,
@@ -2389,14 +2435,27 @@ export function runOnce(
         // `pending` entry, on every projection and every rebuild.
         //
         // So the pointer travels in the question, which is what a person reads,
-        // and the key stays the request's own. Two names and not one, because
-        // the two are not the same event: `disagreement` is a judgement two
-        // agents could not settle, `unfixed` is a check that stayed red.
+        // and the key stays the request's own.
+        //
+        // **And the two shapes do not name themselves the same way, because
+        // only one of the names is a claim** (`#197`). `unfixed` is a state —
+        // the check is red and nothing fixed it — and that holds however the
+        // pass ended, so the output shape has one name. `disagreement` asserted
+        // that two agents looked at one diff and could not settle it, and it
+        // was written on every findings-shaped block: `#187`'s rate limit is a
+        // gate row on the board named *disagreement* above a question saying
+        // nothing was decided. `stopAction` is that table, and its words are
+        // the headlines' — a row reading `proposed · unfinished` over a card
+        // reading *A fixing agent did not finish* is one fact said twice.
         const gate = pipeline.heldAt !== null || unresolved !== null ? "proposed" : "merge";
         const action =
           pipeline.heldAt ??
           atMerge.heldAt ??
-          (unresolved ? (unresolved.on === "findings" ? "disagreement" : "unfixed") : null) ??
+          (unresolved
+            ? unresolved.on === "findings"
+              ? stopAction(unresolved.stop)
+              : "unfixed"
+            : null) ??
           (repairOf ? "repair" : "no-merge");
 
         if (pipeline.heldAt === null && atMerge.heldAt === null) {

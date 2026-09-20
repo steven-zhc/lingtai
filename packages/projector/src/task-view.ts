@@ -1053,14 +1053,28 @@ export function describeHold(card: Pick<TaskCard, "needs" | "diagnosis">): HoldL
  * reject what is there. A failure that needs acknowledging is neither, and
  * stays what `describeHold` says it is.
  *
+ * **`needs` is read, and that is what makes the third sentence true** (`#197`).
+ * It used to hold by accident: the only blocks written `acknowledgement` — the
+ * merge lane's, the out-of-turns one, a spent approval's — left no open
+ * `ApprovalRequested`, so `awaitingSha` was null and this returned null without
+ * ever asking. A fixer killed mid-round now writes `acknowledgement` on a block
+ * that *does* hold a sha, and the chip read *waiting for your review* — whose
+ * move is approve or reject what is there — directly beside a headline saying
+ * *this is infrastructure and not your call: send it again*. A chip and a
+ * headline prescribing opposite moves on one card is the failure #147 split the
+ * chip to end, so the rule that was documented is now the rule that runs.
+ *
  * Beside `describeHold` for its reason (#83, #100): the card and `lingtai
  * status` both say it, and must say it in the same words.
  */
 export function describeWait(
-  card: Pick<TaskCard, "blocked" | "asked" | "awaitingSha">,
+  card: Pick<TaskCard, "blocked" | "asked" | "awaitingSha" | "needs">,
 ): "waiting for your answer" | "waiting for your review" | null {
   if (!card.blocked) return null;
   if (card.asked) return "waiting for your answer";
+  // Before the sha, because a block can now carry both and only one of them is
+  // a question to the person: an acknowledgement is `describeHold`'s to word.
+  if (card.needs === "acknowledgement") return null;
   if (card.awaitingSha !== null) return "waiting for your review";
   return null;
 }

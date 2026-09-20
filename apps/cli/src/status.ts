@@ -260,6 +260,7 @@ export async function status(
         blocked: t.blocked === true,
         asked: t.asked === true,
         awaitingSha: t.awaitingSha ?? null,
+        needs: t.needs ?? null,
       });
       const note =
         t.state !== "queued"

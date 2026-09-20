@@ -29,6 +29,7 @@ import {
   fixStopOf,
   mergeAnywayBecause,
   quoteFindings,
+  stopAction,
   stopNeeds,
   unfixedQuestion,
 } from "../src/fix.ts";
@@ -310,6 +311,7 @@ describe("what a person is shown when the rounds are over", () => {
     headSha: "c0ffee1234567890",
     findings: [finding()],
     rounds: 1,
+    refusals: 1,
     why: "the ceiling of 1 fix round(s) for this item is spent, and the review still refuses",
     stop: { ended: "spent" },
   });
@@ -354,6 +356,7 @@ describe("what a person is shown when the rounds are over", () => {
       headSha: "c0ffee1234567890",
       findings: [finding()],
       rounds: 0,
+      refusals: 1,
       why: "this project's recipe buys no rounds of fix-and-re-review (repair.fix: 0)",
       stop: { ended: "no-rounds" },
     });
@@ -410,6 +413,7 @@ describe("the headline says what stopped the pass", () => {
       headSha: "a7663f9000000000",
       findings: [finding(), finding({ severity: "major" })],
       rounds: 2,
+      refusals: 2,
       why: "the fixing agent did not finish (crash: it broke), so there is nothing new to read",
       stop,
     });
@@ -532,7 +536,8 @@ describe("the headline says what stopped the pass", () => {
   });
 
   /**
-   * **And how much was decided is read off `rounds`, not assumed.**
+   * **And how much was decided is read off what this reviewer refused — never
+   * off `rounds`.**
    *
    * `runtime.limits.rounds` is 2 by default (`recipe.ts`), so *`review` refuses
    * A; round 1 commits B; `review` refuses B; round 2's fixer is killed* is the
@@ -541,9 +546,17 @@ describe("the headline says what stopped the pass", () => {
    * two diffs and refused both, which is what `done` in the same card says
    * outright. A reader who believes the headline treats a refusal two agents
    * have been round twice as one nothing has argued with.
+   *
+   * **And the counter that says so cannot be `rounds`**, which is the whole of
+   * the last row here. `run-once.ts` keeps *one ceiling, so one counter*:
+   * `rounds` is spent by whichever point refused, so it is as easily *`build`
+   * refused A, round 1 fixed it, `review` refused B* — where this reviewer has
+   * read exactly one diff and the card would credit it with refusing a diff it
+   * never saw. The two numbers are given apart here for that reason, and the
+   * pair `rounds: 2, refusals: 1` is the case no single counter can get right.
    */
-  it("does not say nothing was decided where an earlier round was reviewed", () => {
-    const after = (rounds: number, stop: FixStop) =>
+  it("counts the diffs this reviewer refused, and not the rounds the pass bought", () => {
+    const after = (rounds: number, refusals: number, stop: FixStop) =>
       diagnoseDisagreement({
         action: "review",
         branch: "agent/187",
@@ -551,13 +564,14 @@ describe("the headline says what stopped the pass", () => {
         headSha: "a7663f9000000000",
         findings: [finding(), finding({ severity: "major" })],
         rounds,
+        refusals,
         why: "the fixing agent did not finish (crash: it broke), so there is nothing new to read",
         stop,
       }).what;
 
     // Round 1's fixer was the first thing bought: one review, one refusal, and
     // nothing decided is the whole truth.
-    expect(after(1, { ended: "crashed", failure: "crash: session limit" })).toContain(
+    expect(after(1, 1, { ended: "crashed", failure: "crash: session limit" })).toContain(
       "so nothing here was decided",
     );
     // Round 2's was not, and the two endings that say this make the same claim.
@@ -565,10 +579,19 @@ describe("the headline says what stopped the pass", () => {
       { ended: "crashed", failure: "crash: session limit" },
       { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
     ] satisfies FixStop[]) {
-      const twice = after(2, stop);
+      const twice = after(2, 2, stop);
 
       expect(twice).not.toContain("so nothing here was decided");
       expect(twice).toContain("the reviewer refused 2 diffs here");
+
+      // **`build` refused A, round 1 answered it, and this reviewer refused B
+      // in round 2.** Two rounds were bought and this reviewer read one diff:
+      // the card must not say two, because the second refusal was another
+      // point's, of a diff `review` never saw.
+      const once = after(2, 1, stop);
+
+      expect(once).toContain("so nothing here was decided");
+      expect(once).not.toContain("refused 2 diffs here");
     }
   });
 
@@ -650,6 +673,52 @@ describe("the headline says what stopped the pass", () => {
   });
 
   /**
+   * **And the name the log keeps, which outlives all three sentences.**
+   *
+   * `ApprovalRequested.action` is the key the projection folds a gate row under
+   * and the word the board's history and `lingtai status` print beside the
+   * point — `proposed · disagreement`. It was that word on every findings-shaped
+   * block whatever ended the pass, so `#187`'s rate limit is a row named
+   * *disagreement* sitting one line above a question saying nothing was
+   * decided: the contradiction this ticket is about, on the one field nothing
+   * ever rewrites.
+   *
+   * `disagreement` is a claim — two agents read one diff and could not settle
+   * it — and only the ceiling earns it. The others are named for what stopped
+   * them, in the headlines' own words, so a row and a card read as one fact.
+   */
+  it("names a findings-shaped block for what stopped it, and only the ceiling a disagreement", () => {
+    expect(stopAction({ ended: "spent" })).toBe("disagreement");
+
+    // Not a disagreement: nothing got as far as a second judgement.
+    const stopped = (
+      [
+        { ended: "crashed", failure: "crash: session limit" },
+        { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
+        { ended: "declined" },
+        { ended: "no-criterion" },
+        { ended: "no-rounds" },
+      ] satisfies FixStop[]
+    ).map(stopAction);
+
+    for (const name of stopped) expect(name).not.toBe("disagreement");
+    // And each tells the others apart, because the name is a gate row's key:
+    // two endings under one key are two things a board cannot separate.
+    expect(new Set([...stopped, "disagreement"]).size).toBe(6);
+
+    // `#187` itself, and the word is the whole of the defect.
+    expect(stopAction({ ended: "crashed", failure: "crash: session limit" })).toBe("unfinished");
+    // Not `crashed`, for the headline's reason: `timeout` and `aborted` reach
+    // this ending too, and one word for three kinds names the wrong one twice.
+    expect(stopAction({ ended: "crashed", failure: "timeout: the 2h wall reached" })).toBe(
+      "unfinished",
+    );
+    // One agent refused and none was bought, so there is nobody to have
+    // disagreed with.
+    expect(stopAction({ ended: "no-rounds" })).toBe("unanswered");
+  });
+
+  /**
    * The evidence under the headline is untouched by which ending it is (#83).
    * The headline is a reading; `done` and `raw` are what it was made from, and
    * `run-once.ts` was already composing the true sentence in `why`.
@@ -677,6 +746,7 @@ describe("the headline says what stopped the pass", () => {
         headSha: "deadbee0000000",
         evidence: "ENOSPC: no space left on device",
         rounds: 1,
+        refusals: 1,
         why: "the fixing agent did not finish (crash: ENOSPC), so nothing new was produced",
         stop,
       });
@@ -726,7 +796,8 @@ describe("the headline says what stopped the pass", () => {
     });
 
     /**
-     * **And *nothing was run again* is a count, which `rounds` holds.**
+     * **And *nothing was run again* is a count — of what this point refused,
+     * never of what the pass bought.**
      *
      * `build` refuses A; round 1 commits B; the loop re-runs the pipeline and
      * `build` refuses B — a second `GateFailed` on the log; round 2's fixer is
@@ -735,41 +806,63 @@ describe("the headline says what stopped the pass", () => {
      * headline. Calling that one untested result is worth money to a person
      * deciding whether to merge over it: one red result and two are not the
      * same evidence.
+     *
+     * **`rounds` cannot be that count, and the last row is why.** There is one
+     * ceiling and so one counter (`run-once.ts`), spent by whichever point
+     * refused: *`review` refuses A; round 1 commits B; `build` refuses B; round
+     * 2's fixer is killed* is `rounds: 2` with `build` having refused **once**.
+     * A headline reading *`build` ran 2 times in all, on 2 different diffs, and
+     * refused every one* over one red result is the same quantity overstated
+     * instead of understated — and overstated in the direction that makes a
+     * person readier to treat the red as settled.
      */
-    it("says how many diffs the check refused when a later round was stopped", () => {
-      const after = (rounds: number, stop: FixStop) =>
+    it("counts the diffs this point refused, and not the rounds the pass bought", () => {
+      const after = (rounds: number, refusals: number, stop: FixStop) =>
         diagnoseUnfixed({
           action: "build",
           branch: "agent/176",
           headSha: "deadbee0000000",
           evidence: "ENOSPC: no space left on device",
           rounds,
+          refusals,
           why: "the fixing agent did not finish (crash: ENOSPC), so nothing new was produced",
           stop,
         }).what;
 
       // Round 1 — the first thing bought, so nothing was re-run and the
       // sentence is the absolute one.
-      expect(after(1, { ended: "crashed", failure: "crash: ENOSPC" })).toContain(
+      expect(after(1, 1, { ended: "crashed", failure: "crash: ENOSPC" })).toContain(
         "and nothing was run again",
       );
-      expect(after(1, { ended: "declined" })).toContain("the point has run once");
+      expect(after(1, 1, { ended: "declined" })).toContain("the point has run once");
 
-      // Round 2 — two results, and only the last of them untested.
+      // Round 2, both of them this point's — two results, and only the last of
+      // them untested.
       for (const stop of [
         { ended: "crashed", failure: "crash: ENOSPC" },
         { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
       ] satisfies FixStop[]) {
-        const twice = after(2, stop);
+        const twice = after(2, 2, stop);
 
         expect(twice).not.toContain("nothing was run again");
         expect(twice).toContain("`build` ran 2 times in all, on 2 different diffs");
+
+        // **Round 2, and the first round was another point's.** Two rounds were
+        // bought and `build` went red once: the card must say one red result,
+        // because there is one.
+        const once = after(2, 1, stop);
+
+        expect(once).toContain("nothing was run again");
+        expect(once).not.toContain("2 times in all");
+        expect(once).not.toContain("2 different diffs");
       }
-      expect(after(2, { ended: "declined" })).toContain("the point has run 2 times");
-      expect(after(2, { ended: "declined" })).not.toContain("has run once");
-      // The ceiling reads nothing off it, because there every round committed
-      // and *it ran again and said the same thing* is true at any count.
-      expect(after(2, { ended: "spent" })).toBe(after(1, { ended: "spent" }));
+      expect(after(2, 2, { ended: "declined" })).toContain("the point has run 2 times");
+      expect(after(2, 2, { ended: "declined" })).not.toContain("has run once");
+      expect(after(2, 1, { ended: "declined" })).toContain("the point has run once");
+      // The ceiling reads nothing off either, because there every round
+      // committed and *it ran again and said the same thing* is true at any
+      // count.
+      expect(after(2, 2, { ended: "spent" })).toBe(after(1, 1, { ended: "spent" }));
     });
 
     it("leaves a check that really did stay red exactly as it was", () => {
@@ -1039,6 +1132,7 @@ describe("what a person is shown when the restarts are over too", () => {
     headSha: "c0ffee1234567890",
     findings: [finding()],
     rounds: 3,
+    refusals: 3,
     why: "the ceiling of 2 restart(s) for this item is spent, and the review reviewer still refuses",
     stop: { ended: "spent" },
     earlier: [earlier],
@@ -1069,6 +1163,7 @@ describe("what a person is shown when the restarts are over too", () => {
       headSha: "c0ffee1234567890",
       findings: [finding()],
       rounds: 3,
+      refusals: 3,
       why: "the ceiling of 3 round(s) for this pass is spent, and the review action still refuses",
       stop: { ended: "spent" },
     });

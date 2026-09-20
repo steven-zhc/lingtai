@@ -803,6 +803,40 @@ describe("task_view", () => {
   });
 
   /**
+   * **A block can be both, and only one of them is a question to the person**
+   * (`#197`).
+   *
+   * The rule above held by accident for as long as it was documented: the only
+   * blocks written `acknowledgement` — the merge lane's, the out-of-turns one,
+   * a spent approval's — left no open `ApprovalRequested`, so `awaitingSha` was
+   * null and this returned null without ever asking `needs`. A fixing agent
+   * killed mid-round now writes `acknowledgement` on a block that *does* hold a
+   * sha, and the chip read *waiting for your review* — whose move is approve or
+   * reject what is there (#147) — beside a headline reading *this is
+   * infrastructure and not your call: send it again*. Two chips on one card
+   * prescribing opposite moves is the failure #147 split the chip to end, so
+   * the rule is asserted rather than inherited from which blocks happen to
+   * exist.
+   */
+  it("does not call an acknowledgement a review, even when it holds a sha", () => {
+    const stopped = {
+      blocked: true,
+      asked: false,
+      awaitingSha: "a7663f9000000000",
+      needs: "acknowledgement" as const,
+    };
+
+    expect(describeWait(stopped)).toBeNull();
+    // And the sha still means a review where the block is somebody's call —
+    // the common case must not be lost to fix the combination.
+    expect(describeWait({ ...stopped, needs: "judgement" })).toBe("waiting for your review");
+    expect(describeWait({ ...stopped, needs: null })).toBe("waiting for your review");
+    // An answer is still an answer: a question asked before any run outranks
+    // both, because there is no diff for a review to be about.
+    expect(describeWait({ ...stopped, asked: true })).toBe("waiting for your answer");
+  });
+
+  /**
    * What diagnosis costs, apart from the work.
    *
    * Answering a refusal is on by default and spends an agent without being

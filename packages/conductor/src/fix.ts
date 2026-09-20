@@ -219,6 +219,51 @@ export function stopNeeds(stop: FixStop): "judgement" | "acknowledgement" {
   }
 }
 
+/**
+ * What to call a findings-shaped block on the log — `ApprovalRequested.action`.
+ *
+ * **The name outlives every sentence** (`#197`). The headline is a card's, the
+ * question is a notification's, and both are read once; this is the key the
+ * projection folds a gate row under (`proposed:<action>`) and the word
+ * `lingtai status` and the board's history print beside the point for ever. It
+ * was `disagreement` whatever ended the pass, so `#187`'s rate limit is a row
+ * on the board literally named *disagreement*, one line above a question saying
+ * nothing was decided — the same contradiction this ticket is about, on the
+ * very payload the sentences were fixed on.
+ *
+ * **Only the findings shape needs a table.** `unfixed` is a state — the check
+ * is red and nothing fixed it — and that is true however the pass ended, so the
+ * output shape keeps its one name. `disagreement` is a *claim*, that two agents
+ * looked at one diff and could not settle it, and it is only true of the
+ * ceiling: every other ending stopped before a second judgement existed.
+ *
+ * The words are the headlines' in one each, so a person who reads
+ * `proposed · unfinished` on the board and *A fixing agent did not finish* on
+ * the card is reading one fact twice rather than two facts.
+ */
+export function stopAction(stop: FixStop): string {
+  switch (stop.ended) {
+    // Something that was not the ticket stopped the agent answering the
+    // findings — `crash`, `timeout`, `aborted`. Not *crashed*, for the reason
+    // the headline is not: one word for three kinds names the wrong one twice.
+    case "crashed":
+      return "unfinished";
+    case "out-of-turns":
+      return "out-of-turns";
+    case "declined":
+      return "declined";
+    case "no-criterion":
+      return "no-criterion";
+    // One agent refused and none was bought to answer it, so there is nobody
+    // for it to have disagreed with.
+    case "no-rounds":
+      return "unanswered";
+    // The ceiling, and the only ending where the old name was ever true.
+    case "spent":
+      return "disagreement";
+  }
+}
+
 export type FixDecision =
   | { fix: true; round: number; on: FixOn }
   /** `why` is a sentence for the card, naming the rule that refused. */
@@ -712,6 +757,16 @@ export function diagnoseDisagreement(input: {
   findings: readonly GateFinding[];
   /** Rounds of fix-and-re-review that were spent. Zero when none was bought. */
   rounds: number;
+  /**
+   * How many diffs **this reviewer** refused in this pass (`#197`).
+   *
+   * Its own number because `rounds` is not one: that is the pass's single
+   * ceiling counter and every point spends it, so it answers *how much was
+   * bought* and never *how often did this action say no*. The sentences that
+   * count refusals read this; the ones that name the budget still read
+   * `rounds`.
+   */
+  refusals: number;
   /** Why no further fixer was bought, in `decideFix`'s own words. */
   why: string;
   /**
@@ -750,22 +805,27 @@ export function diagnoseDisagreement(input: {
    * What the reviewer has already decided, which is what *nothing here was
    * decided* is a claim about (`#197`).
    *
-   * **`rounds` is read and not assumed.** On the two endings below it is the
-   * number of the round that produced nothing, so each of the rounds before it
-   * did commit and the reviewer read and refused what each one produced —
-   * `runtime.limits.rounds` defaults to 2, so a fixer killed in round 2 sits
-   * behind a diff this reviewer has already judged, and `#187` itself is that
-   * shape. *Nothing was decided* is then false, and false in the direction that
-   * costs: it invites a person to treat a refusal nothing has argued with as
-   * one two agents have been round twice.
+   * **`refusals` and never `rounds`.** A fixer killed in round 2 may sit behind
+   * a diff this reviewer already read and refused, and then *nothing was
+   * decided* is false in the direction that costs — it invites a person to
+   * treat a refusal two agents have been round twice as one nothing has argued
+   * with. But `rounds` cannot say which: it is **one counter for the whole
+   * pass**, spent by whichever point refused (`run-once.ts`'s *one ceiling, so
+   * one counter*), so `rounds: 2` is as easily *`build` refused, a round fixed
+   * it, then `review` refused the result* — where this reviewer has read
+   * exactly one diff. Counting that as two credits this reviewer with a refusal
+   * of a diff it never saw, which is the same overstatement one field over.
+   *
+   * So the count is the one the loop keeps per action, and it is the number of
+   * diffs **this reviewer** refused.
    *
    * What is true of every one of them is that the findings below are the ones
    * nothing answered, which is the sentence both arms keep.
    */
   const undecided =
-    input.rounds <= 1
+    input.refusals <= 1
       ? "so nothing here was decided"
-      : `so nothing new was decided: the reviewer refused ${input.rounds} diffs here ` +
+      : `so nothing new was decided: the reviewer refused ${input.refusals} diffs here ` +
         "and the round answering the last produced nothing";
   /**
    * The first sentence, which is the ending's to write.
@@ -980,6 +1040,14 @@ export function diagnoseUnfixed(input: {
   evidence: string;
   /** Rounds of fix-and-recheck that were spent. Zero when none was bought. */
   rounds: number;
+  /**
+   * How many diffs **this action** refused in this pass (`#197`).
+   *
+   * Never `rounds`, for `diagnoseDisagreement`'s reason: the pass has one
+   * ceiling counter and every point spends it, so *two rounds* is as easily
+   * *this action refused once and another point refused the other time*.
+   */
+  refusals: number;
   /** Why no further fixer was bought, in `decideFix`'s own words. */
   why: string;
   /** What ended the loop, which is what the headline is about (`#197`). */
@@ -1000,18 +1068,19 @@ export function diagnoseUnfixed(input: {
    * How many times the point actually ran, which is what *nothing was run
    * again* is a claim about (`#197`).
    *
-   * **`rounds` is read and not assumed**, for the reason `undecided` above is:
-   * on the three endings whose last round produced nothing, `rounds` is that
-   * round's number, so each round before it committed and the action ran on
-   * what it produced. `runtime.limits.rounds` defaults to 2, so a fixer that
-   * dies in round 2 stands behind one diff this action has already refused —
-   * two red results on two different diffs, which `done` two fields below says
-   * outright. Only the *last* of them is untested, and telling a person none of
-   * them were is worse than saying nothing: one red result and two are worth
-   * different amounts to somebody deciding whether to merge over it, and this
-   * headline exists to say which it is.
+   * **`refusals` and never `rounds`**, for the reason `undecided` above is.
+   * A fixer that dies in round 2 may stand behind one diff this action has
+   * already refused — two red results on two different diffs, which `done` two
+   * fields below says outright — and telling a person none of them were tested
+   * is worse than saying nothing: one red result and two are worth different
+   * amounts to somebody deciding whether to merge over it. But `rounds` is the
+   * pass's single ceiling counter and every point spends it, so *round 2* is as
+   * easily *`review` refused, a round answered it, and this action went red on
+   * the result* — one red result, and a card claiming two would overstate the
+   * evidence in the direction that makes a person readier to treat it as
+   * settled.
    */
-  const ran = Math.max(1, input.rounds);
+  const ran = Math.max(1, input.refusals);
   const notAgain =
     ran === 1
       ? "nothing was run again"
