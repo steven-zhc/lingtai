@@ -73,13 +73,18 @@ function supervisor(answers: [string, { status: number; out: string } | (() => {
  * every existing assertion about what the supervisor was asked stays the
  * daemon's. `boardCalls` is what the board's job was asked.
  */
-function boardSupervisor(inner: Exec, loadedAtFirst: boolean, refusesToStop = false) {
+function boardSupervisor(inner: Exec, loadedAtFirst: boolean, refusesToStop = false, refusesToEnable = false) {
   const calls: string[] = [];
   let loaded = loadedAtFirst;
   const exec: Exec = (call) => {
     const line = call.join(" ");
     if (!line.includes(BOARD_LAUNCHD_LABEL) && !line.includes(BOARD_SYSTEMD_UNIT)) return inner(call);
     calls.push(line);
+    // A stale symlink under `default.target.wants`, or a transient bus error:
+    // the board's unit does not enable, while the daemon's already has.
+    if (refusesToEnable && line.startsWith("systemctl --user enable")) {
+      return { status: 1, out: "Failed to enable unit: Connection reset by peer" };
+    }
     // `Boot-out failed: 36: Operation now in progress` is what launchd answers
     // for a job that is mid-start, and the ordinary way a stop does not take.
     if (refusesToStop && /^launchctl bootout|^systemctl --user stop/.test(line)) {
@@ -157,6 +162,8 @@ function command(
     boardLoaded?: boolean;
     /** Whether the supervisor refuses to stop the board's job, as launchd does for one mid-start. */
     boardWontStop?: boolean;
+    /** Whether `systemctl --user enable` refuses the board's unit, the daemon's having taken. */
+    boardWontEnable?: boolean;
     /** Why there is no board to serve here. There is one, by default. */
     boardMissing?: string | null;
     /** Who holds the board's port lock. Nobody, by default; a throw is a lock that could not be read. */
@@ -167,7 +174,7 @@ function command(
 ) {
   const out: string[] = [];
   const err: string[] = [];
-  const board = boardSupervisor(exec, extra.boardLoaded ?? false, extra.boardWontStop ?? false);
+  const board = boardSupervisor(exec, extra.boardLoaded ?? false, extra.boardWontStop ?? false, extra.boardWontEnable ?? false);
   const go = (verb: string, ...why: string[]) =>
     serviceCommand([verb, ...why], {
       liveness: extra.liveness ?? (async () => "last seen 3000s ago (pid 41) — not running"),
@@ -365,6 +372,29 @@ describe("restart on macOS", () => {
     expect(said).toContain("a daemon started now would not read it");
     expect(said).not.toContain("exits again");
     expect(out.join("\n")).not.toContain("shutdown \"why\"` first");
+  });
+
+  it("exits 1, and never a number of its own, for a request that lands during its own drain", async () => {
+    // The check before the drain passes and the one inside `start` does not.
+    // That refusal answers with a value of this file's own, so that `service
+    // start` knows not to bootstrap the board's job under *Nothing was started
+    // or stopped* (#187) — and it is this file's alone: what leaves the command
+    // is the 1 an operator sees.
+    let asks = 0;
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+    ]);
+    const d = quietDrain();
+    const { go, err } = command("darwin", s.exec, {
+      drain: d.drain,
+      shutdown: async () => (asks++ === 0 ? null : { by: "steven", reason: "the database is moving" }),
+    });
+    await launchdFile();
+    expect(await go("restart", "picking up #88")).toBe(1);
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
+    expect(err.join("\n")).toContain("a shutdown request stands — asked by steven (the database is moving)");
   });
 
   it("restarts when whether a shutdown stands could not be read, and says what that would mean", async () => {
@@ -1565,6 +1595,67 @@ describe("two jobs", () => {
     expect(boardCalls).toContain(`launchctl bootout gui/${UID}/${BOARD_LAUNCHD_LABEL}`);
     expect(existsSync(BOARD_PLIST())).toBe(false);
     expect(out.join("\n")).toContain(`removed ${BOARD_PLIST()}`);
+  });
+
+  /**
+   * The start's refusal, and the board's leg under it (#187).
+   *
+   * `service start` runs both legs on purpose — a daemon that recorded no start
+   * is a separate question from a board that did not come up — and there is one
+   * refusal of the daemon's that has to stop the board's too: *a shutdown
+   * request stands … Nothing was started or stopped.* It was printed and then
+   * contradicted, in the same output, by a `launchctl bootstrap` of the board's
+   * job. `install` and `restart` both return before their board start here.
+   */
+  it("start over a standing shutdown request starts no board job either, and its exit is the conductor's 1", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, out, err, boardCalls } = command("darwin", s.exec, {
+      shutdown: async () => ({ by: "human:lingtai", reason: "moving the database" }),
+    });
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("start")).toBe(1);
+    expect(err.join("\n")).toContain("a shutdown request stands — asked by human:lingtai (moving the database)");
+    expect(err.join("\n")).toContain("Nothing was started or stopped.");
+    // Neither job was bootstrapped, and the supervisor was not even asked about
+    // the board's — the sentence above is the whole of what happened.
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
+    expect(boardCalls).toEqual([]);
+    expect(out.join("\n")).not.toContain("the board answers on");
+  });
+
+  /**
+   * The board's `enable`, on the conductor's exit (#187).
+   *
+   * Linux, and everything of the daemon's has landed: the unit is written,
+   * enabled, started, and `startAndConfirm` has read its `ConductorStarted`
+   * back. Then `systemctl --user enable lingtai-board.service` fails. Returning
+   * 1 there gave the conductor's own number to a conductor that had done all it
+   * says, and left on the way out without either status block — so nothing on
+   * screen said the daemon was up, supervised and taking work, and the exit
+   * said, by doc/operating.md's own table, that the conductor was what failed.
+   */
+  it("install exits on the board alone where the board's unit could not be enabled, and still reports both jobs", async () => {
+    const s = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\nMainPID=0\n" }],
+      ["loginctl", { status: 0, out: "yes\n" }],
+    ]);
+    const { go, out, err, boardCalls } = command("linux", s.exec, { boardWontEnable: true });
+    expect(await go("install")).toBe(START_BOARD_ONLY);
+    // The conductor's install did every leg of its own, and says so.
+    const said = out.join("\n");
+    expect(said).toContain("a daemon recorded its start");
+    expect(s.calls).toContain(`systemctl --user enable ${SYSTEMD_UNIT}`);
+    expect(s.calls).toContain(`systemctl --user start ${SYSTEMD_UNIT}`);
+    // Both reports ran, in their order — neither was skipped by the return.
+    expect(said).toContain(`supervisor  (systemctl --user, ${SYSTEMD_UNIT})`);
+    expect(said).toContain(`supervisor  (systemctl --user, ${BOARD_SYSTEMD_UNIT})`);
+    expect(said.indexOf(`supervisor  (systemctl --user, ${SYSTEMD_UNIT})`)).toBeLessThan(
+      said.indexOf(`supervisor  (systemctl --user, ${BOARD_SYSTEMD_UNIT})`),
+    );
+    // And the board's own leg is what did not happen, in the board's words.
+    expect(boardCalls.filter((c) => c.startsWith("systemctl --user start"))).toEqual([]);
+    expect(err.join("\n")).toContain(`${BOARD_SYSTEMD_UNIT} could not be enabled`);
   });
 
   it("start and restart pass over a board job nobody installed, and the daemon's own start still answers", async () => {

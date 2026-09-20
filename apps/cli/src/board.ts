@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { constants, Script } from "node:vm";
 import { boardPort, repoRoot } from "@lingtai/env";
 import type { FileLocker, HeldLock } from "@lingtai/env/lock";
-import { BOARD_JOB, BOARD_WAIT_MS, type Exec, type Keeper } from "./service.ts";
+import { BOARD_JOB, BOARD_WAIT_MS, UNLOAD_WAIT_MS, type Exec, type Keeper } from "./service.ts";
 
 /**
  * The built board, served from this process (#183).
@@ -238,6 +238,18 @@ const ANSWER_POLL_MS = 250;
 const ANSWER_WAIT_MS = BOARD_WAIT_MS;
 const ANSWER_POLLS = ANSWER_WAIT_MS / ANSWER_POLL_MS;
 
+/**
+ * How long a supervised `stop` waits for the supervisor to say the job is gone
+ * — **`service`'s own `UNLOAD_WAIT_MS`, because it is the same `bootout`**.
+ *
+ * `launchctl bootout` returns once it has *asked* for the job's termination,
+ * which `service.ts`'s `unloadJob` waits past for exactly this reason. Counted
+ * as well as timed, for the reason `ANSWER_POLLS` is: the count bounds a test's
+ * loop, where a no-op `sleep` takes no time, and the clock bounds the wait.
+ */
+const GONE_POLL_MS = 500;
+const GONE_POLLS = UNLOAD_WAIT_MS / GONE_POLL_MS;
+
 /** What was typed. `port` and `dir` are null where nothing was, and the caller resolves them. */
 export interface BoardArgs {
   verb: BoardVerb;
@@ -411,10 +423,44 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       return 1;
     }
     if (what === "stop") {
+      // The call returning is not the job being gone, and saying so would be
+      // the one thing this verb is asked for.
+      if (!(await gone())) return 1;
       log("stopped the board's job. It stays stopped: pnpm lingtai service start starts it again with the conductor");
       return 0;
     }
     return (await answers()) ? 0 : 1;
+  };
+
+  /**
+   * Whether the supervisor has let the board's job go, **waited for rather than
+   * read off the call's own exit**.
+   *
+   * `launchctl bootout` exits 0 once it has asked for the termination, while
+   * the job is still running — `service.ts`'s `unloadJob` polls past exactly
+   * that. Reported without the wait, `stop` said *stopped the board's job* over
+   * a process that still held the port and the board lock: the next `board
+   * status` called it `serving`, and the next `board start` was refused by the
+   * lock the dying process had not dropped yet. (`systemctl --user stop`
+   * blocks, so there the first ask is the answer and this costs one.)
+   */
+  const gone = async (): Promise<boolean> => {
+    const until = world.now() + UNLOAD_WAIT_MS;
+    for (let i = 0; i < GONE_POLLS; i++) {
+      if (i > 0 && world.now() >= until) break;
+      const kept = world.keeper();
+      if ("unread" in kept) {
+        error(`the supervisor was asked to stop the board's job, and whether it has could not be read — ${kept.unread}`);
+        return false;
+      }
+      if (!kept.kept) return true;
+      await world.sleep(GONE_POLL_MS);
+    }
+    error(
+      `the supervisor still has the board's job ${UNLOAD_WAIT_MS / 1000}s after the stop — ` +
+        "it may still be answering. pnpm lingtai service status says what the supervisor has",
+    );
+    return false;
   };
 
   /** Whether a board answers again after a restart, waited for rather than assumed. */

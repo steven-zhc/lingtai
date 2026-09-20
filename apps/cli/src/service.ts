@@ -224,6 +224,19 @@ export const SHUTDOWN_BOARD_ONLY = 3;
  */
 export const START_BOARD_ONLY = 4;
 
+/**
+ * Not an exit code: `start`'s own answer for **a shutdown request stands, so
+ * nothing was started or stopped**, told apart from the 1 of a start that was
+ * made and failed.
+ *
+ * The refusal's own last sentence is *Nothing was started or stopped*, and
+ * `service start` runs the board's leg after the daemon's — so without this it
+ * printed that sentence and then bootstrapped the board's job under it. It
+ * never leaves `serviceCommand`: the two call sites answer 1 for it, which is
+ * what `install` and `restart` already return in the same case.
+ */
+const REFUSED_OVER_SHUTDOWN = -1;
+
 export interface ServiceInputs {
   /** Absolute path to `node`. */
   node: string;
@@ -482,8 +495,12 @@ export function lingering(exec: Exec, username: string): "yes" | "no" | { unread
  * appended before it started (#159), so it is not the request that keeps it
  * from work — it is that it cannot take the lock, and a daemon that loses the
  * lock claims nothing.
+ *
+ * Exported because `lingtai board stop` runs the same `bootout` against the
+ * board's job and has to wait past the same early return (#187) — one estimate
+ * of one thing.
  */
-const UNLOAD_WAIT_MS = 60_000;
+export const UNLOAD_WAIT_MS = 60_000;
 
 /**
  * Seconds `service shutdown` watches the supervisor for a moment with no daemon
@@ -1170,9 +1187,19 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     return 1;
   };
 
-  /** The supervisor's start, refused while a shutdown request stands, and confirmed by the daemon's record. */
+  /**
+   * The supervisor's start, refused while a shutdown request stands, and
+   * confirmed by the daemon's record.
+   *
+   * The refusal answers `REFUSED_OVER_SHUTDOWN` and not 1, so that a caller can
+   * tell *nothing was started* from *the start failed*: the sentence it prints
+   * is **Nothing was started or stopped**, and `service start` going on to
+   * bootstrap the board's job under it would make that false in the same
+   * output. Never returned from `serviceCommand` — both call sites below turn
+   * it into the 1 the operator sees.
+   */
   const start = async (unloaded = false): Promise<number> => {
-    if (await shutdownStands(unloaded)) return 1;
+    if (await shutdownStands(unloaded)) return REFUSED_OVER_SHUTDOWN;
     const answer = ask();
     if (!answer) return 1;
     // A daemon the supervisor is already running is not started again — and is
@@ -1434,12 +1461,19 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // above refuses by returning, and each of those refusals says that nothing
       // was loaded — which a board loaded first would make false.
       //
-      // Not refused over a standing shutdown, either: that request is the
-      // conductor's, and a UI takes no work over anybody's stop.
-      if (noBoard === null && platform === "systemd" && !run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT])) return 1;
+      // A standing shutdown request is one of those returns, above, under *the
+      // files are written and nothing was loaded* — so no board job is started
+      // under that sentence here, and none is in `start` below either.
+      // A failure here is the board's and exits as the board's: returning 1
+      // gave the conductor's number to a conductor that had installed, started
+      // and recorded its start, and skipped both reports on the way out, so
+      // nothing on screen said the daemon was up (#187).
+      const boardEnabled =
+        noBoard !== null || platform !== "systemd" || run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT]);
+      if (!boardEnabled) error(`${BOARD_SYSTEMD_UNIT} could not be enabled, so nothing was started for the board`);
       // Said once, above, where there is nothing to serve — so the start is not
       // asked to say it again.
-      const boardCode = noBoard === null ? await startBoard() : 0;
+      const boardCode = noBoard === null && boardEnabled ? await startBoard() : 0;
 
       log("");
       log("the conductor");
@@ -1450,20 +1484,26 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log("");
       log("the board");
       const boardReport = await reportBoard();
-      // Every leg of the conductor's has returned above or is `code`; the two
+      // Every leg of the conductor's has returned above or is `code`; the three
       // left are the board's alone, and say so by their number.
-      return code !== 0 ? code : boardCode !== 0 || boardReport !== 0 ? START_BOARD_ONLY : 0;
+      return code !== 0 ? code : !boardEnabled || boardCode !== 0 || boardReport !== 0 ? START_BOARD_ONLY : 0;
     }
 
     case "start": {
       if (!installed) return notInstalled();
       const daemon = await start();
-      // Both legs run — a `service start` that exited 0 over a board nobody can
-      // open is the claim #167 took out of the daemon's start — and the number
-      // says which one failed, since `lingtai restart` asks this about the
-      // conductor. The daemon's answer wins where both failed: *the board did
-      // not come up* is not a thing to tell a restart whose daemon never
-      // started either.
+      // A standing shutdown request refuses both legs, and that is the one
+      // failure of the daemon's that stops the board's start: the refusal says
+      // *Nothing was started or stopped*, so a `launchctl bootstrap` of the
+      // board's job after it would contradict it in the same output. `install`
+      // and `restart` both return before their board start in that case.
+      if (daemon === REFUSED_OVER_SHUTDOWN) return 1;
+      // Otherwise both legs run — a `service start` that exited 0 over a board
+      // nobody can open is the claim #167 took out of the daemon's start — and
+      // the number says which one failed, since `lingtai restart` asks this
+      // about the conductor. The daemon's answer wins where both failed: *the
+      // board did not come up* is not a thing to tell a restart whose daemon
+      // never started either.
       const board = await startBoard();
       return daemon !== 0 ? daemon : board === 0 ? 0 : START_BOARD_ONLY;
     }
@@ -1498,7 +1538,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // restart has no reason to abandon its start over the UI.
       if (verb === "shutdown") return boardStopped === 0 ? 0 : SHUTDOWN_BOARD_ONLY;
       const daemonStarted = await start(kept);
-      if (daemonStarted !== 0) return daemonStarted;
+      // The sentinel stays inside this file: what a refused start is worth to
+      // anybody outside is 1.
+      if (daemonStarted !== 0) return daemonStarted === REFUSED_OVER_SHUTDOWN ? 1 : daemonStarted;
       const boardStarted = await startBoard();
       // The conductor drained, unloaded, started and recorded it; both numbers
       // left are the board's, and one exit says that rather than reading like a

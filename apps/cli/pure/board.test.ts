@@ -142,12 +142,29 @@ import { BOARD_WAIT_MS, type Keeper } from "../src/service.ts";
 const PORT = 17820;
 const URL = `http://127.0.0.1:${PORT}`;
 
-function world(over: Partial<BoardWorld> & { holder?: string | null } = {}) {
+function world(
+  over: Partial<BoardWorld> & {
+    holder?: string | null;
+    /** Whether a supervisor keeps the board's job — a keeper that answers as the real one does. */
+    kept?: boolean;
+    /**
+     * How many asks after `bootout` the supervisor goes on saying it has the
+     * job. `bootout` returns while the job is still running, so this is the
+     * ordinary case and not a pathological one; `Infinity` is a job that never
+     * goes.
+     */
+    jobGoesAfter?: number;
+  } = {},
+) {
   const out: string[] = [];
   const err: string[] = [];
   const calls: string[] = [];
   const signalled: number[] = [];
   let holder: string | null = over.holder ?? null;
+  /** The supervisor's job: gone only once it has been asked for *and* let go. */
+  let booted = false;
+  let asksSinceBootout = 0;
+  let keeperAsks = 0;
   const w: BoardWorld = {
     host: "127.0.0.1",
     hostname: "mac",
@@ -161,8 +178,19 @@ function world(over: Partial<BoardWorld> & { holder?: string | null } = {}) {
       },
       holder: async () => holder,
     },
-    keeper: () => ({ kept: false }) as Keeper,
-    exec: (call) => (calls.push(call.join(" ")), { status: 0, out: "" }),
+    keeper: () => {
+      keeperAsks++;
+      if (!over.kept) return { kept: false } as Keeper;
+      if (!booted) return KEPT;
+      return asksSinceBootout++ < (over.jobGoesAfter ?? 0) ? KEPT : ({ kept: false } as Keeper);
+    },
+    exec: (call) => {
+      calls.push(call.join(" "));
+      // The call that *asks* for the termination. What launchd says afterwards
+      // is the keeper's above, and it is not `gone` at once.
+      if (call[1] === "bootout" || (call[1] === "--user" && call[2] === "stop")) booted = true;
+      return { status: 0, out: "" };
+    },
     serve: async () => {},
     open: async () => true,
     signal: (pid) => {
@@ -179,7 +207,7 @@ function world(over: Partial<BoardWorld> & { holder?: string | null } = {}) {
   };
   const go = (verb: BoardCommand["verb"], extra: Partial<BoardCommand> = {}) =>
     boardCommand({ verb, port: PORT, dir: "/dist/board", open: false, ...extra }, w);
-  return { go, out, err, calls, signalled, held: () => holder };
+  return { go, out, err, calls, signalled, held: () => holder, keeperAsks: () => keeperAsks };
 }
 
 const KEPT: Keeper = { kept: true, platform: "launchd", path: "/Users/x/Library/LaunchAgents/ai.nextloom.lingtai.board.plist", uid: 501 };
@@ -269,11 +297,49 @@ describe("lingtai board stop", () => {
   it("is the supervisor's call where a supervisor keeps the board, and signals nothing itself", async () => {
     // A signal here would be respawned thirty seconds later, behind whatever
     // took the port in the meantime.
-    const w = world({ holder: `board on ${PORT} pid 500 on mac`, keeper: () => KEPT });
+    const w = world({ holder: `board on ${PORT} pid 500 on mac`, kept: true });
     expect(await w.go("stop")).toBe(0);
     expect(w.signalled).toEqual([]);
     expect(w.calls).toEqual(["launchctl bootout gui/501/ai.nextloom.lingtai.board"]);
     expect(w.out.join("\n")).toContain("pnpm lingtai service start");
+  });
+
+  /**
+   * `bootout` returns while the job is still going (#187).
+   *
+   * `service.ts`'s `unloadJob` waits past exactly this, and this path did not:
+   * it printed *stopped the board's job. It stays stopped* on the call's own
+   * exit, and the next command disagreed — `board status` still said `serving
+   * board on 17820 pid 500 on mac`, and `board start` was refused by the lock
+   * the dying process had not dropped. So the supervisor is asked until it says
+   * the job is gone.
+   */
+  it("says stopped only once the supervisor says the job is gone, and not when bootout returns", async () => {
+    const w = world({ holder: `board on ${PORT} pid 500 on mac`, kept: true, jobGoesAfter: 3 });
+    expect(await w.go("stop")).toBe(0);
+    expect(w.calls).toEqual(["launchctl bootout gui/501/ai.nextloom.lingtai.board"]);
+    // Asked before the stop, and then until it had gone — never once.
+    expect(w.keeperAsks()).toBeGreaterThan(3);
+    expect(w.out.join("\n")).toContain("stopped the board's job");
+  });
+
+  it("does not call a job the supervisor still has stopped, however the bootout exited", async () => {
+    const w = world({ holder: `board on ${PORT} pid 500 on mac`, kept: true, jobGoesAfter: Infinity });
+    expect(await w.go("stop")).toBe(1);
+    expect(w.out.join("\n")).not.toContain("stopped the board's job");
+    expect(w.err.join("\n")).toContain("the supervisor still has the board's job 60s after the stop");
+  });
+
+  it("says a supervisor that could not be asked afterwards, rather than calling the job gone", async () => {
+    let asks = 0;
+    const w = world({
+      holder: `board on ${PORT} pid 500 on mac`,
+      keeper: () => (asks++ === 0 ? KEPT : { unread: "launchctl print exited 112" }),
+    });
+    expect(await w.go("stop")).toBe(1);
+    expect(w.calls).toEqual(["launchctl bootout gui/501/ai.nextloom.lingtai.board"]);
+    expect(w.out.join("\n")).not.toContain("stopped the board's job");
+    expect(w.err.join("\n")).toContain("launchctl print exited 112");
   });
 
   it("stops nothing, and says so, when no board of this machine's is running", async () => {
