@@ -271,6 +271,34 @@ describe("the board's lifecycle", () => {
     expect(l.took).toEqual([]);
   });
 
+  /**
+   * A start that failed after `serveFromSource` spawned one — `listening`
+   * gives the bind sixty seconds, and a cold machine with no `.next` cache can
+   * take longer. The child binds the port a moment later, and without this it
+   * is a board holding no lock: `status` says nobody is serving beside a port
+   * that answers, `stop` refuses to signal it, and every `board start` — each
+   * 30s supervisor respawn included — is refused as *something that is not a
+   * board of this machine's*. The CLI would not exit either: the ref'd child
+   * handle keeps the loop alive while `main` only sets `process.exitCode`.
+   */
+  it("takes the development server with it when the serve it spawned one for fails", async () => {
+    const l = locking(null);
+    const stopped: string[] = [];
+    const { go, err } = run(["start"], {
+      locker: l.locker,
+      serve: async () => {
+        throw new Error("the board never listened on 127.0.0.1:17820");
+      },
+      stopServing: () => stopped.push("SIGTERM"),
+    });
+    expect(await go()).toBe(1);
+    expect(err.join("\n")).toContain("the board never listened on 127.0.0.1:17820");
+    expect(stopped).toEqual(["SIGTERM"]);
+    // And the lock, as before — the two go together, or the next start is
+    // refused by a board that is not there.
+    expect(await l.locker.holder(BOARD_LOCK)).toBe(null);
+  });
+
   it("stop signals the pid the lock names, and waits for the lock to go", async () => {
     const l = locking(`board on 17820 pid 4242 on ${hostname()}`);
     const signalled: [number, string | 0][] = [];

@@ -322,6 +322,8 @@ export interface BoardWorld {
   place?: BoardPlace | { missing: string };
   /** Serves it, and resolves once the port is answered. */
   serve?: (options: BoardOptions) => Promise<void>;
+  /** `stopServer`, injected so a test can watch the failed start take its child with it. */
+  stopServing?: () => void;
   /** Whether anything answers on `host:port` — which is not whether it is a board. */
   answers?: (host: string, port: number) => Promise<boolean>;
   /** Open a browser. False when none could be. */
@@ -529,8 +531,18 @@ export async function boardCommand(args: string[], world: BoardWorld = {}): Prom
     try {
       await (world.serve ?? serveBoard)({ place, port, host });
     } catch (err) {
-      await dropBoardLock();
       error((err as Error).message);
+      await dropBoardLock();
+      // **A serve that failed may still have spawned one.** `serveFromSource`
+      // rejects from `listening` — sixty seconds on a cold machine with no
+      // `.next` — long after `next dev` was spawned, and that child goes on to
+      // bind the port a moment later: a board holding no lock, which `status`
+      // reports as nobody serving, `stop` refuses to signal and every respawn
+      // is then refused by. Its live handle would also keep this process alive
+      // for ever, since `main` only sets `process.exitCode`. So the start that
+      // failed takes its server with it — the refusal is printed first, because
+      // the child's `exit` ends this process.
+      (world.stopServing ?? stopServer)();
       return 1;
     }
     log(`board on ${url}`);

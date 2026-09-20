@@ -93,6 +93,19 @@ export interface Job {
   argv: readonly string[];
   /** systemd's `Description=`. */
   description: string;
+  /**
+   * How this job is stopped, and why — the `KillMode`/`TimeoutStopSec` lines
+   * of the unit and the `ExitTimeOut` note in the plist.
+   *
+   * **Per job, because the daemon's reasons are false about the board.** The
+   * generated file is the first thing anybody debugging one opens, and the
+   * daemon's *signal the daemon, not the agent it detached* and *the pass is
+   * waited for through the log* describe a drain the board has neither half
+   * of: it detaches nothing and finishes no pass, and what `KillMode=process`
+   * would spare here is its own `next dev` child.
+   */
+  systemdStop: string;
+  launchdStop: string;
 }
 
 export const DAEMON_JOB: Job = {
@@ -101,6 +114,15 @@ export const DAEMON_JOB: Job = {
   unit: SYSTEMD_UNIT,
   argv: ["daemon"],
   description: "Lingtai daemon",
+  systemdStop: `# Signal the daemon, not the agent it detached (0030).
+KillMode=process
+# No TimeoutStopSec, deliberately: systemd's 90s stands. The wall limit here
+# would make logout and machine shutdown block for an hour. The pass is waited
+# for through the log — lingtai service shutdown drains first, stops after (#174).`,
+  launchdStop: `  <!-- No ExitTimeOut, deliberately: launchd's 20 seconds stands. Set to the
+       wall limit it would make bootout, logout and machine shutdown block
+       for an hour. The pass is waited for through the log instead —
+       lingtai service shutdown drains first and unloads after (#174). -->`,
 };
 
 /**
@@ -114,6 +136,23 @@ export const BOARD_JOB: Job = {
   unit: SYSTEMD_BOARD_UNIT,
   argv: ["board", "start", "--no-open"],
   description: "Lingtai board",
+  // `control-group` is systemd's default, and it is written out because the
+  // daemon's unit beside it says the opposite for reasons that are not this
+  // job's. From a checkout the board is a CLI with `next dev` under it
+  // (`board.ts`), and `KillMode=process` would leave that child outside the
+  // kill scope: a board killed without running its SIGTERM handler — OOM,
+  // `kill -9` — would leave it on the port holding no lock, and every
+  // `Restart=always` respawn would then be refused by its own orphan.
+  systemdStop: `# The default, said out loud: the board's own next dev child is in this cgroup,
+# and leaving it outside would orphan it on the port with no lock naming it.
+KillMode=control-group
+# No TimeoutStopSec: systemd's 90s stands, and nothing here waits on it. A
+# board detaches nothing and has no pass to finish, so its stop is a signal
+# with no drain in front of it — lingtai service shutdown drains the conductor
+# and stops this (#187).`,
+  launchdStop: `  <!-- No ExitTimeOut, deliberately: launchd's 20 seconds is more than a board
+       needs. It detaches nothing and has no pass to finish, so nothing is
+       drained before this is booted out (#187). -->`,
 };
 
 export type ServicePlatform = "launchd" | "systemd";
@@ -171,8 +210,10 @@ function xml(text: string): string {
 
 /**
  * The LaunchAgent `scripts/launchd.sh` wrote, plus `LINGTAI_HOME` when it is
- * set — and, for `BOARD_JOB`, the same file with the board's label, arguments
- * and logs. The two jobs differ in those three things and in nothing else.
+ * set — and, for `BOARD_JOB`, the same file with the board's label, arguments,
+ * logs and stop note. The two jobs differ in those four things and in nothing
+ * else; the note is one of them because the daemon's reasons for not setting
+ * `ExitTimeOut` are a drain the board has no part of.
  */
 export function launchdPlist(inputs: ServiceInputs, job: Job = DAEMON_JOB): ServiceFile {
   const logs = join(stateDir(inputs.env), "logs");
@@ -209,10 +250,7 @@ ${job.argv.map((a) => `    <string>${xml(a)}</string>`).join("\n")}
   <key>ThrottleInterval</key>
   <integer>30</integer>
 
-  <!-- No ExitTimeOut, deliberately: launchd's 20 seconds stands. Set to the
-       wall limit it would make bootout, logout and machine shutdown block
-       for an hour. The pass is waited for through the log instead —
-       lingtai service shutdown drains first and unloads after (#174). -->
+${job.launchdStop}
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -249,10 +287,12 @@ const UNIT_UNSAFE = /[\s"'\\%$;]/;
  * - `Restart=always` is `KeepAlive`, and `RestartSec=30` is `ThrottleInterval`.
  *   `StartLimitIntervalSec=0` because launchd never gives up on a KeepAlive job
  *   and systemd, by default, does after five quick failures.
- * - `KillMode=process`, because the default kills the whole cgroup, agent
- *   included. 0030 put the agent in its own process group so the signal that
- *   begins a drain does not kill the run being drained; launchd signals only
- *   the daemon, and this is systemd doing the same.
+ * - `KillMode=process` **for the daemon**, because the default kills the whole
+ *   cgroup, agent included. 0030 put the agent in its own process group so the
+ *   signal that begins a drain does not kill the run being drained; launchd
+ *   signals only the daemon, and this is systemd doing the same. The board
+ *   wants the opposite and says so in its own unit — `Job.systemdStop` is per
+ *   job so that neither file carries the other's reasons.
  * - `WantedBy=default.target` is `RunAtLoad`: up when the user's manager is.
  */
 export function systemdUnit(inputs: ServiceInputs, job: Job = DAEMON_JOB): ServiceFile {
@@ -288,11 +328,7 @@ ${Object.entries(vars)
 Restart=always
 # launchd's ThrottleInterval.
 RestartSec=30
-# Signal the daemon, not the agent it detached (0030).
-KillMode=process
-# No TimeoutStopSec, deliberately: systemd's 90s stands. The wall limit here
-# would make logout and machine shutdown block for an hour. The pass is waited
-# for through the log — lingtai service shutdown drains first, stops after (#174).
+${job.systemdStop}
 StandardOutput=append:${join(logs, `${job.id}.log`)}
 StandardError=append:${join(logs, `${job.id}.err`)}
 
@@ -1357,13 +1393,22 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         // The drain unloaded a launchd job; a systemd unit is stopped and still enabled.
         if (platform === "systemd" && !run(["systemctl", "--user", "disable", "--now", SYSTEMD_UNIT])) return 1;
       }
+      // **The board's job is removed whether or not the daemon's file is still
+      // there**, so this sits in front of the `!installed` note and not behind
+      // it. Behind it, a first `uninstall` whose board bootout failed — a
+      // transient `Boot-out failed: 36: Operation now in progress`, or the 60s
+      // `unload` — had already removed the daemon's file, so the obvious second
+      // run found `installed` false, printed `nothing at …daemon.plist` and
+      // exited 0 over a board job still loaded and still starting at every
+      // login. An `uninstall` that reports success names everything it left.
+      const boardWritten = existsSync(boardFile.path);
+      if (installed) await rm(file.path, { force: true });
+      const boardCode = await uninstallBoard();
+      if (platform === "systemd" && (installed || boardWritten) && !run(["systemctl", "--user", "daemon-reload"])) return 1;
       if (!installed) {
         log(`nothing at ${file.path}${answer.loaded ? ", and the job it named is unloaded" : ""}`);
-        return 0;
+        return boardCode;
       }
-      await rm(file.path, { force: true });
-      const boardCode = await uninstallBoard();
-      if (platform === "systemd" && !run(["systemctl", "--user", "daemon-reload"])) return 1;
       log(`removed ${file.path} (logs kept in ${file.logs})`);
       return boardCode;
     }

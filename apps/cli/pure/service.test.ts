@@ -1500,7 +1500,7 @@ describe("two jobs", () => {
     expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(false);
   });
 
-  it("the board's unit and the daemon's are the same file but for the label, the arguments and the logs", () => {
+  it("the board's unit and the daemon's are the same file but for the label, the arguments, the logs and the stop", () => {
     const inputs = { node: NODE, root: ROOT, env: { HOME: "/home/x", USER: "x" } };
     const daemon = systemdUnit(inputs, DAEMON_JOB).content;
     const board = systemdUnit(inputs, BOARD_JOB).content;
@@ -1511,6 +1511,36 @@ describe("two jobs", () => {
     expect(board).toContain("board.log");
     expect(daemon).toContain("daemon.log");
     expect(systemdUnit(inputs, BOARD_JOB).path).toContain(SYSTEMD_BOARD_UNIT);
+  });
+
+  /**
+   * **A generated file is the first thing anybody debugging the job opens**, so
+   * what it says about its own stop has to be true of it. The daemon's two
+   * reasons are both false of the board: it detaches no agent, and there is no
+   * pass waited for through the log before it is stopped — `stopBoard` is
+   * `systemctl --user stop` with no drain in front of it. And `KillMode` is not
+   * a comment: from a checkout the board is a CLI with `next dev` under it, and
+   * `process` would leave that child outside the kill scope, on the port and
+   * holding no lock, refusing every `Restart=always` respawn after it.
+   */
+  it("neither file carries the other's reasons for how it is stopped", () => {
+    const inputs = { node: NODE, root: ROOT, env: { HOME: "/home/x", USER: "x" } };
+    const daemon = systemdUnit(inputs, DAEMON_JOB).content;
+    const board = systemdUnit(inputs, BOARD_JOB).content;
+    expect(daemon).toMatch(/^KillMode=process$/m);
+    expect(daemon).toContain("the agent it detached");
+    expect(daemon).toContain("The pass is waited");
+
+    expect(board).toMatch(/^KillMode=control-group$/m);
+    expect(board).not.toContain("KillMode=process");
+    expect(board).not.toContain("the agent it detached");
+    expect(board).not.toContain("The pass is waited");
+    expect(board).toContain("no pass to finish");
+
+    const boardPlist = launchdPlist(inputs, BOARD_JOB).content;
+    expect(launchdPlist(inputs, DAEMON_JOB).content).toContain("The pass is waited for through the log");
+    expect(boardPlist).not.toContain("The pass is waited for through the log");
+    expect(boardPlist).toContain("no pass to finish");
   });
 });
 
@@ -1578,6 +1608,42 @@ describe("the board's job is confirmed, and its failures are its own", () => {
     }
     return { status: 0, out: "" };
   };
+
+  /**
+   * The same shape at `uninstall`, and the second run is the whole finding: the
+   * board's half used to sit behind `if (!installed) return 0`, so once the
+   * first run had removed the daemon's file and failed on the board's, the
+   * obvious second run said `nothing at …daemon.plist` and exited 0 — over a
+   * job launchd still had loaded and still started at every login.
+   */
+  it("uninstall removes the board's job on a second run, though the daemon's file went in the first", async () => {
+    const daemonPlist = join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`);
+    const boardPlist = join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`);
+    await launchdFile();
+    await writeFile(boardPlist, "");
+
+    const first: string[] = [];
+    const one = command("darwin", boardWillNotStop(first), { drain: quietDrain().drain });
+    expect(await one.go("uninstall")).toBe(1);
+    expect(existsSync(daemonPlist)).toBe(false);
+    expect(existsSync(boardPlist)).toBe(true);
+
+    // The operator runs it again, and this time the bootout takes.
+    const second: string[] = [];
+    const booted = new Set<string>();
+    const exec: Exec = (call) => {
+      second.push(call.join(" "));
+      if (call[1] === "bootout") return booted.add(call[2] ?? ""), { status: 0, out: "" };
+      if (call[1] === "print") {
+        return booted.has(call[2] ?? "") ? { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" } : { status: 0, out: "\tstate = running\n" };
+      }
+      return { status: 0, out: "" };
+    };
+    const two = command("darwin", exec, { drain: quietDrain().drain });
+    expect(await two.go("uninstall")).toBe(0);
+    expect(second).toContain(`launchctl bootout gui/${UID}/${LAUNCHD_BOARD_LABEL}`);
+    expect(existsSync(boardPlist)).toBe(false);
+  });
 
   it("restart starts the daemon again though the board's stop failed, and says which of the two it was", async () => {
     const calls: string[] = [];

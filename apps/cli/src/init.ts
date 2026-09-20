@@ -48,7 +48,7 @@ import { runnableEnv } from "@lingtai/agent-env";
 import { boardPort, stateDir } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { type SchemaOutcome, createSchema } from "@lingtai/event-store/schema";
-import { boardPlace, dropBoardLock, holdBoardLock, serveBoard } from "./board.ts";
+import { boardPlace, dropBoardLock, holdBoardLock, serveBoard, stopServer } from "./board.ts";
 
 // -------------------------------------------------------------- the world --
 
@@ -516,6 +516,9 @@ export function liveInitWorld(): InitWorld {
         await serveBoard({ place, port, host });
       } catch (err) {
         await dropBoardLock();
+        // And the development server, where the failure came after it was
+        // spawned: `board start`'s reason, at the second path that serves one.
+        stopServer();
         return { refused: (err as Error).message };
       }
       return { url: `http://${host}:${port}` };
