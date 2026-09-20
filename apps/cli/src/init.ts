@@ -165,16 +165,25 @@ function writeConfig(path: string, doc: Document, home: string): void {
  * the one deletion here (`chooseDatabase`'s empty answer) has to keep the same
  * promise, so the comment moves down to the key that now stands first rather
  * than going out with the one that was asked for.
+ *
+ * **And when nothing follows it, down to the end of the file.** `database:` is
+ * as likely to be written last as first — it is the line `lingtai init` adds —
+ * so *move it to the next key* has to answer the case where there is no next
+ * key, or the promise holds only for the arrangement the test happened to
+ * write. The document's trailing comment is where those lines land: the same
+ * text, at the place in the file it already occupied, which is the whole of
+ * what was promised.
  */
 function dropKey(config: Document, key: string): void {
   const items = isMap(config.contents) ? config.contents.items : [];
   const index = items.findIndex((pair) => isScalar(pair.key) && pair.key.value === key);
   const going = index === -1 ? undefined : items[index]!.key;
   const next = index === -1 ? undefined : items[index + 1]?.key;
-  if (isScalar(going) && typeof going.commentBefore === "string" && isScalar(next)) {
-    next.commentBefore = next.commentBefore === null || next.commentBefore === undefined
-      ? going.commentBefore
-      : `${going.commentBefore}\n${next.commentBefore}`;
+  if (isScalar(going) && typeof going.commentBefore === "string") {
+    const moving = going.commentBefore;
+    const under = (was: string | null | undefined): string => (was === null || was === undefined ? moving : `${moving}\n${was}`);
+    if (isScalar(next)) next.commentBefore = under(next.commentBefore);
+    else config.comment = under(config.comment);
   }
   config.delete(key);
 }

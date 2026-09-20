@@ -370,6 +370,11 @@ describe("sqlite: the store absence chooses (#179)", () => {
             LINGTAI_HOME: home,
             LINGTAI_DATABASE_URL: "",
             LINGTAI_DIRECT_DATABASE_URL: "",
+            // The pre-#63 name is a connection somebody named, and
+            // `storeChoice` refuses rather than choosing SQLite past it — so a
+            // developer with one exported would get that refusal here instead
+            // of the absence this asserts.
+            DATABASE_URL: "",
             VITEST: "",
             LINGTAI_TEST: "",
           },

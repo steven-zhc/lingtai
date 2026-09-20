@@ -87,8 +87,10 @@ reads still take `databaseUrl()` and refuse by name, so a SQLite machine gets
 through `lingtai init` and then fails every command that appends —
 `packages/projector/src/projection.ts` throws *LINGTAI_DATABASE_URL is not set*
 before `lingtai approve` or `run` has done anything, and `apps/cli/src/store.ts`
-says the same sentence for the two that hold no projector to throw for them:
-`lingtai add`, and `pause`/`resume`/`shutdown`/`now`. That `store` row is therefore a **FAIL**
+says the same sentence for the three that hold no projector to throw for them:
+`lingtai add`, `pause`/`resume`/`shutdown`/`now`, and `lingtai board` — which
+appends nothing itself but serves the App wizard, in this process, from a page
+whose Create button does. That `store` row is therefore a **FAIL**
 on a SQLite machine rather than a note, which is also what stops `lingtai
 restart` draining a daemon and starting one that cannot open a log. #175 is what
 ports them, and the day it lands the row goes green with nothing else to change.

@@ -124,6 +124,31 @@ describe("lingtai doctor — environment", () => {
     expect(find(report.results, "environment").status).toBe("fail");
   });
 
+  /**
+   * #179, and the row's whole reason for existing. `DATABASE_URL` under the
+   * pre-#63 name is a connection somebody plainly configured — an install older
+   * than the rename, or the slip every provider's dashboard invites — so this
+   * machine chose nothing, and `storeChoice` refuses every caller on it. A
+   * report that answered `sqlite · … nothing names a Postgres connection, and
+   * absence is the choice` would be telling the operator about a decision they
+   * did not make, with the one-word repair nowhere on the screen — and the
+   * `environment` row, skipped as *no Postgres URL to check*, would be the
+   * second sentence saying it.
+   */
+  it("does not choose SQLite past the pre-#63 name, and names the rename", async () => {
+    const report = await runDoctor(env({ DATABASE_URL: DIRECT }));
+    const store = find(report.results, "store");
+
+    expect(store.status).toBe("fail");
+    expect(store.detail).not.toContain("sqlite");
+    expect(store.detail).not.toContain("absence is the choice");
+    expect(store.detail).toContain("DATABASE_URL names a connection");
+    expect(store.detail).toContain("#63");
+    // And the row that judges an environment is judging this one, not skipped.
+    expect(find(report.results, "environment").status).toBe("fail");
+    expect(find(report.results, "postgres").detail).not.toContain("the log is SQLite");
+  });
+
   it("refuses a pooled URL standing in for the direct one, and says to set it", async () => {
     // #176's trap: the fallback only fills a gap, and on Supabase the gap it
     // fills with the pooler is the connection that loses a NOTIFY silently.

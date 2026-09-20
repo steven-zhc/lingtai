@@ -1062,6 +1062,27 @@ async function main(argv: string[]): Promise<number> {
         console.error("lingtai board [--port <n>] [--dir <path>]");
         return 2;
       }
+      // **The board is served from this process, and its App wizard appends.**
+      // Not a reader, therefore, on the one machine where that matters: the
+      // first screen of `/setup/github-app` offers Create, and pressing it runs
+      // `create-app.ts`'s `append(...GitHubAppCreated)` through the same
+      // singleton `add` and the control verbs were just stopped from reaching —
+      // so a SQLite machine would have its App minted, recorded at seq 1 in
+      // `~/.lingtai/lingtai.db`, and the page would say so, while the whole rest
+      // of this system told the operator that log was one to abandon. `init`
+      // stops before serving the board for exactly this reason (0055 §7); this
+      // is the same board reached by the other door. Before `serveBoard`, so it
+      // is the store that is refused for and not a missing `dist/board`.
+      const held = refusedBecauseSqlite();
+      if (held !== null) {
+        console.error(paint.fail(held));
+        console.error(
+          paint.muted(
+            "the board is served from this process, and its first screen is the App wizard, which appends GitHubAppCreated",
+          ),
+        );
+        return 1;
+      }
       await serveBoard({ dir: flags["dir"] || builtBoardDir(), port, host: "127.0.0.1" });
       console.log(`board on http://127.0.0.1:${port}`);
       return 0;

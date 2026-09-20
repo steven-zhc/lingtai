@@ -276,10 +276,36 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
   // a machine that chose SQLite — and choosing SQLite there would start an empty
   // log beside a database somebody plainly configured. It refuses by name, as
   // it did before any of this existed.
-  if (optional(`${PREFIX}DIRECT_DATABASE_URL`, from)) {
+  //
+  // **And the same of the pre-#63 name.** `DATABASE_URL` is what this variable
+  // was called, so a machine that has one and no `LINGTAI_DATABASE_URL` is
+  // either an install that predates the rename or the mistake `renamedFrom`
+  // exists for — every provider's dashboard calls the variable `DATABASE_URL`.
+  // Either way somebody plainly named a connection, and reporting *nothing
+  // names one, so this machine chose SQLite* is a deliberate choice they did not
+  // make, with the one-word fix nowhere on the screen. `required` is what says
+  // it, and saying it is the only reason this branch is here: `databaseUrl()`
+  // ran it as its last step before #179 and that is the line this restores.
+  if (optional(`${PREFIX}DIRECT_DATABASE_URL`, from) || renamedFrom(`${PREFIX}DATABASE_URL`, from)) {
     return { kind: "postgres", url: required(`${PREFIX}DATABASE_URL`, from) };
   }
   return { kind: "sqlite", path: sqliteLogPath(from) };
+}
+
+/**
+ * The pre-#63 name, where it is set and the prefixed one is not — otherwise
+ * null, which is every ordinary machine.
+ *
+ * Exported for `lingtai doctor`, which decides which store is in use without
+ * going through `storeChoice` — it has a `~/.lingtai/config.yml` URL of its own
+ * to fold in, and a synthetic environment that `machineUrl` deliberately will
+ * not read. Asking this rather than reading `DATABASE_URL` there keeps *which
+ * name this one was renamed from* written once: a report that answered that
+ * question differently from the refusal is the report saying `sqlite` about a
+ * machine every command refuses.
+ */
+export function renamedDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string | null {
+  return optional(`${PREFIX}DATABASE_URL`, from) ? null : renamedFrom(`${PREFIX}DATABASE_URL`, from);
 }
 
 /**

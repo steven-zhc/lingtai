@@ -51,7 +51,7 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp, machineDatabaseUrl, sqliteLogPath } from "@lingtai/env";
+import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp, machineDatabaseUrl, renamedDatabaseUrl, sqliteLogPath } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
@@ -154,8 +154,26 @@ export function storeInUse(
   direct: string | undefined,
   path: string,
   source = "LINGTAI_DATABASE_URL",
+  renamed: string | null = null,
 ): CheckResult {
   if (!pooled) {
+    // **The pre-#63 name is a connection somebody named**, so this machine has
+    // not chosen anything either: `storeChoice` refuses it by name exactly as it
+    // refuses the half-named Postgres below, and the report has to say the same
+    // thing the command says. Reported before the direct URL because it is the
+    // narrower fault and names its own fix — an operator reading *nothing names
+    // a Postgres connection* about a machine whose `DATABASE_URL` is a Postgres
+    // connection has been told the opposite of the one-word repair.
+    if (renamed) {
+      return {
+        name: "store",
+        status: "fail",
+        detail:
+          `none · ${renamed} names a connection and LINGTAI_DATABASE_URL does not — it was renamed (#63), so that ` +
+          `a project's own ${renamed} can never be confused with Lingtai's. This is not a machine that chose SQLite: ` +
+          "rename the line, and every caller is refused by that name until it is",
+      };
+    }
     // A direct URL and no pooled one is a Postgres machine missing a line, not
     // a machine that chose SQLite (0055 §2) — and not a machine with a store
     // either: `storeChoice` raises `LINGTAI_DATABASE_URL is not set` for every
@@ -1629,10 +1647,18 @@ export async function recipeGovernsItsBase(
  * `LINGTAI_DATABASE_URL` is unset — the order `databaseUrl` reads them in — and
  * only where the caller hands it in: `doctorReport` does, and a test's own
  * environment never reaches the operator's file.
+ *
+ * `renamed` is the pre-#63 name where it is the only one naming a connection —
+ * a machine `storeChoice` refuses rather than reading as a choice of SQLite
+ * (0055 §2), and therefore one the `store` row must not call SQLite either. A
+ * parameter because `doctorReport` uses the unprefixed names as its own
+ * carriers and so cannot be asked afterwards; from a test the environment
+ * answers for itself.
  */
 export async function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   machine: () => string | undefined = () => undefined,
+  renamed: string | null = renamedDatabaseUrl(env),
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -1665,10 +1691,13 @@ export async function runDoctor(
   // Before any check, because every check after it is about one store or the
   // other. A file that would not parse is not a choice either way, and the
   // `environment` row below is where it is reported.
-  if (!unreadable) results.push(storeInUse(pooled, direct, sqliteLogPath(env), source));
+  if (!unreadable) results.push(storeInUse(pooled, direct, sqliteLogPath(env), source, renamed));
   // Nothing names a connection at all, and nothing was meant to: the log is
-  // SQLite (#179). `direct` counts, so a half-named Postgres stays a failure.
-  const sqlite = !pooled && !direct && !unreadable;
+  // SQLite (#179). `direct` counts, so a half-named Postgres stays a failure —
+  // and so does a `DATABASE_URL` under the old name, which is a connection
+  // somebody named and therefore something the `environment` row must judge
+  // rather than be skipped over.
+  const sqlite = !pooled && !direct && !unreadable && !renamed;
   const envResult = unreadable
     ? { name: "environment", status: "fail" as const, detail: unreadable }
     : sqlite
@@ -1740,8 +1769,17 @@ export async function runDoctor(
  * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)). A gate that
  * ran a *slightly* different doctor than the one you type would be the worst of
  * both.
+ *
+ * **The pre-#63 name is read before the loaders touch it**, and handed over
+ * separately. This copies the resolved URLs back under the unprefixed names,
+ * and deletes them where nothing resolved — so by the time `runDoctor` has the
+ * environment, a `DATABASE_URL` the operator actually set has been overwritten
+ * or removed, which is exactly the machine the `store` row has to recognise
+ * (#63, 0055 §2). Asked here, of `process.env`, it is the machine's answer
+ * rather than this function's.
  */
 export async function doctorReport(): Promise<DoctorReport> {
+  const renamed = renamedDatabaseUrl();
   const env = { ...process.env };
   try {
     env["DATABASE_URL"] = databaseUrl();
@@ -1753,7 +1791,7 @@ export async function doctorReport(): Promise<DoctorReport> {
   } catch {
     delete env["DIRECT_DATABASE_URL"];
   }
-  return runDoctor(env, () => machineDatabaseUrl(env));
+  return runDoctor(env, () => machineDatabaseUrl(env), renamed);
 }
 
 /**

@@ -41,6 +41,14 @@ machine that chose SQLite, and it is refused by name as it was before any of
 this existed. Choosing SQLite there would start an empty log beside a database
 somebody plainly configured.
 
+**The pre-#63 name counts as naming one too.** An unprefixed `DATABASE_URL` and
+no `LINGTAI_DATABASE_URL` is either an install older than the rename or the
+mistake `renamedFrom` exists for — every provider's dashboard calls the variable
+`DATABASE_URL` — so `storeChoice()` refuses there as well, with the one line
+that names the fault and its one-word repair. Reporting a *deliberate choice of
+SQLite* to somebody who made no choice is the failure this rule is against, and
+it is the same failure in both halves of it.
+
 **3. It chooses nothing for the tests.** Under `VITEST` or `LINGTAI_TEST`,
 `storeChoice()` asks `testUrl` and that refusal stands unchanged.
 `packages/env/test/env.test.ts` asserts it — including that the operator's own
@@ -65,10 +73,12 @@ report says it rather than leaving it to be inferred from a variable nobody set.
 
 The row would like to be a statement rather than a verdict — either store is a
 legitimate answer, and what the rows below judge is whether the chosen one
-works. It cannot be one yet — nor on the machine of §2, which chose neither:
-only `LINGTAI_DIRECT_DATABASE_URL` set is a machine with *no* store, since
-`storeChoice` refuses every caller there, and the row that answers which store
-is in use fails rather than reporting a Postgres one it cannot open. A SQLite machine is a machine on which *no command
+works. It cannot be one yet — nor on either machine of §2, which chose neither:
+`LINGTAI_DIRECT_DATABASE_URL` alone, and a `DATABASE_URL` under the pre-#63
+name, are machines with *no* store, since `storeChoice` refuses every caller on
+both, and the row that answers which store is in use fails rather than
+reporting a Postgres one it cannot open — naming, in the second case, the
+rename, which is the one repair that machine needs. A SQLite machine is a machine on which *no command
 that appends runs at all* (see the first consequence), so a `store` row that
 said `ok`, or even `warn`, would make the command that answers **is the system
 doing what the code says** answer yes about a machine where nothing does. It
@@ -123,8 +133,11 @@ next `lingtai init`, which is the one that names a Postgres URL.
   `ProjectConfigured` at seq 1 into a log the board cannot read and the same
   command's own advice then tells the operator to leave behind. A refusal every
   document already promised is worth nothing until the two commands that could
-  disprove it make it true, so they ask for it by name before they append. That
-  file is deleted by #175 and nothing else changes with it.
+  disprove it make it true, so they ask for it by name before they append.
+  **`lingtai board` is the third**, and by §7's argument rather than this one:
+  it does not append, it *serves the page that does* — the App wizard, in this
+  process — so the guard `init` got is the same guard the other door to that
+  screen needs. That file is deleted by #175 and nothing else changes with it.
 - **No migration between the stores**, as doc/design/1.0.md has it: switching
   starts a new log and picks up new tickets. Nothing converts one to the other
   and no tool is built.

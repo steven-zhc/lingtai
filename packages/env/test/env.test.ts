@@ -14,6 +14,7 @@ import {
   githubWebhookSecret,
   hasGitHubApp,
   machineDatabaseUrl,
+  renamedDatabaseUrl,
   resolvePath,
   sqliteLogPath,
   storeChoice,
@@ -120,6 +121,33 @@ describe("absence chooses the store", () => {
     expect(() => storeChoice({ LINGTAI_DIRECT_DATABASE_URL: URL, LINGTAI_HOME: "/tmp/lingtai-home" })).toThrow(
       /LINGTAI_DATABASE_URL is not set/,
     );
+  });
+
+  /**
+   * **The pre-#63 name is the other way to plainly name a connection**, and the
+   * one an operator arrives at by accident: every provider's dashboard calls
+   * the variable `DATABASE_URL`, and an install older than the rename has it
+   * under that name for Lingtai itself. Before #179 `databaseUrl()` ended at
+   * `required()` and said so — *it was renamed to LINGTAI_DATABASE_URL (#63) …
+   * Rename the line* — which is the only sentence on that machine naming the
+   * one-word repair. Choosing SQLite past it reports a deliberate choice
+   * nobody made and takes that sentence off the screen.
+   */
+  it("refuses the pre-#63 name too, and names the rename rather than choosing sqlite", () => {
+    const renamed = { DATABASE_URL: URL, LINGTAI_HOME: "/tmp/lingtai-home" };
+
+    expect(() => storeChoice(renamed)).toThrow(/DATABASE_URL is set — it was renamed to LINGTAI_DATABASE_URL \(#63\)/);
+    expect(() => storeChoice(renamed)).toThrow(/Rename the line/);
+    expect(() => databaseUrl(renamed)).toThrow(/it was renamed to LINGTAI_DATABASE_URL/);
+    // And `renamedDatabaseUrl` — which `lingtai doctor` asks, having its own
+    // `config.yml` URL to fold in — answers the same question the same way.
+    expect(renamedDatabaseUrl(renamed)).toBe("DATABASE_URL");
+    // The prefixed name set is an ordinary Postgres machine: the old one is not
+    // consulted, so an operator with a `DATABASE_URL` of their own is not asked
+    // about it.
+    expect(storeChoice({ ...renamed, LINGTAI_DATABASE_URL: URL })).toEqual({ kind: "postgres", url: URL });
+    expect(renamedDatabaseUrl({ ...renamed, LINGTAI_DATABASE_URL: URL })).toBeNull();
+    expect(renamedDatabaseUrl({ LINGTAI_HOME: "/tmp/lingtai-home" })).toBeNull();
   });
 
   /**

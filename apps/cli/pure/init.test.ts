@@ -290,6 +290,36 @@ describe("lingtai init (#186)", () => {
     });
 
     /**
+     * **The same file with the keys the other way round.** `dropKey` moves the
+     * comment above the key it removes down to the key that follows it — and
+     * `database:` is as likely to be written last as first, being the line
+     * `lingtai init` adds. With nothing after it there is no key to move the
+     * comment to, and it went out with the key: a line the operator wrote, and
+     * this command did not choose, deleted by a function whose whole purpose is
+     * not to. It lands at the end of the file instead, which is where it was.
+     */
+    it("keeps the comment above database when database is the last key", async () => {
+      const home = freshHome();
+      mkdirSync(home, { recursive: true });
+      // A URL that no longer answers, as in the test above: that is how an
+      // operator reaches the question with one still written in the file.
+      const gone = "postgresql://me:secret@old-host:5432/postgres";
+      writeFileSync(
+        configPath({ LINGTAI_HOME: home }),
+        `runtime:\n  agent: codex\n# the log for this laptop — shared Supabase, see the team wiki\ndatabase:\n  url: ${gone}\n`,
+      );
+      const { world: w } = world(home, { answers: [""], runtimes: [signedIn("codex")] });
+
+      expect(await initCommand([], w)).toBe(1);
+      expect(config(home)).not.toContain("database:");
+      expect(config(home)).not.toContain("old-host");
+      // The line the operator wrote, still in the file.
+      expect(config(home)).toContain("# the log for this laptop — shared Supabase, see the team wiki");
+      // And what stayed is still readable as the same configuration.
+      expect(config(home)).toContain("agent: codex");
+    });
+
+    /**
      * The same, with nobody at a terminal: `--database-url ""` skips the
      * question, and skipping the question must not skip the removal — that was
      * the silent half of it, a machine told SQLite while a healthy Postgres

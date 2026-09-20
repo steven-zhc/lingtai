@@ -20,6 +20,16 @@
  * then tells the operator to abandon by naming a Postgres URL. That is the one
  * outcome worse than refusing: work recorded where nothing will look for it.
  *
+ * **And `board` is the third, because serving is not reading.** The board runs
+ * *in the CLI's own process*, and the first screen of `/setup/github-app` is a
+ * Create button that runs `create-app.ts`'s `append(...GitHubAppCreated)`
+ * through this same singleton. The page only reads to decide whether to offer
+ * it, so nothing refuses on the way in; the append arrives after a press, with
+ * no projector and no Postgres between it and `~/.lingtai/lingtai.db`, and the
+ * page then says the App is on Lingtai's log. `lingtai init` stops before this
+ * screen for the same reason (0055 §7) — `lingtai board` is the other door to
+ * it, and needs the same guard.
+ *
  * So the refusal every operator-facing document already promised — README,
  * `.env.example`, `doc/operating.md`, `lingtai init`'s amber line and `lingtai
  * doctor`'s `store` row all say *lingtai add, approve and run refuse by name* —
@@ -28,7 +38,7 @@
  *
  * **This whole file goes when #175 lands.** Nothing else has to change for it
  * to: the moment the projections and the waker take whichever store
- * `storeChoice` chose, a SQLite machine is a working machine, and these two
+ * `storeChoice` chose, a SQLite machine is a working machine, and these three
  * commands are the only callers.
  */
 import { storeChoice } from "@lingtai/env";
