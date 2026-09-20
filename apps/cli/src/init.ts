@@ -132,7 +132,11 @@ export function configPath(env: NodeJS.ProcessEnv): string {
 /** The machine file as a document, so a write keeps every comment and key it did not choose. */
 function readConfig(path: string): Document | { refused: string } {
   if (!existsSync(path)) return new Document({});
-  const doc = parseDocument(readFileSync(path, "utf8"));
+  // `Document` and not the `Document.Parsed` this returns: the branch below
+  // puts a node into `contents` that was never in the text, and a parsed
+  // document's contents are typed as nodes that carry a source range. It is the
+  // type this function hands back either way.
+  const doc: Document = parseDocument(readFileSync(path, "utf8"));
   if (doc.errors.length > 0) {
     return { refused: `${path} does not parse as YAML (${doc.errors[0]!.message}) — fix it and run lingtai init again` };
   }
