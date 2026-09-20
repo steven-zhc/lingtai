@@ -49,7 +49,7 @@
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from "@lingtai/domain";
 import { parseWorkItemStream } from "@lingtai/domain";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "./projection.ts";
 import pg from "pg";
 
@@ -1121,7 +1121,7 @@ export interface ReadTasksOptions {
 }
 
 export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCard[]> {
-  const client = new pg.Client({ connectionString: options.url ?? databaseUrl() });
+  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
   await client.connect();
   try {
     const days = options.retentionDays ?? DEFAULT_RETENTION_DAYS;
@@ -1227,7 +1227,7 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
 export async function readTaskProjects(
   options: Pick<ReadTasksOptions, "retentionDays" | "url"> = {},
 ): Promise<string[]> {
-  const client = new pg.Client({ connectionString: options.url ?? databaseUrl() });
+  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
   await client.connect();
   try {
     const r = await client.query<{ project: string }>(

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { selectRunnable } from "@lingtai/conductor/queue";
 import type { ProjectState } from "@lingtai/domain";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
@@ -75,7 +75,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

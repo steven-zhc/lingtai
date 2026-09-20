@@ -7,7 +7,7 @@
  * doc/decisions/0009-two-connections.md exists to record.
  */
 import pg from "pg";
-import { directDatabaseUrl } from "../src/env.ts";
+import { directPostgresUrl } from "../src/env.ts";
 
 /** Streams created by the current file, so cleanup can name them exactly. */
 export const created = new Set<string>();
@@ -33,7 +33,7 @@ export const discovered = (title: string) => ({
 });
 
 async function direct<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     return await fn(c);

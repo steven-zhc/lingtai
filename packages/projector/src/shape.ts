@@ -32,7 +32,7 @@
  * the whole point, because the alternative is finding out when the daemon stops.
  */
 import pg from "pg";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import type { Projection, ProjectionContext } from "./projection.ts";
 
 /** One table that exists and does not match the DDL that declares it. */
@@ -242,7 +242,7 @@ export async function shapeIn(
  */
 export async function projectionShape(
   projection: Projection,
-  url = databaseUrl(),
+  url = postgresUrl(),
 ): Promise<ProjectionShape> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();

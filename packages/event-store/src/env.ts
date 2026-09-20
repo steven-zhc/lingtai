@@ -3,4 +3,4 @@
  * CLI need it too and neither should depend on the event store to get it. This
  * re-export stays so `packages/event-store` reads the same as it did.
  */
-export { databaseUrl, dbVar, directDatabaseUrl, directUrlIfSet } from "@lingtai/env";
+export { dbVar, directPostgresUrl, directUrlIfSet, postgresUrl } from "@lingtai/env";

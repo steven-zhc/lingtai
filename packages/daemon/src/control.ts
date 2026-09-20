@@ -62,7 +62,7 @@
  * being taken is bounded by the sweep. That is the number 0031 is replacing:
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import {
   CONTROL_STREAM,
@@ -405,7 +405,7 @@ export const HEARTBEAT_MS = 5_000;
 /** Considered down after this long without a beat. Three missed beats. */
 export const STALE_AFTER_MS = HEARTBEAT_MS * 3;
 
-export async function createStatusTable(url = directDatabaseUrl()): Promise<void> {
+export async function createStatusTable(url = directPostgresUrl()): Promise<void> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
@@ -450,7 +450,7 @@ export interface BeatOptions {
 }
 
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null, url = directDatabaseUrl() } = options;
+  const { currentRunId = null, code = null, url = directPostgresUrl() } = options;
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
@@ -585,7 +585,7 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
 }
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
-export async function readStatus(url = directDatabaseUrl()): Promise<DaemonStatus | null> {
+export async function readStatus(url = directPostgresUrl()): Promise<DaemonStatus | null> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {

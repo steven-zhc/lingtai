@@ -45,7 +45,7 @@ const claimed = (runId: string) => ({
  * rather than silently accumulating them. The Postgres caller passes
  * `streamId()`; the in-memory one passes anything, because its log is thrown
  * away with the test. `support.ts` cannot be imported here: it reads
- * `directDatabaseUrl()`, which is the database this contract exists to let a
+ * `directPostgresUrl()`, which is the database this contract exists to let a
  * caller do without.
  */
 export function describeEventStoreContract(

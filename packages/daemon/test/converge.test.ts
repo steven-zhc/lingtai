@@ -11,7 +11,7 @@
  * The second property is the one that makes it convergence rather than retry:
  * an issue somebody fixed by hand gets no write at all.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import type { ProjectState } from "@lingtai/domain";
@@ -82,7 +82,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

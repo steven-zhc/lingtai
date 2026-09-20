@@ -19,7 +19,7 @@
  */
 import type { Envelope } from "@lingtai/domain";
 import pg from "pg";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import { type EventStore, createPostgresWaker, eventStore, type Subscription, subscribe } from "@lingtai/event-store";
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from "./shape.ts";
 
@@ -175,7 +175,7 @@ export interface ProjectionRunnerOptions {
 export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
   const { projection } = options;
   const store = options.store ?? eventStore;
-  const pool = new pg.Pool({ connectionString: options.url ?? databaseUrl(), max: 2 });
+  const pool = new pg.Pool({ connectionString: options.url ?? postgresUrl(), max: 2 });
 
   let subscription: Subscription | null = null;
   let failure: unknown = null;
@@ -332,7 +332,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
  * `updatedAt` is old is a stopped subscriber, and the old loop had no way to
  * notice the equivalent at all.
  */
-export async function projectionLag(url = databaseUrl()): Promise<ProjectionLag[]> {
+export async function projectionLag(url = postgresUrl()): Promise<ProjectionLag[]> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {

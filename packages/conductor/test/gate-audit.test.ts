@@ -11,7 +11,7 @@
  * point. That is the shape of the two changes that merged into `main` with
  * nobody's approval.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { parsePayload } from "@lingtai/domain";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
@@ -32,7 +32,7 @@ beforeAll(() => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");
@@ -105,7 +105,7 @@ async function landedItem(
 }
 
 const forProject = async () =>
-  (await landedWithoutGatePoints(directDatabaseUrl())).filter((f) => f.project === PROJECT);
+  (await landedWithoutGatePoints(directPostgresUrl())).filter((f) => f.project === PROJECT);
 
 describe("landedWithoutGatePoints", () => {
   it("finds the change that merged past a point the recipe configured", async () => {

@@ -5,7 +5,7 @@
  * The last one does need it, and it is the one that matters — it is Phase 0's
  * exit criterion written as an assertion.
  */
-import { createDb, createEventStore, databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
+import { createDb, createEventStore, directPostgresUrl, postgresUrl } from "@lingtai/event-store";
 import { beat, createStatusTable } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
@@ -72,7 +72,7 @@ describe("lingtai doctor — environment", () => {
     expect(find(report.results, "postgres").status).toBe("skip");
   });
 
-  it("reads ~/.lingtai/config.yml's database.url when neither variable is set, as databaseUrl does (#186)", async () => {
+  it("reads ~/.lingtai/config.yml's database.url when neither variable is set, as postgresUrl does (#186)", async () => {
     // A pooler URL, so the check fails on its shape and nothing is connected to.
     const report = await runDoctor(env({}), () => POOLED);
     const e = find(report.results, "environment");
@@ -459,7 +459,7 @@ describe("lingtai doctor — against the real database", () => {
    */
   it("is green", async () => {
     const report = await runDoctor(
-      env({ LINGTAI_DATABASE_URL: databaseUrl(), LINGTAI_DIRECT_DATABASE_URL: directDatabaseUrl() }),
+      env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
     );
 
     const failures = report.results.filter((r) => r.status === "fail");
@@ -509,7 +509,7 @@ describe("lingtai doctor — against the real database", () => {
 
     try {
       const report = await runDoctor(
-        env({ LINGTAI_DATABASE_URL: databaseUrl(), LINGTAI_DIRECT_DATABASE_URL: directDatabaseUrl() }),
+        env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
       );
       const liveness = find(report.results, "daemon: liveness");
 
@@ -521,7 +521,7 @@ describe("lingtai doctor — against the real database", () => {
     } finally {
       // One row for the whole installation: left behind, it tells every later
       // test in the suite that a daemon is up.
-      const client = new pg.Client({ connectionString: directDatabaseUrl() });
+      const client = new pg.Client({ connectionString: directPostgresUrl() });
       await client.connect();
       await client.query("delete from daemon_status where id = 1").catch(() => {});
       await client.end();
@@ -557,7 +557,7 @@ describe("lingtai doctor — against the real database", () => {
 
     try {
       const report = await runDoctor(
-        env({ LINGTAI_DATABASE_URL: databaseUrl(), LINGTAI_DIRECT_DATABASE_URL: directDatabaseUrl() }),
+        env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
       );
       const check = find(report.results, "subscribers: failures");
 
@@ -568,7 +568,7 @@ describe("lingtai doctor — against the real database", () => {
       expect(check.detail).toContain("notify");
       expect(check.detail).toContain("terminal-notifier exited 127");
     } finally {
-      const c = new pg.Client({ connectionString: directDatabaseUrl() });
+      const c = new pg.Client({ connectionString: directPostgresUrl() });
       await c.connect();
       try {
         await c.query("alter table events disable rule lingtai_events_no_delete");

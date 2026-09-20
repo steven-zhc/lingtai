@@ -1,4 +1,4 @@
-export { databaseUrl, directDatabaseUrl } from "./env.ts";
+export { directPostgresUrl, postgresUrl } from "./env.ts";
 export { createDb, db, type Db } from "./db.ts";
 import { db } from "./db.ts";
 import { createEventStore } from "./event-store.ts";

@@ -17,7 +17,7 @@
  */
 import { integrationStream, parsePayload, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { createProjectionRunner, readTasks, taskViewProjection } from "@lingtai/projector";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import { PROMPT_ELIDED, createClaudeCodeRuntime } from "@lingtai/agent";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
@@ -310,7 +310,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");
@@ -753,7 +753,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'a change the 
     ]);
     // Beneath the store, because the store refuses a retired type — which is
     // right for everything that writes, and is why this is the old code's row.
-    const c = new pg.Client({ connectionString: directDatabaseUrl() });
+    const c = new pg.Client({ connectionString: directPostgresUrl() });
     await c.connect();
     try {
       await c.query(

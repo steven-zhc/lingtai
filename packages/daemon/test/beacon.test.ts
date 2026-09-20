@@ -15,7 +15,7 @@
  * finished, and asks the row the question `doctor` and the board's chips ask —
  * `lastBeat`, which is now the one place either of them asks it.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { afterAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import {
@@ -36,7 +36,7 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
  * the state these tests found.
  */
 afterAll(async () => {
-  const client = new pg.Client({ connectionString: directDatabaseUrl() });
+  const client = new pg.Client({ connectionString: directPostgresUrl() });
   await client.connect();
   try {
     await client.query("delete from daemon_status where id = 1");

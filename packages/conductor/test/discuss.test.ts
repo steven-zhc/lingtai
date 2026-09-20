@@ -13,7 +13,7 @@
  * `DiscussionHeld` on the item's — which is exactly the shape a single-stream
  * fake cannot check.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -68,7 +68,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

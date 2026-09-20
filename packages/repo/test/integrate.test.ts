@@ -11,7 +11,7 @@
  * real conflicts, no network.
  */
 import { integrationStream } from "@lingtai/domain";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -100,7 +100,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

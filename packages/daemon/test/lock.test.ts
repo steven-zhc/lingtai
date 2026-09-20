@@ -8,7 +8,7 @@
  * Each test uses its own key so the suite does not fight the operator's daemon
  * — or itself.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { taskViewProjection } from "@lingtai/projector";
 import { describe, expect, it } from "vitest";
 import { acquireDaemonLock, createFileLocker, startDaemon } from "../src/index.ts";
@@ -52,6 +52,6 @@ describe("the daemon", () => {
     // The connection string is read through the loader, never process.env —
     // asserting it here keeps that rule true in the package that opens the
     // longest-lived connection in the system.
-    expect(directDatabaseUrl()).toBeTruthy();
+    expect(directPostgresUrl()).toBeTruthy();
   });
 });

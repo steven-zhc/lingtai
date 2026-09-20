@@ -74,7 +74,7 @@ import { promisify } from "node:util";
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/domain";
 import { paint } from "@lingtai/env/colour";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { projectionLag } from "@lingtai/projector";
 import { type ConvergeOptions, convergeIssues } from "./converge.ts";
@@ -363,7 +363,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
 export async function findLaggingProjections(options: ReconcileOptions = {}): Promise<Finding[]> {
   const known = new Set(options.projections ?? []);
   if (known.size === 0) return [];
-  const lags = await projectionLag(options.url ?? databaseUrl()).catch(() => null);
+  const lags = await projectionLag(options.url ?? postgresUrl()).catch(() => null);
   // No checkpoints table yet is a system that has never run, not a divergence.
   if (lags === null) return [];
   return lags
@@ -415,7 +415,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
   if (names.length === 0) return [];
 
-  const client = new pg.Client({ connectionString: options.url ?? databaseUrl() });
+  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
   let streams: string[];
   try {
     await client.connect();

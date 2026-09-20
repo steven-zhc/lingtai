@@ -6,14 +6,16 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  databaseUrl,
-  directDatabaseUrl,
+  directPostgresUrl,
   directUrlIfSet,
   envFiles,
   githubApp,
   githubWebhookSecret,
   hasGitHubApp,
+  logConfigured,
   machineDatabaseUrl,
+  postgresUrl,
+  postgresUrlIfSet,
   resolvePath,
 } from "../src/index.ts";
 
@@ -59,29 +61,29 @@ describe("the direct URL falls back to the pooled one", () => {
   const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
 
   it("uses the pooled URL when the direct one is absent", () => {
-    expect(directDatabaseUrl({ LINGTAI_DATABASE_URL: DIRECT })).toBe(DIRECT);
+    expect(directPostgresUrl({ LINGTAI_DATABASE_URL: DIRECT })).toBe(DIRECT);
     // Empty is absent, as it is for every other name here.
-    expect(directDatabaseUrl({ LINGTAI_DATABASE_URL: DIRECT, LINGTAI_DIRECT_DATABASE_URL: "" })).toBe(DIRECT);
+    expect(directPostgresUrl({ LINGTAI_DATABASE_URL: DIRECT, LINGTAI_DIRECT_DATABASE_URL: "" })).toBe(DIRECT);
   });
 
   it("never overrides a direct URL that is set", () => {
     // On Supabase the two genuinely differ, and the pooled one is the
     // connection that loses a NOTIFY without saying so.
-    expect(directDatabaseUrl({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT })).toBe(DIRECT);
+    expect(directPostgresUrl({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT })).toBe(DIRECT);
   });
 
   it("refuses by name when neither is set", () => {
-    expect(() => directDatabaseUrl({})).toThrow(/LINGTAI_DIRECT_DATABASE_URL is not set/);
+    expect(() => directPostgresUrl({})).toThrow(/LINGTAI_DIRECT_DATABASE_URL is not set/);
   });
 
   it("falls back within the TEST_ pair, and never across to the operator's", () => {
     const test = { LINGTAI_TEST: "1" };
-    expect(directDatabaseUrl({ ...test, LINGTAI_TEST_DATABASE_URL: DIRECT })).toBe(DIRECT);
+    expect(directPostgresUrl({ ...test, LINGTAI_TEST_DATABASE_URL: DIRECT })).toBe(DIRECT);
     expect(
-      directDatabaseUrl({ ...test, LINGTAI_TEST_DATABASE_URL: POOLED, LINGTAI_TEST_DIRECT_DATABASE_URL: DIRECT }),
+      directPostgresUrl({ ...test, LINGTAI_TEST_DATABASE_URL: POOLED, LINGTAI_TEST_DIRECT_DATABASE_URL: DIRECT }),
     ).toBe(DIRECT);
     expect(() =>
-      directDatabaseUrl({ ...test, LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }),
+      directPostgresUrl({ ...test, LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }),
     ).toThrow(/LINGTAI_TEST_DIRECT_DATABASE_URL is not set/);
   });
 });
@@ -182,9 +184,76 @@ describe("the machine file's database.url", () => {
   it("is never asked for an environment handed in, or for a test — only this process's own", async () => {
     const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
     await writeFile(join(home, "config.yml"), `database:\n  url: ${URL_}\n`);
-    expect(() => databaseUrl({ LINGTAI_HOME: home })).toThrow(/LINGTAI_DATABASE_URL is not set.*lingtai init/);
+    expect(() => postgresUrl({ LINGTAI_HOME: home })).toThrow(/LINGTAI_DATABASE_URL is not set.*lingtai init/);
     expect(directUrlIfSet({ LINGTAI_HOME: home })).toBeUndefined();
     // This process is a test run, so its own environment never reaches the file.
-    expect(() => databaseUrl({ LINGTAI_HOME: home, VITEST: "true" })).toThrow(/LINGTAI_TEST_DATABASE_URL is not set/);
+    expect(() => postgresUrl({ LINGTAI_HOME: home, VITEST: "true" })).toThrow(/LINGTAI_TEST_DATABASE_URL is not set/);
+  });
+});
+
+/**
+ * #213. *Is a log configured* and *what is the Postgres URL* are two questions,
+ * and for as long as every log was Postgres one function answered both — the
+ * first by whether the second threw. `apps/cli/src/entry.ts` asked it that way
+ * three times, and a `catch` is invisible to the compiler, so the day #178's
+ * file-backed store made the answers differ nothing would have said so.
+ */
+describe("whether a log is configured", () => {
+  const URL_ = "postgresql://u:p@db.example.com:5432/postgres";
+
+  it("is a boolean, where asking for the URL is a refusal", () => {
+    // The pair, on one environment: the same absence, answered twice.
+    expect(() => postgresUrl({})).toThrow(/LINGTAI_DATABASE_URL is not set/);
+    expect(logConfigured({})).toBe(false);
+    expect(postgresUrlIfSet({})).toBeUndefined();
+
+    expect(logConfigured({ LINGTAI_DATABASE_URL: URL_ })).toBe(true);
+    expect(postgresUrlIfSet({ LINGTAI_DATABASE_URL: URL_ })).toBe(URL_);
+    expect(postgresUrl({ LINGTAI_DATABASE_URL: URL_ })).toBe(URL_);
+  });
+
+  it("says no to an empty variable, as every other name here does", () => {
+    expect(logConfigured({ LINGTAI_DATABASE_URL: "" })).toBe(false);
+  });
+
+  /**
+   * Unchanged, and deliberately: `postgresUrl` never read the direct name, so a
+   * machine with only that one had no log before this had a name either. The
+   * remedies that say *unset LINGTAI_DATABASE_URL* still name the one variable
+   * this turns on.
+   */
+  it("is not turned on by the direct URL alone", () => {
+    expect(logConfigured({ LINGTAI_DIRECT_DATABASE_URL: URL_ })).toBe(false);
+    // Which is the one asymmetry worth stating: the direct one does fall back
+    // to the pooled name, and the pooled one has never fallen back to it.
+    expect(directPostgresUrl({ LINGTAI_DATABASE_URL: URL_ })).toBe(URL_);
+  });
+
+  it("reads the test side for a test, and never crosses to the operator's", () => {
+    const test = { LINGTAI_TEST: "1" };
+    expect(logConfigured({ ...test, LINGTAI_TEST_DATABASE_URL: URL_ })).toBe(true);
+    expect(logConfigured({ ...test, LINGTAI_DATABASE_URL: URL_ })).toBe(false);
+  });
+
+  it("never reads the machine file for an environment it was handed", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), `database:\n  url: ${URL_}\n`);
+    // The same rule `postgresUrl` follows, so the two cannot disagree about
+    // whether this machine has a log.
+    expect(logConfigured({ LINGTAI_HOME: home })).toBe(false);
+    expect(() => postgresUrl({ LINGTAI_HOME: home })).toThrow(/LINGTAI_DATABASE_URL is not set/);
+  });
+
+  it("agrees with the URL wherever the URL answers at all", () => {
+    for (const env of [{}, { LINGTAI_DATABASE_URL: URL_ }, { LINGTAI_DATABASE_URL: "" }, { LINGTAI_TEST: "1" }]) {
+      let url: string | null = null;
+      try {
+        url = postgresUrl(env);
+      } catch {
+        url = null;
+      }
+      expect(logConfigured(env)).toBe(url !== null);
+      expect(postgresUrlIfSet(env) ?? null).toBe(url);
+    }
   });
 });

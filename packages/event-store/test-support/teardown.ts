@@ -77,7 +77,7 @@ export async function teardown(): Promise<void> {
   // `LINGTAI_`-prefixed since `#63`: every name Lingtai reads for itself is.
   const url =
     process.env["LINGTAI_TEST_DIRECT_DATABASE_URL"] ?? process.env["LINGTAI_TEST_DATABASE_URL"];
-  // Read by name rather than through `databaseUrl()`, which decides between the
+  // Read by name rather than through `postgresUrl()`, which decides between the
   // two by whether it thinks it is in a test. This file may only ever touch the
   // test one, and naming it is how that stays checkable.
   //

@@ -41,7 +41,7 @@
 import { workItemStream } from "@lingtai/domain";
 import type { GateAction } from "@lingtai/recipe";
 import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import type { EventStore } from "@lingtai/event-store";
 import pg from "pg";
 
@@ -207,7 +207,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * Read by `lingtai doctor`, which reports it, and by `lingtai end replay`,
  * which repairs it by appending what should have been appended at the time.
  */
-export async function endedWithoutEndActions(url = databaseUrl()): Promise<UnresolvedEnd[]> {
+export async function endedWithoutEndActions(url = postgresUrl()): Promise<UnresolvedEnd[]> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {

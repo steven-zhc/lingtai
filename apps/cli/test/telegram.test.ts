@@ -30,7 +30,7 @@ import { projectEnvPath, resolveAgentEnv } from "@lingtai/agent-env";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { createWorkLoop, type WorkLoop } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM, workItemStream } from "@lingtai/domain";
-import { boardUrl, directDatabaseUrl } from "@lingtai/env";
+import { boardUrl, directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { resolveRecipe, type Subscriber as SubscriberSpec } from "@lingtai/recipe";
 import pg from "pg";
@@ -57,7 +57,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

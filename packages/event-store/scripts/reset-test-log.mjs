@@ -30,19 +30,19 @@
  * direct, that passed and truncated the real log.
  */
 import pg from "pg";
-import { databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
+import { directPostgresUrl, postgresUrl } from "@lingtai/event-store";
 
 if (!process.env["LINGTAI_TEST"] && !process.env["VITEST"]) {
   console.error("refusing: set LINGTAI_TEST=1 to say which database you mean");
   process.exit(2);
 }
 
-const testUrl = directDatabaseUrl();
+const testUrl = directPostgresUrl();
 
 /** Every string a side resolves, pooled and direct; one that throws is absent. */
 function resolved(env) {
   const urls = new Set();
-  for (const read of [databaseUrl, directDatabaseUrl]) {
+  for (const read of [postgresUrl, directPostgresUrl]) {
     try {
       urls.add(read(env));
     } catch {

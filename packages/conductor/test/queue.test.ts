@@ -6,7 +6,7 @@
  * take next is the conductor's, and this is that decision — the seam 0022 drew
  * between a projection and a caller that reads one.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { createProjectionRunner } from "@lingtai/projector";
 import { taskViewProjection } from "@lingtai/projector";
@@ -43,7 +43,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");
@@ -312,7 +312,7 @@ describe("inWords", () => {
 
 /** The projection's own timestamp, so the test's window is the row's window. */
 async function readAttempt(project: string): Promise<Date | null> {
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     const { rows } = await c.query<{ last_attempt_at: Date | null }>(
@@ -326,7 +326,7 @@ async function readAttempt(project: string): Promise<Date | null> {
 }
 
 async function drop(project: string): Promise<void> {
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("delete from task_view where project = $1", [project]);

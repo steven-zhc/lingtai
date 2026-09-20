@@ -77,7 +77,7 @@
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
 import { type EventStore, createPostgresWaker, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
 import pg from "pg";
@@ -568,7 +568,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
  * slower the longer it has been useful.
  */
 async function headSeq(url?: string): Promise<bigint> {
-  const client = new pg.Client({ connectionString: url ?? directDatabaseUrl() });
+  const client = new pg.Client({ connectionString: url ?? directPostgresUrl() });
   await client.connect();
   try {
     const r = await client.query<{ head: string }>("select coalesce(max(seq), 0)::text as head from events");

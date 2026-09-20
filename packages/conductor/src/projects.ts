@@ -16,13 +16,13 @@ import { type Runtime, createClaudeCodeRuntime, createCodexRuntime } from "@ling
 import { runnableEnv } from "@lingtai/agent-env";
 import type { RuntimeId } from "@lingtai/domain";
 import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import type { GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import pg from "pg";
 
 /** Every project stream that has ever been written to. */
-export async function listProjectStreams(url = databaseUrl()): Promise<string[]> {
+export async function listProjectStreams(url = postgresUrl()): Promise<string[]> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {

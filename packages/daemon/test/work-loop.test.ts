@@ -7,7 +7,7 @@
  * history" is a claim about where the subscription started.
  */
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

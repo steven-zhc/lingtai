@@ -27,7 +27,7 @@ import {
 // **Type-only, and that is the point** (`#157`). This module held
 // `createEventStore(db)` as well, so importing *anything* from it — the
 // `EventStore` interface, `ConcurrencyError` — constructed the process-wide
-// client as a side effect of the import, and `createDb()` reads `databaseUrl()`
+// client as a side effect of the import, and `createDb()` reads `postgresUrl()`
 // eagerly. A test that never touches a database still had to be given one, and
 // that, rather than anything in the test bodies, is what put 29 files in the
 // half that needs one. The singleton now lives in `index.ts`, one import closer

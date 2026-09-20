@@ -11,7 +11,7 @@
 import type { Envelope } from "@lingtai/domain";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import {
   createProjectionRunner,
@@ -99,7 +99,7 @@ const tripped = (path: string, op = "write") => ({
 });
 
 async function direct<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     return await fn(c);
@@ -336,7 +336,7 @@ describe("projection runner", () => {
     // column the table was built without.
     await direct((c) => c.query(`alter table ${TEST_TABLE} drop column path`));
 
-    const drifted = await projectionShape(testProjection, directDatabaseUrl());
+    const drifted = await projectionShape(testProjection, directPostgresUrl());
     expect(drifted.drift).toHaveLength(1);
     expect(drifted.drift[0]!.table).toBe(TEST_TABLE);
     expect(drifted.drift[0]!.missing).toEqual(["path"]);
@@ -351,7 +351,7 @@ describe("projection runner", () => {
     // A rebuild is the fix, and it is checkable without one: after it, the
     // check is clean.
     await runner.rebuild();
-    const rebuilt = await projectionShape(testProjection, directDatabaseUrl());
+    const rebuilt = await projectionShape(testProjection, directPostgresUrl());
     expect(rebuilt.drift).toEqual([]);
     expect(rebuilt.matched).toContain(TEST_TABLE);
   });

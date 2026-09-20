@@ -54,7 +54,7 @@ import {
   type ProjectState,
   type WorkItemStatus,
 } from "@lingtai/domain";
-import { databaseUrl, githubApp, hasGitHubApp } from "@lingtai/env";
+import { githubApp, hasGitHubApp, postgresUrl } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
@@ -163,7 +163,7 @@ async function candidates(url: string): Promise<Set<string>> {
  */
 export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Divergence[]> {
   const store = options.store ?? eventStore;
-  const url = options.url ?? databaseUrl();
+  const url = options.url ?? postgresUrl();
   const projects = options.projects ?? (await loadProjects());
   const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]));
 

@@ -69,8 +69,10 @@ Prisma's CLI engine needs.
 
 **4. Environment loads from the repo root.** `packages/store/src/env.ts` resolves
 `.env.local` then `.env` from the workspace root, not from the current directory.
-A real environment variable beats both. Use `databaseUrl()` and
-`directDatabaseUrl()` — never read `process.env` directly.
+A real environment variable beats both. Use `postgresUrl()` and
+`directPostgresUrl()` — never read `process.env` directly. Whether a log is
+configured at all is `logConfigured()`, a boolean: never a `try`/`catch` around
+one of those two (#213).
 
 **5. `lingtai` does not exist yet.** Scripts are `pnpm contract:emit`, `pnpm db:init`,
 `pnpm db:bootstrap`, `pnpm typecheck`. The CLI is #5.

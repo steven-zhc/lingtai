@@ -14,7 +14,7 @@
  */
 import { firstPass } from "@lingtai/conductor/wizard";
 import { projectStream } from "@lingtai/domain";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
 import { type ResolvedRecipe, resolveRecipe } from "@lingtai/recipe";
@@ -120,7 +120,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

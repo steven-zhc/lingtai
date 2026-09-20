@@ -19,7 +19,7 @@
  * state.
  */
 import { isPending, projectStream } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, directDatabaseUrl, type EventStore } from "@lingtai/event-store";
+import { createDb, createEventStore, type Db, directPostgresUrl, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";
@@ -51,7 +51,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

@@ -10,7 +10,7 @@
  * cleanup — is gone with the lease (0027). Held is held, and what returns a
  * claim is an appended release; `daemon/reconcile.test.ts` proves that.
  */
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -55,7 +55,7 @@ afterAll(async () => {
   await a.close();
   await b.close();
   if (created.size === 0) return;
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

@@ -41,7 +41,7 @@
  * actions there is being told they had no effect on what merged.
  */
 import { GATE_POINTS } from "@lingtai/domain";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import pg from "pg";
 import { splitWorkItem } from "./end-point.ts";
 
@@ -85,7 +85,7 @@ const RAN = [
  * waiver on the run, which names who and why and satisfies this check because
  * `GateWaived` is a gate event like any other.
  */
-export async function landedWithoutGatePoints(url = databaseUrl()): Promise<UnrunGatePoint[]> {
+export async function landedWithoutGatePoints(url = postgresUrl()): Promise<UnrunGatePoint[]> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {

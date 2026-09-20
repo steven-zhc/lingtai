@@ -10,7 +10,7 @@
  * not a second one.
  */
 import { projectStream, reduceProject } from "@lingtai/domain";
-import { directDatabaseUrl } from "@lingtai/env";
+import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { GitHubError, type GitHubClient, type Issue, type Label } from "@lingtai/github";
 import { type Recipe, machinePath, recipePath, resolveLocalRecipe, resolveRecipe } from "@lingtai/recipe";
@@ -198,7 +198,7 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const home of homes) await rm(home, { recursive: true, force: true });
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

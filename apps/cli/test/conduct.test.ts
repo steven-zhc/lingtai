@@ -12,7 +12,7 @@
  */
 import { loadProject } from "@lingtai/conductor";
 import { projectStream } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, directDatabaseUrl, type EventStore } from "@lingtai/event-store";
+import { createDb, createEventStore, type Db, directPostgresUrl, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type PassOutcome, conductProjects } from "../src/conduct.ts";
@@ -44,7 +44,7 @@ beforeAll(async () => {
 // database is green, and an unrecovered refusal left here would be red there.
 afterAll(async () => {
   await client.close();
-  const c = new pg.Client({ connectionString: directDatabaseUrl() });
+  const c = new pg.Client({ connectionString: directPostgresUrl() });
   await c.connect();
   try {
     await c.query("alter table events disable rule lingtai_events_no_delete");

@@ -51,7 +51,7 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp, machineDatabaseUrl } from "@lingtai/env";
+import { directUrlIfSet, githubApp, hasGitHubApp, machineDatabaseUrl, postgresUrlIfSet } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
@@ -1556,7 +1556,7 @@ export async function recipeGovernsItsBase(
 
 /**
  * `machine` reads `database.url` from `~/.lingtai/config.yml`. Asked only when
- * `LINGTAI_DATABASE_URL` is unset — the order `databaseUrl` reads them in — and
+ * `LINGTAI_DATABASE_URL` is unset — the order `postgresUrl` reads them in — and
  * only where the caller hands it in: `doctorReport` does, and a test's own
  * environment never reaches the operator's file.
  */
@@ -1587,7 +1587,7 @@ export async function runDoctor(
     }
   }
   const pooled = env["LINGTAI_DATABASE_URL"] || fromFile;
-  // Absent, the pooled one stands in (#176) — the rule `directDatabaseUrl`
+  // Absent, the pooled one stands in (#176) — the rule `directPostgresUrl`
   // follows, so the doctor checks the connection the system will actually use.
   const standIn = !env["LINGTAI_DIRECT_DATABASE_URL"];
   const direct = env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
@@ -1654,18 +1654,31 @@ export async function runDoctor(
  * both.
  */
 export async function doctorReport(): Promise<DoctorReport> {
-  const env = { ...process.env };
-  try {
-    env["DATABASE_URL"] = databaseUrl();
-  } catch {
-    delete env["DATABASE_URL"];
-  }
-  try {
-    env["DIRECT_DATABASE_URL"] = directDatabaseUrl();
-  } catch {
-    delete env["DIRECT_DATABASE_URL"];
-  }
+  const env = doctorEnvironment();
   return runDoctor(env, () => machineDatabaseUrl(env));
+}
+
+/**
+ * That environment: a copy of this process's, with the two unprefixed names
+ * carrying what this copy reads for itself — and **carrying neither** where
+ * nothing is configured, so an operator's own `DATABASE_URL` for something else
+ * never reads as Lingtai's.
+ *
+ * **Read, not caught** (#213). This was two `try`/`catch` blocks around the
+ * getters, asking them to answer *is one configured* by throwing — the shape
+ * that let the same question hide in `entry.ts` for five passes.
+ * `postgresUrlIfSet` and `directUrlIfSet` are those same two reads with the
+ * refusal left off, so every value here is the one that was here before.
+ */
+export function doctorEnvironment(from: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...from };
+  const pooled = postgresUrlIfSet(from);
+  const direct = directUrlIfSet(from);
+  if (pooled) env["DATABASE_URL"] = pooled;
+  else delete env["DATABASE_URL"];
+  if (direct) env["DIRECT_DATABASE_URL"] = direct;
+  else delete env["DIRECT_DATABASE_URL"];
+  return env;
 }
 
 /**

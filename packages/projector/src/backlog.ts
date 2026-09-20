@@ -29,7 +29,7 @@
  */
 import type { Finding, PayloadOf } from "@lingtai/domain";
 import { findingKey, parseWorkItemStream } from "@lingtai/domain";
-import { databaseUrl } from "@lingtai/env";
+import { postgresUrl } from "@lingtai/env";
 import type { Projection } from "./projection.ts";
 import pg from "pg";
 
@@ -230,7 +230,7 @@ export interface ReadBacklogOptions {
 
 /** Oldest first within a project: a backlog is worked from the bottom. */
 export async function readBacklog(options: ReadBacklogOptions = {}): Promise<BacklogEntry[]> {
-  const client = new pg.Client({ connectionString: options.url ?? databaseUrl() });
+  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
   await client.connect();
   try {
     const where: string[] = [];

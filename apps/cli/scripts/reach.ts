@@ -1,6 +1,6 @@
-import { databaseUrl, directDatabaseUrl } from "@lingtai/event-store";
+import { directPostgresUrl, postgresUrl } from "@lingtai/event-store";
 import pg from "pg";
-for (const [label, get] of [["pooled", databaseUrl], ["direct", directDatabaseUrl]] as const) {
+for (const [label, get] of [["pooled", postgresUrl], ["direct", directPostgresUrl]] as const) {
   let host = "?";
   try {
     host = new URL(get()).hostname;

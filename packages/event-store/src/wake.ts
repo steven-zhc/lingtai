@@ -16,7 +16,7 @@
  * is not seen until something else happens.
  */
 import pg from "pg";
-import { directDatabaseUrl } from "./env.ts";
+import { directPostgresUrl } from "./env.ts";
 
 /** The channel `NOTIFY_SQL`'s trigger writes to (`schema.ts`). */
 export const CHANNEL = "lingtai";
@@ -48,7 +48,7 @@ export interface Waker {
 }
 
 export interface PostgresWakerOptions {
-  /** Session-mode connection string. Defaults to `directDatabaseUrl()`. */
+  /** Session-mode connection string. Defaults to `directPostgresUrl()`. */
   url?: string;
   /**
    * Sets `application_name`, so a listener is identifiable in
@@ -84,7 +84,7 @@ export interface PostgresWaker extends Waker {
  * whole file is shaped around.
  */
 export function createPostgresWaker(options: PostgresWakerOptions = {}): PostgresWaker {
-  const url = options.url ?? directDatabaseUrl();
+  const url = options.url ?? directPostgresUrl();
   const applicationName = options.name ?? "lingtai-subscriber";
   let backendPid: number | null = null;
 

@@ -5,7 +5,7 @@
  * out. A rebuild replays the whole log, so its cost is the log's length, and
  * the test suite appends to its own log on every run without ever pruning it.
  */
-import { directDatabaseUrl } from "@lingtai/event-store";
+import { directPostgresUrl } from "@lingtai/event-store";
 import pg from "pg";
 
 async function count(label: string, url: string): Promise<void> {
@@ -19,9 +19,9 @@ async function count(label: string, url: string): Promise<void> {
   }
 }
 
-// `directDatabaseUrl()` returns the TEST_* string when VITEST is set, so both
+// `directPostgresUrl()` returns the TEST_* string when VITEST is set, so both
 // are read here by flipping that rather than by reading process.env directly.
 process.env["VITEST"] = "1";
-await count("test", directDatabaseUrl());
+await count("test", directPostgresUrl());
 delete process.env["VITEST"];
-await count("main", directDatabaseUrl());
+await count("main", directPostgresUrl());

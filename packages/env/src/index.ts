@@ -22,7 +22,7 @@ import { parse as parseYaml } from "yaml";
  *
  * **The database URL has a third source, behind both**: `database.url` in
  * `~/.lingtai/config.yml`, where `lingtai init` writes the one it verified
- * (#186). `databaseUrl` and `directUrlIfSet` fall back to it when neither the
+ * (#186). `postgresUrl` and `directUrlIfSet` fall back to it when neither the
  * environment nor an env file names one — see `machineDatabaseUrl` — so a
  * command that connects with no variable and no env file is reading that file.
  */
@@ -88,7 +88,7 @@ function inTest(from: NodeJS.ProcessEnv = process.env): boolean {
 /**
  * Which variable to read for a connection, given who is asking.
  *
- * Exported because two callers cannot go through `databaseUrl()`: Prisma's
+ * Exported because two callers cannot go through `postgresUrl()`: Prisma's
  * config and the bootstrap script both have to work with *nothing* configured
  * — `contract emit` and `migration plan` are offline commands — so they read
  * the variable rather than demanding it. They still have to obey the same rule
@@ -194,7 +194,7 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
  *
  * **Behind the environment and the env files, never in front of them**: a set
  * `LINGTAI_DATABASE_URL` wins, as a real variable beats a file everywhere else
- * here. And **never for a test** — `databaseUrl` and `directUrlIfSet` do not ask
+ * here. And **never for a test** — `postgresUrl` and `directUrlIfSet` do not ask
  * this while `inTest`, because a file on the operator's machine is exactly the
  * operator's log, and `testUrl` exists to refuse that.
  *
@@ -309,10 +309,53 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
   return `http://127.0.0.1:${boardPort(from)}`;
 }
 
-/** Pooled. Ordinary reads and writes. */
-export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
-  if (inTest(from)) return testUrl("DATABASE_URL", from);
-  return optional(`${PREFIX}DATABASE_URL`, from) ?? machineUrl(from) ?? required(`${PREFIX}DATABASE_URL`, from);
+/**
+ * **Whether a log is configured at all** — and never *is Postgres configured*,
+ * which is the question next door (#213).
+ *
+ * `databaseUrl()` was read as this one three times in `apps/cli/src/entry.ts`,
+ * written `try { databaseUrl() } catch { return false }`. While every log is
+ * Postgres the two sentences have the same answer, so the conflation reads as
+ * prose and not as a type error: the answer is a thrown exception caught by a
+ * one-line `catch`, which goes on compiling and starts lying the day a log
+ * needs no URL. #178 landed a store that is a file, so the two stopped having
+ * to be the same claim — nothing chooses between them yet, and that is #179.
+ *
+ * So: a boolean, **read rather than caught**. The shape matters as much as the
+ * name — a `try`/`catch` around a getter is what made this invisible for five
+ * passes of #179. Where a log stops having to be Postgres, this body changes
+ * and its callers do not, which is what leaves #179 a change to one function
+ * rather than a migration across thirty-three call sites.
+ *
+ * Today it is exactly what `postgresUrl()` reads, so the two still coincide —
+ * a direct URL alone is not a log, as it was not before this had a name.
+ */
+export function logConfigured(from: NodeJS.ProcessEnv = process.env): boolean {
+  return postgresUrlIfSet(from) !== undefined;
+}
+
+/**
+ * The pooled Postgres URL where one is configured; undefined where none is.
+ *
+ * Reads, and never refuses. `postgresUrl()` is this plus the refusal and
+ * `logConfigured()` is this plus `!== undefined`, so *is there one* and *what
+ * is it* are one read and cannot drift apart. `lingtai doctor` wants this face
+ * too: it reports on an environment rather than demanding one.
+ */
+export function postgresUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | undefined {
+  return optional(dbVar("DATABASE_URL", from), from) ?? machineUrl(from);
+}
+
+/**
+ * Pooled. Ordinary reads and writes, **against Postgres** — which is not the
+ * same claim as *the log*, however long the two have coincided. A caller that
+ * opens a `pg` connection wants this one; a caller deciding whether anything is
+ * configured wants `logConfigured()`.
+ */
+export function postgresUrl(from: NodeJS.ProcessEnv = process.env): string {
+  return (
+    postgresUrlIfSet(from) ?? (inTest(from) ? testUrl("DATABASE_URL", from) : required(`${PREFIX}DATABASE_URL`, from))
+  );
 }
 
 /**
@@ -326,11 +369,16 @@ export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
  * rather than broken. Measured against Supabase's pooler on 2026-08-31; see
  * doc/decisions/0009-two-connections.md.
  *
- * On a plain Postgres this may be the same string as `databaseUrl()`, and then
+ * On a plain Postgres this may be the same string as `postgresUrl()`, and then
  * it need not be written at all: see `directUrlIfSet`. Neither set still
  * refuses, by the direct name.
+ *
+ * **It is about pooling and never about whether a log exists** (#213), which is
+ * why the separation next door leaves its meaning exactly as it was and changes
+ * only the word that said *database* where it meant *Postgres*. Nothing asks
+ * this one whether anything is configured; `logConfigured()` is that question.
  */
-export function directDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string {
+export function directPostgresUrl(from: NodeJS.ProcessEnv = process.env): string {
   return (
     directUrlIfSet(from) ??
     (inTest(from) ? testUrl("DIRECT_DATABASE_URL", from) : required(`${PREFIX}DIRECT_DATABASE_URL`, from))
