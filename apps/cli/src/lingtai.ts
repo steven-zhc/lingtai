@@ -58,7 +58,7 @@ import { pauseCommand } from "./pause.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { releaseCheck } from "./install.ts";
-import { refusedBecauseSqlite } from "./store.ts";
+import { ALSO, REFUSAL, refusedBecauseSqlite } from "./store.ts";
 import { status } from "./status.ts";
 import { versionLine } from "./version.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
@@ -282,15 +282,10 @@ async function addCommand(args: string[]): Promise<number> {
     console.error("lingtai add <owner>/<repo>");
     return 2;
   }
-  // Before GitHub is asked anything, because what follows appends and this
-  // command holds no projector to refuse for it. See `./store.ts`: on a SQLite
-  // machine `add` wrote `ProjectConfigured` into a log nothing else can read
-  // and said `added` — the one outcome worse than refusing.
-  const held = refusedBecauseSqlite();
-  if (held !== null) {
-    console.error(paint.fail(held));
-    return 1;
-  }
+  // Nothing about the store here: `main`'s gate refused this command before it
+  // was called, on the machine where `add` used to write `ProjectConfigured`
+  // into a log nothing else can read and say `added` (`./store.ts`).
+
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
   // `named`, because a person typed it here: a recipe that contradicts `--base`
@@ -845,10 +840,10 @@ async function controlCommand(
     return 0;
   }
 
-  // Each of these four appends, and the projector that refuses for every other
-  // appending command is the one thing this one deliberately does not hold — so
-  // the refusal is asked for here instead (`./store.ts`). A pause recorded in a
-  // log no daemon reads is a pause that never happens and says it did.
+  // **The one refusal `main`'s gate does not make**, and only because the
+  // question above has to be answered on every machine — `REFUSAL` has these
+  // four as `within` for that reason and no other. A pause recorded in a log no
+  // daemon reads is a pause that never happens and says it did.
   const held = refusedBecauseSqlite();
   if (held !== null) {
     console.error(paint.fail(held));
@@ -945,6 +940,27 @@ async function controlCommand(
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+
+  // **Every door at once, rather than the three somebody thought of** (#179,
+  // [0055](../../../doc/decisions/0055-absence-chooses-the-store.md)). On a
+  // machine that names no Postgres connection the log is SQLite, and nothing
+  // that reads or appends runs on one until #175 — so the refusal is made
+  // here, before the command, and `REFUSAL` in `./store.ts` says of every
+  // command which side of that line it is on. A guard per command was the
+  // first attempt and it missed five: `ask`, `answer`, `close`, `requeue` and
+  // `run` reach the singleton through `loadProject` and `heedThePause` before
+  // any projector exists, and each one created the log it then complained was
+  // empty. An unknown command has no row and is not gated, so a typo still
+  // reads `unknown command` rather than a sentence about a database.
+  if (command !== undefined && REFUSAL[command] === "here") {
+    const held = refusedBecauseSqlite();
+    if (held !== null) {
+      console.error(paint.fail(held));
+      const also = ALSO[command];
+      if (also !== undefined) console.error(paint.muted(also));
+      return 1;
+    }
+  }
 
   switch (command) {
     case "add":
@@ -1062,27 +1078,11 @@ async function main(argv: string[]): Promise<number> {
         console.error("lingtai board [--port <n>] [--dir <path>]");
         return 2;
       }
-      // **The board is served from this process, and its App wizard appends.**
-      // Not a reader, therefore, on the one machine where that matters: the
-      // first screen of `/setup/github-app` offers Create, and pressing it runs
-      // `create-app.ts`'s `append(...GitHubAppCreated)` through the same
-      // singleton `add` and the control verbs were just stopped from reaching —
-      // so a SQLite machine would have its App minted, recorded at seq 1 in
-      // `~/.lingtai/lingtai.db`, and the page would say so, while the whole rest
-      // of this system told the operator that log was one to abandon. `init`
-      // stops before serving the board for exactly this reason (0055 §7); this
-      // is the same board reached by the other door. Before `serveBoard`, so it
-      // is the store that is refused for and not a missing `dist/board`.
-      const held = refusedBecauseSqlite();
-      if (held !== null) {
-        console.error(paint.fail(held));
-        console.error(
-          paint.muted(
-            "the board is served from this process, and its first screen is the App wizard, which appends GitHubAppCreated",
-          ),
-        );
-        return 1;
-      }
+      // **Serving is not reading**, on the one machine where that matters: the
+      // App wizard this serves appends, so `main`'s gate has already refused
+      // this command on a SQLite machine — before `serveBoard`, so what is
+      // refused for is the store and not a missing `dist/board`. `ALSO.board`
+      // in `./store.ts` is the second line it prints, and why.
       await serveBoard({ dir: flags["dir"] || builtBoardDir(), port, host: "127.0.0.1" });
       console.log(`board on http://127.0.0.1:${port}`);
       return 0;

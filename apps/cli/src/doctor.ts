@@ -134,12 +134,12 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
  * it rather than leaving it to be inferred.
  *
  * **And SQLite fails this row, until #175.** Not because the choice is wrong —
- * it is the one doc/design/1.0.md wants — but because nothing that appends runs
- * on it yet: the projections and the `LISTEN`/`NOTIFY` waker take a Postgres URL
- * from `databaseUrl()` and refuse by name, which is how `approve`, `run` and the
- * board's own reads die; `add` and the control verbs hold no projector, so they
- * are refused in the same words by `./store.ts` rather than being the two
- * commands that quietly worked on a machine this row could have called green.
+ * it is the one doc/design/1.0.md wants — but because nothing runs on it yet:
+ * the projections, the `LISTEN`/`NOTIFY` waker and the board's own reads take a
+ * Postgres URL from `databaseUrl()`, and there is none. Every command that would
+ * reach the log is refused before it runs, in these same words — `REFUSAL` in
+ * `./store.ts` is the table of which, and this row is the same verdict about the
+ * same machine, said once where a person is looking for it.
  *
  * `warn` would be the right word for *nothing is wrong and you should know
  * anyway*; here something is wrong, and the check that answers **is the system

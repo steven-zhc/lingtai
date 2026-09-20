@@ -118,26 +118,47 @@ next `lingtai init`, which is the one that names a Postgres URL.
 - **A SQLite machine is not yet a whole system, and is not a working one.** The
   projections and the `LISTEN`/`NOTIFY` waker still read `databaseUrl()`
   directly and refuse by name there, and the board's `task_view` reads are
-  Postgres, so on a machine that names nothing, `lingtai approve`, `run` and the
-  board all die — `createProjectionRunner` throws before the command has done
-  anything. Porting them is the rest of #175. Until then this is stated where a
+  Postgres, so on a machine that names nothing there is nothing for `lingtai
+  approve`, `run` or the board to open. What refuses them is the bullet below
+  and not `createProjectionRunner`: a command reaches the singleton well before
+  it builds a projector, and the throw that was taken for a guard arrives after
+  the log has already been created. Porting them is the rest of #175. Until then this is stated where a
   person meets it rather than only here: the `store` row fails (§5),
   `README.md`, `.env.example` and `doc/operating.md` each say *name a Postgres
   URL today*, and `doctor` skips the Postgres block with a row that says the
   checks are implemented and were not run.
-- **Two commands hold no projector, and are refused in its place**
-  (`apps/cli/src/store.ts`). `lingtai add` and the four control verbs —
-  `pause`, `resume`, `shutdown`, `now` — reach `eventStore` without one, the
-  second deliberately (a pause must not replay a backlog before it pauses
-  anything), so on a SQLite machine they did not die: they *succeeded*, writing
-  `ProjectConfigured` at seq 1 into a log the board cannot read and the same
-  command's own advice then tells the operator to leave behind. A refusal every
-  document already promised is worth nothing until the two commands that could
-  disprove it make it true, so they ask for it by name before they append.
-  **`lingtai board` is the third**, and by §7's argument rather than this one:
-  it does not append, it *serves the page that does* — the App wizard, in this
-  process — so the guard `init` got is the same guard the other door to that
-  screen needs. That file is deleted by #175 and nothing else changes with it.
+- **Every command is refused, and the ones that run are the table's**
+  (`REFUSAL` in `apps/cli/src/store.ts`, read by `lingtai.ts`'s `main`). The
+  first attempt asked the question the other way round: `createProjectionRunner`
+  reads `databaseUrl()` while it is being built, so a command that holds a
+  projector was taken to refuse for free, and only the three that hold none —
+  `lingtai add`, the four control verbs (deliberately without one, since a pause
+  must not replay a backlog before it pauses anything), and `lingtai board`,
+  which does not append but *serves the page that does* — were guarded.
+
+  That was false of five commands and blind to a sixth. `ask`, `answer`,
+  `close`, `requeue` and `approve` call `loadProject` **before** `withProjector`,
+  and `run` reads the pause off the control stream before it builds anything —
+  so each went through the singleton, created `~/.lingtai/lingtai.db`, read the
+  empty log it had just made, and refused with `no project named "foo"` or `no
+  GitHub App configured`. And `lingtai service shutdown` reaches
+  `ConductorShutdownRequested` through `drain()` rather than through
+  `controlCommand`: under launchd it drained, wrote the request into a fresh
+  SQLite log the running daemon reads nothing of, and exited 0 saying it had
+  done what #174 exists to do.
+
+  A refusal every document already promised is worth nothing until the commands
+  that could disprove it make it true, and *which commands those are* is not
+  something to be inferred from what each one happens to construct first. So
+  `REFUSAL` carries a row per command, `main` refuses on it before the command
+  runs, and `pure/store.test.ts` fails on a `case` with no row — #167's rule for
+  `RESTART_GUARDS`. The four control verbs keep asking for themselves, one line
+  later, and only because `--help` has to be answered on every machine
+  (`lingtai shutdown --help` once took `--help` as the reason and stopped the
+  daemon). What is left unrefused is named: `doctor` — the command that *says*
+  which store this is — `env`, `attach`, `version`, `init` and `help`, which is
+  `entry.ts`'s rule for the five it answers before `lingtai.ts` loads. That file
+  and its table are deleted by #175 and nothing else changes with them.
 - **No migration between the stores**, as doc/design/1.0.md has it: switching
   starts a new log and picks up new tickets. Nothing converts one to the other
   and no tool is built.

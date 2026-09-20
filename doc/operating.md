@@ -83,17 +83,34 @@ than a SQLite one, and is refused by name.
 
 **So name one anyway, today.** The store is built and the system around it is
 not: the projections, the `LISTEN`/`NOTIFY` waker and the board's `task_view`
-reads still take `databaseUrl()` and refuse by name, so a SQLite machine gets
-through `lingtai init` and then fails every command that appends —
-`packages/projector/src/projection.ts` throws *LINGTAI_DATABASE_URL is not set*
-before `lingtai approve` or `run` has done anything, and `apps/cli/src/store.ts`
-says the same sentence for the three that hold no projector to throw for them:
-`lingtai add`, `pause`/`resume`/`shutdown`/`now`, and `lingtai board` — which
-appends nothing itself but serves the App wizard, in this process, from a page
-whose Create button does. That `store` row is therefore a **FAIL**
-on a SQLite machine rather than a note, which is also what stops `lingtai
-restart` draining a daemon and starting one that cannot open a log. #175 is what
-ports them, and the day it lands the row goes green with nothing else to change.
+reads still take `databaseUrl()` and refuse by name, so nothing can be
+conducted from a SQLite machine — and what you meet there says so rather than
+leaving it to be found out.
+
+`lingtai init` **stops at the database step** on an empty answer, before the
+agent, the App and the board (0055 §7): the step after it serves the board in
+this process and opens its App wizard, which appends, so going on would make
+the very log everything else has just been told to refuse. It says which URL it
+removed from `~/.lingtai/config.yml`, and exits 1.
+
+Every other command is refused before it runs, by name, writing nothing:
+`REFUSAL` in `apps/cli/src/store.ts` has a row per command and
+`apps/cli/src/lingtai.ts`'s `main` refuses on it, so `add`, `run`, `approve`,
+`ask`, `answer`, `close`, `requeue`, `backlog`, `status`, `end`, `projection`,
+`board`, `service`, `restart`, `start` and the four control verbs all print
+*LINGTAI_DATABASE_URL is not set* and exit 1. What still runs is what is about
+this machine rather than its log — `doctor`, `env`, `attach`, `version`,
+`init`, `help`. That is a table and not a habit: a command added with no row is
+a failing test (`apps/cli/pure/store.test.ts`), because the first attempt at
+this guarded three doors and `ask`, `close`, `requeue`, `run` and `lingtai
+service shutdown` went through the other ones — each creating
+`~/.lingtai/lingtai.db`, reading the empty log it had just made, and refusing
+about a missing project instead.
+
+That `store` row is therefore a **FAIL** on a SQLite machine rather than a note,
+which is also what stops `lingtai restart` draining a daemon and starting one
+that cannot open a log. #175 is what ports them, and the day it lands the row
+goes green and the table is deleted.
 
 **One database, and on a plain Postgres one connection string** (#176).
 `LINGTAI_DATABASE_URL` is for ordinary queries; `LINGTAI_DIRECT_DATABASE_URL` is session mode, for migrations and `LISTEN/NOTIFY`

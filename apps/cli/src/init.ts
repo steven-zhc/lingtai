@@ -136,7 +136,17 @@ function readConfig(path: string): Document | { refused: string } {
   if (doc.errors.length > 0) {
     return { refused: `${path} does not parse as YAML (${doc.errors[0]!.message}) — fix it and run lingtai init again` };
   }
-  if (doc.contents === null) return new Document({});
+  // **A file of comments and nothing else is a file with comments in it.**
+  // `new Document({})` here would be a fresh document, and the operator's
+  // header would go out with the one it replaced — which is what the empty
+  // answer now leaves behind (`render`), so the ordinary way to reach this
+  // branch is a machine that chose SQLite and is naming a Postgres URL on the
+  // next run. The contents are made a map in place; the comments stay on the
+  // document they were parsed from.
+  if (doc.contents === null) {
+    doc.contents = doc.createNode({});
+    return doc;
+  }
   if (!isMap(doc.contents)) return { refused: `${path} is not a mapping — fix it and run lingtai init again` };
   return doc;
 }
@@ -149,9 +159,37 @@ function readConfig(path: string): Document | { refused: string } {
 function writeConfig(path: string, doc: Document, home: string): void {
   mkdirSync(home, { recursive: true });
   const partial = `${path}.${process.pid}.partial`;
-  writeFileSync(partial, doc.toString(), { mode: 0o600 });
+  writeFileSync(partial, render(doc), { mode: 0o600 });
   chmodSync(partial, 0o600);
   renameSync(partial, path);
+}
+
+/**
+ * The document as text — and **a document with no keys left is its comments and
+ * nothing else**.
+ *
+ * `yaml` writes an empty map as the flow mapping `{}`, which is valid, is read
+ * back as a map, and is a one-way door: `setIn` keeps the style it parsed, so
+ * the next `lingtai init` to add a URL writes
+ * `{ database: { url: … }, runtime: { agent: codex } }` on a single line with
+ * the operator's header stranded under it, and every one after that grows the
+ * same line. Reachable by one sequence and it is this command's own — the empty
+ * answer takes `database.url` out, `dropKey` takes the empty `database:` with
+ * it, and on a file where that was the only key what is left is a map with
+ * nothing in it.
+ *
+ * So it is not written. The comments are, in the order they stood in, because
+ * they are the whole of what the file still says and this command promises to
+ * keep what it did not choose. `yaml` stores comment text without its `#`, one
+ * line per `\n`, which is what putting them back costs.
+ */
+function render(doc: Document): string {
+  if (!isMap(doc.contents) || doc.contents.items.length > 0) return doc.toString();
+  const kept = [doc.commentBefore, doc.contents.commentBefore, doc.comment]
+    .filter((c): c is string => typeof c === "string" && c !== "")
+    .map((c) => c.split("\n").map((line) => `#${line}`).join("\n"))
+    .join("\n");
+  return kept === "" ? "" : `${kept}\n`;
 }
 
 /**
@@ -173,6 +211,11 @@ function writeConfig(path: string, doc: Document, home: string): void {
  * write. The document's trailing comment is where those lines land: the same
  * text, at the place in the file it already occupied, which is the whole of
  * what was promised.
+ *
+ * **And when it was the only key, the document has no keys at all.** That is
+ * `render`'s case rather than this one's: an empty map written as `{}` is what
+ * collapses the file to a single flow line on every later run, so the file
+ * becomes those comments and nothing else.
  */
 function dropKey(config: Document, key: string): void {
   const items = isMap(config.contents) ? config.contents.items : [];
@@ -382,11 +425,10 @@ async function chooseDatabase(
       world.log(paint.signal(`database     SQLite, ${join(home, "lingtai.db")} · ${said}`));
       // Amber, and said here rather than only in the README, because this is
       // where a person makes the choice. The store is built and the system
-      // around it is not: `approve` and `run` go through the projections, which
-      // take a Postgres URL and refuse by name, and `add` and the control verbs
-      // — which hold no projector — ask `store.ts` for the same refusal before
-      // they append. Somebody who presses Enter and then meets that error was
-      // not warned by anything.
+      // around it is not: the projections, the waker and the board's reads all
+      // take a Postgres URL, so every command that would reach the log is
+      // refused before it runs — `REFUSAL` in `store.ts`. Somebody who presses
+      // Enter and then meets that error was not warned by anything.
       world.log(
         paint.signal(
           "             nothing that appends runs on SQLite yet — lingtai add, approve and run refuse by name, " +

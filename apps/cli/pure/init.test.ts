@@ -320,6 +320,42 @@ describe("lingtai init (#186)", () => {
     });
 
     /**
+     * **And when `database` was the only key, the file is its comments.**
+     * `yaml` writes a map with nothing in it as the flow mapping `{}` — valid,
+     * read back as a map, and a one-way door: `setIn` keeps the style it
+     * parsed, so the *next* `lingtai init` to name a URL wrote
+     * `{ database: { url: … }, runtime: { agent: codex } }` on one line with
+     * the operator's header stranded underneath, and every run after that grew
+     * the same line. The file this command promises to keep hand-editable was
+     * permanently collapsed by the one deletion it makes.
+     *
+     * Both halves are asserted, because the second is the one a reader meets:
+     * the removal, and then a real `lingtai init` over what it left.
+     */
+    it("leaves no empty mapping behind when database was the only key", async () => {
+      const home = freshHome();
+      mkdirSync(home, { recursive: true });
+      const gone = "postgresql://me:secret@old-host:5432/postgres";
+      writeFileSync(configPath({ LINGTAI_HOME: home }), `# the log for this laptop\ndatabase:\n  url: ${gone}\n`);
+      const { world: w } = world(home, { answers: [""] });
+
+      expect(await initCommand([], w)).toBe(1);
+      // The comment the operator wrote, and nothing else — no `{}`.
+      expect(config(home)).toBe("# the log for this laptop\n");
+
+      // The next run names a URL, over exactly that file. Block style, the
+      // header still at the top, and the URL where `machineDatabaseUrl` reads
+      // one.
+      const { world: w2 } = world(home, { answers: [URL_], runtimes: [signedIn("codex")] });
+      await initCommand([], w2);
+      const after = config(home) ?? "";
+      expect(after).not.toContain("{");
+      expect(after).toContain("# the log for this laptop");
+      expect(after).toContain(`database:\n  url: ${URL_}`);
+      expect(after.indexOf("# the log for this laptop")).toBeLessThan(after.indexOf("database:"));
+    });
+
+    /**
      * The same, with nobody at a terminal: `--database-url ""` skips the
      * question, and skipping the question must not skip the removal — that was
      * the silent half of it, a machine told SQLite while a healthy Postgres
