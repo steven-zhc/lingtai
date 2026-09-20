@@ -311,7 +311,11 @@ describe("what a person is shown when the rounds are over", () => {
     headSha: "c0ffee1234567890",
     findings: [finding()],
     rounds: 1,
-    refusals: 1,
+    // **Two, and the sequence is why** (`#197`): `review` refuses A, round 1's
+    // fixer commits B, `review` refuses B, and the ceiling of one is spent. A
+    // ceiling reached with one refusal on this action is a ceiling another point
+    // spent, which is the case below.
+    refusals: 2,
     why: "the ceiling of 1 fix round(s) for this item is spent, and the review still refuses",
     stop: { ended: "spent" },
   });
@@ -371,6 +375,7 @@ describe("what a person is shown when the rounds are over", () => {
       base: "main",
       findings: [finding({ severity: "major" }), finding()],
       rounds: 1,
+      refusals: 2,
       stop: { ended: "spent" },
     });
 
@@ -536,6 +541,45 @@ describe("the headline says what stopped the pass", () => {
   });
 
   /**
+   * **And it is not a first refusal's ending** (`#197`). `decideFix` checks the
+   * criterion rule *before* either ceiling (`fix.ts`), so with a ceiling of 3:
+   * `review` refuses A with scenarios, round 1's fixer commits B, and `review`
+   * refuses B with none. `buyRound` declines at `rounds: 1`, so the card was
+   * headlined *no agent was bought … nothing was changed in answer to it* while
+   * its own `done`, two fields below, read *1 round(s) of fix-and-re-review ran*.
+   * The diff on screen there is the fixer's output, and a person who follows
+   * *the reviewer is what to look at here, not the diff* inspects a reviewer over
+   * code that has already been rewritten once, told no money was spent when a
+   * round was.
+   */
+  it("does not say no agent was bought where a round already ran", () => {
+    const opinion = (rounds: number) =>
+      diagnoseDisagreement({
+        action: "review",
+        branch: "agent/197",
+        base: "main",
+        headSha: "abc1234000000000",
+        findings: [finding({ severity: "major" }), finding()],
+        rounds,
+        refusals: rounds + 1,
+        why: "the review action refused with findings but no failure scenario, and an opinion is not something an agent can be asked to make stop happening",
+        stop: { ended: "no-criterion" },
+      }).what;
+
+    const after = opinion(1);
+
+    expect(after).not.toContain("no agent was bought");
+    expect(after).not.toContain("nothing was changed in answer to it");
+    expect(after).toContain("no further agent was bought after 1 fix round(s)");
+    // What is on the branch, said rather than left to be assumed: it answers the
+    // refusals this one came after, and not this one.
+    expect(after).toMatch(/answers the earlier refusals rather than this one/i);
+    // And the first refusal — no round, nothing changed — reads as it did.
+    expect(opinion(0)).toContain("no agent was bought to answer them");
+    expect(opinion(0)).toContain("nothing was changed in answer to it");
+  });
+
+  /**
    * **And how much was decided is read off what this reviewer refused — never
    * off `rounds`.**
    *
@@ -608,6 +652,45 @@ describe("the headline says what stopped the pass", () => {
         "with 2 findings (worst: blocker), and it is still refused. This is a judgement, " +
         "not a broken build.",
     );
+  });
+
+  /**
+   * **And the ceiling only earns that sentence where this reviewer is what spent
+   * it.** One ceiling means one counter and every point spends it (`run-once.ts`),
+   * so with `proposed: [build, review]` and a ceiling of 3: `build` refuses A,
+   * three rounds answer it, and `review` refuses the last diff. `decideFix`
+   * returns `spent` at `rounds: 3` with this reviewer having refused **once**,
+   * and nothing was ever bought to answer it — so *two agents disagreed* and
+   * *still refused* describe a standoff that has not happened, and a person who
+   * believes them adjudicates instead of raising the ceiling or reading the
+   * findings.
+   */
+  it("does not say two agents disagreed where the rounds went on another point", () => {
+    const after = (rounds: number, refusals: number) =>
+      diagnoseDisagreement({
+        action: "review",
+        branch: "agent/187",
+        base: "main",
+        headSha: "a7663f9000000000",
+        findings: [finding(), finding({ severity: "major" })],
+        rounds,
+        refusals,
+        why: "the ceiling of 3 round(s) for this pass is spent, and the review action still refuses",
+        stop: { ended: "spent" },
+      }).what;
+
+    const once = after(3, 1);
+
+    expect(once).not.toMatch(/two agents disagreed/i);
+    expect(once).not.toMatch(/still refused/i);
+    expect(once).toMatch(/one agent refused/i);
+    expect(once).toMatch(/no round answered it/i);
+    // Where the money went, because that is what a person raises or does not.
+    expect(once).toContain("3 fix round(s)");
+    expect(once).toContain("runtime.limits.rounds");
+    // And the ordinary shape — the reviewer refused, a round answered, the
+    // reviewer refused again — is the sentence it has always been.
+    expect(after(3, 3)).toMatch(/two agents disagreed/i);
   });
 
   /**
@@ -739,14 +822,14 @@ describe("the headline says what stopped the pass", () => {
    * `#177` ended on a full disk and arrived under exactly that sentence.
    */
   describe("and a red check says the same, in its own words", () => {
-    const red = (stop: FixStop) =>
+    const red = (stop: FixStop, refusals = 1) =>
       diagnoseUnfixed({
         action: "build",
         branch: "agent/176",
         headSha: "deadbee0000000",
         evidence: "ENOSPC: no space left on device",
         rounds: 1,
-        refusals: 1,
+        refusals,
         why: "the fixing agent did not finish (crash: ENOSPC), so nothing new was produced",
         stop,
       });
@@ -859,14 +942,58 @@ describe("the headline says what stopped the pass", () => {
       expect(after(2, 2, { ended: "declined" })).toContain("the point has run 2 times");
       expect(after(2, 2, { ended: "declined" })).not.toContain("has run once");
       expect(after(2, 1, { ended: "declined" })).toContain("the point has run once");
-      // The ceiling reads nothing off either, because there every round
-      // committed and *it ran again and said the same thing* is true at any
-      // count.
-      expect(after(2, 2, { ended: "spent" })).toBe(after(1, 1, { ended: "spent" }));
     });
 
+    /**
+     * **And the ceiling reads the count too**, which is the row the test above
+     * used to exclude. It pinned `after(2, 2, spent)` to `after(1, 1, spent)` on
+     * the grounds that *there every round committed, and it ran again and said
+     * the same thing is true at any count* — every round did commit, and the
+     * rounds were bought by whichever point refused, which need not be this one.
+     *
+     * The ceiling is 3 and `proposed` is `[build, review]`. `build` passes A,
+     * B and C while `review` refuses each of them and three rounds answer it;
+     * the last fixer breaks the build, so `build` refuses D, `refusedAgain`
+     * returns 1, and `decideFix` returns `spent`. There is exactly one red
+     * result, it was never re-run, and the headline asserted a repeated one —
+     * overstated in the direction that makes a person readier to merge over the
+     * red or close the ticket rather than requeue it.
+     */
+    it("does not call a check repeated where the rounds went on another point", () => {
+      const after = (rounds: number, refusals: number) =>
+        diagnoseUnfixed({
+          action: "build",
+          branch: "agent/176",
+          headSha: "ddd1234000000",
+          evidence: "error TS2345: argument of type",
+          rounds,
+          refusals,
+          why: "the ceiling of 3 round(s) for this pass is spent, and the build action still refuses",
+          stop: { ended: "spent" },
+        }).what;
+
+      const once = after(3, 1);
+
+      expect(once).not.toMatch(/ran again and said the same thing/i);
+      expect(once).toContain("refused once and was never run again");
+      expect(once).toContain("one result rather than a repeated one");
+      // And the rounds are still named, because where the money went is the
+      // other half of what a person is deciding with.
+      expect(once).toContain("3 fix round(s)");
+      // Where this point is what spent them, the sentence is the one it has
+      // always been.
+      expect(after(3, 3)).toMatch(/ran again and said the same thing/i);
+      expect(once).not.toBe(after(3, 3));
+    });
+
+    /**
+     * The ceiling this point itself spent: `build` refuses A, round 1 commits B,
+     * `build` refuses B, and the ceiling of one is gone. There it really did run
+     * again and say the same thing, and fixing the case above must not cost the
+     * one that was right.
+     */
     it("leaves a check that really did stay red exactly as it was", () => {
-      expect(red({ ended: "spent" }).what).toBe(
+      expect(red({ ended: "spent" }, 2).what).toBe(
         "`build` still refuses agent/176 at deadbee. This is a check that failed and " +
           "stayed failed, not a judgement: whatever it runs, it ran again and said the " +
           "same thing.",
@@ -889,13 +1016,14 @@ describe("the headline says what stopped the pass", () => {
    * stopped reading it.
    */
   describe("and so does the one line a person is notified with", () => {
-    const line = (stop: FixStop) =>
+    const line = (stop: FixStop, refusals = 2) =>
       disagreementQuestion({
         action: "review",
         branch: "agent/187",
         base: "main",
         findings: [finding(), finding({ severity: "major" })],
         rounds: 2,
+        refusals,
         stop,
       });
 
@@ -950,9 +1078,45 @@ describe("the headline says what stopped the pass", () => {
           branch: "agent/176",
           base: "main",
           rounds: 1,
+          refusals: 2,
           stop: { ended: "spent" },
         }),
       ).toBe("build still refuses agent/176 into main after 1 fix round(s)");
+      // And where the ceiling went on another point's refusal, *still* is a word
+      // this check has not earned: it went red once and nothing re-ran it.
+      const once = unfixedQuestion({
+        action: "build",
+        branch: "agent/176",
+        base: "main",
+        rounds: 3,
+        refusals: 1,
+        stop: { ended: "spent" },
+      });
+
+      expect(once).not.toContain("still refuses");
+      expect(once).toContain("no round answered it");
+      expect(once).toContain("3 fix round(s)");
+    });
+
+    /**
+     * **And the two claims the card stopped making, on the line that is read
+     * first** (`#197`). A comment saying *two agents disagreed* or *no fixing
+     * agent was bought* over a card saying one agent refused and a round already
+     * ran is the two-readings failure #83 names, with the notification on the
+     * wrong side of it.
+     */
+    it("says what the card says about the rounds, and about who refused", () => {
+      // The ceiling spent on another point's refusal: this reviewer refused once.
+      const once = line({ ended: "spent" }, 1);
+
+      expect(once).not.toMatch(/two agents disagreed/i);
+      expect(once).toMatch(/no round answered it/i);
+      expect(once).toContain("2 fix round(s)");
+      // And a criterion-less refusal that arrived after a round says so.
+      const opinion = line({ ended: "no-criterion" });
+
+      expect(opinion).not.toContain("no fixing agent was bought");
+      expect(opinion).toContain("no further fixing agent was bought after 2 fix round(s)");
     });
 
     /** The red check's line has the same three endings to tell apart. */
@@ -963,6 +1127,7 @@ describe("the headline says what stopped the pass", () => {
           branch: "agent/176",
           base: "main",
           rounds: 1,
+          refusals: 1,
           stop,
         });
 
@@ -984,7 +1149,14 @@ describe("the headline says what stopped the pass", () => {
      */
     it("does not say a check was never re-run when a later round was stopped", () => {
       const after = (rounds: number, stop: FixStop) =>
-        unfixedQuestion({ action: "build", branch: "agent/176", base: "main", rounds, stop });
+        unfixedQuestion({
+          action: "build",
+          branch: "agent/176",
+          base: "main",
+          rounds,
+          refusals: rounds,
+          stop,
+        });
 
       expect(after(1, { ended: "crashed", failure: "crash: ENOSPC" })).toContain(
         "so it was never re-run",
@@ -1020,6 +1192,7 @@ describe("the headline says what stopped the pass", () => {
             branch: "agent/176",
             base: "main",
             rounds: 0,
+            refusals: 1,
             restarts: 2,
             stop,
           }),
@@ -1031,6 +1204,7 @@ describe("the headline says what stopped the pass", () => {
             base: "main",
             findings: [finding({ severity: "major" })],
             rounds: 0,
+            refusals: 1,
             restarts: 2,
             stop,
           }),
@@ -1045,6 +1219,7 @@ describe("the headline says what stopped the pass", () => {
           branch: "agent/176",
           base: "main",
           rounds: 0,
+          refusals: 1,
           stop: { ended: "no-rounds" },
         }),
       ).toBe("build refuses agent/176 into main and this recipe buys no fix round");
@@ -1061,8 +1236,14 @@ describe("the headline says what stopped the pass", () => {
    * the two-readings failure #83 names, with the log on the wrong side of it.
    */
   describe("and the record a merge is approved against", () => {
-    const clause = (stop: FixStop, on: "findings" | "output" = "findings") =>
-      mergeAnywayBecause({ action: on === "findings" ? "review" : "build", on, rounds: 2, stop });
+    const clause = (stop: FixStop, on: "findings" | "output" = "findings", refusals = 2) =>
+      mergeAnywayBecause({
+        action: on === "findings" ? "review" : "build",
+        on,
+        rounds: 2,
+        refusals,
+        stop,
+      });
 
     it("does not record a disagreement where an agent was stopped", () => {
       const crashed = clause({ ended: "crashed", failure: "crash: session limit" });
@@ -1088,6 +1269,35 @@ describe("the headline says what stopped the pass", () => {
       expect(clause({ ended: "spent" }, "output")).toBe(
         "`build` is still red after 2 fix round(s).",
       );
+    });
+
+    /**
+     * **And it is the sentence that has to stay true for a year** (`#197`).
+     * *Two agents disagreed* and *still red* are claims about a second judgement,
+     * and the pass's one counter can be spent entirely on another point's
+     * refusal; *nothing a fixing agent could be held to* is a claim about money,
+     * and the criterion rule is checked before either ceiling. Both were written
+     * to the one field nothing ever rewrites.
+     */
+    it("records what was spent and who refused, not what it assumes", () => {
+      const once = clause({ ended: "spent" }, "findings", 1);
+
+      expect(once).not.toMatch(/two agents disagreed/i);
+      expect(once).toMatch(/no round answered it/i);
+      expect(once).toContain("2 fix round(s)");
+      // The red check's half of the same claim: *still* is what a first refusal
+      // has not earned.
+      const red = clause({ ended: "spent" }, "output", 1);
+
+      expect(red).not.toContain("still red");
+      expect(red).toMatch(/no round answered it/i);
+      // And a criterion-less refusal that arrived after a round names the rounds,
+      // because a merge approved over the third refusal is not one approved over
+      // the first.
+      expect(clause({ ended: "no-criterion" })).toContain("after 2 fix round(s)");
+      expect(
+        mergeAnywayBecause({ action: "review", on: "findings", rounds: 0, refusals: 1, stop: { ended: "no-criterion" } }),
+      ).toBe("the review reviewer still refuses it, with nothing a fixing agent could be held to.");
     });
   });
 });
@@ -1182,6 +1392,7 @@ describe("what a person is shown when the restarts are over too", () => {
         base: "main",
         findings: [finding()],
         rounds: 3,
+        refusals: 3,
         restarts: 2,
         stop: { ended: "spent" },
       }),

@@ -884,13 +884,29 @@ export function diagnoseDisagreement(input: {
         // The reviewer is the subject here, not the diff. Describing the change
         // at all would point a person at code that was never examined against a
         // criterion, because there was not one.
+        //
+        // **But *no agent was bought* is only true of a first refusal**
+        // (`#197`). `decideFix` checks this rule **before** either ceiling, so
+        // the ending is reached at any `rounds`: a reviewer refuses A with
+        // scenarios, round 1's fixer commits B, and the reviewer refuses B with
+        // none. The diff on screen is then the fixer's output and not the
+        // implementer's — which `done`, two fields below, says outright — so a
+        // person told no money was spent and nothing was changed inspects a
+        // reviewer over code that has already been rewritten once.
         return (
           `The \`${input.action}\` reviewer refused ${at} with ${count(input.findings)} ` +
-          `(worst: ${worst}), and no agent was bought to answer them: not one finding ` +
+          `(worst: ${worst}), and ${
+            input.rounds === 0
+              ? "no agent was bought to answer them"
+              : `no further agent was bought after ${input.rounds} fix round(s)`
+          }: not one finding ` +
           `carries a failure scenario, so there is nothing a fixer could be asked to ` +
           `make stop happening. The reviewer is what to look at here, not the diff — ` +
-          `an opinion is not something this loop can act on, and nothing was changed in ` +
-          `answer to it.`
+          `an opinion is not something this loop can act on, and ${
+            input.rounds === 0
+              ? "nothing was changed in answer to it"
+              : "what is on the branch answers the earlier refusals rather than this one"
+          }.`
         );
       case "no-rounds":
         // **Nothing disagreed with the reviewer, because nothing was bought to.**
@@ -906,13 +922,26 @@ export function diagnoseDisagreement(input: {
           `\`runtime.limits.rounds\` — or reading them yourself.`
         );
       case "spent":
-        // The ceiling, which is the only ending where two agents really did look
-        // at this and disagree. Byte for byte the sentence it has always been —
-        // the common case must not get worse to fix the others.
-        return (
-          `Two agents disagreed about ${at}. ${refused}, and it is still refused. ` +
-          `This is a judgement, not a broken build.`
-        );
+        // The ceiling, which is the only ending where two agents **can** have
+        // looked at this and disagreed — and *can* is not *did* (`#197`). One
+        // ceiling means one counter and every point spends it, so `build`
+        // refuses A, three rounds answer it, and `review` refuses the last diff:
+        // the ceiling is spent, this reviewer has refused once, and no round was
+        // ever bought to answer it. *Still refused* there invites a person to
+        // adjudicate a standoff that never happened.
+        //
+        // Byte for byte the sentence it has always been wherever the reviewer
+        // did refuse more than one diff, which is the ordinary shape and the one
+        // `run-once.test.ts`'s end-to-end pass produces: the common case must
+        // not get worse to fix the others.
+        return input.refusals <= 1
+          ? `One agent refused ${at} and no round answered it. ${refused}, and the ` +
+            `pass's ${input.rounds} fix round(s) had already been spent on an earlier ` +
+            `refusal, so no agent was sent to make them stop happening. The findings ` +
+            `stand unanswered: what changes that is raising ` +
+            `\`runtime.limits.rounds\` — or reading them yourself.`
+          : `Two agents disagreed about ${at}. ${refused}, and it is still refused. ` +
+            `This is a judgement, not a broken build.`;
     }
   })();
   return {
@@ -1144,18 +1173,35 @@ export function diagnoseUnfixed(input: {
         // before it can become an `unresolved`, so no block is made from this
         // today. Falling through to the ceiling's arm would park a false claim
         // here against the day that guard moves, which is `#197`'s whole shape
-        // one level down.
+        // one level down — so it reads the counts for the same reason the arms
+        // above do: `decideFix` checks this rule before either ceiling, so a
+        // round may already have been bought and committed.
         return (
           `\`${input.action}\` refused ${at} and printed nothing to hold a fixer to, ` +
-          `so no agent was bought and it was never run again.`
+          `so no ${input.rounds === 0 ? "" : "further "}agent was bought and ${notAgain}.`
         );
       case "spent":
-        // Byte for byte the sentence it has always been.
-        return (
-          `\`${input.action}\` still refuses ${at}. ` +
-          "This is a check that failed and stayed failed, not a judgement: whatever it " +
-          "runs, it ran again and said the same thing."
-        );
+        // **And the ceiling reads the count too** (`#197`). *It ran again and
+        // said the same thing* is the claim this sentence is worth reading for,
+        // and it is only true where this point is what spent the rounds: one
+        // counter serves the whole pass, so `build` passes A, `review` refuses
+        // it, three rounds answer the review, and `build` goes red on the last
+        // diff. There the ceiling is spent, `build` has refused exactly once and
+        // was never re-run — and a card claiming a repeated result overstates the
+        // evidence in the direction that makes a person readier to merge over it
+        // or close the ticket rather than requeue.
+        //
+        // Byte for byte the sentence it has always been wherever the point did
+        // refuse more than one diff, which is the ordinary shape.
+        return ran === 1
+          ? `\`${input.action}\` refuses ${at}, and no round was bought to answer it: ` +
+            `the pass's ${input.rounds} fix round(s) had already been spent on an ` +
+            `earlier refusal, so \`${input.action}\` refused once and was never run ` +
+            `again. What it printed is below, and it is one result rather than a ` +
+            `repeated one.`
+          : `\`${input.action}\` still refuses ${at}. ` +
+            "This is a check that failed and stayed failed, not a judgement: whatever it " +
+            "runs, it ran again and said the same thing.";
     }
   })();
   return {
@@ -1211,6 +1257,15 @@ export function unfixedQuestion(input: {
   branch: string;
   base: string;
   rounds: number;
+  /**
+   * How many diffs **this action** refused, as `diagnoseUnfixed` reads it
+   * (`#197`).
+   *
+   * Here because the line is read before the card: *still refuses* is a claim
+   * about a result that was reached twice, and the pass's one counter is spent
+   * by whichever point refused.
+   */
+  refusals: number;
   /** What ended the loop, which is what the line is about (`#197`). */
   stop: FixStop;
   /** Approaches already abandoned. Absent or zero on every card today. */
@@ -1247,11 +1302,23 @@ export function unfixedQuestion(input: {
         afterArms(input.restarts)
       );
     case "no-criterion":
-      return `${input.action} refuses ${where} and printed nothing to fix${afterArms(input.restarts)}`;
+      // The rounds when there were any, for the reason the findings-shaped line
+      // names them (`#197`): the criterion rule is checked before either
+      // ceiling, so this ending is not a first refusal's alone.
+      return input.rounds === 0
+        ? `${input.action} refuses ${where} and printed nothing to fix${afterArms(input.restarts)}`
+        : `${input.action} refuses ${where} and printed nothing to fix, after ${spent}`;
     case "spent":
       // The one line it has always been, byte for byte, for the ending where
-      // the point really did run again and say the same thing.
-      return `${input.action} still refuses ${where} after ${spent}`;
+      // the point really did run again and say the same thing — and **that is
+      // the count and not the ending** (`#197`). A ceiling spent answering
+      // another point's refusal leaves this one red once and never re-run, and
+      // *still refuses … after 3 fix round(s)* says those rounds failed to fix
+      // it when they were never about it.
+      return input.refusals <= 1
+        ? `${input.action} refuses ${where} and no round answered it: the ceiling of ` +
+          `${spent} was already spent`
+        : `${input.action} still refuses ${where} after ${spent}`;
   }
 }
 
@@ -1262,6 +1329,17 @@ export function disagreementQuestion(input: {
   base: string;
   findings: readonly GateFinding[];
   rounds: number;
+  /**
+   * How many diffs **this reviewer** refused, as `diagnoseDisagreement` reads
+   * it (`#197`).
+   *
+   * Here for the reason the headline reads it: the line is what a person is
+   * notified with, so of two readings that contradict each other it is the one
+   * acted on. A card saying one agent refused and nothing answered it, under a
+   * comment saying two agents disagreed, is the failure #83 names with the
+   * notification on the wrong side of it.
+   */
+  refusals: number;
   /** What ended the loop, which is what the line is about (`#197`). */
   stop: FixStop;
   /** Approaches already abandoned. Absent or zero on every card today. */
@@ -1289,23 +1367,33 @@ export function disagreementQuestion(input: {
         `reviewer's ${scored} stand, and it said why rather than answering them`
       );
     case "no-criterion":
-      return (
-        `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
-        `scenario, so no fixing agent was bought${afterArms(input.restarts)}`
-      );
+      // **And the rounds are named when there were any** (`#197`).
+      // `decideFix` checks the criterion rule before either ceiling, so this
+      // ending is reached after rounds have been bought and committed; a line
+      // reading *no fixing agent was bought* there is the card's own falsehood
+      // one step earlier, where a person reads it first.
+      return input.rounds === 0
+        ? `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
+          `scenario, so no fixing agent was bought${afterArms(input.restarts)}`
+        : `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
+          `scenario, so no further fixing agent was bought after ${spent}`;
     case "no-rounds":
       return (
         `the ${input.action} reviewer refuses ${where} with ${scored}, and this ` +
         `recipe buys no fix round, so nothing answered it${afterArms(input.restarts)}`
       );
     case "spent":
-      // Byte for byte the line it has always been: the ceiling is the only
-      // ending where two agents did look at this and did not agree.
-      return (
-        `two agents disagreed about ${where}: the ` +
-        `${input.action} reviewer still refuses it after ${spent}, ` +
-        `with ${scored}`
-      );
+      // Byte for byte the line it has always been where two agents did look at
+      // this and did not agree — and **that is a count, not the ending**
+      // (`#197`): the pass's one counter is spent by whichever point refused, so
+      // a ceiling can go entirely on answering something else and leave this
+      // reviewer's single refusal unanswered.
+      return input.refusals <= 1
+        ? `the ${input.action} reviewer refuses ${where} with ${scored} and no round ` +
+          `answered it: the ceiling of ${spent} was already spent`
+        : `two agents disagreed about ${where}: the ` +
+          `${input.action} reviewer still refuses it after ${spent}, ` +
+          `with ${scored}`;
   }
 }
 
@@ -1330,6 +1418,14 @@ export function mergeAnywayBecause(input: {
   action: string;
   on: FixOn;
   rounds: number;
+  /**
+   * How many diffs **this point** refused, as the cards read it (`#197`).
+   *
+   * On the record for the reason everything else here is: this is the sentence
+   * nothing ever rewrites, so a claim about what was decided has to be as true
+   * in a year as the card was on the day.
+   */
+  refusals: number;
   stop: FixStop;
 }): string {
   const after = `${input.rounds} fix round(s)`;
@@ -1348,12 +1444,30 @@ export function mergeAnywayBecause(input: {
     case "declined":
       return `The fixing agent declined after ${after} and ${refuses}; read its objection first.`;
     case "no-criterion":
-      return `${refuses}, with nothing a fixing agent could be held to.`;
+      // **The round count is not zero here** unless the recipe's own is
+      // (`#197`): the criterion rule is checked before either ceiling, so a
+      // record that leaves it out says a merge was approved over a first
+      // refusal when it was approved over the third.
+      return input.rounds === 0
+        ? `${refuses}, with nothing a fixing agent could be held to.`
+        : `${refuses} after ${after}, with nothing a fixing agent could be held to.`;
     case "no-rounds":
       return `${refuses}, and this recipe buys no fix round.`;
     case "spent":
-      // Byte for byte both sentences, for the one ending they were always true
-      // of: the ceiling is spent and the point has answered twice.
+      // Byte for byte both sentences where the point refused more than one diff,
+      // which is what they were always true of: the ceiling is spent and the
+      // point has answered twice. **Where it refused once they are not**
+      // (`#197`) — the pass has one counter and any point can spend it, so a
+      // ceiling spent answering another refusal leaves this one unanswered, and
+      // both *disagreed* and *still* would be recorded for ever of something
+      // that happened once.
+      if (input.refusals <= 1) {
+        const refused =
+          input.on === "findings"
+            ? `The ${input.action} reviewer refuses it`
+            : `\`${input.action}\` refuses it`;
+        return `${refused} and no round answered it; the pass's ${after} went on an earlier refusal.`;
+      }
       return input.on === "findings"
         ? `Two agents disagreed: the ${input.action} reviewer still refuses it after ${after}.`
         : `\`${input.action}\` is still red after ${after}.`;
@@ -1377,9 +1491,12 @@ function armSuffix(restarts: number | undefined): string {
  * *, after 2 restart(s)* — the same fact, for the lines that name no round
  * count to hang `armSuffix` off.
  *
- * **Two of them, and they are exactly the ones a restart can have happened
- * on** (`#197`). `no-rounds` and `no-criterion` are the endings that buy no
- * round, so they have no *N fix round(s)* to append to — and `rounds: 0` beside
+ * **Reached where `rounds` is zero, and only there** (`#197`). `no-rounds` is
+ * that by definition and `no-criterion` is that when the refusal carrying no
+ * criterion was the first — those lines have no *N fix round(s)* to append to.
+ * (A `no-criterion` refusal **after** a round is not one of them: `decideFix`
+ * checks the criterion rule before either ceiling, so the count exists and the
+ * lines above name it rather than coming here.) And `rounds: 0` beside
  * a non-zero `restarts` is the configuration `decideFix`'s own comment calls
  * legible, *never patch, start over twice*, where `no-rounds` is the **only**
  * ending reachable. A line that drops the count there drops it in the one place
