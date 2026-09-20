@@ -839,6 +839,12 @@ board:
   port: 18080
 ```
 
+**The override reaches `pnpm --filter @lingtai/board dev` too**, which is what
+four places here send you to when there is no built board, each saying it
+serves *the same port*. That script asks for the port like everything else
+(`apps/board/serve.ts`) rather than carrying one, or the one number you set
+would be the one the documented fallback ignored.
+
 `17821` is **reserved and bound by nothing** — the daemon listens on nothing at
 all, and a second listener, if one is ever needed, has an obvious home instead
 of being scattered. `packages/env/test/board-port.test.ts` reads every
@@ -934,6 +940,14 @@ for the board either way: nothing is in flight to lose.
 An install from before the board had a job is named and passed over, not
 refused: `service start` and `service restart` say *no board job … pnpm lingtai
 service install writes one* and get on with the conductor.
+
+**A board job the supervisor would not stop does not abandon the conductor's
+restart.** `launchctl bootout` answers `Boot-out failed: 36` for a job that is
+mid-start, and `service shutdown` exits on that — the verb did not do all it
+says — but with an exit of its own, so `lingtai restart` can tell *the drain did
+not finish* from *the board's job did not stop*. It says which, and starts the
+conductor it drained. One number for both legs left the daemon drained,
+unloaded and unsupervised over a UI, under a sentence blaming the drain.
 
 **`KeepAlive` and `Restart=always` are the same rule**: the daemon is a thing
 that is always supposed to be up, so there is no start button that matters.

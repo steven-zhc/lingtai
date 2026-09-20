@@ -59,6 +59,36 @@ describe("the board's port", () => {
 });
 
 /**
+ * The port is not in `apps/board/package.json` (#187).
+ *
+ * It lived there as `next dev -p 3200`, then as `-p 17820`, which is the wrong
+ * place twice over: somebody who installed Lingtai has no `package.json` to
+ * edit, and `pnpm --filter @lingtai/board dev` is where four other places send
+ * them when there is no built board — `board start`'s refusal, `lingtai
+ * service`'s remedy, `doc/operating.md` and `doc/tutorial.md` — each saying it
+ * serves *the same port*. With the number written there that sentence was false
+ * the moment anybody set `board.port`: the board came up on 17820 while every
+ * card link and `lingtai board status` named the port they had asked for.
+ */
+describe("apps/board's own scripts", () => {
+  const board = (file: string): string => readFileSync(join(repoRoot(), "apps/board", file), "utf8");
+
+  it("name no port, and go through the one place that reads board.port", () => {
+    const scripts = (JSON.parse(board("package.json")) as { scripts: Record<string, string> }).scripts;
+    for (const [name, script] of Object.entries(scripts)) {
+      expect(script, `${name} carries a port of its own`).not.toMatch(/-p[= ]*\d|--port|PORT=/);
+      expect(script, `${name} names the board's port`).not.toContain(String(BOARD_PORT));
+    }
+    expect(scripts["dev"]).toContain("serve.ts");
+    expect(scripts["start"]).toContain("serve.ts");
+    // And that file asks for the port rather than passing one of its own: the
+    // only 17820 in it is the sentence saying it used to be here.
+    expect(board("serve.ts")).toContain("boardPort()");
+    expect(board("serve.ts")).not.toMatch(new RegExp(`"-p", *"?${BOARD_PORT}`));
+  });
+});
+
+/**
  * Every `.ts` under each workspace package's `src`. The generated board and
  * anything installed are skipped: this is about what this repository binds.
  */

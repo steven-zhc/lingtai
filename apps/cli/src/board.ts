@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { constants, Script } from "node:vm";
 import { boardPort, repoRoot } from "@lingtai/env";
 import type { FileLocker, HeldLock } from "@lingtai/env/lock";
-import { BOARD_JOB, type Exec, type Keeper } from "./service.ts";
+import { BOARD_JOB, BOARD_WAIT_MS, type Exec, type Keeper } from "./service.ts";
 
 /**
  * The built board, served from this process (#183).
@@ -207,24 +207,36 @@ export function boardLock(port: number): string {
 }
 
 /**
- * How long `stop` waits for a signalled board to let the lock go, and
- * `restart` for one to answer again: ten seconds either way.
+ * How long `stop` waits for a signalled board to let the lock go: ten seconds.
  *
  * Counted in polls rather than measured against the clock, so the wait is the
  * injected `sleep`'s and a test that makes it a no-op does not sit here for ten
  * real seconds.
- *
- * **`restart` is counted and also timed**, because an ask is not free:
- * `answering` carries its own five-second timeout, so against something that
- * accepts TCP and never replies 40 polls are 210 seconds and not the ten this
- * says. The count still bounds a test's loop, where nothing takes any time; the
- * deadline bounds the wait, where each ask takes all of its own.
  */
 const STOP_POLL_MS = 100;
 const STOP_POLLS = 100;
+
+/**
+ * How long `restart` waits for a board to answer again — **`service`'s own
+ * `BOARD_WAIT_MS`, because it is the same Next standalone boot**.
+ *
+ * It was ten seconds of its own, and a cold machine — a fresh login, a `pnpm
+ * build` running beside it — takes longer than that to bind: the command
+ * reported failure and exited 1 for a board that came up two seconds later,
+ * while `service install` was budgeting 75s for the same boot (#187). One
+ * estimate, in one place. (`serveBoard`'s `listening` allows less, and is a
+ * different question: that one waits on a server this process started, and
+ * gives up because nothing is coming.)
+ *
+ * **Counted and also timed**, because an ask is not free: `answering` carries
+ * its own five-second timeout, so against something that accepts TCP and never
+ * replies the polls alone would be far longer than the seconds this reports.
+ * The count still bounds a test's loop, where nothing takes any time; the
+ * deadline bounds the wait, where each ask takes all of its own.
+ */
 const ANSWER_POLL_MS = 250;
-const ANSWER_POLLS = 40;
-const ANSWER_WAIT_MS = ANSWER_POLLS * ANSWER_POLL_MS;
+const ANSWER_WAIT_MS = BOARD_WAIT_MS;
+const ANSWER_POLLS = ANSWER_WAIT_MS / ANSWER_POLL_MS;
 
 /** What was typed. `port` and `dir` are null where nothing was, and the caller resolves them. */
 export interface BoardArgs {

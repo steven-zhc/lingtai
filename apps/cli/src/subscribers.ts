@@ -38,7 +38,7 @@ import { runnableEnv, extensionEnv, resolveAgentEnv } from "@lingtai/agent-env";
 import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from "@lingtai/actions";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { type Envelope, type PayloadOf, workItemOf } from "@lingtai/domain";
-import { boardUrl } from "@lingtai/env";
+import { BOARD_PORT, boardUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 
 /**
@@ -51,9 +51,24 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
  * port changed links to the board that is actually there. It is in the payload
  * rather than compiled into the subscriber so that an extension never has to be
  * rewritten when it moves.
+ *
+ * **A link, and never a throw.** `boardUrl` refuses a `board.port` that is not
+ * a port number, which is right where the board is the subject and fatal here:
+ * this is read inside `buildSubscribers`, which the daemon calls *after* it has
+ * taken the conductor lock and beaten `up` — so one typo in a UI setting left a
+ * process holding the lock, reporting healthy and conducting nothing, since the
+ * projections' LISTEN connections and the beacon keep the event loop alive
+ * after the rejection sets `process.exitCode`. A card link on the default port
+ * may be wrong; a conductor that never claims a ticket is worse, and the port
+ * is refused by name where it is the subject — `lingtai board start`, and the
+ * board's own leg of `lingtai service status`.
  */
 export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
-  return boardUrl(env);
+  try {
+    return boardUrl(env);
+  } catch {
+    return `http://127.0.0.1:${BOARD_PORT}`;
+  }
 }
 
 /**

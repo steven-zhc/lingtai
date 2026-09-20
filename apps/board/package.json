@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack -p 17820",
+    "dev": "node ./serve.ts dev",
     "build": "next build",
-    "start": "next start -p 17820",
+    "start": "node ./serve.ts start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

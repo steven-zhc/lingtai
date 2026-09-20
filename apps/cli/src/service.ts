@@ -182,6 +182,25 @@ export const BOARD_JOB: Job = {
 
 export const JOBS: readonly Job[] = [DAEMON_JOB, BOARD_JOB];
 
+/**
+ * `service shutdown`'s exit where **the conductor drained and unloaded and the
+ * board's job did not stop** (#187).
+ *
+ * Two legs report through one number, and its one other caller reads that
+ * number as a single fact: `lingtai restart` under a supervisor delegates the
+ * drain to `service shutdown`, and a non-zero there means *nothing was started:
+ * the drain above did not finish*. A `launchctl bootout` that answers
+ * `Boot-out failed: 36: Operation now in progress` — the ordinary way a job
+ * mid-start refuses one — used to end there: the daemon drained and unloaded,
+ * the restart abandoned, the conductor down and unsupervised, the operator told
+ * the wrong reason and pointed at the wrong job.
+ *
+ * So the two answers stay two. Non-zero, because a verb that did not do what it
+ * says did not succeed, and distinguishable, because the drain is what its
+ * caller asked about.
+ */
+export const SHUTDOWN_BOARD_ONLY = 3;
+
 export interface ServiceInputs {
   /** Absolute path to `node`. */
   node: string;
@@ -465,8 +484,12 @@ const IDLE_WAIT_POLLS = 90;
  * test with an instant `answering` and a no-op `sleep` spin for 75 real
  * seconds. So the count bounds the asks and the clock bounds the wait; an ask
  * already in flight when the deadline passes is not cut short.
+ *
+ * Exported because `lingtai board restart` waits for the same Next standalone
+ * boot and had its own ten seconds for it — two estimates of one thing, and a
+ * cold machine reported failure for a board that came up seconds later (#187).
  */
-const BOARD_WAIT_MS = 75_000;
+export const BOARD_WAIT_MS = 75_000;
 const BOARD_WAIT_POLLS = 75;
 
 /**
@@ -1438,7 +1461,13 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // request that landed during the wait, and its refusal says *nothing was
       // started* — which a board started first would make false.
       const boardStopped = await stopBoard();
-      if (verb === "shutdown") return boardStopped;
+      // The drain finished; the board's job is its own answer, and never the
+      // drain's. `lingtai restart` reads this number as *did the conductor
+      // stop*, so a board the supervisor would not bootout exits
+      // `SHUTDOWN_BOARD_ONLY` — non-zero, since the verb did not do all it
+      // says, and not 1, since the conductor is drained and unloaded and a
+      // restart has no reason to abandon its start over the UI.
+      if (verb === "shutdown") return boardStopped === 0 ? 0 : SHUTDOWN_BOARD_ONLY;
       const daemonStarted = await start(kept);
       if (daemonStarted !== 0) return daemonStarted;
       const boardStarted = await startBoard();

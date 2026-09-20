@@ -88,6 +88,7 @@ import {
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { doctorReport } from "./doctor.ts";
+import { SHUTDOWN_BOARD_ONLY } from "./service.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
 
 /** How often the lock is asked about while a drain is in flight. */
@@ -1066,9 +1067,16 @@ export async function restartSupervised(
 
   log(paint.held("the supervisor keeps the daemon, so the drain is lingtai service shutdown's and the start is its start."));
   const drained = await how.service(["shutdown", `restarting: ${args.reason}`], drain);
-  if (drained !== 0) {
+  // `SHUTDOWN_BOARD_ONLY` is the conductor drained and unloaded with the board's
+  // job left running — a `launchctl bootout` the job refused mid-start, say. The
+  // restart is the conductor's, and abandoning it there would leave the daemon
+  // down and unsupervised over a UI, under a sentence blaming the drain (#187).
+  if (drained !== 0 && drained !== SHUTDOWN_BOARD_ONLY) {
     log(paint.held("nothing was started: the drain above did not finish. lingtai service status says what the supervisor has."));
     return drained;
+  }
+  if (drained === SHUTDOWN_BOARD_ONLY) {
+    log(paint.held("the conductor drained; the board's job did not stop, which is said above. The restart goes on — it is the conductor's."));
   }
 
   // Where the stream is now, and not `mark`: `service shutdown` held the lock

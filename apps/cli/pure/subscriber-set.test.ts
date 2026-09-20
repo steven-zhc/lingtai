@@ -10,9 +10,13 @@
  * The recipe read is the seam: `reread` and `filters` are what `projectFilters`
  * would have answered, and nothing else is stood in for.
  */
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ProjectFilter } from "@lingtai/conductor";
+import { boardUrl } from "@lingtai/env";
 import { describe, expect, it } from "vitest";
-import { createSubscriberSet } from "../src/subscribers.ts";
+import { boardAddress, createSubscriberSet } from "../src/subscribers.ts";
 
 const unread = (project: string): ProjectFilter => ({ project, ok: false, problem: "network is unreachable" });
 
@@ -116,5 +120,45 @@ describe("a recipe that could not be read at startup", () => {
     const lines = set.describe().join("\n");
     expect(lines).not.toContain("no subscriber declared");
     expect(lines).toContain("EACCES");
+  });
+});
+
+/**
+ * A `board.port` that is not a port number (#187).
+ *
+ * The address is read inside `buildSubscribers`, which the daemon calls *after*
+ * it has taken the conductor lock, started the projections and beaten `up`. A
+ * throw there rejected `main()`, whose handler sets `process.exitCode` and does
+ * not exit — and the projections' LISTEN connections and the beacon timer keep
+ * the event loop alive, so one typo in a UI setting left a process holding the
+ * conductor lock, reporting healthy to `doctor`, the board's health dot and
+ * `service status`, and conducting nothing for ever: no `WorkLoop`, no claim,
+ * no `ConductorStarted`, and a `lingtai shutdown` nothing would ever read.
+ */
+describe("a board.port that is not a port number", () => {
+  const badPort = (): string => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-home-"));
+    writeFileSync(join(home, "config.yml"), "board:\n  port: 8o80\n");
+    return home;
+  };
+
+  it("is a card link on the default port, and never a throw out of the daemon's startup", async () => {
+    const was = process.env["LINGTAI_HOME"];
+    process.env["LINGTAI_HOME"] = badPort();
+    try {
+      // The read it is a `try` around, so this test says what it is about.
+      expect(() => boardUrl()).toThrow(/not a port number/);
+      expect(boardAddress()).toBe("http://127.0.0.1:17820");
+      // And the daemon's own call: no `board` is passed at that call site.
+      const set = await createSubscriberSet({
+        ...options,
+        filters: [declaring("lingtai")],
+        reread: async () => [],
+      });
+      expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(["lingtai/desktop"]);
+    } finally {
+      if (was === undefined) delete process.env["LINGTAI_HOME"];
+      else process.env["LINGTAI_HOME"] = was;
+    }
   });
 });

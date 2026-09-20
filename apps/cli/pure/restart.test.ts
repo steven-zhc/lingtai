@@ -35,7 +35,7 @@ import {
   type RestartFacts,
   type Waivers,
 } from "../src/restart.ts";
-import { LAUNCHCTL_NO_SUCH_SERVICE, LAUNCHD_LABEL, serviceCommand, type Exec } from "../src/service.ts";
+import { BOARD_LAUNCHD_LABEL, LAUNCHCTL_NO_SUCH_SERVICE, LAUNCHD_LABEL, serviceCommand, type Exec } from "../src/service.ts";
 
 const pushed: Identity = {
   sha: "2926f2d0f0e2a0b1c2d3e4f5a6b7c8d9e0f1a2b3",
@@ -603,11 +603,30 @@ async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome
 }
 
 /** `lingtai restart` under launchd: `restartSupervised` over the real `serviceCommand`. */
-async function supervised(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome> {
+async function supervised(
+  scene: Scene,
+  args: RestartArgs = ARGS,
+  /** The board's job refuses its `bootout`, as launchd's `Boot-out failed: 36` does for a job mid-start (#187). */
+  boardWontStop = false,
+): Promise<Outcome> {
   const { w, facts, log, outcome, shutdownNow } = worldOf(scene);
   let loaded = true;
+  let boardLoaded = true;
   const exec: Exec = (call) => {
     const line = call.join(" ");
+    // The board's job, answered apart from the daemon's: the two are unloaded
+    // separately, and a `print` that answered for both would say the board was
+    // gone the moment the daemon was.
+    if (line.includes(BOARD_LAUNCHD_LABEL)) {
+      if (line.startsWith("launchctl print")) {
+        return boardLoaded ? { status: 0, out: "\tstate = running\n\tpid = 99\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" };
+      }
+      if (line.startsWith("launchctl bootout")) {
+        if (boardWontStop) return { status: 36, out: "Boot-out failed: 36: Operation now in progress" };
+        boardLoaded = false;
+      }
+      return { status: 0, out: "" };
+    }
     if (line.startsWith("launchctl print")) {
       return loaded ? { status: 0, out: "\tstate = running\n\tpid = 41\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" };
     }
@@ -775,6 +794,26 @@ describe("the table of refusals", () => {
     // The drain it asked for is withdrawn on both, by its version.
     expect(t.withdrew).toEqual([11]);
     expect(s.withdrew).toEqual([11]);
+  });
+
+  /**
+   * A board job the supervisor would not stop (#187).
+   *
+   * `launchctl bootout` answers `Boot-out failed: 36: Operation now in progress`
+   * for a job that is mid-start, and `service shutdown` reports it. That is one
+   * of two answers in one number, and the restart reads that number as *did the
+   * conductor stop*: it used to abandon the start there, leaving the daemon
+   * drained, unloaded and unsupervised, saying *the drain above did not finish*
+   * — which it had — and pointing at the daemon rather than the board.
+   */
+  it("starts the daemon again where the board's job would not stop, and blames neither the drain nor the daemon", async () => {
+    const s = await supervised({}, ARGS, true);
+    expect(s.code, s.said).toBe(0);
+    expect(s.said).toContain("restarted 2926f2d as mac:4242 — the commit that was checked");
+    // The board's refusal is said, as the board's.
+    expect(s.said).toContain(`the supervisor did not stop ${BOARD_LAUNCHD_LABEL}`);
+    expect(s.said).toContain("the conductor drained; the board's job did not stop");
+    expect(s.said).not.toContain("the drain above did not finish");
   });
 
   it("waives exactly what the flag names, on both paths", async () => {

@@ -24,6 +24,7 @@ import {
   LAUNCHCTL_NO_SUCH_SERVICE,
   LAUNCHD_LABEL,
   NO_SUPERVISOR,
+  SHUTDOWN_BOARD_ONLY,
   SYSTEMD_UNIT,
   keeper,
   launchdPlist,
@@ -71,13 +72,18 @@ function supervisor(answers: [string, { status: number; out: string } | (() => {
  * every existing assertion about what the supervisor was asked stays the
  * daemon's. `boardCalls` is what the board's job was asked.
  */
-function boardSupervisor(inner: Exec, loadedAtFirst: boolean) {
+function boardSupervisor(inner: Exec, loadedAtFirst: boolean, refusesToStop = false) {
   const calls: string[] = [];
   let loaded = loadedAtFirst;
   const exec: Exec = (call) => {
     const line = call.join(" ");
     if (!line.includes(BOARD_LAUNCHD_LABEL) && !line.includes(BOARD_SYSTEMD_UNIT)) return inner(call);
     calls.push(line);
+    // `Boot-out failed: 36: Operation now in progress` is what launchd answers
+    // for a job that is mid-start, and the ordinary way a stop does not take.
+    if (refusesToStop && /^launchctl bootout|^systemctl --user stop/.test(line)) {
+      return { status: 36, out: "Boot-out failed: 36: Operation now in progress" };
+    }
     if (line.startsWith("launchctl print")) {
       return loaded
         ? { status: 0, out: "\tstate = running\n\tpid = 99\n" }
@@ -148,6 +154,8 @@ function command(
     board?: () => Promise<string | null>;
     /** Whether the supervisor already has the board's job. Not, by default. */
     boardLoaded?: boolean;
+    /** Whether the supervisor refuses to stop the board's job, as launchd does for one mid-start. */
+    boardWontStop?: boolean;
     /** Why there is no board to serve here. There is one, by default. */
     boardMissing?: string | null;
     /** Who holds the board's port lock. Nobody, by default; a throw is a lock that could not be read. */
@@ -158,7 +166,7 @@ function command(
 ) {
   const out: string[] = [];
   const err: string[] = [];
-  const board = boardSupervisor(exec, extra.boardLoaded ?? false);
+  const board = boardSupervisor(exec, extra.boardLoaded ?? false, extra.boardWontStop ?? false);
   const go = (verb: string, ...why: string[]) =>
     serviceCommand([verb, ...why], {
       liveness: extra.liveness ?? (async () => "last seen 3000s ago (pid 41) — not running"),
@@ -1476,6 +1484,35 @@ describe("two jobs", () => {
       `launchctl bootout gui/${UID}/${BOARD_LAUNCHD_LABEL}`,
     ]);
     expect(d.said).toEqual(["queue", "ask human:lingtai service shutdown: for the night", "held", "withdraw 1"]);
+  });
+
+  /**
+   * A board job that would not stop, under a drain that finished.
+   *
+   * The two legs report through one number, and `lingtai restart` reads that
+   * number as *did the conductor stop*: returning the board's 1 there abandoned
+   * the restart with the daemon drained, unloaded and unsupervised, saying the
+   * drain had not finished and pointing at the daemon rather than the board.
+   * So the drain's answer is 0 and the board's is `SHUTDOWN_BOARD_ONLY` —
+   * non-zero, because the verb did not do all it says.
+   */
+  it("shutdown exits on the board alone where the drain finished and the board's job would not stop", async () => {
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n\tpid = 77\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+    ]);
+    const d = quietDrain();
+    const { go, err } = command("darwin", s.exec, { drain: d.drain, boardLoaded: true, boardWontStop: true });
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("shutdown", "for the night")).toBe(SHUTDOWN_BOARD_ONLY);
+    expect(SHUTDOWN_BOARD_ONLY).not.toBe(1);
+    // The conductor did drain and did unload, which is what the exit is not about.
+    expect(d.said).toEqual(["queue", "ask human:lingtai service shutdown: for the night", "held", "withdraw 1"]);
+    expect(loaded).toBe(false);
+    // And the board's refusal is the board's, named as the board's job.
+    expect(err.join("\n")).toContain(`the supervisor did not stop ${BOARD_LAUNCHD_LABEL}`);
   });
 
   it("uninstall removes the board's job too, after a daemon whose own file was already gone", async () => {

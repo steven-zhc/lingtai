@@ -137,7 +137,7 @@ import {
   type BoardCommand,
   type BoardWorld,
 } from "../src/board.ts";
-import type { Keeper } from "../src/service.ts";
+import { BOARD_WAIT_MS, type Keeper } from "../src/service.ts";
 
 const PORT = 17820;
 const URL = `http://127.0.0.1:${PORT}`;
@@ -332,11 +332,11 @@ describe("lingtai board restart", () => {
     expect(w.out.join("\n")).toContain(`the board answers on ${URL}`);
   });
 
-  it("waits the ten seconds it says for an answer, though every ask costs its own timeout", async () => {
+  it("waits the seconds it says for an answer, though every ask costs its own timeout", async () => {
     // Something that accepts TCP and never replies holds the port: `answering`
     // burns its own five-second timeout every time. Counted in polls alone,
-    // forty asks a quarter-second apart were 210 seconds under a sentence
-    // promising ten.
+    // the asks a quarter-second apart were far longer than the sentence under
+    // them promises.
     let clock = 0;
     let asks = 0;
     const w = world({
@@ -346,8 +346,23 @@ describe("lingtai board restart", () => {
       now: () => clock,
     });
     expect(await w.go("restart")).toBe(1);
-    expect(asks).toBe(2);
-    expect(w.err.join("\n")).toContain("10s after the restart");
+    expect(asks).toBe(15);
+    expect(clock).toBeLessThanOrEqual(80_000);
+    expect(w.err.join("\n")).toContain("75s after the restart");
+  });
+
+  /**
+   * And the seconds are `service`'s own (#187). A supervised `board restart` is
+   * a `launchctl kickstart` of the job that runs `board start`, so what it is
+   * waiting for is the Next standalone boot `service install` waits for — and
+   * ten seconds of its own made a cold machine, or one with a `pnpm build`
+   * running beside it, report failure and exit 1 for a board that bound two
+   * seconds later.
+   */
+  it("gives the board the budget lingtai service gives the same boot, and not one of its own", async () => {
+    const w = world({ holder: `board on ${PORT} pid 500 on mac`, keeper: () => KEPT });
+    expect(await w.go("restart")).toBe(1);
+    expect(w.err.join("\n")).toContain(`${BOARD_WAIT_MS / 1000}s after the restart`);
   });
 
   it("is stop then start where nothing keeps it", async () => {
