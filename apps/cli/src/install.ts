@@ -111,9 +111,12 @@ export interface World {
   /** Processes whose command line names one of `paths`, or whose working directory is under one, other than this one. */
   running: (paths: readonly string[]) => { pid: number; command: string }[];
   /**
-   * Who holds the conductor lock, where a log is configured — null where nothing
-   * does. A daemon started from a checkout names nothing under `~/.lingtai`, and
-   * still runs its agents there.
+   * Who holds the conductor lock — null where nothing does, and **asked whether
+   * or not a log is configured**: the lock is a file under `~/.lingtai/locks/`
+   * since #193, so it reads with no database at all. A daemon started from a
+   * checkout names nothing under `~/.lingtai`, and still runs its agents there.
+   *
+   * A read that fails throws, and is never a null (`daemon/src/lock.ts`).
    */
   conducting: () => Promise<string | null>;
   /** Drain whatever conducts before the shim moves. `despiteDoctor` waives a red doctor and nothing else. */
@@ -503,36 +506,35 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     return 1;
   }
   // A daemon from a checkout is none of those, and its agents' worktrees,
-  // recipes and run logs are here all the same. The lock says it conducts.
+  // recipes and run logs are here all the same. The lock says it conducts —
+  // and it is a file under `<home>/locks` (#193), so it is asked and answered
+  // on a machine with no log configured at all. That is why there is no second
+  // question below about a lock nobody could ask: this one is the question.
   let holder: string | null;
   try {
     holder = await world.conducting();
   } catch (err) {
-    return refuse(
-      world,
-      `not uninstalling: could not ask the log whether anything conducts (${(err as Error).message}) — ` +
-        "a daemon's worktrees are under what would be removed. Unset LINGTAI_DATABASE_URL if that log is gone",
-    );
+    // A read that failed is not a no (`daemon/src/lock.ts`), and nothing an
+    // operator can set makes an unreadable file readable — so the remedy
+    // offered is the one that works: fix the file, or answer for it.
+    if (!argv.includes("--nothing-conducts")) {
+      return refuse(
+        world,
+        `not uninstalling: the conductor lock under ${join(paths.home, "locks")} could not be read ` +
+          `(${(err as Error).message}), so whether anything conducts went unanswered — a daemon's worktrees, ` +
+          `recipe and run logs are under ${paths.home}. Make that readable, or --nothing-conducts answers for it, once you know`,
+      );
+    }
+    holder = null;
   }
   if (holder !== null) {
     world.log(paint.fail(`not uninstalling — ${holder} holds the conductor lock, and its worktrees, recipe and run logs are under ${paths.home}`));
     world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
     return 1;
   }
+  // Only for the last line of all: whether the log this copy reads is somewhere
+  // else, and so survives the removal.
   const log = world.logConfigured();
-  // With no log configured here the lock was not asked, and a null is not a no:
-  // a daemon from a checkout reads the checkout's `.env.local`, not this copy's.
-  // Anything under the home but `versions/` is a conductor's, so it is not removed
-  // on a question nobody could answer.
-  const state = existsSync(paths.home) ? readdirSync(paths.home).filter((name) => name !== "versions") : [];
-  if (!log && state.length > 0 && !argv.includes("--nothing-conducts")) {
-    return refuse(
-      world,
-      `not uninstalling: no log is configured for this lingtai, so whether a daemon started elsewhere conducts on ` +
-        `${state.map((name) => join(paths.home, name)).join(", ")} could not be asked. ` +
-        "LINGTAI_DATABASE_URL=<its log> lingtai uninstall asks the lock; --nothing-conducts answers for it, once you know",
-    );
-  }
 
   const app = await world.app().catch((err: unknown) => ({ unread: (err as Error).message }));
 

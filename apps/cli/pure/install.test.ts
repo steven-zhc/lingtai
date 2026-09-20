@@ -294,7 +294,14 @@ describe("lingtai uninstall", () => {
     expect(existsSync(worktree)).toBe(true);
   });
 
-  it("refuses where no log is configured here and a conductor's state is under the home, since the lock was never asked", async () => {
+  /**
+   * The lock is a file under `~/.lingtai/locks/` (#193), so a copy with no log
+   * configured asks it and is answered — and a null there is a no. This used to
+   * refuse, and demand `--nothing-conducts`, on the premise that the lock had
+   * never been asked; `world.ts` asks it whether or not a log is configured
+   * (#213), so the premise and the refusal are both gone.
+   */
+  it("removes a conductor's state where no log is configured and the lock says nothing conducts", async () => {
     await installOld();
     // A daemon from a checkout, between passes: its recipe and a held item's
     // worktree are here, nothing runs from them, and this copy has no log.
@@ -303,22 +310,44 @@ describe("lingtai uninstall", () => {
     mkdirSync(worktree, { recursive: true });
     mkdirSync(join(home, ".lingtai", "lingtai"), { recursive: true });
     writeFileSync(recipe, "gates: {}\n");
-    expect(await installCommand(["uninstall", "--yes"], world())).toBe(1);
-    expect(lines.join("\n")).toContain("no log is configured for this lingtai");
-    expect(existsSync(recipe)).toBe(true);
-    expect(existsSync(worktree)).toBe(true);
+    const asked: string[] = [];
+    const w = world({ conducting: async () => (asked.push("lock"), null) });
 
-    lines = [];
-    expect(await installCommand(["uninstall", "--yes", "--nothing-conducts"], world())).toBe(0);
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(0);
+    // Asked, and answered: no flag was needed to say what the lock already said.
+    expect(asked).toEqual(["lock"]);
+    expect(lines.join("\n")).not.toContain("no log is configured");
     expect(existsSync(join(home, ".lingtai"))).toBe(false);
   });
 
-  it("refuses when the log cannot say whether anything conducts", async () => {
+  /**
+   * The one question left open, and the lock is what could not answer it — not
+   * the log, which this never asked. So the refusal names the file, and the
+   * remedy it offers is one that works: no variable makes an unreadable file
+   * readable, and `--nothing-conducts` is what a person can answer with.
+   */
+  it("refuses when the conductor lock cannot be read, naming the lock and a remedy that gets past it", async () => {
     await installOld();
-    const w = world({ conducting: async () => { throw new Error("connection refused"); } });
+    const locks = join(home, ".lingtai", "locks");
+    const w = world({
+      conducting: async () => {
+        throw new Error(`EACCES: permission denied, open '${join(locks, "lingtai:daemon")}'`);
+      },
+      logConfigured: () => true,
+    });
     expect(await installCommand(["uninstall", "--yes"], w)).toBe(1);
-    expect(lines.join("\n")).toContain("could not ask the log whether anything conducts");
+    const said = lines.join("\n");
+    expect(said).toContain(`the conductor lock under ${locks} could not be read`);
+    expect(said).toContain("EACCES: permission denied");
+    // Never the log, and never a variable that would not change this read.
+    expect(said).not.toContain("LINGTAI_DATABASE_URL");
+    expect(said).not.toContain("ask the log");
     expect(existsSync(join(home, ".lingtai"))).toBe(true);
+
+    lines = [];
+    expect(said).toContain("--nothing-conducts");
+    expect(await installCommand(["uninstall", "--yes", "--nothing-conducts"], w)).toBe(0);
+    expect(existsSync(join(home, ".lingtai"))).toBe(false);
   });
 
   it("finds a process by the directory it works in, where its command line names nothing", async () => {

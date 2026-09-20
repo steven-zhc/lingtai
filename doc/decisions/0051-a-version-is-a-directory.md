@@ -30,10 +30,13 @@ it. Nothing but `uninstall` removes a version, and uninstall refuses while any
 process's command line names the shim or anything under `~/.lingtai`, while any
 process works in a directory under it, or while anything holds the conductor
 lock — a daemon started from a checkout names none of those, and its worktrees
-are under `~/.lingtai` all the same. Where no log is configured for the copy
-running the uninstall, the lock cannot be asked, so anything under `~/.lingtai`
-but `versions/` is refused too, until the log is named or `--nothing-conducts`
-answers for it.
+are under `~/.lingtai` all the same. The lock is a file under
+`~/.lingtai/locks/` ([0052](0052-the-lock-is-sqlite-on-a-file.md)), so it is
+asked whether or not a log is configured here — and only where that file cannot
+be *read* is the question open, which refuses until it can be or
+`--nothing-conducts` answers for it. Until #213 separated *is a log configured*
+from *what is the Postgres URL*, this paragraph said that no log here meant the
+lock could not be asked at all, and refused everything but `versions/` on it.
 
 **2. The shim is the switch.** A new link beside it, renamed over it: a command
 started between the two gets one version or the other. Upgrade moves it forward,
