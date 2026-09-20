@@ -564,6 +564,9 @@ beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "lingtai-restart-"));
   await mkdir(join(home, "Library/LaunchAgents"), { recursive: true });
   await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`), "");
+  // Both jobs, which is what `service install` writes (#187): a restart under a
+  // supervisor that keeps only the daemon never reaches the board's start.
+  await writeFile(join(home, "Library/LaunchAgents", `${BOARD_LAUNCHD_LABEL}.plist`), "");
 });
 afterEach(async () => {
   await rm(home, { recursive: true, force: true });
@@ -606,8 +609,15 @@ async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome
 async function supervised(
   scene: Scene,
   args: RestartArgs = ARGS,
-  /** The board's job refuses its `bootout`, as launchd's `Boot-out failed: 36` does for a job mid-start (#187). */
-  boardWontStop = false,
+  /**
+   * What the board's half does, either way it can fail while the conductor's is
+   * fine (#187). `wontStop`: the job refuses its `bootout`, as launchd's
+   * `Boot-out failed: 36` does for one mid-start. `wontAnswer`: nothing answers
+   * on the port after the start — the squatter's case, where something that is
+   * not a Lingtai board holds 17820, so it takes no board lock, the job is
+   * bootstrapped over it and exits on its own `EADDRINUSE`.
+   */
+  board: { wontStop?: boolean; wontAnswer?: boolean } = {},
 ): Promise<Outcome> {
   const { w, facts, log, outcome, shutdownNow } = worldOf(scene);
   let loaded = true;
@@ -622,7 +632,7 @@ async function supervised(
         return boardLoaded ? { status: 0, out: "\tstate = running\n\tpid = 99\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" };
       }
       if (line.startsWith("launchctl bootout")) {
-        if (boardWontStop) return { status: 36, out: "Boot-out failed: 36: Operation now in progress" };
+        if (board.wontStop) return { status: 36, out: "Boot-out failed: 36: Operation now in progress" };
         boardLoaded = false;
       }
       return { status: 0, out: "" };
@@ -653,9 +663,17 @@ async function supervised(
         withdraw: facts.withdraw,
       },
       started: { watermark: facts.watermark, after: facts.startAfter },
-      // The board's job answers at once here: `lingtai restart` is about the
-      // conductor, and a board that would not come up is `service`'s to report.
-      board: { url: "http://127.0.0.1:17820", answering: async () => "http://127.0.0.1:17820", missing: () => null, heldBy: async () => null },
+      // The board's job answers at once unless the scene says otherwise:
+      // `lingtai restart` is about the conductor, and a board that would not
+      // come up is `service`'s to report. `heldBy` is null even under
+      // `wontAnswer` — a squatter that is not a Lingtai board takes no board
+      // lock, which is exactly why the job is started over it and exits.
+      board: {
+        url: "http://127.0.0.1:17820",
+        answering: async () => (board.wontAnswer ? null : "http://127.0.0.1:17820"),
+        missing: () => null,
+        heldBy: async () => null,
+      },
       by: BY,
       platform: "darwin",
       env: { HOME: home, USER: "lingtai" },
@@ -807,13 +825,56 @@ describe("the table of refusals", () => {
    * — which it had — and pointing at the daemon rather than the board.
    */
   it("starts the daemon again where the board's job would not stop, and blames neither the drain nor the daemon", async () => {
-    const s = await supervised({}, ARGS, true);
+    const s = await supervised({}, ARGS, { wontStop: true });
     expect(s.code, s.said).toBe(0);
     expect(s.said).toContain("restarted 2926f2d as mac:4242 — the commit that was checked");
     // The board's refusal is said, as the board's.
     expect(s.said).toContain(`the supervisor did not stop ${BOARD_LAUNCHD_LABEL}`);
     expect(s.said).toContain("the conductor drained; the board's job did not stop");
     expect(s.said).not.toContain("the drain above did not finish");
+  });
+
+  /**
+   * The same fix in the other direction, which is where it was half made (#187).
+   *
+   * Supervised install, both jobs. Something that is not a Lingtai board holds
+   * 17820 — a stale `next dev`, an unrelated server started at login — so it
+   * takes no board lock, the job is bootstrapped over it, exits on its own
+   * `EADDRINUSE`, and nothing ever answers. The daemon drained, started and
+   * recorded its start through all of that.
+   *
+   * `service start` folded both legs into one number and `restartSupervised`
+   * read it as the conductor's: it returned there, so the record was never read
+   * back, `startRefusals` never ran, no confirmation was printed, and `lingtai
+   * restart` exited non-zero over a daemon that is up, supervised and claiming
+   * tickets. What an operator does with that is run it again — a second full
+   * drain of a healthy daemon, an hour of wall limit, the same exit.
+   */
+  it("confirms the daemon where nothing answers on the board's port, and says the board is what did not come up", async () => {
+    const s = await supervised({}, ARGS, { wontAnswer: true });
+    expect(s.code, s.said).toBe(0);
+    expect(s.said).toContain("restarted 2926f2d as mac:4242 — the commit that was checked");
+    // The board's failure, in the board's words and the restart's.
+    expect(s.said).toContain("nothing answered on http://127.0.0.1:17820");
+    expect(s.said).toContain("the board did not come up, and the conductor is up and taking work");
+    expect(s.said).toContain("pnpm lingtai service start starts the board alone");
+    // Neither the drain nor the daemon is blamed for it.
+    expect(s.said).not.toContain("the drain above did not finish");
+    expect(s.said).not.toContain("no daemon recorded one");
+  });
+
+  /**
+   * And the checks the return skipped are run, not merely reached: the same
+   * scene as #167's major 2 — a drain landing while the supervisor starts the
+   * daemon — with the board's port held as well. The board's failure must not
+   * cost the conductor its refusal either.
+   */
+  it("runs the #167 checks on the started daemon though the board never answered", async () => {
+    const s = await supervised({ atStart: { landsDuring: ops(15) } }, ARGS, { wontAnswer: true });
+    expect(s.code, s.said).toBe(1);
+    expect(s.said).toContain("a daemon started, and it is not the start that was checked");
+    expect(s.said).toContain("landed between the checks and the start");
+    expect(s.said).not.toContain("restarted 2926f2d");
   });
 
   it("waives exactly what the flag names, on both paths", async () => {

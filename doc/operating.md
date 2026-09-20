@@ -949,6 +949,25 @@ not finish* from *the board's job did not stop*. It says which, and starts the
 conductor it drained. One number for both legs left the daemon drained,
 unloaded and unsupervised over a UI, under a sentence blaming the drain.
 
+**And a board that never comes up does not cost the conductor its
+confirmation**, which is the same rule on the way back up. Something that is
+not a Lingtai board on 17820 — a stale `next dev`, an unrelated server that
+took the port at login — holds no board lock, so the job is bootstrapped over
+it, exits on its own `EADDRINUSE`, and nothing answers for 75 seconds. The
+daemon started and recorded it through all of that. `service start` exits on
+the board alone, with its own number rather than the daemon's, so `lingtai
+restart` reads the record back, runs the `#167` checks on the daemon that
+started and prints *restarted … — the commit that was checked* — then says the
+board is what did not come up, and where to start it alone. Folded into one
+number it returned there instead: no confirmation, no checks, exit 1 over a
+daemon that is up and claiming tickets, and an operator told to drain a healthy
+one and wait out another pass for the same answer.
+
+The two exits are `service`'s own: **3** is *the conductor did its half and the
+board's job would not stop*, **4** is *the conductor did its half and the board
+did not come up*. Anything else non-zero is the conductor's, and `lingtai
+restart` treats it as one.
+
 **`KeepAlive` and `Restart=always` are the same rule**: the daemon is a thing
 that is always supposed to be up, so there is no start button that matters.
 What you steer is whether it takes work — `lingtai pause` and `lingtai resume`.

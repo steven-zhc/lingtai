@@ -201,6 +201,29 @@ export const JOBS: readonly Job[] = [DAEMON_JOB, BOARD_JOB];
  */
 export const SHUTDOWN_BOARD_ONLY = 3;
 
+/**
+ * The exit of `start`, `restart` and `install` where **every leg of the
+ * conductor's did what it says and the board's did not** (#187): the daemon
+ * started and recorded it, and the board's job would not start, or nothing
+ * answers on its port, or the supervisor could not be asked about it.
+ *
+ * The other half of `SHUTDOWN_BOARD_ONLY`, made for the same caller and against
+ * the same mistake. `lingtai restart` under a supervisor delegates its start to
+ * `service start` and reads that number as *did the conductor start*: a 1 there
+ * means no daemon recorded one, and the restart stops on it — without reading
+ * the record back, without `startRefusals` (the #167 check that the daemon
+ * running is the commit the guards examined and that no shutdown landed during
+ * the start), and without its confirmation. A board whose port a squatter holds
+ * used to end there: the daemon up, supervised and claiming tickets, the last
+ * thing on screen the board's failure, `lingtai restart` exiting non-zero, and
+ * the operator sent back to drain a healthy daemon for an hour and get the same
+ * answer.
+ *
+ * Non-zero, because a verb that did not do all it says did not succeed, and
+ * distinguishable, because the conductor is what its caller asked about.
+ */
+export const START_BOARD_ONLY = 4;
+
 export interface ServiceInputs {
   /** Absolute path to `node`. */
   node: string;
@@ -1427,16 +1450,22 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log("");
       log("the board");
       const boardReport = await reportBoard();
-      return code !== 0 ? code : boardCode !== 0 ? boardCode : boardReport;
+      // Every leg of the conductor's has returned above or is `code`; the two
+      // left are the board's alone, and say so by their number.
+      return code !== 0 ? code : boardCode !== 0 || boardReport !== 0 ? START_BOARD_ONLY : 0;
     }
 
     case "start": {
       if (!installed) return notInstalled();
       const daemon = await start();
-      // Both, and the worst answer wins: a `service start` that exited 0 over a
-      // board nobody can open is the claim #167 took out of the daemon's start.
+      // Both legs run — a `service start` that exited 0 over a board nobody can
+      // open is the claim #167 took out of the daemon's start — and the number
+      // says which one failed, since `lingtai restart` asks this about the
+      // conductor. The daemon's answer wins where both failed: *the board did
+      // not come up* is not a thing to tell a restart whose daemon never
+      // started either.
       const board = await startBoard();
-      return daemon !== 0 ? daemon : board;
+      return daemon !== 0 ? daemon : board === 0 ? 0 : START_BOARD_ONLY;
     }
 
     case "shutdown":
@@ -1471,7 +1500,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       const daemonStarted = await start(kept);
       if (daemonStarted !== 0) return daemonStarted;
       const boardStarted = await startBoard();
-      return boardStarted !== 0 ? boardStarted : boardStopped;
+      // The conductor drained, unloaded, started and recorded it; both numbers
+      // left are the board's, and one exit says that rather than reading like a
+      // restart that failed.
+      return boardStarted !== 0 || boardStopped !== 0 ? START_BOARD_ONLY : 0;
     }
 
     case "uninstall": {

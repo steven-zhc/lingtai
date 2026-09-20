@@ -88,7 +88,7 @@ import {
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { doctorReport } from "./doctor.ts";
-import { SHUTDOWN_BOARD_ONLY } from "./service.ts";
+import { SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } from "./service.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
 
 /** How often the lock is asked about while a drain is in flight. */
@@ -1099,7 +1099,16 @@ export async function restartSupervised(
 
   const startMark = await facts.watermark().catch(() => null);
   const started = await how.service(["start"], drain);
-  if (started !== 0) return started;
+  // `START_BOARD_ONLY` is the daemon started and recorded it, and no board
+  // answered — a port held by something that is not a Lingtai board, say. The
+  // same two-legs-one-number mistake as the drain's, in the other direction:
+  // stopping here would skip the record, `startRefusals` and the confirmation
+  // for a daemon that started correctly, and send the operator back to drain a
+  // healthy one over the UI (#187).
+  if (started !== 0 && started !== START_BOARD_ONLY) return started;
+  if (started === START_BOARD_ONLY) {
+    log(paint.held("the conductor started; the board did not come up, which is said above. The checks below are the conductor's."));
+  }
 
   // `service start` has seen a start recorded; this is which one, and whether it
   // is the one the checks examined.
@@ -1120,6 +1129,15 @@ export async function restartSupervised(
     return 1;
   }
   log(paint.pass(`restarted ${describeIdentity(record)} as ${record.worker} — the commit that was checked`));
+  // Said after the confirmation and not instead of it, and the exit stays the
+  // conductor's — the same answer the drain's leg gives. A non-zero here reads
+  // as *the restart failed*, and what an operator does with that is run it
+  // again: another full drain of a daemon that is up and taking work, an hour
+  // of wall limit, and the same board still on the port at the end of it.
+  if (started === START_BOARD_ONLY) {
+    log(paint.fail("the board did not come up, and the conductor is up and taking work — so this is the UI's to fix, not the restart's."));
+    log(paint.muted("pnpm lingtai service start starts the board alone, over a daemon it leaves running; pnpm lingtai service status says what the supervisor has."));
+  }
   return 0;
 }
 

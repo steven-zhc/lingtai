@@ -25,6 +25,7 @@ import {
   LAUNCHD_LABEL,
   NO_SUPERVISOR,
   SHUTDOWN_BOARD_ONLY,
+  START_BOARD_ONLY,
   SYSTEMD_UNIT,
   keeper,
   launchdPlist,
@@ -1447,12 +1448,49 @@ describe("two jobs", () => {
     expect(out.join("\n")).toContain("no board job was started");
   });
 
-  it("install exits 1 when the board's job started and no board answered — a loaded job is not a UI", async () => {
+  it("install exits on the board alone when its job started and no board answered — a loaded job is not a UI", async () => {
     const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
     const { go, err } = command("darwin", s.exec, { board: async () => null });
-    expect(await go("install")).toBe(1);
+    expect(await go("install")).toBe(START_BOARD_ONLY);
     expect(err.join("\n")).toContain("nothing answered on http://127.0.0.1:17820");
     expect(err.join("\n")).toContain("board.err");
+  });
+
+  /**
+   * The start's two legs, through one number — the drain's mistake in the other
+   * direction, and the half of it that was left (#187).
+   *
+   * `lingtai restart` under a supervisor delegates its start to `service start`
+   * and reads the answer as *did the conductor start*. A board whose port a
+   * squatter holds made that 1: the restart returned there, never read the
+   * record back, never ran `startRefusals`, printed no confirmation and exited
+   * non-zero — over a daemon that had started, was supervised, and was claiming
+   * tickets.
+   */
+  it("start exits on the board alone where the daemon recorded its start and nothing answered", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, out, err } = command("darwin", s.exec, { board: async () => null });
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("start")).toBe(START_BOARD_ONLY);
+    expect(START_BOARD_ONLY).not.toBe(1);
+    expect(START_BOARD_ONLY).not.toBe(SHUTDOWN_BOARD_ONLY);
+    // The daemon's leg did all it says, and says so.
+    expect(out.join("\n")).toContain("a daemon recorded its start");
+    expect(err.join("\n")).toContain("nothing answered on http://127.0.0.1:17820");
+  });
+
+  it("start exits 1 where the daemon is what did not start, whatever the board did", async () => {
+    // Both legs run, and the daemon's answer wins: *the board did not come up*
+    // is not a thing to tell a restart whose daemon never started either.
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go } = command("darwin", s.exec, {
+      board: async () => null,
+      started: { watermark: async () => 1, after: async () => null },
+    });
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("start")).toBe(1);
   });
 
   it("status reports each job on its own, and neither answer stands for the other", async () => {
@@ -1567,7 +1605,7 @@ describe("a board already on the port", () => {
   it("install writes the job and bootstraps nothing, rather than one launchd respawns for ever", async () => {
     const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
     const { go, out, err, boardCalls } = command("darwin", s.exec, terminal);
-    expect(await go("install")).toBe(1);
+    expect(await go("install")).toBe(START_BOARD_ONLY);
     // The file is written — it is correct, and the next login is not this run.
     expect(existsSync(BOARD_PLIST())).toBe(true);
     expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap") || c.startsWith("launchctl kickstart"))).toEqual([]);
@@ -1590,7 +1628,9 @@ describe("a board already on the port", () => {
     const { go, err, boardCalls } = command("darwin", s.exec, terminal);
     await launchdFile();
     await writeFile(BOARD_PLIST(), "");
-    expect(await go("restart", "picking up #88")).toBe(1);
+    // The conductor drained, started and recorded it; the board is the leg
+    // that did not, and the exit says which (#187).
+    expect(await go("restart", "picking up #88")).toBe(START_BOARD_ONLY);
     // The conductor's own start ran; the board's did not.
     expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
     expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap") || c.startsWith("launchctl kickstart"))).toEqual([]);
@@ -1604,7 +1644,7 @@ describe("a board already on the port", () => {
         throw new Error("the lock needs node:sqlite");
       },
     });
-    expect(await go("install")).toBe(1);
+    expect(await go("install")).toBe(START_BOARD_ONLY);
     expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap"))).toEqual([]);
     expect(err.join("\n")).toContain("the board lock could not be read — the lock needs node:sqlite");
   });
@@ -1643,7 +1683,7 @@ describe("waiting for the board to answer", () => {
       board: async () => ((asks++, (clock += 5_000)), null),
       now: () => clock,
     });
-    expect(await go("install")).toBe(1);
+    expect(await go("install")).toBe(START_BOARD_ONLY);
     expect(out.join("\n")).toContain(`waiting for the board to answer on ${BOARD_URL} — up to 75s`);
     expect(err.join("\n")).toContain(`nothing answered on ${BOARD_URL} in 75s`);
     // Fifteen asks and 75 seconds, not 75 asks and 450. The sixteenth is the
