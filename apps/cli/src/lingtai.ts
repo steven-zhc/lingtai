@@ -148,9 +148,12 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --no-open                   no browser — what the supervised job carries
   lingtai board stop                stop the board this machine is serving. stop
                                 and not shutdown: a board has no pass to finish
-  lingtai board restart             stop, then start. Checks nothing — lingtai
-                                restart is the checked one, and it is the
-                                conductor's
+  lingtai board restart             stop, then start. Checks nothing of this
+                                checkout — lingtai restart is the checked one,
+                                and it is the conductor's. Where a supervisor
+                                keeps the board, the stop is the whole restart:
+                                the job comes back and nothing here takes its
+                                lock
   lingtai board status              who is serving it, and whether the port
                                 answers — two facts, not one
   lingtai status [project]          what is runnable, and what is holding the rest

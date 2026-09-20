@@ -26,6 +26,7 @@ import {
   NO_SUPERVISOR,
   SYSTEMD_BOARD_UNIT,
   SYSTEMD_UNIT,
+  boardKeeper,
   keeper,
   launchdPlist,
   lingering,
@@ -1184,6 +1185,89 @@ describe("whether a supervisor keeps the daemon, for a restart", () => {
     const { exec } = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }]]);
     const kept = keeper({ platform: "linux", env: env(), root: ROOT, uid: UID, exec, which });
     expect("unread" in kept && kept.unread).toContain("different checkout");
+  });
+});
+
+/**
+ * The same question of the **board's** job, which `board restart` asks before
+ * it stops one — found cold by the review of #187.
+ *
+ * `board restart` frees the board lock and the `start` behind it is a few
+ * milliseconds of SQLite against launchd's respawn. A terminal that wins that
+ * race leaves the installed job exiting 1 on a lock it cannot take, respawned
+ * every thirty seconds behind a board that goes when the terminal closes —
+ * `confirmBoard` refuses to call that a start, and this is what stops the
+ * restart verb walking into it.
+ */
+describe("whether a supervisor keeps the board, for board restart", () => {
+  const env = () => ({ HOME: home, USER: "lingtai" });
+  const which = (bin: string) => `/usr/bin/${bin}`;
+  const install = async (platform: "launchd" | "systemd", root: string) => {
+    const f = (platform === "launchd" ? launchdPlist : systemdUnit)({ node: NODE, root, env: env() }, BOARD_JOB);
+    await mkdir(dirname(f.path), { recursive: true });
+    await writeFile(f.path, f.content);
+  };
+
+  it("does not, where only the daemon's job was ever installed — a pre-#187 machine", async () => {
+    const f = launchdPlist({ node: NODE, root: ROOT, env: env() });
+    await mkdir(dirname(f.path), { recursive: true });
+    await writeFile(f.path, f.content);
+    const { exec } = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n" }]]);
+    expect(boardKeeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
+  });
+
+  it("does, when launchd has the board's job loaded — and it is asked about that label", async () => {
+    await install("launchd", ROOT);
+    const { exec, calls } = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n\tpid = 500\n" }]]);
+    expect(boardKeeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({
+      kept: true,
+      job: LAUNCHD_BOARD_LABEL,
+    });
+    expect(calls).toEqual([`launchctl print gui/${UID}/${LAUNCHD_BOARD_LABEL}`]);
+  });
+
+  /**
+   * The case that matters most: a job launchd is already respawning is a job
+   * about to want this lock, so a terminal `restart` must not take it.
+   */
+  it("does, for a job that is crash-looping rather than up", async () => {
+    await install("launchd", ROOT);
+    const { exec } = supervisor([["launchctl print", { status: 0, out: "\tstate = spawn scheduled\n\tlast exit code = 1\n" }]]);
+    expect(boardKeeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toMatchObject({ kept: true });
+  });
+
+  it("does not, for a job booted out — there a terminal board is the only board, and restart restarts it", async () => {
+    await install("launchd", ROOT);
+    const { exec } = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    expect(boardKeeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
+  });
+
+  it("does not, for a board unit that is inactive", async () => {
+    await install("systemd", ROOT);
+    const { exec } = supervisor([["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=inactive\n" }]]);
+    expect(boardKeeper({ platform: "linux", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({ kept: false });
+  });
+
+  it("refuses a supervisor it could not ask, so the restart stops nothing rather than racing", async () => {
+    await install("launchd", ROOT);
+    const { exec } = supervisor([["launchctl print", { status: 112, out: "Could not find domain" }]]);
+    expect(boardKeeper({ platform: "darwin", env: env(), root: ROOT, uid: UID, exec, which })).toHaveProperty("unread");
+  });
+
+  /**
+   * Unlike the daemon's: a board job written from another checkout still
+   * serves a board this machine keeps, and a second one beside it is the thing
+   * being prevented. Which checkout renders it is not this question.
+   */
+  it("keeps a board job from another checkout, rather than calling it unread", async () => {
+    await install("systemd", "/srv/other");
+    const { exec } = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\nMainPID=500\n" }],
+    ]);
+    expect(boardKeeper({ platform: "linux", env: env(), root: ROOT, uid: UID, exec, which })).toEqual({
+      kept: true,
+      job: SYSTEMD_BOARD_UNIT,
+    });
   });
 });
 

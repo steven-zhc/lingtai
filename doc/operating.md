@@ -627,6 +627,16 @@ is the same distinction: it is stop-then-start and claims nothing more, where
 `lingtai restart` refuses a `HEAD` the tracking remote does not have, a dirty
 worktree and a red `doctor` before it drains.
 
+**Where a supervisor keeps the board, the stop is the whole restart.** `restart`
+asks that first — of the board's own job, and before it stops anything — and
+where the answer is yes it starts none itself and says so: the job comes back on
+its own. Starting one here would be this terminal racing the respawn for the
+lock it had just freed, and winning: the job then exits 1 on a lock it cannot
+take and is respawned every thirty seconds behind a board that goes when the
+terminal closes. Losing the race is no better — the port is taken by then, and
+`start` would name Lingtai's own supervised board *something that is not a board
+of this machine's*. An answer that cannot be read stops nothing at all.
+
 A run without the hook binary does not start. The binary is not committed, so
 building it is a real step.
 
@@ -968,7 +978,7 @@ nothing recorded.
 |---|---|---|---|
 | `lingtai restart "why"` | `HEAD`, the worktree, `doctor` | yes | both jobs, through `service` |
 | `lingtai service restart "why"` | nothing | yes, the conductor's | both jobs |
-| `lingtai board restart` | nothing | no — a board has no pass | the board |
+| `lingtai board restart` | whether a supervisor keeps the board | no — a board has no pass | the board, or the supervisor's own stop of it |
 
 Both restarts take the board with them, and that is deliberate: a merge into
 `main` reaches the board's source and not the process serving it, exactly as it

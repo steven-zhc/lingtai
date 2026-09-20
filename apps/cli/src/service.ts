@@ -152,7 +152,13 @@ KillMode=control-group
 # and stops this (#187).`,
   launchdStop: `  <!-- No ExitTimeOut, deliberately: launchd's 20 seconds is more than a board
        needs. It detaches nothing and has no pass to finish, so nothing is
-       drained before this is booted out (#187). -->`,
+       drained before this is booted out (#187).
+
+       launchd has no kill scope of systemd's kind, so the next dev child a
+       board served from a checkout runs is not launchd's to take: the CLI
+       SIGTERMs it and SIGKILLs it five seconds later (board.ts's stopServer),
+       well inside that 20 seconds. Without that, a SIGKILL here would leave it
+       on the port holding no lock, and every respawn would be refused by it. -->`,
 };
 
 export type ServicePlatform = "launchd" | "systemd";
@@ -626,6 +632,63 @@ export function keeper(
     };
   }
   return { kept: true, platform, path };
+}
+
+export type BoardKeeper =
+  /** No supervisor has the board's job, or none exists here: whoever starts one is the board. */
+  | { kept: false }
+  /** The supervisor has it, and would start it again by itself. `job` is the label or the unit. */
+  | { kept: true; job: string }
+  /** It could not be told. Refused before anything is stopped, never guessed as `false`. */
+  | { unread: string };
+
+/**
+ * Whether a supervisor keeps **the board**, asked before `board restart` stops
+ * one (#187, and the review of it).
+ *
+ * `keeper` above is the daemon's, and the board needs the same question asked
+ * of its own job: `board restart` frees the board lock, and the `start` behind
+ * it is a few milliseconds of SQLite against launchd's respawn. A terminal
+ * that wins that race leaves the installed job exiting 1 on a lock it cannot
+ * take, respawned every thirty seconds behind a board that goes when the
+ * terminal closes — the state `confirmBoard` refuses to call a start, reached
+ * through the documented restart verb.
+ *
+ * **Loaded is kept, crash-looping included**, which is the case that matters:
+ * a job launchd is respawning is a job about to want this lock. A job booted
+ * out, or a unit `inactive` or `failed`, is not — there a terminal board is
+ * the only board, and `board restart` restarts it as it always did.
+ *
+ * **No checkout check, unlike `keeper`.** A board job written from another
+ * checkout still serves a board this machine keeps, and starting a second one
+ * beside it is exactly what this is asked to prevent; which checkout it renders
+ * is not this question.
+ */
+export function boardKeeper(
+  options: Pick<ServiceOptions, "platform" | "env" | "root" | "uid" | "exec" | "which"> = {},
+): BoardKeeper {
+  const platform = platformFor(options.platform ?? process.platform);
+  const which = options.which ?? whichBin;
+  if (!platform || !which(platform === "launchd" ? "launchctl" : "systemctl")) return { kept: false };
+  const env = options.env ?? process.env;
+  const root = options.root ?? repoRoot();
+  let path: string;
+  try {
+    path = (platform === "launchd" ? launchdPlist : systemdUnit)({ node: "node", root, env }, BOARD_JOB).path;
+  } catch {
+    // A HOME-less environment, or a checkout path systemd cannot carry:
+    // `service install` refuses both, so nothing was installed from here.
+    return { kept: false };
+  }
+  if (!existsSync(path)) return { kept: false };
+
+  const answer = askSupervisor(platform, options.exec ?? execCall, options.uid ?? process.getuid?.() ?? 0, BOARD_JOB);
+  if ("unread" in answer) return { unread: `could not ask the supervisor whether it keeps the board — ${answer.unread}` };
+  const kept =
+    platform === "launchd"
+      ? answer.loaded
+      : answer.loaded && !answer.lines.some((l) => l === "ActiveState=inactive" || l === "ActiveState=failed");
+  return kept ? { kept: true, job: platform === "launchd" ? BOARD_JOB.label : BOARD_JOB.unit } : { kept: false };
 }
 
 /** Where the board answers, who is serving it, and how to ask — the default when nothing is injected. */

@@ -6,7 +6,18 @@ import { join } from "node:path";
 import { BOARD_PORT, RESERVED_PORT } from "@lingtai/env";
 import { createFileLocker, type FileLocker } from "@lingtai/env/lock";
 import { afterEach, describe, expect, it } from "vitest";
-import { BOARD_LOCK, boardCommand, boardEntry, boardPlace, nextBin, serveBoard, type BoardOptions } from "../src/board.ts";
+import {
+  BOARD_LOCK,
+  type BoardOptions,
+  SERVER_KILL_MS,
+  STOP_WAIT_MS,
+  boardCommand,
+  boardEntry,
+  boardPlace,
+  nextBin,
+  serveBoard,
+  stopServer,
+} from "../src/board.ts";
 
 /**
  * `serveBoard` against a stand-in `server.js` that does what Next's does: binds
@@ -80,6 +91,53 @@ describe("serveBoard", () => {
       `127.0.0.1:${port} is already in use`,
     );
     expect((globalThis as { __boardLoaded?: boolean }).__boardLoaded).toBeUndefined();
+  });
+});
+
+/**
+ * The `next dev` a checkout's board is served by, and how it is stopped (#187,
+ * and the review of it).
+ *
+ * **macOS has no kill scope of systemd's kind**, so nothing but this process
+ * will take that child: a CLI that waits for ever for a Turbopack wedged on
+ * shutdown holds the board lock past `board stop`'s deadline, and `stop`'s own
+ * advice is then `kill -9` at this pid — which runs no handler, leaves the
+ * child on the port named by no lock, and is recovered by finding it by hand.
+ */
+describe("the development server a start spawned", () => {
+  /** A checkout whose `next` binds the port and takes SIGTERM without going. */
+  function deafNext(): string {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-board-deaf-"));
+    dirs.push(dir);
+    const next = nextBin(dir);
+    mkdirSync(join(next, ".."), { recursive: true });
+    writeFileSync(
+      next,
+      `const net = require("node:net");
+process.on("SIGTERM", () => {});
+const port = Number(process.argv[process.argv.indexOf("--port") + 1]);
+net.createServer((s) => s.end()).listen(port, "127.0.0.1");
+`,
+    );
+    return dir;
+  }
+
+  it("is SIGKILLed when it will not go, so the port is free and no orphan is left on it", async () => {
+    const port = await freePort();
+    const exits: number[] = [];
+    await serveBoard({ place: { source: deafNext() }, port, host: "127.0.0.1", onServerExit: (c) => exits.push(c) });
+    expect(await answers(port)).toBe(true);
+
+    // What `board stop`'s SIGTERM reaches: the handler this process registered.
+    stopServer(50);
+    for (let i = 0; i < 200 && exits.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 20));
+    // 1, because it went on a signal and not on its own.
+    expect(exits).toEqual([1]);
+    expect(await answers(port)).toBe(false);
+  }, 15_000);
+
+  it("gets its deadline inside board stop's, so stop never has to advise that kill -9", () => {
+    expect(SERVER_KILL_MS).toBeLessThan(STOP_WAIT_MS);
   });
 });
 
@@ -166,7 +224,13 @@ describe("the board's lifecycle", () => {
         throw new Error("the board never queues for the lock");
       },
     };
-    return { locker, took, free: () => void (held = null) };
+    return {
+      locker,
+      took,
+      free: () => void (held = null),
+      /** Somebody else takes it — a supervisor respawning the job it keeps. */
+      replace: (who: string) => void (held = who),
+    };
   }
 
   function run(args: string[], world: Parameters<typeof boardCommand>[1] = {}) {
@@ -181,6 +245,9 @@ describe("the board's lifecycle", () => {
           host: HOST,
           place: { built: "/built/board" },
           answers: async () => false,
+          // No supervisor unless a test says so: the live one shells out to
+          // launchctl, and this suite is on neither platform.
+          keptBySupervisor: () => ({ kept: false }),
           serve: async () => {},
           open: async () => true,
           onInterrupt: () => {},
@@ -358,6 +425,81 @@ describe("the board's lifecycle", () => {
     expect(await go()).toBe(1);
     expect(err[0]).toBe(`a board is already on 17820 — http://${HOST}:17820`);
     if (taken.ok) await taken.lock.release();
+  });
+
+  /**
+   * **`restart` must not race the supervisor for the lock it just freed**, and
+   * on a supervised machine it wins: `holding` is a few milliseconds of SQLite
+   * and `serve` a spawn, all well inside launchd's respawn. What it wins is the
+   * job exiting 1 on a lock it cannot take, respawned every thirty seconds
+   * behind a board that goes when this terminal closes — the state
+   * `confirmBoard` refuses to call a start, reached through the restart verb
+   * and reported as success. Found cold by the review of #187.
+   */
+  describe("restart, and whose board it is", () => {
+    const JOB = "ai.nextloom.lingtai.board";
+
+    it("stops the supervisor's board and starts none itself, taking no lock at all", async () => {
+      const l = locking(`board on 17820 pid 500 on ${hostname()}`);
+      const served: BoardOptions[] = [];
+      const { go, out } = run(["restart"], {
+        locker: l.locker,
+        keptBySupervisor: () => ({ kept: true, job: JOB }),
+        signal: () => l.free(),
+        serve: async (o) => void served.push(o),
+      });
+      expect(await go()).toBe(0);
+      // The whole finding: nothing was served here and nothing was taken, so
+      // the respawn has the lock it needs and there is no crash-loop behind it.
+      expect(served).toEqual([]);
+      expect(l.took).toEqual([]);
+      expect(out.join("\n")).toContain(`${JOB} keeps this board, so none was started here`);
+      expect(out.join("\n")).toContain("pnpm lingtai service restart");
+    });
+
+    it("is stop and then start where no supervisor keeps one, which is the terminal case", async () => {
+      const l = locking(`board on 17820 pid 4242 on ${hostname()}`);
+      const served: BoardOptions[] = [];
+      const { go } = run(["restart"], {
+        locker: l.locker,
+        keptBySupervisor: () => ({ kept: false }),
+        signal: () => l.free(),
+        serve: async (o) => void served.push(o),
+      });
+      expect(await go()).toBe(0);
+      expect(served).toHaveLength(1);
+      expect(l.took).toEqual(["board on 17820"]);
+    });
+
+    it("stops nothing when it could not be told — a restart that cannot tell would race", async () => {
+      const signalled: number[] = [];
+      const { go, err } = run(["restart"], {
+        locker: locking(`board on 17820 pid 500 on ${hostname()}`).locker,
+        keptBySupervisor: () => ({ unread: "launchctl print exited 112: Could not find domain" }),
+        signal: (pid) => void signalled.push(pid),
+      });
+      expect(await go()).toBe(1);
+      expect(signalled).toEqual([]);
+      expect(err.join("\n")).toContain("nothing was stopped");
+    });
+
+    /**
+     * The other half of the same fact: a supervisor takes the lock back in the
+     * instant it is freed, so `stop`'s poll often never sees it empty. Reading
+     * that as *the pid I signalled will not go* would fail a stop that worked,
+     * and send somebody to `kill -9` a pid that is already gone.
+     */
+    it("stop says the board came back, and never that the pid it signalled held on", async () => {
+      const l = locking(`board on 17820 pid 500 on ${hostname()}`);
+      const { go, out, err } = run(["stop"], {
+        locker: l.locker,
+        signal: () => l.replace(`board on 17820 pid 502 on ${hostname()}`),
+      });
+      expect(await go()).toBe(0);
+      expect(out.join("\n")).toContain("stopped the board on 17820 — pid 500");
+      expect(out.join("\n")).toContain("pid 502");
+      expect(err).toEqual([]);
+    });
   });
 });
 

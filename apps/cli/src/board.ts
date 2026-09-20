@@ -8,6 +8,11 @@ import { pathToFileURL } from "node:url";
 import { constants, Script } from "node:vm";
 import { boardPort, machineConfigPath, repoRoot } from "@lingtai/env";
 import { createFileLocker, type FileLocker, type HeldLock } from "@lingtai/env/lock";
+// `service.ts` imports this file for the lock and the place, and this one asks
+// it whose board the supervisor keeps. Both directions are read inside
+// functions and never while either module is being evaluated, which is what
+// makes the pair safe to load from either end.
+import { type BoardKeeper, boardKeeper } from "./service.ts";
 
 /**
  * The built board, served from this process (#183).
@@ -100,6 +105,12 @@ export interface BoardOptions {
   place: BoardPlace;
   port: number;
   host: string;
+  /**
+   * What a development server that exits does to this process — `process.exit`
+   * with its code, and the reason is in `serveFromSource`. Injected only by a
+   * test, which is a runner and may not exit.
+   */
+  onServerExit?: (code: number) => void;
 }
 
 /**
@@ -114,8 +125,9 @@ export interface BoardOptions {
  */
 export async function serveBoard(options: BoardOptions): Promise<void> {
   await portIsFree(options.host, options.port);
-  if ("source" in options.place) await serveFromSource(options.place.source, options.port, options.host);
-  else await loadBuilt(options.place.built, options.port, options.host);
+  if ("source" in options.place) {
+    await serveFromSource(options.place.source, options.port, options.host, options.onServerExit);
+  } else await loadBuilt(options.place.built, options.port, options.host);
   await listening(options.host, options.port);
 }
 
@@ -141,14 +153,42 @@ async function loadBuilt(dir: string, port: number, host: string): Promise<void>
 let server: ChildProcess | null = null;
 
 /**
+ * How long the development server gets to go on `SIGTERM` before `SIGKILL`.
+ *
+ * **Inside `STOP_WAIT_MS`, deliberately**, so that `board stop` sees the lock
+ * go rather than reaching its own deadline and advising a `kill -9` — see
+ * `stopServer`.
+ */
+export const SERVER_KILL_MS = 5_000;
+
+/**
  * Signal it, so that stopping this CLI stops the board and not only the CLI.
  *
  * `board stop` sends `SIGTERM` to **one pid**, and SIGTERM's default action
  * would take this process and leave the server it started orphaned, still on
  * the port and now holding no lock — a board nothing in this file can find.
+ *
+ * **And `SIGKILL` if it will not go.** Waiting for ever is the same orphan by
+ * another road: this process exits only on the child's `exit`, so a Turbopack
+ * that wedges on shutdown holds the lock past `board stop`'s deadline, whose
+ * own advice is then `kill -9` at *this* pid — which runs no handler, leaves
+ * the child on the port with no lock naming it, and is recovered by finding it
+ * by hand. On Linux the unit's `KillMode=control-group` would catch that; macOS
+ * has no kill scope of that kind, so the escalation is here, where both
+ * platforms get it.
  */
-export function stopServer(): void {
-  server?.kill("SIGTERM");
+export function stopServer(after: number = SERVER_KILL_MS): void {
+  const child = server;
+  if (!child) return;
+  child.kill("SIGTERM");
+  const blunt = setTimeout(() => {
+    // `server` is nulled by the child's own `exit`, so this fires only on a
+    // child that is still there.
+    if (server === child) child.kill("SIGKILL");
+  }, after);
+  // Never a reason on its own to stay alive: the child's handle is what keeps
+  // this process up, and an unref'd timer still fires while it does.
+  blunt.unref();
 }
 
 /**
@@ -165,7 +205,12 @@ export function stopServer(): void {
  * a CLI left holding the board lock over a dead server is a board that `status`
  * calls up and `stop` signals into nothing.
  */
-function serveFromSource(dir: string, port: number, host: string): Promise<void> {
+function serveFromSource(
+  dir: string,
+  port: number,
+  host: string,
+  onExit: (code: number) => void = (code) => process.exit(code),
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const next = nextBin(dir);
     if (!existsSync(next)) {
@@ -182,10 +227,12 @@ function serveFromSource(dir: string, port: number, host: string): Promise<void>
     child.once("error", (err: Error) => reject(new Error(`could not start ${next}: ${err.message}`)));
     child.once("spawn", () => {
       server = child;
-      process.once("SIGTERM", stopServer);
+      // Wrapped: a listener is called with the signal's name, which is not the
+      // deadline `stopServer` takes.
+      process.once("SIGTERM", () => stopServer());
       child.once("exit", (code, signal) => {
         server = null;
-        process.exit(code ?? (signal === null ? 0 : 1));
+        onExit(code ?? (signal === null ? 0 : 1));
       });
       resolve();
     });
@@ -264,6 +311,12 @@ async function listening(host: string, port: number): Promise<void> {
  * worktree and a red `doctor` before it drains (0042); `board restart` is
  * stop-then-start and claims nothing more.
  *
+ * It does ask **one** thing first, and it is not about this checkout: whether a
+ * supervisor keeps the board. Where one does, the stop is the whole restart —
+ * the job comes back by itself, and a `start` here would be this terminal
+ * winning a race against the respawn and leaving the job crash-looping behind
+ * a board that goes when the terminal closes (`boardKeeper`).
+ *
  * ## One board per machine, and the lock is how `stop` finds it
  *
  * A port cannot be asked who is behind it, so the board takes the same file
@@ -277,7 +330,7 @@ async function listening(host: string, port: number): Promise<void> {
 export const BOARD_LOCK = "board";
 
 /** How long `stop` waits for the board to let the lock go after the signal. */
-const STOP_WAIT_MS = 10_000;
+export const STOP_WAIT_MS = 10_000;
 
 /**
  * The lock this process holds while it serves, kept at module scope on purpose:
@@ -330,6 +383,12 @@ export interface BoardWorld {
   open?: (url: string) => Promise<boolean>;
   /** `process.kill`, so a test signals nothing. */
   signal?: (pid: number, sig: NodeJS.Signals | 0) => void;
+  /**
+   * Whether a supervisor keeps the board here — `boardKeeper`, injected so a
+   * test is on neither platform. Asked by `restart`, which must not take a
+   * lock the supervisor's job is about to want.
+   */
+  keptBySupervisor?: () => BoardKeeper;
   host?: string;
   /** What runs when Ctrl+C reaches a board this command is serving. */
   onInterrupt?: (stop: () => void) => void;
@@ -486,8 +545,24 @@ export async function boardCommand(args: string[], world: BoardWorld = {}): Prom
         log("under a supervisor it comes back: pnpm lingtai service status says whether one keeps it");
         return 0;
       }
+      // **Somebody else's lock is not the signalled pid holding on.** A
+      // supervisor respawns the job it keeps in the instant the lock goes, so
+      // the free moment is often never seen; reading that as *pid 500 will not
+      // go* would fail a stop that worked and name the wrong process.
+      const nowNamed = parseBoardHolder(now.who);
+      if (nowNamed && nowNamed.pid !== named.pid) {
+        log(`stopped the board on ${named.port} — pid ${named.pid}`);
+        log(`a board is on ${nowNamed.port} again — pid ${nowNamed.pid}, which is what a supervisor keeping one looks like`);
+        return 0;
+      }
       if (Date.now() > until) {
         error(`pid ${named.pid} still holds the board lock ${STOP_WAIT_MS / 1000}s after SIGTERM — kill -9 ${named.pid} is the blunt way`);
+        // It runs no handler, so a board served from a checkout leaves its
+        // `next dev` behind, on the port and named by no lock. `stopServer`
+        // kills that child five seconds into its own SIGTERM, so reaching this
+        // line means this pid ran no handler at all — and the blunt way has
+        // one more thing to look for afterwards.
+        error(`and it runs no handler: lsof -nP -iTCP:${named.port} -sTCP:LISTEN names the development server it would leave on the port`);
         return 1;
       }
       await sleep(100);
@@ -572,8 +647,32 @@ export async function boardCommand(args: string[], world: BoardWorld = {}): Prom
     case "stop":
       return stop();
     case "restart": {
+      // **A restart must not become the board a supervisor keeps.** `stop`
+      // frees the lock and the `start` behind it is a few milliseconds of
+      // SQLite against launchd's respawn — a race this terminal normally wins,
+      // and what it wins is the job exiting 1 on a lock it cannot take,
+      // respawned every thirty seconds behind a board that goes when this
+      // terminal closes. The other side is no better: a respawn that binds the
+      // port first turns the next `start` into *held by something that is not
+      // a board of this machine's*, over Lingtai's own supervised board, and
+      // this verb exits 1 having stopped a board it did not restart.
+      //
+      // So where a supervisor keeps one, **the stop is the restart**: it comes
+      // back by itself, and nothing here takes the lock. Asked before anything
+      // is stopped, and an answer that could not be read stops nothing.
+      const kept = (world.keptBySupervisor ?? boardKeeper)();
+      if ("unread" in kept) {
+        error(`could not read whether a supervisor keeps the board — ${kept.unread}`);
+        error("nothing was stopped: a restart that cannot tell would race the job it keeps");
+        return 1;
+      }
       const stopped = await stop();
       if (stopped !== 0) return stopped;
+      if (kept.kept) {
+        log(`${kept.job} keeps this board, so none was started here — the supervisor starts it again`);
+        log("pnpm lingtai board status says when it is back, and pnpm lingtai service restart is the one that waits for it");
+        return 0;
+      }
       return start();
     }
     case "status": {
