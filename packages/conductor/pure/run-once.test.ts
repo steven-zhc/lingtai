@@ -1131,7 +1131,11 @@ describe("runOnce, with no world to run in", () => {
         question: string;
         diagnosis: { done: string; raw: string | null } | null;
       };
-      expect(blocked.question).toContain("two agents disagreed");
+      // **And not "two agents disagreed"** (`#197`): `rounds: 0` is the recipe
+      // buying nobody to answer the reviewer, so exactly one agent looked at
+      // this diff. The ceiling is still both ceilings' to name, below.
+      expect(blocked.question).not.toContain("two agents disagreed");
+      expect(blocked.question).toContain("buys no fix round");
       expect(blocked.question).not.toContain("restart");
       expect(blocked.diagnosis!.done).toContain("runtime.limits.rounds: 0");
       expect(blocked.diagnosis!.done).toContain("runtime.limits.restarts: 0");

@@ -127,6 +127,7 @@ import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { diagnoseRefusal } from "./attribution.ts";
 import {
   type FixOn,
+  type FixStop,
   type RestartArm,
   decideFix,
   declineWhy,
@@ -134,6 +135,9 @@ import {
   diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
+  fixStopOf,
+  mergeAnywayBecause,
+  stopNeeds,
   unfixedQuestion,
 } from "./fix.ts";
 import { armBranch, decideRestart, restartReason } from "./restart.ts";
@@ -1499,6 +1503,17 @@ export function runOnce(
         rounds: number;
         why: string;
         /**
+         * Which of the five endings this is, for the headline a person reads
+         * first (`#197`).
+         *
+         * Beside `why` rather than instead of it, and beside `exhausted` rather
+         * than derived from it: `why` is the sentence under the headline and
+         * `exhausted` is the two-way question `decideRestart` asks about money.
+         * Neither can say *a rate limit killed the fixer* — which is what a
+         * person has to be told before they are asked to adjudicate anything.
+         */
+        stop: FixStop;
+        /**
          * Whether the **ceiling** is what stopped the rounds, as opposed to an
          * agent declining or a refusal carrying no criterion.
          *
@@ -1639,6 +1654,10 @@ export function runOnce(
               round: rounds,
               why: decision.why,
               on: refusal.on ?? (refusal.findings.length > 0 ? ("findings" as const) : ("output" as const)),
+              // The rule, carried whole rather than flattened into `exhausted`
+              // below: two of its three values are the same answer about money
+              // and three different sentences to a person (`#197`).
+              stop: { ended: decision.rule } satisfies FixStop,
               // The ceiling, or the recipe declining to have one — both mean
               // *nothing more patches this diff in place*, which is the
               // question `decideRestart` asks. `no-criterion` does not: a gate
@@ -1785,10 +1804,29 @@ export function runOnce(
             // produced nothing and meant nothing by it. One sentence for both
             // would tell a person "the fixing agent committed nothing" about a
             // process that was killed.
+            //
+            // **And the distinction now reaches the headline** (`#197`). It was
+            // made here and spent on `why`, which lands three sentences into the
+            // second paragraph of a card whose first sentence said *two agents
+            // disagreed*. `stop` carries the same branch up to where a person
+            // reads first; `why` below is unchanged, because the evidence under
+            // the headline was never the thing that was wrong.
+            //
+            // **And the branch is three ways, not two.** `fixStopOf` reads the
+            // kind against a total record rather than treating everything that
+            // is not a decline as a crash: `out-of-turns` is the repository's
+            // failure (`attribution.ts`), and the block a page above answers a
+            // whole run ending that way with *narrow or split the ticket — a
+            // retry buys another run to the same limit*. A card here telling a
+            // person the opposite is the same ticket read twice and answered
+            // both ways.
             return {
               kind: "declined" as const,
               round: decision.round,
               on: decision.on,
+              stop: (fixed.failure
+                ? fixStopOf(fixed.failure)
+                : { ended: "declined" }) satisfies FixStop,
               why: fixed.failure
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                   "so there is nothing new for the review to read"
@@ -1936,6 +1974,7 @@ export function runOnce(
               evidence: refused.evidence,
               rounds: bought.round,
               why: bought.why,
+              stop: bought.stop,
               exhausted: bought.exhausted,
             };
             // The work is going to a person, so the person has to be able to
@@ -2100,6 +2139,7 @@ export function runOnce(
             evidence: paths,
             rounds: bought.round,
             why: bought.why,
+            stop: bought.stop,
             exhausted: bought.exhausted,
           };
         }
@@ -2383,12 +2423,12 @@ export function runOnce(
                   // one stubborn diff.
                   (arms.length > 0 ? `Approach ${arms.length + 1} of ${arms[0]!.of + 1}. ` : "") +
                   (unresolved
-                    ? unresolved.on === "findings"
-                      ? `Merge ${branch} into ${base} anyway? Two agents disagreed: ` +
-                        `the ${unresolved.action} reviewer still refuses it after ` +
-                        `${unresolved.rounds} fix round(s).`
-                      : `Merge ${branch} into ${base} anyway? \`${unresolved.action}\` is ` +
-                        `still red after ${unresolved.rounds} fix round(s).`
+                    ? // **And this one is kept for ever** (`#197`). The headline
+                      // and the block's line both say what stopped the pass; a
+                      // record that went on saying *two agents disagreed* would
+                      // put the log on the wrong side of the disagreement #83 is
+                      // about, and unlike the other two nothing ever rewrites it.
+                      `Merge ${branch} into ${base} anyway? ${mergeAnywayBecause(unresolved)}`
                     : pipeline.ok && atMerge.ok
                       ? `Merge ${branch} into ${base}? Every gate passed.`
                       : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} gate refused.`),
@@ -2400,6 +2440,13 @@ export function runOnce(
         // Blocked rather than released, the same as a refusal — a question for
         // a person belongs in "Waiting on you", not back in the queue where
         // another run could claim it and throw the question away.
+        //
+        // **`stop` rides the spread** (`#197`), which is why this line did not
+        // change when the sentence it produces did. It is the first thing a
+        // person sees — the GitHub comment, the board's note, `lingtai status`
+        // — so a line still saying *two agents disagreed* over a card headlined
+        // *a fixing agent did not finish* is the two readings contradicting
+        // each other, and the one they read first winning.
         const question = unresolved
           ? unresolved.on === "findings"
             ? disagreementQuestion({ ...unresolved, branch, base, restarts: arms.length })
@@ -2523,7 +2570,11 @@ export function runOnce(
                 question,
                 needsFrom: "human",
                 runId,
-                needs: "judgement",
+                // **The line above the headline has to agree with it** (`#197`,
+                // and `stopNeeds` is where the table lives). Every other hold
+                // here is a person's call — a `human:` action, a migration, a
+                // repair's diff — so `judgement` is still what they get.
+                needs: unresolved === null ? "judgement" : stopNeeds(unresolved.stop),
                 diagnosis,
               }),
             },

@@ -19,12 +19,18 @@
 import { describe, expect, it } from "vitest";
 import type { GateFinding } from "@lingtai/actions";
 import {
+  type FixStop,
   decideFix,
   declineWhy,
   diagnoseDisagreement,
+  diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
+  fixStopOf,
+  mergeAnywayBecause,
   quoteFindings,
+  stopNeeds,
+  unfixedQuestion,
 } from "../src/fix.ts";
 
 const SCENARIO =
@@ -305,6 +311,7 @@ describe("what a person is shown when the rounds are over", () => {
     findings: [finding()],
     rounds: 1,
     why: "the ceiling of 1 fix round(s) for this item is spent, and the review still refuses",
+    stop: { ended: "spent" },
   });
 
   /**
@@ -348,6 +355,7 @@ describe("what a person is shown when the rounds are over", () => {
       findings: [finding()],
       rounds: 0,
       why: "this project's recipe buys no rounds of fix-and-re-review (repair.fix: 0)",
+      stop: { ended: "no-rounds" },
     });
 
     expect(none.done).toContain("No fixing agent ran");
@@ -360,6 +368,7 @@ describe("what a person is shown when the rounds are over", () => {
       base: "main",
       findings: [finding({ severity: "major" }), finding()],
       rounds: 1,
+      stop: { ended: "spent" },
     });
 
     expect(question).toContain("two agents disagreed about agent/123 into main");
@@ -368,6 +377,462 @@ describe("what a person is shown when the rounds are over", () => {
     // And says nothing about restarts, because there have been none. A card on
     // a project that leaves `restarts` at zero reads exactly as it did.
     expect(question).not.toContain("restart");
+  });
+});
+
+/**
+ * **The headline says what stopped the pass** (`#197`).
+ *
+ * Five endings reach these two functions and they ask a person for five
+ * different things — adjudicate, send it again, narrow the ticket, read the
+ * objection, look at the reviewer — and for a year all five opened with *This is
+ * a judgement, not a broken build*. `#187` ended on a rate limit two minutes
+ * before it reset: the fixer had made four edits and was writing tests when it
+ * died, and the page opened by asking a person to adjudicate two findings whose
+ * answer was half-written.
+ *
+ * So these assert the *claim* each headline makes and not that the strings
+ * differ. Two are load-bearing. The crash must never say judgement, because a
+ * person who reads that word acts on it — and **`out-of-turns` must never say
+ * *send it again*, because a person who reads that acts on it too**, and this
+ * repository has already decided what it costs: `RUN_OWNER` calls the turn
+ * limit the repository's own failure and `run-once.ts` blocks a whole run on it
+ * with *narrow or split the ticket first; requeued as written, it buys another
+ * run to the same limit* (`#89`). The two remedies are opposites, so one
+ * sentence for both is worse than no sentence.
+ */
+describe("the headline says what stopped the pass", () => {
+  const card = (stop: FixStop) =>
+    diagnoseDisagreement({
+      action: "review",
+      branch: "agent/187",
+      base: "main",
+      headSha: "a7663f9000000000",
+      findings: [finding(), finding({ severity: "major" })],
+      rounds: 2,
+      why: "the fixing agent did not finish (crash: it broke), so there is nothing new to read",
+      stop,
+    });
+
+  /**
+   * `#187` itself. The word is the whole of the defect: it is what a person
+   * reads, and acting on it means adjudicating a disagreement that never
+   * happened.
+   */
+  it("never calls a crash a judgement, and names what killed the agent", () => {
+    const crashed = card({
+      ended: "crashed",
+      failure: "crash: You've hit your session limit · resets 4:20am (America/Chicago)",
+    });
+
+    expect(crashed.what).not.toMatch(/judgement/i);
+    expect(crashed.what).not.toMatch(/two agents disagreed/i);
+    expect(crashed.what).toContain("did not finish");
+    expect(crashed.what).toContain("crash: You've hit your session limit");
+    // And says what to do, because there is exactly one thing and it is not a
+    // decision: the round answering the findings never committed.
+    expect(crashed.what).toMatch(/send it again/i);
+    expect(crashed.what).toMatch(/infrastructure and not your call/i);
+  });
+
+  /**
+   * **The kind is said once, by the only thing that knows it.** `timeout` and
+   * `aborted` reach the same ending as `crash` because they imply the same
+   * move, and the first draft of this spent that on a sentence reading
+   * *crashed … — timeout: the 2h wall reached*, which contradicts itself
+   * between one dash and the next. A reader deciding whether to look at the
+   * machine or the clock is being told both.
+   */
+  it("does not call a timeout a crash, because the same ending carries three kinds", () => {
+    const walled = card({ ended: "crashed", failure: "timeout: the 2h wall reached" });
+
+    expect(walled.what).not.toMatch(/crash/i);
+    expect(walled.what).toContain("timeout: the 2h wall reached");
+    expect(walled.what).toMatch(/send it again/i);
+  });
+
+  /**
+   * **The ending this round of `#197` exists for.** `out-of-turns` was landing
+   * in the crash's arm, so the card opened by calling the agent crashed and
+   * closed by telling a person to send it again. Both halves are refuted by
+   * code that was already there: `attribution.ts`'s `RUN_OWNER` marks the turn
+   * limit the *repository's* failure, and `run-once.ts` blocks a whole run that
+   * ends this way with *narrow or split the ticket first; requeued as written,
+   * it buys another run to the same limit*. A person who followed the headline
+   * bought a second 300-turn budget that ended the same way.
+   */
+  it("never tells a person to re-send a ticket that spent the turn limit", () => {
+    const overspent = card({
+      ended: "out-of-turns",
+      failure: "out-of-turns: 300 turns, and the recipe allows 300 · $4.10",
+    });
+
+    // The two sentences the crash's arm would have produced, and neither is true.
+    expect(overspent.what).not.toMatch(/send it again/i);
+    expect(overspent.what).not.toMatch(/crash/i);
+    // Nor is the one the ceiling's arm would have produced.
+    expect(overspent.what).not.toMatch(/judgement/i);
+    expect(overspent.what).not.toMatch(/two agents disagreed/i);
+    // What is true, in the words `run-once.ts` already blocks a run with.
+    expect(overspent.what).toMatch(/ran out of turns/i);
+    expect(overspent.what).toMatch(/scope alarm/i);
+    expect(overspent.what).toMatch(/narrowing or splitting the ticket/i);
+    expect(overspent.what).toContain("out-of-turns: 300 turns, and the recipe allows 300");
+  });
+
+  /**
+   * The record that decides it, read row by row — because the defect above was
+   * not a sentence, it was *everything that is not `never-started` is a crash*.
+   * A seventh `RunFailureKind` fails to compile here rather than silently
+   * inheriting the wrong remedy.
+   */
+  it("reads the ending off the failure kind, and the turn limit is its own", () => {
+    expect(fixStopOf({ kind: "out-of-turns", detail: "300 turns" })).toEqual({
+      ended: "out-of-turns",
+      failure: "out-of-turns: 300 turns",
+    });
+    for (const kind of ["crash", "timeout", "aborted", "no-commits"] as const) {
+      expect(fixStopOf({ kind, detail: "why" }).ended).toBe("crashed");
+    }
+    // And the kind survives into the sentence rather than being replaced by it.
+    expect(fixStopOf({ kind: "timeout", detail: "the 2h wall reached" }).ended).toBe("crashed");
+    expect(card(fixStopOf({ kind: "timeout", detail: "the 2h wall reached" })).what).toContain(
+      "timeout: the 2h wall reached",
+    );
+  });
+
+  /** Clipped, because this one sits inside the first sentence a person reads. */
+  it("clips a long failure rather than making the headline scroll", () => {
+    const crashed = card({ ended: "crashed", failure: `crash: ${"z".repeat(5_000)}` });
+
+    expect(crashed.what).toContain("…");
+    expect(crashed.what.length).toBeLessThan(700);
+  });
+
+  /**
+   * An argument, and the one ending where the findings are not what to read
+   * first. 0039 §5's point, carried all the way to the headline.
+   */
+  it("opens a decline with the decline, and points at the objection", () => {
+    const declined = card({ ended: "declined" });
+
+    expect(declined.what).toMatch(/declined/i);
+    expect(declined.what).toMatch(/objection is what to read first/i);
+    expect(declined.what).not.toMatch(/two agents disagreed/i);
+    expect(declined.what).not.toMatch(/broken build\.$/);
+  });
+
+  /** The reviewer is the subject. Describing the diff would point at the wrong thing. */
+  it("says the reviewer produced nothing actionable, rather than describing the diff", () => {
+    const opinion = card({ ended: "no-criterion" });
+
+    expect(opinion.what).toMatch(/no failure scenario|carries a failure scenario/i);
+    expect(opinion.what).toMatch(/reviewer is what to look at here, not the diff/i);
+    expect(opinion.what).not.toMatch(/judgement/i);
+  });
+
+  /**
+   * **The common case, byte for byte.** Fixing the other four must not cost the
+   * one that was right: a real disagreement is the only ending where two agents
+   * looked at this and did not agree.
+   */
+  it("leaves a real disagreement exactly as it was", () => {
+    const spent = card({ ended: "spent" });
+
+    expect(spent.what).toBe(
+      "Two agents disagreed about agent/187 at a7663f9. The `review` reviewer refused it " +
+        "with 2 findings (worst: blocker), and it is still refused. This is a judgement, " +
+        "not a broken build.",
+    );
+  });
+
+  /**
+   * **A recipe that buys no round is not two agents disagreeing**, and this is
+   * the rule that used to share the ceiling's sentence — the last place `#197`'s
+   * defect survived after the crash, the turn limit, the decline and the
+   * criterion each got an arm. `rounds: 0` is `decideFix`'s `no-rounds`: the
+   * reviewer refused and nothing was ever bought to answer it, so exactly one
+   * agent looked at the diff. The findings may be right; nothing has argued
+   * either way, and the sentence must not imply something did.
+   */
+  it("does not say two agents disagreed where a recipe bought no round", () => {
+    const none = card({ ended: "no-rounds" });
+
+    expect(none.what).not.toMatch(/two agents disagreed/i);
+    expect(none.what).not.toMatch(/still refused/i);
+    expect(none.what).toMatch(/one agent refused/i);
+    expect(none.what).toMatch(/buys no round of fix-and-recheck/i);
+    // And what changes it: money, not correctness.
+    expect(none.what).toContain("runtime.limits.rounds");
+    expect(none.what).not.toBe(card({ ended: "spent" }).what);
+  });
+
+  /**
+   * The ticket's own condition, read as one assertion rather than five: **no
+   * two rules share a headline.** Each of `FixStop`'s endings asks a person for
+   * a different move, so two that read alike are two a reader cannot tell
+   * apart — which is the whole of what `#187` cost.
+   */
+  it("gives every ending a headline of its own", () => {
+    const whats = (
+      [
+        { ended: "crashed", failure: "crash: it broke" },
+        { ended: "out-of-turns", failure: "out-of-turns: 300 turns" },
+        { ended: "declined" },
+        { ended: "no-criterion" },
+        { ended: "no-rounds" },
+        { ended: "spent" },
+      ] satisfies FixStop[]
+    ).map((stop) => card(stop).what);
+
+    expect(new Set(whats).size).toBe(whats.length);
+  });
+
+  /**
+   * **The line printed directly above the headline** (`describeHold`, #83).
+   * `needs` was `judgement` whatever stopped the pass, so a crashed fixer's card
+   * read *your judgement is needed* and then *this is infrastructure and not
+   * your call* — the contradiction `#197` is about, one line earlier than the
+   * page it was found on.
+   */
+  it("asks for an acknowledgement where the headline says it is not your call", () => {
+    expect(stopNeeds({ ended: "crashed", failure: "crash: it broke" })).toBe("acknowledgement");
+    expect(stopNeeds({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" })).toBe(
+      "acknowledgement",
+    );
+    // The four that leave something to weigh: a live refusal, an objection, an
+    // opinion to merge over.
+    expect(stopNeeds({ ended: "declined" })).toBe("judgement");
+    expect(stopNeeds({ ended: "no-criterion" })).toBe("judgement");
+    expect(stopNeeds({ ended: "no-rounds" })).toBe("judgement");
+    expect(stopNeeds({ ended: "spent" })).toBe("judgement");
+  });
+
+  /**
+   * The evidence under the headline is untouched by which ending it is (#83).
+   * The headline is a reading; `done` and `raw` are what it was made from, and
+   * `run-once.ts` was already composing the true sentence in `why`.
+   */
+  it("changes only the headline — done and raw are the same whatever stopped it", () => {
+    const crashed = card({ ended: "crashed", failure: "crash: it broke" });
+    const spent = card({ ended: "spent" });
+
+    expect(crashed.done).toBe(spent.done);
+    expect(crashed.raw).toBe(spent.raw);
+    expect(crashed.done).toContain("the fixing agent did not finish (crash: it broke)");
+    expect(crashed.raw).toContain(SCENARIO.split("\n")[0]!);
+  });
+
+  /**
+   * The sibling has the same defect in its own words: *it ran again and said
+   * the same thing* is false of a round that produced no commit. `#176` and
+   * `#177` ended on a full disk and arrived under exactly that sentence.
+   */
+  describe("and a red check says the same, in its own words", () => {
+    const red = (stop: FixStop) =>
+      diagnoseUnfixed({
+        action: "build",
+        branch: "agent/176",
+        headSha: "deadbee0000000",
+        evidence: "ENOSPC: no space left on device",
+        rounds: 1,
+        why: "the fixing agent did not finish (crash: ENOSPC), so nothing new was produced",
+        stop,
+      });
+
+    it("does not claim the check ran again when the fixer crashed", () => {
+      const crashed = red({ ended: "crashed", failure: "crash: ENOSPC: no space left on device" });
+
+      expect(crashed.what).not.toMatch(/ran again and said the same thing/i);
+      expect(crashed.what).toContain("did not finish");
+      expect(crashed.what).toContain("ENOSPC");
+      expect(crashed.what).toMatch(/send it again/i);
+    });
+
+    /** The same opposite, in the red check's words. */
+    it("does not tell a person to re-send a check whose fixer spent the turn limit", () => {
+      const overspent = red({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+
+      expect(overspent.what).not.toMatch(/ran again and said the same thing/i);
+      expect(overspent.what).not.toMatch(/send it again/i);
+      expect(overspent.what).not.toMatch(/crash/i);
+      expect(overspent.what).toMatch(/turn limit/i);
+      expect(overspent.what).toMatch(/narrowing or splitting the ticket/i);
+      expect(overspent.what).toContain("out-of-turns: 300 turns");
+    });
+
+    it("does not claim it ran again when the fixer declined either", () => {
+      const declined = red({ ended: "declined" });
+
+      expect(declined.what).toMatch(/declined/i);
+      expect(declined.what).not.toMatch(/ran again and said the same thing/i);
+      expect(declined.what).toMatch(/argument and not a check\s+that stayed red/i);
+    });
+
+    /**
+     * The same rule the sibling's last arm was about, and the same falsehood:
+     * a recipe that buys no round never ran the check twice, so *it ran again
+     * and said the same thing* is a claim about something that did not happen.
+     * The difference matters to a reader deciding how much one red result is
+     * worth.
+     */
+    it("does not claim it ran again where a recipe bought no round", () => {
+      const none = red({ ended: "no-rounds" });
+
+      expect(none.what).not.toMatch(/ran again and said the same thing/i);
+      expect(none.what).toMatch(/never run again/i);
+      expect(none.what).toMatch(/buys no round of fix-and-recheck/i);
+    });
+
+    it("leaves a check that really did stay red exactly as it was", () => {
+      expect(red({ ended: "spent" }).what).toBe(
+        "`build` still refuses agent/176 at deadbee. This is a check that failed and " +
+          "stayed failed, not a judgement: whatever it runs, it ran again and said the " +
+          "same thing.",
+      );
+    });
+  });
+
+  /**
+   * **And the line above the headline says it too.**
+   *
+   * `question` is what a person is actually notified with — the GitHub comment,
+   * the board's note, the line `lingtai status` prints — so it is read *before*
+   * the card, and for the whole of `#197`'s first draft it went on saying *two
+   * agents disagreed* over a headline saying a fixing agent had been killed. Of
+   * two readings that contradict each other, the one a person acts on is the one
+   * they reach first.
+   *
+   * `run-once.ts` passes `stop` by spreading `unresolved`, so these are what
+   * pins the line: nothing at that call site would fail if these functions
+   * stopped reading it.
+   */
+  describe("and so does the one line a person is notified with", () => {
+    const line = (stop: FixStop) =>
+      disagreementQuestion({
+        action: "review",
+        branch: "agent/187",
+        base: "main",
+        findings: [finding(), finding({ severity: "major" })],
+        rounds: 2,
+        stop,
+      });
+
+    it("does not say two agents disagreed when one of them never answered", () => {
+      const crashed = line({ ended: "crashed", failure: "crash: session limit" });
+      const overspent = line({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+      const declined = line({ ended: "declined" });
+      const opinion = line({ ended: "no-criterion" });
+
+      for (const said of [crashed, overspent, declined, opinion]) {
+        expect(said).not.toMatch(/two agents disagreed/i);
+      }
+      expect(crashed).toMatch(/did not finish/i);
+      expect(crashed).toContain("crash: session limit");
+      expect(declined).toMatch(/declined/i);
+      expect(opinion).toMatch(/no failure scenario/i);
+    });
+
+    /** The same opposite remedies, at the same length. */
+    it("keeps the turn limit off a retry on the one line too", () => {
+      const overspent = line({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+
+      expect(overspent).toMatch(/ran out of turns/i);
+      expect(overspent).toMatch(/needs narrowing, not a retry/i);
+      expect(overspent).not.toMatch(/crash/i);
+    });
+
+    /**
+     * Clipped harder than the headline: this is a whole GitHub comment body and
+     * a `lingtai status` row, so a five-thousand-character quota message would
+     * be the whole of both.
+     */
+    it("clips the failure to a line rather than a paragraph", () => {
+      const crashed = line({ ended: "crashed", failure: `crash: ${"z".repeat(5_000)}` });
+
+      expect(crashed).toContain("…");
+      expect(crashed.length).toBeLessThan(260);
+    });
+
+    /** Byte for byte, both halves, for the ending that really was a disagreement. */
+    it("leaves the ceiling's line exactly as it was", () => {
+      expect(line({ ended: "spent" })).toBe(
+        "two agents disagreed about agent/187 into main: the review reviewer still " +
+          "refuses it after 2 fix round(s), with 2 findings (worst: blocker)",
+      );
+      // And the rule that never bought one says so, rather than borrowing it.
+      expect(line({ ended: "no-rounds" })).not.toMatch(/two agents disagreed/i);
+      expect(line({ ended: "no-rounds" })).toMatch(/buys no fix round/i);
+      expect(
+        unfixedQuestion({
+          action: "build",
+          branch: "agent/176",
+          base: "main",
+          rounds: 1,
+          stop: { ended: "spent" },
+        }),
+      ).toBe("build still refuses agent/176 into main after 1 fix round(s)");
+    });
+
+    /** The red check's line has the same three endings to tell apart. */
+    it("says what stopped a red check's pass, on its one line", () => {
+      const red = (stop: FixStop) =>
+        unfixedQuestion({
+          action: "build",
+          branch: "agent/176",
+          base: "main",
+          rounds: 1,
+          stop,
+        });
+
+      expect(red({ ended: "crashed", failure: "crash: ENOSPC" })).toMatch(
+        /did not finish.*never re-run.*crash: ENOSPC/,
+      );
+      expect(red({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" })).toMatch(
+        /ran out of turns.*needs narrowing, not a retry/,
+      );
+      expect(red({ ended: "declined" })).toMatch(/declined.*said why instead/);
+    });
+  });
+
+  /**
+   * **And the third sentence, which is the one nothing ever rewrites.**
+   *
+   * `ApprovalRequested.question` goes on the run's stream and stays there: it is
+   * what a later pass reads back, what `lingtai status` prints and what the
+   * approval prompt asks. `#187`'s rate limit is recorded under *Two agents
+   * disagreed* for good, and a card fixed above a record that says otherwise is
+   * the two-readings failure #83 names, with the log on the wrong side of it.
+   */
+  describe("and the record a merge is approved against", () => {
+    const clause = (stop: FixStop, on: "findings" | "output" = "findings") =>
+      mergeAnywayBecause({ action: on === "findings" ? "review" : "build", on, rounds: 2, stop });
+
+    it("does not record a disagreement where an agent was stopped", () => {
+      const crashed = clause({ ended: "crashed", failure: "crash: session limit" });
+      const overspent = clause({ ended: "out-of-turns", failure: "out-of-turns: 300 turns" });
+
+      expect(crashed).not.toMatch(/two agents disagreed/i);
+      expect(crashed).toMatch(/did not finish.*nothing was decided/i);
+      expect(overspent).not.toMatch(/two agents disagreed/i);
+      expect(overspent).toMatch(/needs narrowing, not a retry/i);
+    });
+
+    it("says which of the other three it is", () => {
+      expect(clause({ ended: "declined" })).toMatch(/declined.*read its objection first/i);
+      expect(clause({ ended: "no-criterion" })).toMatch(/nothing a fixing agent could be held to/i);
+      expect(clause({ ended: "no-rounds" })).toMatch(/buys no fix round/i);
+    });
+
+    /** Byte for byte, both shapes, for the ending they were always true of. */
+    it("leaves the ceiling's record exactly as it was", () => {
+      expect(clause({ ended: "spent" })).toBe(
+        "Two agents disagreed: the review reviewer still refuses it after 2 fix round(s).",
+      );
+      expect(clause({ ended: "spent" }, "output")).toBe(
+        "`build` is still red after 2 fix round(s).",
+      );
+    });
   });
 });
 
@@ -412,6 +877,7 @@ describe("what a person is shown when the restarts are over too", () => {
     findings: [finding()],
     rounds: 3,
     why: "the ceiling of 2 restart(s) for this item is spent, and the review reviewer still refuses",
+    stop: { ended: "spent" },
     earlier: [earlier],
   });
 
@@ -441,6 +907,7 @@ describe("what a person is shown when the restarts are over too", () => {
       findings: [finding()],
       rounds: 3,
       why: "the ceiling of 3 round(s) for this pass is spent, and the review action still refuses",
+      stop: { ended: "spent" },
     });
 
     // 0040 §4 read all the way down to the bytes: no headings, no framing,
@@ -458,6 +925,7 @@ describe("what a person is shown when the restarts are over too", () => {
         findings: [finding()],
         rounds: 3,
         restarts: 2,
+        stop: { ended: "spent" },
       }),
     ).toContain("after 3 fix round(s) and 2 restart(s)");
   });
