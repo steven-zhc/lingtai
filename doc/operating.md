@@ -841,8 +841,9 @@ board:
 
 `17821` is **reserved and bound by nothing** — the daemon listens on nothing at
 all, and a second listener, if one is ever needed, has an obvious home instead
-of being scattered. `packages/env/test/board-port.test.ts` fails if anything
-starts listening on it.
+of being scattered. `packages/env/test/board-port.test.ts` reads every
+package's `src` and fails if any mention of the number, or of the
+`RESERVED_PORT` that holds it, is anything but prose.
 
 Higher is not safer: macOS hands out `49152–65535` as ephemeral ports and Linux
 `32768–60999`, so a default in either range would collide at random,
@@ -873,6 +874,16 @@ pnpm lingtai service uninstall   # both jobs; logs are kept
 supervises two as easily as one. Merging the board into the daemon to avoid
 supervising two would be the CLI taking on the supervisor's role, which
 `apps/cli/src/service.ts` declines by design.
+
+**Two, where there is a board to serve.** The job runs `lingtai board start`
+from the checkout, and that serves what `pnpm build` wrote into `dist/`. On a
+checkout nobody has built there is no board, and a job installed over that
+would exit at once with `KeepAlive` respawning it every thirty seconds for
+ever — so none is written. `service install` names the missing board, installs
+the conductor's job and exits 0; `pnpm build` and one more `service install`
+add the board's. `service start` and `service restart` say the same and get on
+with the conductor. The daemon is never held up over it: it runs unbuilt
+(0010), which is the whole of what 0010 is for.
 
 | | macOS | Linux |
 |---|---|---|

@@ -551,6 +551,20 @@ export interface ServiceOptions {
   board: {
     url: string;
     answering: () => Promise<string | null>;
+    /**
+     * Why `lingtai board start` would serve nothing on this machine, or null
+     * where it would serve a board.
+     *
+     * **Asked before a job is written, and that is the whole of it.** The job
+     * runs `<root>/apps/cli/src/lingtai.ts board start` — from the source, and
+     * `keeper` asserts exactly that path — while `board start` serves what
+     * `pnpm build` wrote. On a checkout nobody has built there is no board, a
+     * job installed over that exits at once, and `KeepAlive`/`Restart=always`
+     * respawn it every thirty seconds for ever. So it is not installed, and
+     * the reason is said instead: a supervisor with no job is a board that is
+     * missing, which is true, and better than one that crash-loops.
+     */
+    missing: () => string | null;
   };
   /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
   by?: string;
@@ -764,6 +778,16 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
 
   const boardInstalled = (): boolean => existsSync(boardFile.path);
 
+  /**
+   * Said wherever a board job would have been written or started, and there is
+   * no board for it to serve. Not a refusal: the verb was about the conductor,
+   * and the conductor is fine.
+   */
+  const sayNoBoard = (why: string, what: "written" | "started"): void => {
+    log(`${why}, so no board job was ${what} — pnpm build writes the board, and pnpm lingtai service install then adds the job`);
+    log(`      from a checkout, pnpm --filter @lingtai/board dev serves the same port in a terminal`);
+  };
+
   /** Whether a Lingtai board answers where it should — the board's own word, not the supervisor's. */
   const boardAnswers = async (): Promise<string | null | { unread: string }> => {
     try {
@@ -797,6 +821,14 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
 
   /** The supervisor's start for the board job, then the board's own answer. */
   const startBoard = async (): Promise<number> => {
+    // Before the job is asked about: a checkout that has never been built has
+    // no board to serve, and starting a job over that is the crash loop this
+    // command exists to keep off the machine.
+    const missing = options.board.missing();
+    if (missing !== null) {
+      sayNoBoard(missing, "started");
+      return 0;
+    }
     if (!boardInstalled()) {
       // An install from before the board had a job (#187), and not a failure of
       // whatever verb is running: the daemon it was really about did start.
@@ -862,7 +894,15 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       // The drain, or the unload above, took a launchd job; a systemd unit is
       // stopped and still enabled.
-      if (platform === "systemd" && !run(["systemctl", "--user", "disable", "--now", job.unit])) code = 1;
+      //
+      // **A `disable --now` that failed keeps the file**, exactly as the
+      // launchd branch above does. Removing it and reloading leaves the unit
+      // `not-found` while the process is still running, so nothing can name it
+      // to stop it — a worse end than the one this verb was asked for.
+      if (platform === "systemd" && !run(["systemctl", "--user", "disable", "--now", job.unit])) {
+        error(`${job.unit} is still loaded — ${jobFile.path} is left in place, since removing it would leave a job nothing can name`);
+        return 1;
+      }
     }
     if (!existsSync(jobFile.path)) {
       log(`nothing at ${jobFile.path}${answer.loaded ? ", and the job it named is unloaded" : ""}`);
@@ -1204,14 +1244,24 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       let started = false;
       await mkdir(file.logs, { recursive: true });
       await mkdir(dirname(file.path), { recursive: true });
+      // The board's file is written only where there is a board to serve. A
+      // plist for `board start` on an unbuilt checkout is a job that exits at
+      // once and is respawned every thirty seconds for ever, and this command
+      // is the one place that can see it coming.
+      const noBoard = options.board.missing();
       // Both files before either job is touched: under systemd one
       // `daemon-reload` then has both units to read, and a refusal below leaves
       // two files written and nothing loaded, which is what it says.
       await writeFile(file.path, file.content);
-      await writeFile(boardFile.path, boardFile.content);
+      if (noBoard === null) await writeFile(boardFile.path, boardFile.content);
       log(`wrote ${file.path}`);
-      log(`wrote ${boardFile.path}`);
-      log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)} and ${join(boardFile.logs, `${BOARD_JOB.log}.log`)}`);
+      if (noBoard === null) {
+        log(`wrote ${boardFile.path}`);
+        log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)} and ${join(boardFile.logs, `${BOARD_JOB.log}.log`)}`);
+      } else {
+        log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)}`);
+        sayNoBoard(noBoard, "written");
+      }
 
       if (platform === "launchd") {
         const before = ask();
@@ -1265,8 +1315,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       //
       // Not refused over a standing shutdown, either: that request is the
       // conductor's, and a UI takes no work over anybody's stop.
-      if (platform === "systemd" && !run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT])) return 1;
-      const boardCode = await startBoard();
+      if (noBoard === null && platform === "systemd" && !run(["systemctl", "--user", "enable", BOARD_SYSTEMD_UNIT])) return 1;
+      // Said once, above, where there is nothing to serve — so the start is not
+      // asked to say it again.
+      const boardCode = noBoard === null ? await startBoard() : 0;
 
       log("");
       log("the conductor");

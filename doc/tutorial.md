@@ -138,9 +138,10 @@ In another terminal, for the board:
 pnpm lingtai board start             # http://127.0.0.1:17820
 ```
 
-From a checkout with no `pnpm build` behind it there is no built board beside
-the CLI, and that command says so; `pnpm --filter @lingtai/board dev` serves
-the same port from the source.
+From a checkout with no `pnpm build` behind it there is no built board, and
+that command says so; `pnpm --filter @lingtai/board dev` serves the same port
+from the source. `pnpm build` writes one into `dist/`, and `board start` from a
+checkout serves that.
 
 To install it as a background service instead — a LaunchAgent on macOS, a
 systemd user unit on Linux:

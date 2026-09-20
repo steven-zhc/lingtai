@@ -254,7 +254,10 @@ export const BOARD_PORT = 17820;
  * It is reserved rather than bound because **a port with no use is a port the
  * next reader has to explain**, and the two ways that ends — inventing a
  * purpose for it, or deleting it — are both worse than a number written down.
- * `packages/env/test/board-port.test.ts` fails if anything starts listening on it.
+ * `packages/env/test/board-port.test.ts` reads every package's `src` and fails
+ * if any mention of the number **or of this name** is anything but prose — an
+ * import of `RESERVED_PORT` included, since importing it is the only way to
+ * bind the port without writing the digits.
  */
 export const RESERVED_PORT = 17821;
 

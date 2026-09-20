@@ -11,6 +11,7 @@
  * `process.env` for a connection string directly.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { connect } from "node:net";
 import { hostname } from "node:os";
 import { boardPort, boardUrl } from "@lingtai/env";
@@ -48,7 +49,7 @@ import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
 import { configPath } from "./init.ts";
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from "./service.ts";
-import { boardCommand, builtBoardDir, parseBoardArgs, serveBoard, type BoardWorld } from "./board.ts";
+import { boardCommand, boardEntry, builtBoardDir, parseBoardArgs, serveBoard, type BoardWorld } from "./board.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "@lingtai/conductor/onboard";
@@ -386,7 +387,7 @@ function serviceOptions(): ServiceOptions {
   return {
     // The board's job, beside the daemon's (#187). `answering` is the board's
     // own word for being up, which a job the supervisor has loaded is not.
-    board: { url: boardUrl(), answering: () => boardAnswering(boardPort()) },
+    board: { url: boardUrl(), answering: () => boardAnswering(boardPort()), missing: boardMissing },
     // A read that throws, so a beacon that could not be read says so.
     // Doctor folds that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
@@ -424,6 +425,20 @@ function serviceOptions(): ServiceOptions {
  * calling that one a board is how `board stop` ends up signalling somebody
  * else's process. `lingtai init` asks the same question the same way.
  */
+/**
+ * Why `lingtai board start` would serve nothing here, or null.
+ *
+ * The same question `board start` itself asks, asked before a job is written
+ * to run it (#187): the supervisor's job runs this file from the source, and
+ * from the source the board is whatever `pnpm build` left in `dist/`. Where
+ * there is none, `lingtai service` writes no board job rather than one launchd
+ * respawns every thirty seconds.
+ */
+function boardMissing(): string | null {
+  const entry = boardEntry(builtBoardDir());
+  return existsSync(entry) ? null : `no built board at ${entry}`;
+}
+
 async function boardAnswering(port: number): Promise<string | null> {
   const url = `http://127.0.0.1:${port}`;
   try {

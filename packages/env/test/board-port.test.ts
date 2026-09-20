@@ -105,17 +105,50 @@ describe("17821, reserved", () => {
     expect(files.some((f) => readFileSync(f, "utf8").includes("export const RESERVED_PORT = 17821;"))).toBe(true);
     const mentions: string[] = [];
     for (const path of files) {
-      const text = readFileSync(path, "utf8");
-      if (!text.includes("17821")) continue;
-      for (const line of text.split("\n")) {
-        if (!line.includes("17821")) continue;
-        // A comment, or the declaration itself. Anything else — a `listen`, a
-        // default, a URL — is a port that is no longer reserved, and the
-        // comment beside `RESERVED_PORT` saying so is no longer true.
-        const prose = /^\s*(\/\/|\*|\/\*)/.test(line) || /^export const RESERVED_PORT = 17821;$/.test(line.trim());
-        if (!prose) mentions.push(`${path}: ${line.trim()}`);
-      }
+      for (const line of named(readFileSync(path, "utf8"))) mentions.push(`${path}: ${line}`);
     }
     expect(mentions).toEqual([]);
   });
+
+  /**
+   * The scan, against the line it exists for. A scan that finds nothing
+   * because it can see nothing passes the test above for ever, and the day
+   * something binds the port the comment saying otherwise is still there.
+   */
+  it("sees a listener written without the digits, which is how one would actually be written", () => {
+    expect(named(`  createServer().listen(RESERVED_PORT, "127.0.0.1");\n`)).toEqual([
+      'createServer().listen(RESERVED_PORT, "127.0.0.1");',
+    ]);
+    expect(named(`import { RESERVED_PORT } from "@lingtai/env";\n`)).toEqual(['import { RESERVED_PORT } from "@lingtai/env";']);
+    expect(named(`  server.listen(17821);\n`)).toEqual(["server.listen(17821);"]);
+    // And prose is still prose, or the test above never passes at all.
+    expect(named(" * `17821` is reserved, and `RESERVED_PORT` is where it is written down.\n")).toEqual([]);
+    expect(named("export const RESERVED_PORT = 17821;\n")).toEqual([]);
+  });
 });
+
+/**
+ * Every line of `text` that names the reserved port and is not prose.
+ *
+ * **The identifier as well as the number**, which is the whole of it: a
+ * `createServer().listen(RESERVED_PORT)` carries no `17821`, so a scan for the
+ * digits alone passed it and left the comment beside `RESERVED_PORT` —
+ * *bound by nothing* — standing over a port that was now bound. An `import` of
+ * the name counts too: importing it is the only way to bind it without the
+ * number, and there is nothing else in this repository to import it for.
+ */
+const NAMES = /17821|RESERVED_PORT/;
+
+function named(text: string): string[] {
+  if (!NAMES.test(text)) return [];
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!NAMES.test(line)) continue;
+    // A comment, or the declaration itself. Anything else — a `listen`, a
+    // default, a URL, an import — is a port that is no longer reserved, and the
+    // comment beside `RESERVED_PORT` saying so is no longer true.
+    const prose = /^\s*(\/\/|\*|\/\*)/.test(line) || /^export const RESERVED_PORT = 17821;$/.test(line.trim());
+    if (!prose) out.push(line.trim());
+  }
+  return out;
+}

@@ -3,7 +3,7 @@ import { connect, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { boardEntry, serveBoard } from "../src/board.ts";
+import { boardEntry, builtBoardDir, serveBoard } from "../src/board.ts";
 
 /**
  * `serveBoard` against a stand-in `server.js` that does what Next's does: binds
@@ -77,6 +77,48 @@ describe("serveBoard", () => {
       `127.0.0.1:${port} is already in use`,
     );
     expect((globalThis as { __boardLoaded?: boolean }).__boardLoaded).toBeUndefined();
+  });
+});
+
+/**
+ * Where the built board is found (#187).
+ *
+ * The one that matters is the second: `lingtai service`'s board job runs
+ * `<root>/apps/cli/src/lingtai.ts board start` — from the source, which is the
+ * only kind of install `service install` supports — so a `builtBoardDir` that
+ * looked only beside itself gave that job nothing to serve, and launchd
+ * respawned the corpse every thirty seconds.
+ */
+describe("builtBoardDir", () => {
+  function tree(...entries: string[]): string {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-built-"));
+    dirs.push(dir);
+    for (const entry of entries) {
+      const at = boardEntry(join(dir, entry));
+      mkdirSync(join(at, ".."), { recursive: true });
+      writeFileSync(at, "");
+    }
+    return dir;
+  }
+
+  it("is the board beside the running file, which is where a shipped build puts it", () => {
+    const dir = tree("board");
+    expect(builtBoardDir(join(dir, "lingtai.cjs"), "/nowhere")).toBe(join(dir, "board"));
+  });
+
+  it("is <root>/dist/board from the source, where pnpm build writes it and nothing is beside apps/cli/src", () => {
+    const root = tree(join("dist", "board"));
+    expect(builtBoardDir(join(root, "apps/cli/src/lingtai.ts"), root)).toBe(join(root, "dist", "board"));
+  });
+
+  it("prefers the one beside it, so a checkout's stale dist never shadows a shipped build", () => {
+    const root = tree("board", join("dist", "board"));
+    expect(builtBoardDir(join(root, "lingtai.cjs"), root)).toBe(join(root, "board"));
+  });
+
+  it("names the one beside it where neither holds a board, which is what serveBoard then refuses by", () => {
+    const root = tree();
+    expect(builtBoardDir(join(root, "apps/cli/src/lingtai.ts"), root)).toBe(join(root, "apps/cli/src/board"));
   });
 });
 

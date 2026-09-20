@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { isSea } from "node:sea";
 import { pathToFileURL } from "node:url";
 import { constants, Script } from "node:vm";
+import { repoRoot } from "@lingtai/env";
 import type { FileLocker, HeldLock } from "@lingtai/env/lock";
 import { BOARD_JOB, type Exec, type Keeper } from "./service.ts";
 
@@ -24,15 +25,29 @@ export function boardEntry(dir: string): string {
 }
 
 /**
- * Where `pnpm build` put the board, relative to the running CLI.
+ * Where `pnpm build` put the board — **two places, because there are two ways
+ * to be running**.
  *
- * Beside the file this was bundled into. Run from source there is no
- * `board/` beside `apps/cli/src`, and `serveBoard` says so by name.
+ * Beside the file this was bundled into, first: bundled,
+ * `import.meta.filename` is the bundle's — or the binary's, which
+ * `apps/release/src/build.ts` makes it inside a SEA.
+ *
+ * **Then `<root>/dist/board`, which is the only one a source checkout has**
+ * (#187). Run from source there is nothing beside `apps/cli/src`, and
+ * `lingtai service`'s board job runs exactly that path — `keeper` asserts
+ * `<root>/apps/cli/src/lingtai.ts` — so a `builtBoardDir` that looked only
+ * beside itself made the installed job a thing that exits at once and is
+ * respawned every thirty seconds for ever. `pnpm build` writes `dist/` at the
+ * checkout root (`apps/release/src/build.ts`), and a board there is a board.
+ *
+ * Where neither holds one, the first is returned: `serveBoard` names it, and
+ * beside-the-CLI is what a reader of a shipped install expects to be told.
  */
-export function builtBoardDir(self: string = import.meta.filename): string {
-  // Bundled, `import.meta.filename` is the bundle's — or the binary's, which
-  // `apps/release/src/build.ts` makes it inside a SEA.
-  return join(dirname(self), "board");
+export function builtBoardDir(self: string = import.meta.filename, root: string = repoRoot()): string {
+  const beside = join(dirname(self), "board");
+  if (existsSync(boardEntry(beside))) return beside;
+  const built = join(root, "dist", "board");
+  return existsSync(boardEntry(built)) ? built : beside;
 }
 
 export interface BoardOptions {

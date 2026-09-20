@@ -148,6 +148,8 @@ function command(
     board?: () => Promise<string | null>;
     /** Whether the supervisor already has the board's job. Not, by default. */
     boardLoaded?: boolean;
+    /** Why there is no board to serve here. There is one, by default. */
+    boardMissing?: string | null;
   } = {},
 ) {
   const out: string[] = [];
@@ -160,7 +162,11 @@ function command(
       pause: extra.pause ?? (async () => null),
       drain: extra.drain ?? quietDrain().drain,
       started: extra.started ?? recordedAtOnce,
-      board: { url: BOARD_URL, answering: extra.board ?? (async () => BOARD_URL) },
+      board: {
+        url: BOARD_URL,
+        answering: extra.board ?? (async () => BOARD_URL),
+        missing: () => extra.boardMissing ?? null,
+      },
       by: "human:lingtai",
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
@@ -244,7 +250,7 @@ describe("no service manager", () => {
       shutdown: async () => null,
       drain: quietDrain().drain,
       started: recordedAtOnce,
-      board: { url: BOARD_URL, answering: async () => BOARD_URL },
+      board: { url: BOARD_URL, answering: async () => BOARD_URL, missing: () => null },
       platform: "linux",
       env: { HOME: home },
       which: (bin) => (bin === "node" ? NODE : null),
@@ -637,6 +643,24 @@ describe("shutdown", () => {
       `systemctl --user disable --now ${SYSTEMD_UNIT}`,
       "systemctl --user daemon-reload",
     ]);
+  });
+
+  it("keeps the unit file when `disable --now` failed, since a removed one leaves a daemon nothing can name", async () => {
+    // The unit stays active — a transient bus error, a dependency holding it —
+    // and `rm` plus `daemon-reload` would leave it `not-found` with the process
+    // still running. The launchd branch refuses for the same reason.
+    const s = supervisor([
+      ["systemctl --user show", { status: 0, out: "LoadState=loaded\nActiveState=active\n" }],
+      ["systemctl --user disable", { status: 1, out: "Failed to disable unit: Connection reset by peer" }],
+    ]);
+    const d = quietDrain();
+    const { go, err } = command("linux", s.exec, { drain: d.drain });
+    await systemdFile();
+    expect(await go("uninstall")).toBe(1);
+    expect(existsSync(join(home, ".config/systemd/user", SYSTEMD_UNIT))).toBe(true);
+    expect(s.calls).not.toContain("systemctl --user daemon-reload");
+    expect(err.join("\n")).toContain("is still loaded");
+    expect(err.join("\n")).toContain("a job nothing can name");
   });
 
   it("refuses a request already standing — anybody's, its own name included — and stops nothing", async () => {
@@ -1362,6 +1386,51 @@ describe("two jobs", () => {
     expect(existsSync(BOARD_PLIST())).toBe(true);
     expect(boardCalls).toContain(`launchctl bootstrap gui/${UID} ${BOARD_PLIST()}`);
     expect(out.join("\n")).toContain("the board answers on http://127.0.0.1:17820");
+  });
+
+  /**
+   * The board job runs `<root>/apps/cli/src/lingtai.ts board start`, from the
+   * source — `keeper` asserts that exact path, so it is the only kind of
+   * install there is — and `board start` serves what `pnpm build` wrote. On a
+   * checkout nobody has built there is nothing to serve, and a job installed
+   * over that exits at once with `KeepAlive` respawning it every thirty
+   * seconds for ever, `confirmBoard` blocking 75s, and install exiting 1.
+   *
+   * So the file is not written and the job is not loaded. The conductor's
+   * install is untouched by it: the daemon runs unbuilt (0010), and refusing
+   * it over a UI nobody could have had would be the wider failure.
+   */
+  const UNBUILT = "no built board at /srv/lingtai/dist/board/apps/board/server.js";
+
+  it("install writes no board job where there is no board to serve, and the conductor's still lands", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, out, err } = command("darwin", s.exec, { boardMissing: UNBUILT, board: async () => null });
+    expect(await go("install")).toBe(0);
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(true);
+    // Nothing written and nothing bootstrapped: a plist launchd would respawn
+    // every thirty seconds is the whole of what this avoids.
+    expect(existsSync(BOARD_PLIST())).toBe(false);
+    expect(err.join("\n")).not.toContain("nothing answered");
+    const said = out.join("\n");
+    expect(said).toContain(UNBUILT);
+    expect(said).toContain("no board job was written");
+    expect(said).toContain("pnpm build");
+  });
+
+  it("start and restart write nothing either, and say the same thing rather than starting a job", async () => {
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n\tpid = 77\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+      ["launchctl bootstrap", () => ((loaded = true), { status: 0, out: "" })],
+    ]);
+    const { go, out, boardCalls } = command("darwin", s.exec, { boardMissing: UNBUILT, board: async () => null });
+    await launchdFile();
+    expect(await go("restart", "picking up #88")).toBe(0);
+    // The supervisor is not even asked about the board's job: there is no
+    // board, so there is nothing for it to have.
+    expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap") || c.startsWith("launchctl kickstart"))).toEqual([]);
+    expect(out.join("\n")).toContain("no board job was started");
   });
 
   it("install exits 1 when the board's job started and no board answered — a loaded job is not a UI", async () => {
