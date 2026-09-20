@@ -172,7 +172,8 @@ function tar(out: string, dir: string, entry: string): void {
 async function servesAPage(command: string, args: string[], env: NodeJS.ProcessEnv = childEnv()): Promise<void> {
   const port = await freePort();
 
-  const board = spawn(command, [...args, "board", "--port", String(port)], {
+  // `--no-open`, as the supervisor's own job carries: nothing here is at a browser.
+  const board = spawn(command, [...args, "board", "start", "--port", String(port), "--no-open"], {
     cwd: work,
     env,
     stdio: ["ignore", "pipe", "pipe"],

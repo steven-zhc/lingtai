@@ -39,6 +39,12 @@ thing this whole design exists to remove — `interval` should not appear anywhe
   person. Before that stops being true, three things need doing: authentication,
   an authorisation model for `approvers`, and a review of the Server Actions,
   which currently trust their caller completely.
+  > **The number changed in `#187`, and no decision on this line did.** It is
+  > 17820, in code, with `board.port` in `~/.lingtai/config.yml` to override it
+  > and nothing to configure otherwise — 3200 lived in
+  > `apps/board/package.json`, which is not a file somebody who installed
+  > Lingtai edits. `localhost`, *no authentication*, and the three things
+  > needed before that changes, all stand.
 - Rendering is deferred where it should be. `loadBoard` returns empty columns
   today rather than invented rows — a board showing fictional work is worse than
   one showing none.

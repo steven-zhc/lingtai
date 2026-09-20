@@ -1,8 +1,11 @@
 import { mkdtempSync, readFileSync, statSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initCommand, redact } from "../src/init.ts";
+import { createFileLocker } from "@lingtai/env/lock";
+import { BOARD_LOCK } from "../src/board.ts";
+import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initCommand, liveInitWorld, redact } from "../src/init.ts";
 
 /**
  * `lingtai init` (#186), against a world with no database, GitHub, runtime or
@@ -101,8 +104,8 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       board: async () => {
         step("board");
         seen.boards++;
-        if (script.running !== undefined) return { refused: "127.0.0.1:3200 is already in use" };
-        return script.board ?? { url: "http://127.0.0.1:3200" };
+        if (script.running !== undefined) return { refused: "127.0.0.1:17820 is already in use" };
+        return script.board ?? { url: "http://127.0.0.1:17820" };
       },
       open: async (url) => {
         step("open");
@@ -141,7 +144,7 @@ describe("lingtai init (#186)", () => {
 
     expect(config(home)).toBe(`database:\n  url: ${URL_}\nruntime:\n  agent: claude-code\n`);
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600);
-    expect(seen.opened).toEqual(["http://127.0.0.1:3200/setup/github-app"]);
+    expect(seen.opened).toEqual(["http://127.0.0.1:17820/setup/github-app"]);
     expect(seen.lines.join("\n")).toContain("lingtai-me, owned by me — it answered");
     // The password is not printed anywhere.
     expect(seen.lines.join("\n")).not.toContain("secret");
@@ -154,7 +157,7 @@ describe("lingtai init (#186)", () => {
       app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" },
     });
     expect(await initCommand([], w)).toBe(0);
-    expect(seen.opened).toEqual(["http://127.0.0.1:3200/setup/repository"]);
+    expect(seen.opened).toEqual(["http://127.0.0.1:17820/setup/repository"]);
   });
 
   describe("Ctrl+C at each step, then again: it continues", () => {
@@ -172,7 +175,7 @@ describe("lingtai init (#186)", () => {
         expect(await initCommand([], second.world)).toBe(0);
 
         expect(config(home)).toBe(`database:\n  url: ${URL_}\nruntime:\n  agent: codex\n`);
-        expect(second.seen.opened).toEqual(["http://127.0.0.1:3200/setup/github-app"]);
+        expect(second.seen.opened).toEqual(["http://127.0.0.1:17820/setup/github-app"]);
 
         // What the first run settled, the second does not ask again.
         const settledDatabase = STEPS.indexOf(at) > STEPS.indexOf("database");
@@ -341,12 +344,12 @@ describe("lingtai init (#186)", () => {
     // The board is up, as it is on a finished machine, so its port is taken.
     const again = world(
       home,
-      { app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" }, running: "http://127.0.0.1:3200" },
+      { app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" }, running: "http://127.0.0.1:17820" },
       db,
     );
     expect(await initCommand([], again.world)).toBe(0);
     expect(again.seen.boards).toBe(0);
-    expect(again.seen.opened).toEqual(["http://127.0.0.1:3200/setup/repository"]);
+    expect(again.seen.opened).toEqual(["http://127.0.0.1:17820/setup/repository"]);
 
     expect(again.seen.asked).toEqual([]);
     expect(config(home)).toBe(before);
@@ -370,5 +373,69 @@ describe("lingtai init (#186)", () => {
   it("never prints a password", () => {
     expect(redact(URL_)).toBe("postgresql://me:***@db.example:5432/lingtai");
     expect(redact("postgresql://db.example/lingtai")).toBe("postgresql://db.example/lingtai");
+  });
+});
+
+/**
+ * The board `lingtai init` leaves running is the machine's board, and holds the
+ * machine's board lock (#187, and the review of it).
+ *
+ * `serveBoard` on its own binds the port and tells nobody. Without the lock,
+ * `lingtai board stop` finds nobody to signal and exits 0 over a board still
+ * up, `board status` says `nobody` is serving beside a port that answers, and
+ * `board start` refuses with *held by something that is not a board of this
+ * machine's* — about the board Lingtai itself started, on the one path that
+ * installs it.
+ */
+describe("the board lingtai init serves takes the board lock", () => {
+  /** `LINGTAI_HOME` for the duration: `holdBoardLock`'s own locker reads it. */
+  async function inAFreshHome<T>(run: (home: string) => Promise<T>): Promise<T> {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-init-lock-"));
+    const was = process.env["LINGTAI_HOME"];
+    process.env["LINGTAI_HOME"] = home;
+    try {
+      return await run(home);
+    } finally {
+      if (was === undefined) delete process.env["LINGTAI_HOME"];
+      else process.env["LINGTAI_HOME"] = was;
+    }
+  }
+
+  it("refuses a port a board of this machine's already holds, in board start's words", async () => {
+    await inAFreshHome(async (home) => {
+      const locker = createFileLocker({ dir: join(home, "locks") });
+      const held = await locker.tryLock(BOARD_LOCK, "board on 17820");
+      expect(held.ok).toBe(true);
+      // The lock, not the port: nothing is listening here at all.
+      expect(await liveInitWorld().board(17820)).toEqual({
+        refused: expect.stringContaining("a board is already on 17820"),
+      });
+      if (held.ok) await held.lock.release();
+    });
+  });
+
+  /**
+   * The lock is taken before the board is served and the board can still fail
+   * to serve — here on a port something else holds, which `serveBoard` refuses
+   * before it loads or spawns anything. A lock left behind by that would be a
+   * board `status` reports as serving and `stop` signals a dead pid for, on the
+   * one path that installs Lingtai.
+   */
+  it("gives the lock back when the board it took it for does not start", async () => {
+    const holder = createServer();
+    const port = await new Promise<number>((resolve) => {
+      holder.listen(0, "127.0.0.1", () => {
+        const address = holder.address();
+        resolve(typeof address === "object" && address ? address.port : 0);
+      });
+    });
+    try {
+      await inAFreshHome(async (home) => {
+        expect(await liveInitWorld().board(port)).toEqual({ refused: expect.stringContaining("already in use") });
+        expect(await createFileLocker({ dir: join(home, "locks") }).holder(BOARD_LOCK)).toBe(null);
+      });
+    } finally {
+      await new Promise((resolve) => holder.close(resolve));
+    }
   });
 });

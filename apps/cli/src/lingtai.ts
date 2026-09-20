@@ -41,7 +41,7 @@ import {
 import { parseDuration } from "@lingtai/recipe";
 import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
-import { builtBoardDir, serveBoard } from "./board.ts";
+import { boardCommand } from "./board.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "@lingtai/conductor/onboard";
@@ -81,7 +81,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 again to continue, or to see what is set
     --database-url <url>        instead of being asked
     --agent <claude-code|codex> instead of being asked, where both are signed in
-    --port <n>                  the board's port. default: 3200
+    --port <n>                  the board's port. default: 17820
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
     --base <branch>             where to *read the recipe from*, not what the
                                 base is — the recipe's own repo.base says that,
@@ -137,11 +137,22 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 stopped system and on a run that is long over.
                                 A landed run has no log: 0034 keeps exactly the
                                 ones still owed an explanation
-  lingtai board                     serve the board pnpm build wrote beside this
-                                CLI, in this process. From the source, there is
-                                none: pnpm --filter @lingtai/board dev
-    --port <n>                  default 3200
+  lingtai board start               serve the board: the URL printed, a browser
+                                opened, and ctrl-c stops it. The one pnpm build
+                                wrote beside this CLI, in this process — or,
+                                from a checkout, the workspace's own, as a
+                                development server this stops with it
+    --port <n>                  instead of board.port in ~/.lingtai/config.yml,
+                                which defaults to 17820
     --dir <path>                a built board somewhere else
+    --no-open                   no browser — what the supervised job carries
+  lingtai board stop                stop the board this machine is serving. stop
+                                and not shutdown: a board has no pass to finish
+  lingtai board restart             stop, then start. Checks nothing — lingtai
+                                restart is the checked one, and it is the
+                                conductor's
+  lingtai board status              who is serving it, and whether the port
+                                answers — two facts, not one
   lingtai status [project]          what is runnable, and what is holding the rest
     --all                       include items that have left the queue
                                 and why. Takes nothing and claims nothing.
@@ -1035,17 +1046,11 @@ async function main(argv: string[]): Promise<number> {
       process.on("SIGINT", () => detach.abort());
       return attach({ runId, signal: detach.signal });
     }
-    case "board": {
-      const { flags } = parseFlags(rest);
-      const port = Number(flags["port"] ?? 3200);
-      if (!Number.isInteger(port) || port <= 0) {
-        console.error("lingtai board [--port <n>] [--dir <path>]");
-        return 2;
-      }
-      await serveBoard({ dir: flags["dir"] || builtBoardDir(), port, host: "127.0.0.1" });
-      console.log(`board on http://127.0.0.1:${port}`);
-      return 0;
-    }
+    // Flags and all parsed by `boardCommand`: `--no-open` is a flag the
+    // supervisor's job carries, and `parseFlags` here would swallow the `--dir`
+    // after it as its value.
+    case "board":
+      return boardCommand(rest);
     case "status": {
       const { positional, flags } = parseFlags(rest);
       return status({ project: positional[0], all: "all" in flags });

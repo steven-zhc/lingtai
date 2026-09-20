@@ -204,7 +204,25 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
  * where somebody plainly set one.
  */
 export function machineDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string | undefined {
-  const path = join(stateDir(from), "config.yml");
+  const url = machineSetting(from, "database", "url");
+  return typeof url === "string" && url !== "" ? url : undefined;
+}
+
+/** Where the machine file is, said once so a refusal can name it. */
+export function machineConfigPath(from: NodeJS.ProcessEnv = process.env): string {
+  return join(stateDir(from), "config.yml");
+}
+
+/**
+ * One value out of `~/.lingtai/config.yml`, or undefined where the file, the
+ * section or the key is absent — **and the file need not exist**.
+ *
+ * A file that does not parse is refused by its path rather than read as an
+ * absent key, which would say *not set* about a machine where somebody plainly
+ * set one.
+ */
+function machineSetting(from: NodeJS.ProcessEnv, section: string, key: string): unknown {
+  const path = machineConfigPath(from);
   let text: string;
   try {
     text = readFileSync(path, "utf8");
@@ -215,11 +233,64 @@ export function machineDatabaseUrl(from: NodeJS.ProcessEnv = process.env): strin
   try {
     parsed = parseYaml(text);
   } catch (err) {
-    throw new Error(`${path} could not be parsed as YAML, so its database.url could not be read: ${(err as Error).message}`);
+    throw new Error(`${path} could not be parsed as YAML, so its ${section}.${key} could not be read: ${(err as Error).message}`);
   }
-  const database = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["database"] : undefined;
-  const url = database !== null && typeof database === "object" ? (database as Record<string, unknown>)["url"] : undefined;
-  return typeof url === "string" && url !== "" ? url : undefined;
+  const held = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)[section] : undefined;
+  return held !== null && typeof held === "object" ? (held as Record<string, unknown>)[key] : undefined;
+}
+
+/**
+ * The board's port, and the one beside it (#187).
+ *
+ * **Fixed, in code, and no configuration required.** `10000–32767` is the band:
+ * high enough to be clear of anything common, and below both ephemeral ranges —
+ * macOS hands out `49152–65535` and Linux `32768–60999`, so a default in either
+ * is handed to some other process by the kernel and collides **at random,
+ * intermittently, and mostly not at all**, which is harder to diagnose than a
+ * fixed clash.
+ *
+ * It was `apps/board/package.json`'s `next dev -p 3200`, which is the wrong
+ * place: somebody who installed Lingtai does not edit its `package.json`.
+ */
+export const BOARD_PORT = 17820;
+
+/**
+ * Reserved, and **bound by nothing**.
+ *
+ * The daemon listens on no port at all — `pause`, `shutdown`, `approve` and the
+ * rest all reach it through the log (0014, 0022), the hook socket is a unix
+ * socket path and the liveness beacon is a file (#46). This number is held so
+ * that a second listener, the day one is needed — moving the webhook receiver
+ * off the board is the candidate — has an obvious home rather than being
+ * scattered. **Binding it today with no use would be a port the next reader has
+ * to explain**, and the two ways that ends — inventing a purpose, or deleting
+ * it — are both worse than a reserved number with this comment on it.
+ * `apps/cli/pure/board.test.ts` fails if anything starts using it.
+ */
+export const RESERVED_PORT = 17821;
+
+/**
+ * The port the board is served on: `board.port` in `~/.lingtai/config.yml` where
+ * that names one, and `BOARD_PORT` otherwise. The file need not exist.
+ *
+ * A value that is not a port is refused by name rather than rounded or ignored:
+ * a board on a port nobody asked for is a board nobody finds.
+ */
+export function boardPort(from: NodeJS.ProcessEnv = process.env): number {
+  const set = machineSetting(from, "board", "port");
+  if (set === undefined || set === null || set === "") return BOARD_PORT;
+  const port = typeof set === "number" ? set : Number(set);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(
+      `board.port in ${machineConfigPath(from)} is ${JSON.stringify(set)}, which is not a port between 1 and 65535`,
+    );
+  }
+  return port;
+}
+
+/** Where the board answers on this machine — the one address the CLI, the notifiers and the browser share. */
+export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
+  return `http://localhost:${boardPort(from)}`;
 }
 
 /** The machine file's URL, asked only of this process's own environment and never in a test. */

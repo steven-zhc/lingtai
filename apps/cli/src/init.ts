@@ -45,10 +45,10 @@ import { join } from "node:path";
 import { Document, isMap, parseDocument } from "yaml";
 import { claudeCodeAuth, codexAuth } from "@lingtai/agent/auth";
 import { runnableEnv } from "@lingtai/agent-env";
-import { stateDir } from "@lingtai/env";
+import { boardPort, stateDir } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { type SchemaOutcome, createSchema } from "@lingtai/event-store/schema";
-import { builtBoardDir, serveBoard } from "./board.ts";
+import { boardPlace, dropBoardLock, holdBoardLock, serveBoard } from "./board.ts";
 
 // -------------------------------------------------------------- the world --
 
@@ -89,8 +89,8 @@ export interface InitWorld {
   appeared: () => Promise<{ slug: string; owner: string }>;
   /**
    * A Lingtai board already answering on this port — the machine's own, from
-   * `lingtai board` or the service — as its URL, or null. Asked before one is
-   * started, since a second on the same port is refused.
+   * `lingtai board start` or the service — as its URL, or null. Asked before
+   * one is started, since a second on the same port is refused.
    */
   boardAt: (port: number) => Promise<string | null>;
   /** Serve the board; the process stays up for it. */
@@ -98,9 +98,6 @@ export interface InitWorld {
   /** Open a browser. False when none could be. */
   open: (url: string) => Promise<boolean>;
 }
-
-/** `lingtai board`'s default, so the two commands name one address. */
-export const BOARD_PORT = 3200;
 
 const USAGE = "lingtai init [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]";
 
@@ -170,8 +167,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const parsed = parseArgs(argv);
   if ("refused" in parsed) return refuse(world, parsed.refused, 2);
   const { flags } = parsed;
-  const port = flags["port"] === undefined ? BOARD_PORT : Number(flags["port"]);
-  if (!Number.isInteger(port) || port <= 0) return refuse(world, `${USAGE} — --port takes a port number`, 2);
+  const asked = flags["port"] === undefined ? null : Number(flags["port"]);
+  if (asked !== null && (!Number.isInteger(asked) || asked <= 0)) {
+    return refuse(world, `${USAGE} — --port takes a port number`, 2);
+  }
 
   const home = stateDir(world.env);
   const path = configPath(world.env);
@@ -192,6 +191,20 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
 
   const config = readConfig(path);
   if ("refused" in config) return refuse(world, config.refused);
+
+  // The port only once the file has been proved to parse — this command is the
+  // one that fixes a broken `config.yml`, so reading a setting out of it first
+  // would refuse in `@lingtai/env`'s words over `readConfig`'s (#187).
+  // `boardPort`, so `lingtai init` and `lingtai board start` name one address:
+  // the machine file's `board.port` where it names one, and 17820 otherwise. It
+  // was `3200` here and `-p 3200` in the board's `package.json`, which is the
+  // wrong place — somebody who installed Lingtai does not edit its package.json.
+  let port: number;
+  try {
+    port = asked ?? boardPort(world.env);
+  } catch (err) {
+    return refuse(world, `${(err as Error).message} — fix it and run lingtai init again`);
+  }
 
   // ---- the database ---------------------------------------------------------
   const database = await chooseDatabase(world, config, path, home, flags["database-url"] ?? null);
@@ -238,7 +251,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   world.log(
     running !== null
       ? paint.muted(`the board was already running at ${running} — this started none`)
-      : paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again"),
+      : paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board start starts it again"),
   );
   return 0;
 }
@@ -485,9 +498,24 @@ export function liveInitWorld(): InitWorld {
     },
     board: async (port) => {
       const host = "127.0.0.1";
+      // The lock every path that serves a board takes (#187). Without it the
+      // board this command leaves running is invisible to the rest of the
+      // lifecycle: `board stop` finds nobody to signal, `board status` says
+      // `nobody` is serving, and the next `board start` names it as something
+      // that is not a board — on the one path that installs Lingtai.
+      // `boardPlace`, the same question `board start` asks: the built board
+      // beside this CLI, or — on a checkout, which is how a contributor runs
+      // this — the workspace's own, served by its `next`.
+      const place = boardPlace();
+      if ("missing" in place) return { refused: place.missing };
+      const held = await holdBoardLock(port);
+      if (!("ok" in held)) {
+        return { refused: `a board is already on ${port} — ${held.held ?? "it has not named itself"}. pnpm lingtai board stop stops it` };
+      }
       try {
-        await serveBoard({ dir: builtBoardDir(), port, host });
+        await serveBoard({ place, port, host });
       } catch (err) {
+        await dropBoardLock();
         return { refused: (err as Error).message };
       }
       return { url: `http://${host}:${port}` };

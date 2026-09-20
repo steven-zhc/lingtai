@@ -6,6 +6,10 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BOARD_PORT,
+  RESERVED_PORT,
+  boardPort,
+  boardUrl,
   databaseUrl,
   directDatabaseUrl,
   directUrlIfSet,
@@ -186,5 +190,47 @@ describe("the machine file's database.url", () => {
     expect(directUrlIfSet({ LINGTAI_HOME: home })).toBeUndefined();
     // This process is a test run, so its own environment never reaches the file.
     expect(() => databaseUrl({ LINGTAI_HOME: home, VITEST: "true" })).toThrow(/LINGTAI_TEST_DATABASE_URL is not set/);
+  });
+});
+
+/**
+ * #187. The board's port is in code with a default and no configuration
+ * required, and `~/.lingtai/config.yml` may override it — it was
+ * `apps/board/package.json`'s `next dev -p 3200`, which is the wrong place:
+ * somebody who installed Lingtai does not edit its `package.json`.
+ */
+describe("the board's port", () => {
+  it("is 17820 with no file at all", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    expect(boardPort({ LINGTAI_HOME: home })).toBe(BOARD_PORT);
+    expect(BOARD_PORT).toBe(17820);
+    expect(boardUrl({ LINGTAI_HOME: home })).toBe("http://localhost:17820");
+  });
+
+  it("is 17820 for a file that names no board.port", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "runtime:\n  agent: claude-code\n");
+    expect(boardPort({ LINGTAI_HOME: home })).toBe(BOARD_PORT);
+  });
+
+  it("is what board.port says where the file names one", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "board:\n  port: 19999\n");
+    expect(boardPort({ LINGTAI_HOME: home })).toBe(19999);
+    expect(boardUrl({ LINGTAI_HOME: home })).toBe("http://localhost:19999");
+  });
+
+  it("refuses a board.port that is not a port, rather than falling back to the default", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "board:\n  port: the usual one\n");
+    expect(() => boardPort({ LINGTAI_HOME: home })).toThrow(/is not a port between 1 and 65535/);
+    expect(() => boardPort({ LINGTAI_HOME: home })).toThrow(join(home, "config.yml"));
+  });
+
+  it("is not below the ephemeral ranges by accident: Linux starts at 32768 and macOS at 49152", () => {
+    // A default in either is handed out by the kernel, so it would collide at
+    // random and mostly not at all — harder to diagnose than a fixed clash.
+    expect(BOARD_PORT).toBeGreaterThanOrEqual(10_000);
+    expect(RESERVED_PORT).toBeLessThan(32_768);
   });
 });

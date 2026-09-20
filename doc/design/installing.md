@@ -239,6 +239,12 @@ it is named here so nobody has to rediscover it by losing it.
 
 ## Starting and stopping what was installed
 
+> **Built in `#187`.** `lingtai board start|stop|restart|status` is
+> `apps/cli/src/board.ts`, `service` installs two jobs, and the ports below are
+> `BOARD_PORT` and `RESERVED_PORT` in `packages/env/src/index.ts`. What follows
+> is the reasoning, kept because it is the argument and not the changelog;
+> [`operating.md`](../operating.md) is the operator's version.
+
 **Two processes, one supervisor, and the CLI does not become a supervisor
 itself.** `apps/cli/src/service.ts:12` is the reason:
 
@@ -305,9 +311,11 @@ be clear of anything common, below both ranges. `18789` is OpenClaw's, `27017`
 MongoDB's, `26257` CockroachDB's, `19999` Netdata's.
 
 **Defaults are in code and require no configuration.**
-`~/.lingtai/config.yaml` may override, and need not exist. The port is
-`apps/board/package.json`'s `next dev -p 3200` today, which is the wrong place:
-somebody who installed Lingtai does not edit its `package.json`.
+`board.port` in `~/.lingtai/config.yml` may override, and the file need not
+exist. The port was `apps/board/package.json`'s `next dev -p 3200`, which is the
+wrong place: somebody who installed Lingtai does not edit its `package.json`.
+That script carries no port at all now; `lingtai board start` passes `--port` to
+it, so the number has one source.
 
 ### The daemon binds nothing, and that is the design
 
@@ -326,7 +334,9 @@ is nothing to `curl`.
 needed, has an obvious home instead of being scattered. **Binding it today with
 no use would be a port the next reader has to explain**, and the two ways that
 ends — inventing a purpose, or deleting it — are both worse than an empty line
-in this table.
+in this table. `apps/cli/pure/board.test.ts` greps the source for the number and
+fails if it appears anywhere but its own declaration, so *bound by nothing* is
+checked rather than remembered.
 
 ### The one consequence of two processes, named rather than fixed
 

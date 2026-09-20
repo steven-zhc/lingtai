@@ -135,7 +135,7 @@ as it appears, and runs the merge lane. Leave it running.
 In another terminal, for the board:
 
 ```bash
-pnpm --filter @lingtai/board dev     # http://localhost:3200
+pnpm lingtai board start             # http://localhost:17820, and a browser on it
 ```
 
 To install it as a background service instead — a LaunchAgent on macOS, a

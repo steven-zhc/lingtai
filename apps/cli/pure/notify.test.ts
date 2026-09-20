@@ -29,7 +29,7 @@ import { macNotifier, notifyCommand, type Exec } from "../src/notify.ts";
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
   workItem: { id: "wi-lingtai-123", project: "lingtai", issue: "123" },
-  board: "http://localhost:3200",
+  board: "http://localhost:17820",
 });
 
 /** Records what was spawned, and answers with whatever the test wants. */
@@ -59,7 +59,7 @@ describe("what the operator reads", () => {
     const n = render(payload("RunAwaitingInput", { prompt: "which base?" }));
 
     expect(n.title).toBe("#123 is asking");
-    expect(n.url).toBe("http://localhost:3200/task/wi-lingtai-123");
+    expect(n.url).toBe("http://localhost:17820/task/wi-lingtai-123");
   });
 
   it("says both halves of a refusal", () => {
@@ -79,7 +79,7 @@ describe("which channel, and what it does with the link", () => {
     expect(channel.name).toBe("terminal-notifier");
     const sent = calls.find((c) => c.bin === "terminal-notifier");
     expect(sent?.args).toContain("-open");
-    expect(sent?.args).toContain("http://localhost:3200/task/wi-lingtai-123");
+    expect(sent?.args).toContain("http://localhost:17820/task/wi-lingtai-123");
   });
 
   /**
@@ -94,7 +94,7 @@ describe("which channel, and what it does with the link", () => {
 
     expect(channel.name).toBe("osascript");
     const script = calls.find((c) => c.bin === "osascript")?.args[1] ?? "";
-    expect(script).toContain("http://localhost:3200/task/wi-lingtai-123");
+    expect(script).toContain("http://localhost:17820/task/wi-lingtai-123");
   });
 
   /** The body is a question written by an agent, and it goes into an AppleScript string. */
@@ -165,7 +165,7 @@ describe("parsePayload", () => {
       JSON.stringify({ event: { type: "WorkItemBlocked", data: {} }, workItem: { id: "wi-a-1", project: "a", issue: "1" } }),
     );
 
-    expect(parsed.board).toBe("http://localhost:3200");
+    expect(parsed.board).toBe("http://localhost:17820");
   });
 });
 

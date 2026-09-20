@@ -30,7 +30,7 @@ import { projectEnvPath, resolveAgentEnv } from "@lingtai/agent-env";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { createWorkLoop, type WorkLoop } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM, workItemStream } from "@lingtai/domain";
-import { directDatabaseUrl } from "@lingtai/env";
+import { boardUrl, directDatabaseUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { resolveRecipe, type Subscriber as SubscriberSpec } from "@lingtai/recipe";
 import pg from "pg";
@@ -211,7 +211,9 @@ describe("the telegram subscriber this repository declares", () => {
     ]);
     await until(() => api.received.find((r) => r.text.includes("landed")));
 
-    const card = `http://localhost:3200/task/${encodeURIComponent(run.wi)}`;
+    // The board this machine serves, not a number written down twice: the
+    // subscriber's default is `boardUrl()` since #187.
+    const card = `${boardUrl()}/task/${encodeURIComponent(run.wi)}`;
     expect(api.received.map((r) => r.text)).toEqual([
       `#${run.issue} run failed\ncrash: session limit\n${card}`,
       `#${run.issue} landed\nmerged into main at 5ace763\n${card}`,

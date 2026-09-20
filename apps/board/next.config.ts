@@ -22,6 +22,14 @@ const config: NextConfig = {
   // naming sharp — `apps/release/src/build.ts` prunes that, and its test fails
   // if a `.node` file is left in the output.
   images: { unoptimized: true },
+  // **Next writes `AGENTS.md` and `CLAUDE.md` into this directory on every
+  // `next dev`, and here that is a dirty worktree.** `lingtai board start`
+  // serves a checkout by running this development server (#187), and under
+  // `lingtai service` it does so unattended — so two untracked files would
+  // appear in the repository and `lingtai restart` would refuse the next start
+  // by name, over files nobody wrote. Lingtai's own CLAUDE.md is at the root
+  // and says what an agent here needs.
+  agentRules: false,
   // The build id is a directory name under `.next/static/`, and Next's default
   // is random — so two builds of one commit were two layouts. `pnpm build`
   // passes the commit; `next build` alone keeps the default.

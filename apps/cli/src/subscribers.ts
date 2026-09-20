@@ -35,6 +35,7 @@
  * only a run stream reaches the log at all.
  */
 import { runnableEnv, extensionEnv, resolveAgentEnv } from "@lingtai/agent-env";
+import { BOARD_PORT, boardUrl } from "@lingtai/env";
 import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from "@lingtai/actions";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { type Envelope, type PayloadOf, workItemOf } from "@lingtai/domain";
@@ -42,15 +43,35 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 
 /**
  * The board's address on the one machine this runs on
- * ([0008](../../../doc/decisions/0008-nextjs-board.md)): port 3200, localhost,
- * no authentication.
+ * ([0008](../../../doc/decisions/0008-nextjs-board.md)): localhost, no
+ * authentication, and the port `lingtai board start` serves on — 17820, or
+ * `board.port` in `~/.lingtai/config.yml` where that names one (#187).
  *
- * A constant rather than a setting, because the deployment it would describe
- * does not exist yet. It is in the payload rather than compiled into the
- * subscriber so that the day it does, one place changes and no extension has to
- * be rewritten.
+ * **Read once, when the daemon builds its subscribers, and not per delivery.**
+ * That is the same rule the recipe follows and the opposite of the `env:`
+ * callback below, and the difference is which change it is: `lingtai env set`
+ * is what a missing name's `PluginFailed` tells the operator to run, so an env
+ * read at startup would go on telling them to run it after they had. Nothing
+ * asks anybody to change `board.port` — a machine that does has to restart the
+ * board it names, and `lingtai restart` restarts both jobs (#187). Reading a
+ * file on every delivered event to shorten a window nobody is standing in would
+ * buy less than it costs.
+ *
+ * It is in the payload rather than compiled into the subscriber so that the day
+ * a deployment has an address of its own, one place changes and no extension
+ * has to be rewritten.
  */
-export const BOARD_URL = "http://localhost:3200";
+export const boardHere = (): string => {
+  try {
+    return boardUrl();
+  } catch {
+    // A `board.port` this machine cannot mean is refused by name by every
+    // command that serves the board. It is not worth a daemon that will not
+    // start over a link: the default is where the board is if nobody moved it,
+    // and if somebody did, the command they ran told them the file is wrong.
+    return `http://localhost:${BOARD_PORT}`;
+  }
+};
 
 /**
  * The work item a run is for, off the log.
@@ -223,7 +244,7 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
             const now = await resolve({ project, required: [], allow: declared });
             return runnableEnv(extensionEnv(now.merged, spec.env).values);
           },
-          board: options.board ?? BOARD_URL,
+          board: options.board ?? boardHere(),
         }),
       });
     }

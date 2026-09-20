@@ -14,13 +14,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LockPlace, RecordedStart } from "@lingtai/daemon";
 import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding, withdrawShutdown } from "@lingtai/daemon/control";
-import { repoRoot } from "@lingtai/env";
+import { BOARD_PORT, repoRoot } from "@lingtai/env";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  BOARD_JOB,
+  DAEMON_JOB,
   LAUNCHCTL_NO_SUCH_SERVICE,
+  LAUNCHD_BOARD_LABEL,
   LAUNCHD_LABEL,
   NO_SUPERVISOR,
+  SYSTEMD_BOARD_UNIT,
   SYSTEMD_UNIT,
   keeper,
   launchdPlist,
@@ -43,18 +47,66 @@ afterEach(async () => {
 
 const ROOT = "/srv/lingtai";
 const NODE = "/usr/bin/node";
+/** Where the board answers, as `liveBoard` would put it — asked, never connected to. */
+const BOARD = `http://127.0.0.1:${BOARD_PORT}`;
 
-/** A supervisor that answers by the first matching prefix, and remembers what it was asked. */
-function supervisor(answers: [string, { status: number; out: string } | (() => { status: number; out: string })][]) {
+/**
+ * The board lock naming the pid the supervisor stubs here report for a running
+ * job. `confirmBoard` requires the two to be the same process, so this is a
+ * board the job is serving rather than a port that merely answers.
+ */
+const SERVED_BY_THE_JOB = { port: BOARD_PORT, pid: 88, host: "this-machine" };
+
+type Answered = { status: number; out: string };
+
+/**
+ * A supervisor that answers by the first matching prefix, and remembers what it
+ * was asked. An answer written as a function is given what it has been asked so
+ * far, so a stub can be a supervisor that *starts what it is told to* rather
+ * than one whose jobs never run.
+ */
+function supervisor(answers: [string, Answered | ((calls: readonly string[]) => Answered)][]) {
   const calls: string[] = [];
   const exec: Exec = (call) => {
     const line = call.join(" ");
     calls.push(line);
     const hit = answers.find(([prefix]) => line.startsWith(prefix));
     if (!hit) return { status: 0, out: "" };
-    return typeof hit[1] === "function" ? hit[1]() : hit[1];
+    return typeof hit[1] === "function" ? hit[1](calls) : hit[1];
   };
   return { calls, exec };
+}
+
+/**
+ * The board job's own answer, from a supervisor that starts it: absent (launchd)
+ * or loaded-and-inactive (systemd) until the board's own start call, and pid 88
+ * after it.
+ *
+ * `confirmBoard` asks which process is serving the port and not only whether
+ * something answers there (#187), so a stub whose board job never runs is a
+ * stub of a machine where the board never came up. First in the list, since the
+ * daemon's own prefix would otherwise answer for both labels.
+ */
+function boardJobThatStarts(
+  platform: "launchd" | "systemd",
+): [string, (calls: readonly string[]) => Answered] {
+  if (platform === "launchd") {
+    const started = (calls: readonly string[]) =>
+      calls.some((c) => c.startsWith("launchctl bootstrap") && c.includes(LAUNCHD_BOARD_LABEL)) ||
+      calls.includes(`launchctl kickstart gui/${UID}/${LAUNCHD_BOARD_LABEL}`);
+    return [
+      `launchctl print gui/${UID}/${LAUNCHD_BOARD_LABEL}`,
+      (calls) =>
+        started(calls) ? { status: 0, out: "\tstate = running\n\tpid = 88\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" },
+    ];
+  }
+  return [
+    `systemctl --user show ${SYSTEMD_BOARD_UNIT}`,
+    (calls) =>
+      calls.includes(`systemctl --user start ${SYSTEMD_BOARD_UNIT}`)
+        ? { status: 0, out: "LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=88\n" }
+        : { status: 0, out: "LoadState=loaded\nActiveState=inactive\nMainPID=0\n" },
+  ];
 }
 
 /**
@@ -106,6 +158,19 @@ function command(
     uid?: number;
     drain?: ServiceDrain;
     started?: { watermark: () => Promise<number>; after: (version: number) => Promise<RecordedStart | null> };
+    /**
+     * The board's port, answered rather than connected to, and the board lock
+     * answered rather than read — this suite opens no sockets and takes no
+     * locks. The default is a board the supervisor's own job is serving: pid
+     * 88, as every stub here reports for a running job.
+     */
+    board?: Partial<NonNullable<Parameters<typeof serviceCommand>[1]["board"]>>;
+    /**
+     * What the board's job would serve. The default is a checkout, which is
+     * what this repository is; the filesystem is never asked, so the suite does
+     * not depend on whether a `pnpm build` happens to have been run beside it.
+     */
+    servable?: Parameters<typeof serviceCommand>[1]["servable"];
   } = {},
 ) {
   const out: string[] = [];
@@ -117,6 +182,8 @@ function command(
       pause: extra.pause ?? (async () => null),
       drain: extra.drain ?? quietDrain().drain,
       started: extra.started ?? recordedAtOnce,
+      board: { url: BOARD, answers: async () => true, serving: async () => SERVED_BY_THE_JOB, ...extra.board },
+      servable: extra.servable ?? { source: "/checkout/apps/board" },
       by: "human:lingtai",
       platform,
       env: extra.env ?? { HOME: home, USER: "lingtai" },
@@ -266,7 +333,9 @@ describe("restart on macOS", () => {
     const { go } = command("darwin", s.exec, { drain: d.drain });
     await launchdFile();
     expect(await go("restart", "picking", "up", "#88")).toBe(0);
-    const verbs = s.calls.map((c) => c.split(" ").slice(0, 2).join(" "));
+    // The daemon's own calls: the board's job is a second label, asked about
+    // and found absent, and its half is the test below.
+    const verbs = s.calls.filter((c) => !c.includes(LAUNCHD_BOARD_LABEL)).map((c) => c.split(" ").slice(0, 2).join(" "));
     expect(verbs).toEqual(["launchctl print", "launchctl bootout", "launchctl print", "launchctl print", "launchctl print", "launchctl bootstrap"]);
     expect(s.calls.join("\n")).not.toContain("kickstart");
     expect(d.said).toEqual(["queue", "ask human:lingtai service restart: picking up #88", "held", "withdraw 1"]);
@@ -279,8 +348,12 @@ describe("restart on macOS", () => {
     expect(await go("restart")).toBe(0);
     expect(s.calls.filter((c) => !c.startsWith("systemctl --user show"))).toEqual([
       `systemctl --user stop ${SYSTEMD_UNIT}`,
+      `systemctl --user stop ${SYSTEMD_BOARD_UNIT}`,
       `systemctl --user start ${SYSTEMD_UNIT}`,
     ]);
+    // The board's unit is stopped and not started again: its file is not on
+    // disk here, and a start over a job nothing installed is a note, not a lie.
+    expect(s.calls).not.toContain(`systemctl --user start ${SYSTEMD_BOARD_UNIT}`);
   });
 
   it("starts nothing while a shutdown request stands, which the daemon it started would take work over", async () => {
@@ -590,6 +663,8 @@ describe("shutdown", () => {
     expect(s.calls.filter((c) => !c.startsWith("systemctl --user show"))).toEqual([
       `systemctl --user stop ${SYSTEMD_UNIT}`,
       `systemctl --user disable --now ${SYSTEMD_UNIT}`,
+      `systemctl --user stop ${SYSTEMD_BOARD_UNIT}`,
+      `systemctl --user disable ${SYSTEMD_BOARD_UNIT}`,
       "systemctl --user daemon-reload",
     ]);
   });
@@ -851,6 +926,7 @@ describe("start on Linux", () => {
 describe("install, and whose checkout it names", () => {
   it("writes this checkout into the unit when the installing user owns it — repoRoot(), not a path the test chose", async () => {
     const s = supervisor([
+      boardJobThatStarts("systemd"),
       ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }],
       ["loginctl", { status: 0, out: "yes\n" }],
     ]);
@@ -995,17 +1071,25 @@ describe("status", () => {
 describe("install on Linux", () => {
   it("reloads, enables and starts the unit, and reports both answers", async () => {
     const s = supervisor([
+      boardJobThatStarts("systemd"),
       ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }],
       ["loginctl", { status: 0, out: "yes\n" }],
     ]);
     const { go, out } = command("linux", s.exec);
     expect(await go("install")).toBe(0);
     expect(s.calls.filter((c) => !c.startsWith("systemctl --user show"))).toEqual([
+      // One `daemon-reload` for both units — both files are written before
+      // either is enabled (#187).
       "systemctl --user daemon-reload",
       "systemctl --user enable lingtai.service",
       "systemctl --user start lingtai.service",
       "loginctl show-user lingtai --property=Linger --value",
+      `systemctl --user enable ${SYSTEMD_BOARD_UNIT}`,
+      `systemctl --user start ${SYSTEMD_BOARD_UNIT}`,
     ]);
+    expect(await readFile(join(home, ".config/systemd/user", SYSTEMD_BOARD_UNIT), "utf8")).toContain(
+      "apps/cli/src/lingtai.ts board start --no-open",
+    );
     expect(await readFile(join(home, ".config/systemd/user/lingtai.service"), "utf8")).toContain("Restart=always");
     expect(out.join("\n")).not.toMatch(/lingering|taking work/);
   });
@@ -1033,6 +1117,7 @@ describe("install on Linux", () => {
 
   it("says a lingering it could not read is unread, not off", async () => {
     const s = supervisor([
+      boardJobThatStarts("systemd"),
       ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }],
       ["loginctl", { status: 127, out: "spawnSync loginctl ENOENT" }],
     ]);
@@ -1149,6 +1234,7 @@ describe("a start the daemon never recorded", () => {
 
   it("install exits 1, and prints no report that could be read as a start", async () => {
     const s = supervisor([
+      boardJobThatStarts("systemd"),
       ["systemctl --user show", { status: 0, out: "LoadState=not-found\nActiveState=inactive\n" }],
       ["loginctl", { status: 0, out: "yes\n" }],
     ]);
@@ -1269,5 +1355,290 @@ describe("one command to stop, one to start", () => {
       "ConductorShutdownWithdrawn",
       "ConductorStarted",
     ]);
+  });
+});
+
+/**
+ * #187. The board is a second job, not a second process under the first —
+ * `launchd` supervises two as easily as one, and merging them to avoid it would
+ * be this file taking on the supervisor's role it declines in its own header.
+ */
+describe("two jobs", () => {
+  it("install writes and loads the board's own file beside the daemon's", async () => {
+    const s = supervisor([boardJobThatStarts("launchd"), ["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go } = command("darwin", s.exec);
+    expect(await go("install")).toBe(0);
+    const plist = await readFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "utf8");
+    expect(plist).toContain("<string>board</string>");
+    expect(plist).toContain("<string>start</string>");
+    // No browser from a job launchd starts at login: there is nobody at one.
+    expect(plist).toContain("<string>--no-open</string>");
+    expect(plist).toContain(join(home, ".lingtai/logs/board.log"));
+    expect(s.calls).toContain(`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${LAUNCHD_BOARD_LABEL}.plist`);
+    expect(s.calls).toContain(`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
+    // The daemon's own log is where it was; the two never share a file.
+    expect(await readFile(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`), "utf8")).toContain(
+      join(home, ".lingtai/logs/daemon.log"),
+    );
+  });
+
+  /**
+   * The first attempt at `#187` wrote the board's job unconditionally, and on
+   * a from-source install `dist/board` does not exist: the job exited 1, the
+   * supervisor respawned it every thirty seconds for ever, and `install` had
+   * already said it was done. `boardPlace` is asked before the file is
+   * written, in the process whose `import.meta.filename` that job will have.
+   */
+  it("writes no board job where there is no board to serve, and still installs the conductor's", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, out } = command("darwin", s.exec, {
+      servable: { missing: "no board to serve: nothing built at /dist/board/apps/board/server.js" },
+    });
+    expect(await go("install")).toBe(0);
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`))).toBe(false);
+    expect(out.join("\n")).toContain("no board job was written — no board to serve");
+    // The conductor's is installed all the same: a missing board is not a
+    // reason to leave the machine without the thing that takes work.
+    expect(s.calls).toContain(`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
+    expect(s.calls.some((c) => c.includes(LAUNCHD_BOARD_LABEL) && c.startsWith("launchctl bootstrap"))).toBe(false);
+  });
+
+  it("status reports each job separately, so one running does not stand for both", async () => {
+    const s = supervisor([
+      [`launchctl print gui/${UID}/${LAUNCHD_LABEL}`, { status: 0, out: LOADED_BUT_NOT_RUNNING }],
+      [`launchctl print gui/${UID}/${LAUNCHD_BOARD_LABEL}`, { status: 0, out: "\tstate = running\n\tpid = 88\n" }],
+    ]);
+    const { go, out } = command("darwin", s.exec, { board: { url: "http://127.0.0.1:17820", answers: async () => true } });
+    expect(await go("status")).toBe(0);
+    const text = out.join("\n");
+    // The conductor launchd is respawning every thirty seconds, and the board
+    // that is up beside it: both said, neither summarised into the other.
+    expect(text).toContain(`launchctl, gui/${UID}/${LAUNCHD_LABEL}`);
+    expect(out).toContain("  state = spawn scheduled");
+    expect(out).toContain("  last exit code = 78: EX_CONFIG");
+    expect(text).toContain(`launchctl, gui/${UID}/${LAUNCHD_BOARD_LABEL}`);
+    expect(out).toContain("  pid = 88");
+    expect(out).toContain("  answers");
+  });
+
+  it("status says nothing answers on the board's port though the job is loaded, which is the whole point", async () => {
+    const s = supervisor([["launchctl print", { status: 0, out: "\tstate = running\n\tpid = 88\n" }]]);
+    const { go, out } = command("darwin", s.exec, { board: { url: "http://127.0.0.1:17820", answers: async () => false } });
+    expect(await go("status")).toBe(0);
+    const text = out.join("\n");
+    expect(text).toContain("http://127.0.0.1:17820 — whether the UI answers there, which loaded does not say");
+    expect(out).toContain("  nothing answers");
+  });
+
+  it("shutdown stops the board without a drain — it has no pass to finish", async () => {
+    // A launchd that keeps each job until that job's own bootout. One answer
+    // for both labels would leave `unload` waiting on a job it had just booted.
+    const booted = new Set<string>();
+    const calls: string[] = [];
+    const exec: Exec = (call) => {
+      calls.push(call.join(" "));
+      if (call[1] === "bootout") return booted.add(call[2]!), { status: 0, out: "" };
+      if (call[1] === "print") {
+        return booted.has(call[2]!)
+          ? { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }
+          : { status: 0, out: "\tstate = running\n" };
+      }
+      return { status: 0, out: "" };
+    };
+    const d = quietDrain();
+    const { go } = command("darwin", exec, { drain: d.drain });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "");
+    expect(await go("shutdown", "moving", "house")).toBe(0);
+    // One drain, the conductor's. The board's stop is the bootout and nothing else.
+    expect(d.said).toEqual(["queue", "ask human:lingtai service shutdown: moving house", "held", "withdraw 1"]);
+    expect(calls.filter((c) => c.startsWith("launchctl bootout"))).toEqual([
+      `launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`,
+      `launchctl bootout gui/${UID}/${LAUNCHD_BOARD_LABEL}`,
+    ]);
+  });
+
+  /**
+   * A board that never answered is said, loudly — and `start` still exits 0,
+   * because **this verb's code is the conductor's**.
+   *
+   * `lingtai restart` reads a non-zero here as *the daemon did not start* and
+   * returns before `startRefusals` (`restart.ts:1093`), the check that the
+   * daemon now running is the commit it examined. A board would otherwise take
+   * that check with it and report a conductor that started fine as a restart
+   * that failed. `install` is the other way about — nothing chains off it —
+   * and the test above pins that.
+   */
+  it("a start the board never answered is said and not swallowed, and is still the conductor's exit code", async () => {
+    // The job runs and holds the lock — the one thing missing is the port.
+    const s = supervisor([boardJobThatStarts("launchd"), ["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, err } = command("darwin", s.exec, {
+      board: { url: "http://127.0.0.1:17820", answers: async () => false },
+    });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "");
+    expect(await go("start")).toBe(0);
+    expect(err.join("\n")).toContain("nothing answers on http://127.0.0.1:17820");
+    expect(err.join("\n")).toContain("board.err");
+  });
+
+  it("says a board job nothing installed is not installed, and does not call the daemon's restart a failure", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, out } = command("darwin", s.exec);
+    await launchdFile();
+    expect(await go("start")).toBe(0);
+    expect(out.join("\n")).toContain("no board job is installed");
+  });
+
+  it("uninstall removes the board's file too", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go } = command("darwin", s.exec);
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "");
+    expect(await go("uninstall")).toBe(0);
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`))).toBe(false);
+    expect(existsSync(join(home, "Library/LaunchAgents", `${LAUNCHD_LABEL}.plist`))).toBe(false);
+  });
+
+  it("the board's unit and the daemon's are the same file but for the label, the arguments and the logs", () => {
+    const inputs = { node: NODE, root: ROOT, env: { HOME: "/home/x", USER: "x" } };
+    const daemon = systemdUnit(inputs, DAEMON_JOB).content;
+    const board = systemdUnit(inputs, BOARD_JOB).content;
+    expect(board).toContain(`ExecStart=${NODE} ${ROOT}/apps/cli/src/lingtai.ts board start --no-open`);
+    expect(board).toContain("Description=Lingtai board");
+    expect(board).toContain("Restart=always");
+    expect(board).toContain("RestartSec=30");
+    expect(board).toContain("board.log");
+    expect(daemon).toContain("daemon.log");
+    expect(systemdUnit(inputs, BOARD_JOB).path).toContain(SYSTEMD_BOARD_UNIT);
+  });
+});
+
+/**
+ * The two ways a second job goes wrong that a first job's verbs must not
+ * swallow: a board somebody else is serving on the port, and a board that will
+ * not stop. Both were found cold by the review of #187.
+ */
+describe("the board's job is confirmed, and its failures are its own", () => {
+  it("a port answered by another board is not this job's start — a crash-looping job is not an install that worked", async () => {
+    // `pnpm lingtai board start` in a terminal holds the board lock and answers
+    // on 17820. The job launchd bootstraps finds the lock held, writes `a board
+    // is already on 17820` to board.err and exits 1, and launchd respawns it
+    // every thirty seconds behind a board that goes when that terminal closes.
+    const s = supervisor([
+      [
+        `launchctl print gui/${UID}/${LAUNCHD_BOARD_LABEL}`,
+        (calls) =>
+          calls.some((c) => c.startsWith("launchctl bootstrap") && c.includes(LAUNCHD_BOARD_LABEL))
+            ? { status: 0, out: "\tstate = spawn scheduled\n\truns = 7\n\tlast exit code = 1\n" }
+            : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" },
+      ],
+      ["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }],
+    ]);
+    const { go, out, err } = command("darwin", s.exec, {
+      // Something answers, and it is not this job's.
+      board: { answers: async () => true, serving: async () => ({ port: BOARD_PORT, pid: 4242, host: "this-machine" }) },
+    });
+    expect(await go("install")).toBe(1);
+    expect(out.join("\n")).not.toContain(`the board answers on ${BOARD}`);
+    expect(err.join("\n")).toContain(`the supervisor reports no process for ${LAUNCHD_BOARD_LABEL}`);
+    expect(err.join("\n")).toContain("board.err");
+  });
+
+  it("a running job and a lock another pid holds is said as that, and never as a board that came up", async () => {
+    const s = supervisor([boardJobThatStarts("launchd"), ["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }]]);
+    const { go, err } = command("darwin", s.exec, {
+      // The job is pid 88; the board on the port is pid 4242, from a terminal.
+      board: { answers: async () => true, serving: async () => ({ port: BOARD_PORT, pid: 4242, host: "this-machine" }) },
+    });
+    expect(await go("install")).toBe(1);
+    const said = err.join("\n");
+    expect(said).toContain("served by pid 4242");
+    expect(said).toContain(`${LAUNCHD_BOARD_LABEL} is pid 88`);
+    expect(said).toContain("did not take the board lock");
+  });
+
+  /**
+   * A launchd whose board job will not boot out, and whose daemon does — the
+   * shape of the bug this pins: the conductor was drained, unloaded, and left
+   * that way because the *board's* stop failed after it.
+   */
+  const boardWillNotStop = (calls: string[]): Exec => (call) => {
+    const line = call.join(" ");
+    calls.push(line);
+    const label = call[2] ?? "";
+    if (call[1] === "bootout") {
+      return label.endsWith(LAUNCHD_BOARD_LABEL) ? { status: 5, out: "Boot-out failed: 5: Input/output error" } : { status: 0, out: "" };
+    }
+    if (call[1] === "print") {
+      if (label.endsWith(LAUNCHD_BOARD_LABEL)) return { status: 0, out: "\tstate = running\n\tpid = 88\n" };
+      return calls.includes(`launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`)
+        ? { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }
+        : { status: 0, out: "\tstate = running\n" };
+    }
+    return { status: 0, out: "" };
+  };
+
+  it("restart starts the daemon again though the board's stop failed, and says which of the two it was", async () => {
+    const calls: string[] = [];
+    const d = quietDrain();
+    const { go, err } = command("darwin", boardWillNotStop(calls), { drain: d.drain });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "");
+    expect(await go("restart", "picking", "up", "#88")).toBe(0);
+    // The conductor is back: the bootstrap after the drain is the proof, and it
+    // used to be unreachable behind the board's `return`.
+    expect(calls).toContain(`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
+    expect(d.said).toEqual(["queue", "ask human:lingtai service restart: picking up #88", "held", "withdraw 1"]);
+    expect(err.join("\n")).toContain("the board's job could not be stopped");
+  });
+
+  /**
+   * The daemon restarts, and the board is bootstrapped into a job launchd has
+   * scheduled a respawn for with no process behind it — `last exit code = 1`,
+   * which is what a board refused by a port somebody else holds leaves.
+   */
+  const boardThatNeverComesUp =
+    (calls: string[]): Exec =>
+    (call) => {
+      calls.push(call.join(" "));
+      const label = call[2] ?? "";
+      if (call[1] !== "print") return { status: 0, out: "" };
+      if (label.endsWith(LAUNCHD_BOARD_LABEL)) {
+        return calls.some((c) => c.startsWith("launchctl bootstrap") && c.includes(LAUNCHD_BOARD_LABEL))
+          ? { status: 0, out: "\tstate = spawn scheduled\n\truns = 7\n\tlast exit code = 1\n" }
+          : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" };
+      }
+      return calls.includes(`launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`)
+        ? { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" }
+        : { status: 0, out: "\tstate = running\n" };
+    };
+
+  it("restart refuses a board that never came up, because nothing chains off its exit code the way lingtai restart does off shutdown's and start's", async () => {
+    const calls: string[] = [];
+    const { go, err } = command("darwin", boardThatNeverComesUp(calls), { drain: quietDrain().drain });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "");
+    expect(await go("restart", "picking", "up", "#88")).toBe(1);
+    // Non-zero is a report and never a rollback: the conductor was drained and
+    // started again first, and that is what the bootstrap below proves.
+    expect(calls).toContain(`launchctl bootstrap gui/${UID} ${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
+    expect(err.join("\n")).toContain(`the supervisor reports no process for ${LAUNCHD_BOARD_LABEL}`);
+  });
+
+  it("shutdown's exit code is the conductor's, so lingtai restart does not read a board as a drain that did not finish", async () => {
+    const calls: string[] = [];
+    const d = quietDrain();
+    const { go, err } = command("darwin", boardWillNotStop(calls), { drain: d.drain });
+    await launchdFile();
+    await writeFile(join(home, "Library/LaunchAgents", `${LAUNCHD_BOARD_LABEL}.plist`), "");
+    // Exactly what `lingtai restart` calls (restart.ts): a non-zero here is
+    // read as "the drain above did not finish", and nothing is started.
+    expect(await go("shutdown", "restarting:", "picking", "up", "#88")).toBe(0);
+    expect(d.said).toEqual(["queue", "ask human:lingtai service shutdown: restarting: picking up #88", "held", "withdraw 1"]);
+    expect(calls).toContain(`launchctl bootout gui/${UID}/${LAUNCHD_LABEL}`);
+    const said = err.join("\n");
+    expect(said).toContain("the board's job could not be stopped");
+    expect(said).toContain("pnpm lingtai service status");
   });
 });

@@ -73,7 +73,7 @@ export async function POST(request: Request): Promise<Response> {
   // latency and nothing else.
   //
   // **The host is what is checked, and not only the scheme.** `https://` is
-  // what a person types in front of `localhost:3200` — a scheme test passes it,
+  // what a person types in front of `localhost:17820` — a scheme test passes it,
   // `buildManifest` takes the non-null branch, and the App is created with
   // `active: true` pointed at this machine, which is the exact state the
   // paragraph above says is refused. `unreachableWebhook` is where that
