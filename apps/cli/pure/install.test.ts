@@ -127,7 +127,9 @@ function world(overrides: Partial<World> = {}): World {
       return { ok: true, after: async () => void calls.push("after") };
     },
     app: async () => null,
-    logConfigured: () => false,
+    // Null is `storeChoice` refusing to say — a half-named Postgres — and not a
+    // machine that chose SQLite, which is a log and says where it is.
+    store: () => null,
     ...overrides,
   };
 }
@@ -313,6 +315,40 @@ describe("lingtai uninstall", () => {
     expect(existsSync(join(home, ".lingtai"))).toBe(false);
   });
 
+  /**
+   * #179. Absence chooses the store, so a machine that names no Postgres URL is
+   * a machine whose log is `~/.lingtai/lingtai.db` — and `databaseUrl()` read as
+   * *is a log configured* answered no for it. `uninstall` then refused by
+   * listing that very file among the state it could not ask about, and offered
+   * `LINGTAI_DATABASE_URL=<its log>` as the remedy for a file; `--nothing-conducts`
+   * removed the only copy of the log with the prompt naming nothing but the
+   * directory. The lock is a file (0052), so on this machine it was asked and
+   * answered, and there is nothing to refuse for.
+   */
+  it("asks the lock on a machine whose log is SQLite, and names that log before removing it", async () => {
+    await installOld();
+    const db = join(home, ".lingtai", "lingtai.db");
+    mkdirSync(join(home, ".lingtai", "worktrees"), { recursive: true });
+    writeFileSync(db, "SQLite format 3\0");
+    const asked: string[] = [];
+    let saidByThen = 0;
+    const w = world({
+      store: () => ({ kind: "sqlite", path: db }),
+      ask: async (q) => (asked.push(q), (saidByThen = lines.length), true),
+    });
+
+    expect(await installCommand(["uninstall"], w)).toBe(0);
+    expect(lines.join("\n")).not.toContain("no log is configured for this lingtai");
+    expect(asked).toHaveLength(1);
+    // **Before the question**, which is the only place naming it changes an
+    // answer: the prompt itself says "everything under ~/.lingtai", and a log
+    // named after the removal is a log named too late.
+    const named = lines.findIndex((l) => l.includes(`${db} is this machine's event log`));
+    expect(named).toBeGreaterThan(-1);
+    expect(named).toBeLessThan(saidByThen);
+    expect(existsSync(db)).toBe(false);
+  });
+
   it("refuses when the log cannot say whether anything conducts", async () => {
     await installOld();
     const w = world({ conducting: async () => { throw new Error("connection refused"); } });
@@ -380,7 +416,7 @@ describe("lingtai uninstall", () => {
         appAsked = existsSync(join(home, ".lingtai"));
         return { slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 2, key: { path: join(home, ".lingtai", "lingtai", "app.pem") } };
       },
-      logConfigured: () => true,
+      store: () => ({ kind: "postgres", url: "postgresql://u:p@db.example.com:5432/postgres" }),
     });
     expect(await installCommand(["uninstall"], w)).toBe(0);
 

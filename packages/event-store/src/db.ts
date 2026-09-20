@@ -23,5 +23,18 @@ export function createDb(url: string = databaseUrl()) {
 
 export type Db = ReturnType<typeof createDb>;
 
-/** The process-wide client. Long-lived; never closed in a server. */
-export const db = createDb();
+/**
+ * The process-wide client. Long-lived; never closed in a server — and built on
+ * **first use** rather than at import (#179).
+ *
+ * It used to be `export const db = createDb()`, which read `databaseUrl()` while
+ * this module loaded. That was a reasonable side effect while a machine with no
+ * `LINGTAI_DATABASE_URL` was a misconfigured machine; since absence chooses
+ * SQLite it is an ordinary one, and importing the barrel there must not demand
+ * a URL nobody was asked for. Nothing else moves: still one client per process.
+ */
+let client: Db | undefined;
+export function postgresDb(): Db {
+  client ??= createDb();
+  return client;
+}

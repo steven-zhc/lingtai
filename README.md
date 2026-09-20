@@ -45,8 +45,18 @@ exactly what it was.
 
 ## The big picture
 
-Lingtai runs on one machine of yours. It owns a Postgres database, a clone of
-each repository it manages, and the agent processes it starts.
+Lingtai runs on one machine of yours. It owns a log — a Postgres database where
+one is configured, and otherwise a SQLite file in `~/.lingtai/`, which is what
+naming no database means — a clone of each repository it manages, and the agent
+processes it starts.
+
+**Today, name a Postgres database.** The SQLite half is the store and not yet
+the system: the projections, the `LISTEN`/`NOTIFY` waker and the board's reads
+are still Postgres, so on a machine that names nothing, every command that
+appends — `lingtai add`, `approve`, `run` — refuses by name, and `lingtai
+doctor` fails its `store` row saying so. [#175](https://github.com/steven-zhc/lingtai/issues/175)
+is what finishes it; until then absence chooses a log nothing can be conducted
+from.
 
 ```mermaid
 flowchart TB

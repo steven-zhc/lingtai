@@ -48,10 +48,11 @@ function buildBoard(root: string, out: string): void {
     // A fixed id makes two builds of one commit one layout, which the random
     // default does not.
     LINGTAI_BUILD_ID: commit(root),
-    // Collecting page data imports `@lingtai/event-store`, whose `db.ts` builds a
-    // client at module scope and throws without a URL. Nothing connects during
-    // the build, so it gets an address that answers nothing rather than the
-    // operator's log, or a gate that has no URL at all.
+    // Collecting page data imports `@lingtai/event-store`, which opens whichever
+    // log this machine's configuration names. Nothing connects during the build,
+    // so it gets an address that answers nothing — rather than the operator's
+    // log, or, with no URL at all, the SQLite file absence would choose (#179).
+    // A build must not touch either.
     LINGTAI_DATABASE_URL: "postgres://build.invalid:5432/lingtai",
   };
   // A build started under vitest must not build as a test: `NODE_ENV=test`

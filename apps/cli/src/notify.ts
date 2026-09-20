@@ -23,11 +23,13 @@
  *
  * Because a subscriber's environment holds no `LINGTAI_*` name — 0037 §1 does
  * not want an extension holding `LINGTAI_DATABASE_URL` — and `lingtai.ts`
- * imports `@lingtai/event-store`, whose `db.ts` builds a pool from that
- * variable *at module load*. A `lingtai notify` subcommand would therefore die
- * before it parsed its own argument, and the first thing anybody would reach
- * for is to stop stripping the prefix: the boundary undone to keep the
- * convenience.
+ * imports `@lingtai/event-store`, which opens a log from that variable. It used
+ * to do so *at module load*, so a `lingtai notify` subcommand died before it
+ * parsed its own argument; since #179 the store is opened on first use and the
+ * absent variable chooses SQLite, which is quieter and worse — an extension
+ * would start a log of its own in `~/.lingtai/` rather than failing. Either way
+ * the first thing anybody would reach for is to stop stripping the prefix: the
+ * boundary undone to keep the convenience.
  *
  * So the file is the command. `node apps/cli/src/notify.ts` loads this module
  * and `packages/extension`, which depends on nothing; it needs no database and

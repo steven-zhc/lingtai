@@ -54,6 +54,24 @@ No flag and no prompt. This is the same shape as `merge: []` meaning nothing
 holds at the merge point — **the configuration is the choice**, and there is
 nothing to get out of step with it.
 
+**Done in #179** ([0055](../decisions/0055-absence-chooses-the-store.md)):
+`storeChoice()` in `@lingtai/env` is where it is decided, `@lingtai/event-store`'s
+singleton is what it opens, `lingtai init`'s empty answer writes nothing and
+*takes out* any `database.url` already in `config.yml` — absence is read back
+out of that same file — and `lingtai doctor` says which store it found and
+where. That empty answer also ends the run: the steps below it serve the board
+and open its App wizard, which appends, and `init` must not be the command that
+makes the log every other one has just been told to refuse. Two things the rule
+does *not* reach: the `LINGTAI_TEST_*` names, which keep refusing rather than
+falling back, and a machine that named only
+`LINGTAI_DIRECT_DATABASE_URL`, which is a missing line rather than a decision.
+
+**The choice is decided and the system is not ported.** Nothing that appends
+runs on SQLite yet — the projections and the waker are Postgres — so the
+`doctor` row for it is a failure naming #175, and the installer-facing
+documents say to name a Postgres URL today. That is the last of this section
+that is still a plan.
+
 ### The Postgres lane is one URL, not two
 
 `directDatabaseUrl()` was `required()` and threw when unset, so a person had

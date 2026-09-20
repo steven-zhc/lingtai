@@ -51,7 +51,7 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp, machineDatabaseUrl } from "@lingtai/env";
+import { databaseUrl, directDatabaseUrl, githubApp, hasGitHubApp, machineDatabaseUrl, sqliteLogPath } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
@@ -121,6 +121,76 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
   } finally {
     await c.end();
   }
+}
+
+/**
+ * **Which store is in use, and where it is** — the first thing the report says
+ * about this machine's log (#179).
+ *
+ * Absence chooses the store, so *which database am I on* stopped being
+ * answerable by looking for a variable: an unset `LINGTAI_DATABASE_URL` used to
+ * mean a machine nobody had configured and now means a machine that chose
+ * SQLite. A reader cannot tell those apart from the outside, so the report says
+ * it rather than leaving it to be inferred.
+ *
+ * **And SQLite fails this row, until #175.** Not because the choice is wrong —
+ * it is the one doc/design/1.0.md wants — but because nothing that appends runs
+ * on it yet: the projections and the `LISTEN`/`NOTIFY` waker take a Postgres URL
+ * from `databaseUrl()` and refuse by name, which is how `approve`, `run` and the
+ * board's own reads die; `add` and the control verbs hold no projector, so they
+ * are refused in the same words by `./store.ts` rather than being the two
+ * commands that quietly worked on a machine this row could have called green.
+ *
+ * `warn` would be the right word for *nothing is wrong and you should know
+ * anyway*; here something is wrong, and the check that answers **is the system
+ * doing what the code says** is the one place it must not be softened.
+ * It also gates `lingtai restart` (0042 §4), which would otherwise drain a
+ * daemon and start one that cannot open a log — a note is not a failure there,
+ * so a note would let it through. The day #175 lands this becomes `ok` and the
+ * rest of the report goes on judging the store that was chosen.
+ */
+export function storeInUse(
+  pooled: string | undefined,
+  direct: string | undefined,
+  path: string,
+  source = "LINGTAI_DATABASE_URL",
+): CheckResult {
+  if (!pooled) {
+    // A direct URL and no pooled one is a Postgres machine missing a line, not
+    // a machine that chose SQLite (0055 §2) — and not a machine with a store
+    // either: `storeChoice` raises `LINGTAI_DATABASE_URL is not set` for every
+    // caller, so no log can be opened at all. The row that exists to say which
+    // store is in use has to fail when the answer is *none*, or the reader
+    // scanning the left edge for FAIL passes over the one machine where
+    // nothing works. The `environment` row below names the missing line.
+    return direct
+      ? {
+          name: "store",
+          status: "fail",
+          detail:
+            "none · LINGTAI_DIRECT_DATABASE_URL names a connection and nothing names the pooled one, so there is " +
+            "no log to open — every caller is refused by name. Set LINGTAI_DATABASE_URL; the environment row below " +
+            "says the same about the missing line",
+        }
+      : {
+          name: "store",
+          status: "fail",
+          detail:
+            `sqlite · ${path} — nothing names a Postgres connection, and absence is the choice (#179). ` +
+            "No command that appends runs on it yet: the projections and the LISTEN/NOTIFY waker still " +
+            "take a Postgres URL and refuse by name, so lingtai add, approve, run and the board die here. " +
+            "Name a Postgres URL — the variable, .env.local, or lingtai init — or wait for #175, which ports them",
+        };
+  }
+  let where: string;
+  try {
+    const u = describeUrl(pooled);
+    where = `:${u.port} db=${u.database}`;
+  } catch {
+    // A string that is not a URL is the `environment` row's to fail on, by name.
+    where = "unreadable as a URL";
+  }
+  return { name: "store", status: "ok", detail: `postgres · ${source} ${where}` };
 }
 
 /**
@@ -1591,9 +1661,23 @@ export async function runDoctor(
   // follows, so the doctor checks the connection the system will actually use.
   const standIn = !env["LINGTAI_DIRECT_DATABASE_URL"];
   const direct = env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
+  const source = fromFile ? "~/.lingtai/config.yml database.url" : undefined;
+  // Before any check, because every check after it is about one store or the
+  // other. A file that would not parse is not a choice either way, and the
+  // `environment` row below is where it is reported.
+  if (!unreadable) results.push(storeInUse(pooled, direct, sqliteLogPath(env), source));
+  // Nothing names a connection at all, and nothing was meant to: the log is
+  // SQLite (#179). `direct` counts, so a half-named Postgres stays a failure.
+  const sqlite = !pooled && !direct && !unreadable;
   const envResult = unreadable
     ? { name: "environment", status: "fail" as const, detail: unreadable }
-    : environment(pooled, direct, standIn && Boolean(pooled), fromFile ? "~/.lingtai/config.yml database.url" : undefined);
+    : sqlite
+      ? {
+          name: "environment",
+          status: "skip" as const,
+          detail: "no Postgres URL to check — the store row above is where an absent one is judged",
+        }
+      : environment(pooled, direct, standIn && Boolean(pooled), source);
   results.push(envResult);
 
   if (envResult.status === "ok" && pooled && direct) {
@@ -1621,7 +1705,11 @@ export async function runDoctor(
     results.push({
       name: "postgres",
       status: "skip",
-      detail: "not attempted — the environment check failed first",
+      detail: sqlite
+        ? "not attempted — the log is SQLite, and the schema, the projections, the subscribers and the " +
+          "daemon's own rows are all read out of Postgres. Implemented, and not run: the store row above " +
+          "is the verdict on this machine, and #175 is what ports them"
+        : "not attempted — the environment check failed first",
     });
   }
 

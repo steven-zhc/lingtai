@@ -15,6 +15,8 @@ import {
   hasGitHubApp,
   machineDatabaseUrl,
   resolvePath,
+  sqliteLogPath,
+  storeChoice,
 } from "../src/index.ts";
 
 describe("resolvePath", () => {
@@ -83,6 +85,65 @@ describe("the direct URL falls back to the pooled one", () => {
     expect(() =>
       directDatabaseUrl({ ...test, LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }),
     ).toThrow(/LINGTAI_TEST_DIRECT_DATABASE_URL is not set/);
+  });
+});
+
+/**
+ * #179. Absence is the choice, and there is no second setting to fall out of
+ * step with it. Each case hands an environment rather than touching
+ * `process.env`, which under vitest would always take the `TEST_` side — which
+ * is the whole point of the third block.
+ */
+describe("absence chooses the store", () => {
+  const URL = "postgresql://u:p@db.example.com:5432/postgres";
+
+  it("selects postgres where a URL is set", () => {
+    expect(storeChoice({ LINGTAI_DATABASE_URL: URL })).toEqual({ kind: "postgres", url: URL });
+    expect(databaseUrl({ LINGTAI_DATABASE_URL: URL })).toBe(URL);
+  });
+
+  it("selects sqlite under ~/.lingtai where nothing names one", () => {
+    // No flag was passed and no prompt was answered: the configuration is the
+    // decision, and an empty one decides too.
+    expect(storeChoice({ LINGTAI_HOME: "/tmp/lingtai-home" })).toEqual({
+      kind: "sqlite",
+      path: "/tmp/lingtai-home/lingtai.db",
+    });
+    expect(sqliteLogPath({ HOME: "/home/someone" })).toBe("/home/someone/.lingtai/lingtai.db");
+    // Empty is absent, as it is for every other name here.
+    expect(storeChoice({ LINGTAI_HOME: "/tmp/lingtai-home", LINGTAI_DATABASE_URL: "" }).kind).toBe("sqlite");
+  });
+
+  it("refuses a machine that named only the direct URL, rather than choosing sqlite", () => {
+    // A missing line, not a decision — and an empty log started beside a
+    // database somebody plainly configured is the silent version of that.
+    expect(() => storeChoice({ LINGTAI_DIRECT_DATABASE_URL: URL, LINGTAI_HOME: "/tmp/lingtai-home" })).toThrow(
+      /LINGTAI_DATABASE_URL is not set/,
+    );
+  });
+
+  /**
+   * **The rule must not reach the test variables.** A fallback to SQLite here
+   * would leave `pnpm test:db` green against a file while claiming to assert
+   * Postgres — the projections, `LISTEN`/`NOTIFY`, two clients racing — and the
+   * refusal `testUrl` has carried since `#63` would have been quietly deleted
+   * by a change nobody read as deleting it.
+   */
+  it("refuses in a test run rather than falling through to sqlite", () => {
+    const test = { LINGTAI_TEST: "1", LINGTAI_HOME: "/tmp/lingtai-home" };
+    expect(() => storeChoice(test)).toThrow(/LINGTAI_TEST_DATABASE_URL is not set/);
+    expect(() => databaseUrl(test)).toThrow(/LINGTAI_TEST_DATABASE_URL is not set/);
+    // Not even with the operator's own URL set, which is the log the refusal is
+    // about: the suite writes real events, and only deleting from an
+    // append-only table would remove them again.
+    expect(() => storeChoice({ ...test, LINGTAI_DATABASE_URL: URL })).toThrow(
+      /LINGTAI_TEST_DATABASE_URL is not set/,
+    );
+    // Vitest's own variable, not just the explicit override.
+    expect(() => storeChoice({ VITEST: "true", LINGTAI_HOME: "/tmp/lingtai-home" })).toThrow(
+      /LINGTAI_TEST_DATABASE_URL is not set/,
+    );
+    expect(storeChoice({ ...test, LINGTAI_TEST_DATABASE_URL: URL })).toEqual({ kind: "postgres", url: URL });
   });
 });
 

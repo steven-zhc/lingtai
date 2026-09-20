@@ -14,10 +14,12 @@
  * not through the binary, which is why the shim can move under it.
  *
  * **None of this needs the log.** A machine that has only just installed has no
- * database to name, and every other command loads `@lingtai/event-store`, which
- * throws without one — so `entry.ts` answers these four before that is
- * imported, and what does need the log (the drain, the App) is reached through
- * `World` and imported only when asked.
+ * database to name — and since #179 naming none is itself a choice, so the
+ * hazard turned over: `@lingtai/event-store` no longer throws at import, it
+ * opens whichever store was chosen the moment anything reads or appends. Either
+ * way these four must not be the thing that reaches it, so `entry.ts` answers
+ * them before it is imported, and what does need the log (the drain, the App)
+ * is reached through `World` and imported only when asked.
  *
  * **The one outbound request** a tool that sends nothing anywhere makes is the
  * question *which release is newest*, and it is asked by `lingtai upgrade` and
@@ -42,6 +44,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { paint } from "@lingtai/env/colour";
+import type { StoreChoice } from "@lingtai/env";
 import workspace from "../../../package.json" with { type: "json" };
 import { platformName, versionLine } from "./version.ts";
 
@@ -120,8 +123,17 @@ export interface World {
   drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
   /** The GitHub App this machine is configured with, asked before anything is removed. */
   app: () => Promise<AppFacts | null | { unread: string }>;
-  /** Whether a log is configured, so an uninstall can say it is not under `~/.lingtai`. */
-  logConfigured: () => boolean;
+  /**
+   * **Which log this machine has, and where it is** — null only where
+   * `storeChoice` refuses to say, which is a half-named Postgres (0055 §2).
+   *
+   * Not a boolean, and not `databaseUrl()`, since #179: absence names the
+   * SQLite log in `~/.lingtai` rather than naming nothing, so a machine that
+   * has one would have been told it had none — while `uninstall` listed the
+   * file itself among what it could not ask about, and then offered to remove
+   * it without ever saying what it was.
+   */
+  store: () => StoreChoice | null;
 }
 
 // ------------------------------------------------------------- versions --
@@ -519,13 +531,13 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
     return 1;
   }
-  const log = world.logConfigured();
+  const store = world.store();
   // With no log configured here the lock was not asked, and a null is not a no:
   // a daemon from a checkout reads the checkout's `.env.local`, not this copy's.
   // Anything under the home but `versions/` is a conductor's, so it is not removed
   // on a question nobody could answer.
   const state = existsSync(paths.home) ? readdirSync(paths.home).filter((name) => name !== "versions") : [];
-  if (!log && state.length > 0 && !argv.includes("--nothing-conducts")) {
+  if (store === null && state.length > 0 && !argv.includes("--nothing-conducts")) {
     return refuse(
       world,
       `not uninstalling: no log is configured for this lingtai, so whether a daemon started elsewhere conducts on ` +
@@ -537,6 +549,18 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   const app = await world.app().catch((err: unknown) => ({ unread: (err as Error).message }));
 
   const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`;
+  // **Named, because "everything under ~/.lingtai" does not name it.** Where
+  // the log is a file it is under the home, it is the only copy there has ever
+  // been of it — nothing converts a log between the stores (0055) — and it goes
+  // with the worktrees and the run logs in one `rmSync`. A Postgres log is
+  // somewhere else and survives this, which is why only this one is said.
+  if (store !== null && store.kind === "sqlite" && existsSync(store.path)) {
+    world.log(
+      paint.signal(
+        `${store.path} is this machine's event log — every event it holds goes with it, and nothing here copies it anywhere`,
+      ),
+    );
+  }
   if (!argv.includes("--yes") && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
     world.log("nothing was removed");
     return 1;
@@ -586,7 +610,7 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
       }`,
     );
   }
-  if (log) {
+  if (store !== null && store.kind === "postgres") {
     world.log("The log is not under ~/.lingtai: the database LINGTAI_DATABASE_URL names is untouched, and its tables are yours to drop.");
   }
   return 0;

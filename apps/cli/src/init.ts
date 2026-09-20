@@ -4,7 +4,9 @@
  * first run*).
  *
  *   look       git, which runtimes are installed and signed in, what ~/.lingtai holds
- *   database   a Postgres URL — connected to, and its tables created
+ *   database   a Postgres URL — connected to, and its tables created; empty is
+ *              SQLite, which takes any URL already in the file back out and
+ *              ends the run there (#179)
  *   agent      detected; more than one signed in is asked; none is refused by name
  *   App        one already configured is verified by a real call
  *   board      started here, and a browser opened on the wizard's first screen
@@ -26,9 +28,26 @@
  * other thing silently, which is how a machine signed in to two runtimes ends
  * up running the one nobody picked.
  *
- * **SQLite is the absence, and it is not built** (#179). An empty answer is
- * that choice, and this says so and asks again rather than writing a machine
- * whose board cannot start.
+ * **SQLite is the absence, so the file must be left holding no URL** (#179).
+ * An empty answer settles the database rather than asking again — but absence
+ * is read back out of this same `config.yml` by `storeChoice()`, so a
+ * `database.url` left standing there would go on selecting Postgres on a
+ * machine this command had just told the operator was on SQLite. The empty
+ * answer therefore *removes* it, and says which URL it removed. That is the
+ * only place init deletes rather than adds, and it is the same rule as
+ * everywhere else here: what the file says **is** the choice, so a choice that
+ * is absence has to leave the file saying nothing.
+ *
+ * It is not a conversion. Nothing moves between the two stores (0055), and the
+ * Postgres that URL named is left exactly as it was.
+ *
+ * **And that answer ends the run.** Everything below the database step finishes
+ * by serving the board here and opening the App wizard, which appends
+ * `GitHubAppCreated` through the event store — so on a SQLite machine
+ * continuing would create the log that every other command has just been told
+ * to refuse, and `entry.ts` answers these five commands precisely so that none
+ * of them is the thing that makes one. The choice is kept; the agent, the App
+ * and the board are the next `lingtai init`'s.
  *
  * **Subscriptions are not Lingtai's business.** Whether a runtime can run is
  * asked of the runtime; whether it is paid for is not asked at all.
@@ -42,7 +61,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
-import { Document, isMap, parseDocument } from "yaml";
+import { Document, isMap, isScalar, parseDocument } from "yaml";
 import { claudeCodeAuth, codexAuth } from "@lingtai/agent/auth";
 import { runnableEnv } from "@lingtai/agent-env";
 import { stateDir } from "@lingtai/env";
@@ -133,6 +152,31 @@ function writeConfig(path: string, doc: Document, home: string): void {
   writeFileSync(partial, doc.toString(), { mode: 0o600 });
   chmodSync(partial, 0o600);
   renameSync(partial, path);
+}
+
+/**
+ * Take a top-level key out, and **leave the comments above it where a reader
+ * put them**.
+ *
+ * `yaml` hangs a leading comment on the key that follows it, so a file whose
+ * first line is `# the machine I run on` has that line attached to whichever
+ * key happens to come first — and deleting that key deletes the header with it.
+ * The rest of this file promises a write keeps every comment it did not choose;
+ * the one deletion here (`chooseDatabase`'s empty answer) has to keep the same
+ * promise, so the comment moves down to the key that now stands first rather
+ * than going out with the one that was asked for.
+ */
+function dropKey(config: Document, key: string): void {
+  const items = isMap(config.contents) ? config.contents.items : [];
+  const index = items.findIndex((pair) => isScalar(pair.key) && pair.key.value === key);
+  const going = index === -1 ? undefined : items[index]!.key;
+  const next = index === -1 ? undefined : items[index + 1]?.key;
+  if (isScalar(going) && typeof going.commentBefore === "string" && isScalar(next)) {
+    next.commentBefore = next.commentBefore === null || next.commentBefore === undefined
+      ? going.commentBefore
+      : `${going.commentBefore}\n${next.commentBefore}`;
+  }
+  config.delete(key);
 }
 
 /** A URL fit to print: the password is never shown. */
@@ -308,13 +352,59 @@ async function chooseDatabase(
       candidate = answer.trim();
     }
     if (candidate === "") {
+      // **Absence is written by making it absent** (#179). Nothing new goes into
+      // the file — a `store: sqlite` key would be a second setting that could
+      // disagree with the first — but a `database.url` already there is exactly
+      // what `storeChoice()` reads on every later command, so leaving it would
+      // make this line a lie: the operator is told SQLite and the machine goes
+      // on appending to that Postgres. It comes out, and is named coming out.
+      const previous = config.getIn(["database", "url"]);
+      const removed = typeof previous === "string" && previous !== "" ? previous : null;
+      if (removed !== null) {
+        config.deleteIn(["database", "url"]);
+        // An empty `database:` left behind reads as a setting nobody made.
+        const rest = config.get("database");
+        if (isMap(rest) && rest.items.length === 0) dropKey(config, "database");
+        writeConfig(path, config, home);
+      }
+      const said = removed === null
+        ? `nothing written to ${path}`
+        : `${redact(removed)} removed from ${path} — a new log, and nothing is converted from the old one`;
+      world.log(paint.signal(`database     SQLite, ${join(home, "lingtai.db")} · ${said}`));
+      // Amber, and said here rather than only in the README, because this is
+      // where a person makes the choice. The store is built and the system
+      // around it is not: `approve` and `run` go through the projections, which
+      // take a Postgres URL and refuse by name, and `add` and the control verbs
+      // — which hold no projector — ask `store.ts` for the same refusal before
+      // they append. Somebody who presses Enter and then meets that error was
+      // not warned by anything.
       world.log(
-        paint.fail(
-          "SQLite is the choice an empty answer makes, and it is not built yet (#179) — a Postgres URL is the one store " +
-            "this version runs on. Nothing was written",
+        paint.signal(
+          "             nothing that appends runs on SQLite yet — lingtai add, approve and run refuse by name, " +
+            "and lingtai doctor fails its store row, until #175 ports the projections. Run lingtai init again " +
+            "with a Postgres URL to move off it",
         ),
       );
-    } else if (!/^postgres(ql)?:\/\//.test(candidate)) {
+      // **And init stops here, rather than being the sixth appending path.**
+      // The steps below end by serving the board *in this process* and opening
+      // it on `/setup/github-app`, and rendering that page calls
+      // `offerCreation`, which reads and appends `GitHubAppCreated` through
+      // `@lingtai/event-store`'s singleton — the same `storeChoice()` this
+      // answer just made. So going on would create `lingtai.db` and write the
+      // machine's App into it, on the one machine every other command has just
+      // been told to refuse: `entry.ts` dispatches these five commands because
+      // each must run where there is no log and must never be the thing that
+      // makes one. The choice is recorded — by absence, which is the whole of
+      // recording it — and nothing after it can be done on this store yet.
+      return refuse(
+        world,
+        `stopping here: the board is served from this process and its first screen is the App wizard, which ` +
+          `appends GitHubAppCreated to this machine's log — on SQLite that would create ${join(home, "lingtai.db")} ` +
+          `and put the App in a log no other command will read. The agent, the App and the board are the next ` +
+          `lingtai init's, on a machine that names a Postgres URL. The choice above is kept`,
+      );
+    }
+    if (!/^postgres(ql)?:\/\//.test(candidate)) {
       world.log(paint.fail(`that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written`));
     } else {
       const check = await world.database(candidate);

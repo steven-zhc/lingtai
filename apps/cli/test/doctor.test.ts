@@ -55,9 +55,73 @@ describe("lingtai doctor — environment", () => {
     expect(report.failed).toBeGreaterThan(0);
   });
 
-  it("names both when neither is set", async () => {
-    const e = find((await runDoctor(env({}))).results, "environment");
-    expect(e.detail).toContain("LINGTAI_DATABASE_URL and LINGTAI_DIRECT_DATABASE_URL");
+  /**
+   * #179. An unset `LINGTAI_DATABASE_URL` used to mean a machine nobody had
+   * configured and now means a machine that chose SQLite — and nothing outside
+   * can tell those apart, which is why the report says which store it found
+   * rather than leaving it to be inferred from a variable nobody set.
+   */
+  it("says which store is in use, and where, before it checks anything", async () => {
+    const report = await runDoctor(env({}));
+    const store = find(report.results, "store");
+
+    expect(report.results.indexOf(store)).toBeLessThan(
+      report.results.indexOf(find(report.results, "environment")),
+    );
+    expect(store.detail).toContain("sqlite");
+    expect(store.detail).toContain("lingtai.db");
+    expect(find(report.results, "environment").status).toBe("skip");
+    expect(find(report.results, "postgres").detail).toContain("the log is SQLite");
+  });
+
+  /**
+   * The row is red, and that is the point of it. SQLite is the store 1.0 wants,
+   * and it is not yet a store any command that appends can use: the projections
+   * and the `LISTEN`/`NOTIFY` waker take a Postgres URL and refuse by name, so
+   * `lingtai add`, `approve`, `run` and the board all die on a machine this
+   * report could have called green — and `lingtai restart` gates on this same
+   * report, where a note is explicitly not a failure (`restart.ts`'s
+   * `doctorFailed`), so a note would drain a daemon and start one that cannot
+   * open a log. When #175 ports them this becomes `ok`.
+   */
+  it("fails on a SQLite machine, because no command that appends can run on one yet", async () => {
+    const report = await runDoctor(env({}));
+    const store = find(report.results, "store");
+
+    expect(store.status).toBe("fail");
+    expect(report.failed).toBeGreaterThan(0);
+    expect(formatReport(report)).toContain("FAILED");
+    // Not a bare verdict: what is missing, and both ways out of it.
+    expect(store.detail).toContain("#175");
+    expect(store.detail).toContain("Name a Postgres URL");
+    // And the checks below say they were not run, not that they do not exist.
+    expect(find(report.results, "postgres").detail).toContain("Implemented, and not run");
+  });
+
+  it("says postgres, and where it was named, when a URL is set", async () => {
+    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
+    const store = find(report.results, "store");
+
+    expect(store.detail).toContain("postgres · LINGTAI_DATABASE_URL :6543");
+    // The same rule as every other row: never the credentials, never the host.
+    expect(store.detail).not.toContain("u:p");
+    expect(store.detail).not.toContain("db.example.com");
+  });
+
+  it("does not choose SQLite for a machine that named only the direct URL, and fails rather than calling it a store", async () => {
+    // A missing line, not a decision. Choosing SQLite there would start an
+    // empty log beside a database somebody plainly configured — and `storeChoice`
+    // opens nothing at all there, so the row that says which store is in use
+    // cannot be the green one on the machine where there is none. The report is
+    // read by scanning the left edge for FAIL; a green row with the bad news in
+    // its detail is a row that gets passed over.
+    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
+    const store = find(report.results, "store");
+
+    expect(store.detail).not.toContain("sqlite");
+    expect(store.status).toBe("fail");
+    expect(store.detail).toContain("LINGTAI_DATABASE_URL");
+    expect(find(report.results, "environment").status).toBe("fail");
   });
 
   it("refuses a pooled URL standing in for the direct one, and says to set it", async () => {
@@ -96,8 +160,11 @@ describe("lingtai doctor — environment", () => {
   });
 
   it("does not attempt Postgres once the environment is wrong", async () => {
-    const report = await runDoctor(env({}));
+    // Wrong, not absent: absent is SQLite (#179), and a pooled URL missing from
+    // a machine that named the direct one is the failure this skips after.
+    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
     expect(find(report.results, "postgres").status).toBe("skip");
+    expect(find(report.results, "postgres").detail).toContain("the environment check failed first");
   });
 
   it("reports the two URLs separately, and never prints either", async () => {
@@ -400,7 +467,10 @@ describe("lingtai doctor — reporting", () => {
   });
 
   it("says how many failed, and every check says what it found", async () => {
-    const report = await runDoctor(env({}));
+    // A failure has to be arranged now that an empty environment is not one:
+    // absence chooses SQLite (#179), and a machine that named only the direct
+    // URL is the nearest thing to a misconfiguration this can make offline.
+    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
     expect(formatReport(report)).toContain("FAILED");
     expect(report.results.every((r) => r.detail.length > 0)).toBe(true);
   });

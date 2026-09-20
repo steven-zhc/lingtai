@@ -312,8 +312,11 @@ describe("sqlite: on a Node without node:sqlite", () => {
       execFile(
         process.execPath,
         ["--import", hook, "--input-type=module", "-e", script],
-        // The barrel builds a Postgres client, which reads its address and
-        // never connects to it.
+        // A URL, so the barrel is a Postgres one and this assertion is about
+        // the import alone. Since #179 it builds nothing either way — the
+        // client and the log are both opened on first use — and absence here
+        // would make the child choose SQLite, which is the next test's subject
+        // and not this one's.
         { env: { ...process.env, LINGTAI_DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" }, timeout: 30_000 },
         (err, stdout, stderr) => (err ? reject(new Error(`${err.message}\n${stderr}`)) : resolve(stdout)),
       ),
@@ -322,4 +325,67 @@ describe("sqlite: on a Node without node:sqlite", () => {
     expect(lines[0]).toBe("imported");
     expect(lines[1]).toMatch(/^the SQLite store needs node:sqlite, which Node v[\d.]+ does not have without a flag — Node 22\.13 or later has it$/);
   }, 40_000);
+});
+
+/**
+ * **Absence chooses this store** (#179, [0055](../../../doc/decisions/0055-absence-chooses-the-store.md)).
+ *
+ * `packages/env/test/env.test.ts` asserts what `storeChoice()` answers; this
+ * asserts that the answer is *what the singleton opens*, which is the claim
+ * that makes it the choice rather than a description of one. Nothing else
+ * covers it: every other caller of `eventStore` in the suite is under vitest,
+ * where `inTest` sends `storeChoice` to the `TEST_` names and it can only ever
+ * be Postgres — which is the other half of the ticket and the reason this has
+ * to be a process of its own.
+ *
+ * `LINGTAI_DATABASE_URL: ""` rather than deleting it, because dotenv does not
+ * overwrite a name `process.env` already has: a developer whose `.env.local`
+ * names a URL would otherwise have that URL loaded into the child and this
+ * would assert Postgres while claiming to assert absence. Empty is absent to
+ * `optional()` and present to dotenv, which is exactly the lever wanted.
+ */
+describe("sqlite: the store absence chooses (#179)", () => {
+  it("is what the singleton opens, at ~/.lingtai/lingtai.db — and not before something reads or appends", async () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-absent-"));
+    dirs.push(home);
+    const barrel = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+    const log = join(home, "lingtai.db");
+    const script = `
+      const { existsSync } = await import("node:fs");
+      const m = await import(${JSON.stringify(barrel)});
+      console.log("after import: " + existsSync(${JSON.stringify(log)}));
+      const claimed = { type: "WorkItemClaimed", actor: "conductor", data: { runId: "run-1", worker: "test", title: null, kind: null } };
+      const written = await m.eventStore.append("wi-absent", 0, [claimed]);
+      console.log("appended: " + written[0].seq + " " + written[0].type);
+      const read = await m.eventStore.read("wi-absent", 0);
+      console.log("read back: " + read.length + " " + read[0].type);
+      console.log("after append: " + existsSync(${JSON.stringify(log)}));`;
+    const out = await new Promise<string>((resolve, reject) =>
+      execFile(
+        process.execPath,
+        ["--experimental-strip-types", "--input-type=module", "-e", script],
+        {
+          env: {
+            ...process.env,
+            LINGTAI_HOME: home,
+            LINGTAI_DATABASE_URL: "",
+            LINGTAI_DIRECT_DATABASE_URL: "",
+            VITEST: "",
+            LINGTAI_TEST: "",
+          },
+          timeout: 60_000,
+        },
+        (err, stdout, stderr) => (err ? reject(new Error(`${err.message}\n${stderr}`)) : resolve(stdout)),
+      ),
+    );
+
+    // A bare `lingtai --version` imports this barrel and must not leave a log
+    // behind: the client and the file are both opened on first use.
+    expect(out).toContain("after import: false");
+    // Not a Postgres error, and not `LINGTAI_DATABASE_URL is not set`: the
+    // append went to the file absence named, and came back out of it.
+    expect(out).toContain("appended: 1 WorkItemClaimed");
+    expect(out).toContain("read back: 1 WorkItemClaimed");
+    expect(out).toContain("after append: true");
+  }, 90_000);
 });

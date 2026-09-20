@@ -227,10 +227,81 @@ function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
   return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined;
 }
 
-/** Pooled. Ordinary reads and writes. */
+/**
+ * Where the log goes when nothing named a Postgres URL — `~/.lingtai/lingtai.db`,
+ * as doc/design/1.0.md's "Where things live" has it.
+ *
+ * Under `stateDir`, so `LINGTAI_HOME` moves it with everything else Lingtai owns
+ * on this machine. A second answer to *where does Lingtai keep its own files*
+ * is a second answer that can drift.
+ */
+export function sqliteLogPath(from: NodeJS.ProcessEnv = process.env): string {
+  return join(stateDir(from), "lingtai.db");
+}
+
+/** Which store this machine's log is, and where it is. */
+export type StoreChoice =
+  | { readonly kind: "postgres"; readonly url: string }
+  | { readonly kind: "sqlite"; readonly path: string };
+
+/**
+ * **Absence is the choice** (#179).
+ *
+ * A Postgres URL — the variable, an env file, or `database.url` in
+ * `~/.lingtai/config.yml` — selects Postgres. Nothing at all selects SQLite in
+ * `~/.lingtai/`. No flag and no prompt, and therefore no second setting that
+ * could fall out of step with the first: the same shape as `merge: []` meaning
+ * nothing holds, where the configuration **is** the decision rather than a
+ * thing consulted alongside one.
+ *
+ * **It chooses for the application. It chooses nothing for the tests.** Under
+ * `inTest` this asks `testUrl`, which refuses when `LINGTAI_TEST_DATABASE_URL`
+ * is unset and must never fall through to SQLite: that fallback would let
+ * `pnpm test:db` pass against a file while claiming to assert Postgres, and
+ * asserting Postgres is the whole subject of that half of the suite (`#158`) —
+ * the projections, `LISTEN`/`NOTIFY`, two clients racing. The refusal is pinned
+ * by `test/env.test.ts`, and its reason is written out at `testUrl`.
+ *
+ * Read by `@lingtai/event-store`'s singleton, which is what makes it the
+ * choice and not a description of one, and by `lingtai doctor`, which prints
+ * it: *which database am I on* stopped being answerable by looking for a
+ * variable the moment an absent one started meaning something.
+ */
+export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice {
+  if (inTest(from)) return { kind: "postgres", url: testUrl("DATABASE_URL", from) };
+  const url = optional(`${PREFIX}DATABASE_URL`, from) ?? machineUrl(from);
+  if (url !== undefined) return { kind: "postgres", url };
+  // **Absence is nothing at all naming a connection.** A machine with only
+  // `LINGTAI_DIRECT_DATABASE_URL` set is a Postgres machine missing a line, not
+  // a machine that chose SQLite — and choosing SQLite there would start an empty
+  // log beside a database somebody plainly configured. It refuses by name, as
+  // it did before any of this existed.
+  if (optional(`${PREFIX}DIRECT_DATABASE_URL`, from)) {
+    return { kind: "postgres", url: required(`${PREFIX}DATABASE_URL`, from) };
+  }
+  return { kind: "sqlite", path: sqliteLogPath(from) };
+}
+
+/**
+ * Pooled. Ordinary reads and writes — **and Postgres, demanded**.
+ *
+ * Through `storeChoice`, so which sources are read and in what order cannot
+ * differ from the choice itself. It still refuses by name where nothing names
+ * a URL, and that refusal is now a fact about the caller rather than about the
+ * machine: what is left reading this is the code that can only be Postgres —
+ * the projections, the `LISTEN`/`NOTIFY` waker, the daemon's own reconcile and
+ * converge queries, `lingtai doctor`'s catalogue reads — so on a SQLite machine
+ * it is asking for something that is not there, and saying so by name is right.
+ * A caller that wants whichever store this machine has asks `storeChoice`, and
+ * one that wants to know **whether there is a log at all** asks it too: since
+ * absence names a store, "no URL" and "no log" stopped being the same fact, and
+ * reading this for the second question is how `lingtai uninstall` came to tell a
+ * SQLite machine it had no log while listing that log among what it would
+ * remove.
+ */
 export function databaseUrl(from: NodeJS.ProcessEnv = process.env): string {
-  if (inTest(from)) return testUrl("DATABASE_URL", from);
-  return optional(`${PREFIX}DATABASE_URL`, from) ?? machineUrl(from) ?? required(`${PREFIX}DATABASE_URL`, from);
+  const chosen = storeChoice(from);
+  return chosen.kind === "postgres" ? chosen.url : required(`${PREFIX}DATABASE_URL`, from);
 }
 
 /**

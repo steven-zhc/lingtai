@@ -70,6 +70,29 @@ pnpm typecheck
 `.env.local` lives at the repo root and is gitignored. A real environment
 variable beats it, which is what makes CI and launchd work with no file at all.
 
+**Name no database at all and the log is SQLite**, in `~/.lingtai/lingtai.db`
+(#179, [ADR 0055](decisions/0055-absence-chooses-the-store.md)). Absence is the
+choice: there is no flag and no second setting that could disagree with it, and
+`lingtai doctor`'s `store` row — the one under *packages load under Node* — says
+which one this machine has and where it is, because an unset variable no longer
+tells you. A URL set anywhere Lingtai reads one — the variable, `.env.local`, or
+`database.url` in `~/.lingtai/config.yml` — is Postgres instead. Switching
+starts a new log; nothing is converted between the two. A machine that names
+only `LINGTAI_DIRECT_DATABASE_URL` is a Postgres machine missing a line rather
+than a SQLite one, and is refused by name.
+
+**So name one anyway, today.** The store is built and the system around it is
+not: the projections, the `LISTEN`/`NOTIFY` waker and the board's `task_view`
+reads still take `databaseUrl()` and refuse by name, so a SQLite machine gets
+through `lingtai init` and then fails every command that appends —
+`packages/projector/src/projection.ts` throws *LINGTAI_DATABASE_URL is not set*
+before `lingtai approve` or `run` has done anything, and `apps/cli/src/store.ts`
+says the same sentence for the two that hold no projector to throw for them:
+`lingtai add`, and `pause`/`resume`/`shutdown`/`now`. That `store` row is therefore a **FAIL**
+on a SQLite machine rather than a note, which is also what stops `lingtai
+restart` draining a daemon and starting one that cannot open a log. #175 is what
+ports them, and the day it lands the row goes green with nothing else to change.
+
 **One database, and on a plain Postgres one connection string** (#176).
 `LINGTAI_DATABASE_URL` is for ordinary queries; `LINGTAI_DIRECT_DATABASE_URL` is session mode, for migrations and `LISTEN/NOTIFY`
 — not for locks, which are files under `~/.lingtai/locks` and never Postgres (0052). Unset, the direct one is `LINGTAI_DATABASE_URL`; set, it
@@ -82,9 +105,13 @@ The event store must be **its own database**, not one belonging to a managed
 project — Lingtai has to keep running while a managed project is the thing
 being changed.
 
-**The tests need their own string, and refuse to run without it.**
-`LINGTAI_TEST_DATABASE_URL`, and `LINGTAI_TEST_DIRECT_DATABASE_URL` behind a pooler, point at a *different*
-database — the pair falls back within itself, never to the operator's. The suite is not mocked — it appends real events, runs real
+**The tests need their own string, and refuse to run without it — absence
+chooses nothing here.** `LINGTAI_TEST_DATABASE_URL` points at a *different*
+database, and `LINGTAI_TEST_DIRECT_DATABASE_URL` behind a pooler; the pair falls
+back within itself, never to the operator's, and never to SQLite. It survives
+1.0 and its direct twin does not ([ADR 0055](decisions/0055-absence-chooses-the-store.md)):
+`pnpm test:db` is the half whose subject is Postgres itself, so a file cannot
+stand in for it. The suite is not mocked — it appends real events, runs real
 projections — so pointed at your own log it
 leaves work items and board cards behind. It did: twenty-four cards from ten
 throwaway `esctest*` projects, and none from a real one. Cleaning that up is

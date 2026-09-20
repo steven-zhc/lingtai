@@ -237,12 +237,108 @@ describe("lingtai init (#186)", () => {
       expect(config(home)).not.toContain("wrong");
     });
 
-    it("an empty answer is SQLite, which is not built — said by number, and asked again", async () => {
+    it("an empty answer is SQLite, and writes no database at all (#179)", async () => {
       const home = freshHome();
-      const { world: w, seen } = world(home, { answers: ["", URL_] });
-      expect(await initCommand([], w)).toBe(0);
-      expect(seen.lines.join("\n")).toContain("#179");
-      expect(config(home)).toContain(URL_);
+      const { world: w, seen } = world(home, { answers: [""] });
+      expect(await initCommand([], w)).toBe(1);
+      expect(seen.lines.join("\n")).toContain("SQLite");
+      expect(seen.lines.join("\n")).toContain("lingtai.db");
+      // Absence is the choice, so there is nothing to write: a `database.url`
+      // here — or a `store:` key beside it — would be a second setting that
+      // could disagree with what `storeChoice()` reads. On a home that held
+      // nothing to begin with that is no file at all, the run having ended at
+      // this step with no agent chosen either.
+      expect(config(home)).toBeNull();
+      // Nothing was connected to, either.
+      expect(seen.connected).toEqual([]);
+      // And the choice is not reported as a working machine: nothing that
+      // appends runs on SQLite until #175, and this is where somebody chooses.
+      expect(seen.lines.join("\n")).toContain("nothing that appends runs on SQLite yet");
+      expect(seen.lines.join("\n")).toContain("#175");
+    });
+
+    /**
+     * #179. The line this prints is read back by `storeChoice()` out of this
+     * same file, so an empty answer that left `database.url` standing would say
+     * SQLite and leave the machine appending to that Postgres on every later
+     * command — and `lingtai doctor` would then report the opposite of what
+     * init had just said. The URL comes out, and is named coming out.
+     */
+    it("an empty answer takes a URL already in the file back out (#179)", async () => {
+      const home = freshHome();
+      mkdirSync(home, { recursive: true });
+      const gone = "postgresql://me:secret@old-host:5432/postgres";
+      writeFileSync(configPath({ LINGTAI_HOME: home }), `# mine\ndatabase:\n  url: ${gone}\nruntime:\n  agent: codex\n`);
+      // The written URL is asked first and does not answer, which is how an
+      // operator arrives at the question with a dead URL in the file.
+      const { world: w, seen } = world(home, { answers: [""], runtimes: [signedIn("codex")] });
+
+      expect(await initCommand([], w)).toBe(1);
+      expect(seen.connected).toEqual([gone]);
+      expect(config(home)).not.toContain("old-host");
+      // The key is gone, not emptied — `database: {}` would read as a setting.
+      expect(config(home)).not.toContain("database:");
+      // And nothing it did not choose was touched.
+      expect(config(home)).toContain("# mine");
+      expect(config(home)).toContain("agent: codex");
+      const said = seen.lines.join("\n");
+      expect(said).toContain("SQLite");
+      expect(said).toContain("removed from");
+      expect(said).toContain("nothing is converted");
+      // Even here, never the password.
+      expect(said).not.toContain("secret");
+    });
+
+    /**
+     * The same, with nobody at a terminal: `--database-url ""` skips the
+     * question, and skipping the question must not skip the removal — that was
+     * the silent half of it, a machine told SQLite while a healthy Postgres
+     * stayed in the file and went on taking every append.
+     */
+    it("--database-url '' removes it too, and says which URL it removed", async () => {
+      const home = freshHome();
+      mkdirSync(home, { recursive: true });
+      writeFileSync(configPath({ LINGTAI_HOME: home }), `database:\n  url: ${URL_}\n`);
+      const { world: w, seen } = world(home, { answers: [] });
+
+      expect(await initCommand(["--database-url", ""], w)).toBe(1);
+      expect(seen.asked).not.toContain("ask:database");
+      expect(config(home)).not.toContain("database:");
+      expect(seen.lines.join("\n")).toContain("removed from");
+      expect(seen.lines.join("\n")).not.toContain("secret");
+    });
+
+    /**
+     * **The choice ends the run, because everything after it appends.** `init`
+     * serves the board *in this process* and opens it on `/setup/github-app`,
+     * and rendering that page calls `offerCreation`
+     * (`packages/conductor/src/create-app.ts`), which reads `ctl-github-app`
+     * and appends `GitHubAppCreated` through `@lingtai/event-store`'s
+     * singleton — the store `storeChoice()` picks, which on this machine is
+     * `~/.lingtai/lingtai.db`. So an `init` that went on would have *created*
+     * the log and written the machine's App into it, reporting success, on the
+     * one machine where `add`, the control verbs, `approve` and `run` have all
+     * just been made to refuse. `entry.ts` answers these five commands because
+     * each has to run where there is no log; being the thing that makes one is
+     * the same fault from the other side.
+     */
+    it("does not go on to the board or the wizard on a SQLite machine", async () => {
+      const home = freshHome();
+      const { world: w, seen } = world(home, { answers: [""] });
+
+      expect(await initCommand([], w)).toBe(1);
+
+      // The three steps that follow the database, none of them taken: the App
+      // is not asked, no board is served, and no browser is opened on the
+      // wizard — the page that appends.
+      expect(seen.apps).toBe(0);
+      expect(seen.boards).toBe(0);
+      expect(seen.opened).toEqual([]);
+      expect(seen.asked).not.toContain("ask:agent");
+      // And it says why it stopped, naming the append rather than only the store.
+      const said = seen.lines.join("\n");
+      expect(said).toContain("GitHubAppCreated");
+      expect(said).toContain("stopping here");
     });
 
     it("a written URL that stopped answering asks again rather than going on", async () => {

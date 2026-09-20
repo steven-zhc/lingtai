@@ -58,6 +58,7 @@ import { pauseCommand } from "./pause.ts";
 import { run as runOnceCommand } from "./run.ts";
 import { keeper, serviceCommand, type ServiceOptions } from "./service.ts";
 import { releaseCheck } from "./install.ts";
+import { refusedBecauseSqlite } from "./store.ts";
 import { status } from "./status.ts";
 import { versionLine } from "./version.ts";
 import { WALL_LIMIT } from "./wall-limit.ts";
@@ -280,6 +281,15 @@ async function addCommand(args: string[]): Promise<number> {
   if (!slug) {
     console.error("lingtai add <owner>/<repo>");
     return 2;
+  }
+  // Before GitHub is asked anything, because what follows appends and this
+  // command holds no projector to refuse for it. See `./store.ts`: on a SQLite
+  // machine `add` wrote `ProjectConfigured` into a log nothing else can read
+  // and said `added` — the one outcome worse than refusing.
+  const held = refusedBecauseSqlite();
+  if (held !== null) {
+    console.error(paint.fail(held));
+    return 1;
   }
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
@@ -833,6 +843,16 @@ async function controlCommand(
   if (args.includes("--help") || args.includes("-h")) {
     console.log(USAGE);
     return 0;
+  }
+
+  // Each of these four appends, and the projector that refuses for every other
+  // appending command is the one thing this one deliberately does not hold — so
+  // the refusal is asked for here instead (`./store.ts`). A pause recorded in a
+  // log no daemon reads is a pause that never happens and says it did.
+  const held = refusedBecauseSqlite();
+  if (held !== null) {
+    console.error(paint.fail(held));
+    return 1;
   }
 
   const { positional, flags } = parseFlags(args);
