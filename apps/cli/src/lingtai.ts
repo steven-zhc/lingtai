@@ -14,7 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { connect } from "node:net";
 import { hostname } from "node:os";
-import { boardPort, boardUrl } from "@lingtai/env";
+import { BOARD_PORT, boardPort } from "@lingtai/env";
 import { createFileLocker } from "@lingtai/env/lock";
 import { createProjectionRunner, projectionLag } from "@lingtai/projector";
 import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
@@ -49,7 +49,7 @@ import { paint } from "@lingtai/env/colour";
 import { attach } from "./attach.ts";
 import { configPath } from "./init.ts";
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from "./service.ts";
-import { boardCommand, boardEntry, builtBoardDir, parseBoardArgs, serveBoard, type BoardWorld } from "./board.ts";
+import { boardCommand, boardEntry, boardLock, boardPortOrWhy, builtBoardDir, parseBoardArgs, serveBoard, type BoardWorld } from "./board.ts";
 import { conductorPass } from "./conduct.ts";
 import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
 import { add } from "@lingtai/conductor/onboard";
@@ -387,7 +387,7 @@ function serviceOptions(): ServiceOptions {
   return {
     // The board's job, beside the daemon's (#187). `answering` is the board's
     // own word for being up, which a job the supervisor has loaded is not.
-    board: { url: boardUrl(), answering: () => boardAnswering(boardPort()), missing: boardMissing },
+    board: boardOptions(),
     // A read that throws, so a beacon that could not be read says so.
     // Doctor folds that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
@@ -419,12 +419,46 @@ function serviceOptions(): ServiceOptions {
 }
 
 /**
- * Whether a **Lingtai** board answers on `port`, as its own page says so.
+ * The board's leg of `ServiceOptions` (#187), and **the port is read here
+ * rather than left to be read by every field**.
  *
- * The title and not a 200: a port some other server holds answers too, and
- * calling that one a board is how `board stop` ends up signalling somebody
- * else's process. `lingtai init` asks the same question the same way.
+ * `boardPort()` throws on a `board.port` that is not a port number, and this
+ * object is built for every `lingtai service` verb and for `lingtai restart`.
+ * Read where the fields were written — `boardUrl()` in the literal — a typo in
+ * a UI setting took the conductor down with it: `service shutdown "moving the
+ * database"` threw before `serviceCommand` was entered, so nothing was drained
+ * and nothing unloaded, and the only thing said was about the board's port. So
+ * the failure becomes the board's own `missing`, which no verb refuses over,
+ * and the drain runs.
  */
+function boardOptions(): ServiceOptions["board"] {
+  const asked = boardPortOrWhy();
+  if ("why" in asked) {
+    const why = asked.why;
+    return {
+      // No port was read, so there is no address of this machine's. The
+      // default's is where a board would answer once the file reads, and
+      // `missing` says in the same breath that nothing is on it.
+      url: `http://127.0.0.1:${BOARD_PORT}`,
+      answering: async () => null,
+      missing: () => ({ why, remedy: [`the board's port is set in ${configPath(process.env)}, and nothing else here reads it`] }),
+      // Never reached: every verb asks `missing` first and starts no board.
+      heldBy: async () => {
+        throw new Error(why);
+      },
+    };
+  }
+  const { port } = asked;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    answering: () => boardAnswering(port),
+    missing: boardMissing,
+    // The key `lingtai board start` takes, read without taking it — so a board
+    // in a terminal is not a job the supervisor respawns every thirty seconds.
+    heldBy: () => createFileLocker().holder(boardLock(port)),
+  };
+}
+
 /**
  * Why `lingtai board start` would serve nothing here, or null.
  *
@@ -434,11 +468,26 @@ function serviceOptions(): ServiceOptions {
  * there is none, `lingtai service` writes no board job rather than one launchd
  * respawns every thirty seconds.
  */
-function boardMissing(): string | null {
+function boardMissing(): { why: string; remedy: readonly string[] } | null {
   const entry = boardEntry(builtBoardDir());
-  return existsSync(entry) ? null : `no built board at ${entry}`;
+  return existsSync(entry)
+    ? null
+    : {
+        why: `no built board at ${entry}`,
+        remedy: [
+          "pnpm build writes the board, and pnpm lingtai service install then adds the job",
+          "from a checkout, pnpm --filter @lingtai/board dev serves the same port in a terminal",
+        ],
+      };
 }
 
+/**
+ * Whether a **Lingtai** board answers on `port`, as its own page says so.
+ *
+ * The title and not a 200: a port some other server holds answers too, and
+ * calling that one a board is how `board stop` ends up signalling somebody
+ * else's process. `lingtai init` asks the same question the same way.
+ */
 async function boardAnswering(port: number): Promise<string | null> {
   const url = `http://127.0.0.1:${port}`;
   try {
@@ -492,6 +541,7 @@ function liveBoardWorld(): BoardWorld {
       }
     },
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => Date.now(),
     whereThePortIsSet: `board.port in ${configPath(process.env)}, or --port for this one run`,
     log: (line) => console.log(line),
     error: (line) => console.error(line),

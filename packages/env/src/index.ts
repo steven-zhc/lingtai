@@ -288,7 +288,13 @@ export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number 
   if (port === undefined || port === null) return undefined;
   const n = typeof port === "number" ? port : Number(port);
   if (!Number.isInteger(n) || n <= 0 || n > 65535) {
-    throw new Error(`${path} sets board.port to ${JSON.stringify(port)}, which is not a port number — ${BOARD_PORT} is the default`);
+    // Not "17820 is the default": nothing fell back to it, and a sentence that
+    // named the default beside the refusal read as though the value had been
+    // ignored and the board served on 17820 anyway.
+    throw new Error(
+      `${path} sets board.port to ${JSON.stringify(port)}, which is not a port number, so no port was read — ` +
+        `take that line out to have the default, ${BOARD_PORT}`,
+    );
   }
   return n;
 }

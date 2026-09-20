@@ -452,11 +452,21 @@ const UNLOAD_WAIT_MS = 60_000;
 const IDLE_WAIT_POLLS = 90;
 
 /**
- * Seconds a start waits for the board to answer. Next's standalone server binds
+ * How long a start waits for the board to answer. Next's standalone server binds
  * in a second or two on a warm machine; this is long enough for a cold one and
  * past two of the supervisor's thirty-second restarts, and far short of the
  * daemon's, which waits on a reconcile that talks to GitHub.
+ *
+ * **A clock and a poll count, because either alone lies.** The count alone was
+ * the wait: 75 asks, a second apart, said to be 75 seconds — and an `answering`
+ * that carries its own five-second timeout makes each ask cost six against
+ * something that accepts TCP and never replies, so the command sat for seven
+ * and a half minutes having stated 75 seconds. The clock alone would make a
+ * test with an instant `answering` and a no-op `sleep` spin for 75 real
+ * seconds. So the count bounds the asks and the clock bounds the wait; an ask
+ * already in flight when the deadline passes is not cut short.
  */
+const BOARD_WAIT_MS = 75_000;
 const BOARD_WAIT_POLLS = 75;
 
 /**
@@ -549,11 +559,16 @@ export interface ServiceOptions {
    * taking work, so no verb here concludes the second from the first.
    */
   board: {
+    /**
+     * Where a board would answer. The default's address where the port could
+     * not be read at all — `missing` carries that, and nothing here serves on
+     * a number nobody chose.
+     */
     url: string;
     answering: () => Promise<string | null>;
     /**
-     * Why `lingtai board start` would serve nothing on this machine, or null
-     * where it would serve a board.
+     * Why `lingtai board start` would serve nothing on this machine, and what
+     * to do about it — or null where it would serve a board.
      *
      * **Asked before a job is written, and that is the whole of it.** The job
      * runs `<root>/apps/cli/src/lingtai.ts board start` — from the source, and
@@ -563,8 +578,27 @@ export interface ServiceOptions {
      * respawn it every thirty seconds for ever. So it is not installed, and
      * the reason is said instead: a supervisor with no job is a board that is
      * missing, which is true, and better than one that crash-loops.
+     *
+     * **`remedy` is the job of the caller and not of this file**, because the
+     * reasons differ: an unbuilt checkout wants `pnpm build`, and a `board.port`
+     * that is not a port number wants the line taken out of `config.yml`. A
+     * board that cannot be served is never a refusal of the verb — the conductor
+     * is drained, unloaded or started either way, and a UI setting does not
+     * hold up the drain.
      */
-    missing: () => string | null;
+    missing: () => { why: string; remedy: readonly string[] } | null;
+    /**
+     * Who holds the board's port lock, or null when nobody does — the key
+     * `lingtai board start` takes, read without taking it.
+     *
+     * **Asked before the supervisor is told to start the board.** A board
+     * somebody started in a terminal holds that lock, so the job would be
+     * refused by it, exit 1 at once, and be respawned every thirty seconds for
+     * ever — while `answering` found that same terminal board on the URL and
+     * called the start good. Throws where the lock cannot be read: *unread* is
+     * not *nobody*, and a start over an unread lock is the crash loop again.
+     */
+    heldBy: () => Promise<string | null>;
   };
   /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
   by?: string;
@@ -576,6 +610,11 @@ export interface ServiceOptions {
   exec?: Exec;
   which?: (bin: string) => string | null;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * The clock a wait is measured against, beside the `sleep` it is spent in.
+   * A wait that says how long it is has to be both: see `BOARD_WAIT_MS`.
+   */
+  now?: () => number;
   log?: (line: string) => void;
   error?: (line: string) => void;
 }
@@ -646,6 +685,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   const exec = options.exec ?? execCall;
   const which = options.which ?? whichBin;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = options.now ?? (() => Date.now());
   const verb = args[0] as Verb | undefined;
   if (args[0] === "stop") {
     // Gone rather than kept as an alias. It sent the supervisor's signal, and
@@ -783,9 +823,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
    * no board for it to serve. Not a refusal: the verb was about the conductor,
    * and the conductor is fine.
    */
-  const sayNoBoard = (why: string, what: "written" | "started"): void => {
-    log(`${why}, so no board job was ${what} — pnpm build writes the board, and pnpm lingtai service install then adds the job`);
-    log(`      from a checkout, pnpm --filter @lingtai/board dev serves the same port in a terminal`);
+  const sayNoBoard = (missing: { why: string; remedy: readonly string[] }, what: "written" | "started"): void => {
+    log(`${missing.why}, so no board job was ${what}`);
+    for (const line of missing.remedy) log(`      ${line}`);
   };
 
   /** Whether a Lingtai board answers where it should — the board's own word, not the supervisor's. */
@@ -799,9 +839,15 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
 
   /** Waits for a board to answer after a start. False when none did, having said so. */
   const confirmBoard = async (): Promise<boolean> => {
-    log(`waiting for the board to answer on ${options.board.url} — up to ${BOARD_WAIT_POLLS}s. It is waiting, not hung.`);
+    const seconds = BOARD_WAIT_MS / 1000;
+    log(`waiting for the board to answer on ${options.board.url} — up to ${seconds}s. It is waiting, not hung.`);
+    // The clock as well as the count: an `answering` that waits out its own
+    // timeout on every ask makes 75 of them far longer than the 75 seconds
+    // said above, and a wait that outlives its own sentence looks hung.
+    const until = now() + BOARD_WAIT_MS;
     let unread: string | null = null;
     for (let i = 0; i < BOARD_WAIT_POLLS; i++) {
+      if (i > 0 && now() >= until) break;
       const asked = await boardAnswers();
       if (typeof asked === "string") {
         log(`the board answers on ${asked}`);
@@ -812,7 +858,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     }
     error(
       unread === null
-        ? `the supervisor accepted the board's start, and nothing answered on ${options.board.url} in ${BOARD_WAIT_POLLS}s — so the UI is not up on its account.`
+        ? `the supervisor accepted the board's start, and nothing answered on ${options.board.url} in ${seconds}s — so the UI is not up on its account.`
         : `the supervisor accepted the board's start, and ${options.board.url} could not be asked whether a board answers — ${unread}.`,
     );
     error(`${join(boardFile.logs, `${BOARD_JOB.log}.err`)} is what the job wrote; a port somebody else holds is named there in words.`);
@@ -843,6 +889,27 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // bind, and `service status` is where that shows.
       log("the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers");
       return 0;
+    }
+    // The port, before the supervisor is told anything. The lock is held by a
+    // board this machine is serving, and the supervisor has just said the
+    // process is not its job's — so it is a terminal's. Bootstrapped over that,
+    // the job is refused by the lock, exits 1, and is respawned every thirty
+    // seconds for ever, while `confirmBoard` finds the terminal's board on the
+    // same URL and calls the start good. That is the one state two jobs make
+    // likelier, and the only place that can see it coming.
+    let holder: string | null;
+    try {
+      holder = await options.board.heldBy();
+    } catch (err) {
+      error(`the board lock could not be read — ${(err as Error).message}. Nothing was started for the board:`);
+      error("a board already on the port would make the supervisor's job exit at once, and be respawned every thirty seconds for ever");
+      return 1;
+    }
+    if (holder !== null) {
+      error(`a board is already on ${options.board.url}, and it is not the supervisor's — held by ${holder}`);
+      error("nothing was started for the board: that lock would refuse the job, which would exit and be respawned every thirty seconds for ever");
+      error("pnpm lingtai board stop stops that one, and pnpm lingtai service start hands the board to the supervisor");
+      return 1;
     }
     if (platform === "systemd") {
       if (!run(["systemctl", "--user", "start", BOARD_SYSTEMD_UNIT])) return 1;
@@ -923,6 +990,14 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     log(`board       (${options.board.url} — whether a board answers there, which loaded does not say)`);
     const asked = await boardAnswers();
     log(`  ${typeof asked === "string" ? `answers on ${asked}` : asked === null ? "nothing answers" : `could not ask — ${asked.unread}`}`);
+    // Where there is no board to serve, the address above is the default's and
+    // nothing is on it — said here, or a `board.port` that is not a port number
+    // reads as a board that is merely down.
+    const missing = options.board.missing();
+    if (missing !== null) {
+      log(`  ${missing.why}, so this machine has no board job to keep`);
+      for (const line of missing.remedy) log(`  ${line}`);
+    }
     return "unread" in answer ? 1 : 0;
   };
 

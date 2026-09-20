@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { isSea } from "node:sea";
 import { pathToFileURL } from "node:url";
 import { constants, Script } from "node:vm";
-import { repoRoot } from "@lingtai/env";
+import { boardPort, repoRoot } from "@lingtai/env";
 import type { FileLocker, HeldLock } from "@lingtai/env/lock";
 import { BOARD_JOB, type Exec, type Keeper } from "./service.ts";
 
@@ -48,6 +48,25 @@ export function builtBoardDir(self: string = import.meta.filename, root: string 
   if (existsSync(boardEntry(beside))) return beside;
   const built = join(root, "dist", "board");
   return existsSync(boardEntry(built)) ? built : beside;
+}
+
+/**
+ * The board's port, or why there is none — **a value and never a throw**.
+ *
+ * `boardPort()` refuses a `board.port` that is not a port number, which is
+ * right for `lingtai board`, whose whole subject is the board, and wrong for
+ * everything else. Read where a `ServiceOptions` is built, one typo in a UI
+ * setting threw before `serviceCommand` was entered (#187): `lingtai service
+ * shutdown "moving the database"` drained nothing, unloaded nothing, and said
+ * one thing, about the board's port. The conductor is not held up by the UI's
+ * port, so the refusal is carried as a fact for the board's own leg to report.
+ */
+export function boardPortOrWhy(env: NodeJS.ProcessEnv = process.env): { port: number } | { why: string } {
+  try {
+    return { port: boardPort(env) };
+  } catch (err) {
+    return { why: (err as Error).message };
+  }
 }
 
 export interface BoardOptions {
@@ -194,11 +213,18 @@ export function boardLock(port: number): string {
  * Counted in polls rather than measured against the clock, so the wait is the
  * injected `sleep`'s and a test that makes it a no-op does not sit here for ten
  * real seconds.
+ *
+ * **`restart` is counted and also timed**, because an ask is not free:
+ * `answering` carries its own five-second timeout, so against something that
+ * accepts TCP and never replies 40 polls are 210 seconds and not the ten this
+ * says. The count still bounds a test's loop, where nothing takes any time; the
+ * deadline bounds the wait, where each ask takes all of its own.
  */
 const STOP_POLL_MS = 100;
 const STOP_POLLS = 100;
 const ANSWER_POLL_MS = 250;
 const ANSWER_POLLS = 40;
+const ANSWER_WAIT_MS = ANSWER_POLLS * ANSWER_POLL_MS;
 
 /** What was typed. `port` and `dir` are null where nothing was, and the caller resolves them. */
 export interface BoardArgs {
@@ -232,6 +258,11 @@ export interface BoardWorld {
   /** SIGTERM to `pid`. False when there is no such process to signal. */
   signal: (pid: number) => boolean;
   sleep: (ms: number) => Promise<void>;
+  /**
+   * The clock a wait is measured against, beside the `sleep` it is spent in.
+   * `restart`'s wait for an answer needs both — see `ANSWER_WAIT_MS`.
+   */
+  now: () => number;
   /** Where the port is set, said wherever the port is the trouble. */
   whereThePortIsSet: string;
   log: (line: string) => void;
@@ -376,7 +407,11 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
 
   /** Whether a board answers again after a restart, waited for rather than assumed. */
   const answers = async (): Promise<boolean> => {
+    const until = world.now() + ANSWER_WAIT_MS;
     for (let i = 0; i < ANSWER_POLLS; i++) {
+      // The clock beside the count: one ask can cost its own timeout, and a
+      // wait that outlives the seconds it reports looks hung.
+      if (i > 0 && world.now() >= until) break;
       const at = await world.answering(command.port).catch(() => null);
       if (at !== null) {
         log(`the board answers on ${at}`);
@@ -385,7 +420,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       await world.sleep(ANSWER_POLL_MS);
     }
     error(
-      `nothing answers on ${url} ${(ANSWER_POLLS * ANSWER_POLL_MS) / 1000}s after the restart — ` +
+      `nothing answers on ${url} ${ANSWER_WAIT_MS / 1000}s after the restart — ` +
         "pnpm lingtai service status says what the supervisor has",
     );
     return false;

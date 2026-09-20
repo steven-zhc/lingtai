@@ -150,6 +150,10 @@ function command(
     boardLoaded?: boolean;
     /** Why there is no board to serve here. There is one, by default. */
     boardMissing?: string | null;
+    /** Who holds the board's port lock. Nobody, by default; a throw is a lock that could not be read. */
+    boardHeldBy?: () => Promise<string | null>;
+    /** The clock a wait is measured against, where a test spends time on an ask. The real one by default. */
+    now?: () => number;
   } = {},
 ) {
   const out: string[] = [];
@@ -165,7 +169,8 @@ function command(
       board: {
         url: BOARD_URL,
         answering: extra.board ?? (async () => BOARD_URL),
-        missing: () => extra.boardMissing ?? null,
+        missing: () => (extra.boardMissing === undefined || extra.boardMissing === null ? null : { why: extra.boardMissing, remedy: ["pnpm build writes the board"] }),
+        heldBy: extra.boardHeldBy ?? (async () => null),
       },
       by: "human:lingtai",
       platform,
@@ -176,6 +181,7 @@ function command(
       exec: board.exec,
       which: (bin) => (bin === "node" ? NODE : `/usr/bin/${bin}`),
       sleep: async () => {},
+      ...(extra.now ? { now: extra.now } : {}),
       log: (l) => out.push(l),
       error: (l) => err.push(l),
     });
@@ -250,7 +256,7 @@ describe("no service manager", () => {
       shutdown: async () => null,
       drain: quietDrain().drain,
       started: recordedAtOnce,
-      board: { url: BOARD_URL, answering: async () => BOARD_URL, missing: () => null },
+      board: { url: BOARD_URL, answering: async () => BOARD_URL, missing: () => null, heldBy: async () => null },
       platform: "linux",
       env: { HOME: home },
       which: (bin) => (bin === "node" ? NODE : null),
@@ -1502,5 +1508,110 @@ describe("two jobs", () => {
     // and nothing is started or stopped for a job that was never installed.
     expect(boardCalls).toEqual([`launchctl print gui/${UID}/${BOARD_LAUNCHD_LABEL}`]);
     expect(out.join("\n")).toContain("so nothing was started for the board — pnpm lingtai service install writes one");
+  });
+});
+
+/**
+ * The port, before the supervisor is told anything (#187).
+ *
+ * A board somebody started in a terminal holds `board:<port>` under
+ * `~/.lingtai/locks/`, and the job runs the same `board start` against the same
+ * port: bootstrapped over that one it is refused by the lock, exits 1, and
+ * `KeepAlive`/`ThrottleInterval 30` respawn it every thirty seconds for ever —
+ * while the URL answers all along, because the terminal's board is on it. So a
+ * start that asked the URL alone reported success over a crash loop.
+ */
+describe("a board already on the port", () => {
+  const BOARD_PLIST = () => join(home, "Library/LaunchAgents", `${BOARD_LAUNCHD_LABEL}.plist`);
+  const HOLDER = "board on 17820 pid 500 on mac";
+  /** The terminal's board: it holds the lock, and it answers. */
+  const terminal = { boardHeldBy: async () => HOLDER, board: async () => BOARD_URL };
+
+  it("install writes the job and bootstraps nothing, rather than one launchd respawns for ever", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, out, err, boardCalls } = command("darwin", s.exec, terminal);
+    expect(await go("install")).toBe(1);
+    // The file is written — it is correct, and the next login is not this run.
+    expect(existsSync(BOARD_PLIST())).toBe(true);
+    expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap") || c.startsWith("launchctl kickstart"))).toEqual([]);
+    expect(err.join("\n")).toContain(`held by ${HOLDER}`);
+    expect(err.join("\n")).toContain("pnpm lingtai board stop");
+    // And the board that answers is never read as the job's having started.
+    expect(out.join("\n")).not.toContain("the board answers on");
+    // The two facts stay two: something answers, and the supervisor has no
+    // process for the job.
+    expect(out.join("\n")).toContain(`answers on ${BOARD_URL}`);
+  });
+
+  it("restart starts the conductor and no board job, and exits on the board", async () => {
+    let loaded = true;
+    const s = supervisor([
+      ["launchctl print", () => (loaded ? { status: 0, out: "\tstate = running\n\tpid = 77\n" } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "" })],
+      ["launchctl bootout", () => ((loaded = false), { status: 0, out: "" })],
+      ["launchctl bootstrap", () => ((loaded = true), { status: 0, out: "" })],
+    ]);
+    const { go, err, boardCalls } = command("darwin", s.exec, terminal);
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("restart", "picking up #88")).toBe(1);
+    // The conductor's own start ran; the board's did not.
+    expect(s.calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(true);
+    expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap") || c.startsWith("launchctl kickstart"))).toEqual([]);
+    expect(err.join("\n")).toContain(`held by ${HOLDER}`);
+  });
+
+  it("starts nothing for the board where the lock could not be read — unread is not nobody", async () => {
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, err, boardCalls } = command("darwin", s.exec, {
+      boardHeldBy: async () => {
+        throw new Error("the lock needs node:sqlite");
+      },
+    });
+    expect(await go("install")).toBe(1);
+    expect(boardCalls.filter((c) => c.startsWith("launchctl bootstrap"))).toEqual([]);
+    expect(err.join("\n")).toContain("the board lock could not be read — the lock needs node:sqlite");
+  });
+
+  it("is not asked where the supervisor is already running the board's job", async () => {
+    // The lock is held there too — by the job's own process — and reading it
+    // as a stranger's would stop the supervisor being asked to keep its board.
+    let asked = 0;
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, out } = command("darwin", s.exec, {
+      boardLoaded: true,
+      boardHeldBy: async () => (asked++, HOLDER),
+    });
+    await launchdFile();
+    await writeFile(BOARD_PLIST(), "");
+    expect(await go("start")).toBe(0);
+    expect(asked).toBe(0);
+    expect(out.join("\n")).toContain("the supervisor has a process for the board's job");
+  });
+});
+
+/**
+ * The wait says how long it is, and is that long (#187).
+ *
+ * `answering` carries its own five-second timeout, so against something that
+ * accepts TCP and never replies — a stalled `next dev`, a tunnel to a dead
+ * host — a wait counted in polls alone was 75 asks a second apart, seven and a
+ * half minutes, under a sentence promising 75 seconds.
+ */
+describe("waiting for the board to answer", () => {
+  it("is the seconds it says, though every ask costs its own timeout", async () => {
+    let clock = 0;
+    let asks = 0;
+    const s = supervisor([["launchctl print", { status: LAUNCHCTL_NO_SUCH_SERVICE, out: "Could not find service" }]]);
+    const { go, out, err } = command("darwin", s.exec, {
+      board: async () => ((asks++, (clock += 5_000)), null),
+      now: () => clock,
+    });
+    expect(await go("install")).toBe(1);
+    expect(out.join("\n")).toContain(`waiting for the board to answer on ${BOARD_URL} — up to 75s`);
+    expect(err.join("\n")).toContain(`nothing answered on ${BOARD_URL} in 75s`);
+    // Fifteen asks and 75 seconds, not 75 asks and 450. The sixteenth is the
+    // report under it, which asks once and waits for nothing.
+    expect(asks).toBe(16);
+    expect(clock).toBeLessThanOrEqual(80_000);
   });
 });

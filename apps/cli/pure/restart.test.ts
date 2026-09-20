@@ -636,7 +636,7 @@ async function supervised(scene: Scene, args: RestartArgs = ARGS): Promise<Outco
       started: { watermark: facts.watermark, after: facts.startAfter },
       // The board's job answers at once here: `lingtai restart` is about the
       // conductor, and a board that would not come up is `service`'s to report.
-      board: { url: "http://127.0.0.1:17820", answering: async () => "http://127.0.0.1:17820", missing: () => null },
+      board: { url: "http://127.0.0.1:17820", answering: async () => "http://127.0.0.1:17820", missing: () => null, heldBy: async () => null },
       by: BY,
       platform: "darwin",
       env: { HOME: home, USER: "lingtai" },

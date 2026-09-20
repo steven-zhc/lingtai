@@ -885,6 +885,23 @@ add the board's. `service start` and `service restart` say the same and get on
 with the conductor. The daemon is never held up over it: it runs unbuilt
 (0010), which is the whole of what 0010 is for.
 
+**And nothing is started over a board that is already on the port.** A
+`lingtai board start` in a terminal holds `board:17820` under
+`~/.lingtai/locks/`, and the job runs that same command against that same port:
+bootstrapped over it, the job is refused by the lock, exits at once, and is
+respawned every thirty seconds for ever — while the URL answers all along,
+because the terminal's board is on it, so a start that asked only the URL
+reported success over a crash loop. `service install` writes the file, starts
+nothing, names the holder and exits non-zero; `pnpm lingtai board stop` and
+`pnpm lingtai service start` hand the board to the supervisor. A lock that
+cannot be read stops the start too: *unread* is not *nobody*.
+
+A `board.port` that is not a port number holds up nothing of the conductor's.
+It is refused by name where the board is the subject — `lingtai board start`
+serves nothing — and everywhere else it is a fact the board's own half of the
+report carries: `service shutdown` drains and unloads, and says the port could
+not be read beside the board it could not find.
+
 | | macOS | Linux |
 |---|---|---|
 | supervisor | launchd, `launchctl` | systemd **user** manager, `systemctl --user` |

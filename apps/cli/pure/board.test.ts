@@ -3,7 +3,7 @@ import { connect, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { boardEntry, builtBoardDir, serveBoard } from "../src/board.ts";
+import { boardEntry, boardPortOrWhy, builtBoardDir, serveBoard } from "../src/board.ts";
 
 /**
  * `serveBoard` against a stand-in `server.js` that does what Next's does: binds
@@ -171,6 +171,7 @@ function world(over: Partial<BoardWorld> & { holder?: string | null } = {}) {
       return true;
     },
     sleep: async () => {},
+    now: () => Date.now(),
     whereThePortIsSet: "board.port in ~/.lingtai/config.yml, or --port for this one run",
     log: (l) => out.push(l),
     error: (l) => err.push(l),
@@ -331,6 +332,24 @@ describe("lingtai board restart", () => {
     expect(w.out.join("\n")).toContain(`the board answers on ${URL}`);
   });
 
+  it("waits the ten seconds it says for an answer, though every ask costs its own timeout", async () => {
+    // Something that accepts TCP and never replies holds the port: `answering`
+    // burns its own five-second timeout every time. Counted in polls alone,
+    // forty asks a quarter-second apart were 210 seconds under a sentence
+    // promising ten.
+    let clock = 0;
+    let asks = 0;
+    const w = world({
+      holder: `board on ${PORT} pid 500 on mac`,
+      keeper: () => KEPT,
+      answering: async () => ((asks++, (clock += 5_000)), null),
+      now: () => clock,
+    });
+    expect(await w.go("restart")).toBe(1);
+    expect(asks).toBe(2);
+    expect(w.err.join("\n")).toContain("10s after the restart");
+  });
+
   it("is stop then start where nothing keeps it", async () => {
     let served = 0;
     const w = world({ holder: `board on ${PORT} pid 500 on mac`, serve: async () => void served++ });
@@ -397,6 +416,37 @@ describe("the board lock", () => {
     await w.go("stop", { port: 18080 });
     await w.go("status", { port: 18080 });
     expect(keys).toEqual(["board:18080", "board:18080", "board:18080"]);
+  });
+});
+
+/**
+ * The port, asked for by something whose subject is not the board (#187).
+ *
+ * `lingtai service` builds a `ServiceOptions` for every verb it has, and
+ * `lingtai restart` builds one to delegate through. A `board.port` read there
+ * as `boardPort()` threw out of the literal, so `lingtai service shutdown
+ * "moving the database"` never entered `serviceCommand`: nothing was drained,
+ * nothing was unloaded, and the one thing said was about the board's port.
+ */
+describe("the board's port, where the board is not the subject", () => {
+  function home(yaml: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-port-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "config.yml"), yaml);
+    return dir;
+  }
+
+  it("is the file's where the file names one, and the default where nothing does", () => {
+    expect(boardPortOrWhy({ LINGTAI_HOME: home("board:\n  port: 18080\n") })).toEqual({ port: 18080 });
+    expect(boardPortOrWhy({ LINGTAI_HOME: home("runtime:\n  agent: claude-code\n") })).toEqual({ port: 17820 });
+  });
+
+  it("is a reason and never a throw, so a typo in a UI setting does not hold up a drain", () => {
+    const asked = boardPortOrWhy({ LINGTAI_HOME: home("board:\n  port: 8o80\n") });
+    expect(asked).toEqual({ why: expect.stringContaining("is not a port number") });
+    // And the reason does not read as though the default had been used, which
+    // is what it would have to have been for the board to be anywhere at all.
+    expect((asked as { why: string }).why).toContain("no port was read");
   });
 });
 
