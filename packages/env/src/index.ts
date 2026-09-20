@@ -204,27 +204,67 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
  * where somebody plainly set one.
  */
 export function machineDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string | undefined {
+  const machine = machineDatabase(from);
+  if (machine.unreadable !== undefined) throw new Error(machine.unreadable);
+  return machine.url;
+}
+
+interface MachineDatabase {
+  /** `database.url`, where the file has one. */
+  url?: string;
+  /** Why the file could not be read at all — never *it names no URL*. */
+  unreadable?: string;
+}
+
+/**
+ * What the file says, as data: a URL, nothing, or a file that could not be read
+ * at all — **three answers and not two**, so that a caller which must not refuse
+ * does not have to catch one (#213).
+ *
+ * `machineDatabaseUrl` is this plus the refusal, for the callers that are about
+ * to connect; `machineUrlIfReadable` is this without it, for the two readers
+ * that only look.
+ */
+function machineDatabase(from: NodeJS.ProcessEnv): MachineDatabase {
   const path = join(stateDir(from), "config.yml");
   let text: string;
   try {
     text = readFileSync(path, "utf8");
   } catch {
-    return undefined;
+    return {};
   }
   let parsed: unknown;
   try {
     parsed = parseYaml(text);
   } catch (err) {
-    throw new Error(`${path} could not be parsed as YAML, so its database.url could not be read: ${(err as Error).message}`);
+    return {
+      unreadable: `${path} could not be parsed as YAML, so its database.url could not be read: ${(err as Error).message}`,
+    };
   }
   const database = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["database"] : undefined;
   const url = database !== null && typeof database === "object" ? (database as Record<string, unknown>)["url"] : undefined;
-  return typeof url === "string" && url !== "" ? url : undefined;
+  return typeof url === "string" && url !== "" ? { url } : {};
 }
 
 /** The machine file's URL, asked only of this process's own environment and never in a test. */
 function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
   return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined;
+}
+
+/**
+ * The same, **total**: a `config.yml` that does not parse is undefined here
+ * rather than a thrown error.
+ *
+ * The refusal is not lost, it is moved to the caller it belongs to — the one
+ * opening a connection, which is where naming the broken file is a remedy
+ * (#186). `postgresUrlIfSet`, `directUrlIfSet` and so `logConfigured` are
+ * questions *about* configuration, and a question about configuration that
+ * throws is the same defect #213 is about, one layer down: `lingtai upgrade`
+ * and `lingtai uninstall` are the two commands that repair a broken install,
+ * and a half-written `config.yml` must not be what stops them.
+ */
+function machineUrlIfReadable(from: NodeJS.ProcessEnv): string | undefined {
+  return from === process.env && !inTest(from) ? machineDatabase(from).url : undefined;
 }
 
 /**
@@ -324,11 +364,20 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
  * So: a boolean, **read rather than caught**. The shape matters as much as the
  * name — a `try`/`catch` around a getter is what made this invisible for five
  * passes of #179. Where a log stops having to be Postgres, this body changes
- * and its callers do not, which is what leaves #179 a change to one function
- * rather than a migration across thirty-three call sites.
+ * and its callers do not: one place decides, and no caller decides again by
+ * catching. That is all it is — the eighteen callers of `postgresUrl()` still
+ * each want a connection string, and giving them one is #179's actual work
+ * (doc/design/installing.md).
  *
  * Today it is exactly what `postgresUrl()` reads, so the two still coincide —
  * a direct URL alone is not a log, as it was not before this had a name.
+ *
+ * **Total.** It answers on every machine, including one whose `config.yml` was
+ * truncated mid-write: `false`, because nothing here names a log, while
+ * `postgresUrl()` refuses by that file's path and `lingtai doctor` fails the
+ * environment row on it. A boolean that can throw would be the `catch` back in
+ * a different shape, and it would land on the two commands — `upgrade` and
+ * `uninstall` — that exist to repair a broken install.
  */
 export function logConfigured(from: NodeJS.ProcessEnv = process.env): boolean {
   return postgresUrlIfSet(from) !== undefined;
@@ -337,13 +386,17 @@ export function logConfigured(from: NodeJS.ProcessEnv = process.env): boolean {
 /**
  * The pooled Postgres URL where one is configured; undefined where none is.
  *
- * Reads, and never refuses. `postgresUrl()` is this plus the refusal and
- * `logConfigured()` is this plus `!== undefined`, so *is there one* and *what
- * is it* are one read and cannot drift apart. `lingtai doctor` wants this face
- * too: it reports on an environment rather than demanding one.
+ * Reads, and never refuses — **including a `~/.lingtai/config.yml` it cannot
+ * parse**, which is undefined here and a refusal in `postgresUrl()`. `lingtai
+ * doctor` wants this face too: it reports on an environment rather than
+ * demanding one, and reports the unreadable file as its own failing row.
+ *
+ * `postgresUrl()` is this plus the refusal and `logConfigured()` is this plus
+ * `!== undefined`, so *is there one* and *what is it* are one read and cannot
+ * drift apart: wherever this is undefined, `postgresUrl()` refuses.
  */
 export function postgresUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | undefined {
-  return optional(dbVar("DATABASE_URL", from), from) ?? machineUrl(from);
+  return optional(dbVar("DATABASE_URL", from), from) ?? machineUrlIfReadable(from);
 }
 
 /**
@@ -354,7 +407,13 @@ export function postgresUrlIfSet(from: NodeJS.ProcessEnv = process.env): string 
  */
 export function postgresUrl(from: NodeJS.ProcessEnv = process.env): string {
   return (
-    postgresUrlIfSet(from) ?? (inTest(from) ? testUrl("DATABASE_URL", from) : required(`${PREFIX}DATABASE_URL`, from))
+    postgresUrlIfSet(from) ??
+    // `machineUrl` again, and not for the value: the reader above is silent
+    // about a `config.yml` it could not parse, and this caller is about to
+    // connect — so the file is named here (#186) rather than reported as *not
+    // set* on a machine where somebody plainly set one.
+    machineUrl(from) ??
+    (inTest(from) ? testUrl("DATABASE_URL", from) : required(`${PREFIX}DATABASE_URL`, from))
   );
 }
 
@@ -381,6 +440,9 @@ export function postgresUrl(from: NodeJS.ProcessEnv = process.env): string {
 export function directPostgresUrl(from: NodeJS.ProcessEnv = process.env): string {
   return (
     directUrlIfSet(from) ??
+    // As `postgresUrl`: the reader is silent about a `config.yml` it could not
+    // parse, and a caller that is about to connect is told which file it is.
+    machineUrl(from) ??
     (inTest(from) ? testUrl("DIRECT_DATABASE_URL", from) : required(`${PREFIX}DIRECT_DATABASE_URL`, from))
   );
 }
@@ -409,7 +471,10 @@ export function directUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | 
   return (
     optional(dbVar("DIRECT_DATABASE_URL", from), from) ??
     optional(dbVar("DATABASE_URL", from), from) ??
-    machineUrl(from)
+    // Total, as `postgresUrlIfSet` is: `lingtai doctor` reads this one to
+    // report on an environment, and must not be the command a broken
+    // `config.yml` stops.
+    machineUrlIfReadable(from)
   );
 }
 

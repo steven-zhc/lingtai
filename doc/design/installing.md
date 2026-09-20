@@ -54,20 +54,31 @@ No flag and no prompt. This is the same shape as `merge: []` meaning nothing
 holds at the merge point — **the configuration is the choice**, and there is
 nothing to get out of step with it.
 
-### Where the rule goes: `logConfigured()`
+### Where the rule is read: `logConfigured()`
 
 One function, `packages/env/src/index.ts`'s, and it already exists —
 [#213](https://github.com/steven-zhc/lingtai/issues/213) separated *is a log
 configured* from *what is the Postgres URL* before anything was built on top.
 Every caller that asks the first question asks it by name and reads a boolean;
 `postgresUrl()` is the second question and is asked only by callers opening a
-`pg` connection. So the rule above is a change to one body and to no call site.
+`pg` connection.
 
-It was worth a ticket of its own because the two questions were one function,
-and *is there a log* was asked by catching *what is the URL* — a `try`/`catch`
-that no type checks, so a store that needs no URL would have made three callers
-in `apps/cli/src/entry.ts` start lying while still compiling. That cost five
-passes and about $100 before it was separated out.
+**That makes the rule readable in one place. It does not make it cheap**, and
+this is where an estimate goes wrong: flipping `logConfigured()` to always-true
+gives every machine a log and no store to put it in. The eighteen
+`postgresUrl()` / `directPostgresUrl()` call sites are each a `pg` connection
+string, from `readTasks()` (`projector/src/task-view.ts:1124`) to the daemon's
+beacon (`daemon/src/control.ts:453`), and each still refuses by name on exactly
+the machine the rule declares supported. **What the rule costs is *What SQLite
+has to replace* below**: a second `EventStore`, a waker, and the seam through
+those eighteen.
+
+What #213 bought is that none of them is a *second* place the question is
+asked. It was worth a ticket of its own because the two questions were one
+function, and *is there a log* was asked by catching *what is the URL* — a
+`try`/`catch` that no type checks, so a store that needs no URL would have made
+three callers in `apps/cli/src/entry.ts` start lying while still compiling.
+That cost five passes and about $100 before it was separated out.
 
 ### The Postgres lane is one URL, not two
 

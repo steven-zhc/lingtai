@@ -13,6 +13,12 @@
  * pass the first and fail the second, which is what the `catch` blocks never
  * had anyone check.
  */
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { repoRoot } from "@lingtai/env";
 import { describe, expect, it } from "vitest";
 import type { Drained } from "../src/install.ts";
 import { liveDrain, liveWorld, type Live } from "../src/world.ts";
@@ -63,13 +69,58 @@ describe("conducting", () => {
     expect(o.asked).toEqual(["lock"]);
   });
 
-  it("answers null where none is, without asking the lock at all", async () => {
+  /**
+   * The case the separation found. A daemon run from a checkout reads that
+   * checkout's `.env.local`, so the installed copy can have no
+   * `LINGTAI_DATABASE_URL` while a conductor is live — and its worktrees,
+   * recipe and run logs are under the home `lingtai uninstall` would remove.
+   *
+   * The lock is a file under `~/.lingtai/locks/` since #193 and needs no
+   * database to read, so *no log here* is not a reason to answer null about it.
+   * Answering null is what put `install.ts` one `--nothing-conducts` away from
+   * deleting a running conductor's worktrees.
+   */
+  it("asks the lock where no log is configured too, because the lock is a file (#193)", async () => {
     const o = outside({});
-    expect(await liveWorld("/v/1/lingtai", o.live).conducting()).toBeNull();
-    // The lock lives in the log. Reaching it would mean loading `@lingtai/daemon`
-    // on a machine that has just been installed, which is what `entry.ts` exists
-    // to avoid.
-    expect(o.asked).toEqual([]);
+    expect(await liveWorld("/v/1/lingtai", o.live).conducting()).toBe("human:steven");
+    expect(o.asked).toEqual(["lock"]);
+  });
+
+  /**
+   * And the live `holder` can answer there, which is the whole of the claim
+   * above: it imports `@lingtai/daemon/lock`, whose only dependency is
+   * `@lingtai/env/lock`. `@lingtai/daemon` itself cannot be asked — its index
+   * reaches `@lingtai/event-store`, whose process-wide client calls
+   * `postgresUrl()` at import — so the gate this replaced was, in the end,
+   * about the import and never about the lock.
+   *
+   * A child process because that is what a module's import cost is measured in,
+   * and `dir` so the probe never reads the operator's own lock.
+   */
+  it("reads the lock with nothing configured, where the daemon's index cannot even load", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-lock-"));
+    const script = join(dir, "probe.mjs");
+    const module = (file: string) =>
+      JSON.stringify(pathToFileURL(join(repoRoot(), "packages", "daemon", "src", file)).href);
+    writeFileSync(
+      script,
+      `const { conductorLockHolder } = await import(${module("lock.ts")});\n` +
+        `console.log(JSON.stringify(await conductorLockHolder({ dir: ${JSON.stringify(dir)} })));\n` +
+        `try { await import(${module("index.ts")}); console.log("index loaded"); }\n` +
+        `catch (err) { console.log("index refused: " + err.message.split("\\n")[0]); }\n`,
+    );
+    const ran = spawnSync(process.execPath, [script], {
+      encoding: "utf8",
+      // Empty is absent to `optional`, and present to dotenv — so the
+      // checkout's own `.env.local` cannot configure a log for this probe.
+      env: { PATH: process.env["PATH"] ?? "", HOME: dir, LINGTAI_HOME: dir, LINGTAI_DATABASE_URL: "" },
+    });
+
+    expect(ran.status).toBe(0);
+    const said = ran.stdout.trim().split("\n");
+    expect(said[0]).toBe("null");
+    expect(said[1]).toContain("index refused");
+    expect(said[1]).toContain("LINGTAI_DATABASE_URL is not set");
   });
 });
 

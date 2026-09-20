@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./control": "./src/control.ts",
-    "./currency": "./src/currency.ts"
+    "./currency": "./src/currency.ts",
+    "./lock": "./src/lock.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

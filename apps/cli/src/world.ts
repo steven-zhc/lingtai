@@ -2,9 +2,8 @@
  * The live `World` the install commands run against — separate from `entry.ts`
  * so a test can run it, the way `upgrade-drain.ts` was.
  *
- * **Three of its answers turn on whether a log is configured**, and each of
- * them used to ask that by catching an exception from the Postgres getter
- * (#213):
+ * **Two of its answers turn on whether a log is configured**, and three used to
+ * ask that by catching an exception from the Postgres getter (#213):
  *
  *     logConfigured: () => { try { return Boolean(databaseUrl()); } catch { return false; } }
  *
@@ -14,9 +13,14 @@
  * parted: a `catch` keeps compiling and starts lying. They ask
  * `logConfigured()` now, which is a boolean and reads rather than throws.
  *
+ * The third was `conducting`, and separating the two questions is what showed
+ * that it never belonged in this list: the lock it asks about is a file under
+ * `~/.lingtai/locks/` (#193), so it is asked on a machine with no log at all.
+ *
  * What is past this module — the lock, the drain proper — is `Live`, so a test
- * can watch those **not** being reached where no log is configured. That is the
- * assertion the three `catch` blocks never had.
+ * can watch the drain **not** being reached where no log is configured, and the
+ * lock being asked anyway. That is the assertion the three `catch` blocks never
+ * had.
  */
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
@@ -28,7 +32,7 @@ import { runningFrom, type AppFacts, type Drained, type World } from "./install.
 export interface Live {
   env: NodeJS.ProcessEnv;
   log: (line: string) => void;
-  /** Who holds the conductor lock. Asked only where a log is configured. */
+  /** Who holds the conductor lock. Asked whether or not a log is configured — it is a file (#193). */
   holder: () => Promise<string | null>;
   /** The drain proper — the doctor gate, the request and the wait. Reached only where a log is configured. */
   drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
@@ -40,8 +44,13 @@ export function live(): Live {
     env: process.env,
     log: (line) => console.log(line),
     holder: async () => {
-      const daemon = await import("@lingtai/daemon");
-      return daemon.conductorLockHolder();
+      // `@lingtai/daemon/lock` and not `@lingtai/daemon`: the lock is a file
+      // under `~/.lingtai/locks/` (#193, 0052) and reads with nothing
+      // configured, while the package's index reaches `@lingtai/event-store`,
+      // whose process-wide client calls `postgresUrl()` at import — which is
+      // the only reason a machine with no log could not ask who conducts.
+      const lock = await import("@lingtai/daemon/lock");
+      return lock.conductorLockHolder();
     },
     drain: drainWithTheLog,
   };
@@ -71,10 +80,13 @@ export function liveWorld(self: string, outside: Live = live()): World {
       }
     },
     running: runningFrom,
-    // The lock lives in the log, so there is nothing to ask where none is
-    // configured — and a null here is *nothing conducts that this copy can see*,
-    // which `install.ts` is careful not to read as *nothing conducts*.
-    conducting: async () => (logConfigured(outside.env) ? outside.holder() : null),
+    // **Asked whether or not a log is configured.** The conductor lock is a
+    // file under `~/.lingtai/locks/` since #193, so a daemon running from a
+    // checkout — whose `.env.local` names a log this copy has never heard of —
+    // is named here rather than answered as a null. Gating this on the log was
+    // true only while the lock was `pg_advisory_lock`, and what it would cost
+    // is `install.ts` removing a live conductor's worktrees on `--nothing-conducts`.
+    conducting: () => outside.holder(),
     drain: (reason, despiteDoctor) => liveDrain(reason, despiteDoctor, outside),
     app: liveApp,
     logConfigured: () => logConfigured(outside.env),

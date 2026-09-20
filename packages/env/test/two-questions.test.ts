@@ -15,8 +15,11 @@
  * the cheapest rule that catches every instance this repository has had is: do
  * not wrap the getter in a `try` at all. `logConfigured()` is a boolean.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { logConfigured, postgresUrl, postgresUrlIfSet, repoRoot } from "../src/index.ts";
 
@@ -93,5 +96,85 @@ describe("the two questions", () => {
     // Or the scan walked nothing at all.
     expect(files.length).toBeGreaterThan(50);
     expect(files.filter((path) => catching(readFileSync(path, "utf8")))).toEqual([]);
+  });
+});
+
+/**
+ * **A boolean that throws is the `catch` in a different shape**, and the place
+ * it would land is `~/.lingtai/config.yml`: `machineDatabaseUrl` refuses a file
+ * it cannot parse (#186), and both reads fall back to that file.
+ *
+ * `lingtai upgrade` and `lingtai uninstall` are the two commands that repair a
+ * broken install, and both begin by asking `logConfigured()` — so a `config.yml`
+ * truncated mid-write must not be what stops them. What it does stop is a
+ * connection: `postgresUrl()` still names the file, which is the one remedy
+ * that works.
+ *
+ * **In a child process, because this question cannot be asked in-process.**
+ * The machine file is read only for `process.env` and only outside a test
+ * (`machineUrl`), which is #186's rule and not a thing to weaken for a test —
+ * so the probe is a real process that is not one. `LINGTAI_DATABASE_URL=` is
+ * passed empty on purpose: dotenv does not overwrite a name that is already
+ * there, so the checkout's own `.env.local` cannot answer for the machine.
+ */
+describe("a config.yml that cannot be parsed", () => {
+  interface Probe {
+    configured: boolean;
+    ifSet: string | null;
+    direct: string | null;
+    url: string | null;
+    refusal: string | null;
+  }
+
+  function probe(config: string): { home: string; read: Probe } {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-two-questions-"));
+    writeFileSync(join(home, "config.yml"), config);
+    const script = join(home, "probe.mjs");
+    const index = pathToFileURL(join(repoRoot(), "packages", "env", "src", "index.ts")).href;
+    writeFileSync(
+      script,
+      `import { directUrlIfSet, logConfigured, postgresUrl, postgresUrlIfSet } from ${JSON.stringify(index)};\n` +
+        `const out = { configured: logConfigured(), ifSet: postgresUrlIfSet() ?? null, direct: directUrlIfSet() ?? null, url: null, refusal: null };\n` +
+        `try { out.url = postgresUrl(); } catch (err) { out.refusal = err.message; }\n` +
+        `console.log(JSON.stringify(out));\n`,
+    );
+    const ran = spawnSync(process.execPath, [script], {
+      encoding: "utf8",
+      env: {
+        PATH: process.env["PATH"] ?? "",
+        HOME: home,
+        LINGTAI_HOME: home,
+        // Empty is absent to `optional`, and present to dotenv.
+        LINGTAI_DATABASE_URL: "",
+        LINGTAI_DIRECT_DATABASE_URL: "",
+      },
+    });
+    expect(ran.stderr).not.toContain("could not be parsed as YAML");
+    expect(ran.status).toBe(0);
+    return { home, read: JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as Probe };
+  }
+
+  it("is no log, and not an exception — so the commands that repair an install still run", () => {
+    // Truncated mid-write, which is how a machine arrives in this state.
+    const { home, read } = probe('database:\n  url: "postgres://u:p@h/db');
+    expect(read.configured).toBe(false);
+    expect(read.ifSet).toBeNull();
+    expect(read.direct).toBeNull();
+    // And the refusal is not lost: it is the caller about to connect that gets
+    // it, naming the file rather than the variable nobody set.
+    expect(read.url).toBeNull();
+    expect(read.refusal).toContain(join(home, "config.yml"));
+    expect(read.refusal).toContain("could not be parsed as YAML");
+  });
+
+  it("is the same process reading the same file, where the file is whole", () => {
+    const url = "postgresql://u:p@db.example.com:5432/postgres";
+    const { read } = probe(`database:\n  url: ${url}\n`);
+    expect(read.configured).toBe(true);
+    expect(read.ifSet).toBe(url);
+    expect(read.url).toBe(url);
+    // #176's stand-in, from the file too.
+    expect(read.direct).toBe(url);
+    expect(read.refusal).toBeNull();
   });
 });
