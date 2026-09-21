@@ -90,6 +90,64 @@ runtime:
     expect(spoken.provenance?.["runtime.budget.diff"]).toBe("400000 ← default");
   });
 
+  /**
+   * **And the same is true of every other key with a default**, which is three
+   * more: `source.exclude`, `env.required` and `gates`. The last is the one
+   * that matters — it is what holds a run — and it is also the only key here
+   * with a *third* origin, because `extends:` is a line about gates that never
+   * names one. A reader asking where the `proposed: build` gate came from
+   * opens `recipe.yml`, finds no `gates:` block, and has nowhere else to look
+   * unless provenance says the preset (#218).
+   */
+  it("names the preset for what the preset decided, and never this file", async () => {
+    const bare = `
+version: 1
+repo: { base: main }
+source: { kinds: [bug] }
+env: { plantAt: .env.local }
+`;
+    const read = (recipe: string) => ({
+      home: HOME,
+      signedIn: signed("claude-code"),
+      read: files({ [recipePath("app", HOME)]: recipe }),
+    });
+
+    const extended = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\n`));
+    expect(extended.provenance?.["gates"]).toBe(
+      "admit 0, prepared 1, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
+    );
+    // The preset has no `source` and no `env`, so these two are the schema's
+    // in both recipes — naming a file for either sends a reader to open it.
+    expect(extended.provenance?.["source.exclude"]).toBe("(none) ← default");
+    expect(extended.provenance?.["env.required"]).toBe("(none) ← default");
+
+    // Without one, five empty points nobody wrote down — a default, and this
+    // file is the one place the answer is not.
+    const alone = await resolveLocalRecipe("app", read(bare));
+    expect(alone.provenance?.["gates"]).toBe("admit 0, prepared 0, proposed 0, merge 0, end 0 ← default");
+
+    // And a file that carries them says so, in all three.
+    const own = await resolveLocalRecipe(
+      "app",
+      read(`
+version: 1
+extends: pnpm-workspace
+repo: { base: main }
+source: { kinds: [bug], exclude: [blocked] }
+env: { plantAt: .env.local, required: [DATABASE_URL] }
+gates:
+  proposed:
+    - { name: build, run: pnpm test }
+`),
+    );
+    const file = `${HOME}/app/recipe.yml`;
+    // The file's gates replace the preset's whole, which is `applyPreset`'s
+    // rule — so the one line names the file and not both.
+    expect(own.provenance?.["gates"]).toBe(`admit 0, prepared 0, proposed 1, merge 0, end 0 ← ${file}`);
+    expect(own.provenance?.["source.exclude"]).toBe(`blocked ← ${file}`);
+    expect(own.provenance?.["env.required"]).toBe(`DATABASE_URL ← ${file}`);
+  });
+
   it("refuses a missing recipe by its path", async () => {
     const options = { home: HOME, signedIn: signed("claude-code"), read: files({}) };
     await expect(resolveLocalRecipe("app", options)).rejects.toThrow(RecipeMissingError);

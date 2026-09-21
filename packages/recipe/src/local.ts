@@ -30,6 +30,7 @@ import { Document, isMap, parse as parseYaml, parseDocument } from "yaml";
 import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
+import { PRESETS } from "./presets.ts";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
 
@@ -212,6 +213,53 @@ export function provenanceSource(entry: string | undefined): string | null {
   return at === -1 ? null : entry.slice(at + PROVENANCE_ARROW.length);
 }
 
+/** Whether an object carries a dotted path at all — not what it says there. */
+function carries(value: unknown, path: string): boolean {
+  let at = value;
+  for (const segment of path.split(".")) {
+    if (at === null || typeof at !== "object" || Array.isArray(at)) return false;
+    if (!(segment in (at as Record<string, unknown>))) return false;
+    at = (at as Record<string, unknown>)[segment];
+  }
+  return at !== undefined;
+}
+
+/**
+ * Where a value in the resolved recipe came from: the file, the preset
+ * underneath it, or the schema (#218).
+ *
+ * **Three origins and not two.** Every key here but `repo.base`, `source.kinds`
+ * and `env.plantAt` has a schema default, and `gates` — the most consequential
+ * of them, since it is what holds a run — can also come from a preset. A
+ * resolved recipe reads the same in all three cases, so a reader told
+ * `recipe.yml` for a `gates:` block that file does not contain opens it, finds
+ * nothing, and cannot learn the answer anywhere: `extends: pnpm-workspace` is
+ * a line about gates that never names them.
+ *
+ * **Asked at the level the merge happens at**, which is `applyPreset`'s rule
+ * and not this function's invention: `repo` and `runtime` merge a key at a
+ * time and `gates` replaces whole, so whichever of the two carries
+ * `runtime.budget` decides every number in it and the other's is not applied.
+ * Hence the section — the first two segments — settles *who*, and only then
+ * does the leaf inside it settle file-or-default.
+ */
+function originIn(
+  wrote: unknown,
+  preset: string | null,
+  path: string,
+): (key: string) => string {
+  return (key) => {
+    const section = key.split(".").slice(0, 2).join(".");
+    const carrier = carries(wrote, section)
+      ? { at: path, held: wrote }
+      : preset !== null && carries(PRESETS[preset], section)
+        ? { at: `preset ${preset}`, held: PRESETS[preset] }
+        : null;
+    if (carrier === null) return "default";
+    return section === key || carries(carrier.held, key) ? carrier.at : "default";
+  };
+}
+
 export interface LocalRecipeOptions {
   /** `stateDir()` unless a test says otherwise. */
   home?: string;
@@ -304,27 +352,24 @@ export async function resolveLocalRecipe(
   provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"}${PROVENANCE_ARROW}${assigneeFrom("take") ?? "default"}`;
   provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"}${PROVENANCE_ARROW}${assigneeFrom("login") ?? "default"}`;
 
-  // Which of the two values below the *file* actually carries, as against the
-  // ones the schema fills in. Asked of the file's own object because that is
-  // the only place the difference survives: `recipe.source.backoff` reads `1h`
-  // whether the line is there or not, so nothing downstream can tell a value
-  // this file decided from a default it was silent about (#218).
+  // What the *file itself* carries, kept before anything is merged into it.
+  // This is the only place the difference survives: `recipe.source.exclude`
+  // reads `[]` and `recipe.gates.proposed` reads the preset's action whether
+  // this file mentions either or not, so nothing downstream can tell a value
+  // this file decided from one it was silent about (#218).
   //
-  // No preset sets either — `Preset` has no `source` at all, and its `runtime`
-  // carries only `agent` — so the file is the whole question.
-  const said = { backoff: false, budget: new Set<string>() };
+  // A copy, and not the object: the callback below replaces `raw.runtime` with
+  // the machine's half, and the preset merges underneath afterwards.
+  let wrote: unknown = {};
 
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
+    wrote = structuredClone(raw);
     const refused: string[] = [];
     const runtime = raw["runtime"];
     const own =
       runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {};
-    const mapping = (value: unknown): Record<string, unknown> =>
-      value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-    said.backoff = "backoff" in mapping(raw["source"]);
-    for (const key of Object.keys(mapping(own["budget"]))) said.budget.add(key);
     for (const key of ["agent", "limits", "assignee"]) {
       if (key in own) {
         refused.push(
@@ -346,13 +391,8 @@ export async function resolveLocalRecipe(
     "repo.base": recipe.repo.base,
     "source.kinds": recipe.source.kinds.join(" > "),
     "source.exclude": list(recipe.source.exclude),
-    // The two a reading says out loud and provenance did not carry, so that
-    // every row of one has a source beside it (#218). Neither can come from
-    // anywhere but this file — `runtime.budget` is refused in the machine's —
-    // but both have a schema default, which is why they are the two keys here
-    // that may answer `default`: naming this file for a value it does not
-    // mention sends a reader to open it and find nothing, which is worse than
-    // the blank column that was there before.
+    // Said out loud by a reading, and not carried here until now — so that
+    // every row of one has a source beside it (#218).
     "source.backoff": recipe.source.backoff,
     "env.required": list(recipe.env.required),
     gates: Object.entries(recipe.gates)
@@ -365,12 +405,9 @@ export async function resolveLocalRecipe(
   for (const [key, value] of Object.entries(recipe.runtime.budget)) {
     recipeValues[`runtime.budget.${key}`] = String(value);
   }
-  const defaulted = (key: string) =>
-    key === "source.backoff"
-      ? !said.backoff
-      : key.startsWith("runtime.budget.") && !said.budget.has(key.slice("runtime.budget.".length));
+  const from = originIn(wrote, resolved.preset, path);
   for (const [key, value] of Object.entries(recipeValues))
-    provenance[key] = `${value}${PROVENANCE_ARROW}${defaulted(key) ? "default" : path}`;
+    provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;
   return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
 }
 

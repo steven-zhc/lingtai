@@ -127,7 +127,8 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
               <span className="hlab">Where every value came from</span>
               <span className="hfact">
                 the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{" "}
-                <span className="mono">config.yml</span>, detection, or a default
+                <span className="mono">config.yml</span>, the preset it{" "}
+                <span className="mono">extends</span>, detection, or a default
               </span>
             </h2>
             {/* `lingtai doctor`'s own block, which has printed since #180 and

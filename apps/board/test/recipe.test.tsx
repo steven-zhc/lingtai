@@ -61,6 +61,19 @@ runtime:
   budget: { attempts: 9, diff: 1000 }
 `;
 
+/**
+ * A recipe that leaves to a preset the one thing the page is most read for.
+ * No `gates:`, no `exclude:`, no `required:` — so the three keys with a schema
+ * default are all silent, and `gates` has the preset underneath it besides.
+ */
+const EXTENDS = `
+version: 1
+extends: pnpm-workspace
+repo: { base: main }
+source: { kinds: [bug] }
+env: { plantAt: .env.local }
+`;
+
 /** A machine that says some of it machine-wide and some of it for this project. */
 const MACHINE = `
 runtime:
@@ -161,6 +174,35 @@ describe("what a project's recipe says today", () => {
     expect(sourceIn(speaks, "budget")).toContain("default");
     // Per field in the block below too, so which two is a thing a reader can see.
     expect(render(speaks)).toContain("runtime.budget.attempts");
+  });
+
+  /**
+   * **The row this page exists for, and the one with a third origin.** `gates`
+   * has a schema default *and* can come from a preset, so `the points` is the
+   * one row on the page whose answer may be in neither file: a reader asking
+   * where the `proposed: build` gate came from opens `recipe.yml`, finds no
+   * `gates:` block, and has nowhere left to look unless the page names
+   * `extends:`'s preset. `excludes` is the same schema default without the
+   * preset, and both used to read `← ~/.lingtai/app/recipe.yml`.
+   */
+  it("names the preset for the points it decided, and the schema for what neither file says", async () => {
+    await writeFile(join(home, "app", "recipe.yml"), EXTENDS);
+    const view = await projectRecipe(state);
+    const file = join(home, "app", "recipe.yml");
+
+    expect(sourceIn(view, "the points")).toBe("preset pnpm-workspace");
+    expect(sourceIn(view, "the points")).not.toContain(file);
+    expect(sourceIn(view, "excludes")).toBe("default");
+    // The page says it where a reader is looking — beside the row, and in the
+    // exhaustive block under it, which carries `env.required` too.
+    const html = render(view);
+    expect(html).toContain("admit 0 · prepared 1 · proposed 1 · merge 0 · end 0");
+    expect(html).toContain("← preset pnpm-workspace");
+    expect(sourceIn(view, "excludes")).not.toContain(file);
+
+    // And with no preset either, five empty points are the schema's.
+    await writeFile(join(home, "app", "recipe.yml"), EXTENDS.replace("extends: pnpm-workspace\n", ""));
+    expect(sourceIn(await projectRecipe(state), "the points")).toBe("default");
   });
 
   /** So a reader can hold this against an attempt's recorded recipe (#217). */
