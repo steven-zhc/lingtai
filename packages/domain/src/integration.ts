@@ -129,11 +129,24 @@ export function reduceIntegration(events: readonly Envelope[]): IntegrationState
 }
 
 /**
- * Whether an integration is in flight against this base.
+ * Whether the **last** attempt on this base has reached a terminal event yet.
  *
  * A reading, not a gate: nothing consults it before attempting, and nothing has
- * since the lane stopped taking a lock (#194). What it answers is *is anything
- * merging right now*, off the fold.
+ * since the lane stopped taking a lock (#194).
+ *
+ * **It cannot answer *is anything merging right now*, and a caller that reads
+ * it that way will be wrong in both directions.** Overlap is the design: A and
+ * B both append `IntegrationAttempted`, A is refused at the push, and the first
+ * terminal puts `lifecycle` back to `idle` while B is still merging — so this
+ * says false with a merge in flight. While both are in flight `lifecycle` names
+ * whichever attempted *last*, so B's `workItemId` and `headSha` have overwritten
+ * A's. One `lifecycle` cannot hold two, which is why the fold does not try.
+ *
+ * What is left is what a single-writer lane made this mean and a chip could
+ * still say honestly: something attempted here and nothing has said how it
+ * ended. Counting what is genuinely open needs the attempts paired to their
+ * terminals by `workItemId`, which is a different fold, and no caller has
+ * needed it.
  */
 export function laneIsBusy(state: IntegrationState): boolean {
   return state.lifecycle.status === "attempting";

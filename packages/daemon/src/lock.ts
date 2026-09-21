@@ -22,7 +22,11 @@
  * by this process, released by the kernel when it dies, with nothing to clean up
  * and no stale file to explain. That file says what it is built on and what was
  * refused — `flock(2)`, which Node cannot call, among them. It is the same lock
- * the merge lane and a decision take; Lingtai has one locking mechanism.
+ * a decision and the board take; Lingtai has one locking mechanism. **The merge
+ * lane is not one of them and has not been since #194**: two integrations
+ * against one base overlap on purpose, and which of them lands is decided by
+ * git rejecting the second push, not here. Nothing about this lock serialises a
+ * merge — a conductor is what it excludes.
  * `test/lock-contract.ts` is what any locker is held to: one holder, and
  * released when the holder dies — the two facts #93 and 0027 stand on.
  *

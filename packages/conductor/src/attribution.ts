@@ -257,7 +257,10 @@ const REFUSAL_READING: Record<
       `${base} moved while ${branch} was being merged into it, so origin refused the push.`,
     move: {
       action: "requeue",
-      why: "the base moved rather than the branch being wrong — the next pass merges it against where the base is now",
+      why:
+        "the base moved rather than the branch being wrong — the lane already merged it " +
+        "against where the base had got to and lost the push every time, so a requeue is " +
+        "the same attempt in a quieter minute",
     },
   },
   /**

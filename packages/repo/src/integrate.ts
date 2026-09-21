@@ -28,9 +28,16 @@
  * lands and the other is rejected as not a fast-forward, and that is true with
  * a lock, without one, and between two machines where a lock never reached.
  * What the lock bought was *cheaper failure* — the loser was told before it cut
- * a worktree — and that is not worth a mechanism a reader has to learn. The
- * rejected push is the refusal now, recorded as `push-rejected` exactly as
- * `lane-busy` was recorded before it.
+ * a worktree — and that is not worth a mechanism a reader has to learn.
+ *
+ * **The loser of a push merges against where the base is now and tries again**,
+ * here rather than anywhere else. Nothing is wrong with its branch and no
+ * judgement is owed: everything above the push is a pure recomputation against
+ * a base that moved, it costs seconds and buys no agent, and the caller it
+ * would otherwise return to blocks the item on a person who can do nothing but
+ * click Requeue. `LOST_PUSHES` bounds it; a base that moves out from under
+ * every one of those attempts is the `push-rejected` refusal, recorded exactly
+ * as `lane-busy` was recorded before it.
  *
  * So two integrations against one base **overlap by design**, and each one owns
  * a worktree of its own rather than one per base.
@@ -46,6 +53,8 @@ import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/do
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { Effect, Either } from "effect";
 import { randomUUID } from "node:crypto";
+import { rm, stat } from "node:fs/promises";
+import { basename } from "node:path";
 import { stateDir } from "@lingtai/env";
 import { RepoFailed, type TokenSource, gitEffect } from "./git.ts";
 import { worktreePath } from "./worktree.ts";
@@ -91,6 +100,39 @@ const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i;
  * channel where it belongs.
  */
 const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were rejected/i;
+
+/**
+ * How many times a base may move out from under this merge before a person is
+ * told about it.
+ *
+ * Each retry is a fetch, a worktree, a merge and a push — seconds, no agent, no
+ * money — against the base as it now stands, which is precisely what the move
+ * on the refusal's card asks a person to do by hand. Three of them, so four
+ * attempts in all — bounded rather than endless because a base that beats one
+ * merge four times running is busy in a way a person should hear about, and
+ * because a loop with no ceiling in the one place that writes to the base
+ * branch is the wrong thing to leave running unattended.
+ */
+const LOST_PUSHES = 3;
+
+/**
+ * How long one of this lane's worktrees may sit untouched before it is a corpse.
+ *
+ * **Nothing else reclaims one.** The name carries a uuid so that two
+ * integrations against one base cannot stand in one directory, which means a
+ * process killed inside a merge — a second Ctrl+C, a `--timeout`, a crash —
+ * leaves both a checkout and a registration that no scope will ever close, and
+ * `git worktree prune` does not touch one whose directory is still there. The
+ * fixed `integrator-<base>` this replaced was bounded at one per base; a uuid
+ * is bounded by nothing, so each integration sweeps what earlier ones left
+ * behind before it cuts its own.
+ *
+ * Age is the whole of what tells a corpse from a colleague now that two on one
+ * base is ordinary. An hour is `runtime.limits.wall`, the ceiling on the pass
+ * that owns the merge — past it, whatever cut the directory is not coming back
+ * for it.
+ */
+const WORKTREE_IS_ABANDONED_AFTER = 60 * 60 * 1_000;
 
 /**
  * The promise face, for callers that are not Effect.
@@ -165,7 +207,42 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
 
   const at = (args: string[], cwd: string) => gitEffect(args, { ...run, cwd });
 
-  return Effect.scoped(
+  /**
+   * The worktrees of this lane that nothing is coming back for.
+   *
+   * Found the way the system itself finds them — registered under the mirror,
+   * named for the integrator — and judged by age, which is all that is left to
+   * judge them by now that two live ones on one base is ordinary
+   * (`WORKTREE_IS_ABANDONED_AFTER`). The directory's mtime is when it was cut,
+   * so an integration in flight is minutes old at the outside.
+   *
+   * Every step swallows its own failure. A sweep that refused a merge would be
+   * a worse bug than the one it is here to clear.
+   */
+  const sweepAbandoned = (mirror: string): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const registered = yield* at(["worktree", "list", "--porcelain"], mirror).pipe(
+        Effect.orElseSucceed(() => ""),
+      );
+      for (const line of registered.split("\n")) {
+        if (!line.startsWith("worktree ")) continue;
+        const path = line.slice("worktree ".length).trim();
+        if (!basename(path).startsWith("integrator-")) continue;
+        const cutAt = yield* Effect.promise(
+          async () => (await stat(path).catch(() => null))?.mtimeMs ?? null,
+        );
+        if (cutAt === null || Date.now() - cutAt < WORKTREE_IS_ABANDONED_AFTER) continue;
+        yield* at(["worktree", "remove", "--force", path], mirror).pipe(Effect.ignore);
+        yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(
+          Effect.ignore,
+        );
+      }
+      // And the registrations with no directory left — git's own job, and the
+      // other half of what a killed process leaves behind.
+      yield* at(["worktree", "prune"], mirror).pipe(Effect.ignore);
+    });
+
+  const attempt = Effect.scoped(
     Effect.gen(function* () {
       yield* Effect.promise(() =>
         append("IntegrationAttempted", {
@@ -207,6 +284,13 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         ],
         mirror,
       );
+
+      // What an earlier integration was killed in the middle of, before this one
+      // adds a directory of its own: see `WORKTREE_IS_ABANDONED_AFTER`. A
+      // registration whose directory is already gone is git's own `prune` to
+      // clear, and one still standing is this sweep's — nothing else in the
+      // system looks at these.
+      yield* sweepAbandoned(mirror);
 
       // The worktree is disposable; the mirror is the expensive part. Acquired
       // and released as one thing, so no path below has to remember it — and it
@@ -298,8 +382,11 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // Everything above was computed against the base as it stood when this
       // integration fetched it. Another one may have landed in the meantime;
       // git says so here, atomically, by refusing a push that is not a
-      // fast-forward. **That rejection is a refusal like any other** — an event
-      // with a reason the caller requeues on, not a retry loop and not a throw.
+      // fast-forward. **That rejection is an event like any other refusal** —
+      // and, unlike the others, one this lane answers itself: the attempt below
+      // it is re-run against the base where it now is (`LOST_PUSHES`), because
+      // nothing is wrong with the branch and nobody's judgement is owed. What
+      // returns from here is a base that beat this merge every time.
       const pushed = yield* Effect.either(
         at(["push", "origin", `HEAD:refs/heads/${options.base}`], cwd),
       );
@@ -337,4 +424,31 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       ),
     ),
   );
+
+  /**
+   * **A base that moved is answered here, and not by a person.**
+   *
+   * The attempt above is a whole integration — its own `IntegrationAttempted`,
+   * its own worktree, its own terminal event — so losing the push and running
+   * it again is one attempt refused and another made, and the lane's log reads
+   * as exactly that. Nothing is reused across the two: the base is fetched
+   * afresh, the merge is recomputed, and `verify` is asked again about the tree
+   * that actually exists now.
+   *
+   * It is here rather than at the caller because both callers do the same thing
+   * with a refusal — `run-once.ts` blocks the item on a human acknowledgement,
+   * `approve.ts` blocks it with the approval already spent — and neither has
+   * anything to decide. A rejected push says the branch is fine and the base
+   * moved, which is a recomputation, not a question: an item that waits for a
+   * person to click Requeue in a repository that merges unattended is a ticket
+   * stopped by a race it won nothing by losing.
+   */
+  return Effect.gen(function* () {
+    let result = yield* attempt;
+    for (let lost = 0; lost < LOST_PUSHES; lost++) {
+      if (result.ok || result.reason !== "push-rejected") return result;
+      result = yield* attempt;
+    }
+    return result;
+  });
 }

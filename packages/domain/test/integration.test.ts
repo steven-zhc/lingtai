@@ -145,6 +145,46 @@ describe("reduceIntegration", () => {
     expect(laneIsBusy(s)).toBe(false);
   });
 
+  /**
+   * **What `laneIsBusy` cannot say**, pinned so that nobody builds a chip on it.
+   *
+   * Two integrations against one base overlap by design since #194. The fold
+   * keeps one `lifecycle`, so the first terminal sets it `idle` with the other
+   * merge still in flight, and while both are open it names whichever attempted
+   * last. A caller reading this as *is anything merging right now* is told no
+   * during a merge and told about the wrong work item during two.
+   */
+  it("answers about the last attempt, not about what is merging", () => {
+    const e = makeStream(LANE);
+    const both = [
+      e("IntegrationAttempted", { workItemId: "wi-a", branch: "agent/58", headSha: "sha-a" }),
+      e("IntegrationAttempted", { workItemId: "wi-b", branch: "agent/59", headSha: "sha-b" }),
+    ];
+
+    // Both in flight, and the lane can only name one of them.
+    const overlapping = reduceIntegration(both);
+    expect(overlapping.lifecycle).toEqual({
+      status: "attempting",
+      workItemId: "wi-b",
+      branch: "agent/59",
+      headSha: "sha-b",
+    });
+
+    // A loses the push; B is still merging, and this still says false.
+    const aRefused = reduceIntegration([
+      ...both,
+      e("IntegrationRefused", {
+        workItemId: "wi-a",
+        branch: "agent/58",
+        reason: "push-rejected" as const,
+        detail: "! [rejected] HEAD -> develop (fetch first)",
+      }),
+    ]);
+
+    expect(aRefused.attempts).toBe(2);
+    expect(laneIsBusy(aRefused)).toBe(false);
+  });
+
   it("ignores an event type it has never heard of", () => {
     const e = makeStream(LANE);
     const s = reduceIntegration([

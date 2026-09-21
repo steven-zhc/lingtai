@@ -588,6 +588,11 @@ Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/even
 and told the loser this, and git's rejected push — `push-rejected` — is what
 tells it now. The value stays because events on the log carry it.
 
+One `push-rejected` on the log is a lost race the lane answered itself, by
+merging against the base where it now is and pushing again. The one that reaches
+a person is the last of four in a row (`LOST_PUSHES`, `packages/repo/src/integrate.ts`)
+— a base that moved out from under every attempt.
+
 ## run stage — 13
 
 Where a failed run stopped, as `stopped at <stage>`. Source: the `stage:`

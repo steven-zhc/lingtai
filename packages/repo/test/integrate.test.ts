@@ -14,7 +14,7 @@ import { integrationStream } from "@lingtai/domain";
 import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -224,54 +224,109 @@ describe("integrate", () => {
    * **Git is what makes the merge safe, and the lane holds no lock** (#194).
    *
    * Two integrations computed against one `develop` both reach the push. The
-   * ref update is atomic: one lands, and the other is rejected as not a
-   * fast-forward — a refusal on the log with a reason a person can act on,
-   * rather than a throw or a retry loop. The lock only ever bought the loser a
-   * cheaper way of being told.
+   * ref update is atomic: one lands and the other is rejected as not a
+   * fast-forward — and the loser answers that itself, by merging against the
+   * `develop` that now exists and pushing again. Nothing is wrong with its
+   * branch, so there is nothing for a person to decide: a refusal here would
+   * park the item in "Waiting on you" in a repository that merges unattended,
+   * for a race it lost nothing by losing.
    *
-   * The first is held at `verify`, after it has merged the base in and before
-   * it pushes, so both are computed against the same base — the overlap the
-   * lock used to make impossible.
+   * **The interleaving is made, not waited for.** `verify` runs after the base
+   * has been fetched and merged in and before the push, so the first
+   * integration announcing that it is there is the proof both were computed
+   * against the same base. This used to be a 1.5s sleep, which on a loaded
+   * `test:db` run let the two serialise and failed a tree with nothing wrong
+   * with it.
    */
-  it("races two integrations on one base: one lands and the other is refused at the push", async () => {
+  it("races two integrations on one base: the loser merges again against where the base got to", async () => {
     await branchWith("agent/7", { "src/d.ts": "export const d = 1;\n" });
     await branchWith("agent/8", { "src/e.ts": "export const e = 1;\n" });
 
     let releaseFirst: () => void = () => {};
     const gate = new Promise<void>((r) => (releaseFirst = r));
+    let atVerify: () => void = () => {};
+    const reachedVerify = new Promise<void>((r) => (atVerify = r));
+    let verifies = 0;
 
     const first = integrate({
       ...base(),
       branch: "agent/7",
       verify: async () => {
+        verifies++;
+        atVerify();
         await gate;
         return { ok: true, evidence: "" };
       },
     });
 
-    // Long enough for the first to have cut its worktree and merged the base in.
-    await new Promise((r) => setTimeout(r, 1_500));
+    // The first has fetched `develop` and merged agent/7 into it, and has not
+    // pushed. The second now computes against exactly that base.
+    await reachedVerify;
     const second = await integrate({ ...base(), branch: "agent/8" });
     expect(second.ok, JSON.stringify(second)).toBe(true);
 
     releaseFirst();
     const loser = await first;
 
-    // Both terminated, which is the first thing removing a lock has to keep.
-    expect(loser.ok, JSON.stringify(loser)).toBe(false);
-    if (loser.ok) return;
-    expect(loser.reason).toBe("push-rejected");
-    // The reason names the push, and carries git's own words about it.
-    expect(loser.detail).toContain("develop");
-    expect(loser.detail).toMatch(/rejected/i);
+    // It lost the push and landed anyway, on the base agent/8 had moved to.
+    expect(loser.ok, JSON.stringify(loser)).toBe(true);
+    // A second whole attempt, not a second push of the same commit: the base
+    // was fetched again, the merge recomputed, and `verify` asked about it.
+    expect(verifies).toBe(2);
 
+    // And the lost race is on the log, which is where it is answered for.
     const refusals = (await lane()).filter((e) => e.type === "IntegrationRefused");
-    expect(refusals.some((r) => r.data["reason"] === "push-rejected")).toBe(true);
+    const rejected = refusals.filter((r) => r.data["reason"] === "push-rejected");
+    expect(rejected).toHaveLength(1);
+    expect(String(rejected[0]!.data["detail"])).toMatch(/rejected/i);
+    expect(String(rejected[0]!.data["detail"])).toContain("develop");
 
-    // And exactly one of the two is on the base branch.
+    // Both are on the base branch, in the order the pushes actually happened.
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
     expect(log.stdout).toContain("work on agent/8");
-    expect(log.stdout).not.toContain("work on agent/7");
+    expect(log.stdout).toContain("work on agent/7");
+  });
+
+  /**
+   * **The retry is bounded, and the refusal it stops at is still a refusal.**
+   *
+   * A base that wins the race every time is a person's to hear about, and the
+   * card's move — requeue — is the honest one for it. `verify` runs after the
+   * base is merged in and before the push, so pushing a commit from there makes
+   * every attempt's push a lost race, with no timing in it.
+   */
+  it("gives up on a base that moves under every attempt, and says push-rejected", async () => {
+    await branchWith("agent/10", { "src/g.ts": "export const g = 1;\n" });
+    const before = (await lane()).length;
+    let attempts = 0;
+
+    const result = await integrate({
+      ...base(),
+      branch: "agent/10",
+      verify: async () => {
+        attempts++;
+        await g(["commit", "-q", "--allow-empty", "-m", `develop moved ${attempts}`], work);
+        await g(["push", "-q", "origin", "develop"], work);
+        return { ok: true, evidence: "" };
+      },
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("push-rejected");
+    expect(result.detail).toMatch(/rejected/i);
+
+    // One try and three retries, each of them an attempt and a refusal of its
+    // own on the lane's log.
+    expect(attempts).toBe(4);
+    const events = (await lane()).slice(before);
+    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(4);
+    expect(
+      events.filter((e) => e.type === "IntegrationRefused" && e.data["reason"] === "push-rejected"),
+    ).toHaveLength(4);
+
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("work on agent/10");
   });
 
   /**
@@ -290,6 +345,46 @@ describe("integrate", () => {
       cwd: join(home, "repos", `${PROJECT}.git`),
     });
     expect(registered.stdout).not.toContain("integrator-");
+  });
+
+  /**
+   * **A process killed inside a merge leaves a checkout nothing else reclaims.**
+   *
+   * The scope releases the worktree on every path this function can take, and
+   * on none of the ones it cannot: a second Ctrl+C, a `--timeout`, a crash. The
+   * name carries a uuid now, so each death leaves a full checkout and a
+   * registration under a fresh name — and `git worktree prune` does not touch
+   * one whose directory is still there. They would accumulate without bound and
+   * pin their commits against gc.
+   *
+   * Age is what tells a corpse from a colleague, because two live integrations
+   * on one base is ordinary since #194. An hour is the pass's own ceiling.
+   */
+  it("reclaims an integrator worktree a killed process left behind, and leaves a live one alone", async () => {
+    await branchWith("agent/11", { "src/h.ts": "export const h = 1;\n" });
+    const mirror = join(home, "repos", `${PROJECT}.git`);
+    const abandoned = join(home, "worktrees", PROJECT, "integrator-develop-deadbeef");
+    const live = join(home, "worktrees", PROJECT, "integrator-develop-cafe1234");
+
+    for (const path of [abandoned, live]) {
+      await exec("git", ["worktree", "add", "-q", "--detach", path, "develop"], { cwd: mirror });
+    }
+    // Three hours ago: whatever cut it is not coming back for it.
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1_000);
+    await utimes(abandoned, old, old);
+
+    const result = await integrate({ ...base(), branch: "agent/11" });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    // Gone from the disk and from the mirror's registrations, both halves of
+    // what the killed process left.
+    await expect(stat(abandoned)).rejects.toThrow();
+    const registered = await exec("git", ["worktree", "list", "--porcelain"], { cwd: mirror });
+    expect(registered.stdout).not.toContain("integrator-develop-deadbeef");
+
+    // And the one that could be a merge in flight is untouched.
+    expect(registered.stdout).toContain("integrator-develop-cafe1234");
+    expect((await stat(live)).isDirectory()).toBe(true);
   });
 
   it("never returns without an event, whatever happened", async () => {
