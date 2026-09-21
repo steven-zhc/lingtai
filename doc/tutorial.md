@@ -170,7 +170,8 @@ prepared           whatever your recipe puts there — usually the install
 agent              writes and commits on agent/<issue>, in that worktree only
 proposed           your gates run; the first refusal wins
 merge              nothing configured, so it does not stop
-integrate          under a lock file: merge base in, verify, merge out
+integrate          merge base in, verify, merge out — no lock: two merges on
+                   one base overlap, git refuses one, and that one merges again
 end                whatever your recipe puts there
 ```
 

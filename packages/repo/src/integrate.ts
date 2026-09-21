@@ -173,9 +173,14 @@ const WORKTREE_IS_ABANDONED_AFTER = 60 * 60 * 1_000;
  * The promise face, for callers that are not Effect.
  *
  * `conductor/src/approve.ts` and the board reach the integrator from ordinary
- * `async` code. The error channel below is `never` — every path appends and
- * returns an `IntegrateResult` — so running it here cannot throw for a reason
- * the type did not already say.
+ * `async` code, with no `try` around the call: `approve.ts` has spent the
+ * approval by the time it gets here, so an exception out of this would leave
+ * the item gating with nothing on the log to say why.
+ *
+ * The error channel below is `never` — every path appends and returns an
+ * `IntegrateResult` — and `unexpected` is what makes that true of the defect
+ * channel too, which is where a store that stopped answering arrives. So
+ * running it here cannot throw.
  */
 export function integrate(options: IntegrateOptions): Promise<IntegrateResult> {
   return Effect.runPromise(integrateEffect(options));
@@ -239,6 +244,36 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       });
       return { ok: true, mergeCommit } as IntegrateResult;
     });
+
+  /**
+   * The defect channel, and the last thing between a caller and an exception.
+   *
+   * `integrate()` above promises that it cannot throw, and everything that
+   * appends can: `store.read` and `store.append` reject on a dropped
+   * connection, `Effect.promise` turns that rejection into a defect, and a
+   * defect no handler sees leaves `Effect.runPromise` as a rejected promise.
+   * Neither caller has a `try` around it — `approve.ts` has already spent the
+   * approval by then — so an escaping defect is the #84 dead end: no
+   * `IntegrationRefused`, no `WorkItemBlocked`, no diagnosis, and a second
+   * attempt refused.
+   *
+   * So a defect becomes the refusal it always was. **And if recording that
+   * refusal defects too — which is the ordinary case, because the store is
+   * usually what failed — the caller is still given an `IntegrateResult`**: the
+   * event cannot be written by definition, and a refusal the caller can act on
+   * is worth more than an exception it cannot. This is the one path in here
+   * that may return without an event, and only when the log is what is down.
+   */
+  const unexpected = (defect: unknown): Effect.Effect<IntegrateResult> => {
+    const detail = `the integration failed unexpectedly: ${
+      defect instanceof Error ? defect.message : String(defect)
+    }`;
+    return refuse("conflict", detail).pipe(
+      Effect.catchAllDefect(() =>
+        Effect.succeed({ ok: false, reason: "conflict", detail } as IntegrateResult),
+      ),
+    );
+  };
 
   const at = (args: string[], cwd: string) => gitEffect(args, { ...run, cwd });
 
@@ -447,12 +482,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type
       // system can see has already been handled one line up.
-      Effect.catchAllDefect((defect) =>
-        refuse(
-          "conflict",
-          `the integration failed unexpectedly: ${defect instanceof Error ? defect.message : String(defect)}`,
-        ),
-      ),
+      Effect.catchAllDefect(unexpected),
     ),
   );
 
@@ -505,5 +535,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       `${options.base} moved while ${options.branch} was being merged into it, ` +
         `every one of ${LOST_PUSHES + 1} times; origin rejected the last push:\n${lastRejection}`,
     );
-  });
+    // The append at the top and the refusal just above are appends like any
+    // other, and `attempt`'s own handlers are inside it and never see them.
+    // This is what covers both — and whatever gets past `attempt`'s.
+  }).pipe(Effect.catchAllDefect(unexpected));
 }

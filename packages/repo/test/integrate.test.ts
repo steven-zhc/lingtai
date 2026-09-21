@@ -404,6 +404,50 @@ describe("integrate", () => {
     expect((await stat(live)).isDirectory()).toBe(true);
   });
 
+  /**
+   * **A log that stopped answering is a refusal, not an exception.**
+   *
+   * `integrate()` says it cannot throw, and both callers take it at its word:
+   * `approve.ts` calls it with the approval already spent and no `try` around
+   * the call, so an exception out of here leaves the item back at `gating`
+   * with no `IntegrationRefused`, no `WorkItemBlocked`, no diagnosis and no
+   * second attempt — the #84 dead end.
+   *
+   * The appends that can do it are the two outside `attempt` and therefore
+   * outside its handlers: the `IntegrationAttempted` at the top, and the
+   * terminal refusal at the bottom. `store.read` rejecting on a dropped
+   * connection is the documented failure mode of this system's own store, and
+   * `Effect.promise` turns a rejection into a defect, which leaves
+   * `Effect.runPromise` as a rejected promise unless something catches it.
+   *
+   * So the store here refuses everything, which is the worst case: the refusal
+   * cannot be recorded either, because recording it is the thing that is
+   * broken. The caller is still given an `IntegrateResult` it can act on.
+   */
+  it("hands back a refusal when the log itself is unreachable, rather than throwing", async () => {
+    await branchWith("agent/12", { "src/i.ts": "export const i = 1;\n" });
+    const dropped = new Error("Connection terminated unexpectedly");
+    const unreachable: EventStore = {
+      append: () => Promise.reject(dropped),
+      read: () => Promise.reject(dropped),
+      readAll: () => Promise.reject(dropped),
+    };
+
+    // Not rejecting is half of what is under test: an `await` that threw here
+    // fails this, and is what `approve.ts` would have got.
+    const result = await integrate({ ...base(), branch: "agent/12", store: unreachable });
+
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("conflict");
+    expect(result.detail).toContain("Connection terminated unexpectedly");
+
+    // And it never got near the base: the attempt could not be recorded, so no
+    // merge was computed and nothing was pushed.
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("work on agent/12");
+  });
+
   it("never returns without an event, whatever happened", async () => {
     // Every case above asserts its own event; this asserts the invariant across
     // all of them: the lane has exactly one terminal event per attempt.
