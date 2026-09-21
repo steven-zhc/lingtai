@@ -412,21 +412,22 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: "recipe" | 
  * Never throws, for `projectFilter`'s reason: a caller asking what a project is
  * configured to do always gets an answer, and "it could not be read, because …"
  * is one of the answers.
+ *
+ * **The resolve is what the `try` is around, and nothing else.** `faultOf`
+ * sorts the errors the *resolve* raises; anything else thrown under the same
+ * `try` is sorted by its `else` branch and comes out as `fault: "recipe"`,
+ * naming a file that need not hold the offending value at all. `readRecipe` is
+ * outside it for that reason, and may be: the one value it parses rather than
+ * prints is `runtime.limits.wall`, and since #218 both schemas that can carry
+ * a `wall` refuse one that is not a duration — so the file that holds it says
+ * so, under its own key, before a resolve ever succeeds.
  */
 export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe> {
   const project = state.project ?? "(unnamed)";
   const at = recipePath(project);
+  let resolved: Resolved;
   try {
-    const resolved = await currentRecipe(state);
-    return {
-      ok: true,
-      project,
-      at,
-      configHash: resolved.configHash,
-      ref: resolved.ref,
-      rows: readRecipe(resolved.recipe),
-      provenance: resolved.provenance ?? {},
-    };
+    resolved = await currentRecipe(state);
   } catch (err) {
     return {
       ok: false,
@@ -435,6 +436,15 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
       problem: (err as Error).message.replace(/\s*\n\s*/g, " ").trim(),
     };
   }
+  return {
+    ok: true,
+    project,
+    at,
+    configHash: resolved.configHash,
+    ref: resolved.ref,
+    rows: readRecipe(resolved.recipe),
+    provenance: resolved.provenance ?? {},
+  };
 }
 
 /**

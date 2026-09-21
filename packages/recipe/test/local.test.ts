@@ -126,6 +126,17 @@ env: { plantAt: .env.local }
     const alone = await resolveLocalRecipe("app", read(bare));
     expect(alone.provenance?.["gates"]).toBe("admit 0, prepared 0, proposed 0, merge 0, end 0 ← default");
 
+    // **And a `gates:` with its block commented out is this file saying
+    // nothing**, which is what `applyPreset`'s `??` makes of it: `null ??
+    // preset.gates` is the preset's, so the run gets `proposed: build` and a
+    // reader who commented the block out and is asking why must be sent to the
+    // preset. A key present and empty used to read as a key this file carried.
+    const emptied = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\ngates:\n`));
+    expect(emptied.recipe.gates.proposed).toHaveLength(1);
+    expect(emptied.provenance?.["gates"]).toBe(
+      "admit 0, prepared 1, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
+    );
+
     // And a file that carries them says so, in all three.
     const own = await resolveLocalRecipe(
       "app",
@@ -222,6 +233,33 @@ gates:
       const a = await resolveLocalRecipe("app", withMachine(undefined));
       const b = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
       expect(a.configHash).not.toBe(b.configHash);
+    });
+
+    /**
+     * **`wall` is a duration, and this file is the one that has to say so.**
+     * `wall: "90"` — the unit forgotten — used to resolve: nothing rejected it
+     * here, and `parseDuration` threw later, out of whatever was reading the
+     * resolved recipe. The board's recipe page caught that throw beside the
+     * resolve's own and read it as *the recipe could not be read*, naming
+     * `~/.lingtai/app/recipe.yml` — a file that may not carry `runtime.limits`
+     * at all, so its reader opened it twice and found nothing (#218).
+     */
+    it("refuses a wall that is not a duration, by its key and in this file", async () => {
+      const resolving = resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n'));
+      await expect(resolving).rejects.toThrow(MachineConfigInvalidError);
+      await expect(
+        resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n')),
+      ).rejects.toThrow(`${HOME}/config.yml is not valid`);
+      await expect(
+        resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n')),
+      ).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/);
+      // And under a project's section, which is the other half of the same key.
+      await expect(
+        resolveLocalRecipe(
+          "app",
+          withMachine('projects:\n  app:\n    runtime:\n      limits: { wall: "90" }\n'),
+        ),
+      ).rejects.toThrow(/projects\.app\.runtime\.limits\.wall: must be a positive duration/);
     });
   });
 

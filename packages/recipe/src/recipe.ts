@@ -520,7 +520,18 @@ export const Recipe = z.object({
     limits: z
       .object({
         turns: z.number().int().positive().default(300),
-        wall: z.string().default("2h"),
+        /**
+         * A duration, checked here for the reason `source.backoff` is checked
+         * where it is written: `parseDuration` throws, and a throw out of the
+         * middle of something *reading* the resolved recipe names neither the
+         * key nor the file. `wall: "90"` — the unit forgotten — resolved
+         * cleanly and threw later inside the board's reading of it, where it
+         * was read as *the recipe could not be read* (#218).
+         */
+        wall: z
+          .string()
+          .default("2h")
+          .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 2h" }),
         /**
          * How many times a pass sends the agent back, carrying what refused it.
          *
@@ -660,8 +671,14 @@ export { formatDuration, parseDuration } from "./duration.ts";
  */
 export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined);
 
-/** `parseDuration`, as a predicate: for a schema, where throwing is the wrong shape. */
-function positiveDuration(text: string): boolean {
+/**
+ * `parseDuration`, as a predicate: for a schema, where throwing is the wrong
+ * shape.
+ *
+ * Exported for the machine file's schema, which holds the same `wall` this one
+ * does and must refuse the same values by name (0046 §3, #218).
+ */
+export function positiveDuration(text: string): boolean {
   try {
     return parseDuration(text) > 0;
   } catch {

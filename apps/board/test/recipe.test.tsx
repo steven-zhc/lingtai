@@ -272,6 +272,33 @@ describe("a recipe that cannot be read", () => {
     expect(note).not.toContain(join(home, "app", "recipe.yml"));
   });
 
+  /**
+   * **And a value the reading has to parse is the machine's too.** `wall: "90"`
+   * — the unit forgotten — used to resolve, because nothing refined it as a
+   * duration: the throw came afterwards, out of `parseDuration` inside
+   * `readRecipe`, and was caught beside the resolve's own errors and sorted by
+   * `faultOf`'s `else` into `fault: "recipe"`. The page then named
+   * `~/.lingtai/app/recipe.yml`, which may not carry `runtime.limits` at all
+   * (0046 §3) — so its reader opened that file twice, found no `limits:` block,
+   * and was never told about the one file to edit.
+   */
+  it("names the machine's file for a wall that is not a duration, and never the recipe", async () => {
+    await writeFile(join(home, "config.yml"), `runtime:\n  agent: claude-code\n  limits: { wall: "90" }\n`);
+    const view = await projectRecipe(state);
+    const html = render(view);
+
+    expect(view.ok).toBe(false);
+    if (view.ok) return;
+    expect(view.fault).toBe("machine");
+    expect(view.at).toBe(join(home, "config.yml"));
+    expect(html).toContain("must be a positive duration");
+    expect(html).not.toContain(join(home, "app", "recipe.yml"));
+    // The line that says what to edit is the line that must not send a reader
+    // to the file with nothing wrong in it.
+    const note = html.slice(html.indexOf("Read-only."));
+    expect(note).toContain(join(home, "config.yml"));
+  });
+
   /** The same file, refused by the schema rather than by name. */
   it("names the machine's file for an assignee it will not accept", async () => {
     await writeFile(join(home, "config.yml"), `runtime:\n  agent: claude-code\n  assignee: { take: nobody }\n`);

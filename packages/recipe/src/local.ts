@@ -31,7 +31,7 @@ import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
-import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
+import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
 
 /** A project's recipe, under `stateDir()`. */
@@ -47,7 +47,19 @@ export function machinePath(home: string = stateDir()): string {
 /** The limits a machine may set. Every key optional: an absent one is the default, and says so. */
 const MachineLimits = z.strictObject({
   turns: z.number().int().positive().optional(),
-  wall: z.string().optional(),
+  /**
+   * A duration, refused here rather than at the point of use.
+   *
+   * This is the file `wall` lives in since 0046 §3, so this is the file that
+   * has to say `"90"` is not one — `Recipe`'s own check never sees this value
+   * under its own key, and every reader downstream of the resolve is left
+   * calling `parseDuration` on it and throwing somewhere that cannot name
+   * either the key or the file (#218).
+   */
+  wall: z
+    .string()
+    .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 2h" })
+    .optional(),
   rounds: z.number().int().nonnegative().optional(),
   restarts: z.number().int().nonnegative().optional(),
 });
@@ -213,7 +225,16 @@ export function provenanceSource(entry: string | undefined): string | null {
   return at === -1 ? null : entry.slice(at + PROVENANCE_ARROW.length);
 }
 
-/** Whether an object carries a dotted path at all — not what it says there. */
+/**
+ * Whether an object carries a dotted path at all — not what it says there.
+ *
+ * **A key with nothing under it carries nothing**, and that is `applyPreset`'s
+ * rule rather than a convenience here: `recipe["gates"] ?? preset.gates` takes
+ * the preset's for a `null` exactly as it does for an absent key, so a
+ * `gates:` whose block has been commented out is a file that decided nothing
+ * and must not be named as the source of what the preset decided (#218). The
+ * intermediate segments have always read it this way; only the leaf did not.
+ */
 function carries(value: unknown, path: string): boolean {
   let at = value;
   for (const segment of path.split(".")) {
@@ -221,7 +242,7 @@ function carries(value: unknown, path: string): boolean {
     if (!(segment in (at as Record<string, unknown>))) return false;
     at = (at as Record<string, unknown>)[segment];
   }
-  return at !== undefined;
+  return at !== undefined && at !== null;
 }
 
 /**
