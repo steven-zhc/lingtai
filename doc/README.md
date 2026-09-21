@@ -155,6 +155,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [009](experiments/009-the-end-gate-closes-its-own-issue.md) | Does the new model land and close a ticket by itself? | yes — admin #157, 8 turns, $0.63, closed with its label intact |
 | [010](experiments/010-the-log-before-the-second-reset.md) | What was in the log before ADR 0019 reset it? | 56 events, `seq` 10 to 65, kept because it is the only copy |
 | [011](experiments/011-patching-versus-starting-over.md) | When a reviewer keeps refusing, is another round or a fresh start cheaper? | the fresh start, decisively — and it needed none of its rounds ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
+| [012](experiments/012-where-the-turns-go.md) | Every ticket takes 100+ turns and the tokens go fast — where do they go? | cost is linear in turns at ~$0.10; half the turns are the fix loop, and `review` feeds all of it, refusing 3× for every acceptance |
 
 ## Open
 
