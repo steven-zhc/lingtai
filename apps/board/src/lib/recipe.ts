@@ -11,14 +11,19 @@
  * before the move was given the repository's copy, and that commit is where it
  * still is.
  */
+import { GATE_POINTS } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
+import { passCeiling } from "@lingtai/conductor/ceiling";
+import { describeAssignee } from "@lingtai/conductor/filter";
 import {
   RecipeInvalidError,
   RecipeMissingError,
   kindOfAction,
+  parseDuration,
   resolveRecipe,
   type GateAction,
+  type Recipe,
 } from "@lingtai/recipe";
 
 /**
@@ -55,6 +60,14 @@ export type RunRecipe =
       configHash: string;
       source: string;
       at: { base: string } | { head: string };
+      /**
+       * How this recipe stands against the one at head (#217).
+       *
+       * On the `run` variant only, because it is the only one where the
+       * question means anything: a `head` recipe *is* head's, and a `none` has
+       * nothing to compare.
+       */
+      from: FromHead;
     }
   | {
       of: "head";
@@ -65,6 +78,108 @@ export type RunRecipe =
       why: string;
     }
   | { of: "none"; why: string };
+
+/**
+ * One value this attempt was given that the recipe at head does not have (#217).
+ *
+ * Both sides are strings because both sides are shown: `null` is *not set at
+ * all*, which is a different fact from a value that changed and reads
+ * differently on the page.
+ */
+export interface Change {
+  /** Its path in the recipe, keyed by name where a list has names — `gates.proposed.build.run`. */
+  path: string;
+  run: string | null;
+  head: string | null;
+}
+
+/**
+ * What differs between the recipe this attempt got and the one at head.
+ *
+ * **`same` is an answer and not an absence**, which is the whole of why this is
+ * a value rather than a list that happens to be empty (#217). Most of the time
+ * nothing differs, and *nothing differs* is the useful reading: this attempt
+ * ran under what you have now. A page that printed a list and showed nothing
+ * when it was empty would say the same thing as a page that never looked.
+ *
+ * `unknown` is the third: head could not be read, so the comparison was not
+ * made, and that is not the same as there being nothing in it.
+ */
+export type FromHead =
+  | { of: "same"; ref: string }
+  | { of: "changed"; ref: string; changes: readonly Change[] }
+  | { of: "unknown"; why: string };
+
+/** A leaf of the recipe as a person reads it. `null` is a value; `undefined` canonical drops. */
+function say(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value) ?? "";
+}
+
+/**
+ * The recipe flattened to `path → value`, which is what makes two of them
+ * comparable.
+ *
+ * **A list of named things is keyed by its names, never by position.** An
+ * action inserted at the top of `proposed` would otherwise read as every action
+ * on that point having changed, and the one that was actually added would be
+ * the one row that looked unremarkable.
+ *
+ * An empty list is a value (`(nothing)`) rather than an absence, for the reason
+ * a `skipped` gate point is drawn: a point whose actions were all removed is a
+ * change, and a path that merely stops existing does not read as one.
+ */
+function flatten(value: unknown, at: string, into: Map<string, string>): void {
+  // `undefined` never reaches a reader: `canonical` drops it before the hash is
+  // taken (0047 §2), so a path that is undefined here is a path the recipe the
+  // run was decided by does not have.
+  if (value === undefined) return;
+  if (Array.isArray(value)) {
+    if (value.length === 0) into.set(at, "(nothing)");
+    else if (value.every((v) => typeof (v as { name?: unknown })?.name === "string"))
+      for (const item of value) flatten(item, `${at}.${(item as { name: string }).name}`, into);
+    else into.set(at, value.map(say).join(", "));
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [key, v] of Object.entries(value)) flatten(v, at === "" ? key : `${at}.${key}`, into);
+    return;
+  }
+  into.set(at, say(value));
+}
+
+/** Every path the two recipes disagree on, in the recipe's own order of keys. */
+export function changesFromHead(mine: Recipe, head: Recipe): Change[] {
+  const a = new Map<string, string>();
+  const b = new Map<string, string>();
+  flatten(mine, "", a);
+  flatten(head, "", b);
+  return [...new Set([...a.keys(), ...b.keys()])]
+    .sort()
+    .filter((path) => a.get(path) !== b.get(path))
+    .map((path) => ({ path, run: a.get(path) ?? null, head: b.get(path) ?? null }));
+}
+
+/**
+ * This run's recipe against head's — **by hash first, and the diff only after
+ * it says there is one**.
+ *
+ * Two documents with one hash are one document (0047 §2), so `same` is settled
+ * by twelve characters rather than by walking two objects and finding nothing.
+ *
+ * Never throws, and a head that cannot be read costs the comparison and not the
+ * recipe: an attempt whose own recipe is proved still shows it, and says the
+ * comparison was not made rather than that nothing differs.
+ */
+async function fromHead(mine: Resolved, atHead: () => Promise<Resolved>): Promise<FromHead> {
+  let head: Resolved;
+  try {
+    head = await atHead();
+  } catch (err) {
+    return { of: "unknown", why: (err as Error).message.replace(/\s*\n\s*/g, " ").trim() };
+  }
+  if (head.configHash === mine.configHash) return { of: "same", ref: head.ref };
+  return { of: "changed", ref: head.ref, changes: changesFromHead(mine.recipe, head.recipe) };
+}
 
 /**
  * The recipe at a commit, per repository and sha — **exact, and never stale**,
@@ -145,6 +260,14 @@ export async function recipeOfRun(
         configHash: base.configHash,
         source: base.source,
         at: { base: run.baseSha },
+        // **Head is read even here, where nothing needs it to prove anything.**
+        // It used not to be, and that was right while the only question was
+        // *what did `proposed:build` do*. The other question — *what was this
+        // attempt run under* — is answered by the difference, and the answer is
+        // usually `same`: this attempt ran under what you have now (#217). It
+        // costs no request; since 0046 §3 head is this machine's file, and the
+        // caller reads it once however many attempts the page has.
+        from: await fromHead(base, atHead),
       };
     } else {
       why =
@@ -166,6 +289,9 @@ export async function recipeOfRun(
       configHash: head.configHash,
       source: head.source,
       at: { head: head.ref },
+      // The same document as head's by the hash that just proved it, so there
+      // is nothing to walk and nothing that could differ.
+      from: { of: "same", ref: head.ref },
     };
   }
   return {
@@ -211,4 +337,61 @@ export function describeAction(action: GateAction): { does: string; bound: strin
       return { does: `sets labels ${a.labels.join(", ")} when ${a.when}`, bound: "runs for effect" };
     }
   }
+}
+
+/** One row of the reading: the recipe's own word for a section, and what it says. */
+export interface Reading {
+  name: string;
+  says: string;
+}
+
+/**
+ * The recipe an attempt was given, as a person reads it (#217).
+ *
+ * **`lingtai status`'s rows, in `lingtai status`'s words**, and two of them are
+ * that command's own sentences rather than a second wording of them —
+ * `describeAssignee` and `passCeiling`. There is one recipe and there should be
+ * one vocabulary for it; a page that invented its own would be a second place
+ * for the sentence about `restarts` to go stale, which is the whole of what
+ * `passCeiling` exists to stop (0039 §3).
+ *
+ * **Grouped rather than dumped.** `canonical` is 3.5KB of sorted JSON and
+ * printing it whole is honest and unreadable — the whole document is still one
+ * disclosure below, for a reader who wants exactly that.
+ *
+ * All five points are counted, including the empty ones, for the reason the
+ * rail draws them: a point that is merely absent looks like one that was
+ * configured and silently did not run (0016 §4).
+ */
+export function readRecipe(recipe: Recipe): Reading[] {
+  const limits = recipe.runtime.limits;
+  const budget = recipe.runtime.budget;
+  return [
+    {
+      name: "picks up",
+      says:
+        recipe.source.kinds.join(" > ") +
+        (recipe.source.kinds.length > 1 ? " (in priority order)" : ""),
+    },
+    {
+      name: "excludes",
+      says: recipe.source.exclude.length > 0 ? recipe.source.exclude.join(", ") : "nothing",
+    },
+    { name: "assignee", says: describeAssignee(recipe.runtime.assignee) },
+    {
+      name: "the points",
+      says: GATE_POINTS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
+    },
+    { name: "a pass", says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall) }) },
+    {
+      name: "retries",
+      says: `after ${recipe.source.backoff}, unless a repair is pending`,
+    },
+    {
+      name: "budget",
+      says:
+        `evidence ${budget.evidence} · attempts ${budget.attempts} · ` +
+        `findings ${budget.findings} · diff ${budget.diff}`,
+    },
+  ];
 }

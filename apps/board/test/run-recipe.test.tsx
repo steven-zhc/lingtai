@@ -112,8 +112,10 @@ describe("the recipe beside an attempt's actions", () => {
     expect(recipe.of).toBe("run");
     expect(recipe.of === "run" && recipe.at).toEqual({ base: BASE });
     expect(asked).toEqual([BASE]);
-    // Proved at base, so head's was never needed.
-    expect(heads()).toBe(0);
+    // Proved at base — and head is still read, to say what differs from it
+    // (#217). It is this machine's file since 0046 §3, not a request, and the
+    // caller reads it once however many attempts the page has.
+    expect(heads()).toBe(1);
 
     const html = render({ ...run, recipe });
     expect(html).toContain("pnpm typecheck &amp;&amp; pnpm test");
@@ -193,10 +195,141 @@ describe("the recipe beside an attempt's actions", () => {
 
     expect(second).toEqual(first);
     expect(asked).toHaveLength(1);
-    expect(heads()).toBe(0);
+    // Head is read per call here because this fake does not memoise it; the
+    // board's `recipesFor` does, so a page with six attempts reads it once.
+    expect(heads()).toBe(2);
   });
 
   it("does not grow the record a fifth row", () => {
     expect(RECORD_ROWS).toEqual(["findings", "files", "attempts", "ticket"]);
+  });
+});
+
+/**
+ * *What was this attempt run under* — the other question the same data answers
+ * (#217), and the one that had no answer on the page at all.
+ *
+ * The assertions are about the reading and about the comparison, because those
+ * are the two things a dump of 3.5KB of sorted JSON would also technically
+ * contain and nobody would find.
+ */
+describe("the recipe an attempt was given", () => {
+  it("reads in lingtai status's rows and its words", async () => {
+    const run = runWith(await hashOf(RECIPE));
+    const { client, atHead } = fake({ [BASE]: RECIPE });
+    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) });
+
+    expect(html).toContain("<dt>picks up</dt><dd>bug</dd>");
+    expect(html).toContain("<dt>excludes</dt><dd>blocked</dd>");
+    // `describeAssignee`'s sentence, not a second wording of it.
+    expect(html).toContain("any issue, whoever it is assigned to");
+    // All five, including the four nothing is configured at (0016 §4).
+    expect(html).toContain("admit 0 · prepared 0 · proposed 1 · merge 0 · end 0");
+    // `passCeiling`'s sentence, which is what `lingtai status` prints.
+    expect(html).toContain("10 turns");
+    expect(html).toContain("<dt>budget</dt>");
+    expect(html).toContain("evidence 2000 · attempts 5 · findings 5 · diff 400000");
+  });
+
+  it("says the record carries no comments, so a bare number is not one with no reasoning", async () => {
+    const run = runWith(await hashOf(RECIPE));
+    const { client, atHead } = fake({ [BASE]: RECIPE });
+    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) });
+
+    expect(html).toContain("What the log records is the canonical recipe");
+    expect(html).toContain("comments discarded (0047 §2)");
+  });
+
+  it("shows what differs from head, naming the value and both sides", async () => {
+    // `2d3353b`, exactly: the attempt's `build` ran the suite and head's does
+    // not, and until now the runs from both sides of it sat in one list saying
+    // nothing.
+    const run = runWith(await hashOf(RECIPE));
+    const { client, atHead } = fake({ [BASE]: RECIPE });
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    expect(recipe.of === "run" && recipe.from).toEqual({
+      of: "changed",
+      ref: "main",
+      changes: [
+        {
+          path: "gates.proposed.build.run",
+          run: "pnpm typecheck && pnpm test",
+          head: "pnpm typecheck",
+        },
+      ],
+    });
+
+    const html = render({ ...run, recipe });
+    expect(html).toContain("This is not the recipe at the head of main");
+    expect(html).toContain("1 value");
+    expect(html).toContain("gates.proposed.build.run");
+  });
+
+  it("says nothing differs rather than saying nothing", async () => {
+    // Proved at its own base commit, and that document is head's.
+    const run = runWith(await hashOf(HEAD));
+    const { client, atHead } = fake({ [BASE]: HEAD });
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    expect(recipe.of === "run" && recipe.at).toEqual({ base: BASE });
+    expect(recipe.of === "run" && recipe.from).toEqual({ of: "same", ref: "main" });
+    expect(render({ ...run, recipe })).toContain(
+      "Nothing differs from the recipe at the head of main",
+    );
+  });
+
+  it("keeps the attempt's own recipe when head cannot be read, and says the comparison was not made", async () => {
+    const run = runWith(await hashOf(RECIPE));
+    const { client } = fake({ [BASE]: RECIPE });
+    const atHead = async () => {
+      throw new Error("no recipe at ~/.lingtai/lingtai/recipe.yml");
+    };
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    // The attempt's recipe is still proved and still shown; only the
+    // comparison is lost.
+    expect(recipe.of).toBe("run");
+    expect(recipe.of === "run" && recipe.from).toEqual({
+      of: "unknown",
+      why: "no recipe at ~/.lingtai/lingtai/recipe.yml",
+    });
+
+    const html = render({ ...run, recipe });
+    expect(html).toContain("pnpm typecheck &amp;&amp; pnpm test");
+    expect(html).toContain("What differs from the recipe at head is not known");
+  });
+
+  it("never reads head's recipe as this attempt having run under what you have now", async () => {
+    const run = runWith(await hashOf(RECIPE.replace("20m", "30m")));
+    const { client, atHead } = fake({ [BASE]: RECIPE });
+
+    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) });
+    expect(html).toContain("Not this run&#x27;s recipe");
+    expect(html).not.toContain("Nothing differs");
+    expect(html).toContain("there is nothing to compare it with");
+  });
+
+  it("keys a gate's actions by name, so inserting one is one change and not three", async () => {
+    const two = RECIPE.replace(
+      '    - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }',
+      '    - { name: lint, run: "pnpm lint", timeout: 5m }\n' +
+        '    - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }',
+    );
+    const run = runWith(await hashOf(two));
+    const { client } = fake({ [BASE]: two });
+    const atHead = async () => resolveRecipe(async () => RECIPE, "main");
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    expect(recipe.of === "run" && recipe.from.of).toBe("changed");
+    const changes = recipe.of === "run" && recipe.from.of === "changed" ? recipe.from.changes : [];
+    // `build` is untouched and says nothing; only the added action is named.
+    expect(changes.map((c) => c.path)).toEqual([
+      "gates.proposed.lint.env",
+      "gates.proposed.lint.name",
+      "gates.proposed.lint.run",
+      "gates.proposed.lint.timeout",
+    ]);
+    expect(changes.every((c) => c.head === null)).toBe(true);
   });
 });

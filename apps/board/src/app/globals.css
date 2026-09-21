@@ -1698,11 +1698,29 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .attempt .point { background: var(--surface-2); }
 .attempt > .empty { margin: 0; }
 
-/* What each gate action ran, under the rail (#190). The provenance line leads
-   because a command whose recipe is unnamed is a claim about a run nobody can
-   check; the commands are closed until asked. */
+/* The recipe this attempt was given, under the rail (#190, #217). The
+   provenance line leads because a command whose recipe is unnamed is a claim
+   about a run nobody can check; then the reading, then what differs from head,
+   then the commands, closed until asked. */
 .arecipe { margin: 0 0 0.5rem; font-size: 0.75rem; }
 .arecipe .rprov { margin: 0 0 0.35rem; }
+/* The reading: `lingtai status`'s rows, in a column that reads *down* the way
+   the terminal's does. The name column is the width of the longest of them. */
+.rread { margin: 0 0 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.rread > div { display: flex; gap: 0.75rem; align-items: baseline; }
+.rread dt { min-width: 5.5rem; flex: none; color: var(--muted); }
+.rread dd { margin: 0; min-width: 0; }
+/* Quiet, and present on every reading. It is a caveat about the record rather
+   than a fact about this run, and a reader should meet it once without it
+   competing with the values above it. */
+.rnote { margin: 0 0 0.35rem; opacity: 0.75; }
+.rdiff { margin: 0 0 0.35rem; }
+.rchanges { list-style: none; margin: 0 0 0.35rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.rchanges > li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.rpath { min-width: 12rem; }
+/* This attempt's value first and head's after it, dimmed: the page is about the
+   attempt, and head's is the thing it is being measured against. */
+.rhead { opacity: 0.75; }
 .acts { list-style: none; margin: 0 0 0.35rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .acts > li { display: flex; gap: 0.75rem; align-items: baseline; }
 .actpoint { min-width: 5.5rem; color: var(--muted); }
