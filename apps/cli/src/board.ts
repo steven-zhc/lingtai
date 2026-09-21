@@ -178,8 +178,8 @@ async function listening(host: string, port: number): Promise<void> {
  *
  * There is no log to send a request down, so the board is found the way
  * everything else on this machine is found: **the file lock under
- * `~/.lingtai/locks/` (#193)**, the same locker the conductor, the merge lane
- * and a decision take. `board start` holds `board` while it serves, and the
+ * `~/.lingtai/locks/` (#193)**, the same locker the conductor and a decision
+ * take. `board start` holds `board` while it serves, and the
  * holder's name carries its pid and host — so `stop` has something to signal
  * and `status` has something to report, and a killed board leaves nothing
  * behind, because the kernel drops a file lock with the process.

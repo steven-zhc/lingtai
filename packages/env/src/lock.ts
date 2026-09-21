@@ -1,12 +1,20 @@
 /**
  * A named lock for this process, held in a file under `~/.lingtai/locks/` (#193).
  *
- * Every lock Lingtai takes is this one — the conductor's (`daemon/lock.ts`), the
- * merge lane's (`repo/integrate.ts`) and a decision's (`conductor/approve.ts`).
+ * Every lock Lingtai takes is this one — the conductor's (`daemon/lock.ts`), a
+ * decision's (`conductor/approve.ts`) and the board's (`apps/cli/src/board.ts`).
  * None of them needs a database, so a SQLite install is locked exactly as a
- * Postgres one is. **All three answer *not twice on this machine*** — the claim
+ * Postgres one is. **Each answers *not twice on this machine*** — the claim
  * moved to the GitHub assignee in [0046 §2](../../../doc/decisions/0046-lingtai-is-personal.md),
  * and that is precisely a file lock's scope.
+ *
+ * **The merge lane was the fourth and is not one any more** (#194). 0052 lists
+ * it, and it was ported here from a Postgres advisory lock with the rest. It
+ * went because it was never the guarantee: a ref update is atomic, so two
+ * integrations against one base are decided by git rejecting the second push,
+ * with a lock, without one, and between machines where no lock reaches. A lock
+ * whose job something else already does is a thing to delete, not to port
+ * again — which is the question to ask of each of the three above.
  *
  * ## What it is built on, and what it is not
  *

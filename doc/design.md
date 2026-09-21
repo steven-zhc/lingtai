@@ -114,7 +114,14 @@ item lives for weeks, so one stream would make every read expensive.
 |---|---|---|---|
 | WorkItem | `wi-{project}-{n}` | weeks | lifecycle, priority, links to other items |
 | Run | `run-{ulid}` | hours | one agent attempt: progress, guard trips, diff, receipt |
-| Integration | `int-{project}-{base}` | forever | one base branch's merge lane — the serialisation point |
+| Integration | `int-{project}-{base}` | forever | one base branch's merge lane — the *record* of it, not the serialisation point (#194) |
+
+**Nothing serialises that lane.** Two integrations against one base overlap on
+purpose, and git's ref update decides which lands by rejecting the second push.
+So the Integration fold cannot answer *is anything merging right now* — it keeps
+one `lifecycle`, which the first terminal returns to `idle` while another merge
+may still be in flight, and which names whichever attempted last while two are
+(`packages/domain/src/integration.ts`, `laneIsBusy`).
 
 ### Lifecycle
 
@@ -140,7 +147,8 @@ item lives for weeks, so one stream would make every read expensive.
 Every arrow is an event. Every arrow that used to produce silence — the six
 `return 1` paths in `integrate()` — is now `IntegrationRefused` with a typed
 reason: `conflict`, `dirty-base`, `unpushed-base`, `pending-migration`,
-`gate-failed`, `no-commits`, `lane-busy`.
+`gate-failed`, `no-commits`, `push-rejected` — and `lane-busy`, which is read
+and never written since #194 took the merge lane's lock away.
 
 **That diagram spans all three aggregates, and no single reducer produces it.**
 A work item's own stream carries discovery, claims, blocks and the landing;
