@@ -14,6 +14,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
  */
 import "../../../board/src/app/globals.css";
 import "./site.css";
+import "./home.css";
 
 /**
  * The two faces the product uses, self-hosted, exactly as the board loads them
@@ -40,11 +41,11 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Lingtai — the harness you put around a coding agent",
+    default: "Lingtai — let your backlog move",
     template: "%s — Lingtai",
   },
   description:
-    "Lingtai takes issues one at a time, gives each a disposable worktree and a filtered environment, holds it at the gates your repository defines, and merges only what passes them.",
+    "Lingtai takes labeled GitHub issues one at a time, gives coding agents an isolated place to work, runs your checks, and shows you what landed or needs attention.",
   icons: {
     icon: [
       { url: "/logo-dark.png", type: "image/png", media: "(prefers-color-scheme: dark)" },

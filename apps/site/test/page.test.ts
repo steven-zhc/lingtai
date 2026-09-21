@@ -4,20 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { docRoot, FRONT_PAGE_DOCS, HTML_DOCS, published } from "@/lib/docs";
 
-/**
- * The order the front page argues in, as a test.
- *
- * The page's sections are in the order they are for one reason, recorded in
- * `doc/decisions/0035-the-site-is-a-projection.md` and made a rule by #116:
- * **the event log is why the promise is credible, not the promise.** Nobody
- * arrives wanting a record; they arrive wanting the queue to move without them
- * watching it. So the log is argued for under "when it goes wrong" and never
- * above it.
- *
- * That is exactly the kind of rule a later edit undoes without noticing — a
- * sentence about the log reads well anywhere, which is the problem — so it is
- * checked rather than left as an intention in a comment.
- */
+/** The home page leads with a visitor's outcome and keeps its proof honest. */
 
 /** The page, with the comments taken out: they are not what a reader reads. */
 async function prose(): Promise<string> {
@@ -25,31 +12,39 @@ async function prose(): Promise<string> {
   return page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
 }
 
-describe("nothing above “when it goes wrong” argues from the event log", () => {
-  it("says nothing about the log until the section that earns it", async () => {
+describe("the home page's argument", () => {
+  it("does not lead with internals or event-log claims", async () => {
     const text = await prose();
-    const section = text.indexOf("When it goes wrong");
-    expect(section, "the page has no “when it goes wrong” section").toBeGreaterThan(-1);
+    const section = text.indexOf("The work, in the open");
+    expect(section, "the page has no evidence section").toBeGreaterThan(-1);
     const above = text.slice(0, section);
     expect(above).not.toMatch(/\blogs?\b/i);
-    expect(above).not.toMatch(/\bevent-source|append-only|projection\b/i);
+    expect(above).not.toMatch(/\bevent-source|append-only|projection|Postgres sequence\b/i);
   });
 
-  it("keeps the sections in the order the argument needs", async () => {
+  it("explains the benefit, use, proof, and limits in that order", async () => {
     const text = await prose();
     const order = [
-      "Point it at a repository",
-      "The loop",
-      "Your repository sets the rules",
-      "When it goes wrong",
-      "Open",
-      "Docs",
+      "Let your backlog move",
+      "What changes for you",
+      "Why Lingtai",
+      "How you use it",
+      "The work, in the open",
+      "Know the edges",
+      "Keep exploring",
     ];
     const at = order.map((heading) => ({ heading, at: text.indexOf(heading) }));
     const missing = at.filter((s) => s.at < 0).map((s) => s.heading);
     expect(missing, `the page is missing: ${missing.join(", ")}`).toEqual([]);
     const positions = at.map((s) => s.at);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it("marks the conceptual diagram as an illustration, not board data", async () => {
+    const text = await prose();
+    expect(text).toContain('role="img"');
+    expect(text).toContain("ILLUSTRATION");
+    expect(text).toContain("snapshot === null ? <NoSnapshot /> : <SnapshotBoard snapshot={snapshot} />");
   });
 });
 

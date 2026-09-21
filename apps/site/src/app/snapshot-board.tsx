@@ -44,20 +44,13 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
         </div>
       </div>
       <p className="snap-note">
-        Not live. Read from the event log when this page was built, on{" "}
-        {stamp(snapshot.capturedAt)}, and stamped with that date — a page holding a connection to
-        the log would be a coupling and, since not every repository on this board is public, an
-        exposure. Each lane draws a few of its cards and counts all of them: the number beside a
-        lane&rsquo;s name is the whole lane, and the totals above are the whole board.
+        Snapshot from {stamp(snapshot.capturedAt)}, not live. Lane counts and totals include all
+        work, even when only a few cards are shown.
         {snapshot.withheld > 0 && (
           <>
-            {" "}
-            {snapshot.withheld} of the cards on this board{" "}
-            {snapshot.withheld === 1 ? "is" : "are"} from a private repository and{" "}
-            {snapshot.withheld === 1 ? "keeps" : "keep"} everything except
-            what names it: the lane, the age and the money are real, the title is withheld. Nothing
-            is dropped, because a board that quietly omits some of its work is the board nobody
-            should believe.
+            {" "}{snapshot.withheld} private-repository{" "}
+            {snapshot.withheld === 1 ? "card has" : "cards have"} identifying details withheld;
+            its lane and totals still count.
           </>
         )}
       </p>
@@ -213,10 +206,9 @@ function accent(card: SnapshotCard): string {
 export function NoSnapshot() {
   return (
     <div className="no-snapshot">
-      <b>No board snapshot was taken for this build.</b> The figures on this page come from the
-      event log of the machine that built it, and that machine had no{" "}
-      <code>LINGTAI_DATABASE_URL</code> — so there is nothing here rather than something plausible.
-      Run <code>pnpm --filter @lingtai/site snapshot</code> beside a log and build again.
+      <b>No public board snapshot in this build.</b> The site does not invent work or numbers.
+      Build beside a configured event store with <code>pnpm --filter @lingtai/site snapshot</code>{" "}
+      to publish a dated, privacy-filtered view.
     </div>
   );
 }
