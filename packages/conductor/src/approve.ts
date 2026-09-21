@@ -80,13 +80,16 @@ function splitGate(key: string): { gate: string; action: string } {
  * so a waived `review` went on the log as a waived `build`. Nothing a person
  * clicks names a gate any more; the run says which ones refused.
  *
- * `failed` and `never-ran` both: a gate whose agent never started did not pass
- * either, and merging over it is merging past a point nobody judged. A verdict
- * on any other sha is not about this diff and is left out, as `gatesOn` does.
+ * `failed`, `never-ran` and `did-not-finish` alike: a gate whose agent never
+ * started, or started and produced no receipt, did not pass either, and merging
+ * over one is merging past a point nobody judged. A verdict on any other sha is
+ * not about this diff and is left out, as `gatesOn` does.
  */
+const UNPASSED = new Set(["failed", "never-ran", "did-not-finish"]);
+
 export function refusingOn(run: RunState, onSha: string): string[] {
   return Object.values(run.gates)
-    .filter((g) => g.onSha === onSha && (g.verdict === "failed" || g.verdict === "never-ran"))
+    .filter((g) => g.onSha === onSha && UNPASSED.has(g.verdict))
     .map((g) => g.gate);
 }
 

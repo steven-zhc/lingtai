@@ -102,7 +102,7 @@ imports `rail.tsx` and reads `foldProgress`; it does not grow a list.
 > those is Lingtai's bug**.
 > — `page.tsx`, on the five points ([0016 §4](../decisions/0016-the-settled-model.md))
 
-Three of the seven states look empty and mean different things, so the segment
+Three of the eight states look empty and mean different things, so the segment
 carries the distinction the sentence above demands:
 
 | state | segment |
@@ -114,6 +114,16 @@ carries the distinction the sentence above demands:
 | `pending` | flat `--rule`. Quiet, because nothing is wrong |
 | `skipped` | dashed outline, no fill. Nothing configured (`admit: []`, `merge: []`); it keeps its place without claiming anything happened in it |
 | `never-ran` | hatched, `--fail`. The one segment that breaks the bar's rhythm, and the only place the fail colour appears with no verdict behind it |
+| `did-not-finish` | the same hatch. The agent *started* here and produced no receipt, twice ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
+
+**The two hatched states share a tone and not a sentence.** `never-ran` says the
+account is walled and the conductor has stood down; `did-not-finish` says this
+action's agent crashed, was run once more, did the same, and the item is now a
+person's. To a reader scanning a row they are one mark — *a point that was
+reached and judged nothing* — and a sixth colour would be asking the bar to
+carry a distinction only a sentence can. The distinction survives where it is
+acted on: two events on the log, two verdicts in the fold, two different things
+for an operator to do.
 
 **`never-ran` is not an extra.** A bar that draws all five points must have a
 mark for *configured and did not run*, or that state renders as something it is

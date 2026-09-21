@@ -247,6 +247,22 @@ export function attemptOutcome(
         break;
       }
 
+      /**
+       * The point was reached, its agent started and ended with no receipt, and
+       * it is **not** evidence for the next attempt either
+       * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1).
+       *
+       * The paragraph above holds word for word: a crashed reviewer has nothing
+       * to say to an agent about the code, and leaving it in `unfinished` would
+       * tell the next one that a review died *inside* this diff — a fact about
+       * the diff that nobody established.
+       */
+      case "GateDidNotFinish": {
+        const d = event.data as PayloadOf<"GateDidNotFinish">;
+        unfinished.delete(`${d.gate}:${d.action}`);
+        break;
+      }
+
       case "GateFailed": {
         const d = event.data as PayloadOf<"GateFailed">;
         const what = `${d.gate}:${d.action}`;

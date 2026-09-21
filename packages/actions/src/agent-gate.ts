@@ -405,8 +405,33 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
             findings: [],
           };
         }
+        /**
+         * **And a reviewer that *started* and did not finish has not reviewed
+         * anything either** — [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1.
+         *
+         * The sentence below has said `the reviewer did not finish` since this
+         * branch was written, and the verdict beside it said `failed` — which
+         * is the verdict a reviewer that read the diff and refused it returns.
+         * So `run-once.ts` bought a fix round, and on `run-9e510ffc` an agent
+         * was paid fourteen seconds to write *I'm not fixing anything this
+         * round … the review never looked at the change* (`#196`). The
+         * difference was real and lived only in this string, and a string is
+         * not something `decideFix` or the board reads.
+         *
+         * **The whole branch, and not a second reading of `kind`.** Every
+         * failure that is not `never-started` reaches here without a receipt:
+         * a crash, a timeout, a turn budget spent without an answer, an abort.
+         * None of them judged the diff, so none of them may buy an agent to
+         * answer a judgement. Splitting `crash` out from its neighbours would
+         * put a second classification at this seam, which is exactly what
+         * 0031 §1 forbids — the adapter's `kind` is the answer, and what the
+         * answer *costs* is the pipeline's (0057 §4).
+         *
+         * The runtime's own words stay in it, whole and prefixed, because the
+         * prefix is what says they are about the machinery.
+         */
         return {
-          verdict: "failed",
+          verdict: "did-not-finish",
           evidence: `the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
           findings: [],
         };

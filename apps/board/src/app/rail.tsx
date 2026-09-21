@@ -40,6 +40,11 @@ const CELL_TONE: Record<PointState, string> = {
   // Hatched, in the fail colour and with no verdict behind it — the one mark
   // that breaks the rhythm, because it is the one state that is our bug.
   "never-ran": "t-never",
+  // The same hatch, because it is the same thing to a reader of a bar: a point
+  // that was configured, was reached, and judged nothing. What separates the
+  // two is *whose* fault and *what to do*, which is a sentence and not a tone —
+  // so it is on the segment's title and on the card, not in a sixth colour.
+  "did-not-finish": "t-never",
   pending: "t-pending",
   skipped: "t-skipped",
 };
@@ -53,7 +58,7 @@ const CELL_TONE: Record<PointState, string> = {
  */
 function labelTone(p: PointProgress, at: string | null): string {
   if (p.actions.length === 0) return "l-off";
-  if (p.state === "failed" || p.state === "never-ran") return "l-bad";
+  if (p.state === "failed" || p.state === "never-ran" || p.state === "did-not-finish") return "l-bad";
   if (p.state === "running" || p.point === at) return "l-at";
   return "l-done";
 }
@@ -63,6 +68,9 @@ function segTitle(p: PointProgress): string {
   if (p.actions.length === 0) return `${p.point}: nothing configured, so nothing runs`;
   if (p.state === "never-ran") {
     return `${p.point}: ${p.planned.join(", ")} — configured and did not run, which is Lingtai's bug (0016 §4)`;
+  }
+  if (p.state === "did-not-finish") {
+    return `${p.point}: ${p.planned.join(", ")} — its agent started and produced no verdict, twice (0057)`;
   }
   return `${p.point}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
 }

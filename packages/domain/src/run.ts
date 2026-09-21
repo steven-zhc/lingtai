@@ -24,8 +24,22 @@ import type { Invocation, PayloadOf, RunFailureKind, RuntimeId } from "./events.
  * §1, one layer up). The gate's agent never started — a quota, a signed-out
  * runtime — so nothing was judged. Folding it into `failed` is what `#133` is
  * about; folding it into `passed` would be worse.
+ *
+ * `did-not-finish` is the neighbouring absence
+ * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1): the
+ * agent *started* and ended with no receipt. Nothing was judged there either,
+ * and it is its own value rather than `never-ran`'s because the two cost
+ * opposite things — one stands the conductor down for an account-wide wall,
+ * and the other is local and retried once.
  */
-export type GateVerdict = "requested" | "running" | "passed" | "failed" | "never-ran" | "waived";
+export type GateVerdict =
+  | "requested"
+  | "running"
+  | "passed"
+  | "failed"
+  | "never-ran"
+  | "did-not-finish"
+  | "waived";
 
 export interface GateFinding {
   file: string;
@@ -315,6 +329,26 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           // The runtime's own sentence: evidence that the agent never started,
           // and never evidence about the diff. There are no findings for the
           // same reason there is no verdict.
+          evidence: d.detail,
+          findings: [],
+          by: null,
+          reason: null,
+        }),
+      };
+    }
+
+    case "GateDidNotFinish": {
+      const d = event.data as PayloadOf<"GateDidNotFinish">;
+      return {
+        ...state,
+        ...at,
+        gates: withGate(state, {
+          gate: `${d.gate}:${d.action}`,
+          verdict: "did-not-finish",
+          onSha: d.onSha,
+          // The runtime's own sentence about the machinery, never about the
+          // diff — `GateNeverRan.detail`'s reason, one row along in 0057's
+          // table. No findings, because there is no verdict to have them.
           evidence: d.detail,
           findings: [],
           by: null,

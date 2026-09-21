@@ -596,6 +596,7 @@ export const taskViewProjection: Projection = {
         case "GatePassed":
         case "GateFailed":
         case "GateNeverRan":
+        case "GateDidNotFinish":
         case "GateWaived":
         case "ApprovalRequested":
         case "ApprovalGranted":
@@ -686,6 +687,11 @@ const VERDICT: Record<string, string> = {
   // about this diff was judged (#133). Counted as neither passed nor failed, so
   // a card does not wear the red stripe for a review that never happened.
   GateNeverRan: "never-ran",
+  // Neither either, and a different neither: the agent started and ended with
+  // no receipt, so nothing about this diff was judged and nothing about the
+  // account was learned (0057). Drawn as its own state rather than as a refusal
+  // — 0016 §4's rule, which is what `#133` applied one row up.
+  GateDidNotFinish: "did-not-finish",
   GateWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "approved",

@@ -66,6 +66,20 @@ export type PointState =
    * which is what a point with no verdict line used to read as.
    */
   | "never-ran"
+  /**
+   * **Nothing judged this diff here either, and for a reason that is ours and
+   * not the account's** ([0057](../../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
+   *
+   * The point was reached, its agent started, and it ended with no receipt —
+   * a crash, a timeout, a turn budget spent. The pipeline ran it once more and
+   * it did the same, so the pass stopped and the item is a person's.
+   *
+   * Beside `never-ran` rather than inside it: they read alike on a rail and
+   * they are opposite facts to an operator, because one says *the account is
+   * walled* and this one says *this machine, this action*. Not `failed`, for
+   * the reason `never-ran` is not: a refusal is a sentence about the diff.
+   */
+  | "did-not-finish"
   | "waived";
 
 /**
@@ -212,6 +226,10 @@ function stateOf(
   // both stop there (0041 §4), so a `failed` beside it on the same point is a
   // refusal from an earlier round, about a commit that is no longer the head.
   if (seen.includes("never-ran")) return "never-ran";
+  // Above `failed` for the same reason and with the same ordering argument: the
+  // pipeline and the pass both stop here (0057 §4), so a `failed` beside it on
+  // the same point came from an earlier round and a commit that has moved.
+  if (seen.includes("did-not-finish")) return "did-not-finish";
   // **`lingtai doctor`'s comparison, made where a person is already looking.**
   // The log's own plan named actions here, the run recorded nothing at all — no
   // request, no verdict, no approval, no waiver — and the item landed, so there
@@ -380,6 +398,13 @@ export function foldProgress(
 
       case "GateNeverRan":
         close(data, "never-ran");
+        break;
+
+      case "GateDidNotFinish":
+        // Every attempt, including the one a retry answered — and then the
+        // retry's own verdict closes over it. A point that ends here is one
+        // whose last word was this, which is what the pass stopped on.
+        close(data, "did-not-finish");
         break;
 
       case "GateWaived":

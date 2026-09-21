@@ -464,13 +464,52 @@ describe("the gate", () => {
     expect(result.evidence).toContain("not readable");
   });
 
-  it("fails, with the kind, when the reviewer does not finish", async () => {
+  /**
+   * **A reviewer that started and did not finish is not a refusal either**
+   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1, `#196`).
+   *
+   * This test asserted `failed` for two years, and the verdict it asserted is
+   * the one a reviewer that read the diff and refused it returns. So
+   * `run-once.ts` bought a fix round for a gate that judged nothing, and on
+   * `run-9e510ffc` the fixing agent spent fourteen seconds working out that
+   * *the review never looked at the change*. The evidence sentence had said so
+   * all along — and a sentence is not something `decideFix` reads.
+   *
+   * **Every kind that is not `never-started`**, which is the whole of this
+   * branch: a timeout here and a crash below. Splitting them would put a second
+   * classification at a seam 0031 §1 says may only have one.
+   */
+  it("says a reviewer that did not finish judged nothing, with the kind", async () => {
     const result = await gateWith(
       outcome({ failure: { kind: "timeout", detail: "no result within 60000ms" } }),
     ).run(context);
 
-    expect(result.verdict).toBe("failed");
+    expect(result.verdict).toBe("did-not-finish");
     expect(result.evidence).toContain("timeout");
+    expect(result.findings).toEqual([]);
+  });
+
+  /**
+   * The measured one: exit 1 in a second, no receipt on the stream, for a
+   * reason that has nothing to do with the diff (`#192`, `#195`).
+   */
+  it("says the same of a reviewer that crashed, and carries the runtime's words", async () => {
+    const result = await gateWith(
+      outcome({
+        exitCode: 1,
+        turns: 0,
+        costUsd: null,
+        text: null,
+        failure: { kind: "crash", detail: "Error: Session ID 0f1e is already in use." },
+      }),
+    ).run(context);
+
+    expect(result.verdict).toBe("did-not-finish");
+    // Prefixed, unlike `never-ran`'s: the prefix is what says the sentence
+    // under it is about the machinery and never about the diff.
+    expect(result.evidence).toContain("the reviewer did not finish (crash)");
+    expect(result.evidence).toContain("already in use");
+    expect(result.findings).toEqual([]);
   });
 
   /**

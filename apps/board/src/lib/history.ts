@@ -201,6 +201,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     return n > 0 ? `${gateAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : gateAt(d);
   },
   GateNeverRan: (d) => `${gateAt(d)} — never ran: ${clip(d["detail"])}`,
+  // The retry is on the log, so the line says which attempt this was and
+  // whether another follows (0057 §4). *Retried* and *gave up* are the two
+  // sentences, and reading them off `attempt` alone would need the constant.
+  GateDidNotFinish: (d) =>
+    `${gateAt(d)} — did not finish (attempt ${d["attempt"]}, ` +
+    `${d["retrying"] ? "retrying" : "no more attempts"}): ${clip(d["detail"])}`,
   GateWaived: (d) => `${gateAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
   ApprovalRequested: (d) => `${gateAt(d)} — ${clip(need(d, "question"))}`,
   ApprovalGranted: (d) => `${gateAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,
