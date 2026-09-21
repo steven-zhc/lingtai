@@ -42,6 +42,7 @@
  * `event-store/test/contract.ts` be passed unchanged by a store written months
  * later (#178).
  */
+import type { EventStore } from "@lingtai/event-store/store";
 import { describe, expect, it } from "vitest";
 import {
   controlWatermark,
@@ -102,6 +103,33 @@ const claimed = (runId: string) => ({
   data: { runId, worker: "local:1", title: null, kind: "bug" },
 });
 
+/**
+ * Puts the control stream back to *nobody is being told anything*, by
+ * appending.
+ *
+ * **The reset that makes the control-stream half of this contract survivable.**
+ * `ctl-conductor` is one stream for the whole installation and Postgres's log
+ * is append-only and shared: a run killed between asking for a drain and
+ * withdrawing it — Ctrl+C, a dropped connection — leaves a request standing,
+ * and the next run's `requestShutdownUnlessStanding` then finds it and appends
+ * nothing at all. `asked` is `false`, the assertion fails, and no rerun and no
+ * teardown repairs it: a log that does not delete has no `delete` to offer.
+ *
+ * So the repair is `ConductorResumed`: the event `lingtai resume` appends, and
+ * the only one that lifts a pause *and* a standing request together — "a person
+ * typing `lingtai resume` means all of it" (`domain/control.ts`). It is run
+ * before every assertion as well as after one, which is what makes an
+ * interrupted run cost the next one nothing.
+ *
+ * Silent when there is nothing to lift, and that is the ordinary case: on a
+ * fresh SQLite file it is one read of an empty stream.
+ */
+async function quiesceControl(events: EventStore): Promise<void> {
+  const state = await readControl(events);
+  if (!state.paused && state.shutdown === null) return;
+  await resumeConductor("human:contract", events);
+}
+
 export function describeDaemonStoreContract(
   name: string,
   open: () => Promise<DaemonFixture>,
@@ -111,13 +139,20 @@ export function describeDaemonStoreContract(
     const fixture = await open();
     try {
       await fixture.store.create();
-      // Every assertion starts where a fresh machine does: the table exists and
-      // nothing has beaten. Postgres shares one row with the rest of the suite,
-      // so this is what makes the order of these tests not matter.
+      // Every assertion starts where a fresh machine does: the table exists,
+      // nothing has beaten, and nothing is being said to the conductor.
+      // Postgres shares both the row and `ctl-conductor` with the rest of the
+      // suite, so this is what makes the order of these tests not matter — and
+      // what makes a previous run that died half way through not matter either.
       await fixture.forget();
+      await quiesceControl(fixture.store.events);
       return await fn(fixture);
     } finally {
+      // Here rather than in a `try` around each pair below, so that no
+      // assertion can be written without it: every one of them leaves the
+      // beacon and the control stream as it found them, however it ends.
       await fixture.forget().catch(() => {});
+      await quiesceControl(fixture.store.events).catch(() => {});
       await fixture.close().catch(() => {});
     }
   }
@@ -304,6 +339,31 @@ export function describeDaemonStoreContract(
         const lifted = await withdrawShutdown("human:ada", version, "it finished", store.events);
         expect(lifted.withdrew).toBe(true);
         expect((await readControl(store.events)).shutdown).toBeNull();
+      });
+    });
+
+    it("lifts what a run that died half way through left standing", async () => {
+      // The one above appends to `ctl-conductor`, which on Postgres is the real
+      // stream, shared and without deletes. Interrupt it between the ask and
+      // the withdrawal and a request stands for ever: every later run finds it,
+      // `requestShutdownUnlessStanding` appends nothing, `asked` is false, and
+      // no rerun and no teardown can repair a log that does not delete.
+      //
+      // So what is asserted here is the repair `withStore` runs before every
+      // assertion — the one event that lifts a pause and a standing request
+      // together.
+      await withStore(async ({ store }) => {
+        await pauseConductor("human:ada", "and then the process was killed", store.events);
+        await requestShutdownUnlessStanding("human:ada", "restarting", null, store.events);
+
+        await quiesceControl(store.events);
+
+        const state = await readControl(store.events);
+        expect(state.shutdown).toBeNull();
+        expect(state.paused).toBe(false);
+        // Which is the thing that matters: the next run gets to ask.
+        const asked = await requestShutdownUnlessStanding("human:bob", "mine", null, store.events);
+        expect(asked.asked).toBe(true);
       });
     });
   });

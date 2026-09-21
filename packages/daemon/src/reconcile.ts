@@ -97,6 +97,23 @@ function daemonStore(options: ReconcileOptions): DaemonStore {
 }
 
 /**
+ * The log a pass reads and appends through: **the one the streams came from.**
+ *
+ * `store` when a caller named one, and otherwise the log the injected
+ * `daemonStore` carries — which is what `DaemonStore.events` is for
+ * (`store.ts`). The process-wide store is the last resort and not the second,
+ * because finding stream ids in one log and folding them out of another does
+ * not fail, it answers *nothing is wrong*: `streams()` returns `wi-p-117` from
+ * the store it was given, `read("wi-p-117")` goes to Postgres and comes back
+ * empty, the fold is not `claimed`, and `releaseForeignClaims` reports no
+ * orphaned claims at all. The dead daemon's claim then holds the ticket out of
+ * circulation for ever, which is #87 with the repair for #87 installed.
+ */
+function logOf(options: ReconcileOptions): EventStore {
+  return options.store ?? options.daemonStore?.events ?? eventStore;
+}
+
+/**
  * What was done about a divergence.
  *
  * A free-form string in the event (`Reconciled.findings[].action`), so this
@@ -151,6 +168,10 @@ export interface ReconcileOptions {
    * Beside `store` rather than instead of it: `store` is the log this pass
    * reads and appends through, and this is the one question about the log that
    * `EventStore` does not answer — *which streams should I fold at all*.
+   *
+   * Given without `store`, the log read is the one this carries (`logOf`), and
+   * it is handed on to `convergeIssues` so that both halves of a pass ask the
+   * same store.
    */
   daemonStore?: DaemonStore;
   /**
@@ -188,7 +209,7 @@ export interface ReconcileOptions {
  * so it can say what would happen without making it happen.
  */
 export async function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const abandoned = options.abandoned ?? new Set<string>();
   const home = options.home ?? defaultHome();
   const root = join(home, "worktrees");
@@ -305,7 +326,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * asked of one is whether it is still owed an explanation.
  */
 export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const home = options.home ?? defaultHome();
   const root = join(home, "runs");
 
@@ -430,7 +451,7 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
  * its conductor. See `killWorker`.
  */
 export async function releaseForeignClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const worker = options.worker ?? conductorWorker();
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
   if (names.length === 0) return [];
@@ -563,7 +584,7 @@ function isOurs(command: string): boolean {
 
 export async function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
   const log = options.log ?? (() => {});
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
 
   // Read all four before acting on any. A pass that repaired as it discovered
   // would report a world that no longer existed by the time it finished.
@@ -589,6 +610,12 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
       store,
       ...(options.url === undefined ? {} : { url: options.url }),
       ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
+      // Handed on for the same reason `store` is: without it the converge half
+      // builds a Postgres store of its own, so a pass given a working store
+      // would still refuse at `postgresUrl()` on a machine that has configured
+      // none — and where it did connect, it would be asking a second log which
+      // streams the first one's findings are about.
+      ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
       log,
     });
     const done = new Set(converged.map((d) => `${d.workItemId}:${d.change}`));

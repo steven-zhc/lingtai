@@ -127,7 +127,8 @@ export interface ConvergeOptions {
    *
    * As `reconcile`'s: `store` is the log this reads and appends through, and
    * this answers the one question about the log that `EventStore` does not —
-   * *which streams are worth folding*.
+   * *which streams are worth folding*. Given without `store`, the log read is
+   * the one this carries — see `logOf`.
    */
   daemonStore?: DaemonStore;
   /** Injected so a test needs no GitHub App. Keyed by project name. */
@@ -147,6 +148,19 @@ export interface ConvergeOptions {
  * log and then against GitHub — that part cannot be SQL, because the target
  * comes from `labelsFor` rather than from a table.
  */
+/**
+ * The log this reads and appends through: **the one the candidates came from.**
+ *
+ * `store` when a caller named one, and otherwise the log the injected
+ * `daemonStore` carries, never the process-wide one. `candidates()` returns
+ * stream ids from whichever store it was given, and folding those ids out of a
+ * different log answers *no drift* rather than failing — see `reconcile.ts`'s
+ * `logOf`, which is the same rule for the same reason.
+ */
+function logOf(options: ConvergeOptions): EventStore {
+  return options.store ?? options.daemonStore?.events ?? eventStore;
+}
+
 async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
@@ -169,7 +183,7 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
  * making it happen — the same split `findOrphans` has.
  */
 export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Divergence[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const streams =
     options.daemonStore ?? createPostgresDaemonStore({ url: options.url ?? postgresUrl() });
   const projects = options.projects ?? (await loadProjects());
@@ -283,7 +297,7 @@ export async function convergeIssues(
   options: ConvergeOptions = {},
 ): Promise<{ divergences: Divergence[]; converged: Divergence[] }> {
   const log = options.log ?? (() => {});
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const divergences = await findIssueDrift(options);
   if (options.dryRun) return { divergences, converged: [] };
 

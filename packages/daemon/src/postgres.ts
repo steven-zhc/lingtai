@@ -2,11 +2,17 @@
  * The daemon's storage in Postgres (#220).
  *
  * Every statement here was in `control.ts`, `work-loop.ts`, `reconcile.ts` or
- * `converge.ts` a moment ago, unchanged: this is a move, not a rewrite. What it
- * changes is where a `pg.Client` may be constructed — here, inside the Postgres
+ * `converge.ts` a moment ago: this is a move, not a rewrite. What it changes is
+ * where a `pg.Client` may be constructed — here, inside the Postgres
  * implementation, and nowhere else under `src/`
  * ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
  * §1).
+ *
+ * **`streams` is the one that is not a copy**, because it was two: `reconcile`
+ * asked for one type across several project prefixes and `converge` for five
+ * types under `wi-%`, as a `like` and a subquery respectively. They are the
+ * same question with different arguments, and the subquery was doing nothing
+ * the `where` does not — a stream holding one of those types *is* the answer.
  *
  * **A connection per operation, exactly as before.** A store that held one open
  * would be the tidier object and the wrong one: `readStatus` is called by a
