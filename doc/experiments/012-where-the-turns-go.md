@@ -169,6 +169,45 @@ is not waste on dead tickets; it is what landing costs — 117 landed items
 against 21,126 turns is **~148 turns, ~$16 per landed ticket** in agent time
 (the per-ticket figure over claims is higher; see below).
 
+## A postscript the same afternoon: `build` has the same failure mode
+
+§4's *10% of `review` refusals carry no findings* has a `build` counterpart, and
+it turned up twice within an hour of this being written.
+
+`apps/cli/pure/world.test.ts:100` spawns a child `node` that type-strips the
+daemon's whole import graph, and asserts an exit status and two lines of stdout
+— **nothing about time**. Its bound was vitest's 5000ms default, which nobody
+chose: idle the probe takes ~0.5–1.9s. Under `pnpm -r`, beside `apps/release`'s
+binary builds, the same pass reported `import 66.28s` against 25–32s idle, and
+it timed out.
+
+It refused [#215](https://github.com/steven-zhc/lingtai/issues/215), then
+refused [#196](https://github.com/steven-zhc/lingtai/issues/196) at 5686ms — on
+a branch cut from `main` **110 seconds before** the fix that raised the bound
+was pushed. Neither diff went near that import graph.
+
+**Three separate agents reached the same diagnosis independently**, each
+measuring the probe itself rather than editing the test: 0.50–0.75s head
+against base over three runs each; 507/553/655ms; and the gate's own command run
+twice on the tree at `EXIT=0` across 18 packages. All three declined their fix
+round and said why. That is the behaviour the loop is supposed to produce, and
+it still cost two fix rounds ($1.81 and $1.41), two human decisions, and two
+waived gates.
+
+**The generalisation is the thing to keep**: a gate can go red for a reason the
+diff cannot cause, and when it does, every mechanism downstream treats it as
+evidence about the diff. `review`'s version is a crashed reviewer
+([0057](../decisions/0057-a-gate-that-did-not-finish.md), 10% of refusals);
+`build`'s version is a test whose bound is a clock on a shared machine rather
+than a claim about the code. Neither is rare, and neither is visible as
+anything but a refusal.
+
+One more thing that made it worse and is worth knowing: **`pnpm -r` stops at the
+first failing package**, so a refusal's evidence is silent about every package
+after it. #196's refusal said nothing about `packages/actions` (125 passed),
+`packages/conductor` (387) or `apps/board` (437) — the run never reached them.
+A reader of that evidence cannot tell a one-test flake from a broken tree.
+
 ## Reconciling with 011, which found the opposite
 
 [011](011-patching-versus-starting-over.md) put one ticket's two arms side by
