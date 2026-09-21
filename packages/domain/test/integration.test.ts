@@ -102,6 +102,49 @@ describe("reduceIntegration", () => {
     expect(s.refusals).toHaveLength(1);
   });
 
+  /**
+   * **`lane-busy` is read for ever and written never** (#194).
+   *
+   * The merge lane took a lock, and this is what the loser was told. The lock
+   * is gone — git's ref update was always the guarantee — but the events are
+   * on the log, and a build that could not parse one could not read this
+   * repository's own history. `makeStream` validates through the real schema,
+   * so this loads a past refusal exactly as the store hands one out.
+   */
+  it("still reads a past `lane-busy` refusal, which nothing writes any more", () => {
+    const e = makeStream(LANE);
+    const s = reduceIntegration([
+      e("IntegrationAttempted", { workItemId: "wi-a", branch: "agent/58", headSha: "sha-a" }),
+      e("IntegrationRefused", {
+        workItemId: "wi-a",
+        branch: "agent/58",
+        reason: "lane-busy" as const,
+        detail: "another integration holds merge:lingtai:main",
+      }),
+    ]);
+
+    expect(s.refusals[0]?.reason).toBe("lane-busy");
+    expect(s.refusalsByReason).toEqual({ "lane-busy": 1 });
+    expect(laneIsBusy(s)).toBe(false);
+  });
+
+  /** What the loser is told now: git refused the push, and the fold counts it. */
+  it("counts a rejected push as the refusal it is", () => {
+    const e = makeStream(LANE);
+    const s = reduceIntegration([
+      e("IntegrationAttempted", { workItemId: "wi-a", branch: "agent/58", headSha: "sha-a" }),
+      e("IntegrationRefused", {
+        workItemId: "wi-a",
+        branch: "agent/58",
+        reason: "push-rejected" as const,
+        detail: "! [rejected] HEAD -> main (fetch first)",
+      }),
+    ]);
+
+    expect(s.refusalsByReason).toEqual({ "push-rejected": 1 });
+    expect(laneIsBusy(s)).toBe(false);
+  });
+
   it("ignores an event type it has never heard of", () => {
     const e = makeStream(LANE);
     const s = reduceIntegration([

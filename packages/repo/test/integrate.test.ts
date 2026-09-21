@@ -221,11 +221,19 @@ describe("integrate", () => {
   });
 
   /**
-   * Two integrations against one base must never overlap. The lane is a lock
-   * file (#193), so a process that dies holding it has it dropped by the
-   * kernel — nothing to unwind.
+   * **Git is what makes the merge safe, and the lane holds no lock** (#194).
+   *
+   * Two integrations computed against one `develop` both reach the push. The
+   * ref update is atomic: one lands, and the other is rejected as not a
+   * fast-forward — a refusal on the log with a reason a person can act on,
+   * rather than a throw or a retry loop. The lock only ever bought the loser a
+   * cheaper way of being told.
+   *
+   * The first is held at `verify`, after it has merged the base in and before
+   * it pushes, so both are computed against the same base — the overlap the
+   * lock used to make impossible.
    */
-  it("serialises: a second integration on the same base is refused as lane-busy", async () => {
+  it("races two integrations on one base: one lands and the other is refused at the push", async () => {
     await branchWith("agent/7", { "src/d.ts": "export const d = 1;\n" });
     await branchWith("agent/8", { "src/e.ts": "export const e = 1;\n" });
 
@@ -235,26 +243,53 @@ describe("integrate", () => {
     const first = integrate({
       ...base(),
       branch: "agent/7",
-      // Holds the lane while the second one tries.
       verify: async () => {
         await gate;
         return { ok: true, evidence: "" };
       },
     });
 
-    // Give the first one time to take the lock.
+    // Long enough for the first to have cut its worktree and merged the base in.
     await new Promise((r) => setTimeout(r, 1_500));
     const second = await integrate({ ...base(), branch: "agent/8" });
-
-    expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.reason).toBe("lane-busy");
+    expect(second.ok, JSON.stringify(second)).toBe(true);
 
     releaseFirst();
-    expect((await first).ok).toBe(true);
+    const loser = await first;
 
-    // Both outcomes are on the record, which is the whole point.
-    const reasons = (await lane()).filter((e) => e.type === "IntegrationRefused");
-    expect(reasons.some((r) => r.data["reason"] === "lane-busy")).toBe(true);
+    // Both terminated, which is the first thing removing a lock has to keep.
+    expect(loser.ok, JSON.stringify(loser)).toBe(false);
+    if (loser.ok) return;
+    expect(loser.reason).toBe("push-rejected");
+    // The reason names the push, and carries git's own words about it.
+    expect(loser.detail).toContain("develop");
+    expect(loser.detail).toMatch(/rejected/i);
+
+    const refusals = (await lane()).filter((e) => e.type === "IntegrationRefused");
+    expect(refusals.some((r) => r.data["reason"] === "push-rejected")).toBe(true);
+
+    // And exactly one of the two is on the base branch.
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).toContain("work on agent/8");
+    expect(log.stdout).not.toContain("work on agent/7");
+  });
+
+  /**
+   * The worktree is the only thing the scope holds now, and it still unwinds.
+   * A fixed `integrator-<base>` was safe only while the lock meant one
+   * integration on a base at a time, so the race above would have had the two
+   * of them standing in one directory.
+   */
+  it("leaves no worktree behind, and never two integrations in one directory", async () => {
+    await branchWith("agent/9", { "src/f.ts": "export const f = 1;\n" });
+
+    const result = await integrate({ ...base(), branch: "agent/9" });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    const registered = await exec("git", ["worktree", "list", "--porcelain"], {
+      cwd: join(home, "repos", `${PROJECT}.git`),
+    });
+    expect(registered.stdout).not.toContain("integrator-");
   });
 
   it("never returns without an event, whatever happened", async () => {
@@ -266,8 +301,10 @@ describe("integrate", () => {
       (e) => e.type === "IntegrationRefused" || e.type === "IntegrationSucceeded",
     ).length;
 
-    // `lane-busy` refuses before it attempts, so terminals are never fewer.
-    expect(terminal).toBeGreaterThanOrEqual(attempts);
+    // One terminal per attempt exactly. Nothing refuses before it attempts any
+    // more — `lane-busy` was the only path that did, and the lane takes no lock
+    // to be refused by (#194).
+    expect(terminal).toBe(attempts);
     expect(attempts).toBeGreaterThan(0);
   });
 });

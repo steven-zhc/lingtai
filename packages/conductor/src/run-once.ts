@@ -2137,11 +2137,11 @@ export function runOnce(
          * to cost the most.**
          *
          * The lane merged the base in, found it does not apply, aborted, and let
-         * go — `integrate()` returning is what releases the lane's lock and
-         * the lane's own worktree, which are one scope. So nothing below holds
-         * the lane while an agent works, and the lane is simply re-entered
-         * afterwards. That was the objection that looked fatal to this and was
-         * not.
+         * go — `integrate()` returning is what releases the lane's worktree,
+         * which is its whole scope since #194 took the lock away. So nothing
+         * below holds anything while an agent works, and the lane is simply
+         * re-entered afterwards. That was the objection that looked fatal to
+         * this and was not; the lock it was about is gone either way.
          *
          * The base may move again while the agent resolves one. Then this comes
          * round again, which is ordinary optimistic retry bounded by `rounds`,

@@ -41,7 +41,7 @@ import { createFileLocker } from "@lingtai/env/lock";
  * queue while the diff it sent back went on to land — onto an item a new run
  * had already claimed. No version check spans two streams and a push.
  *
- * The file lock the merge lane and the daemon take (`@lingtai/env/lock`, #193):
+ * The file lock the daemon and the board take (`@lingtai/env/lock`, #193):
  * whoever arrives second is refused and told why, rather than waiting, and a
  * process that dies holding it has it released by the kernel — so a merge
  * interrupted by a crash does not leave the card with a requeue that refuses

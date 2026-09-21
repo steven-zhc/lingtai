@@ -577,12 +577,16 @@ Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 
 `claude-code` · `codex`
 
-## integration refusal reason — 7
+## integration refusal reason — 8
 
 Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
-`gate-failed` · `no-commits` · `lane-busy`
+`gate-failed` · `no-commits` · `push-rejected` · `lane-busy`
+
+`lane-busy` is **read and never written** since #194: the merge lane took a lock
+and told the loser this, and git's rejected push — `push-rejected` — is what
+tells it now. The value stays because events on the log carry it.
 
 ## run stage — 13
 

@@ -815,8 +815,8 @@ stop-then-start and claims nothing more.
 **A port somebody already holds is said in words**, never as a bare
 `EADDRINUSE`: *a board is already on 17820 — http://127.0.0.1:17820*, the
 holder beside it, and where the port is set. A board this machine is serving
-holds a file lock under `~/.lingtai/locks/` — the same locker the conductor,
-the merge lane and a decision take (#193) — named for its port, and the
+holds a file lock under `~/.lingtai/locks/` — the same locker the conductor
+and a decision take (#193) — named for its port, and the
 holder's name carries its pid, which is what `stop` signals and `status`
 reports. Something else on the port is named as something else: it holds no
 lock of ours and nothing here signals it.

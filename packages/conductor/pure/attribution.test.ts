@@ -48,7 +48,7 @@ describe("whose failure it is", () => {
    * that pointed a person at the branch would point them at the wrong thing.
    */
   it("calls the integrator's own worktree, mirror and lane Lingtai's", () => {
-    for (const reason of ["dirty-base", "unpushed-base", "lane-busy"] as const) {
+    for (const reason of ["dirty-base", "unpushed-base", "push-rejected", "lane-busy"] as const) {
       expect(whoseFailure({ ...conflict, reason }), reason).toBe("lingtai");
     }
   });
@@ -83,7 +83,7 @@ describe("whose failure it is", () => {
   });
 
   /**
-   * The map is total over `RefusalReason`, which is what stops an eighth reason
+   * The map is total over `RefusalReason`, which is what stops a ninth reason
    * silently defaulting into either answer. Asserted here as well as by the
    * compiler, because the compiler's version disappears if anyone reaches for
    * an index signature.
@@ -96,6 +96,7 @@ describe("whose failure it is", () => {
       "pending-migration",
       "gate-failed",
       "no-commits",
+      "push-rejected",
       "lane-busy",
     ];
     for (const reason of every) {
@@ -160,6 +161,10 @@ describe("a refusal, read for a person", () => {
     "pending-migration",
     "gate-failed",
     "no-commits",
+    "push-rejected",
+    // Nothing writes this since #194 and everything still reads it: the value
+    // is on the log, and a build that could not read it could not read this
+    // repository's own history.
     "lane-busy",
   ];
 
@@ -236,6 +241,21 @@ describe("a refusal, read for a person", () => {
     for (const reason of ["gate-failed", "pending-migration", "dirty-base", "unpushed-base"]) {
       expect(read(reason).recommendation, reason).toBeNull();
     }
+  });
+
+  /**
+   * **The lane took a lock until #194 and takes none now**, so a rejected push
+   * is where two integrations against one base are found out. It reads as its
+   * own sentence and requeues, which is what `lane-busy` did — the refusal did
+   * not become less clear by moving to where git makes it.
+   */
+  it("reads a rejected push as the base having moved, and requeues", () => {
+    const d = read("push-rejected");
+    expect(d.what).toBe("develop moved while agent/112 was being merged into it, so origin refused the push.");
+    expect(d.recommendation?.action).toBe("requeue");
+    // And the refusal it replaced still reads, for the events that carry it.
+    expect(read("lane-busy").recommendation?.action).toBe("requeue");
+    expect(read("lane-busy").what).toContain("held the merge lane");
   });
 
   /** An unknown reason still gets a diagnosis, and gets no move — as `whoseFailure` does. */

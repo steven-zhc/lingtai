@@ -21,26 +21,32 @@
  * looked at. A dirty working copy somewhere else cannot affect a merge that does
  * not touch it.
  *
- * **The lane is a lock file** (`@lingtai/env/lock`, #193) — held by this
- * process, not a pid written down. Two integrations against one base serialise
- * on it, and a process that dies holding it has it dropped by the kernel —
- * there is nothing to unwind. It covers one machine, which is the lane's whole
- * scope since 0046: another person's Lingtai merging to the same base is
- * GitHub's to refuse, as a push that is not a fast-forward.
+ * **The lane holds no lock, because git is what makes a merge safe** (#194).
+ * It took one until then — a lock file, and a Postgres advisory lock before
+ * that — and what that lock bought was never the guarantee. A ref update is
+ * atomic: two integrations computed against one base both reach the push, one
+ * lands and the other is rejected as not a fast-forward, and that is true with
+ * a lock, without one, and between two machines where a lock never reached.
+ * What the lock bought was *cheaper failure* — the loser was told before it cut
+ * a worktree — and that is not worth a mechanism a reader has to learn. The
+ * rejected push is the refusal now, recorded as `push-rejected` exactly as
+ * `lane-busy` was recorded before it.
  *
- * Both of the things it holds — that lock, and the worktree it cuts to merge in
- * — are `Effect.acquireRelease` pairs inside one `Scope`
- * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). They
- * were a pair of nested `finally` blocks, which is the same guarantee written
- * out by hand: correct here, and correct only because one function happened to
- * own both ends of both resources.
+ * So two integrations against one base **overlap by design**, and each one owns
+ * a worktree of its own rather than one per base.
+ *
+ * That worktree is an `Effect.acquireRelease` pair inside a `Scope`
+ * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)) — one
+ * resource now, where there used to be two. It was a pair of nested `finally`
+ * blocks, which is the same guarantee written out by hand: correct here, and
+ * correct only because one function happened to own both ends of it.
  */
 import { integrationStream } from "@lingtai/domain";
 import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/domain";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { Effect, Either } from "effect";
+import { randomUUID } from "node:crypto";
 import { stateDir } from "@lingtai/env";
-import { type Locker, createFileLocker } from "@lingtai/env/lock";
 import { RepoFailed, type TokenSource, gitEffect } from "./git.ts";
 import { worktreePath } from "./worktree.ts";
 
@@ -60,8 +66,6 @@ export interface IntegrateOptions {
   home?: string;
   gitEnv?: NodeJS.ProcessEnv;
   store?: EventStore;
-  /** What holds the lane. This machine's lock files unless a test says otherwise. */
-  locker?: Locker;
   /**
    * Re-run after merging the base in, before merging out. The gates already ran
    * against the agent's head; this is the "does it still work with what landed
@@ -76,6 +80,17 @@ export type IntegrateResult =
 
 /** Files whose presence in a diff means a human applies the migration, not the agent. */
 const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i;
+
+/**
+ * Git's words for *somebody else got there first*.
+ *
+ * The bracketed reason differs — `fetch first`, `non-fast-forward` — and the
+ * wording has moved between versions, so what is matched is the rejection
+ * itself rather than any one cause of it. A push that failed for some other
+ * reason (no credentials, no network) is not this, and goes to the unexpected
+ * channel where it belongs.
+ */
+const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were rejected/i;
 
 /**
  * The promise face, for callers that are not Effect.
@@ -94,16 +109,19 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   const home = options.home ?? stateDir();
   const stream = integrationStream(options.project, options.base);
   const run = { token: options.token, env: options.gitEnv };
-  const key = `merge:${options.project}:${options.base}`;
 
   // Every exit goes through one of these two. There is no `return` in this
   // function that does not append first.
   //
-  // The lane's stream has more than one writer *by design*: whoever holds the
-  // lock is appending its attempt and outcome while everyone else appends
-  // `lane-busy`. So an append here re-reads and retries on a lost race — which
-  // is exactly what `ConcurrencyError` means, and the first version of this
-  // function did not do it. The concurrency test found that immediately.
+  // The lane's stream has more than one writer *by design*: two integrations
+  // against one base overlap, and each appends its own attempt and outcome. So
+  // an append here re-reads and retries on a lost race — which is exactly what
+  // `ConcurrencyError` means, and the first version of this function did not do
+  // it. The concurrency test found that immediately.
+  //
+  // **This retry is not about the lock**, and it stayed when the lock went
+  // (#194): the writers it answers for are the integrations themselves, which
+  // the lock never excluded from the stream — only from the merge.
   async function append(
     type: "IntegrationAttempted" | "IntegrationRefused" | "IntegrationSucceeded",
     data: unknown,
@@ -149,22 +167,6 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
 
   return Effect.scoped(
     Effect.gen(function* () {
-      // ---- the lane ----------------------------------------------------------
-      // Releasing explicitly is tidy; the lock would drop when the process
-      // exits anyway, which is what makes a crash mid-merge recoverable with
-      // nothing to clean up. What the scope buys is that "drops anyway" no
-      // longer has to mean "the process died".
-      const lane = yield* Effect.acquireRelease(
-        Effect.promise(() => (options.locker ?? createFileLocker()).tryLock(key, `lingtai-merge-${options.project}`)),
-        (got) => Effect.promise(async () => (got.ok ? got.lock.release() : undefined)),
-      );
-
-      if (!lane.ok) {
-        // Not a queue: the caller retries. Two integrations against one base must
-        // never overlap, and saying so is better than blocking a scheduler thread.
-        return yield* refuse("lane-busy", `another integration holds ${key}`);
-      }
-
       yield* Effect.promise(() =>
         append("IntegrationAttempted", {
           workItemId: options.workItemId,
@@ -179,10 +181,15 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       }
 
       const mirror = `${home}/repos/${options.project}.git`;
+      // **One worktree per integration, not one per base.** A fixed
+      // `integrator-<base>` was safe only because the lock meant one
+      // integration on a base at a time. Nothing serialises them before the
+      // push now (#194), so two overlap by design and each needs a directory —
+      // and a HEAD — that the other cannot be standing in.
       const cwd = worktreePath(
         home,
         options.project,
-        `integrator-${options.base.replace(/\//g, ".")}`,
+        `integrator-${options.base.replace(/\//g, ".")}-${randomUUID().slice(0, 8)}`,
       );
 
       // Only the two refs this merge is about, rather than `+refs/heads/*`.
@@ -202,9 +209,16 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       );
 
       // The worktree is disposable; the mirror is the expensive part. Acquired
-      // and released as one thing, so no path below has to remember it.
+      // and released as one thing, so no path below has to remember it — and it
+      // is the only thing this scope holds since the lock went (#194).
+      //
+      // **Detached**, for the reason the agent's worktree is (0039 §1): a
+      // checked-out `integrate/<base>` is a ref in the mirror, and a second
+      // integration against the same base would collide with the first on it.
+      // Nothing here needs the branch — the merge moves HEAD and the push has
+      // always been `HEAD:refs/heads/<base>`.
       yield* Effect.acquireRelease(
-        at(["worktree", "add", "--force", "-B", `integrate/${options.base}`, cwd, options.base], mirror),
+        at(["worktree", "add", "--force", "--detach", cwd, options.base], mirror),
         () => at(["worktree", "remove", "--force", cwd], mirror).pipe(Effect.ignore),
       );
 
@@ -279,7 +293,26 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       }
 
       const mergeCommit = yield* at(["rev-parse", "HEAD"], cwd);
-      yield* at(["push", "origin", `HEAD:refs/heads/${options.base}`], cwd);
+
+      // ---- the ref update, which is what serialises this lane ----------------
+      // Everything above was computed against the base as it stood when this
+      // integration fetched it. Another one may have landed in the meantime;
+      // git says so here, atomically, by refusing a push that is not a
+      // fast-forward. **That rejection is a refusal like any other** — an event
+      // with a reason the caller requeues on, not a retry loop and not a throw.
+      const pushed = yield* Effect.either(
+        at(["push", "origin", `HEAD:refs/heads/${options.base}`], cwd),
+      );
+      if (Either.isLeft(pushed)) {
+        // A push that failed for some other reason is not this lane's business
+        // to read, and goes to the unexpected channel at the bottom.
+        if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left);
+        return yield* refuse(
+          "push-rejected",
+          `origin rejected ${mergeCommit} onto ${options.base}: it moved while this merge was computed, ` +
+            `so ${options.branch} was merged into a base that is no longer there:\n${pushed.left.detail}`,
+        );
+      }
       // The mirror is Lingtai's own copy of the truth; leaving it stale would
       // make the next integration compute against a base that has moved.
       yield* at(["fetch", "origin", `+refs/heads/${options.base}:refs/heads/${options.base}`], mirror);
