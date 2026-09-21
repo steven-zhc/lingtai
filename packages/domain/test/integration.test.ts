@@ -170,7 +170,8 @@ describe("reduceIntegration", () => {
       headSha: "sha-b",
     });
 
-    // A loses the push; B is still merging, and this still says false.
+    // A gives up at the push — a lost push says nothing on the log until the
+    // lane has run out of them — and B is still merging, and this says false.
     const aRefused = reduceIntegration([
       ...both,
       e("IntegrationRefused", {

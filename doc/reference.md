@@ -588,10 +588,13 @@ Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/even
 and told the loser this, and git's rejected push — `push-rejected` — is what
 tells it now. The value stays because events on the log carry it.
 
-One `push-rejected` on the log is a lost race the lane answered itself, by
-merging against the base where it now is and pushing again. The one that reaches
-a person is the last of four in a row (`LOST_PUSHES`, `packages/repo/src/integrate.ts`)
-— a base that moved out from under every attempt.
+A `push-rejected` on the log is a base that beat this merge **four times**
+(`LOST_PUSHES`, `packages/repo/src/integrate.ts`). A single lost race says
+nothing: the lane answers it itself, by merging against the base where it now is
+and pushing again, and the whole run of pushes is one `IntegrationAttempted` and
+one terminal. That is on purpose — an `IntegrationRefused` reaches the `desktop`
+subscriber as *did not merge* and wakes a queue pass, and a race the lane goes on
+to win is neither.
 
 ## run stage — 13
 
@@ -657,8 +660,10 @@ them match the outcome, so that *configured and resolved to nothing* and
 `gates: end ran on what landed` compares, and what `lingtai end replay`
 puts right.
 
-Nothing that changes *code* goes through here — that is git's job, under the
-merge lane's lock.
+Nothing that changes *code* goes through here — that is git's job. The merge
+lane holds no lock to do it under: since #194 two integrations against one base
+overlap, and git's ref update is what decides which of them lands, by rejecting
+the second push (`push-rejected`, above).
 
 ## notification subscription — 0 by default
 

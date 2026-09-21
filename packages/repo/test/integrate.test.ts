@@ -231,6 +231,14 @@ describe("integrate", () => {
    * park the item in "Waiting on you" in a repository that merges unattended,
    * for a race it lost nothing by losing.
    *
+   * **And it says nothing, which is the same argument one step further on.**
+   * `IntegrationRefused` is declared to the `desktop` subscriber and is in
+   * `COMPLETION_EVENTS`, so one appended here would interrupt a person with
+   * *#n did not merge* about a merge that lands two seconds later, with nothing
+   * able to retract it, and would wake a queue pass mid-integration. So the
+   * whole run of pushes is one attempt and one terminal, and this asserts the
+   * count of each.
+   *
    * **The interleaving is made, not waited for.** `verify` runs after the base
    * has been fetched and merged in and before the push, so the first
    * integration announcing that it is there is the proof both were computed
@@ -241,6 +249,7 @@ describe("integrate", () => {
   it("races two integrations on one base: the loser merges again against where the base got to", async () => {
     await branchWith("agent/7", { "src/d.ts": "export const d = 1;\n" });
     await branchWith("agent/8", { "src/e.ts": "export const e = 1;\n" });
+    const before = (await lane()).length;
 
     let releaseFirst: () => void = () => {};
     const gate = new Promise<void>((r) => (releaseFirst = r));
@@ -270,16 +279,19 @@ describe("integrate", () => {
 
     // It lost the push and landed anyway, on the base agent/8 had moved to.
     expect(loser.ok, JSON.stringify(loser)).toBe(true);
-    // A second whole attempt, not a second push of the same commit: the base
-    // was fetched again, the merge recomputed, and `verify` asked about it.
+    // A whole second merge, not a second push of the same commit: the base was
+    // fetched again, the merge recomputed, and `verify` asked about it.
     expect(verifies).toBe(2);
 
-    // And the lost race is on the log, which is where it is answered for.
-    const refusals = (await lane()).filter((e) => e.type === "IntegrationRefused");
-    const rejected = refusals.filter((r) => r.data["reason"] === "push-rejected");
-    expect(rejected).toHaveLength(1);
-    expect(String(rejected[0]!.data["detail"])).toMatch(/rejected/i);
-    expect(String(rejected[0]!.data["detail"])).toContain("develop");
+    // **Nothing told anybody it did not merge.** Two integrations, two
+    // attempts, two successes — and no `IntegrationRefused` at all, which is
+    // the event the `desktop` subscriber and `COMPLETION_EVENTS` are declared
+    // on. The lost push is not on the log because nothing is owed an
+    // explanation for a race that was then won.
+    const events = (await lane()).slice(before);
+    expect(events.filter((e) => e.type === "IntegrationRefused")).toHaveLength(0);
+    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(2);
+    expect(events.filter((e) => e.type === "IntegrationSucceeded")).toHaveLength(2);
 
     // Both are on the base branch, in the order the pushes actually happened.
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
@@ -293,19 +305,24 @@ describe("integrate", () => {
    * A base that wins the race every time is a person's to hear about, and the
    * card's move — requeue — is the honest one for it. `verify` runs after the
    * base is merged in and before the push, so pushing a commit from there makes
-   * every attempt's push a lost race, with no timing in it.
+   * every one of this integration's pushes a lost race, with no timing in it.
+   *
+   * **One refusal, not four.** Four pushes were lost and a person is told once,
+   * because one `integrate()` is one attempt and one answer — and because four
+   * desktop notifications about one merge is exactly the noise the retry was
+   * added to stop.
    */
-  it("gives up on a base that moves under every attempt, and says push-rejected", async () => {
+  it("gives up on a base that moves under every push, and says push-rejected once", async () => {
     await branchWith("agent/10", { "src/g.ts": "export const g = 1;\n" });
     const before = (await lane()).length;
-    let attempts = 0;
+    let pushes = 0;
 
     const result = await integrate({
       ...base(),
       branch: "agent/10",
       verify: async () => {
-        attempts++;
-        await g(["commit", "-q", "--allow-empty", "-m", `develop moved ${attempts}`], work);
+        pushes++;
+        await g(["commit", "-q", "--allow-empty", "-m", `develop moved ${pushes}`], work);
         await g(["push", "-q", "origin", "develop"], work);
         return { ok: true, evidence: "" };
       },
@@ -315,15 +332,15 @@ describe("integrate", () => {
     if (result.ok) return;
     expect(result.reason).toBe("push-rejected");
     expect(result.detail).toMatch(/rejected/i);
+    expect(result.detail).toContain("develop");
 
-    // One try and three retries, each of them an attempt and a refusal of its
-    // own on the lane's log.
-    expect(attempts).toBe(4);
+    // One try and three retries — and one attempt and one terminal for the lot.
+    expect(pushes).toBe(4);
     const events = (await lane()).slice(before);
-    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(4);
+    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(1);
     expect(
       events.filter((e) => e.type === "IntegrationRefused" && e.data["reason"] === "push-rejected"),
-    ).toHaveLength(4);
+    ).toHaveLength(1);
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
     expect(log.stdout).not.toContain("work on agent/10");
@@ -398,7 +415,8 @@ describe("integrate", () => {
 
     // One terminal per attempt exactly. Nothing refuses before it attempts any
     // more — `lane-busy` was the only path that did, and the lane takes no lock
-    // to be refused by (#194).
+    // to be refused by (#194) — and a lost push adds neither side of this,
+    // which is what keeps it 1:1 through the retries above.
     expect(terminal).toBe(attempts);
     expect(attempts).toBeGreaterThan(0);
   });

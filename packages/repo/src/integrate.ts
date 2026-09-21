@@ -36,8 +36,15 @@
  * a base that moved, it costs seconds and buys no agent, and the caller it
  * would otherwise return to blocks the item on a person who can do nothing but
  * click Requeue. `LOST_PUSHES` bounds it; a base that moves out from under
- * every one of those attempts is the `push-rejected` refusal, recorded exactly
+ * every one of those pushes is the `push-rejected` refusal, recorded exactly
  * as `lane-busy` was recorded before it.
+ *
+ * That retry does not bend the rule above, and it does not weaken it either:
+ * **the whole run of pushes is one `IntegrationAttempted` and one terminal**,
+ * because the caller asked for one merge and is owed one answer. A lost push
+ * that this lane goes on to win is the single thing in here that says nothing —
+ * a refusal is what interrupts a person and wakes a queue pass, and a race
+ * still being won is neither (`LostPush`).
  *
  * So two integrations against one base **overlap by design**, and each one owns
  * a worktree of its own rather than one per base.
@@ -87,6 +94,29 @@ export type IntegrateResult =
   | { ok: true; mergeCommit: string }
   | { ok: false; reason: RefusalReason; detail: string };
 
+/**
+ * A push this lane lost and is about to answer itself.
+ *
+ * **Not an `IntegrateResult`, and deliberately not on the log.** An
+ * `IntegrationRefused` is a declared subscriber event — `.lingtai/config.yaml`
+ * sends it to `desktop`, which renders it as *#202 did not merge* — and
+ * `COMPLETION_EVENTS` wakes a queue pass on it. Appending one for a race the
+ * lane goes on to win would interrupt a person about a merge that landed two
+ * seconds later, with nothing in the system to retract it, and would wake the
+ * conductor while the integration it is about is still running. The whole
+ * argument for retrying here is that a lost race owes nobody an explanation;
+ * saying it on the log anyway is making the noise the retry was meant to stop.
+ *
+ * So the type is what keeps it internal: the loop below is the only thing that
+ * can see one, and the only way out of this function is still an
+ * `IntegrateResult` that has already been appended.
+ */
+interface LostPush {
+  readonly lostThePush: true;
+  /** Git's own words, kept for the refusal that a run of these becomes. */
+  readonly detail: string;
+}
+
 /** Files whose presence in a diff means a human applies the migration, not the agent. */
 const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i;
 
@@ -108,10 +138,15 @@ const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were re
  * Each retry is a fetch, a worktree, a merge and a push — seconds, no agent, no
  * money — against the base as it now stands, which is precisely what the move
  * on the refusal's card asks a person to do by hand. Three of them, so four
- * attempts in all — bounded rather than endless because a base that beats one
+ * pushes in all — bounded rather than endless because a base that beats one
  * merge four times running is busy in a way a person should hear about, and
  * because a loop with no ceiling in the one place that writes to the base
  * branch is the wrong thing to leave running unattended.
+ *
+ * **Four pushes, one attempt.** The whole run of them is a single
+ * `IntegrationAttempted` and a single terminal, because it is a single
+ * integration: see `LostPush` for why the ones in the middle say nothing on the
+ * log.
  */
 const LOST_PUSHES = 3;
 
@@ -242,16 +277,15 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       yield* at(["worktree", "prune"], mirror).pipe(Effect.ignore);
     });
 
-  const attempt = Effect.scoped(
+  /**
+   * One merge, computed against the base as it stands and pushed.
+   *
+   * It is not *the* attempt — `IntegrationAttempted` is appended once, by the
+   * loop at the bottom, because the run of these is one integration. What comes
+   * back is either a terminal already on the log or a `LostPush`, which is not.
+   */
+  const attempt: Effect.Effect<IntegrateResult | LostPush> = Effect.scoped(
     Effect.gen(function* () {
-      yield* Effect.promise(() =>
-        append("IntegrationAttempted", {
-          workItemId: options.workItemId,
-          branch: options.branch,
-          headSha: options.headSha,
-        }),
-      );
-
       // The gates' verdict is the integrator's business only in that it refuses.
       if (!options.gatesPassed) {
         return yield* refuse("gate-failed", options.gateDetail ?? "a gate refused this diff");
@@ -382,11 +416,12 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // Everything above was computed against the base as it stood when this
       // integration fetched it. Another one may have landed in the meantime;
       // git says so here, atomically, by refusing a push that is not a
-      // fast-forward. **That rejection is an event like any other refusal** —
-      // and, unlike the others, one this lane answers itself: the attempt below
-      // it is re-run against the base where it now is (`LOST_PUSHES`), because
-      // nothing is wrong with the branch and nobody's judgement is owed. What
-      // returns from here is a base that beat this merge every time.
+      // fast-forward. **That rejection is not a refusal**, and is the one thing
+      // out of this function that does not append: it is answered where it is
+      // made, by recomputing against the base where it now is (`LOST_PUSHES`),
+      // because nothing is wrong with the branch and nobody's judgement is
+      // owed. Only a base that beats every one of those pushes becomes an
+      // `IntegrationRefused`, at the loop below — see `LostPush`.
       const pushed = yield* Effect.either(
         at(["push", "origin", `HEAD:refs/heads/${options.base}`], cwd),
       );
@@ -394,11 +429,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
         if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left);
-        return yield* refuse(
-          "push-rejected",
-          `origin rejected ${mergeCommit} onto ${options.base}: it moved while this merge was computed, ` +
-            `so ${options.branch} was merged into a base that is no longer there:\n${pushed.left.detail}`,
-        );
+        return { lostThePush: true, detail: pushed.left.detail } satisfies LostPush;
       }
       // The mirror is Lingtai's own copy of the truth; leaving it stale would
       // make the next integration compute against a base that has moved.
@@ -428,27 +459,51 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   /**
    * **A base that moved is answered here, and not by a person.**
    *
-   * The attempt above is a whole integration — its own `IntegrationAttempted`,
-   * its own worktree, its own terminal event — so losing the push and running
-   * it again is one attempt refused and another made, and the lane's log reads
-   * as exactly that. Nothing is reused across the two: the base is fetched
-   * afresh, the merge is recomputed, and `verify` is asked again about the tree
-   * that actually exists now.
+   * One integration, whatever it takes: a single `IntegrationAttempted` at the
+   * top, then as many merges as the base makes necessary, then a single
+   * terminal. Nothing is reused between two of them — the base is fetched
+   * afresh, the merge is recomputed in a worktree of its own, and `verify` is
+   * asked again about the tree that actually exists now — but none of that is a
+   * new *attempt*, because the caller asked for one merge and is owed one
+   * answer.
    *
-   * It is here rather than at the caller because both callers do the same thing
-   * with a refusal — `run-once.ts` blocks the item on a human acknowledgement,
-   * `approve.ts` blocks it with the approval already spent — and neither has
-   * anything to decide. A rejected push says the branch is fine and the base
-   * moved, which is a recomputation, not a question: an item that waits for a
-   * person to click Requeue in a repository that merges unattended is a ticket
-   * stopped by a race it won nothing by losing.
+   * **That is also why a lost push appends nothing** (`LostPush`). A refusal is
+   * the sentence a person reads: it reaches the `desktop` subscriber as *did
+   * not merge* and wakes a queue pass, and neither is true of a race this lane
+   * is still in the middle of winning. Writing one per lost push would have
+   * sent up to four interruptions per successful merge, none of them
+   * retractable — the exact cost the retry exists to avoid, moved from the
+   * board to the notification tray.
+   *
+   * The retry is here rather than at the caller because both callers do the
+   * same thing with a refusal — `run-once.ts` blocks the item on a human
+   * acknowledgement, `approve.ts` blocks it with the approval already spent —
+   * and neither has anything to decide. A rejected push says the branch is fine
+   * and the base moved, which is a recomputation, not a question: an item that
+   * waits for a person to click Requeue in a repository that merges unattended
+   * is a ticket stopped by a race it won nothing by losing.
    */
   return Effect.gen(function* () {
-    let result = yield* attempt;
-    for (let lost = 0; lost < LOST_PUSHES; lost++) {
-      if (result.ok || result.reason !== "push-rejected") return result;
-      result = yield* attempt;
+    yield* Effect.promise(() =>
+      append("IntegrationAttempted", {
+        workItemId: options.workItemId,
+        branch: options.branch,
+        headSha: options.headSha,
+      }),
+    );
+
+    let lastRejection = "";
+    for (let push = 0; push <= LOST_PUSHES; push++) {
+      const outcome = yield* attempt;
+      if (!("lostThePush" in outcome)) return outcome;
+      lastRejection = outcome.detail;
     }
-    return result;
+    // Every push lost. Now it is a person's, and the card's move — requeue —
+    // is the honest one: the branch is fine and the base is busy.
+    return yield* refuse(
+      "push-rejected",
+      `${options.base} moved while ${options.branch} was being merged into it, ` +
+        `every one of ${LOST_PUSHES + 1} times; origin rejected the last push:\n${lastRejection}`,
+    );
   });
 }
