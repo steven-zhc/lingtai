@@ -63,8 +63,12 @@ describe("one store, and one place that knows which", () => {
     // What "nothing chooses between them here" means as a check: no file under
     // `src/` mentions both stores, so there is nowhere a selection could have
     // been written. That decision is #179's.
+    //
+    // **No file is exempt**, least of all `index.ts` and `store.ts`. Those two
+    // were, and they are precisely where a selection would be written — a
+    // `projectionStore()` reading an env var, exported from the barrel, breaks
+    // the rule this file exists for and left all four assertions green.
     const both = sources
-      .filter((s) => s.file !== "index.ts" && s.file !== "store.ts")
       .filter((s) => {
         const c = code(s.text);
         return c.includes("createPostgresProjectionStore") && c.includes("createSqliteProjectionStore");

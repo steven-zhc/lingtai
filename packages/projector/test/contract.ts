@@ -243,10 +243,20 @@ export function describeProjectionStoreContract(
       const n = "projection_contract_ledger";
       try {
         await f.store.transact((ctx) => f.store.advance(ctx, n, 3n));
+        // Something in the log, so that `headSeq` is a number the store had to
+        // go and find. `lag === headSeq - lastSeq` on its own is a tautology —
+        // both implementations compute it as exactly that subtraction, so a
+        // store whose head is always zero passes it, and the swallow that
+        // reports a projection 4,000 events behind as caught up passed it too.
+        // What is asserted is therefore the head against the log.
+        const [appended] = await f.events.append(f.stream("run", "lag"), 0, [touched("head.ts")]);
 
         const lag = await f.store.lag(n);
         expect(lag.name).toBe(n);
         expect(lag.lastSeq).toBe(3n);
+        // At least, rather than exactly: the log is the fixture's and may be
+        // one another test in the same database is also appending to.
+        expect(lag.headSeq).toBeGreaterThanOrEqual(appended!.seq);
         expect(lag.lag).toBe(lag.headSeq - lag.lastSeq);
         expect(lag.updatedAt).toBeInstanceOf(Date);
 
@@ -254,7 +264,9 @@ export function describeProjectionStoreContract(
         // `lingtai doctor` reports, and a projection missing from it is one
         // nobody can see has stopped.
         const all = await f.store.lags();
-        expect(all.find((l) => l.name === n)?.lastSeq).toBe(3n);
+        const found = all.find((l) => l.name === n);
+        expect(found?.lastSeq).toBe(3n);
+        expect(found?.headSeq).toBeGreaterThanOrEqual(appended!.seq);
       } finally {
         await f.close();
       }
@@ -305,6 +317,48 @@ export function describeProjectionStoreContract(
 
         expect((await touches(f, run)).map((r) => r.path)).toEqual(["kept.ts"]);
         expect(await f.store.checkpoint(CONTRACT_TABLE)).toBe(first[0]!.seq);
+      } finally {
+        await f.close();
+      }
+    });
+
+    it("shows a reader nothing of a fold that has not committed", async () => {
+      // **The atomicity is promised to readers as well as to writers**, and
+      // that half was the easy one to lose: sharing one store between the
+      // runner (`into:`) and the board is the shape this interface is built
+      // for, and a render landing inside an open fold must see all of the
+      // batch or none of it. The read is issued once the rows are written and
+      // nothing is committed — the window a 40-event `commitBatch` holds open
+      // while it awaits between statements — and awaited after the rollback.
+      const f = await make();
+      const task = f.stream("wi", "44");
+      const run = f.stream("run", "uncommitted");
+      try {
+        const written = await f.events.append(task, 0, [claimed(run, "a card that never commits")]);
+        await f.store.transact((ctx) => taskViewProjection.create(ctx));
+
+        let folded = () => {};
+        const applied = new Promise<void>((r) => {
+          folded = r;
+        });
+        let release = () => {};
+        const held = new Promise<void>((r) => {
+          release = r;
+        });
+        const folding = f.store.transact(async (ctx) => {
+          await taskViewProjection.apply(written, ctx);
+          folded();
+          await held;
+          throw new Error("the fold changed its mind");
+        });
+
+        await applied;
+        const reading = f.store.tasks({ project: f.project, retentionDays: 3650 });
+        release();
+        await expect(folding).rejects.toThrow("changed its mind");
+
+        expect(await reading).toEqual([]);
+        expect(await f.store.tasks({ project: f.project, retentionDays: 3650 })).toEqual([]);
       } finally {
         await f.close();
       }

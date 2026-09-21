@@ -32,6 +32,7 @@
  * the board reads — are written in SQLite and go nowhere near `translate`. They
  * are this implementation's, as their Postgres counterparts are that one's.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { DatabaseSync } from "node:sqlite";
 import type { BlockDiagnosis } from "@lingtai/domain";
 import type { BacklogEntry } from "./backlog.ts";
@@ -404,11 +405,57 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
     }
   };
 
+  /** Which transaction, if any, the calling async context is running inside. */
+  const inside = new AsyncLocalStorage<symbol>();
+
+  /**
+   * A read, in the same queue the transactions are in.
+   *
+   * One connection is one transaction, so a read issued while a fold's
+   * `BEGIN IMMEDIATE` is open used to be a read *inside* that transaction: it
+   * saw rows nothing had committed, and a fold that then threw left the board
+   * having rendered a card that never existed. The common case was quieter and
+   * worse — `commitBatch` folds a batch in one transaction and awaits between
+   * statements, so a render landing in that window returned a half-folded row,
+   * the state advanced and the batch's later verdicts not yet applied.
+   *
+   * Postgres cannot do either, because a reader there is a second connection
+   * outside the writer's transaction — so `transact`'s promise, *a fold and
+   * its checkpoint advance together, or neither*, is made to readers as well
+   * as to writers, and sharing one store between the runner and the board is
+   * the shape the interface is built for. Queueing the reads behind the writes
+   * is how this store keeps that promise: a concurrent reader waits for the
+   * commit and then sees all of it.
+   *
+   * **A read from inside the transaction's own callback is refused instead**,
+   * because queueing that one would be waiting for a transaction that is
+   * waiting for the read. It is also the one case the connection cannot serve
+   * two ways at once, and it has an answer already: `ctx.query`, which is what
+   * a fold reads its own writes with. `advance`, `register` and `rewind` are
+   * on that side too and take the connection directly rather than this.
+   */
+  const read = <T>(fn: () => T): Promise<T> => {
+    if (inside.getStore() !== undefined) {
+      return Promise.reject(
+        new Error(
+          "a read on the projection store from inside its own transaction: one connection cannot answer both, so read the fold's own writes through `ctx.query`",
+        ),
+      );
+    }
+    return serialise(async () => fn());
+  };
+
   const ctx: ProjectionContext = {
     async query(text, values) {
       const q = translate(text, values ?? []);
       return all(q.text, q.params) as never[];
     },
+  };
+
+  /** The log's high-water mark, in this file. Throws when there is no log in it. */
+  const headOf = (): bigint => {
+    const [row] = all("select cast(coalesce(max(seq), 0) as text) as head_seq from events");
+    return BigInt(String(row?.head_seq ?? "0"));
   };
 
   async function begin(): Promise<void> {
@@ -433,12 +480,18 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         try {
           // Inside the transaction, so the table a checkpoint needs is made by
           // whoever gets there first and by nobody twice.
-          if (!ensured) {
-            db.exec(CHECKPOINTS);
-            ensured = true;
-          }
-          const result = await fn(ctx);
+          if (!ensured) db.exec(CHECKPOINTS);
+          // Named, so that a read reaching this store while the fold is open
+          // can tell *the fold itself is asking* from *somebody else is*.
+          const result = await inside.run(Symbol("transaction"), () => fn(ctx));
           db.exec("COMMIT");
+          // Latched **after** the commit, and that is the whole of it: SQLite's
+          // DDL is transactional, so a rollback — a fold that threw, or a
+          // `COMMIT` that came back busy — takes the `create` with it. Setting
+          // the flag beside the `exec` left a store that skipped the DDL for
+          // ever and answered `no such table: checkpoints` to every later
+          // advance, while `checkpoint()` went on reporting zero.
+          ensured = true;
           return result;
         } catch (err) {
           try {
@@ -453,11 +506,13 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
     },
 
     async checkpoint(name) {
-      const [row] = allOrEmpty(
-        "select cast(last_seq as text) as last_seq from checkpoints where name = ?",
-        [name],
-      );
-      return BigInt((row?.last_seq as string | undefined) ?? "0");
+      return read(() => {
+        const [row] = allOrEmpty(
+          "select cast(last_seq as text) as last_seq from checkpoints where name = ?",
+          [name],
+        );
+        return BigInt((row?.last_seq as string | undefined) ?? "0");
+      });
     },
 
     // The checkpoint statements are this implementation's, written in SQLite
@@ -494,50 +549,70 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
     },
 
     async columnsOf(tables) {
-      const live = new Map<string, ReadonlySet<string>>();
-      for (const table of tables) {
-        // No rows means the table is not there, which is what the Postgres
-        // catalogue read says by leaving it out too.
-        const rows = all("select name from pragma_table_info(?)", [table]);
-        if (rows.length === 0) continue;
-        live.set(table, new Set(rows.map((r) => String(r.name))));
-      }
-      return live;
+      return read(() => {
+        const live = new Map<string, ReadonlySet<string>>();
+        for (const table of tables) {
+          // No rows means the table is not there, which is what the Postgres
+          // catalogue read says by leaving it out too.
+          const rows = all("select name from pragma_table_info(?)", [table]);
+          if (rows.length === 0) continue;
+          live.set(table, new Set(rows.map((r) => String(r.name))));
+        }
+        return live;
+      });
     },
 
+    /**
+     * **The head is read on its own, and it is not forgiven.**
+     *
+     * Two tables, two different questions, and one query forgiving both was
+     * wrong: a file with a `checkpoints` row saying 4,000 and no `events` in it
+     * at all answered `{lastSeq: 0n, headSeq: 0n, lag: 0n}` — a projection
+     * 4,000 events behind reported as caught up, by the one number whose job is
+     * to say otherwise, and with the checkpoint it *could* read thrown away.
+     * The log being somewhere else is a fault and reaches the caller as one;
+     * Postgres says `relation "events" does not exist` to the same file.
+     * Only the checkpoint side tolerates a table no projector has made yet.
+     */
     async lag(name) {
-      const [row] = allOrEmpty(
-        `select cast(coalesce(c.last_seq, 0) as text) as last_seq,
-                cast((select coalesce(max(seq), 0) from events) as text) as head_seq,
-                c.updated_at
-         from (select 1) as one
-         left join checkpoints c on c.name = ?`,
-        [name],
-      );
-      const lastSeq = BigInt((row?.last_seq as string | undefined) ?? "0");
-      const headSeq = BigInt((row?.head_seq as string | undefined) ?? "0");
-      return { name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: parseAt(row?.updated_at) };
-    },
-
-    async lags(): Promise<ProjectionLag[]> {
-      const rows = allOrEmpty(
-        `select c.name,
-                cast(c.last_seq as text) as last_seq,
-                cast((select coalesce(max(seq), 0) from events) as text) as head_seq,
-                c.updated_at
-         from checkpoints c
-         order by c.name`,
-      );
-      return rows.map((row) => {
-        const lastSeq = BigInt(row.last_seq as string);
-        const headSeq = BigInt(row.head_seq as string);
+      return read(() => {
+        const headSeq = headOf();
+        const [row] = allOrEmpty(
+          "select cast(last_seq as text) as last_seq, updated_at from checkpoints where name = ?",
+          [name],
+        );
+        const lastSeq = BigInt((row?.last_seq as string | undefined) ?? "0");
         return {
-          name: row.name as string,
+          name,
           lastSeq,
           headSeq,
           lag: headSeq - lastSeq,
-          updatedAt: parseAt(row.updated_at),
+          updatedAt: parseAt(row?.updated_at),
         };
+      });
+    },
+
+    async lags(): Promise<ProjectionLag[]> {
+      return read(() => {
+        const rows = allOrEmpty(
+          `select c.name, cast(c.last_seq as text) as last_seq, c.updated_at
+           from checkpoints c
+           order by c.name`,
+        );
+        // No checkpoints at all is nothing to report, and no lag to get wrong.
+        // One or more is a claim about the log, so the log has to be there.
+        if (rows.length === 0) return [];
+        const headSeq = headOf();
+        return rows.map((row) => {
+          const lastSeq = BigInt(row.last_seq as string);
+          return {
+            name: row.name as string,
+            lastSeq,
+            headSeq,
+            lag: headSeq - lastSeq,
+            updatedAt: parseAt(row.updated_at),
+          };
+        });
       });
     },
 
@@ -552,26 +627,28 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         args.push(query.project);
         where += " and t.project = ?";
       }
-      const rows = allOrEmpty(
-        `select t.* from task_view t
-         ${where}
-         order by t.project,
-           case when t.state = 'waiting' then t.updated_at end asc nulls last,
-           cast(t.issue as integer)`,
-        args,
+      return read(() =>
+        allOrEmpty(
+          `select t.* from task_view t
+           ${where}
+           order by t.project,
+             case when t.state = 'waiting' then t.updated_at end asc nulls last,
+             cast(t.issue as integer)`,
+          args,
+        ).map(toCard),
       );
-      return rows.map(toCard);
     },
 
     async taskProjects(query) {
       const since = new Date(Date.now() - query.retentionDays * 86_400_000).toISOString();
-      const rows = allOrEmpty(
-        `select distinct project from task_view
-         where (closed_at is null or closed_at > ?)
-         order by project`,
-        [since],
+      return read(() =>
+        allOrEmpty(
+          `select distinct project from task_view
+           where (closed_at is null or closed_at > ?)
+           order by project`,
+          [since],
+        ).map((r) => String(r.project)),
       );
-      return rows.map((r) => String(r.project));
     },
 
     async backlog(query: BacklogQuery) {
@@ -586,13 +663,14 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         args.push(value);
         where.push(`${column} = ?`);
       }
-      const rows = allOrEmpty(
-        `select * from finding_backlog
-         ${where.length > 0 ? `where ${where.join(" and ")}` : ""}
-         order by project, raised_seq`,
-        args,
+      return read(() =>
+        allOrEmpty(
+          `select * from finding_backlog
+           ${where.length > 0 ? `where ${where.join(" and ")}` : ""}
+           order by project, raised_seq`,
+          args,
+        ).map(toEntry),
       );
-      return rows.map(toEntry);
     },
 
     async close() {
