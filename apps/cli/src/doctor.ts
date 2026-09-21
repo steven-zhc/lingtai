@@ -704,9 +704,16 @@ export async function daemonLiveness(
  * make `lingtai doctor` exit 1 on something the restart lets through. Whether a daemon should restart
  * *itself* when `main` moves is still open; 0042 decided only the command.
  */
-async function daemonCurrency(): Promise<CheckResult> {
+export async function daemonCurrency(
+  /**
+   * The beacon read, as `daemonLiveness` takes it. Both rows read the one
+   * mutable row, so both of them answer on whichever store holds it (#220) —
+   * and a test can show that without a database.
+   */
+  read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
+): Promise<CheckResult> {
   const name = "daemon: currency";
-  const status = await readStatus().catch(() => null);
+  const status = await read();
   if (!status) {
     return { name, status: "ok", detail: "no daemon has run — nothing is holding code open" };
   }

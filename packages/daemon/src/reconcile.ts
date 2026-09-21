@@ -80,9 +80,21 @@ import { projectionLag } from "@lingtai/projector";
 import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
 import { DAEMON_LOCK_KEY } from "./lock.ts";
-import pg from "pg";
+import { createPostgresDaemonStore } from "./postgres.ts";
+import type { DaemonStore } from "./store.ts";
 
 const execFile = promisify(execFileCb);
+
+/**
+ * The store a pass reads the log's streams through.
+ *
+ * Postgres at the pooled URL when nobody says otherwise, which is the
+ * connection this file used before it had an interface — the choice itself is
+ * #179's.
+ */
+function daemonStore(options: ReconcileOptions): DaemonStore {
+  return options.daemonStore ?? createPostgresDaemonStore({ url: options.url ?? postgresUrl() });
+}
 
 /**
  * What was done about a divergence.
@@ -133,6 +145,14 @@ export interface ReconcileOptions {
   abandoned?: ReadonlySet<string>;
   log?: (line: string) => void;
   url?: string;
+  /**
+   * Where the claimed work items are looked up. Defaults to Postgres at `url`.
+   *
+   * Beside `store` rather than instead of it: `store` is the log this pass
+   * reads and appends through, and this is the one question about the log that
+   * `EventStore` does not answer — *which streams should I fold at all*.
+   */
+  daemonStore?: DaemonStore;
   /**
    * Which projections this system runs, so lag can be judged.
    *
@@ -415,24 +435,10 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
   if (names.length === 0) return [];
 
-  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
-  let streams: string[];
-  try {
-    await client.connect();
-    const r = await client.query<{ stream_id: string }>(
-      `select distinct stream_id from events
-       where type = 'WorkItemClaimed'
-         and stream_id like any($1)
-       order by stream_id`,
-      [names.map((n) => `wi-${n}-%`)],
-    );
-    streams = r.rows.map((row) => row.stream_id);
-  } catch {
+  const streams = await daemonStore(options)
+    .streams({ prefixes: names.map((n) => `wi-${n}-%`), types: ["WorkItemClaimed"] })
     // No log to read is not a divergence.
-    return [];
-  } finally {
-    await client.end().catch(() => {});
-  }
+    .catch(() => []);
 
   const findings: Finding[] = [];
   for (const workItemId of streams) {

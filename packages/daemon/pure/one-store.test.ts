@@ -1,0 +1,89 @@
+/**
+ * The rule #220 exists to establish, asserted rather than remembered.
+ *
+ * **A direct `pg` client outside the Postgres implementation is a place the
+ * init-time choice does not reach**
+ * ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
+ * §1). There were six of them under `src/` — three in `control.ts` for the
+ * beacon alone, and one each in `work-loop.ts`, `reconcile.ts` and
+ * `converge.ts` — and that is why a machine with no Postgres could not say
+ * whether a daemon was up.
+ *
+ * One is not a rule anybody keeps by reading a comment: the next thing the
+ * daemon needs to ask the log will want a query, and a `new pg.Client` is the
+ * shortest way to get one. So the rule is a failing test, in the half of the
+ * suite that needs no database — the same file `packages/projector` keeps for
+ * the same reason (#219).
+ */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const SRC = fileURLToPath(new URL("../src", import.meta.url));
+
+/** The one file allowed to know what a driver is. Its twin knows `node:sqlite`. */
+const POSTGRES = "postgres.ts";
+const SQLITE = "sqlite.ts";
+
+const sources = readdirSync(SRC)
+  .filter((f) => f.endsWith(".ts"))
+  .map((file) => ({ file, text: readFileSync(join(SRC, file), "utf8") }));
+
+/** Ignores the prose. Every file here documents what it does not do. */
+const code = (text: string): string =>
+  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+describe("one store, and one place that knows which", () => {
+  it("finds the files it is about", () => {
+    // A rename that emptied this list would leave every assertion below
+    // vacuously true, which is the failure mode a source-reading test has.
+    expect(sources.map((s) => s.file)).toEqual(
+      expect.arrayContaining([
+        "control.ts",
+        "work-loop.ts",
+        "reconcile.ts",
+        "converge.ts",
+        "store.ts",
+        POSTGRES,
+        SQLITE,
+      ]),
+    );
+  });
+
+  it("constructs a pg client in the Postgres implementation and nowhere else", () => {
+    const offenders = sources
+      .filter((s) => s.file !== POSTGRES)
+      .filter((s) => /\bnew pg\.|from "pg"/.test(code(s.text)))
+      .map((s) => s.file);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reaches for node:sqlite in the SQLite implementation and nowhere else", () => {
+    const offenders = sources
+      .filter((s) => s.file !== SQLITE)
+      .filter((s) => /node:sqlite/.test(code(s.text)))
+      .map((s) => s.file);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("names both implementations in neither of them", () => {
+    // What "nothing chooses between them here" means as a check: no file under
+    // `src/` mentions both stores, so there is nowhere a selection could have
+    // been written. That decision is #179's.
+    //
+    // **No file is exempt**, least of all `index.ts` and `store.ts` — those are
+    // precisely where a selection would be written, as a `daemonStore()`
+    // reading an env var and exported from the barrel.
+    const both = sources
+      .filter((s) => {
+        const c = code(s.text);
+        return c.includes("createPostgresDaemonStore") && c.includes("createSqliteDaemonStore");
+      })
+      .map((s) => s.file);
+
+    expect(both).toEqual([]);
+  });
+});
