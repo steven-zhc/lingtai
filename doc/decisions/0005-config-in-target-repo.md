@@ -1,12 +1,32 @@
 # 0005 — Configuration lives in the managed repository
 
-**Status** accepted in part · 2026-08-31 · supersedes an earlier draft that put
-it outside · its **policy half is superseded by [0016](0016-the-settled-model.md)**
+**Status** superseded · 2026-08-31 · supersedes an earlier draft that put it
+outside · its **policy half is superseded by
+[0016](0016-the-settled-model.md)** and **its surviving half by
+[0046](0046-lingtai-is-personal.md) §3** · qualified by
+[0047](0047-the-recipe-a-run-got-is-on-the-log.md)
 
-What stands: the recipe lives in the managed repository and is read from
-`origin/<base>`, never from the agent's branch. What is gone: "a recipe may
-add strictness and can never remove it" — there is no longer an outside
-policy for it to be measured against. The workflow is the user's to define.
+**Nothing here is in force, and the reversal is worth reading beside the
+argument.** This file's whole subject — the recipe at
+`<repo>/.lingtai/config.yaml`, read from `origin/<base>` and never from the
+agent's branch — moved out of the managed repository in
+[#180](https://github.com/steven-zhc/lingtai/issues/180). The recipe is now
+`~/.lingtai/<project>/recipe.yml`, nothing is read from or written to the
+repository for it, and a `.lingtai/config.yaml` still committed there is an
+ordinary file that changes nothing.
+
+Two things survive translated rather than deleted. **§Context's objection was
+never answered by being argued with — it was answered by location.** "Putting
+gate definitions in the repository hands the exam paper to the candidate" was
+solved here by reading from the base branch; 0046 solves it more completely,
+because an agent's blast radius is its worktree and `~/.lingtai/` is not in it.
+And the sentence below that 0046 quotes back: what a team genuinely shares was
+never the recipe — *which checks are required, and who may approve, are not in
+the repository at all, they are branch protection*.
+
+Also gone, and gone earlier: "a recipe may add strictness and can never remove
+it" — there is no longer an outside policy for it to be measured against. The
+workflow is the user's to define.
 
 ## Context
 

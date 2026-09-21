@@ -52,9 +52,59 @@ alike. Nothing here packs or publishes: a tag does, in
 `.github/workflows/release.yml`.
 
 **4. `install.sh` is served by the site**, as `apps/site/public/install.sh`, so
-`https://lingtai.dev/install.sh` is a static file. It detects the platform and
-refuses anything else by name, asks `releases/latest` unless `LINGTAI_VERSION`
-says, and edits no shell profile.
+`https://lingtai.nextloom.ai/install.sh` is a static file. It detects the
+platform and refuses anything else by name, asks `releases/latest` unless
+`LINGTAI_VERSION` says, and edits no shell profile.
+
+**It is published as a release asset too, and that address is the canonical
+one.** `releases/latest/download/install.sh` cannot move: a domain can lapse,
+be renamed, or sit behind a bot challenge answering 200 with an HTML page —
+which `curl -f` does not catch, because it is not an error status, and which
+`sh` then runs. Neither address is load-bearing past first contact: the script
+fetches every artifact from GitHub Releases and so does `upgrade`, so a domain
+that moves breaks new installs and nothing already installed. That is what
+makes the domain a cheap decision to revisit, and it is the reason to keep the
+URL out of anything but prose.
+
+### The site is on Cloudflare, and two of its defaults matter here
+
+`apps/site` is `output: "export"` — a directory of files — so it is a static
+deploy from `apps/site/out`, built by `pnpm --filter @lingtai/site build` from
+the **repository root**, which a pnpm workspace requires: the site depends on
+`@lingtai/projector`, and a build rooted at `apps/site` cannot resolve it.
+
+**`.node-version` at the root is what makes that build run at all**, and it is
+there for a hosting provider rather than for anyone's laptop. The site's build
+runs `node scripts/doc-assets.ts` and `node scripts/snapshot.ts` directly, so
+it needs a Node that strips types without a flag; a provider defaulting to its
+own old Node fails on the first `.ts` import, and the error names the syntax
+rather than the Node. It says `26`, which is what `release.yml` builds the
+binaries with and what this machine runs — one number, three places that must
+agree.
+
+**The build gets no `LINGTAI_DATABASE_URL`, and that is the decision rather
+than an omission.** `scripts/snapshot.ts` reads the log to put Lingtai's own
+board on the front page; without the variable it writes nothing, says so, and
+exits 0, and the page renders *no snapshot* instead of invented figures. Giving
+a hosting provider's build machine the credential for this system's own log to
+decorate a marketing page is the wrong trade, and `.env.local` is gitignored so
+the builder never sees one by accident. If the board is wanted on the page
+later, the place to take it is GitHub Actions, where that credential already
+lives — and `LINGTAI_SITE_PUBLIC_PROJECTS` is an allowlist that is empty by
+default, so every card is withheld until somebody names a project.
+
+**Bot protection is the one setting that can break `curl … | sh` silently.**
+Bot Fight Mode, an "Under Attack" zone, or a WAF rule can answer `/install.sh`
+with **200 and an HTML challenge page**. `curl -f` does not catch it — it is
+not an error status — and `sh` then runs HTML. `/install.sh` needs a WAF skip,
+and the check after any deploy is one line:
+
+    curl -fsSL https://lingtai.nextloom.ai/install.sh | head -1   # #!/bin/sh
+
+**Caching and content type are pinned in `apps/site/public/_headers`**, which
+`public/` copies to the root of `out/` where Cloudflare reads it: `text/plain`
+so the script can be read in a browser before it is run, and five minutes so a
+fixed installer reaches the next person.
 
 **5. `version`, `upgrade`, `rollback` and `uninstall` need no log.** Every other
 command loads `@lingtai/event-store`, which throws without a database URL at

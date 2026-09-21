@@ -1,0 +1,19 @@
+# Cloudflare's headers file. `public/` is copied verbatim into `out/`, so this
+# lands at the root of the deployed site, which is where Cloudflare reads it.
+#
+# Only one rule here earns its place, and it is about `curl … | sh`.
+#
+# **`text/plain`, deliberately.** `.sh` would otherwise be served as a type the
+# browser downloads, and the front page links to this file as *the script* — an
+# installer nobody can read before running is an installer nobody should run.
+# `curl` does not care either way, so plain text costs the pipe nothing and buys
+# a reader everything. `nosniff` then stops a browser second-guessing it.
+#
+# **Five minutes, not a year.** This file is fetched once per machine and never
+# again — the script and `lingtai upgrade` both go straight to GitHub Releases
+# after that — so there is nothing to gain from a long cache, and a bug fixed in
+# the installer wants to reach the next person rather than the next year's.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300, must-revalidate
+  X-Content-Type-Options: nosniff

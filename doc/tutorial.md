@@ -1,257 +1,215 @@
-# Tutorial — from nothing to a merged issue, unattended
+# Tutorial — get one issue to land
 
-The shortest path that ends with Lingtai taking an issue off GitHub, working it,
-and merging the result back — with nobody typing anything after the first
-`lingtai daemon`.
+This is the shortest path from a new machine to one GitHub issue worked by an
+agent and merged back into your repository.
 
-Everything here is done once except step 5, which is labelling an issue.
+You will do three things once — set up this machine, add a repository, start
+Lingtai — then label one issue. Everything else happens on the board.
 
----
+> **You are done when** the issue reaches **Landed**, its commit is on your base
+> branch, and you can explain which checks allowed it through.
 
-## 0. What you need first
+## Before you start
 
-- **Postgres of its own.** Not a database belonging to a project you manage —
-  Lingtai has to keep running while that project is the thing being changed.
-- **A GitHub App**, installed on the repository you want managed. Not a personal
-  access token: a fine-grained token can be wrong in a way nothing reports.
-- **Node 22.13+**, `pnpm`, and the agent runtime you intend to use signed in
-  (`claude` for Claude Code).
+Have these ready:
 
-Copy `.env.example` to `.env.local` at the repository root and fill in the two
-connection strings and the App's ID and key. Then:
+- **Git**
+- **A Postgres URL** for Lingtai's own data
+- **Claude Code or Codex**, installed and signed in
+- **Permission to install a GitHub App** on the repository you want to use
 
-```bash
-pnpm install
-pnpm db:init && pnpm db:bootstrap
-pnpm lingtai doctor        # everything checkable, checked
-```
+Choose a small first issue. A focused bug with an obvious test is better than a
+large feature: your goal is to see the whole loop once, not test the limits of
+the agent.
 
-`doctor` is the whole of the setup verification. Do not go on while it is red.
-
----
-
-## 1. Put a recipe in the repository you want managed
-
-`.lingtai/config.yaml`, committed **on the branch work merges into**. This is
-the smallest one that runs:
-
-```yaml
-version: 1
-
-repo:
-  base: main
-
-source:
-  # Which issue labels are work, in priority order. Any label of yours; Lingtai
-  # keeps no list of its own. An issue with none of these is not picked up.
-  kinds: [bug, feature]
-  # Labels of yours that keep an agent off a ticket.
-  exclude: [blocked]
-
-env:
-  # Variable NAMES the run may see. Values come from the machine running
-  # Lingtai, never from here — so this file is safe to commit.
-  allow: []
-  # Where the filtered env file is written inside the agent's worktree.
-  plantAt: .env.local
-
-gates:
-  # What must pass before anything merges. Its exit code is the verdict.
-  proposed:
-    - name: build
-      run: pnpm test
-      timeout: 15m
-
-runtime:
-  agent: claude-code
-```
-
-**This recipe merges automatically.** There is no `merge:` block, so nothing
-holds for a person. That is what "unattended" means, and it is a deliberate
-choice — [step 6](#6-if-you-would-rather-approve-first) is the other one.
-
-Commit it and push it to `main`. Lingtai reads it from `origin/main` for every
-run and never from an agent's branch, so an agent cannot change the rules of the
-run it is part of.
-
----
-
-## 2. Register the repository
+Install the CLI:
 
 ```bash
-pnpm lingtai add <owner>/<repo> --base main
+curl -fsSL https://lingtai.nextloom.ai/install.sh | sh
 ```
 
-`--base` says where to *read the recipe from*, not what the base is — the
-recipe's own `repo.base` decides that, and this command records what it says.
-Leave the flag out and the recipe is looked for on the repository's default
-branch; name a branch whose recipe declares a different `repo.base` and this
-refuses rather than overruling either of you.
-
-It checks the App's installation and permissions **before** it writes anything,
-then reads the recipe, hashes it, and prints what it found:
-
-```
-recipe: .lingtai/config.yaml at main@2595965 — hash 9c63ab61fdd1
-  admit     (skipped)
-  prepared  (skipped)
-  proposed  build
-  merge     (skipped)
-  end       (skipped)
-```
-
-All five points are listed, including the empty ones. A point that is skipped is
-your decision; being unable to see that it is skipped would not be.
-
----
-
-## 3. See what it would take, without taking it
+The installer verifies the downloaded archive, installs `lingtai` under
+`~/.local/bin`, and starts setup. If you prefer an address that does not depend
+on this site:
 
 ```bash
-pnpm lingtai status <repo> --refresh
+curl -fsSL https://github.com/steven-zhc/lingtai/releases/latest/download/install.sh | sh
 ```
 
-```
-from GitHub: 3 runnable, 12 passed over — excluded-label 9, no-kind 3
-queue: 3 runnable
-  #41  bug      A stale response can overwrite the current query's hits
-  ...
-```
+Running from a source checkout instead? Run `pnpm install`, then use
+`pnpm lingtai` wherever this guide says `lingtai`.
 
-This costs nothing and claims nothing. The passed-over count is the useful half:
-an issue nobody is working on has a reason, and the reason is your recipe's.
+## Step 1 — Set up this machine
 
----
-
-## 4. Start the daemon
+If the installer did not already start setup:
 
 ```bash
-pnpm lingtai daemon
+lingtai init
 ```
 
-That is the last command you type. It holds the projections current, takes work
-as it appears, and runs the merge lane. Leave it running.
+`init` checks what is already present before it asks anything. It will:
 
-In another terminal, for the board:
+1. connect to Postgres and create Lingtai's tables;
+2. select a signed-in agent runtime;
+3. open the local board;
+4. guide you through creating or verifying a GitHub App.
+
+It writes machine settings to `~/.lingtai/config.yml`. If setup is interrupted,
+run `lingtai init` again; verified answers are kept and setup resumes at the
+first unfinished choice.
+
+Leave this terminal open while you onboard the repository. It is serving the
+board at [http://127.0.0.1:17820](http://127.0.0.1:17820). Later,
+`lingtai board start` starts the same board again.
+
+Before moving on:
 
 ```bash
-pnpm lingtai board start             # http://127.0.0.1:17820
+lingtai doctor
 ```
 
-From a checkout with no `pnpm build` behind it there is no built board, and
-that command says so; `pnpm --filter @lingtai/board dev` serves the same port
-from the source. `pnpm build` writes one into `dist/`, and `board start` from a
-checkout serves that.
+Do not start a run while `doctor` is red. Its output names the failing check and
+the command or setting involved.
 
-To install it as a background service instead — a LaunchAgent on macOS, a
-systemd user unit on Linux:
+## Step 2 — Add one repository
+
+On the board, choose **Add repository** and select the repository where the
+GitHub App is installed.
+
+Lingtai reads the repository and proposes a setup. Most rows are facts it can
+detect — the base branch, labels, scripts, submodules, and environment names.
+Check those rows, then answer the two choices that matter most:
+
+- **Does a person approve the merge?** Choose yes for a supervised first run.
+  Choose no only if passing work should land unattended.
+- **How far may one ticket go before it is yours?** The limits bound agent
+  turns, wall time, repair rounds, and restarts.
+
+The last screen is the important one: it shows the exact issues the first pass
+will take, in order. If the list surprises you, go back and change the eligible
+labels or use **Hold all** before finishing.
+
+The wizard writes your recipe here:
+
+```text
+~/.lingtai/<project>/recipe.yml
+```
+
+The recipe is local to this machine. Nothing is committed to the repository you
+manage. It records which labels count as work, what checks run, and whether a
+person must approve.
+
+If a run needs project secrets, add only the names required by the recipe:
 
 ```bash
-pnpm lingtai service install
+lingtai env set <project> DATABASE_URL
+lingtai env list <project>
 ```
 
-No service manager, as in a container? The foreground `lingtai daemon` above is
-the answer, not a workaround.
+Values are read without echo and stored in
+`~/.lingtai/env/<project>.env`; `env list` shows names, never values.
 
----
+## Step 3 — Check the queue, then start
 
-## 5. Label an issue
-
-On GitHub, put one of your `kinds` labels on an issue — `bug`, or `feature`.
-
-That is the entire trigger. Within a sweep (or seconds, if you have pointed the
-App's webhook at `<your tunnel>/api/webhook`) the daemon claims it and the loop
-runs:
-
-```
-claim              an event, so two schedulers cannot take the same issue
-worktree           cut from Lingtai's own mirror, never your checkout
-prepared           whatever your recipe puts there — usually the install
-agent              writes and commits on agent/<issue>, in that worktree only
-proposed           your gates run; the first refusal wins
-merge              nothing configured, so it does not stop
-integrate          merge base in, verify, merge out — no lock: two merges on
-                   one base overlap, git refuses one, and that one merges again
-end                whatever your recipe puts there
-```
-
-The branch lands on `main`. Watch it on the board, or:
+Preview what Lingtai can take without claiming anything:
 
 ```bash
-pnpm lingtai status <repo> --all
+lingtai status <project>
 ```
 
-```
-  #41  bug  A stale response can overwrite the current query's hits  [landed]
-```
+Look for your first issue under `runnable`. If it is passed over, the same
+output tells you why. The common reasons are:
 
-**That is the whole loop.** Everything after this is refinement.
+- `no-kind` — the issue has none of the recipe's eligible labels;
+- `excluded-label` — it carries a label the recipe holds back;
+- `blocked-by` — GitHub says an open issue blocks it.
 
----
-
-## 6. If you would rather approve first
-
-Add a `merge` gate and the loop stops there instead of merging:
-
-```yaml
-gates:
-  merge:
-    - name: approval
-      human: Merge {branch} into {base}?
-```
-
-The run holds, the board shows the card with its diff and its gate evidence, and
-you decide:
+When the queue looks right:
 
 ```bash
-pnpm lingtai approve <repo> --issue 41
-pnpm lingtai requeue <repo> --issue 41 --note "wrong approach"
+lingtai start
 ```
 
-Approving on the board does the same thing — **as long as the daemon is running**,
-because the daemon is what performs the merge once the approval is in the log.
+Leave this terminal running. `start` keeps the board current, takes eligible
+work, runs the agent and checks, and performs allowed merges.
 
-An approval is bound to the commit it was asked about. If the branch moves, the
-approval stops counting, by arithmetic rather than by anyone remembering.
+For a background service on macOS or Linux, use `lingtai service install` after
+you have completed this first run.
 
----
+## Step 4 — Label one issue
 
-## 7. Stopping
+On GitHub, add one of the eligible labels you chose in the wizard — for example
+`bug` or `feature` — to the small issue you prepared.
+
+That label is the trigger. On the board, the card moves through the loop:
+
+```text
+GitHub issue  →  Queued  →  Running  →  Landed
+                              │
+                              └────→  Waiting on you
+```
+
+Behind those four states, Lingtai:
+
+1. claims the issue and cuts a disposable worktree;
+2. lets the agent change and commit in that worktree;
+3. runs the checks from your local recipe;
+4. asks for approval if you required it;
+5. merges passing work and performs configured end actions.
+
+Your normal checkout is not the agent's workspace. The agent cannot decide that
+its own checks passed, and it cannot silently skip a configured gate.
+
+## Step 5 — Read the result
+
+### If it lands
+
+Confirm all three:
+
+- the card is in **Landed**;
+- the commit is on the configured base branch;
+- the GitHub issue was closed if you enabled that end action.
+
+You have now seen the complete loop. Add another eligible label when you want
+the next issue taken.
+
+### If it waits on you
+
+Open the card. The board shows which attempt stopped, the failing check or hold,
+what it cost, and any run log still needed to explain it.
+
+If the only hold is the approval you configured, approve on the board or run:
 
 ```bash
-pnpm lingtai pause "why"     # take no new work; a run in flight finishes
-pnpm lingtai resume
-pnpm lingtai shutdown "why"  # finish the pass in flight, then stop the daemon
-pnpm lingtai restart "why"   # …and start one again, from a checked commit
+lingtai approve <project> --issue 41
 ```
 
-The reason is required for a pause and it is recorded. `pause` stops work being
-taken; it never stops effects that already happened from going out.
+If the approach is wrong, send the item back with a useful note:
 
-`shutdown` is the same append, and then the process ends. What it waits for is
-the **pass** — the agent, then the gates, then the merge lane — so it can take
-as long as the recipe's `runtime.limits.wall`, and it says so before it starts
-waiting. Ctrl+C does the same thing and tells you what a second one would cost.
-`lingtai resume` lifts a shutdown the daemon never got to act on.
+```bash
+lingtai requeue <project> --issue 41 --note "what should change next time"
+```
 
-`restart` is that drain and then one daemon — in this terminal, or through
-`lingtai service` when a supervisor keeps it. It refuses before
-it stops anything — a commit the tracking remote has not got, a dirty worktree,
-anything `lingtai doctor` failed on — because a refusal after the drain is a
-system that is down. A start it performs is in the log, with who asked, why, and
-the commit ([0042](decisions/0042-the-restart-is-a-command.md)).
+For a live run log:
 
----
+```bash
+lingtai attach <runId>
+```
 
-## What to read next
+Do not diagnose every refusal from this tutorial. The
+[operating guide](operating.md) maps each stopped state to the evidence and the
+next action.
 
-- [`README.md`](../README.md) — what this is, the big picture, and the five
-  gate points, on one screen
-- [`guide.md`](guide.md) — the week-two question this tutorial does not answer:
-  what a repository that gets good results does differently, from writing a
-  ticket to reading a failure
-- [`operating.md`](operating.md) — the same path as this tutorial, with the
-  reasons: every refusal, and what each one means
-- [`doc/reference.md`](reference.md) — every enum, every gate action, every
-  refusal reason, counted
-- [`doc/decisions/`](decisions/) — why each of these is the way it is
+## Next: make it yours
+
+- [Guide](guide.md) — write issues that agents can finish and checks can judge
+- [Operating](operating.md) — pause, restart, recover, and understand refusals
+- [The pass](the-pass.html) — the full loop as one diagram
+- [Reference](reference.md) — every recipe key, command, state, and default
+
+To stop taking new work while you adjust things:
+
+```bash
+lingtai pause "tuning the first repository"
+lingtai resume
+```

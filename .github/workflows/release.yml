@@ -75,6 +75,14 @@ jobs:
           # `board/` is identical on every platform; one copy is published.
           if [ "${{ matrix.platform }}" = linux-x64 ]; then
             tar -czf artifacts/board.tar.gz -C dist board
+            # The installer itself, published beside what it installs — the one
+            # address for it that cannot move. A domain serving it can lapse,
+            # be renamed, or answer a bot challenge with a 200 HTML page that
+            # `curl -f` does not catch and `sh` then runs. Same file the site
+            # serves at /install.sh, byte for byte; it lands in SHA256SUMS
+            # below, which is harmless — the script looks up only the names it
+            # fetched, and it never fetches itself.
+            cp apps/site/public/install.sh artifacts/install.sh
           fi
 
       - uses: actions/upload-artifact@v4

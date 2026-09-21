@@ -28,18 +28,26 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 
 ```
 ~/.lingtai/
+├── config.yml                   this machine: the database URL, the agent, limits, ports
+├── <project>/recipe.yml         the recipe — gates, kinds, env names  — persistent
 ├── env/<project>.env            your values, per project — persistent
 ├── repos/<project>.git          bare mirror — persistent
 ├── worktrees/<project>/<runId>  one per run — disposable
-└── runs/<runId>/settings.json   the hook wiring
+├── runs/<runId>/settings.json   the hook wiring
+├── runs/<project>/<runId>.log   what a run is doing, while it does it
+└── locks/                       the conductor, the board, a merge lane, a decision
 ```
 
 | | Lifetime | Why there |
 |---|---|---|
+| `config.yml` | Persistent | **This machine's half of the recipe** — `runtime.agent`, `runtime.limits`, `runtime.assignee`, `database.url`, `board.port`. Written by `lingtai init`, a value at a time, each after it was verified. |
+| `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
 | `worktrees/<project>/<runId>` | One run | Cheap. Cut from the mirror, removed when the run ends — and removed *before* the integrator runs, because a worktree holding `agent/<n>` checked out stops git updating that ref. |
 | `runs/<runId>/settings.json` | One run | **Outside the worktree, deliberately.** An agent that can edit its own hook configuration has no hook configuration. |
+| `runs/<project>/<runId>.log` | While it is owed | What `lingtai attach` and the task page's *run log* tail. **A trace, never a record**: it asks the daemon and the database nothing, so it answers on a stopped system — and a run that landed has no log, because [0034](decisions/0034-the-run-log.md) keeps only the ones still owed an explanation. |
+| `locks/` | While held | One file per lock — the conductor's, the board's, a merge lane's, a decision's. **Not anything in Postgres** ([0052](decisions/0052-the-lock-is-sqlite-on-a-file.md)): each person runs their own Lingtai against their own log, so a lock scoped to one database would have answered `ok` while the real competitor was on somebody else's laptop. |
 | `$TMPDIR/lingtai/*.sock` | One run | The hook's socket. In `$TMPDIR` rather than under `LINGTAI_HOME` because a unix socket path has a hard 104-byte limit and a home directory plus a run id exceeds it — see [ADR 0011](decisions/0011-hook-latency-is-runtime-startup.md). |
 
 Two things in this repository are also not committed: `.env.local`, and
@@ -49,9 +57,10 @@ Two things in this repository are also not committed: `.env.local`, and
 **`rm -rf ~/.lingtai/repos ~/.lingtai/worktrees ~/.lingtai/runs` is safe.**
 Everything in those is either re-clonable from GitHub or belongs to a run that is
 over. The part that matters — the event log — is in Postgres, and none of it is
-here. `~/.lingtai/env` is the exception: you wrote it, nothing else has a copy,
-and deleting it makes every project that requires a value refuse by name until
-you write it again.
+here. **`config.yml`, `<project>/recipe.yml` and `env/` are the exception**: you
+wrote all three, nothing else has a copy, and deleting them leaves a machine
+with no recipe for any project and no value for any name it requires — each
+refused by name until you write it again.
 
 [#18]: https://github.com/steven-zhc/lingtai/issues/18
 [#19]: https://github.com/steven-zhc/lingtai/issues/19
@@ -122,6 +131,13 @@ It refuses twice over if you point it at anything else: the flag has to be set,
 *and* the string it resolves has to differ from the one without the flag.
 
 ### Bringing the database up
+
+> **`lingtai init` does this, and this section is what it does.** Since
+> [#186](https://github.com/steven-zhc/lingtai/issues/186) one command takes a
+> bare machine to the board: it asks for the URL, connects, creates the tables,
+> and only then writes the URL into `~/.lingtai/config.yml` — nothing is written
+> before its choice has been verified. The two scripts below are still here and
+> still work; from a checkout they are the same thing with the steps visible.
 
 Prisma 8 splits planning from applying. Planning is offline; only the second
 half needs a reachable database.
@@ -289,16 +305,28 @@ actually grants those four permissions is a per-repository question, and
 
 ## Onboarding a repository
 
-### 1. Give the repository a recipe
+### 1. Write the recipe — on this machine, not in the repository
 
-Lingtai reads `<repo>/.lingtai/config.yaml` **from the base branch**,
-never from the branch an agent is working on. An agent that edits this file
-changes nothing about the run in flight; the edit shows up in the diff and takes
-effect from the next work item. That rule is borrowed from GitHub Actions and is
-[ADR 0005](decisions/0005-config-in-target-repo.md).
+```
+~/.lingtai/<project>/recipe.yml
+```
 
-Commit this to the base branch of the repository being managed — not to
-Lingtai:
+**Nothing is committed to the repository being managed.** The recipe is yours
+([0046](decisions/0046-lingtai-is-personal.md) §3,
+[#180](https://github.com/steven-zhc/lingtai/issues/180)), and the board's
+wizard writes a first one for you by reading the repository — its scripts, its
+labels, its default branch.
+
+> **This replaced `<repo>/.lingtai/config.yaml`, and the reason is worth
+> keeping.** That file was read **from the base branch**, never from the branch
+> an agent was working on, so an agent that edited it changed nothing about the
+> run in flight — [ADR 0005](decisions/0005-config-in-target-repo.md), borrowed
+> from GitHub Actions. The guarantee is now held by *location* instead: an
+> agent's blast radius is its worktree, and `~/.lingtai/` is not in it. A
+> `.lingtai/config.yaml` still sitting in a managed repository is an ordinary
+> file — nothing reads it, and editing it changes nothing.
+
+Write this file:
 
 ```yaml
 version: 1
@@ -319,7 +347,9 @@ source:
   exclude: [blocked, needs-design]
 
 env:
-  # Variable NAMES only, never values — so this file is safe to commit.
+  # Variable NAMES only, never values — the values are in
+  # ~/.lingtai/env/<project>.env, at 0600, which is the one layer nothing else
+  # writes.
   #
   # `required` means what it says: a name here with no value in any layer
   # refuses this project for the whole pass, before an issue is claimed and
@@ -348,13 +378,37 @@ gates:
     - name: close the ticket
       when: landed
       close: true
+```
 
+**There is no `runtime:` block here, and writing one is refused rather than
+ignored.** `runtime.agent`, `runtime.limits` and `runtime.assignee` are facts
+about *this machine*, not about this repository, so they live in
+`~/.lingtai/config.yml` ([0046](decisions/0046-lingtai-is-personal.md) §3):
+
+```yaml
 runtime:
   agent: claude-code
-  limits:
-    turns: 300
-    wall: 2h
+  limits: { turns: 300, wall: 2h, rounds: 2, restarts: 0 }
+
+projects:
+  nextloom-ai-admin:
+    runtime:
+      limits: { wall: 2h }      # this one repository, over the machine's own
 ```
+
+Left in the recipe, each is named back at you —
+`runtime.agent: moved to this machine (0046 §3) — write it in
+~/.lingtai/config.yml … Nothing here was applied` — and `gates:` written in the
+machine file is refused the same way. **Both files refuse what belongs in the
+other**, because a key silently dropped and a key that does not exist are
+different facts to whoever wrote it ([0016](decisions/0016-the-settled-model.md)
+§4), and a gate that reads as declared while holding nothing is a way to weaken
+a gate quietly.
+
+> [0053](decisions/0053-the-recipe-chooses-the-agent-for-each-role.md) moves the
+> agent and the limits back into the recipe, per *role* — development,
+> discussion, and each agent gate. It is accepted and **not implemented**: the
+> refusal above is what `main` does today.
 
 A shorter form, if the project is an ordinary pnpm workspace:
 
@@ -466,29 +520,34 @@ with no projects, a caption with one and a filter with two, and the only route
 left was this command or typing the wizard's path from memory.
 
 There is nothing else to write. The tier, the gates, the priority order **and the
-base** are all the recipe's, in the managed repository — which is why this
-command takes a slug and nothing more.
+base** are all the recipe's, in `~/.lingtai/<project>/recipe.yml` — which is why
+this command takes a slug and nothing more, and why it reads nothing from the
+repository to do it.
 
-`--base` is the one exception, and it is not a second way of saying what the base
-is: you have to be on *some* branch to read `.lingtai/config.yaml` at all, and
-`--base` says which. The file's own `repo.base` then decides, and that is what
-gets recorded:
+`--base` is a **bootstrap hint, and it is not a second way of saying what the
+base is.** The file's own `repo.base` decides, and that is what gets recorded:
 
 | `--base` | what happens |
 |---|---|
-| omitted | the recipe is read from the repository's default branch; if it declares another `repo.base`, it is read again there and **that** branch is recorded |
+| omitted | the repository's default branch is the hint; the recipe's `repo.base` is adopted and **that** branch is recorded |
 | given, agreeing with `repo.base` | unchanged |
 | given, disagreeing | refused, naming both branches, before anything is written |
 
 ```
 pnpm lingtai add steven-zhc/nextloom-ai-admin --base main
---base main, but .lingtai/config.yaml there declares repo.base: develop. …
+--base main, but ~/.lingtai/nextloom-ai-admin/recipe.yml declares repo.base: develop.
+This command will not overrule either — re-run without --base to take the recipe's,
+or fix repo.base in the file.
 ```
 
-So reach for `--base` when the recipe is not on the default branch — never to
-override what the recipe says. Editing `repo.base` afterwards re-creates the
-disagreement, and a run refuses on it rather than obeying rules from the wrong
-branch (`lingtai doctor` has the same check).
+**Only a branch a *person* typed earns that refusal.** A branch the system
+remembered — the one `ProjectOnboardingStarted` recorded, replayed by the
+board's *Recheck* — is a hint and is quietly adopted, because there is no flag
+for a button to omit and the refusal's advice would name something nobody typed.
+
+Editing `repo.base` afterwards re-creates the disagreement, and a run refuses on
+it rather than obeying a base nobody confirmed (`lingtai doctor` has the same
+check).
 
 ### 3. Check it
 
@@ -514,12 +573,12 @@ nextloom-ai-admin  base=develop
 ```
 
 The first three lines are **what this project will and will not take**, and
-`lingtai daemon` prints the same block for every registered project at startup,
+`lingtai start` prints the same block for every registered project at startup,
 from the same function, before it takes anything. A project whose recipe will
 not resolve gets that slot rather than being left out:
 
 ```
-lingtai        RECIPE INVALID — .lingtai/config.yaml on main is not valid: source.kinds.3: Invalid option
+lingtai        RECIPE INVALID — ~/.lingtai/lingtai/recipe.yml is not valid: source.kinds.3: Invalid option
                nothing will be taken from this project
 ```
 
@@ -624,8 +683,13 @@ nothing was merged. Re-run without --no-merge to merge it.
 ### Let the daemon do it
 
 ```bash
-pnpm lingtai daemon
+pnpm lingtai start
 ```
+
+> `lingtai daemon` still answers and is the name this used to have. A
+> LaunchAgent or systemd unit already on disk has it written into its plist,
+> and renaming a command must not stop a supervisor that is already running
+> (#159). `start` is the name.
 
 One process, holding one lock — a file under `~/.lingtai/locks`, not anything in Postgres. It keeps the projections current and
 takes work: a completion event — landed, released, blocked, refused — is what
@@ -864,10 +928,10 @@ intermittently, and mostly not at all — harder to find than a fixed clash.
 
 ### Keep it running
 
-**No service manager? Run `lingtai daemon` and `lingtai board start` in the
+**No service manager? Run `lingtai start` and `lingtai board start` in the
 foreground.** A container, a
 Linux whose init is not systemd, a box with no user session: `pnpm lingtai
-daemon` under whatever supervises that machine is a first-class way to run
+start` under whatever supervises that machine is a first-class way to run
 Lingtai, not a debug mode, and it needs nothing else from this section.
 `lingtai service` says the same when it finds no `launchctl` or `systemctl`.
 
@@ -983,7 +1047,7 @@ whole cgroup, agent included, where launchd signals only the daemon.
 
 Both files are generated, never committed: they carry this checkout's absolute
 paths, `node`'s, and the installing user's `HOME`, `USER` and `LINGTAI_HOME`.
-`lingtai daemon` itself is unchanged — `service` only manages what runs it. A
+The daemon itself is unchanged — `service` only manages what runs it. A
 path a systemd unit cannot carry verbatim (a space, a quote, `%`, `$`, `\`) is
 refused by name rather than written in a form systemd would misread.
 
@@ -1324,7 +1388,8 @@ Every refusal names itself. The common ones:
 |---|---|
 | `the GitHub App is not installed on …` | Step 3 above — install it on that repository. |
 | `the installation is missing permissions:` | Step 1's table; each gap is listed with what it has, what it needs and what it is for. |
-| `no .lingtai/config.yaml on develop` | The recipe is missing from the **base branch**. A copy on the agent's branch is not read, by design. |
+| `no recipe at ~/.lingtai/<project>/recipe.yml` | The recipe is yours and lives on this machine (0046 §3) — nothing is read from the repository, and nothing needs committing to it. The board's wizard writes a first one by reading the repository. |
+| `runtime.agent: moved to this machine (0046 §3)` | A key that belongs in `~/.lingtai/config.yml` was left in the recipe. **Nothing in that recipe was applied** — the file is refused whole, rather than the key being dropped. Same for `runtime.limits`, `runtime.assignee`, and for `gates:` written in the machine file. |
 | `runtime: signed in — claude-code reports not signed in` | `lingtai doctor` asks in the environment a *run* gets, not yours. If you are signed in and this fails, that environment is missing something the credential store needs. `/login` will not help. |
 | `no lingtai-hook binary at …` | `pnpm --filter @lingtai/hook build`. A run without the guard must not start. |
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |

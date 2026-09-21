@@ -1,7 +1,19 @@
 #!/bin/sh
 # Lingtai's installer (#184, doc/decisions/0051-a-version-is-a-directory.md).
 #
-#   curl -fsSL https://lingtai.dev/install.sh | sh
+#   curl -fsSL https://lingtai.nextloom.ai/install.sh | sh
+#
+# **Two addresses, and they are not interchangeable.** The one above is the
+# front door. The one that cannot move is the release asset:
+#
+#   curl -fsSL https://github.com/steven-zhc/lingtai/releases/latest/download/install.sh | sh
+#
+# A domain can lapse, be renamed, or end up behind a bot challenge answering
+# 200 with an HTML page — which `curl -f` does not catch, because it is not an
+# error status, and which then gets piped into `sh`. Neither address is
+# load-bearing after this script runs: every artifact below comes straight from
+# GitHub Releases, and so does `lingtai upgrade`. A domain that moves breaks
+# new installs and nothing that is already installed.
 #
 # What it does, in order, and nothing else:
 #

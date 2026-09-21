@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FRONT_PAGE_DOCS } from "@/lib/docs";
 import { readSnapshot, stamp } from "@/lib/snapshot";
-import { Bar, Foot, REPO } from "./chrome";
+import { Bar, Foot, INSTALL_FALLBACK, INSTALL_URL, REPO } from "./chrome";
 import { NoSnapshot, SnapshotBoard } from "./snapshot-board";
 
 export default async function Home() {
@@ -21,6 +21,17 @@ export default async function Home() {
                 runs your repository&rsquo;s checks, and lands passing work. If a run needs you, it
                 stops with a reason.
               </p>
+              <div className="install">
+                <div className="command install-line">
+                  <span>$</span> curl -fsSL {INSTALL_URL} | sh
+                </div>
+                <p className="install-note">
+                  macOS and Linux, arm64 or x64. It checks a SHA256 before it unpacks a byte, and
+                  ends at <code>lingtai init</code>. Or read it first:{" "}
+                  <a className="link" href={INSTALL_URL}>the script</a> ·{" "}
+                  <a className="link" href={INSTALL_FALLBACK}>from the release</a>
+                </p>
+              </div>
               <div className="hero-actions">
                 <Link className="way-in" href="/docs/tutorial/">
                   Get started <span aria-hidden="true">↗</span>
@@ -61,7 +72,7 @@ export default async function Home() {
                   <div className="mini-check final"><span>03</span> Merge if allowed <b>→</b></div>
                 </div>
                 <h3>You set the boundaries</h3>
-                <p>The agent writes code. Your committed recipe determines the checks and whether a person must approve.</p>
+                <p>The agent writes code. Your local recipe determines the checks and whether a person must approve.</p>
               </article>
               <article className="benefit-card">
                 <div className="mini-board" aria-hidden="true">
@@ -99,30 +110,31 @@ export default async function Home() {
             <div className="setup-lead">
               <p className="kicker">How you use it</p>
               <h2 id="setup-title">Start with one repository.</h2>
-              <p>Set it up on your machine, tell it which issues count, then let the daemon run.</p>
+              <p>Set it up on your machine, tell it which issues count, then let it run.</p>
               <Link className="link" href="/docs/tutorial/">Follow the complete tutorial →</Link>
             </div>
             <ol className="setup-steps">
               <li>
                 <span className="step-number">01</span>
                 <div>
-                  <h3>Connect the essentials</h3>
-                  <p>Bring Postgres, a GitHub App, and a signed-in agent runtime. Run <code>pnpm lingtai doctor</code> to check the setup.</p>
+                  <h3>One command, from a bare machine</h3>
+                  <div className="command"><span>$</span> lingtai init</div>
+                  <p>It asks for a Postgres URL, creates the tables, detects your agent runtime, and creates the GitHub App from a manifest in one click. It ends on the board, ready for a repository.</p>
                 </div>
               </li>
               <li>
                 <span className="step-number">02</span>
                 <div>
-                  <h3>Commit your rules</h3>
-                  <p>In <code>.lingtai/config.yaml</code>, choose issue labels, allowed environment variables, and the checks a change must pass.</p>
+                  <h3>Review the proposed rules</h3>
+                  <p>The board reads the repository and proposes labels, checks, and limits. You make the two lasting choices: how far a ticket may run, and whether a person approves the merge.</p>
                 </div>
               </li>
               <li>
                 <span className="step-number">03</span>
                 <div>
-                  <h3>Give it a repo and go</h3>
-                  <div className="command"><span>$</span> pnpm lingtai add owner/repo</div>
-                  <div className="command"><span>$</span> pnpm lingtai daemon</div>
+                  <h3>Check it, then start</h3>
+                  <div className="command"><span>$</span> lingtai doctor</div>
+                  <div className="command"><span>$</span> lingtai start</div>
                   <p>Label an issue. Follow the run on the local board.</p>
                 </div>
               </li>
@@ -149,9 +161,10 @@ export default async function Home() {
               <p>Self-hosted software you can inspect, pause, and improve—not a promise that every edge is solved.</p>
             </div>
             <ul className="limit-list">
-              <li><b>Not a container sandbox.</b> Guarded runs use a worktree, filtered environment, and recording hook; <code>sandboxed</code> is not built.</li>
-              <li><b>Two gate points are not active.</b> Configured <code>admit</code> and <code>merge</code> pipelines are shown but do not execute yet. <a className="link" href="https://github.com/steven-zhc/lingtai/issues/58">Track #58</a></li>
-              <li><b>There are operational edges.</b> Sequence gaps, daemon code updates, and store-version compatibility still need work. <Link className="link" href="/docs/operating/">Read the operating guide</Link></li>
+              <li><b>Postgres is required.</b> A database of its own — not one belonging to a project you manage. Running entirely on SQLite is decided and three-quarters built: it becomes a choice you make at setup, not a default you fall into. <a className="link" href={`${REPO}/issues/179`}>Track #179</a></li>
+              <li><b>Not a container sandbox.</b> Guarded runs use a worktree, a filtered environment, and a recording hook; <code>sandboxed</code> is a tier the schema names and nothing enforces yet.</li>
+              <li><b>A running daemon holds the code it started with.</b> Merging does not reach the process that is conducting, so picking up new code is <code>lingtai restart</code> — which refuses first, on a commit the remote has not got, a dirty tree, or a red doctor.</li>
+              <li><b>0.9.0 is the first release.</b> It exists to prove this path end to end: four binaries, a board, checksums, and an installer. <Link className="link" href="/docs/operating/">Read the operating guide</Link></li>
             </ul>
           </section>
 
@@ -202,7 +215,7 @@ function RunDiagram() {
             <div className="work-line"><span className="work-node" /> Agent makes a change</div>
             <div className="work-line"><span className="work-node check" /> Your checks run</div>
           </div>
-          <div className="diagram-footnote">Your repository sets the rules</div>
+          <div className="diagram-footnote">Your local recipe sets the rules</div>
         </div>
         <div className="diagram-arrow" aria-hidden="true">→</div>
         <div className="diagram-column result-column">

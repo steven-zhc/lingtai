@@ -35,8 +35,8 @@ exactly what it was.
 | | |
 |---|---|
 | **Nothing decides in private** | Every component appends to one table and keeps no state of its own, so the board and the CLI cannot disagree. |
-| **The managed repository stays ordinary** | One committed file, `.lingtai/config.yaml`. No bot account, no CI job, no label state machine. Delete Lingtai tomorrow and the repository would not notice. |
-| **The repository's own team sets the rules** | What may be picked up, what environment it gets, what must pass. Nothing privileged sits above that file. |
+| **The managed repository stays ordinary** | **Nothing is committed to it at all.** No configuration file, no bot account, no CI job, no label state machine. Delete Lingtai tomorrow and the repository would not notice, because there is nothing there to delete. |
+| **The rules are yours, and they are on your machine** | What may be picked up, what environment it gets, what must pass — `~/.lingtai/<project>/recipe.yml`. Nothing privileged sits above that file, and an agent cannot reach it: its blast radius is a worktree, and `~/.lingtai/` is not in it ([0046](doc/decisions/0046-lingtai-is-personal.md) §3). What a *team* shares was never the recipe — it is branch protection. |
 | **A configured check that did not run is a bug** | Not a preference — the thing the design is built to make visible. An unconfigured gate is *shown as skipped*, never omitted, because absent and silently-not-run must be distinguishable. |
 | **Refusing is cheap and early** | A missing environment value refuses the whole project before an issue is claimed: no worktree, no agent, no money. |
 

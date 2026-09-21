@@ -255,10 +255,17 @@ it is not a security boundary.
 
 ## 6. Configuration
 
-Recipe in `<repo>/.lingtai/config.yaml`, and a run's recipe read from
-`origin/<base>` rather than from the agent's branch. Nothing sits above it.
-Full reasoning: [decisions/0005](decisions/0005-config-in-target-repo.md).
-The schema is [`packages/config/src/recipe.ts`](../packages/config/src/recipe.ts).
+Recipe in `~/.lingtai/<project>/recipe.yml` — **this machine's, not the managed
+repository's** — with `runtime.agent` and `runtime.limits` beside it in
+`~/.lingtai/config.yml`. Nothing sits above it, and both files refuse by name
+what belongs in the other. Full reasoning:
+[decisions/0046](decisions/0046-lingtai-is-personal.md) §3, which superseded
+[0005](decisions/0005-config-in-target-repo.md)'s placement — reading a
+committed file from `origin/<base>` kept an agent from editing the rules of its
+own run, and keeping the file outside every worktree does the same thing more
+completely. What a run was actually given is on the log
+([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)).
+The schema is [`packages/recipe/src/recipe.ts`](../packages/recipe/src/recipe.ts).
 
 Onboarding is `lingtai add <owner>/<repo>`, and `lingtai doctor <project>` is the old
 `preflight()` generalised — its value is not the first run but every time
