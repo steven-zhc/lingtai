@@ -136,6 +136,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0052](decisions/0052-the-lock-is-sqlite-on-a-file.md) | **The lock is SQLite's, on a file, and the queue is made rather than given** | accepted; supersedes 0046 §1's `flock(2)`, which Node cannot call |
 | [0053](decisions/0053-the-recipe-chooses-the-agent-for-each-role.md) | **The recipe chooses the agent for each role** | accepted, implementation pending; supersedes 0046 §3's machine placement of agent and limits |
 | [0054](decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md) | **A role keeps its permissions when its agent changes** | accepted, implementation pending; extends 0007/0033; independent review worktrees and enforceable limits |
+| [0055](decisions/0055-two-implementations-chosen-at-init.md) | **Every store has two implementations, and init chooses one** | accepted; supersedes 0003's premise |
 
 ## Experiments
 
