@@ -8,6 +8,8 @@
     "./test-support": "./test/support.ts",
     "./memory": "./test/memory.ts",
     "./store": "./src/event-store.ts",
+    "./subscribe": "./src/subscribe.ts",
+    "./wake": "./src/wake.ts",
     "./schema": "./src/schema.ts",
     "./sqlite": "./src/sqlite.ts"
   },

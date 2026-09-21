@@ -29,9 +29,8 @@
  */
 import type { Finding, PayloadOf } from "@lingtai/domain";
 import { findingKey, parseWorkItemStream } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
-import type { Projection } from "./projection.ts";
-import pg from "pg";
+import { createPostgresProjectionStore } from "./postgres.ts";
+import type { Projection } from "./store.ts";
 
 export const BACKLOG_TABLE = "finding_backlog";
 
@@ -228,58 +227,23 @@ export interface ReadBacklogOptions {
   url?: string;
 }
 
-/** Oldest first within a project: a backlog is worked from the bottom. */
+/**
+ * Oldest first within a project: a backlog is worked from the bottom.
+ *
+ * Out of Postgres unless a caller says otherwise. The query and the mapping are
+ * `postgres.ts`'s since #219 and unchanged by the move, including the one thing
+ * that is easy to lose: **a database no projector has ever started has no
+ * table, and that is an empty backlog rather than a failure.**
+ */
 export async function readBacklog(options: ReadBacklogOptions = {}): Promise<BacklogEntry[]> {
-  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
-  await client.connect();
+  const store = createPostgresProjectionStore({ url: options.url, max: 1 });
   try {
-    const where: string[] = [];
-    const args: unknown[] = [];
-    for (const [column, value] of [
-      ["project", options.project],
-      ["status", options.status],
-      ["key", options.key],
-    ] as const) {
-      if (value === undefined) continue;
-      args.push(value);
-      where.push(`${column} = $${args.length}`);
-    }
-    const r = await client.query(
-      `select * from finding_backlog
-       ${where.length > 0 ? `where ${where.join(" and ")}` : ""}
-       order by project, raised_seq`,
-      args,
-    );
-    return r.rows.map((row) => ({
-      key: row.key,
-      project: row.project,
-      issue: row.issue,
-      taskId: row.task_id,
-      runId: row.run_id,
-      gate: row.gate,
-      action: row.action,
-      onSha: row.on_sha,
-      file: row.file,
-      line: row.line,
-      severity: row.severity,
-      claim: row.claim,
-      failureScenario: row.failure_scenario,
-      raisedSeq: String(row.raised_seq),
-      raisedAt: row.raised_at,
-      status: row.status,
-      decidedBy: row.decided_by,
-      decidedAt: row.decided_at,
-      kind: row.kind,
-      proposedRef: row.proposed_ref,
-      proposedUrl: row.proposed_url,
-      reason: row.reason,
-    }));
-  } catch (err) {
-    // A database no projector has ever started has no table, and that is an
-    // empty backlog rather than a failure.
-    if ((err as { code?: string }).code === "42P01") return [];
-    throw err;
+    return await store.backlog({
+      project: options.project,
+      status: options.status,
+      key: options.key,
+    });
   } finally {
-    await client.end();
+    await store.close();
   }
 }

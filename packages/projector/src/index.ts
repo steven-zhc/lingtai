@@ -8,16 +8,34 @@
  * a package boundary, which is exactly what `ProjectionContext` was doing.
  *
  * An event store offers resumption. It does not remember its readers.
+ *
+ * Since #219 the runner holds a `ProjectionStore` rather than a pool of its
+ * own: one interface over `task_view`, `task_view_run`, `finding_backlog` and
+ * `finding_backlog_run`, with `postgres.ts` beside `sqlite.ts` and
+ * `test/contract.ts` — which neither owns — deciding whether they agree. The
+ * SQLite one is reached at `@lingtai/projector/sqlite`, so that a barrel import
+ * never loads `node:sqlite` on a Postgres install. **Nothing in this package
+ * chooses between them.**
  */
 export {
   createProjectionRunner,
   projectionLag,
-  type Projection,
-  type ProjectionContext,
-  type ProjectionLag,
   type ProjectionRunner,
   type ProjectionRunnerOptions,
 } from "./projection.ts";
+export {
+  type BacklogQuery,
+  type Projection,
+  type ProjectionContext,
+  type ProjectionLag,
+  type ProjectionRow,
+  type ProjectionStore,
+  type TaskQuery,
+} from "./store.ts";
+export {
+  createPostgresProjectionStore,
+  type PostgresProjectionStoreOptions,
+} from "./postgres.ts";
 export {
   ProjectionShapeError,
   declaredColumns,

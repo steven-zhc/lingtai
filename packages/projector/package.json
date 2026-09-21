@@ -5,10 +5,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./task-view": "./src/task-view.ts"
+    "./task-view": "./src/task-view.ts",
+    "./store": "./src/store.ts",
+    "./sqlite": "./src/sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run -c vitest.pure.config.ts",
     "test:db": "vitest run"
   },
   "dependencies": {

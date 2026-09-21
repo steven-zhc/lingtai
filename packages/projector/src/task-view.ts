@@ -49,9 +49,8 @@
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from "@lingtai/domain";
 import { parseWorkItemStream } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
-import type { Projection, ProjectionContext } from "./projection.ts";
-import pg from "pg";
+import { createPostgresProjectionStore } from "./postgres.ts";
+import type { Projection, ProjectionContext } from "./store.ts";
 
 /**
  * Where a task is.
@@ -1120,94 +1119,28 @@ export interface ReadTasksOptions {
   url?: string;
 }
 
+/**
+ * The board's cards, out of Postgres unless a caller says otherwise.
+ *
+ * The query and the mapping moved into `postgres.ts` with #219 and did not
+ * change on the way; what is left here is the default — a store opened for this
+ * read and closed after it, exactly as the client it replaced was. **Nothing
+ * here chooses between the implementations**: that is
+ * [#179](https://github.com/steven-zhc/lingtai/issues/179)'s, and a caller that
+ * already has a store calls `store.tasks` and skips this.
+ */
 export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCard[]> {
-  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
-  await client.connect();
+  const store = createPostgresProjectionStore({ url: options.url, max: 1 });
   try {
-    const days = options.retentionDays ?? DEFAULT_RETENTION_DAYS;
-    const args: unknown[] = [days];
-    let where = `where (t.closed_at is null or t.closed_at > now() - ($1 || ' days')::interval)`;
-    if (options.project) {
-      args.push(options.project);
-      where += ` and t.project = $2`;
-    }
-
-    const r = await client.query(
-      `select t.*
-       from task_view t
-       ${where}
-       order by t.project,
-         -- "Waiting on you" is oldest first: it is the column that stalls, and
-         -- what has waited longest is what to do next. Null everywhere else, so
-         -- the other lanes fall through to the ticket number.
-         case when t.state = 'waiting' then t.updated_at end asc nulls last,
-         nullif(regexp_replace(t.issue, '\\D', '', 'g'), '')::bigint`,
-      args,
-    );
-
-    return r.rows.map((row) => {
-      const gates = (row.gates ?? {}) as Record<string, string>;
-      // Only the run the row names. A released row names none, so it counts
-      // nothing — which is the point: between a release and the next attempt
-      // reaching the same point there is no live verdict to report, and the
-      // card used to report the dead one anyway (#78).
-      const mine = row.run_id ? `${row.run_id as string}:` : null;
-      const verdicts = mine
-        ? Object.entries(gates)
-            .filter(([key]) => key.startsWith(mine))
-            .map(([, verdict]) => verdict)
-        : [];
-      const count = (v: string) => verdicts.filter((x) => x === v).length;
-      // Summed on read, for the reason the map exists: one pass may buy more
-      // than one round, and an operator asking what diagnosis cost means all of
-      // it. Null rather than 0 when nothing was spent — nothing bought and
-      // something bought for free are different facts, and only one of them has
-      // ever happened.
-      const spent = Object.values((row.repair_costs ?? {}) as Record<string, number | null>).filter(
-        (v): v is number => typeof v === "number",
-      );
-      return {
-        taskId: row.task_id,
-        project: row.project,
-        issue: row.issue,
-        title: row.title ?? `#${row.issue}`,
-        kind: row.kind ?? "unknown",
-        state: row.state as TaskState,
-        tier: row.tier,
-        runId: row.run_id,
-        turns: row.turns,
-        costUsd: row.cost_usd,
-        gatesPassed: count("passed"),
-        gatesFailed: count("failed"),
-        gatesWaived: count("waived"),
-        gatesApproved: count("approved"),
-        baseSha: row.base_sha,
-        headSha: row.head_sha,
-        files: row.files,
-        insertions: row.insertions,
-        deletions: row.deletions,
-        note: row.note,
-        updatedAt: row.updated_at,
-        closedAt: row.closed_at,
-        attempts: row.attempts,
-        lastAttemptAt: row.last_attempt_at,
-        restarts: row.restarts ?? 0,
-        restartsOf: row.restarts_of ?? 0,
-        blocked: row.blocked === true,
-        needs: row.needs ?? null,
-        // Written from a parsed payload and read back as it was written, so the
-        // shape is the event's rather than this reader's guess about it.
-        diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
-        asked: row.asked === true,
-        answer: (row.answer as TaskCard["answer"]) ?? null,
-        awaitingSha: row.awaiting_sha,
-        awaitingApproval: row.awaiting_sha !== null,
-        repairPending: row.repair_pending === true,
-        repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
-      };
+    return await store.tasks({
+      project: options.project,
+      // Resolved here rather than in the store, so that changing the window
+      // stays a different query and a store never has to know the board's
+      // default.
+      retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
     });
   } finally {
-    await client.end();
+    await store.close();
   }
 }
 
@@ -1227,18 +1160,12 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
 export async function readTaskProjects(
   options: Pick<ReadTasksOptions, "retentionDays" | "url"> = {},
 ): Promise<string[]> {
-  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
-  await client.connect();
+  const store = createPostgresProjectionStore({ url: options.url, max: 1 });
   try {
-    const r = await client.query<{ project: string }>(
-      `select distinct project
-       from task_view
-       where (closed_at is null or closed_at > now() - ($1 || ' days')::interval)
-       order by project`,
-      [options.retentionDays ?? DEFAULT_RETENTION_DAYS],
-    );
-    return r.rows.map((row) => row.project);
+    return await store.taskProjects({
+      retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
+    });
   } finally {
-    await client.end();
+    await store.close();
   }
 }
