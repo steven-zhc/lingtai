@@ -577,12 +577,24 @@ Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 
 `claude-code` · `codex`
 
-## integration refusal reason — 7
+## integration refusal reason — 8
 
 Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
-`gate-failed` · `no-commits` · `lane-busy`
+`gate-failed` · `no-commits` · `push-rejected` · `lane-busy`
+
+`lane-busy` is **read and never written** since #194: the merge lane took a lock
+and told the loser this, and git's rejected push — `push-rejected` — is what
+tells it now. The value stays because events on the log carry it.
+
+A `push-rejected` on the log is a base that beat this merge **four times**
+(`LOST_PUSHES`, `packages/repo/src/integrate.ts`). A single lost race says
+nothing: the lane answers it itself, by merging against the base where it now is
+and pushing again, and the whole run of pushes is one `IntegrationAttempted` and
+one terminal. That is on purpose — an `IntegrationRefused` reaches the `desktop`
+subscriber as *did not merge* and wakes a queue pass, and a race the lane goes on
+to win is neither.
 
 ## run stage — 13
 
@@ -648,8 +660,10 @@ them match the outcome, so that *configured and resolved to nothing* and
 `gates: end ran on what landed` compares, and what `lingtai end replay`
 puts right.
 
-Nothing that changes *code* goes through here — that is git's job, under the
-merge lane's lock.
+Nothing that changes *code* goes through here — that is git's job. The merge
+lane holds no lock to do it under: since #194 two integrations against one base
+overlap, and git's ref update is what decides which of them lands, by rejecting
+the second push (`push-rejected`, above).
 
 ## notification subscription — 0 by default
 

@@ -31,9 +31,9 @@
  * so it can run on every `lingtai doctor` and at every daemon start — which is
  * the whole point, because the alternative is finding out when the daemon stops.
  */
-import pg from "pg";
 import { postgresUrl } from "@lingtai/env";
-import type { Projection, ProjectionContext } from "./projection.ts";
+import { createPostgresProjectionStore } from "./postgres.ts";
+import type { Projection, ProjectionContext, ProjectionStore } from "./store.ts";
 
 /** One table that exists and does not match the DDL that declares it. */
 export interface ProjectionDrift {
@@ -192,10 +192,10 @@ export async function declaredShape(projection: Projection): Promise<Map<string,
   return declared;
 }
 
-/** The comparison, inside a connection somebody else owns. */
+/** The comparison, against a store somebody else owns. */
 export async function shapeIn(
   projection: Projection,
-  ctx: ProjectionContext,
+  store: ProjectionStore,
 ): Promise<ProjectionShape> {
   const declared = await declaredShape(projection);
   const tables = [...declared.keys()];
@@ -203,25 +203,16 @@ export async function shapeIn(
     return { projection: projection.name, matched: [], absent: [], drift: [] };
   }
 
-  const rows = await ctx.query<{ table_name: string; column_name: string }>(
-    `select table_name, column_name from information_schema.columns
-     where table_schema = current_schema() and table_name = any($1::text[])`,
-    [tables],
-  );
-  const live = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const set = live.get(row.table_name) ?? new Set<string>();
-    set.add(row.column_name);
-    live.set(row.table_name, set);
-  }
+  const live = await store.columnsOf(tables);
 
   const matched: string[] = [];
   const absent: string[] = [];
   const drift: ProjectionDrift[] = [];
   for (const [table, columns] of declared) {
     const have = live.get(table);
-    // No row in the catalogue means the table does not exist, and a table that
-    // does not exist is not drifted — `create` makes it, at the current shape.
+    // Absent from the catalogue means the table does not exist, and a table
+    // that does not exist is not drifted — `create` makes it, at the current
+    // shape.
     if (!have) {
       absent.push(table);
       continue;
@@ -235,26 +226,20 @@ export async function shapeIn(
 }
 
 /**
- * The same comparison, on its own connection. What `lingtai doctor` asks.
+ * The same comparison, on a connection of its own. What `lingtai doctor` asks.
  *
- * Reads `information_schema` and nothing else, which is the rule the doctor is
- * built on: a diagnostic that writes to the system of record is the wrong shape.
+ * Reads the catalogue and nothing else, which is the rule the doctor is built
+ * on: a diagnostic that writes to the system of record is the wrong shape.
  */
 export async function projectionShape(
   projection: Projection,
   url = postgresUrl(),
 ): Promise<ProjectionShape> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
+  const store = createPostgresProjectionStore({ url, max: 1 });
   try {
-    return await shapeIn(projection, {
-      async query(text, values) {
-        const r = await client.query(text, values ? [...values] : undefined);
-        return r.rows;
-      },
-    });
+    return await shapeIn(projection, store);
   } finally {
-    await client.end();
+    await store.close();
   }
 }
 

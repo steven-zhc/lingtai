@@ -58,7 +58,8 @@ import { githubApp, hasGitHubApp, postgresUrl } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
-import pg from "pg";
+import { createPostgresDaemonStore } from "./postgres.ts";
+import type { DaemonStore } from "./store.ts";
 
 /**
  * One client per registered project.
@@ -121,6 +122,15 @@ export interface Divergence {
 export interface ConvergeOptions {
   store?: EventStore;
   url?: string;
+  /**
+   * Where the candidate streams are looked up. Defaults to Postgres at `url`.
+   *
+   * As `reconcile`'s: `store` is the log this reads and appends through, and
+   * this answers the one question about the log that `EventStore` does not —
+   * *which streams are worth folding*. Given without `store`, the log read is
+   * the one this carries — see `logOf`.
+   */
+  daemonStore?: DaemonStore;
   /** Injected so a test needs no GitHub App. Keyed by project name. */
   clients?: Map<string, GitHubClient>;
   /** Injected so a test needs no `prj-` streams. */
@@ -138,21 +148,32 @@ export interface ConvergeOptions {
  * log and then against GitHub — that part cannot be SQL, because the target
  * comes from `labelsFor` rather than from a table.
  */
-async function candidates(url: string): Promise<Set<string>> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    const live = await client.query<{ stream_id: string }>(
-      `select distinct stream_id from events where stream_id like 'wi-%'
-       and stream_id in (
-         select stream_id from events
-         where type in ('WorkItemClaimed', 'WorkItemBlocked', 'WorkItemReleased', 'WorkItemLanded', 'WorkItemUnblocked')
-       )`,
-    );
-    return new Set(live.rows.map((r) => r.stream_id));
-  } finally {
-    await client.end();
-  }
+/**
+ * The log this reads and appends through: **the one the candidates came from.**
+ *
+ * `store` when a caller named one, and otherwise the log the injected
+ * `daemonStore` carries, never the process-wide one. `candidates()` returns
+ * stream ids from whichever store it was given, and folding those ids out of a
+ * different log answers *no drift* rather than failing — see `reconcile.ts`'s
+ * `logOf`, which is the same rule for the same reason.
+ */
+function logOf(options: ConvergeOptions): EventStore {
+  return options.store ?? options.daemonStore?.events ?? eventStore;
+}
+
+async function candidates(store: DaemonStore): Promise<Set<string>> {
+  return new Set(
+    await store.streams({
+      prefixes: ["wi-%"],
+      types: [
+        "WorkItemClaimed",
+        "WorkItemBlocked",
+        "WorkItemReleased",
+        "WorkItemLanded",
+        "WorkItemUnblocked",
+      ],
+    }),
+  );
 }
 
 /**
@@ -162,14 +183,15 @@ async function candidates(url: string): Promise<Set<string>> {
  * making it happen — the same split `findOrphans` has.
  */
 export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Divergence[]> {
-  const store = options.store ?? eventStore;
-  const url = options.url ?? postgresUrl();
+  const store = logOf(options);
+  const streams =
+    options.daemonStore ?? createPostgresDaemonStore({ url: options.url ?? postgresUrl() });
   const projects = options.projects ?? (await loadProjects());
   const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]));
 
   const found: Divergence[] = [];
 
-  for (const workItemId of await candidates(url)) {
+  for (const workItemId of await candidates(streams)) {
     const parsed = parseWorkItemStream(workItemId);
     if (!parsed) continue;
     const issue = Number(parsed.issue);
@@ -275,7 +297,7 @@ export async function convergeIssues(
   options: ConvergeOptions = {},
 ): Promise<{ divergences: Divergence[]; converged: Divergence[] }> {
   const log = options.log ?? (() => {});
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const divergences = await findIssueDrift(options);
   if (options.dryRun) return { divergences, converged: [] };
 

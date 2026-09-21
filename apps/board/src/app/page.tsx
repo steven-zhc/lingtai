@@ -17,6 +17,11 @@ import { elapsed } from "@/lib/progress";
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { Pending } from "./pending.tsx";
+// Whether there is an App at all, which is where the bar's add-a-repository
+// lands: the picker once it exists, step 0 before. Read here and handed down
+// so `projects.tsx` stays a fold over its arguments (#216).
+import { hasGitHubApp } from "@lingtai/env";
+import { Projects } from "./projects.tsx";
 import { inWords } from "@lingtai/conductor/queue";
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
@@ -707,37 +712,12 @@ export default async function Page({
           Lingtai
         </span>
         <span className="sep" />
-        {/* A filter, not a caption. With one project there is nothing to choose
-            between, so it stays the sentence it was.
-
-            **Nothing configured is the one board with somewhere to go**, and it
-            is the same object rather than a fifth one: the slot already says
-            *there is nothing here yet*, and step 0 — create the App, install
-            it, add a repository — is what a person on that board is looking
-            for (#169). A board with projects gets the filter it always had, so
-            the row does not grow. */}
-        {filters.length === 0 ? (
-          <Link className="tab" href="/setup/github-app" title="create the GitHub App, then install it">
-            no project configured
-          </Link>
-        ) : filters.length === 1 ? (
-          <span>{filters[0]}</span>
-        ) : (
-          <span className="filter">
-            <Link className={`tab${only === undefined ? " on" : ""}`} href="/">
-              all
-            </Link>
-            {filters.map((p) => (
-              <Link
-                key={p}
-                className={`tab${only === p ? " on" : ""}`}
-                href={`/?project=${encodeURIComponent(p)}`}
-              >
-                {p}
-              </Link>
-            ))}
-          </span>
-        )}
+        {/* The projects, and the way to add one — `projects.tsx`, which is
+            where that argument is made. In short: the filter is one of the
+            four the rule below names, it has been a list of tabs since #81,
+            and a list gaining an action at its end is that object rather than
+            a fifth one (#216). */}
+        <Projects filters={filters} only={only} app={hasGitHubApp()} />
         <span className="sep" />
         {/* Everything from here is the right rail, and it is a rail rather than
             four more children of `.bar` so that a narrow window breaks between
@@ -838,7 +818,15 @@ export default async function Page({
               argued against the four that are left — filter, reading, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend and the pass
-              limits are on `/spend`. */}
+              limits are on `/spend`.
+
+              **The four are not all on `.rail`, and #216 is where that
+              mattered.** The filter is one of them, so *it is on the other
+              side of the separator* is not an argument this rule accepts. What
+              #216 added — a `+` that onboards a repository — passes instead by
+              adding nothing to the count: the filter has been a list of tabs
+              since #81, and a list gaining an action at its end is that object
+              and not a fifth one. A fifth object is still argued for here. */}
         </span>
       </div>
 

@@ -98,6 +98,26 @@ export const RefusalReason = z.enum([
   "pending-migration",
   "gate-failed",
   "no-commits",
+  /**
+   * Two integrations computed against one base, found where git finds it: the
+   * ref update is atomic, one push lands and the other is rejected as not a
+   * fast-forward. It is what `lane-busy` below was, discovered one step later
+   * and by the thing that was always the guarantee (#194).
+   */
+  "push-rejected",
+  /**
+   * **Never written since #194, and never removable.**
+   *
+   * The merge lane used to take a lock and tell the loser this before it cut a
+   * worktree. Git's ref update was the guarantee all along, on one machine and
+   * across them, so the lock went and the loser is now told `push-rejected`.
+   *
+   * The value stays in the enum because events on this log carry it: a reader
+   * that can no longer parse it cannot read this repository's own history.
+   * There is no `RETIRED` set for a refusal reason as there is for an event
+   * type — this comment is the whole of the marking, and `attribution.ts` still
+   * has a sentence and a move for it.
+   */
   "lane-busy",
 ]);
 export type RefusalReason = z.infer<typeof RefusalReason>;

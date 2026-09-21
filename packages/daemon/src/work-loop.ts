@@ -77,10 +77,10 @@
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
  */
-import { directPostgresUrl } from "@lingtai/env";
 import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
 import { type EventStore, createPostgresWaker, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
-import pg from "pg";
+import { createPostgresDaemonStore } from "./postgres.ts";
+import type { DaemonStore } from "./store.ts";
 
 /**
  * The events that mean the conductor is free to look again.
@@ -249,6 +249,14 @@ export interface WorkLoopOptions {
   triggers?: readonly string[];
   /** Session-mode connection for the subscription. */
   url?: string;
+  /**
+   * Where the log's head is read from. Defaults to Postgres at `url`.
+   *
+   * The subscription beside it is still the process-wide store's, because a
+   * waker is the log's business and not this one's — #179 is where both
+   * choices are made together.
+   */
+  daemonStore?: DaemonStore;
   /**
    * How long a subscriber may take before the boundary calls it failed.
    *
@@ -497,7 +505,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     async start() {
       // From the head, not from zero. Replaying history would fire a pass for
       // every task that has ever landed.
-      const from = await headSeq(options.url);
+      const from = await headSeq(options);
 
       subscription = subscribe({
         fromSeq: from,
@@ -563,17 +571,13 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
 /**
  * The log's current end, so the subscription starts there rather than replaying.
  *
- * One query rather than paging the whole log: the answer is a single number and
- * walking a hundred thousand events to find it would make starting the daemon
- * slower the longer it has been useful.
+ * Through the store since #220: the query was a `pg.Client` built here, which
+ * is one of the four places the choice of implementation could not reach
+ * (0055 §1).
  */
-async function headSeq(url?: string): Promise<bigint> {
-  const client = new pg.Client({ connectionString: url ?? directPostgresUrl() });
-  await client.connect();
-  try {
-    const r = await client.query<{ head: string }>("select coalesce(max(seq), 0)::text as head from events");
-    return BigInt(r.rows[0]?.head ?? "0");
-  } finally {
-    await client.end();
-  }
+async function headSeq(options: WorkLoopOptions): Promise<bigint> {
+  const store =
+    options.daemonStore ??
+    createPostgresDaemonStore(options.url === undefined ? {} : { url: options.url });
+  return store.head();
 }

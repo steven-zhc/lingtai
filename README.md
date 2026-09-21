@@ -92,7 +92,7 @@ flowchart LR
   P --> AG[agent runs]
   AG --> D{{proposed}}
   D --> M{{merge}}
-  M --> I[integrate<br/>lock file]
+  M --> I[integrate<br/>no lock: git refuses the second push]
   I -->|merged| L[landed]
   L --> E{{end}}
 

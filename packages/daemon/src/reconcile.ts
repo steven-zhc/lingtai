@@ -80,9 +80,38 @@ import { projectionLag } from "@lingtai/projector";
 import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
 import { DAEMON_LOCK_KEY } from "./lock.ts";
-import pg from "pg";
+import { createPostgresDaemonStore } from "./postgres.ts";
+import type { DaemonStore } from "./store.ts";
 
 const execFile = promisify(execFileCb);
+
+/**
+ * The store a pass reads the log's streams through.
+ *
+ * Postgres at the pooled URL when nobody says otherwise, which is the
+ * connection this file used before it had an interface — the choice itself is
+ * #179's.
+ */
+function daemonStore(options: ReconcileOptions): DaemonStore {
+  return options.daemonStore ?? createPostgresDaemonStore({ url: options.url ?? postgresUrl() });
+}
+
+/**
+ * The log a pass reads and appends through: **the one the streams came from.**
+ *
+ * `store` when a caller named one, and otherwise the log the injected
+ * `daemonStore` carries — which is what `DaemonStore.events` is for
+ * (`store.ts`). The process-wide store is the last resort and not the second,
+ * because finding stream ids in one log and folding them out of another does
+ * not fail, it answers *nothing is wrong*: `streams()` returns `wi-p-117` from
+ * the store it was given, `read("wi-p-117")` goes to Postgres and comes back
+ * empty, the fold is not `claimed`, and `releaseForeignClaims` reports no
+ * orphaned claims at all. The dead daemon's claim then holds the ticket out of
+ * circulation for ever, which is #87 with the repair for #87 installed.
+ */
+function logOf(options: ReconcileOptions): EventStore {
+  return options.store ?? options.daemonStore?.events ?? eventStore;
+}
 
 /**
  * What was done about a divergence.
@@ -134,6 +163,18 @@ export interface ReconcileOptions {
   log?: (line: string) => void;
   url?: string;
   /**
+   * Where the claimed work items are looked up. Defaults to Postgres at `url`.
+   *
+   * Beside `store` rather than instead of it: `store` is the log this pass
+   * reads and appends through, and this is the one question about the log that
+   * `EventStore` does not answer — *which streams should I fold at all*.
+   *
+   * Given without `store`, the log read is the one this carries (`logOf`), and
+   * it is handed on to `convergeIssues` so that both halves of a pass ask the
+   * same store.
+   */
+  daemonStore?: DaemonStore;
+  /**
    * Which projections this system runs, so lag can be judged.
    *
    * Told, not discovered. A `checkpoints` row for a projection nobody runs any
@@ -168,7 +209,7 @@ export interface ReconcileOptions {
  * so it can say what would happen without making it happen.
  */
 export async function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const abandoned = options.abandoned ?? new Set<string>();
   const home = options.home ?? defaultHome();
   const root = join(home, "worktrees");
@@ -285,7 +326,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * asked of one is whether it is still owed an explanation.
  */
 export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const home = options.home ?? defaultHome();
   const root = join(home, "runs");
 
@@ -410,29 +451,15 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
  * its conductor. See `killWorker`.
  */
 export async function releaseForeignClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
   const worker = options.worker ?? conductorWorker();
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
   if (names.length === 0) return [];
 
-  const client = new pg.Client({ connectionString: options.url ?? postgresUrl() });
-  let streams: string[];
-  try {
-    await client.connect();
-    const r = await client.query<{ stream_id: string }>(
-      `select distinct stream_id from events
-       where type = 'WorkItemClaimed'
-         and stream_id like any($1)
-       order by stream_id`,
-      [names.map((n) => `wi-${n}-%`)],
-    );
-    streams = r.rows.map((row) => row.stream_id);
-  } catch {
+  const streams = await daemonStore(options)
+    .streams({ prefixes: names.map((n) => `wi-${n}-%`), types: ["WorkItemClaimed"] })
     // No log to read is not a divergence.
-    return [];
-  } finally {
-    await client.end().catch(() => {});
-  }
+    .catch(() => []);
 
   const findings: Finding[] = [];
   for (const workItemId of streams) {
@@ -557,7 +584,7 @@ function isOurs(command: string): boolean {
 
 export async function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
   const log = options.log ?? (() => {});
-  const store = options.store ?? eventStore;
+  const store = logOf(options);
 
   // Read all four before acting on any. A pass that repaired as it discovered
   // would report a world that no longer existed by the time it finished.
@@ -583,6 +610,12 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
       store,
       ...(options.url === undefined ? {} : { url: options.url }),
       ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
+      // Handed on for the same reason `store` is: without it the converge half
+      // builds a Postgres store of its own, so a pass given a working store
+      // would still refuse at `postgresUrl()` on a machine that has configured
+      // none — and where it did connect, it would be asking a second log which
+      // streams the first one's findings are about.
+      ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
       log,
     });
     const done = new Set(converged.map((d) => `${d.workItemId}:${d.change}`));

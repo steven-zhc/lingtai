@@ -14,7 +14,7 @@ import { integrationStream } from "@lingtai/domain";
 import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -221,40 +221,231 @@ describe("integrate", () => {
   });
 
   /**
-   * Two integrations against one base must never overlap. The lane is a lock
-   * file (#193), so a process that dies holding it has it dropped by the
-   * kernel — nothing to unwind.
+   * **Git is what makes the merge safe, and the lane holds no lock** (#194).
+   *
+   * Two integrations computed against one `develop` both reach the push. The
+   * ref update is atomic: one lands and the other is rejected as not a
+   * fast-forward — and the loser answers that itself, by merging against the
+   * `develop` that now exists and pushing again. Nothing is wrong with its
+   * branch, so there is nothing for a person to decide: a refusal here would
+   * park the item in "Waiting on you" in a repository that merges unattended,
+   * for a race it lost nothing by losing.
+   *
+   * **And it says nothing, which is the same argument one step further on.**
+   * `IntegrationRefused` is declared to the `desktop` subscriber and is in
+   * `COMPLETION_EVENTS`, so one appended here would interrupt a person with
+   * *#n did not merge* about a merge that lands two seconds later, with nothing
+   * able to retract it, and would wake a queue pass mid-integration. So the
+   * whole run of pushes is one attempt and one terminal, and this asserts the
+   * count of each.
+   *
+   * **The interleaving is made, not waited for.** `verify` runs after the base
+   * has been fetched and merged in and before the push, so the first
+   * integration announcing that it is there is the proof both were computed
+   * against the same base. This used to be a 1.5s sleep, which on a loaded
+   * `test:db` run let the two serialise and failed a tree with nothing wrong
+   * with it.
    */
-  it("serialises: a second integration on the same base is refused as lane-busy", async () => {
+  it("races two integrations on one base: the loser merges again against where the base got to", async () => {
     await branchWith("agent/7", { "src/d.ts": "export const d = 1;\n" });
     await branchWith("agent/8", { "src/e.ts": "export const e = 1;\n" });
+    const before = (await lane()).length;
 
     let releaseFirst: () => void = () => {};
     const gate = new Promise<void>((r) => (releaseFirst = r));
+    let atVerify: () => void = () => {};
+    const reachedVerify = new Promise<void>((r) => (atVerify = r));
+    let verifies = 0;
 
     const first = integrate({
       ...base(),
       branch: "agent/7",
-      // Holds the lane while the second one tries.
       verify: async () => {
+        verifies++;
+        atVerify();
         await gate;
         return { ok: true, evidence: "" };
       },
     });
 
-    // Give the first one time to take the lock.
-    await new Promise((r) => setTimeout(r, 1_500));
+    // The first has fetched `develop` and merged agent/7 into it, and has not
+    // pushed. The second now computes against exactly that base.
+    await reachedVerify;
     const second = await integrate({ ...base(), branch: "agent/8" });
-
-    expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.reason).toBe("lane-busy");
+    expect(second.ok, JSON.stringify(second)).toBe(true);
 
     releaseFirst();
-    expect((await first).ok).toBe(true);
+    const loser = await first;
 
-    // Both outcomes are on the record, which is the whole point.
-    const reasons = (await lane()).filter((e) => e.type === "IntegrationRefused");
-    expect(reasons.some((r) => r.data["reason"] === "lane-busy")).toBe(true);
+    // It lost the push and landed anyway, on the base agent/8 had moved to.
+    expect(loser.ok, JSON.stringify(loser)).toBe(true);
+    // A whole second merge, not a second push of the same commit: the base was
+    // fetched again, the merge recomputed, and `verify` asked about it.
+    expect(verifies).toBe(2);
+
+    // **Nothing told anybody it did not merge.** Two integrations, two
+    // attempts, two successes — and no `IntegrationRefused` at all, which is
+    // the event the `desktop` subscriber and `COMPLETION_EVENTS` are declared
+    // on. The lost push is not on the log because nothing is owed an
+    // explanation for a race that was then won.
+    const events = (await lane()).slice(before);
+    expect(events.filter((e) => e.type === "IntegrationRefused")).toHaveLength(0);
+    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(2);
+    expect(events.filter((e) => e.type === "IntegrationSucceeded")).toHaveLength(2);
+
+    // Both are on the base branch, in the order the pushes actually happened.
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).toContain("work on agent/8");
+    expect(log.stdout).toContain("work on agent/7");
+  });
+
+  /**
+   * **The retry is bounded, and the refusal it stops at is still a refusal.**
+   *
+   * A base that wins the race every time is a person's to hear about, and the
+   * card's move — requeue — is the honest one for it. `verify` runs after the
+   * base is merged in and before the push, so pushing a commit from there makes
+   * every one of this integration's pushes a lost race, with no timing in it.
+   *
+   * **One refusal, not four.** Four pushes were lost and a person is told once,
+   * because one `integrate()` is one attempt and one answer — and because four
+   * desktop notifications about one merge is exactly the noise the retry was
+   * added to stop.
+   */
+  it("gives up on a base that moves under every push, and says push-rejected once", async () => {
+    await branchWith("agent/10", { "src/g.ts": "export const g = 1;\n" });
+    const before = (await lane()).length;
+    let pushes = 0;
+
+    const result = await integrate({
+      ...base(),
+      branch: "agent/10",
+      verify: async () => {
+        pushes++;
+        await g(["commit", "-q", "--allow-empty", "-m", `develop moved ${pushes}`], work);
+        await g(["push", "-q", "origin", "develop"], work);
+        return { ok: true, evidence: "" };
+      },
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("push-rejected");
+    expect(result.detail).toMatch(/rejected/i);
+    expect(result.detail).toContain("develop");
+
+    // One try and three retries — and one attempt and one terminal for the lot.
+    expect(pushes).toBe(4);
+    const events = (await lane()).slice(before);
+    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(1);
+    expect(
+      events.filter((e) => e.type === "IntegrationRefused" && e.data["reason"] === "push-rejected"),
+    ).toHaveLength(1);
+
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("work on agent/10");
+  });
+
+  /**
+   * The worktree is the only thing the scope holds now, and it still unwinds.
+   * A fixed `integrator-<base>` was safe only while the lock meant one
+   * integration on a base at a time, so the race above would have had the two
+   * of them standing in one directory.
+   */
+  it("leaves no worktree behind, and never two integrations in one directory", async () => {
+    await branchWith("agent/9", { "src/f.ts": "export const f = 1;\n" });
+
+    const result = await integrate({ ...base(), branch: "agent/9" });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    const registered = await exec("git", ["worktree", "list", "--porcelain"], {
+      cwd: join(home, "repos", `${PROJECT}.git`),
+    });
+    expect(registered.stdout).not.toContain("integrator-");
+  });
+
+  /**
+   * **A process killed inside a merge leaves a checkout nothing else reclaims.**
+   *
+   * The scope releases the worktree on every path this function can take, and
+   * on none of the ones it cannot: a second Ctrl+C, a `--timeout`, a crash. The
+   * name carries a uuid now, so each death leaves a full checkout and a
+   * registration under a fresh name — and `git worktree prune` does not touch
+   * one whose directory is still there. They would accumulate without bound and
+   * pin their commits against gc.
+   *
+   * Age is what tells a corpse from a colleague, because two live integrations
+   * on one base is ordinary since #194. An hour is the pass's own ceiling.
+   */
+  it("reclaims an integrator worktree a killed process left behind, and leaves a live one alone", async () => {
+    await branchWith("agent/11", { "src/h.ts": "export const h = 1;\n" });
+    const mirror = join(home, "repos", `${PROJECT}.git`);
+    const abandoned = join(home, "worktrees", PROJECT, "integrator-develop-deadbeef");
+    const live = join(home, "worktrees", PROJECT, "integrator-develop-cafe1234");
+
+    for (const path of [abandoned, live]) {
+      await exec("git", ["worktree", "add", "-q", "--detach", path, "develop"], { cwd: mirror });
+    }
+    // Three hours ago: whatever cut it is not coming back for it.
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1_000);
+    await utimes(abandoned, old, old);
+
+    const result = await integrate({ ...base(), branch: "agent/11" });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    // Gone from the disk and from the mirror's registrations, both halves of
+    // what the killed process left.
+    await expect(stat(abandoned)).rejects.toThrow();
+    const registered = await exec("git", ["worktree", "list", "--porcelain"], { cwd: mirror });
+    expect(registered.stdout).not.toContain("integrator-develop-deadbeef");
+
+    // And the one that could be a merge in flight is untouched.
+    expect(registered.stdout).toContain("integrator-develop-cafe1234");
+    expect((await stat(live)).isDirectory()).toBe(true);
+  });
+
+  /**
+   * **A log that stopped answering is a refusal, not an exception.**
+   *
+   * `integrate()` says it cannot throw, and both callers take it at its word:
+   * `approve.ts` calls it with the approval already spent and no `try` around
+   * the call, so an exception out of here leaves the item back at `gating`
+   * with no `IntegrationRefused`, no `WorkItemBlocked`, no diagnosis and no
+   * second attempt — the #84 dead end.
+   *
+   * The appends that can do it are the two outside `attempt` and therefore
+   * outside its handlers: the `IntegrationAttempted` at the top, and the
+   * terminal refusal at the bottom. `store.read` rejecting on a dropped
+   * connection is the documented failure mode of this system's own store, and
+   * `Effect.promise` turns a rejection into a defect, which leaves
+   * `Effect.runPromise` as a rejected promise unless something catches it.
+   *
+   * So the store here refuses everything, which is the worst case: the refusal
+   * cannot be recorded either, because recording it is the thing that is
+   * broken. The caller is still given an `IntegrateResult` it can act on.
+   */
+  it("hands back a refusal when the log itself is unreachable, rather than throwing", async () => {
+    await branchWith("agent/12", { "src/i.ts": "export const i = 1;\n" });
+    const dropped = new Error("Connection terminated unexpectedly");
+    const unreachable: EventStore = {
+      append: () => Promise.reject(dropped),
+      read: () => Promise.reject(dropped),
+      readAll: () => Promise.reject(dropped),
+    };
+
+    // Not rejecting is half of what is under test: an `await` that threw here
+    // fails this, and is what `approve.ts` would have got.
+    const result = await integrate({ ...base(), branch: "agent/12", store: unreachable });
+
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("conflict");
+    expect(result.detail).toContain("Connection terminated unexpectedly");
+
+    // And it never got near the base: the attempt could not be recorded, so no
+    // merge was computed and nothing was pushed.
+    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
+    expect(log.stdout).not.toContain("work on agent/12");
   });
 
   it("never returns without an event, whatever happened", async () => {
@@ -266,8 +457,11 @@ describe("integrate", () => {
       (e) => e.type === "IntegrationRefused" || e.type === "IntegrationSucceeded",
     ).length;
 
-    // `lane-busy` refuses before it attempts, so terminals are never fewer.
-    expect(terminal).toBeGreaterThanOrEqual(attempts);
+    // One terminal per attempt exactly. Nothing refuses before it attempts any
+    // more — `lane-busy` was the only path that did, and the lane takes no lock
+    // to be refused by (#194) — and a lost push adds neither side of this,
+    // which is what keeps it 1:1 through the retries above.
+    expect(terminal).toBe(attempts);
     expect(attempts).toBeGreaterThan(0);
   });
 });

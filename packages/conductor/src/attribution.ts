@@ -102,7 +102,7 @@ export interface Failure {
 /**
  * Every refusal the integrator can make, and whose it is.
  *
- * A total record rather than a `switch` with a default: an eighth
+ * A total record rather than a `switch` with a default: a ninth
  * `RefusalReason` will not compile until somebody decides who owns it, which is
  * the property that keeps a new failure from silently reaching a person with
  * the wrong sentence on it.
@@ -127,7 +127,16 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   "dirty-base": "lingtai",
   /** Lingtai's mirror and origin disagree about the base. Lingtai's mirror. */
   "unpushed-base": "lingtai",
-  /** Two of Lingtai's own integrations raced. Lingtai's lane. */
+  /**
+   * Two integrations computed against one base and git turned the second away.
+   * Lingtai's lane, for the reason `lane-busy` was: nothing is wrong with the
+   * branch, and an agent has nothing it could change about a race.
+   */
+  "push-rejected": "lingtai",
+  /**
+   * The same thing, before #194 removed the merge lane's lock — kept because
+   * events on the log carry it. Nothing writes it; everything still reads it.
+   */
   "lane-busy": "lingtai",
 };
 
@@ -189,7 +198,7 @@ export function whoseFailure(failure: Failure): FailureOwner {
  * anything could have acted on it. It simply never said any of it in words.
  *
  * A total record over `RefusalReason`, for the reason `INTEGRATION_OWNER` is
- * one: an eighth reason will not compile until somebody writes the sentence and
+ * one: a ninth reason will not compile until somebody writes the sentence and
  * decides whether it has a move. A reason with no move is the normal case and
  * not an oversight — `gate-failed` is a red diff, which is a judgement, and
  * `dirty-base` is Lingtai's own checkout, which requeueing walks straight back
@@ -243,6 +252,22 @@ const REFUSAL_READING: Record<
       `Lingtai's mirror of ${base} and origin disagree, so the merge was refused. Nothing is wrong with ${branch}.`,
     move: null,
   },
+  "push-rejected": {
+    says: ({ branch, base }) =>
+      `${base} moved while ${branch} was being merged into it, so origin refused the push.`,
+    move: {
+      action: "requeue",
+      why:
+        "the base moved rather than the branch being wrong — the lane already merged it " +
+        "against where the base had got to and lost the push every time, so a requeue is " +
+        "the same attempt in a quieter minute",
+    },
+  },
+  /**
+   * **Read, never written** (#194). A refusal on the log from before the merge
+   * lane's lock went still reaches a person as a sentence and a move, which is
+   * the whole reason the value cannot be deleted from `RefusalReason`.
+   */
   "lane-busy": {
     says: ({ branch, base }) =>
       `another integration held the merge lane, so ${branch} was not merged into ${base}.`,

@@ -200,9 +200,13 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 }
 
 /* The projects, as a control. They were a joined string beside a `loadBoard`
-   that has always taken a project (#81). Only drawn where there is more than
-   one — with a single project there is nothing to choose between, and a tab
-   that cannot narrow anything is a button that does nothing. */
+   that has always taken a project (#81). The *tabs* are only drawn where there
+   is more than one — with a single project there is nothing to choose between,
+   and a tab that cannot narrow anything is a button that does nothing — but
+   this box is drawn with one project too since #216, holding that project's
+   name as the caption it was and the list's own `+` after it. So nothing here
+   may assume a choice is being offered: a group treatment (a border, a
+   background, padding) would land on every single-project board. */
 .filter { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
 .tab {
   font-family: var(--mono); font-size: 10.5px;
@@ -211,6 +215,12 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 }
 .tab:hover { color: var(--ink); border-color: var(--rule-2); }
 .tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+/* The list's own action, at the end of it (#216). A `.tab`, because it is one
+   of this list's controls and the filter is already a list of tabs — *a tab is
+   not a chip*, so the row carries the four it was cut to and not a fifth. Set
+   off by the gap so `+` is read as the end of the list and not as a project
+   named `+`. */
+.filter .add { margin-left: 5px; }
 
 /* Repositories on their way in (#163) — recorded, and not yet conducted.
 
@@ -1688,11 +1698,40 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .attempt .point { background: var(--surface-2); }
 .attempt > .empty { margin: 0; }
 
-/* What each gate action ran, under the rail (#190). The provenance line leads
-   because a command whose recipe is unnamed is a claim about a run nobody can
-   check; the commands are closed until asked. */
+/* The recipe this attempt was given, under the rail (#190, #217). The
+   provenance line leads because a command whose recipe is unnamed is a claim
+   about a run nobody can check; then the reading, then what differs from head,
+   then the commands, closed until asked. */
 .arecipe { margin: 0 0 0.5rem; font-size: 0.75rem; }
 .arecipe .rprov { margin: 0 0 0.35rem; }
+/* The reading: `lingtai status`'s rows, in a column that reads *down* the way
+   the terminal's does. The name column is the width of the longest of them. */
+.rread { margin: 0 0 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.rread > div { display: flex; gap: 0.75rem; align-items: baseline; }
+.rread dt { min-width: 5.5rem; flex: none; color: var(--muted); }
+.rread dd { margin: 0; min-width: 0; }
+/* Quiet, and present on every reading. It is a caveat about the record rather
+   than a fact about this run, and a reader should meet it once without it
+   competing with the values above it. */
+.rnote { margin: 0 0 0.35rem; opacity: 0.75; }
+.rdiff { margin: 0 0 0.35rem; }
+.rchanges { list-style: none; margin: 0 0 0.35rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.rchanges > li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.rpath { min-width: 12rem; }
+/* The recipe view (#218): the reading, with the one column `lingtai status`
+   has and the board did not — where each value came from. Its own modifier
+   rather than a second list, because the rows are the same rows and a page
+   that reworded them would be a second vocabulary for one recipe. */
+.rread.sourced > div { flex-wrap: wrap; }
+.rfrom { color: var(--muted); overflow-wrap: anywhere; }
+/* `lingtai doctor`'s provenance block: every value, its origin, nothing
+   grouped. Under the reading because it is consulted and not read. */
+.prov { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.75rem; }
+.prov > li { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: baseline; }
+.pval { min-width: 0; overflow-wrap: anywhere; }
+/* This attempt's value first and head's after it, dimmed: the page is about the
+   attempt, and head's is the thing it is being measured against. */
+.rhead { opacity: 0.75; }
 .acts { list-style: none; margin: 0 0 0.35rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .acts > li { display: flex; gap: 0.75rem; align-items: baseline; }
 .actpoint { min-width: 5.5rem; color: var(--muted); }

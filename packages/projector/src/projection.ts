@@ -7,81 +7,32 @@
  * depends on which write you put first. Together, the checkpoint is simply part
  * of the projection's state, and recovery is "read the checkpoint, carry on".
  *
- * That is why this file talks to Postgres through `pg` rather than through the
- * ORM. Projections are deliberately **not** in the Prisma contract — their shape
- * will change, and changing one is `TRUNCATE` + reset + replay, not a migration
- * (doc/decisions/0003-postgres-event-store.md). A table the contract does not
- * know about has no ORM surface, and a projection needs DDL, `TRUNCATE` and its
- * own upserts regardless. The same deliberate split as the subscriber.
+ * That rule is now the first line of `ProjectionStore` (`store.ts`) rather than
+ * a paragraph about `pg`, which is the whole of #219: this file used to open a
+ * pool and a client of its own, so the runner *was* the Postgres path and there
+ * was nothing to swap. It now holds a store and states the rule to it; which
+ * store it holds is decided by whoever builds it, and by default that is still
+ * Postgres.
  *
- * Reads still go through the store, and therefore through Prisma: `readAll` is
- * the only cursor, and its payloads are validated and upcast on the way out.
+ * Reads of the log still go through the `EventStore`: `readAll` is the only
+ * cursor, and its payloads are validated and upcast on the way out.
  */
 import type { Envelope } from "@lingtai/domain";
-import pg from "pg";
 import { postgresUrl } from "@lingtai/env";
-import { type EventStore, createPostgresWaker, eventStore, type Subscription, subscribe } from "@lingtai/event-store";
+// The two submodules rather than the barrel, and that is #157's argument one
+// package over: importing `@lingtai/event-store` constructs the process-wide
+// client as a side effect, so a runner handed both a log and a projection store
+// would still have needed a Postgres to exist. `subscribe` and `wake` build
+// nothing at import, and the process-wide `eventStore` is reached for only when
+// nobody supplied a log.
+import type { EventStore } from "@lingtai/event-store/store";
+import { type Subscription, subscribe } from "@lingtai/event-store/subscribe";
+import { type Waker, createPostgresWaker } from "@lingtai/event-store/wake";
+import { createPostgresProjectionStore } from "./postgres.ts";
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from "./shape.ts";
+import type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from "./store.ts";
 
-/** SQL access inside the projection's transaction. */
-export interface ProjectionContext {
-  query<T extends pg.QueryResultRow = pg.QueryResultRow>(
-    text: string,
-    values?: readonly unknown[],
-  ): Promise<T[]>;
-}
-
-export interface Projection {
-  /** The `checkpoints.name` this projection advances. */
-  readonly name: string;
-
-  /**
-   * Idempotent DDL for whatever tables this projection owns. Called before every
-   * catch-up, so a fresh database needs no migration step.
-   *
-   * **It must not read its own query results.** `declaredShape` calls this with
-   * a context that records the SQL instead of executing it, which is how the
-   * shape check gets the declared columns without a second list to keep in step
-   * (`shape.ts`). Recording returns no rows, so a `create` that branched on one
-   * would be recorded wrong.
-   */
-  create(ctx: ProjectionContext): Promise<void>;
-
-  /**
-   * **Removes** everything `create` made — dropped, not emptied.
-   *
-   * This used to truncate, and truncating is not enough. `create` is
-   * `create table if not exists`, so a projection whose *shape* changed kept
-   * the old columns forever and the runner died on the first write to a column
-   * that was not there. The error surfaced as "subscription stopped before it
-   * caught up", which names the symptom and not one word of the cause.
-   *
-   * Dropping is what makes the claim in `rebuild` true: a projection's shape is
-   * free to change because changing it costs a rebuild rather than a migration.
-   */
-  reset(ctx: ProjectionContext): Promise<void>;
-
-  /**
-   * Folds one batch, in `seq` order.
-   *
-   * **Must be idempotent.** The checkpoint is transactional, so a clean crash
-   * cannot double-apply — but a process killed after Postgres committed and
-   * before the runner noticed will re-read the same events, and so will a
-   * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
-   */
-  apply(events: readonly Envelope[], ctx: ProjectionContext): Promise<void>;
-}
-
-export interface ProjectionLag {
-  name: string;
-  /** How far this projection has consumed. */
-  lastSeq: bigint;
-  /** The log's high-water mark. */
-  headSeq: bigint;
-  /** Events behind. Zero is caught up. */
-  lag: bigint;
-  updatedAt: Date | null;
-}
+export type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from "./store.ts";
 
 export interface ProjectionRunner {
   readonly name: string;
@@ -94,7 +45,7 @@ export interface ProjectionRunner {
   stop(): Promise<void>;
 
   /**
-   * Truncate, reset the checkpoint, replay from the beginning.
+   * Drop, reset the checkpoint, replay from the beginning.
    *
    * This is what makes a projection's shape free to change: it costs a rebuild,
    * not a migration.
@@ -104,8 +55,10 @@ export interface ProjectionRunner {
    * O(events) round trips. Measured 2026-09-02 against the test database:
    * 1,184 events through the outbox projection took 59.4s, about 50ms each —
    * that projection is gone (0022), and the measurement is kept because the
-   * cost belongs to the mechanism rather than to that handler. Worth
-   * knowing before putting one inside anything with a deadline.
+   * cost belongs to the mechanism rather than to that handler. A store with no
+   * network between it and the disk pays a different price for the same shape,
+   * which is one of the things #219 exists to make possible. Worth knowing
+   * before putting one inside anything with a deadline.
    */
   rebuild(): Promise<void>;
 
@@ -118,109 +71,71 @@ export interface ProjectionRunner {
    */
   shape(): Promise<ProjectionShape>;
 
-  /** Releases the pool. `stop()` alone leaves the runner restartable. */
+  /** Releases the store. `stop()` alone leaves the runner restartable. */
   close(): Promise<void>;
 }
 
-function ctxFor(client: pg.PoolClient | pg.Client): ProjectionContext {
-  return {
-    async query(text, values) {
-      const r = await client.query(text, values ? [...values] : undefined);
-      return r.rows;
-    },
-  };
-}
-
-/**
- * `checkpoints.updated_at` is `NOT NULL` with no database default —
- * `temporal.updatedAtString()` is a Prisma client behaviour, not a trigger — so
- * raw SQL has to supply it. Measured against the live schema; forgetting it
- * fails loudly, which is the good case.
- */
-const ADVANCE_CHECKPOINT = `
-  insert into checkpoints (name, last_seq, updated_at)
-  values ($1, $2, now())
-  on conflict (name) do update
-    set last_seq = excluded.last_seq, updated_at = now()`;
-
-/**
- * Puts a row down at zero without moving an existing one.
- *
- * A projection with no events yet would otherwise have no checkpoint at all,
- * and `projectionLag` cannot tell that apart from a projection nobody ever
- * started — so `lingtai doctor` would report "nothing running" about something that
- * is running fine and merely has nothing to do.
- */
-const REGISTER_CHECKPOINT = `
-  insert into checkpoints (name, last_seq, updated_at)
-  values ($1, 0, now())
-  on conflict (name) do nothing`;
-
-/** Same, but forces an existing row back to zero. Used by `rebuild`. */
-const RESET_CHECKPOINT = `
-  insert into checkpoints (name, last_seq, updated_at)
-  values ($1, 0, now())
-  on conflict (name) do update
-    set last_seq = 0, updated_at = now()`;
-
 export interface ProjectionRunnerOptions {
   projection: Projection;
+  /** The log. The process-wide `eventStore` outside a test. */
   store?: EventStore;
-  /** Pooled connection. Transaction mode is fine: a transaction is one checkout. */
+  /**
+   * Where the fold lands, and the checkpoint with it.
+   *
+   * **Nothing chooses here.** Left out, this is Postgres at `url` — which is
+   * every caller in this repository today. It is an argument so that
+   * [#179](https://github.com/steven-zhc/lingtai/issues/179) has somewhere to
+   * put an answer, and so that a test can hold the runner to a store with no
+   * server behind it.
+   *
+   * A runner given one does not own it: `close()` closes a store the runner
+   * built and leaves one it was handed, for the reason a pool passed in is the
+   * caller's to end.
+   */
+  into?: ProjectionStore;
+  /** Pooled connection for the default Postgres store. */
   url?: string;
+  /**
+   * What says the log has moved. `LISTEN`/`NOTIFY` unless told otherwise,
+   * because that is what the log in Postgres offers; a log in a file brings
+   * `createPollingWaker` instead (#177).
+   */
+  waker?: Waker;
   batchSize?: number;
   onError?: (error: unknown, phase: "connection" | "handler") => void;
 }
 
 export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
   const { projection } = options;
-  const store = options.store ?? eventStore;
-  const pool = new pg.Pool({ connectionString: options.url ?? postgresUrl(), max: 2 });
+  const mine = options.into === undefined;
+  const into = options.into ?? createPostgresProjectionStore({ url: options.url });
 
   let subscription: Subscription | null = null;
   let failure: unknown = null;
 
-  async function inTransaction<T>(fn: (ctx: ProjectionContext) => Promise<T>): Promise<T> {
-    const client = await pool.connect();
-    try {
-      await client.query("begin");
-      const result = await fn(ctxFor(client));
-      await client.query("commit");
-      return result;
-    } catch (err) {
-      await client.query("rollback").catch(() => {
-        // The connection is already gone; the transaction died with it.
-      });
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  async function readCheckpoint(): Promise<bigint> {
-    const r = await pool.query<{ last_seq: string }>(
-      "select last_seq::text as last_seq from checkpoints where name = $1",
-      [projection.name],
-    );
-    return BigInt(r.rows[0]?.last_seq ?? "0");
-  }
-
   async function commitBatch(events: readonly Envelope[]): Promise<void> {
     const last = events[events.length - 1];
     if (!last) return;
-    await inTransaction(async (ctx) => {
+    await into.transact(async (ctx: ProjectionContext) => {
       await projection.apply(events, ctx);
       // The whole point: this is not a separate write.
-      await ctx.query(ADVANCE_CHECKPOINT, [projection.name, last.seq.toString()]);
+      await into.advance(ctx, projection.name, last.seq);
     });
   }
 
+  /** The log, built on demand so that a runner given one opens no client. */
+  async function log(): Promise<EventStore> {
+    return options.store ?? (await import("@lingtai/event-store")).eventStore;
+  }
+
   async function follow(): Promise<void> {
-    const fromSeq = await readCheckpoint();
+    const store = await log();
+    const fromSeq = await into.checkpoint(projection.name);
     const sub = subscribe({
       fromSeq,
       store,
-      waker: createPostgresWaker({ name: `lingtai-projection-${projection.name}` }),
+      waker:
+        options.waker ?? createPostgresWaker({ name: `lingtai-projection-${projection.name}` }),
       onBatch: commitBatch,
       batchSize: options.batchSize ?? 500,
       onError: (error, phase) => {
@@ -244,9 +159,9 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
 
     async start() {
       failure = null;
-      await inTransaction(async (ctx) => {
+      await into.transact(async (ctx) => {
         await projection.create(ctx);
-        await ctx.query(REGISTER_CHECKPOINT, [projection.name]);
+        await into.register(ctx, projection.name);
       });
 
       // After `create`, so a fresh database has just been given the current
@@ -268,12 +183,12 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     },
 
     async rebuild() {
-      // Stop first. A runner still applying events into a table being truncated
+      // Stop first. A runner still applying events into a table being dropped
       // would produce a result that depends on timing, which is the one thing a
       // rebuild must not do.
       await this.stop();
 
-      await inTransaction(async (ctx) => {
+      await into.transact(async (ctx) => {
         // Remove first, then recreate. The other order drops what was just
         // built and leaves nothing behind.
         await projection.reset(ctx);
@@ -281,7 +196,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
         // Zeroed rather than deleted: the projection still exists and is still
         // being run, and a missing row would make it look like one nobody had
         // ever started.
-        await ctx.query(RESET_CHECKPOINT, [projection.name]);
+        await into.rewind(ctx, projection.name);
       });
 
       failure = null;
@@ -290,37 +205,15 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
 
     async close() {
       await this.stop();
-      await pool.end();
+      if (mine) await into.close();
     },
 
     async shape() {
-      return shapeIn(projection, {
-        async query(text, values) {
-          const r = await pool.query(text, values ? [...values] : undefined);
-          return r.rows;
-        },
-      });
+      return shapeIn(projection, into);
     },
 
     async lag() {
-      const r = await pool.query<{ last_seq: string; head_seq: string; updated_at: Date | null }>(
-        `select coalesce(c.last_seq, 0)::text as last_seq,
-                (select coalesce(max(seq), 0) from events)::text as head_seq,
-                c.updated_at
-         from (select 1) one
-         left join checkpoints c on c.name = $1`,
-        [projection.name],
-      );
-      const row = r.rows[0];
-      const lastSeq = BigInt(row?.last_seq ?? "0");
-      const headSeq = BigInt(row?.head_seq ?? "0");
-      return {
-        name: projection.name,
-        lastSeq,
-        headSeq,
-        lag: headSeq - lastSeq,
-        updatedAt: row?.updated_at ?? null,
-      };
+      return into.lag(projection.name);
     },
   };
 }
@@ -333,28 +226,10 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
  * notice the equivalent at all.
  */
 export async function projectionLag(url = postgresUrl()): Promise<ProjectionLag[]> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
+  const store = createPostgresProjectionStore({ url, max: 1 });
   try {
-    const r = await client.query<{
-      name: string;
-      last_seq: string;
-      head_seq: string;
-      updated_at: Date | null;
-    }>(
-      `select c.name,
-              c.last_seq::text as last_seq,
-              (select coalesce(max(seq), 0) from events)::text as head_seq,
-              c.updated_at
-       from checkpoints c
-       order by c.name`,
-    );
-    return r.rows.map((row) => {
-      const lastSeq = BigInt(row.last_seq);
-      const headSeq = BigInt(row.head_seq);
-      return { name: row.name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row.updated_at };
-    });
+    return await store.lags();
   } finally {
-    await client.end();
+    await store.close();
   }
 }

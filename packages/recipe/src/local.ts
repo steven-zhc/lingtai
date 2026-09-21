@@ -30,7 +30,8 @@ import { Document, isMap, parse as parseYaml, parseDocument } from "yaml";
 import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
-import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
+import { PRESETS } from "./presets.ts";
+import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
 
 /** A project's recipe, under `stateDir()`. */
@@ -46,7 +47,19 @@ export function machinePath(home: string = stateDir()): string {
 /** The limits a machine may set. Every key optional: an absent one is the default, and says so. */
 const MachineLimits = z.strictObject({
   turns: z.number().int().positive().optional(),
-  wall: z.string().optional(),
+  /**
+   * A duration, refused here rather than at the point of use.
+   *
+   * This is the file `wall` lives in since 0046 §3, so this is the file that
+   * has to say `"90"` is not one — `Recipe`'s own check never sees this value
+   * under its own key, and every reader downstream of the resolve is left
+   * calling `parseDuration` on it and throwing somewhere that cannot name
+   * either the key or the file (#218).
+   */
+  wall: z
+    .string()
+    .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 2h" })
+    .optional(),
   rounds: z.number().int().nonnegative().optional(),
   restarts: z.number().int().nonnegative().optional(),
 });
@@ -189,6 +202,85 @@ export async function resolveAgent(
   );
 }
 
+/**
+ * How a provenance entry joins its value to where the value came from.
+ *
+ * Written once because two readers now split on it: `lingtai doctor` prints the
+ * whole entry, and the board's recipe page prints the two halves in two columns
+ * (#218). A separator spelled out in both places is one nobody can change.
+ */
+export const PROVENANCE_ARROW = " ← ";
+
+/**
+ * The `where` half of a provenance entry — `value ← where` — or null when the
+ * entry says nothing about where it came from.
+ *
+ * Null rather than the whole entry: a reader that cannot find the source must
+ * say it has none, not print the value a second time under a heading claiming
+ * to be its origin.
+ */
+export function provenanceSource(entry: string | undefined): string | null {
+  if (entry === undefined) return null;
+  const at = entry.indexOf(PROVENANCE_ARROW);
+  return at === -1 ? null : entry.slice(at + PROVENANCE_ARROW.length);
+}
+
+/**
+ * Whether an object carries a dotted path at all — not what it says there.
+ *
+ * **A key with nothing under it carries nothing**, and that is `applyPreset`'s
+ * rule rather than a convenience here: `recipe["gates"] ?? preset.gates` takes
+ * the preset's for a `null` exactly as it does for an absent key, so a
+ * `gates:` whose block has been commented out is a file that decided nothing
+ * and must not be named as the source of what the preset decided (#218). The
+ * intermediate segments have always read it this way; only the leaf did not.
+ */
+function carries(value: unknown, path: string): boolean {
+  let at = value;
+  for (const segment of path.split(".")) {
+    if (at === null || typeof at !== "object" || Array.isArray(at)) return false;
+    if (!(segment in (at as Record<string, unknown>))) return false;
+    at = (at as Record<string, unknown>)[segment];
+  }
+  return at !== undefined && at !== null;
+}
+
+/**
+ * Where a value in the resolved recipe came from: the file, the preset
+ * underneath it, or the schema (#218).
+ *
+ * **Three origins and not two.** Every key here but `repo.base`, `source.kinds`
+ * and `env.plantAt` has a schema default, and `gates` — the most consequential
+ * of them, since it is what holds a run — can also come from a preset. A
+ * resolved recipe reads the same in all three cases, so a reader told
+ * `recipe.yml` for a `gates:` block that file does not contain opens it, finds
+ * nothing, and cannot learn the answer anywhere: `extends: pnpm-workspace` is
+ * a line about gates that never names them.
+ *
+ * **Asked at the level the merge happens at**, which is `applyPreset`'s rule
+ * and not this function's invention: `repo` and `runtime` merge a key at a
+ * time and `gates` replaces whole, so whichever of the two carries
+ * `runtime.budget` decides every number in it and the other's is not applied.
+ * Hence the section — the first two segments — settles *who*, and only then
+ * does the leaf inside it settle file-or-default.
+ */
+function originIn(
+  wrote: unknown,
+  preset: string | null,
+  path: string,
+): (key: string) => string {
+  return (key) => {
+    const section = key.split(".").slice(0, 2).join(".");
+    const carrier = carries(wrote, section)
+      ? { at: path, held: wrote }
+      : preset !== null && carries(PRESETS[preset], section)
+        ? { at: `preset ${preset}`, held: PRESETS[preset] }
+        : null;
+    if (carrier === null) return "default";
+    return section === key || carries(carrier.held, key) ? carrier.at : "default";
+  };
+}
+
 export interface LocalRecipeOptions {
   /** `stateDir()` unless a test says otherwise. */
   home?: string;
@@ -250,7 +342,7 @@ export async function resolveLocalRecipe(
   const agent = await resolveAgent(named, options.signedIn, machineFile);
 
   const provenance: Record<string, string> = {
-    "runtime.agent": `${agent.agent} ← ${agent.from}`,
+    "runtime.agent": `${agent.agent}${PROVENANCE_ARROW}${agent.from}`,
   };
   const limits: Record<string, unknown> = {};
   for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
@@ -258,7 +350,7 @@ export async function resolveLocalRecipe(
     const from =
       scoped?.limits?.[key] !== undefined ? scopedAt : shared?.limits?.[key] !== undefined ? machineFile : "default";
     limits[key] = value ?? LIMIT_DEFAULTS[key];
-    provenance[`runtime.limits.${key}`] = `${limits[key]} ← ${from}`;
+    provenance[`runtime.limits.${key}`] = `${limits[key]}${PROVENANCE_ARROW}${from}`;
   }
 
   // Absent unless the machine said something, so a machine that has not heard
@@ -278,10 +370,21 @@ export async function resolveLocalRecipe(
     }
     assignee = parsed.data;
   }
-  provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"} ← ${assigneeFrom("take") ?? "default"}`;
-  provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"} ← ${assigneeFrom("login") ?? "default"}`;
+  provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"}${PROVENANCE_ARROW}${assigneeFrom("take") ?? "default"}`;
+  provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"}${PROVENANCE_ARROW}${assigneeFrom("login") ?? "default"}`;
+
+  // What the *file itself* carries, kept before anything is merged into it.
+  // This is the only place the difference survives: `recipe.source.exclude`
+  // reads `[]` and `recipe.gates.proposed` reads the preset's action whether
+  // this file mentions either or not, so nothing downstream can tell a value
+  // this file decided from one it was silent about (#218).
+  //
+  // A copy, and not the object: the callback below replaces `raw.runtime` with
+  // the machine's half, and the preset merges underneath afterwards.
+  let wrote: unknown = {};
 
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
+    wrote = structuredClone(raw);
     const refused: string[] = [];
     const runtime = raw["runtime"];
     const own =
@@ -309,12 +412,23 @@ export async function resolveLocalRecipe(
     "repo.base": recipe.repo.base,
     "source.kinds": recipe.source.kinds.join(" > "),
     "source.exclude": list(recipe.source.exclude),
+    // Said out loud by a reading, and not carried here until now — so that
+    // every row of one has a source beside it (#218).
+    "source.backoff": recipe.source.backoff,
     "env.required": list(recipe.env.required),
     gates: Object.entries(recipe.gates)
       .map(([point, actions]) => `${point} ${actions.length}`)
       .join(", "),
   };
-  for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value} ← ${path}`;
+  // Per field, as `runtime.limits` is: a recipe that sets `attempts` and
+  // nothing else must not put this file's name against the three numbers it
+  // does not contain.
+  for (const [key, value] of Object.entries(recipe.runtime.budget)) {
+    recipeValues[`runtime.budget.${key}`] = String(value);
+  }
+  const from = originIn(wrote, resolved.preset, path);
+  for (const [key, value] of Object.entries(recipeValues))
+    provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;
   return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
 }
 

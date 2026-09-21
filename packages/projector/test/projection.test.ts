@@ -14,6 +14,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 import {
+  createPostgresProjectionStore,
   createProjectionRunner,
   declaredColumns,
   describeShape,
@@ -21,8 +22,15 @@ import {
   projectionShape,
   type Projection,
   type ProjectionRunner,
+  type ProjectionStore,
 } from "../src/index.ts";
-import { cleanupStreams, streamId, waitFor } from "@lingtai/event-store/test-support";
+import {
+  CONTRACT_CHECKPOINTS,
+  CONTRACT_TABLES,
+  describeProjectionStoreContract,
+  type ProjectionFixture,
+} from "./contract.ts";
+import { cleanupStreams, created, streamId, waitFor } from "@lingtai/event-store/test-support";
 
 let client: Db;
 let store: EventStore;
@@ -141,7 +149,54 @@ afterAll(async () => {
     await c.query(`drop table if exists ${TEST_TABLE}`);
     await c.query("delete from checkpoints where name in ('lingtai_test_touches', 'lingtai_test_boom')");
     await c.query("drop table if exists lingtai_test_boom");
+    // The contract's own, for the same reason: a checkpoint left behind is not
+    // litter but a projection `lingtai doctor` reports as thousands of events
+    // behind, on a database the whole suite asserts is green.
+    for (const table of CONTRACT_TABLES) await c.query(`drop table if exists "${table}"`);
+    await c.query("delete from checkpoints where name = any($1::text[])", [[...CONTRACT_CHECKPOINTS]]);
+    for (const table of ["task_view", "finding_backlog"]) {
+      await c.query(`delete from "${table}" where project like 'esctest-pg-%'`);
+    }
   });
+});
+
+/**
+ * The Postgres store, held to the contract the SQLite one is held to.
+ *
+ * This is the run that says the *real* `task_view` answers the way the
+ * interface promises — `pure/sqlite.test.ts` is the other half, and a behaviour
+ * only one of them has is a failing test rather than a silent divergence. What
+ * pins the Postgres path's own output across #219 is `task-view.test.ts` and
+ * `backlog.test.ts`, which did not change: every statement behind them moved
+ * into `postgres.ts` verbatim, and those files are what says so.
+ */
+describeProjectionStoreContract("postgres", async (): Promise<ProjectionFixture> => {
+  const project = `esctest-pg-${crypto.randomUUID().slice(0, 8)}`;
+  const opened: ProjectionStore[] = [];
+  const open = (): ProjectionStore => {
+    const s = createPostgresProjectionStore({ url: directPostgresUrl() });
+    opened.push(s);
+    return s;
+  };
+  return {
+    store: open(),
+    events: store,
+    project,
+    // Registered by hand rather than through `streamId()`, because the contract
+    // needs the project and the issue to be readable out of the id — a card is
+    // found by project, and `parseWorkItemStream` splits at the last hyphen.
+    stream(kind, suffix) {
+      const id = `${kind}-${project}-${suffix}`;
+      created.add(id);
+      return id;
+    },
+    async another() {
+      return open();
+    },
+    async close() {
+      await Promise.all(opened.splice(0).map((s) => s.close()));
+    },
+  };
 });
 
 describe("projection runner", () => {

@@ -62,7 +62,6 @@
  * being taken is bounded by the sweep. That is the number 0031 is replacing:
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
-import { directPostgresUrl } from "@lingtai/env";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import {
   CONTROL_STREAM,
@@ -74,13 +73,27 @@ import {
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { readTasks } from "@lingtai/projector";
 import type { CodeVersion } from "./currency.ts";
-import pg from "pg";
+import { createPostgresDaemonStore } from "./postgres.ts";
+import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore } from "./store.ts";
 
 // The stream name, the state and the fold moved to `@lingtai/domain` when
 // `conductor` needed to ask whether the conductor is already paused (0031 §3)
 // — `daemon` depends on `conductor`, so the fold could not stay here. What
 // stays here is what it always was: the I/O, and the commands that append.
 export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from "@lingtai/domain";
+
+// The beacon's row, its thresholds and the one function that reads it moved to
+// `store.ts` when the beacon got an interface (#220) — they are what the two
+// implementations and the contract are about. Re-exported from here because
+// this is where every caller has always imported them from, and moving a type
+// is not a reason to touch the board, `doctor` and `restart`.
+export {
+  HEARTBEAT_MS,
+  STALE_AFTER_MS,
+  lastBeat,
+  type Beating,
+  type DaemonStatus,
+} from "./store.ts";
 
 /**
  * Folds the control stream. Cheap: it is a handful of events, not a history.
@@ -373,65 +386,21 @@ export async function requestRun(
 
 // ------------------------------------------------------------- liveness ----
 
-export interface DaemonStatus {
-  pid: number;
-  host: string;
-  startedAt: Date;
-  lastSeenAt: Date;
-  state: string;
-  currentRunId: string | null;
-  /**
-   * The commit `HEAD` pointed at when this process started, and whether its
-   * worktree was dirty.
-   *
-   * Null when the daemon is older than `#98` and never recorded one — which is
-   * itself the finding, and is reported rather than smoothed over. Liveness and
-   * currency are independent facts and this row now carries both: for
-   * thirty-nine minutes a daemon beat happily while holding code that could not
-   * produce the event the log had been fixed to record.
-   */
-  codeSha: string | null;
-  codeDirty: boolean;
+/**
+ * The Postgres beacon, which is what a caller gets when nobody says otherwise.
+ *
+ * Constructed per call rather than held: the implementation opens a connection
+ * per operation and ends it, so a store is a value and there is nothing to
+ * leak. Which implementation a machine runs is #179's question — this is the
+ * default that keeps the Postgres path exactly as it was.
+ */
+function defaultStore(): DaemonStore {
+  return createPostgresDaemonStore();
 }
 
-/**
- * How often the beacon is refreshed.
- *
- * The one timer in the system, and it is not driving any decision — it says
- * "still here". Everything that *decides* still wakes on an append.
- */
-export const HEARTBEAT_MS = 5_000;
-
-/** Considered down after this long without a beat. Three missed beats. */
-export const STALE_AFTER_MS = HEARTBEAT_MS * 3;
-
-export async function createStatusTable(url = directPostgresUrl()): Promise<void> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    // Single row, enforced by the primary key. Two daemons cannot both be up —
-    // the conductor lock sees to that — so a second row would be a lie.
-    await client.query(`
-      create table if not exists daemon_status (
-        id             int primary key default 1 check (id = 1),
-        pid            int not null,
-        host           text not null,
-        started_at     timestamptz not null,
-        last_seen_at   timestamptz not null,
-        state          text not null,
-        current_run_id text
-      )`);
-    // Added by #98, to a table that already exists on every installation. Not a
-    // migration under 0004's rules — `daemon_status` is the one mutable
-    // operational row and is deliberately outside the write model's contract,
-    // so it is created and widened here, idempotently, where it is read.
-    await client.query(`alter table daemon_status add column if not exists code_sha text`);
-    await client.query(
-      `alter table daemon_status add column if not exists code_dirty boolean not null default false`,
-    );
-  } finally {
-    await client.end();
-  }
+/** Idempotent DDL for the beacon's row. Called once, at every daemon start. */
+export async function createStatusTable(store: DaemonStore = defaultStore()): Promise<void> {
+  await store.create();
 }
 
 export interface BeatOptions {
@@ -445,32 +414,27 @@ export interface BeatOptions {
    * has moved on underneath the modules Node already loaded.
    */
   code?: CodeVersion | null;
-  /** Session-mode connection. Defaults to the configured one. */
-  url?: string;
+  /** Where the row is. Defaults to Postgres, as everything does until #179. */
+  store?: DaemonStore;
 }
 
+/**
+ * One beat.
+ *
+ * The pid and the host are read here, from the process, rather than in a store:
+ * a store writes what it is given, and *who is running* is a fact about this
+ * process and not about a database.
+ */
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null, url = directPostgresUrl() } = options;
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    await client.query(
-      `insert into daemon_status
-         (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-       values (1, $1, $2, now(), now(), $3, $4, $5, $6)
-       on conflict (id) do update
-         set pid = excluded.pid,
-             host = excluded.host,
-             last_seen_at = excluded.last_seen_at,
-             state = excluded.state,
-             current_run_id = excluded.current_run_id,
-             code_sha = excluded.code_sha,
-             code_dirty = excluded.code_dirty`,
-      [process.pid, hostname(), state, currentRunId, code?.sha ?? null, code?.dirty ?? false],
-    );
-  } finally {
-    await client.end();
-  }
+  const { currentRunId = null, code = null, store = defaultStore() } = options;
+  await store.beat({
+    pid: process.pid,
+    host: hostname(),
+    state,
+    currentRunId,
+    codeSha: code?.sha ?? null,
+    codeDirty: code?.dirty ?? false,
+  });
 }
 
 /**
@@ -585,64 +549,8 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
 }
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
-export async function readStatus(url = directPostgresUrl()): Promise<DaemonStatus | null> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    const r = await client.query("select * from daemon_status where id = 1");
-    const row = r.rows[0];
-    if (!row) return null;
-    return {
-      pid: row.pid,
-      host: row.host,
-      startedAt: row.started_at,
-      lastSeenAt: row.last_seen_at,
-      state: row.state,
-      currentRunId: row.current_run_id,
-      // Coalesced rather than assumed: a beacon written by a daemon older than
-      // #98 has neither column, and "it did not say" is the answer to report.
-      codeSha: row.code_sha ?? null,
-      codeDirty: row.code_dirty ?? false,
-    };
-  } catch (err) {
-    // The table not existing means no daemon has ever started, which is a
-    // state the system can be in and not an error to show a person.
-    if (/does not exist/i.test((err as Error).message)) return null;
-    throw err;
-  } finally {
-    await client.end();
-  }
-}
-
-/**
- * What the beacon says, read from **both** of its fields.
- *
- * The staleness test lived in five places — two rows of `lingtai doctor`, three
- * chips on the board — each spelling `Date.now() - lastSeenAt > STALE_AFTER_MS`
- * for itself and each throwing the state word away. `#64` is the ticket about
- * two readers of this row disagreeing; one function is how they cannot.
- *
- * **The age is what decides whether anything is beating, and it is the only
- * thing that can.** A state word is what a process *said*, and a process that
- * has died goes on saying it forever, so exempting `starting` from staleness
- * would trade a wrong answer that lasted twelve seconds for one that lasts
- * until the next daemon starts. What the word adds is what it was doing when it
- * stopped — `starting` is a daemon that died on the way up, `stopping` one that
- * was told to go — so the sentence can name that instead of flattening both
- * into "not running".
- */
-export interface Beating {
-  /** Something is beating: a beat landed within `STALE_AFTER_MS`. */
-  up: boolean;
-  /** The word the beacon carries — `starting`, `up`, `draining`, `stopping`. */
-  state: string;
-  /** Since the last beat. */
-  ageMs: number;
-}
-
-export function lastBeat(status: DaemonStatus, now: number = Date.now()): Beating {
-  const ageMs = now - status.lastSeenAt.getTime();
-  return { up: ageMs <= STALE_AFTER_MS, state: status.state, ageMs };
+export async function readStatus(store: DaemonStore = defaultStore()): Promise<DaemonStatus | null> {
+  return store.status();
 }
 
 function hostname(): string {

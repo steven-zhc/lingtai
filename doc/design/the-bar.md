@@ -49,7 +49,7 @@ while working on something else. Two questions, and no third:
 | `daemon N behind` + `current` | **merge into one health** | one dot, and a sentence only when it is red — two chips for two independent facts is two things to learn to read |
 | `10 queued · 1 running · 45 landed` | **stays, unboxed** | a box says *this is a thing*; this is a reading. Kept as parts — `#81` stands |
 | `$488.52` · `$81.83 answering` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
-| `<project>: rounds ×N` | **to the recipe view** | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
+| `<project>: rounds ×N` | **to the recipe view** (`/recipe/<project>`, built by `#218`) | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
 
 Eleven to four: filters left, reading and health right, the headline last where
 the eye lands. Nothing new in the palette — amber returns to meaning one thing,
@@ -65,6 +65,35 @@ which is the argument none of the six tickets above was asked to make.
 It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx` — where
 the next chip would be added, and so where the argument has to be made.
 
+### Which half of the row does it govern? Both
+
+The four are filter, reading, health, headline, and only three of them are on
+`.rail`: the filter sits left of the second separator, and it is counted. So
+*it is on the other side of the separator* is not an argument this rule
+accepts, and `paused` and `draining` are not two of the four either — they are
+chips, absent whenever there is nothing to say, which is the property that
+makes a chip affordable at all (below).
+
+`#216` is the first ticket asked to make this argument, and it makes it by
+adding nothing to the count. The board offered a way to onboard a repository
+only while it had none: with one project the slot was a caption and with two a
+filter, and the only routes left were `lingtai add <owner>/<repo>` and typing
+`/setup/repository` from memory. What closed that is a `+` at the end of the
+project list — a `.tab` inside `.filter` (`apps/board/src/app/projects.tsx`).
+The filter has been a list of projects since `#81` and grew a tab when a third
+repository was registered; *a tab is not a chip* is already said below. The
+fourth object gained the affordance a list of things has, and the row still
+carries four.
+
+**None of which loosens anything**, and what it did cost is named rather than
+left to be found: a single-project board used to carry a bare caption and now
+carries a caption and one small tab. A list gaining its own action is not the
+same act as a fifth object arriving on a row that is glanced at while you work
+on something else — and that one still has to be argued for here.
+`apps/board/test/projects.test.tsx` holds both halves of it: *is mounted left
+of the rail*, and *leaves the four what they were* — because the way this
+ticket could have gone wrong was to make the `+` fit by redefining the set.
+
 ## What #141 and #142 changed under this
 
 Two of the chips were renamed when
@@ -77,7 +106,7 @@ sentence as its title. Neither rename touched the argument.
 ## What it looks like now
 
 ```
-灵 Lingtai │ [all] lingtai nextloom-ai-admin        10 queued · 1 running · 45 landed  ●  [1 waiting on you]
+灵 Lingtai │ [all] lingtai nextloom-ai-admin  +     10 queued · 1 running · 45 landed  ●  [1 waiting on you]
 ```
 
 One line at 1440, and one line with a third project: the filter grows a tab, and
@@ -90,12 +119,21 @@ Where the five that left went:
 | | |
 |---|---|
 | `$488.52` · `$81.83 answering` | `/spend`, off the reading. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried |
-| `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen |
+| `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen. **And `/recipe/<project>`, which is the view the row above named and which nothing built for a fortnight** (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
 | `current` + `daemon N behind` | one dot (`health.tsx`, folded by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
 
 `paused` and `draining` are still chips and still amber-free, because both are
 already absent when there is nothing to say — which is the property that makes a
-chip affordable at all.
+chip affordable at all. `recipe` in the filter is the same property, and `#218`
+is the second ticket asked to make `#216`'s argument: one control, naming the
+project in view, absent on `all` where there is no single recipe to name.
+
+**A destination that is not built is a fact deleted.** The row above was right
+that `rounds ×N` does not belong on a rail glanced at every few seconds, and for
+a fortnight the consequence was that 0025 §2's *visible* meant a terminal —
+worse, since `0046` §3 had by then moved the recipe to `~/.lingtai/` where a
+clone does not show it either. **Moving a fact off the bar is only finished when
+somewhere else is showing it.**
 
 **The claim is about the bar, and only the bar.** A card still wears the accent
 where a card has earned it — the `waiting` lane's own heading, an answering

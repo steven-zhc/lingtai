@@ -59,6 +59,106 @@ describe("resolveLocalRecipe", () => {
     expect(resolved.provenance?.["repo.base"]).toBe(`main ← ${HOME}/app/recipe.yml`);
   });
 
+  /**
+   * **A schema default is not this file, and provenance may not say it is.**
+   * `source.backoff` and every number in `runtime.budget` have one, so the
+   * resolved recipe reads `1h` and `attempts 5` whether the file mentions them
+   * or not — while the `←` half is read as *where to look*, by `lingtai
+   * doctor` and by the board's recipe page (#218). A reader sent to
+   * `recipe.yml` for a `budget:` block that is not in it concludes the tool is
+   * reading some other file.
+   */
+  it("names a default as a default, and this file only for what this file carries", async () => {
+    const silent = await resolveLocalRecipe("app", withMachine(undefined));
+    expect(silent.provenance?.["source.backoff"]).toBe("1h ← default");
+    expect(silent.provenance?.["runtime.budget.attempts"]).toBe("5 ← default");
+
+    const spoken = await resolveLocalRecipe("app", {
+      home: HOME,
+      signedIn: signed("claude-code"),
+      read: files({
+        [recipePath("app", HOME)]: `${RECIPE.replace("  kinds: [bug]", "  kinds: [bug]\n  backoff: 30m")}
+runtime:
+  budget: { attempts: 9 }
+`,
+      }),
+    });
+    expect(spoken.provenance?.["source.backoff"]).toBe(`30m ← ${HOME}/app/recipe.yml`);
+    // Per field, as `runtime.limits` is: the three numbers beside `attempts`
+    // are still the schema's, and saying otherwise is the same falsehood.
+    expect(spoken.provenance?.["runtime.budget.attempts"]).toBe(`9 ← ${HOME}/app/recipe.yml`);
+    expect(spoken.provenance?.["runtime.budget.diff"]).toBe("400000 ← default");
+  });
+
+  /**
+   * **And the same is true of every other key with a default**, which is three
+   * more: `source.exclude`, `env.required` and `gates`. The last is the one
+   * that matters — it is what holds a run — and it is also the only key here
+   * with a *third* origin, because `extends:` is a line about gates that never
+   * names one. A reader asking where the `proposed: build` gate came from
+   * opens `recipe.yml`, finds no `gates:` block, and has nowhere else to look
+   * unless provenance says the preset (#218).
+   */
+  it("names the preset for what the preset decided, and never this file", async () => {
+    const bare = `
+version: 1
+repo: { base: main }
+source: { kinds: [bug] }
+env: { plantAt: .env.local }
+`;
+    const read = (recipe: string) => ({
+      home: HOME,
+      signedIn: signed("claude-code"),
+      read: files({ [recipePath("app", HOME)]: recipe }),
+    });
+
+    const extended = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\n`));
+    expect(extended.provenance?.["gates"]).toBe(
+      "admit 0, prepared 1, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
+    );
+    // The preset has no `source` and no `env`, so these two are the schema's
+    // in both recipes — naming a file for either sends a reader to open it.
+    expect(extended.provenance?.["source.exclude"]).toBe("(none) ← default");
+    expect(extended.provenance?.["env.required"]).toBe("(none) ← default");
+
+    // Without one, five empty points nobody wrote down — a default, and this
+    // file is the one place the answer is not.
+    const alone = await resolveLocalRecipe("app", read(bare));
+    expect(alone.provenance?.["gates"]).toBe("admit 0, prepared 0, proposed 0, merge 0, end 0 ← default");
+
+    // **And a `gates:` with its block commented out is this file saying
+    // nothing**, which is what `applyPreset`'s `??` makes of it: `null ??
+    // preset.gates` is the preset's, so the run gets `proposed: build` and a
+    // reader who commented the block out and is asking why must be sent to the
+    // preset. A key present and empty used to read as a key this file carried.
+    const emptied = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\ngates:\n`));
+    expect(emptied.recipe.gates.proposed).toHaveLength(1);
+    expect(emptied.provenance?.["gates"]).toBe(
+      "admit 0, prepared 1, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
+    );
+
+    // And a file that carries them says so, in all three.
+    const own = await resolveLocalRecipe(
+      "app",
+      read(`
+version: 1
+extends: pnpm-workspace
+repo: { base: main }
+source: { kinds: [bug], exclude: [blocked] }
+env: { plantAt: .env.local, required: [DATABASE_URL] }
+gates:
+  proposed:
+    - { name: build, run: pnpm test }
+`),
+    );
+    const file = `${HOME}/app/recipe.yml`;
+    // The file's gates replace the preset's whole, which is `applyPreset`'s
+    // rule — so the one line names the file and not both.
+    expect(own.provenance?.["gates"]).toBe(`admit 0, prepared 0, proposed 1, merge 0, end 0 ← ${file}`);
+    expect(own.provenance?.["source.exclude"]).toBe(`blocked ← ${file}`);
+    expect(own.provenance?.["env.required"]).toBe(`DATABASE_URL ← ${file}`);
+  });
+
   it("refuses a missing recipe by its path", async () => {
     const options = { home: HOME, signedIn: signed("claude-code"), read: files({}) };
     await expect(resolveLocalRecipe("app", options)).rejects.toThrow(RecipeMissingError);
@@ -133,6 +233,33 @@ describe("resolveLocalRecipe", () => {
       const a = await resolveLocalRecipe("app", withMachine(undefined));
       const b = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
       expect(a.configHash).not.toBe(b.configHash);
+    });
+
+    /**
+     * **`wall` is a duration, and this file is the one that has to say so.**
+     * `wall: "90"` — the unit forgotten — used to resolve: nothing rejected it
+     * here, and `parseDuration` threw later, out of whatever was reading the
+     * resolved recipe. The board's recipe page caught that throw beside the
+     * resolve's own and read it as *the recipe could not be read*, naming
+     * `~/.lingtai/app/recipe.yml` — a file that may not carry `runtime.limits`
+     * at all, so its reader opened it twice and found nothing (#218).
+     */
+    it("refuses a wall that is not a duration, by its key and in this file", async () => {
+      const resolving = resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n'));
+      await expect(resolving).rejects.toThrow(MachineConfigInvalidError);
+      await expect(
+        resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n')),
+      ).rejects.toThrow(`${HOME}/config.yml is not valid`);
+      await expect(
+        resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n')),
+      ).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/);
+      // And under a project's section, which is the other half of the same key.
+      await expect(
+        resolveLocalRecipe(
+          "app",
+          withMachine('projects:\n  app:\n    runtime:\n      limits: { wall: "90" }\n'),
+        ),
+      ).rejects.toThrow(/projects\.app\.runtime\.limits\.wall: must be a positive duration/);
     });
   });
 

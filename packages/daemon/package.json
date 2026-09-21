@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./control": "./src/control.ts",
+    "./store": "./src/store.ts",
+    "./postgres": "./src/postgres.ts",
+    "./sqlite": "./src/sqlite.ts",
     "./currency": "./src/currency.ts",
     "./lock": "./src/lock.ts"
   },

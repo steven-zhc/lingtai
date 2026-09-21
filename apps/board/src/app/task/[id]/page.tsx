@@ -5,7 +5,7 @@ import { inWords } from "@lingtai/conductor/queue";
 import { describeHold } from "@lingtai/projector/task-view";
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from "@/lib/task";
 import { elapsed } from "@/lib/progress";
-import { describeAction } from "@/lib/recipe";
+import { describeAction, readRecipe, type FromHead } from "@/lib/recipe";
 import { Evidence } from "../../evidence.tsx";
 import { HistoryRow } from "../../history-row.tsx";
 import { DocumentBody } from "../../markdown.tsx";
@@ -265,18 +265,21 @@ export function Attempt({
         </div>
       )}
 
-      <Actions run={run} />
+      <RecipeGiven run={run} />
     </Latch>
   );
 }
 
 /**
- * What each of this attempt's gate actions runs, and what bounds it (#190).
+ * The recipe this attempt was given — the reading of it, what each of its gate
+ * actions runs, and what differs from head (#190, #217).
  *
- * **On the attempt, and not a fifth row of the record.** The question is never
- * *show me the recipe*; it is *what did `proposed:build` do*, asked while
- * looking at `proposed:build` — so the command is on the action, one click
- * open, and the whole document one click further. `RECORD_ROWS` stays four.
+ * **On the attempt, and not a fifth row of the record.** An attempt's recipe is
+ * a fact about that attempt, and attempts already nest; a row of its own would
+ * be a fifth thing in a shape #152 keeps at four so it is learned once. It also
+ * puts the command beside the point it ran at, which was #190's whole argument:
+ * the question is not *show me the recipe*, it is *what did `proposed:build`
+ * do*, asked while looking at `proposed:build`.
  *
  * **Which recipe is said before anything from it is.** The one at head is what
  * the *next* run gets, and `.lingtai/config.yaml` moves; a command drawn under
@@ -289,11 +292,11 @@ export function Attempt({
  * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
  * rather than borrowing a command from a different action.
  */
-export function Actions({ run }: { run: RunView }) {
+export function RecipeGiven({ run }: { run: RunView }) {
   const recipe = run.recipe;
-  if (recipe === undefined || run.progress === null) return null;
+  if (recipe === undefined) return null;
   if (recipe.of === "none") {
-    return <p className="empty arecipe">No recipe to show what these actions run: {recipe.why}.</p>;
+    return <p className="empty arecipe">No recipe to show for this attempt: {recipe.why}.</p>;
   }
 
   const hash = <span className="mono">recipe {recipe.configHash.slice(0, 12)}</span>;
@@ -312,39 +315,80 @@ export function Actions({ run }: { run: RunView }) {
           run gets. Shown because {recipe.why}.
         </p>
       )}
-      <ol className="acts">
-        {run.progress.points.map((p) => (
-          <li key={p.point}>
-            <span className="actpoint">{p.point}</span>
-            {p.planned.length === 0 ? (
-              <span className="empty">skipped</span>
-            ) : (
-              <span className="actlist">
-                {p.planned.map((name) => {
-                  const action = recipe.recipe.gates[p.point].find((a) => a.name === name);
-                  if (!action) {
-                    return (
-                      <span key={name} className="act">
-                        <span className="mono">{name}</span>{" "}
-                        <span className="empty">not in this recipe</span>
-                      </span>
-                    );
-                  }
-                  const { does, bound } = describeAction(action);
-                  return (
-                    <details key={name} className="act">
-                      <summary>
-                        <span className="mono">{name}</span> <span className="actbound">{bound}</span>
-                      </summary>
-                      <pre className="actcmd">{does}</pre>
-                    </details>
-                  );
-                })}
-              </span>
-            )}
-          </li>
+
+      {/* The reading, in `lingtai status`'s rows and its words. Open, because
+          *what was this attempt run under* is the question the page is being
+          asked and a disclosure would be an answer nobody found. */}
+      <dl className="rread">
+        {readRecipe(recipe.recipe).map((row) => (
+          <div key={row.name}>
+            <dt>{row.name}</dt>
+            <dd>{row.says}</dd>
+          </div>
         ))}
-      </ol>
+      </dl>
+
+      {/* **The record has the values and not the reasoning**, and a reader who
+          takes a bare number for a number nobody argued about would be wrong
+          about this repository, whose recipe explains `rounds` over seventy
+          lines. 0047 §2 accepted that loss on purpose — `canonical` is the
+          exact input `configHash` was taken over, and comments are not in it —
+          so the page says it rather than letting the omission speak. */}
+      <p className="rnote">
+        Values only. What the log records is the canonical recipe — parsed, keys sorted, comments
+        discarded (0047 §2) — so the reasoning behind a number here is in the recipe file and its
+        history, not in the record.
+      </p>
+
+      {/* **Never `same` for a recipe that *is* head's.** "Nothing differs" is a
+          claim about the attempt — it ran under what you have now — and that is
+          exactly what the line above says could not be established. Shown as
+          the absence of a comparison rather than as the result of one. */}
+      {recipe.of === "run" ? (
+        <FromHeadSays from={recipe.from} />
+      ) : (
+        <p className="rdiff empty">
+          This is the recipe at the head of {recipe.ref}, so there is nothing to compare it with:
+          what this attempt was given could not be had.
+        </p>
+      )}
+
+      {run.progress === null ? null : (
+        <ol className="acts">
+          {run.progress.points.map((p) => (
+            <li key={p.point}>
+              <span className="actpoint">{p.point}</span>
+              {p.planned.length === 0 ? (
+                <span className="empty">skipped</span>
+              ) : (
+                <span className="actlist">
+                  {p.planned.map((name) => {
+                    const action = recipe.recipe.gates[p.point].find((a) => a.name === name);
+                    if (!action) {
+                      return (
+                        <span key={name} className="act">
+                          <span className="mono">{name}</span>{" "}
+                          <span className="empty">not in this recipe</span>
+                        </span>
+                      );
+                    }
+                    const { does, bound } = describeAction(action);
+                    return (
+                      <details key={name} className="act">
+                        <summary>
+                          <span className="mono">{name}</span> <span className="actbound">{bound}</span>
+                        </summary>
+                        <pre className="actcmd">{does}</pre>
+                      </details>
+                    );
+                  })}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+
       <details className="aprompt">
         <summary>
           <span className="hdocname">the whole recipe</span>
@@ -353,6 +397,68 @@ export function Actions({ run }: { run: RunView }) {
         <pre className="hdoctext">{recipe.source}</pre>
       </details>
     </div>
+  );
+}
+
+/**
+ * What this attempt's recipe has that the one at head does not (#217).
+ *
+ * **Said in all three cases, and *nothing differs* is the useful one.** Most of
+ * the time this attempt ran under what you have now, and that is exactly what a
+ * reader came to find out; a block that appeared only when something differed
+ * would make silence mean two things — *the same* and *nobody looked* — and
+ * `2d3353b` is the day that matters, when `pnpm test:db` left the `build` gate
+ * and the runs from both sides of it sat in one list saying nothing.
+ *
+ * Not a disclosure. It is the part that makes the block worth opening, and the
+ * block is already two disclosures down.
+ */
+function FromHeadSays({ from }: { from: FromHead }) {
+  if (from.of === "unknown") {
+    return (
+      <p className="rdiff empty">
+        What differs from the recipe at head is not known: it could not be read — {from.why}.
+      </p>
+    );
+  }
+  if (from.of === "same") {
+    return (
+      <p className="rdiff">
+        Nothing differs from the recipe at the head of {from.ref}: this attempt ran under what you
+        have now.
+      </p>
+    );
+  }
+  // **Never *0 values differ*.** The hash says these are two documents and the
+  // walk is what names which values; where the walk can name none — two leaves
+  // that read alike as strings — the difference is still real, and a heading
+  // over an empty list would read as the page having nothing to say after
+  // saying there was something.
+  if (from.changes.length === 0) {
+    return (
+      <p className="rdiff refusal">
+        This is not the recipe at the head of {from.ref}, and what differs is not a value this page
+        can name: the two documents hash differently, so read the whole recipe below against
+        head&apos;s.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="rdiff refusal">
+        This is not the recipe at the head of {from.ref} — {plural(from.changes.length, "value")}{" "}
+        differ{from.changes.length === 1 ? "s" : ""}:
+      </p>
+      <ul className="rchanges">
+        {from.changes.map((c) => (
+          <li key={c.path}>
+            <span className="mono rpath">{c.path}</span>
+            <span className="rran">{c.run ?? "(not set)"}</span>
+            <span className="rhead">head: {c.head ?? "(not set)"}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

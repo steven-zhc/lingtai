@@ -28,6 +28,20 @@ export {
   type WorkLoop,
   type WorkLoopOptions,
 } from "./work-loop.ts";
+// The Postgres store and the interface, and **not** the SQLite one: it is
+// reached at `@lingtai/daemon/sqlite`, so that a barrel import never loads
+// `node:sqlite` on a Postgres install — and so that no file here names both,
+// which is what makes "nothing chooses between them" checkable
+// (`pure/one-store.test.ts`). The choice is #179's.
+export {
+  createPostgresDaemonStore,
+  type PostgresDaemonStoreOptions,
+} from "./postgres.ts";
+export {
+  type Beat,
+  type DaemonStore,
+  type StreamQuery,
+} from "./store.ts";
 export {
   CONTROL_STREAM,
   HEARTBEAT_MS,

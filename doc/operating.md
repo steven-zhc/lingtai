@@ -458,6 +458,13 @@ It checks the installation and its permissions **before** it writes anything, so
 a half-onboarded project is not a state that exists. Then it reads the recipe,
 hashes it, and records `ProjectConfigured`.
 
+**Or from the board, in any state it is in.** The `+` at the end of the project
+list on the bar goes to `/setup/repository` once the App exists and to
+`/setup/github-app` before it — so a second repository is something the console
+can do, and not only the first one (`#216`). Until then the slot was an entry
+with no projects, a caption with one and a filter with two, and the only route
+left was this command or typing the wizard's path from memory.
+
 There is nothing else to write. The tier, the gates, the priority order **and the
 base** are all the recipe's, in the managed repository — which is why this
 command takes a slug and nothing more.
@@ -815,8 +822,8 @@ stop-then-start and claims nothing more.
 **A port somebody already holds is said in words**, never as a bare
 `EADDRINUSE`: *a board is already on 17820 — http://127.0.0.1:17820*, the
 holder beside it, and where the port is set. A board this machine is serving
-holds a file lock under `~/.lingtai/locks/` — the same locker the conductor,
-the merge lane and a decision take (#193) — named for its port, and the
+holds a file lock under `~/.lingtai/locks/` — the same locker the conductor
+and a decision take (#193) — named for its port, and the
 holder's name carries its pid, which is what `stop` signals and `status`
 reports. Something else on the port is named as something else: it holds no
 lock of ours and nothing here signals it.
