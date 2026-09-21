@@ -20,10 +20,16 @@ import { DatabaseSync } from "node:sqlite";
 import type { Envelope } from "@lingtai/domain";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { ConcurrencyError } from "../src/event-store.ts";
-import { createPollingWaker, createSqliteEventStore, openSqliteLog } from "../src/sqlite.ts";
+import {
+  createPollingWaker,
+  createSqliteEventStore,
+  createSqliteLogQueries,
+  openSqliteLog,
+} from "../src/sqlite.ts";
 import { subscribe } from "../src/subscribe.ts";
 import type { Waker } from "../src/wake.ts";
 import { describeEventStoreContract } from "../test/contract.ts";
+import { describeLogQueriesContract } from "../test/queries-contract.ts";
 import { describeWakerContract } from "../test/wake-contract.ts";
 
 const dirs: string[] = [];
@@ -322,4 +328,25 @@ describe("sqlite: on a Node without node:sqlite", () => {
     expect(lines[0]).toBe("imported");
     expect(lines[1]).toMatch(/^the SQLite store needs node:sqlite, which Node v[\d.]+ does not have without a flag — Node 22\.13 or later has it$/);
   }, 40_000);
+});
+
+/**
+ * The three questions `packages/conductor/src/` used to ask with a `pg.Client`
+ * of its own, answered on a file (#221).
+ *
+ * **This is the machine `lingtai status` died on.** The contract is the same
+ * file `test/queries.test.ts` runs against Postgres — not a variant of it — so
+ * an anti-join that comes back empty on one store and full on the other is a
+ * failing test. `json_each` stands in for `jsonb_array_elements` and
+ * `seq = (select max(seq) …)` for `distinct on`, and the comparison happens in
+ * the database on both sides: what crosses into the process is the offending
+ * rows and nothing else.
+ */
+describeLogQueriesContract("sqlite", () => {
+  const db = open(freshLog());
+  return {
+    store: createSqliteEventStore(db),
+    queries: createSqliteLogQueries(db),
+    project: `esctest${crypto.randomUUID().slice(0, 6)}`,
+  };
 });

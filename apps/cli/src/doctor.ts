@@ -36,6 +36,11 @@ import {
   projectFilters,
 } from "@lingtai/conductor";
 import type { GitHubClient } from "@lingtai/github";
+// The submodule, not the barrel: these two checks run on the *direct*
+// connection, and the barrel's `log` is the pooled one. Through a pooler is
+// where the suite learned what a dropped connection costs (#157), and an audit
+// that reds on one would hold `lingtai restart`.
+import { createPostgresLogQueries } from "@lingtai/event-store/queries";
 import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
@@ -977,7 +982,7 @@ async function readableTypes(url: string): Promise<CheckResult> {
  */
 async function endPointRan(url: string): Promise<CheckResult> {
   const name = "gates: end ran on what landed";
-  const found = await endedWithoutEndActions(url).catch(() => null);
+  const found = await endedWithoutEndActions(createPostgresLogQueries({ url })).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
@@ -1017,7 +1022,7 @@ async function endPointRan(url: string): Promise<CheckResult> {
  */
 async function gatePointsRan(url: string): Promise<CheckResult> {
   const name = "gates: every point that was planned ran";
-  const found = await landedWithoutGatePoints(url).catch(() => null);
+  const found = await landedWithoutGatePoints(createPostgresLogQueries({ url })).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {

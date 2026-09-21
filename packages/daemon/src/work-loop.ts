@@ -78,7 +78,7 @@
  * must not have. `lingtai doctor` reads them back.
  */
 import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
-import { type EventStore, createPostgresWaker, eventStore, subscribe, type Subscription } from "@lingtai/event-store";
+import { type EventStore, createPostgresLog, eventStore, type Log, subscribe, type Subscription } from "@lingtai/event-store";
 import { createPostgresDaemonStore } from "./postgres.ts";
 import type { DaemonStore } from "./store.ts";
 
@@ -250,11 +250,19 @@ export interface WorkLoopOptions {
   /** Session-mode connection for the subscription. */
   url?: string;
   /**
-   * Where the log's head is read from. Defaults to Postgres at `url`.
+   * The log the daemon follows: what to read **and what says it moved**.
    *
-   * The subscription beside it is still the process-wide store's, because a
-   * waker is the log's business and not this one's — #179 is where both
-   * choices are made together.
+   * One object because the pair is what #221 found broken — every subscriber
+   * named `createPostgresWaker` itself, so a daemon on a machine with no
+   * Postgres had no waker at all and died where #178's poll was sitting unused.
+   * A log hands out its own, so choosing the store chooses the waking.
+   *
+   * Defaults to the process-wide Postgres log, waking on `url`. Named
+   * `eventLog` because `log` here is the line printer.
+   */
+  eventLog?: Log;
+  /**
+   * Where the log's head is read from. Defaults to Postgres at `url`.
    */
   daemonStore?: DaemonStore;
   /**
@@ -507,15 +515,19 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       // every task that has ever landed.
       const from = await headSeq(options);
 
+      // The log, not `options.store`: that one is where failures are recorded,
+      // and a test's store is not the log that wakes.
+      const following =
+        options.eventLog ??
+        createPostgresLog({
+          store: eventStore,
+          ...(options.url === undefined ? {} : { wakeUrl: options.url }),
+        });
+
       subscription = subscribe({
         fromSeq: from,
-        // The process-wide store, not `options.store`: that one is where
-        // failures are recorded, and a test's store is not the log that wakes.
-        store: eventStore,
-        waker: createPostgresWaker({
-          name: "lingtai-daemon",
-          ...(options.url === undefined ? {} : { url: options.url }),
-        }),
+        store: following.store,
+        waker: following.waker("lingtai-daemon"),
         onEvent: (event) => {
           // Before the trigger check: the events worth interrupting somebody
           // for are mostly *not* the ones that wake the conductor. A task being

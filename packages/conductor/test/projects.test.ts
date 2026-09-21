@@ -19,7 +19,15 @@
  * state.
  */
 import { isPending, projectStream } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, directPostgresUrl, type EventStore } from "@lingtai/event-store";
+import {
+  createDb,
+  createEventStore,
+  createPostgresLog,
+  type Db,
+  directPostgresUrl,
+  type EventStore,
+  type Log,
+} from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";
@@ -29,10 +37,13 @@ const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`;
 
 let client: Db;
 let store: EventStore;
+/** The store above and the questions beside it, as one log (#221). */
+let log: Log;
 
 beforeAll(async () => {
   client = createDb();
   store = createEventStore(client);
+  log = createPostgresLog({ store });
   await store.append(projectStream(PENDING), 0, [
     {
       type: "ProjectOnboardingStarted",
@@ -66,7 +77,7 @@ afterAll(async () => {
 
 describe("the projects a conductor may take work from", () => {
   it("does not include one whose recipe has not landed", async () => {
-    const names = (await loadProjects(store)).map((p) => p.project);
+    const names = (await loadProjects(log)).map((p) => p.project);
 
     expect(names).not.toContain(PENDING);
     expect(names).toContain(LIVE);
@@ -85,7 +96,7 @@ describe("the projects a conductor may take work from", () => {
    * pass while the board dropped it.
    */
   it("still comes back from the whole register, with the owner and branch on it", async () => {
-    const all = await loadAllProjects(store);
+    const all = await loadAllProjects(log);
     const pending = all.find((p) => p.project === PENDING);
 
     expect(pending).toBeDefined();
@@ -96,7 +107,7 @@ describe("the projects a conductor may take work from", () => {
 
   /** Every stream is on exactly one of the two sides, which is what makes them a line. */
   it("splits the register in two, with nothing on both sides and nothing lost", async () => {
-    const [all, live] = await Promise.all([loadAllProjects(store), loadProjects(store)]);
+    const [all, live] = await Promise.all([loadAllProjects(log), loadProjects(log)]);
     const named = all.filter((p) => p.project !== null);
     const pending = all.filter(isPending);
 

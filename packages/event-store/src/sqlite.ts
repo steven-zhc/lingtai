@@ -1,5 +1,6 @@
 /**
- * The log in a file: an `EventStore` and a `Waker` over SQLite (#178).
+ * The log in a file: an `EventStore`, a `LogQueries` and a `Waker` over SQLite
+ * (#178, #221).
  *
  * **A laptop with nothing installed runs this.** `node:sqlite` is in the
  * runtime this repository already requires, so there is no server, no
@@ -16,7 +17,11 @@
  * - `seq` is `INTEGER PRIMARY KEY AUTOINCREMENT`: never reused, even after the
  *   highest row is deleted.
  * - `LISTEN`/`NOTIFY` is a poll — see `POLL_MS`, and why that is a correct
- *   waker rather than a degraded one.
+ *   waker rather than a degraded one. `createSqliteLog` is what hands it out,
+ *   so choosing this store chooses the waking with it (#221).
+ * - the three questions that are not a stream read — which projects exist, what
+ *   ended without its `end` point, what landed past a gating point — are
+ *   `createSqliteLogQueries`, held to `test/queries-contract.ts`.
  *
  * **The seq gap Postgres has does not exist here.** `event-store.ts` warns that
  * a reader can see seq 6 committed while seq 5 is in flight. SQLite has one
@@ -26,6 +31,8 @@
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Envelope } from "@lingtai/domain";
 import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from "./event-store.ts";
+import type { Log } from "./log.ts";
+import type { LogQueries } from "./queries.ts";
 import type { Waker } from "./wake.ts";
 
 /**
@@ -349,4 +356,150 @@ export function createPollingWaker(options: PollingWakerOptions): Waker {
       };
     },
   };
+}
+
+// ------------------------------------------------------------- questions ----
+
+/**
+ * The same questions, in SQLite's dialect (#221).
+ *
+ * **Each one still happens in the database.** The Postgres versions are three
+ * anti-joins that return only the offending rows, and the reason they are
+ * translated rather than replaced by a fold over `readAll` is the gate audit:
+ * it compares fourteen event types' whole history against a plan, and
+ * `GatePassed` carries an agent's entire review output. Reading those rows out
+ * to compare them here would transfer and validate tens of megabytes to produce
+ * an empty list.
+ *
+ * `json_extract` and `json_each` stand in for `->>` and
+ * `jsonb_array_elements`, and `seq = (select max(seq) …)` for `distinct on`.
+ * SQLite has had JSON1 compiled in since 3.38, which is older than the
+ * `node:sqlite` this file already requires.
+ */
+export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
+  const streams = db.prepare(
+    "SELECT DISTINCT stream_id AS streamId FROM events WHERE stream_id LIKE ? ORDER BY stream_id",
+  );
+
+  const endedWithout = db.prepare(
+    `WITH over AS (
+       SELECT e.stream_id AS streamId,
+              CASE WHEN e.type = 'WorkItemClosed' THEN 'closed' ELSE 'landed' END AS outcome
+       FROM events e
+       WHERE e.type IN ('WorkItemLanded', 'WorkItemClosed')
+         AND e.seq = (SELECT max(x.seq) FROM events x
+                      WHERE x.stream_id = e.stream_id
+                        AND x.type IN ('WorkItemLanded', 'WorkItemClosed'))
+     ),
+     planned AS (
+       SELECT DISTINCT json_extract(started.data, '$.workItemId') AS work_item
+       FROM events started
+       JOIN events plan
+         ON plan.stream_id = started.stream_id AND plan.type = 'GatesResolved'
+       WHERE started.type = 'RunStarted'
+         AND EXISTS (
+           SELECT 1 FROM json_each(plan.data, '$.points') point
+           WHERE json_extract(point.value, '$.gate') = 'end'
+             AND json_array_length(point.value, '$.actions') > 0
+         )
+     )
+     SELECT over.streamId, over.outcome
+     FROM over
+     JOIN planned ON planned.work_item = over.streamId
+     WHERE NOT EXISTS (
+       SELECT 1 FROM events resolved
+       WHERE resolved.stream_id = over.streamId
+         AND resolved.type = 'EndActionsResolved'
+         AND json_extract(resolved.data, '$.outcome') = over.outcome
+     )
+     ORDER BY over.streamId`,
+  );
+
+  return {
+    async projectStreams(prefix) {
+      return streams.all(`${prefix}%`).map((r) => (r as { streamId: string }).streamId);
+    },
+
+    async endedWithoutEndActions() {
+      return endedWithout.all().map((r) => {
+        const row = r as { streamId: string; outcome: string };
+        return {
+          streamId: row.streamId,
+          outcome: row.outcome === "closed" ? ("closed" as const) : ("landed" as const),
+        };
+      });
+    },
+
+    async landedWithoutGatePoints(ranTypes) {
+      // Prepared per call rather than once: SQLite has no array parameter, so
+      // the number of placeholders is the caller's list's length. This is
+      // `lingtai doctor`'s path and runs once per command.
+      const holes = ranTypes.map(() => "?").join(", ");
+      const statement = db.prepare(
+        `WITH landed AS (
+           SELECT DISTINCT stream_id AS work_item FROM events WHERE type = 'WorkItemLanded'
+         ),
+         last_run AS (
+           SELECT json_extract(e.data, '$.workItemId') AS work_item, e.stream_id AS run_id
+           FROM events e
+           WHERE e.type = 'RunStarted'
+             AND e.seq = (SELECT max(x.seq) FROM events x
+                          WHERE x.type = 'RunStarted'
+                            AND json_extract(x.data, '$.workItemId')
+                                = json_extract(e.data, '$.workItemId'))
+         ),
+         planned AS (
+           SELECT plan.stream_id AS run_id, json_extract(point.value, '$.gate') AS gate
+           FROM events plan, json_each(plan.data, '$.points') point
+           WHERE plan.type = 'GatesResolved'
+             AND json_extract(point.value, '$.gate') <> 'end'
+             AND json_array_length(point.value, '$.actions') > 0
+         )
+         SELECT last_run.work_item AS workItemId, planned.run_id AS runId, planned.gate AS gate
+         FROM landed
+         JOIN last_run ON last_run.work_item = landed.work_item
+         JOIN planned ON planned.run_id = last_run.run_id
+         WHERE NOT EXISTS (
+           SELECT 1 FROM events ran
+           WHERE ran.stream_id = planned.run_id
+             AND ran.type IN (${holes})
+             AND json_extract(ran.data, '$.gate') = planned.gate
+         )
+         ORDER BY last_run.work_item, planned.gate`,
+      );
+      return statement
+        .all(...ranTypes)
+        .map((r) => r as unknown as { workItemId: string; runId: string; gate: string });
+    },
+  };
+}
+
+/**
+ * The log in a file, as one object: the store, the questions and the poll that
+ * wakes a reader of it (#221).
+ *
+ * `db` is the caller's, as it is for `createSqliteEventStore` — close what you
+ * open. The waker opens a connection of its own to `path`, which is why the
+ * path is wanted as well as the handle: a session that shared this connection
+ * would be asking the writer whether the writer had written.
+ */
+export function createSqliteLog(options: SqliteLogOptions): Log {
+  const waker = createPollingWaker({
+    path: options.path,
+    ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
+  });
+  return {
+    store: createSqliteEventStore(options.db),
+    queries: createSqliteLogQueries(options.db),
+    waker: () => waker,
+  };
+}
+
+export interface SqliteLogOptions {
+  /** An open log — `openSqliteLog(path)`. */
+  db: DatabaseSync;
+  /** The same file, for the waker's own connection. Never `:memory:`. */
+  path: string;
+  /** Defaults to `POLL_MS`. */
+  intervalMs?: number;
 }

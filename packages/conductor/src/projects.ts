@@ -16,31 +16,41 @@ import { type Runtime, createClaudeCodeRuntime, createCodexRuntime } from "@ling
 import { runnableEnv } from "@lingtai/agent-env";
 import type { RuntimeId } from "@lingtai/domain";
 import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
 import type { GitHubClient } from "@lingtai/github";
-import { type EventStore, eventStore } from "@lingtai/event-store";
-import pg from "pg";
+// **Type-only, and the submodules rather than the barrel** (`#157`, #221).
+// Importing `@lingtai/event-store` constructs the process-wide client as a side
+// effect of the import, and `createDb()` reads `postgresUrl()` eagerly — which
+// throws where nothing is configured. This file is the first thing `lingtai
+// status` reaches, so an eager import here is the machine with no Postgres
+// losing its first command before a line of it runs. The default log is
+// imported when one is actually wanted, and a caller that brings its own never
+// loads it.
+import type { EventStore } from "@lingtai/event-store/store";
+import type { Log, LogQueries } from "@lingtai/event-store/log";
 
-/** Every project stream that has ever been written to. */
-export async function listProjectStreams(url = postgresUrl()): Promise<string[]> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    const r = await client.query<{ stream_id: string }>(
-      "select distinct stream_id from events where stream_id like $1 order by stream_id",
-      [`${PROJECT_STREAM_PREFIX}%`],
-    );
-    return r.rows.map((x) => x.stream_id);
-  } finally {
-    await client.end();
-  }
+/** The process-wide Postgres log, reached only when nobody supplied one. */
+async function defaultLog(): Promise<Log> {
+  return (await import("@lingtai/event-store")).log;
+}
+
+/**
+ * Every project stream that has ever been written to.
+ *
+ * Through `LogQueries` since #221 rather than a `pg.Client` of its own: this is
+ * the query `lingtai status` runs first, and a raw client here is a place the
+ * init-time choice does not reach (0055 §1).
+ */
+export async function listProjectStreams(queries?: LogQueries): Promise<string[]> {
+  const ask = queries ?? (await defaultLog()).queries;
+  return ask.projectStreams(PROJECT_STREAM_PREFIX);
 }
 
 export async function loadProject(
   project: string,
-  store: EventStore = eventStore,
+  store?: EventStore,
 ): Promise<ProjectState | null> {
-  const events = await store.read(projectStream(project));
+  const from = store ?? (await defaultLog()).store;
+  const events = await from.read(projectStream(project));
   if (events.length === 0) return null;
   const state = reduceProject(events);
   return isRegistered(state) ? state : null;
@@ -57,9 +67,14 @@ export async function loadProject(
  * nothing called would have been a test's idea of the board rather than the
  * board — one that keeps passing while the strip it is named for is broken.
  */
-export async function loadAllProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
-  const streams = await listProjectStreams();
-  return Promise.all(streams.map((s) => store.read(s).then(reduceProject)));
+export async function loadAllProjects(log?: Log): Promise<ProjectState[]> {
+  // A log rather than a store, because this is two questions of the same log
+  // and they must not be able to come from different ones: it used to take an
+  // `EventStore` and then ask `listProjectStreams()` — whose default was
+  // Postgres whatever store it had been handed (#221).
+  const from = log ?? (await defaultLog());
+  const streams = await from.queries.projectStreams(PROJECT_STREAM_PREFIX);
+  return Promise.all(streams.map((s) => from.store.read(s).then(reduceProject)));
 }
 
 /**
@@ -71,8 +86,8 @@ export async function loadAllProjects(store: EventStore = eventStore): Promise<P
  * back from here — the daemon needs no new check, and `test/projects.test.ts`
  * pins that rather than adding one.
  */
-export async function loadProjects(store: EventStore = eventStore): Promise<ProjectState[]> {
-  return (await loadAllProjects(store)).filter(isRegistered);
+export async function loadProjects(log?: Log): Promise<ProjectState[]> {
+  return (await loadAllProjects(log)).filter(isRegistered);
 }
 
 

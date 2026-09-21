@@ -41,8 +41,9 @@
  * actions there is being told they had no effect on what merged.
  */
 import { GATE_POINTS } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
-import pg from "pg";
+// Type-only and by submodule, for the reason `projects.ts` gives: the barrel
+// builds a Postgres client at import.
+import type { LogQueries } from "@lingtai/event-store/log";
 import { splitWorkItem } from "./end-point.ts";
 
 /** A landed item whose run planned actions at a point and recorded none. */
@@ -85,66 +86,35 @@ const RAN = [
  * waiver on the run, which names who and why and satisfies this check because
  * `GateWaived` is a gate event like any other.
  */
-export async function landedWithoutGatePoints(url = postgresUrl()): Promise<UnrunGatePoint[]> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    const r = await client.query<{ work_item: string; run_id: string; gate: string }>(
-      `with landed as (
-         select distinct stream_id as work_item from events where type = 'WorkItemLanded'
-       ),
-       last_run as (
-         select distinct on (data->>'workItemId')
-                data->>'workItemId' as work_item, stream_id as run_id
-         from events
-         where type = 'RunStarted'
-         order by data->>'workItemId', seq desc
-       ),
-       planned as (
-         select plan.stream_id as run_id, point->>'gate' as gate
-         from events plan, lateral jsonb_array_elements(plan.data->'points') point
-         where plan.type = 'GatesResolved'
-           and point->>'gate' <> 'end'
-           and jsonb_array_length(point->'actions') > 0
-       )
-       select last_run.work_item, planned.run_id, planned.gate
-       from landed
-       join last_run on last_run.work_item = landed.work_item
-       join planned on planned.run_id = last_run.run_id
-       where not exists (
-         select 1 from events ran
-         where ran.stream_id = planned.run_id
-           and ran.type = any($1::text[])
-           and ran.data->>'gate' = planned.gate
-       )
-       order by last_run.work_item, planned.gate`,
-      [RAN],
-    );
+export async function landedWithoutGatePoints(queries?: LogQueries): Promise<UnrunGatePoint[]> {
+  // `RAN` goes to the store rather than the store knowing it: which events are
+  // proof a pipeline reached a point is this file's rule, and the anti-join
+  // that uses it is the store's — one row per offending point and nothing else
+  // crosses the wire (#221).
+  const ask = queries ?? (await import("@lingtai/event-store")).log.queries;
+  const rows = await ask.landedWithoutGatePoints(RAN);
 
-    // One row per point; one finding per item, because "this landed with two
-    // points that never ran" is one thing to look at and not two.
-    const byItem = new Map<string, UnrunGatePoint>();
-    for (const row of r.rows) {
-      const split = splitWorkItem(row.work_item);
-      if (split === null) continue;
-      const found = byItem.get(row.work_item);
-      if (found) found.points.push(row.gate);
-      else {
-        byItem.set(row.work_item, {
-          workItemId: row.work_item,
-          runId: row.run_id,
-          points: [row.gate],
-          ...split,
-        });
-      }
+  // One row per point; one finding per item, because "this landed with two
+  // points that never ran" is one thing to look at and not two.
+  const byItem = new Map<string, UnrunGatePoint>();
+  for (const row of rows) {
+    const split = splitWorkItem(row.workItemId);
+    if (split === null) continue;
+    const found = byItem.get(row.workItemId);
+    if (found) found.points.push(row.gate);
+    else {
+      byItem.set(row.workItemId, {
+        workItemId: row.workItemId,
+        runId: row.runId,
+        points: [row.gate],
+        ...split,
+      });
     }
-    // Recipe order — `admit` before `merge` — rather than the alphabet, so the
-    // list reads the way the points run.
-    for (const found of byItem.values()) {
-      found.points.sort((a, b) => GATE_POINTS.indexOf(a as never) - GATE_POINTS.indexOf(b as never));
-    }
-    return [...byItem.values()];
-  } finally {
-    await client.end();
   }
+  // Recipe order — `admit` before `merge` — rather than the alphabet, so the
+  // list reads the way the points run.
+  for (const found of byItem.values()) {
+    found.points.sort((a, b) => GATE_POINTS.indexOf(a as never) - GATE_POINTS.indexOf(b as never));
+  }
+  return [...byItem.values()];
 }

@@ -6,6 +6,12 @@
  * what a waker is held to, and `test/subscribe.test.ts` runs it against this
  * file's Postgres implementation.
  *
+ * **Which waker a subscriber gets is `log.ts`'s and not the subscriber's**
+ * (#221). This function was named directly by every subscriber in the
+ * repository, so a machine with no Postgres did not fall back to #178's poll —
+ * it opened a `LISTEN` against nothing. A `Log` hands out its own waker, and
+ * the pair cannot be mismatched.
+ *
  * **A waker promises very little, on purpose.** A nudge says *something
  * changed, go look* and carries nothing — `subscribe` drains everything after
  * its `lastSeq` whatever the nudge was for. So a nudge may be **late,

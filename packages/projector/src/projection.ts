@@ -16,6 +16,12 @@
  *
  * Reads of the log still go through the `EventStore`: `readAll` is the only
  * cursor, and its payloads are validated and upcast on the way out.
+ *
+ * Since #221 the store and the waker arrive together as a `Log`. That file
+ * argues it, and the short version is that this line used to read
+ * `options.waker ?? createPostgresWaker(...)`: a runner handed a file-backed
+ * store still opened a `LISTEN`, so the poll #178 built was never once
+ * selected.
  */
 import type { Envelope } from "@lingtai/domain";
 import { postgresUrl } from "@lingtai/env";
@@ -26,8 +32,9 @@ import { postgresUrl } from "@lingtai/env";
 // nothing at import, and the process-wide `eventStore` is reached for only when
 // nobody supplied a log.
 import type { EventStore } from "@lingtai/event-store/store";
+import type { Log } from "@lingtai/event-store/log";
 import { type Subscription, subscribe } from "@lingtai/event-store/subscribe";
-import { type Waker, createPostgresWaker } from "@lingtai/event-store/wake";
+import type { Waker } from "@lingtai/event-store/wake";
 import { createPostgresProjectionStore } from "./postgres.ts";
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from "./shape.ts";
 import type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from "./store.ts";
@@ -77,7 +84,20 @@ export interface ProjectionRunner {
 
 export interface ProjectionRunnerOptions {
   projection: Projection;
-  /** The log. The process-wide `eventStore` outside a test. */
+  /**
+   * The log this follows — what to read **and what says it moved**, together.
+   *
+   * They arrive as one object because separating them is the bug #221 closes:
+   * a runner given a file-backed store still reached for `createPostgresWaker`,
+   * so a machine with no Postgres did not fall back to the poll #178 built for
+   * it — it failed to open a `LISTEN` on a database that was not there. A log
+   * hands out its own waker, so there is no pair to get wrong.
+   *
+   * The process-wide Postgres log outside a test, imported on demand so that a
+   * runner given one opens no client.
+   */
+  log?: Log;
+  /** The store alone, overriding `log.store`. A test's recorder. */
   store?: EventStore;
   /**
    * Where the fold lands, and the checkpoint with it.
@@ -96,9 +116,9 @@ export interface ProjectionRunnerOptions {
   /** Pooled connection for the default Postgres store. */
   url?: string;
   /**
-   * What says the log has moved. `LISTEN`/`NOTIFY` unless told otherwise,
-   * because that is what the log in Postgres offers; a log in a file brings
-   * `createPollingWaker` instead (#177).
+   * What says the log has moved, overriding `log.waker(…)`. Left out it is the
+   * log's own — `LISTEN`/`NOTIFY` from Postgres, a poll from a file (#177,
+   * #221). Here for a test that wants a waker made bad on purpose.
    */
   waker?: Waker;
   batchSize?: number;
@@ -123,19 +143,23 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     });
   }
 
-  /** The log, built on demand so that a runner given one opens no client. */
-  async function log(): Promise<EventStore> {
-    return options.store ?? (await import("@lingtai/event-store")).eventStore;
-  }
-
   async function follow(): Promise<void> {
-    const store = await log();
+    // The store and the waker come off one log unless the caller named them,
+    // and the log is reached for only if one of them is missing — so a runner
+    // handed both still opens no client (`#157`).
+    let store = options.store;
+    let waker = options.waker;
+    if (store === undefined || waker === undefined) {
+      const from: Log = options.log ?? (await import("@lingtai/event-store")).log;
+      store ??= from.store;
+      waker ??= from.waker(`lingtai-projection-${projection.name}`);
+    }
+
     const fromSeq = await into.checkpoint(projection.name);
     const sub = subscribe({
       fromSeq,
       store,
-      waker:
-        options.waker ?? createPostgresWaker({ name: `lingtai-projection-${projection.name}` }),
+      waker,
       onBatch: commitBatch,
       batchSize: options.batchSize ?? 500,
       onError: (error, phase) => {

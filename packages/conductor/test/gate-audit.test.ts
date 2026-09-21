@@ -13,7 +13,7 @@
  */
 import { directPostgresUrl } from "@lingtai/env";
 import { parsePayload } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { createDb, createEventStore, createPostgresLogQueries, type Db, type EventStore } from "@lingtai/event-store";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { landedWithoutGatePoints } from "../src/gate-audit.ts";
@@ -105,7 +105,7 @@ async function landedItem(
 }
 
 const forProject = async () =>
-  (await landedWithoutGatePoints(directPostgresUrl())).filter((f) => f.project === PROJECT);
+  (await landedWithoutGatePoints(createPostgresLogQueries({ url: directPostgresUrl() }))).filter((f) => f.project === PROJECT);
 
 describe("landedWithoutGatePoints", () => {
   it("finds the change that merged past a point the recipe configured", async () => {

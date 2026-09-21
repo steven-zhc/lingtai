@@ -41,9 +41,10 @@
 import { workItemStream } from "@lingtai/domain";
 import type { GateAction } from "@lingtai/recipe";
 import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
-import type { EventStore } from "@lingtai/event-store";
-import pg from "pg";
+// Type-only and by submodule, for the reason `projects.ts` gives: the barrel
+// builds a Postgres client at import.
+import type { EventStore } from "@lingtai/event-store/store";
+import type { LogQueries } from "@lingtai/event-store/log";
 
 /**
  * The outcomes `end` fires on. The recipe's `when:` is one of these or `any`.
@@ -207,46 +208,14 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * Read by `lingtai doctor`, which reports it, and by `lingtai end replay`,
  * which repairs it by appending what should have been appended at the time.
  */
-export async function endedWithoutEndActions(url = postgresUrl()): Promise<UnresolvedEnd[]> {
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    const r = await client.query<{ stream_id: string; outcome: string }>(
-      `with over as (
-         select distinct on (stream_id) stream_id,
-                case when type = 'WorkItemClosed' then 'closed' else 'landed' end as outcome
-         from events
-         where type in ('WorkItemLanded', 'WorkItemClosed')
-         order by stream_id, seq desc
-       ),
-       planned as (
-         select distinct started.data->>'workItemId' as work_item
-         from events started
-         join events plan
-           on plan.stream_id = started.stream_id and plan.type = 'GatesResolved'
-         where started.type = 'RunStarted'
-           and exists (
-             select 1 from jsonb_array_elements(plan.data->'points') point
-             where point->>'gate' = 'end' and jsonb_array_length(point->'actions') > 0
-           )
-       )
-       select over.stream_id, over.outcome
-       from over
-       join planned on planned.work_item = over.stream_id
-       where not exists (
-         select 1 from events resolved
-         where resolved.stream_id = over.stream_id
-           and resolved.type = 'EndActionsResolved'
-           and resolved.data->>'outcome' = over.outcome
-       )
-       order by over.stream_id`,
-    );
-    return r.rows.flatMap((row) => {
-      const split = splitWorkItem(row.stream_id);
-      const outcome = row.outcome === "closed" ? "closed" : "landed";
-      return split === null ? [] : [{ workItemId: row.stream_id, outcome, ...split }];
-    });
-  } finally {
-    await client.end();
-  }
+export async function endedWithoutEndActions(queries?: LogQueries): Promise<UnresolvedEnd[]> {
+  // The comparison is the store's since #221 — an anti-join that returns only
+  // the offending items — and the naming is still this file's: `wi-lingtai-52`
+  // becomes a project and an issue here, where `splitWorkItem` is.
+  const ask = queries ?? (await import("@lingtai/event-store")).log.queries;
+  const found = await ask.endedWithoutEndActions();
+  return found.flatMap((row) => {
+    const split = splitWorkItem(row.streamId);
+    return split === null ? [] : [{ workItemId: row.streamId, outcome: row.outcome, ...split }];
+  });
 }
