@@ -30,6 +30,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 /** Head, after a commit like `2d3353b`: the same action, a different command. */
 const HEAD = RECIPE.replace("pnpm typecheck && pnpm test", "pnpm typecheck");
 
+/** Two actions at one point, and the same two in the other order — nothing else. */
+const ORDERED = RECIPE.replace(
+  '    - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }',
+  '    - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }\n' +
+    '    - { name: lint, run: "pnpm lint", timeout: 5m }',
+);
+const SWAPPED = RECIPE.replace(
+  '    - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }',
+  '    - { name: lint, run: "pnpm lint", timeout: 5m }\n' +
+    '    - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }',
+);
+
 const BASE = "b".repeat(40);
 const RUN = "run-44444444-0000-0000-0000-000000000000";
 const hashOf = async (text: string) => (await resolveRecipe(async () => text, "x")).configHash;
@@ -323,13 +335,79 @@ describe("the recipe an attempt was given", () => {
     const recipe = await recipeOfRun(run, client, atHead);
     expect(recipe.of === "run" && recipe.from.of).toBe("changed");
     const changes = recipe.of === "run" && recipe.from.of === "changed" ? recipe.from.changes : [];
-    // `build` is untouched and says nothing; only the added action is named.
+    // `build` is untouched and says nothing: the added action is named, and the
+    // point says what now runs in what order, which is the other thing the
+    // insertion did.
     expect(changes.map((c) => c.path)).toEqual([
+      "gates.proposed",
       "gates.proposed.lint.env",
       "gates.proposed.lint.name",
       "gates.proposed.lint.run",
       "gates.proposed.lint.timeout",
     ]);
-    expect(changes.every((c) => c.head === null)).toBe(true);
+    expect(changes[0]).toEqual({ path: "gates.proposed", run: "lint > build", head: "build" });
+    // Everything the walk names under a name is new; nothing of `build`'s is.
+    expect(changes.slice(1).every((c) => c.head === null)).toBe(true);
+  });
+
+  /**
+   * **The hash sees order and a diff keyed by name does not**, so the order is
+   * a value the walk names for itself — without it a swapped pair is a
+   * `changed` carrying nothing, a page that says a difference and shows none,
+   * and the one thing that moved is the one thing never drawn.
+   *
+   * Order is not decoration at a gate point: `proposed`'s first action is the
+   * one whose refusal stops the pass.
+   */
+  it("names a reordered gate, which the hash sees and a name-keyed walk does not", async () => {
+    const run = runWith(await hashOf(ORDERED));
+    const { client } = fake({ [BASE]: ORDERED });
+    const atHead = async () => resolveRecipe(async () => SWAPPED, "main");
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    expect(recipe.of === "run" && recipe.from).toEqual({
+      of: "changed",
+      ref: "main",
+      changes: [{ path: "gates.proposed", run: "build > lint", head: "lint > build" }],
+    });
+
+    const html = render({ ...run, recipe });
+    expect(html).toContain("1 value");
+    expect(html).toContain("build &gt; lint");
+    // Never a heading over an empty list.
+    expect(html).not.toContain('<ul class="rchanges"></ul>');
+  });
+
+  it("counts the reorder in the mixed case, where an edit would otherwise stand for both", async () => {
+    const run = runWith(await hashOf(ORDERED));
+    const { client } = fake({ [BASE]: ORDERED });
+    const edited = SWAPPED.replace("pnpm lint", "pnpm lint --fix");
+    const atHead = async () => resolveRecipe(async () => edited, "main");
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    const changes = recipe.of === "run" && recipe.from.of === "changed" ? recipe.from.changes : [];
+    expect(changes.map((c) => c.path)).toEqual(["gates.proposed", "gates.proposed.lint.run"]);
+    expect(render({ ...run, recipe })).toContain("2 values");
+  });
+
+  it("never says 0 values differ when the walk can name none of them", async () => {
+    // Two documents the hash tells apart that the walk reads alike all the way
+    // down: a list of one string against a list of two, which join the same.
+    const mine = RECIPE.replace("exclude: [blocked]", 'exclude: ["blocked, held"]');
+    const theirs = RECIPE.replace("exclude: [blocked]", "exclude: [blocked, held]");
+    const run = runWith(await hashOf(mine));
+    const { client } = fake({ [BASE]: mine });
+    const atHead = async () => resolveRecipe(async () => theirs, "main");
+
+    const recipe = await recipeOfRun(run, client, atHead);
+    // `changed` stands on the hash; the walk is what has nothing to name.
+    expect(recipe.of === "run" && recipe.from.of).toBe("changed");
+    expect(recipe.of === "run" && recipe.from.of === "changed" && recipe.from.changes).toEqual([]);
+
+    const html = render({ ...run, recipe });
+    expect(html).toContain("This is not the recipe at the head of main");
+    expect(html).toContain("not a value this page can name");
+    expect(html).not.toContain("0 value");
+    expect(html).not.toContain('<ul class="rchanges"></ul>');
   });
 });

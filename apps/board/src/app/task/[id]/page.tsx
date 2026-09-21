@@ -429,6 +429,20 @@ function FromHeadSays({ from }: { from: FromHead }) {
       </p>
     );
   }
+  // **Never *0 values differ*.** The hash says these are two documents and the
+  // walk is what names which values; where the walk can name none — two leaves
+  // that read alike as strings — the difference is still real, and a heading
+  // over an empty list would read as the page having nothing to say after
+  // saying there was something.
+  if (from.changes.length === 0) {
+    return (
+      <p className="rdiff refusal">
+        This is not the recipe at the head of {from.ref}, and what differs is not a value this page
+        can name: the two documents hash differently, so read the whole recipe below against
+        head&apos;s.
+      </p>
+    );
+  }
   return (
     <>
       <p className="rdiff refusal">

@@ -104,6 +104,13 @@ export interface Change {
  *
  * `unknown` is the third: head could not be read, so the comparison was not
  * made, and that is not the same as there being nothing in it.
+ *
+ * **`changed` is settled by the hash, and `changes` is only what a walk of the
+ * two documents could name.** The two are not the same question: the walk
+ * renders every leaf as a string, so two documents the hash tells apart can
+ * still read alike all the way down (`[a, b]` and `["a, b"]` do), and the list
+ * comes back empty. `changed` stands — the hash is the proof — and the page
+ * says the difference is not in a value it can name, never *0 values differ*.
  */
 export type FromHead =
   | { of: "same"; ref: string }
@@ -124,6 +131,13 @@ function say(value: unknown): string {
  * on that point having changed, and the one that was actually added would be
  * the one row that looked unremarkable.
  *
+ * **And its order is a value of its own**, because keying by name is exactly
+ * what loses it. `canonical` serialises a list in order, so two gates holding
+ * the same actions in the other order hash differently — and without this line
+ * the walk finds nothing, `changed` carries an empty list, and the page asserts
+ * a difference it then shows none of. Order is not decoration at a gate point:
+ * it decides which action runs first and so which refusal stops the pass.
+ *
  * An empty list is a value (`(nothing)`) rather than an absence, for the reason
  * a `skipped` gate point is drawn: a point whose actions were all removed is a
  * change, and a path that merely stops existing does not read as one.
@@ -135,9 +149,13 @@ function flatten(value: unknown, at: string, into: Map<string, string>): void {
   if (value === undefined) return;
   if (Array.isArray(value)) {
     if (value.length === 0) into.set(at, "(nothing)");
-    else if (value.every((v) => typeof (v as { name?: unknown })?.name === "string"))
+    else if (value.every((v) => typeof (v as { name?: unknown })?.name === "string")) {
+      // The list's own path carries the names in the order they run, and each
+      // one's values hang under it. A swap says so on this line and on no
+      // other; an insertion says so here and names the new action below.
+      into.set(at, value.map((v) => (v as { name: string }).name).join(" > "));
       for (const item of value) flatten(item, `${at}.${(item as { name: string }).name}`, into);
-    else into.set(at, value.map(say).join(", "));
+    } else into.set(at, value.map(say).join(", "));
     return;
   }
   if (value !== null && typeof value === "object") {
