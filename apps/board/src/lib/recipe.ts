@@ -18,11 +18,14 @@ import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
 import {
+  AgentUnresolvedError,
   LIMIT_DEFAULTS,
+  MachineConfigInvalidError,
   PROVENANCE_ARROW,
   RecipeInvalidError,
   RecipeMissingError,
   kindOfAction,
+  machinePath,
   parseDuration,
   provenanceSource,
   recipePath,
@@ -345,14 +348,23 @@ export async function recipeOfRun(
  * **Refused is an answer, not an empty page.** A recipe that will not parse is
  * the failure that cost this project a whole queue with doctor green throughout
  * (#76), and the page that exists to say what is configured must say *that*
- * rather than render a page with no rows on it. `at` is the file either way, so
+ * rather than render a page with no rows on it. `at` is a file either way, so
  * the refusal names something a person can open.
+ *
+ * **And it is not always the recipe's file.** Two files decide one project, so
+ * three of the ways this resolve can fail leave `recipe.yml` perfectly
+ * readable: `gates:` in the machine file, an ill-formed `runtime.assignee`
+ * there, and two runtimes signed in with nothing naming one — which 0046 §3
+ * treats as an expected state and not a mistake. A page that answered all
+ * three with *the recipe could not be read* would send its reader to open the
+ * one file there is nothing wrong with, so `fault` says which, and `at` is the
+ * file that fault is in.
  */
 export type ProjectRecipe =
   | {
       ok: true;
       project: string;
-      /** The file the recipe was read from, named whether it parsed or not. */
+      /** The file the recipe was read from. */
       at: string;
       /** Of the resolved recipe — what an attempt's is matched against (#217). */
       configHash: string;
@@ -361,7 +373,33 @@ export type ProjectRecipe =
       rows: readonly Reading[];
       provenance: Readonly<Record<string, string>>;
     }
-  | { ok: false; project: string; at: string; problem: string };
+  | {
+      ok: false;
+      project: string;
+      /** The file to open: the recipe, or this machine's `config.yml` when the fault is there. */
+      at: string;
+      /** Which of the two files `at` is, so the page can name the fault it actually has. */
+      fault: "recipe" | "machine";
+      problem: string;
+    };
+
+/**
+ * Which file a refusal is about (#218).
+ *
+ * The machine file refuses `gates:` and an ill-formed `runtime.assignee` by
+ * name, and `AgentUnresolvedError` is answered either there — by writing
+ * `runtime.agent` — or by signing a runtime out. None of the three is fixed by
+ * editing the recipe, and each names its own remedy in its message; what a
+ * caller must not do is wrap all three in a sentence about the other file.
+ *
+ * `instanceof`, as `setup/wizard/page.tsx` already does across this same
+ * boundary.
+ */
+function faultOf(err: unknown, recipe: string): { at: string; fault: "recipe" | "machine" } {
+  return err instanceof MachineConfigInvalidError || err instanceof AgentUnresolvedError
+    ? { at: machinePath(), fault: "machine" }
+    : { at: recipe, fault: "recipe" };
+}
 
 /**
  * One project's recipe, resolved from this machine — **no request, and nothing
@@ -390,7 +428,12 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
       provenance: resolved.provenance ?? {},
     };
   } catch (err) {
-    return { ok: false, project, at, problem: (err as Error).message.replace(/\s*\n\s*/g, " ").trim() };
+    return {
+      ok: false,
+      project,
+      ...faultOf(err, at),
+      problem: (err as Error).message.replace(/\s*\n\s*/g, " ").trim(),
+    };
   }
 }
 
@@ -574,7 +617,10 @@ export function readRecipe(recipe: Recipe): Reading[] {
       says:
         `evidence ${budget.evidence} · attempts ${budget.attempts} · ` +
         `findings ${budget.findings} · diff ${budget.diff}`,
-      keys: ["runtime.budget"],
+      // Four numbers with four origins, like `a pass`: a recipe that sets
+      // `attempts` and leaves the rest to the schema has one source for one of
+      // them and `default` for three, and the row says both.
+      keys: Object.keys(budget).map((key) => `runtime.budget.${key}`),
     },
   ];
 }

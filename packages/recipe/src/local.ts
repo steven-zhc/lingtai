@@ -304,6 +304,16 @@ export async function resolveLocalRecipe(
   provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"}${PROVENANCE_ARROW}${assigneeFrom("take") ?? "default"}`;
   provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"}${PROVENANCE_ARROW}${assigneeFrom("login") ?? "default"}`;
 
+  // Which of the two values below the *file* actually carries, as against the
+  // ones the schema fills in. Asked of the file's own object because that is
+  // the only place the difference survives: `recipe.source.backoff` reads `1h`
+  // whether the line is there or not, so nothing downstream can tell a value
+  // this file decided from a default it was silent about (#218).
+  //
+  // No preset sets either — `Preset` has no `source` at all, and its `runtime`
+  // carries only `agent` — so the file is the whole question.
+  const said = { backoff: false, budget: new Set<string>() };
+
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
     const refused: string[] = [];
     const runtime = raw["runtime"];
@@ -311,6 +321,10 @@ export async function resolveLocalRecipe(
       runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {};
+    const mapping = (value: unknown): Record<string, unknown> =>
+      value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+    said.backoff = "backoff" in mapping(raw["source"]);
+    for (const key of Object.keys(mapping(own["budget"]))) said.budget.add(key);
     for (const key of ["agent", "limits", "assignee"]) {
       if (key in own) {
         refused.push(
@@ -335,18 +349,28 @@ export async function resolveLocalRecipe(
     // The two a reading says out loud and provenance did not carry, so that
     // every row of one has a source beside it (#218). Neither can come from
     // anywhere but this file — `runtime.budget` is refused in the machine's —
-    // and a row whose source column is blank reads as a source nobody knows
-    // rather than as one there was never a choice about.
+    // but both have a schema default, which is why they are the two keys here
+    // that may answer `default`: naming this file for a value it does not
+    // mention sends a reader to open it and find nothing, which is worse than
+    // the blank column that was there before.
     "source.backoff": recipe.source.backoff,
-    "runtime.budget":
-      `evidence ${recipe.runtime.budget.evidence}, attempts ${recipe.runtime.budget.attempts}, ` +
-      `findings ${recipe.runtime.budget.findings}, diff ${recipe.runtime.budget.diff}`,
     "env.required": list(recipe.env.required),
     gates: Object.entries(recipe.gates)
       .map(([point, actions]) => `${point} ${actions.length}`)
       .join(", "),
   };
-  for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value}${PROVENANCE_ARROW}${path}`;
+  // Per field, as `runtime.limits` is: a recipe that sets `attempts` and
+  // nothing else must not put this file's name against the three numbers it
+  // does not contain.
+  for (const [key, value] of Object.entries(recipe.runtime.budget)) {
+    recipeValues[`runtime.budget.${key}`] = String(value);
+  }
+  const defaulted = (key: string) =>
+    key === "source.backoff"
+      ? !said.backoff
+      : key.startsWith("runtime.budget.") && !said.budget.has(key.slice("runtime.budget.".length));
+  for (const [key, value] of Object.entries(recipeValues))
+    provenance[key] = `${value}${PROVENANCE_ARROW}${defaulted(key) ? "default" : path}`;
   return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
 }
 

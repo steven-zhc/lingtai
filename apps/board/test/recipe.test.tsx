@@ -23,10 +23,11 @@
  * The recipe is resolved for real, from a `LINGTAI_HOME` of two files, because
  * provenance is the whole subject and a fake one would assert the fake.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ProjectState } from "@lingtai/domain";
@@ -43,6 +44,23 @@ gates:
     - { name: build, run: "pnpm test", timeout: 20m }
 `;
 
+/**
+ * The same recipe saying out loud two things `RECIPE` leaves to the schema —
+ * `source.backoff`, and two of `runtime.budget`'s four numbers. Both files
+ * resolve to the same shape; only provenance can tell them apart.
+ */
+const SPEAKS = `
+version: 1
+repo: { base: main }
+source: { kinds: [bug], exclude: ["blocked"], backoff: 30m }
+env: { plantAt: .env.local }
+gates:
+  proposed:
+    - { name: build, run: "pnpm test", timeout: 20m }
+runtime:
+  budget: { attempts: 9, diff: 1000 }
+`;
+
 /** A machine that says some of it machine-wide and some of it for this project. */
 const MACHINE = `
 runtime:
@@ -57,6 +75,8 @@ projects:
 const PAGE = new URL("../src/app/recipe/[project]/page.tsx", import.meta.url);
 const state = { project: "app", owner: "me", base: "main" } as ProjectState;
 const render = (view: ProjectRecipe) => renderToStaticMarkup(<Recipe view={view} />);
+const sourceIn = (view: ProjectRecipe, name: string) =>
+  view.ok ? sourceOf(view.rows.find((row) => row.name === name)!, view.provenance) : null;
 
 let home: string;
 let saved: string | undefined;
@@ -116,6 +136,33 @@ describe("what a project's recipe says today", () => {
     expect(of("a pass")).toContain("default");
   });
 
+  /**
+   * **A source column can be worse than blank, and this is how.** `source.backoff`
+   * and every number in `runtime.budget` have a schema default, so the resolved
+   * recipe reads `1h` and `attempts 5` whether the file says so or not — and a
+   * line naming `recipe.yml` for a value that file does not contain sends its
+   * reader to open it and find no `budget:` block at all. Asserted both ways
+   * round, because `default` everywhere would pass one half of it.
+   */
+  it("says default for a value the file leaves to the schema, and the file for one it carries", async () => {
+    const silent = await projectRecipe(state);
+
+    expect(sourceIn(silent, "retries")).toBe("default");
+    expect(sourceIn(silent, "budget")).toBe("default");
+
+    await writeFile(join(home, "app", "recipe.yml"), SPEAKS);
+    const speaks = await projectRecipe(state);
+    const file = join(home, "app", "recipe.yml");
+
+    expect(sourceIn(speaks, "retries")).toBe(file);
+    // Two of the four numbers are this file's and two are the schema's, and the
+    // row says both — `a pass`'s rule, for the same reason.
+    expect(sourceIn(speaks, "budget")).toContain(file);
+    expect(sourceIn(speaks, "budget")).toContain("default");
+    // Per field in the block below too, so which two is a thing a reader can see.
+    expect(render(speaks)).toContain("runtime.budget.attempts");
+  });
+
   /** So a reader can hold this against an attempt's recorded recipe (#217). */
   it("shows the hash and the base branch the recipe governs", async () => {
     const view = await projectRecipe(state);
@@ -155,30 +202,107 @@ describe("a recipe that cannot be read", () => {
     expect(html).toContain(join(home, "app", "recipe.yml"));
     expect(html).toContain("could not be read");
   });
+
+  /**
+   * **And when the fault is in the other file, it says that one.** `gates:` in
+   * the machine file is the mistake that file exists to refuse, and it stops
+   * the resolve with `recipe.yml` perfectly readable — as an ill-formed
+   * `runtime.assignee` does, and as `AgentUnresolvedError` does. A page
+   * answering all three with *the recipe could not be read* and then *edit the
+   * recipe* costs its reader two readings of the one file there is nothing
+   * wrong with.
+   */
+  it("names the machine's file when the fault is there, and sends nobody to the recipe", async () => {
+    await writeFile(join(home, "config.yml"), `${MACHINE}\ngates:\n  proposed: []\n`);
+    const view = await projectRecipe(state);
+    const html = render(view);
+
+    expect(view.ok).toBe(false);
+    if (view.ok) return;
+    expect(view.fault).toBe("machine");
+    expect(view.at).toBe(join(home, "config.yml"));
+    expect(html).toContain("gates do not live in the machine file");
+    expect(html).not.toContain("could not be read");
+    // The note is rendered in every state, and it is the line that says what to
+    // edit — so it is the line that must not name the wrong file.
+    const note = html.slice(html.indexOf("Read-only."));
+    expect(note).toContain(join(home, "config.yml"));
+    expect(note).not.toContain(join(home, "app", "recipe.yml"));
+  });
+
+  /** The same file, refused by the schema rather than by name. */
+  it("names the machine's file for an assignee it will not accept", async () => {
+    await writeFile(join(home, "config.yml"), `runtime:\n  agent: claude-code\n  assignee: { take: nobody }\n`);
+    const view = await projectRecipe(state);
+
+    expect(view.ok).toBe(false);
+    if (view.ok) return;
+    expect(view.fault).toBe("machine");
+    expect(view.at).toBe(join(home, "config.yml"));
+  });
 });
 
 /**
  * **Nothing writes**, and the claim is about the route rather than about the
- * markup a particular view happens to produce (0046 §4). Both halves are
- * asserted: the file exports no handler and contains no form, and a rendered
- * page has nothing to press.
+ * markup a particular view happens to produce (0046 §4).
+ *
+ * **Which means the whole segment, and not one `page.tsx`.** A `page.tsx`
+ * never serves a method and a `route.ts` cannot sit in the same segment as
+ * one, so a guard that greps this file for `export async function POST` is a
+ * guard whose failing half cannot fail. What #206 would actually add is
+ * `recipe/[project]/apply/route.ts` — a segment *under* this one — or a
+ * `"use server"` module the page imports; so the scan is the segment's whole
+ * tree for a handler, a filesystem write and a server directive, and the
+ * page's imports followed through for the directive, since a server action is
+ * a writer reachable over HTTP wherever the file holding it sits.
  */
 describe("read-only", () => {
-  const source = readFileSync(PAGE, "utf8");
+  const page = fileURLToPath(PAGE);
+  const segment = filesUnder(new URL("../src/app/recipe/", import.meta.url));
+  const reached = importedBy(page);
 
-  it("exports no method handler and declares no server action", () => {
-    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
-      expect(source).not.toContain(`export async function ${method}`);
-      expect(source).not.toContain(`export function ${method}`);
-    }
-    expect(source).not.toContain("use server");
-    // The board's one writer is `app/actions.ts`; this route does not import it.
-    expect(source).not.toMatch(/from\s+["'][^"']*actions["']/);
+  /** A scan that found nothing would pass every assertion below saying nothing. */
+  it("is reading the route, and what the route pulls in", () => {
+    expect(segment).toContain(page);
+    expect(reached).toContain(fileURLToPath(new URL("../src/lib/recipe.ts", import.meta.url)));
   });
 
-  it("renders nothing to press, in either state", async () => {
-    await projectRecipe(state);
-    for (const html of [render(await projectRecipe(state)), render({ ok: false, project: "app", at: "/x", problem: "no" })]) {
+  it("exports no method handler anywhere under the segment", () => {
+    for (const file of segment) {
+      const text = readFileSync(file, "utf8");
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+        expect(text, file).not.toMatch(
+          new RegExp(String.raw`export\s+(?:async\s+)?(?:function|const)\s+${method}\b`),
+        );
+      }
+    }
+  });
+
+  it("declares no server action, in the segment or in anything the page imports", () => {
+    for (const file of new Set([...segment, ...reached])) {
+      expect(readFileSync(file, "utf8"), file).not.toContain("use server");
+    }
+    // The board's one writer is `app/actions.ts`; nothing here imports it.
+    for (const file of segment) {
+      expect(readFileSync(file, "utf8"), file).not.toMatch(/from\s+["'][^"']*actions["']/);
+    }
+  });
+
+  it("touches no filesystem under the segment", () => {
+    for (const file of segment) {
+      const text = readFileSync(file, "utf8");
+      expect(text, file).not.toMatch(/from\s+["']node:fs(?:\/promises)?["']/);
+      expect(text, file).not.toMatch(/\bwriteFile(?:Sync)?\b/);
+    }
+  });
+
+  it("renders nothing to press, in every state", async () => {
+    const states: ProjectRecipe[] = [
+      await projectRecipe(state),
+      { ok: false, project: "app", at: "/x", fault: "recipe", problem: "no" },
+      { ok: false, project: "app", at: "/y", fault: "machine", problem: "no" },
+    ];
+    for (const html of states.map(render)) {
       expect(html).not.toContain("<form");
       expect(html).not.toContain("<button");
       expect(html).not.toContain("<input");
@@ -186,3 +310,38 @@ describe("read-only", () => {
     }
   });
 });
+
+/** Every file in a directory tree — a segment added under this one is the route too. */
+function filesUnder(dir: URL): string[] {
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name));
+}
+
+/**
+ * The local modules an entry file pulls in, followed through.
+ *
+ * Only this app's own files: a bare specifier is a package, and a package
+ * cannot be a Next.js server action. Extension-less and `@/`-aliased
+ * specifiers both resolve, because that is how the app writes them.
+ */
+function importedBy(entry: string, seen = new Set<string>()): string[] {
+  if (seen.has(entry)) return [...seen];
+  seen.add(entry);
+  for (const [, spec = ""] of readFileSync(entry, "utf8").matchAll(/from\s+["']([^"']+)["']/g)) {
+    const next = localModule(spec, entry);
+    if (next !== null) importedBy(next, seen);
+  }
+  return [...seen];
+}
+
+function localModule(spec: string, from: string): string | null {
+  const base = spec.startsWith("@/")
+    ? fileURLToPath(new URL(spec.slice(2), new URL("../src/", import.meta.url)))
+    : spec.startsWith(".")
+      ? join(dirname(from), spec)
+      : null;
+  if (base === null) return null;
+  const tried = [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")];
+  return tried.find((path) => existsSync(path) && statSync(path).isFile()) ?? null;
+}

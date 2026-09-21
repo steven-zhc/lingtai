@@ -59,6 +59,37 @@ describe("resolveLocalRecipe", () => {
     expect(resolved.provenance?.["repo.base"]).toBe(`main ← ${HOME}/app/recipe.yml`);
   });
 
+  /**
+   * **A schema default is not this file, and provenance may not say it is.**
+   * `source.backoff` and every number in `runtime.budget` have one, so the
+   * resolved recipe reads `1h` and `attempts 5` whether the file mentions them
+   * or not — while the `←` half is read as *where to look*, by `lingtai
+   * doctor` and by the board's recipe page (#218). A reader sent to
+   * `recipe.yml` for a `budget:` block that is not in it concludes the tool is
+   * reading some other file.
+   */
+  it("names a default as a default, and this file only for what this file carries", async () => {
+    const silent = await resolveLocalRecipe("app", withMachine(undefined));
+    expect(silent.provenance?.["source.backoff"]).toBe("1h ← default");
+    expect(silent.provenance?.["runtime.budget.attempts"]).toBe("5 ← default");
+
+    const spoken = await resolveLocalRecipe("app", {
+      home: HOME,
+      signedIn: signed("claude-code"),
+      read: files({
+        [recipePath("app", HOME)]: `${RECIPE.replace("  kinds: [bug]", "  kinds: [bug]\n  backoff: 30m")}
+runtime:
+  budget: { attempts: 9 }
+`,
+      }),
+    });
+    expect(spoken.provenance?.["source.backoff"]).toBe(`30m ← ${HOME}/app/recipe.yml`);
+    // Per field, as `runtime.limits` is: the three numbers beside `attempts`
+    // are still the schema's, and saying otherwise is the same falsehood.
+    expect(spoken.provenance?.["runtime.budget.attempts"]).toBe(`9 ← ${HOME}/app/recipe.yml`);
+    expect(spoken.provenance?.["runtime.budget.diff"]).toBe("400000 ← default");
+  });
+
   it("refuses a missing recipe by its path", async () => {
     const options = { home: HOME, signedIn: signed("claude-code"), read: files({}) };
     await expect(resolveLocalRecipe("app", options)).rejects.toThrow(RecipeMissingError);

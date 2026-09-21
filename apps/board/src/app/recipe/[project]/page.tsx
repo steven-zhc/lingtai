@@ -34,9 +34,13 @@ import {
  * question belongs.
  *
  * So there is nothing here to press and no way to post. `recipe.test.tsx` reads
- * this file as text and fails on a form, a server directive or an exported HTTP
- * method, as well as on the rendered markup — because *nothing writes* is a
- * claim about the route, not about what today's markup happens to contain.
+ * this segment's whole tree as text — and the modules the page imports — and
+ * fails on an exported handler, a server directive or a write, as well as on
+ * the rendered markup. The tree and not this file: a `page.tsx` serves no
+ * method anyway, and what would actually make this route a writer is a
+ * `route.ts` in a segment under it, or a server-action module imported from
+ * here. *Nothing writes* is a claim about the route, not about what today's
+ * markup happens to contain.
  */
 export const dynamic = "force-dynamic";
 
@@ -69,7 +73,9 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
             <span className="hfact">
               {view.ok
                 ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next run gets`
-                : "it could not be read, so nothing will be taken from this project"}
+                : view.fault === "recipe"
+                  ? "it could not be read, so nothing will be taken from this project"
+                  : "it could not be resolved, so nothing will be taken from this project"}
             </span>
           </h2>
 
@@ -90,10 +96,27 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
           ) : (
             /* Named, never an empty page: a recipe that will not parse is the
                failure that cost this project a whole queue while every surface
-               rendered as though there were simply nothing to do (#76). */
+               rendered as though there were simply nothing to do (#76).
+
+               And the file named is the one at fault. `gates:` in the machine
+               file, an ill-formed `runtime.assignee` and two runtimes signed
+               in with nothing naming one all stop this resolve with the recipe
+               perfectly readable; a page that said *the recipe could not be
+               read* would have its reader open that file twice over and find
+               nothing wrong, while the one to edit went unnamed. */
             <p className="refusal">
-              The recipe at <span className="mono">{underHome(view.at)}</span> could not be read:{" "}
-              {view.problem}.
+              {view.fault === "recipe" ? (
+                <>
+                  The recipe at <span className="mono">{underHome(view.at)}</span> could not be read:{" "}
+                  {view.problem}.
+                </>
+              ) : (
+                <>
+                  The recipe was not resolved, and the fault is in this machine&apos;s{" "}
+                  <span className="mono">{underHome(view.at)}</span> rather than in the recipe:{" "}
+                  {view.problem}.
+                </>
+              )}
             </p>
           )}
         </section>
