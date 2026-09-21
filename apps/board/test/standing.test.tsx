@@ -213,6 +213,64 @@ describe("the evidence", () => {
   });
 
   /**
+   * The neighbouring ending, and the same trap
+   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
+   *
+   * The reviewer started, crashed, was run once more and crashed again — and
+   * this run also *finished*, exit 0, three turns, forty-two cents. Looking for
+   * a refusal first would put attempt 1's build failure at the top of a page
+   * whose actual answer is that the reviewer never produced a verdict. And the
+   * line must not call it a refusal: nothing judged the diff.
+   */
+  it("names a gate that did not finish, rather than an earlier attempt's refusal", () => {
+    const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
+      e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+    ]);
+    const two = foldRun(claim(RUN_2, "2026-09-08T04:00:00.000Z"), 2, [
+      e(RUN_2, "RunProposedCompletion", { headSha: SHA }),
+      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
+      e(RUN_2, "GateDidNotFinish", {
+        gate: "proposed",
+        action: "review",
+        onSha: SHA,
+        detail: "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.",
+        attempt: 1,
+        retrying: true,
+      }),
+      e(RUN_2, "GateDidNotFinish", {
+        gate: "proposed",
+        action: "review",
+        onSha: SHA,
+        detail: "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.",
+        attempt: 2,
+        retrying: false,
+      }),
+      e(RUN_2, "RunFinished", { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
+    ]);
+
+    const standing = standingOf(
+      [
+        e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
+        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "the proposed:build gate refused it" }),
+        e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
+      ],
+      [one, two],
+    );
+
+    expect(standing.deciding?.attempt).toBe(2);
+    expect(standing.deciding?.source).toBe("proposed / review");
+    expect(standing.deciding?.line).toContain("did not finish");
+    expect(standing.deciding?.line).toContain("already in use");
+    // Not a refusal, and not the stale build from attempt 1.
+    expect(standing.deciding?.line).not.toContain("refused");
+    expect(standing.deciding?.line).not.toContain("TS2741");
+    // And not 0041's sentence either: nothing here says the account is walled.
+    expect(standing.deciding?.line).not.toContain("never ran");
+  });
+
+  /**
    * The same attempt, two rounds: a refusal the fixer answered, then the quota.
    *
    * `foldRun` keeps one entry per gate for the whole attempt, so round 1's

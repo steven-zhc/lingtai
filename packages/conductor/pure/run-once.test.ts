@@ -257,6 +257,63 @@ const refusingRuntime: Runtime = {
 };
 
 /**
+ * The reviewer of `run-9e510ffc`: exit 1 in a second, nothing on the stream.
+ *
+ * `crash` and not `never-started`, which is the whole distinction `#196` turns
+ * on. The three facts 0031 §1 names are not all here — zero turns and zero cost,
+ * yes, but the cause is a session id this binary has already been given
+ * (`#195`), a settings path that does not exist, a binary that is not there.
+ * The adapter says `crash`; nothing downstream re-reads the message to disagree
+ * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
+ *
+ * `after` is how many of the reviewer's attempts crash before it starts
+ * answering — 0 for a reviewer that works, 1 for one that a retry rescues, and
+ * anything above `ATTEMPTS` for one that does not come back.
+ */
+function reviewerThatCrashes(after: number, tried: { n: number }): Runtime {
+  return {
+    ...runtime,
+    run: async (request) => {
+      if (!request.runId.includes(":review:")) {
+        return {
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1234,
+          costUsd: 0.42,
+          failure: null,
+          text: "done",
+          sessionId: "sess-1",
+        };
+      }
+      tried.n += 1;
+      if (tried.n > after) {
+        return {
+          exitCode: 0,
+          turns: 5,
+          durationMs: 2_000,
+          costUsd: 1.25,
+          failure: null,
+          text: JSON.stringify({ findings: [] }),
+          sessionId: "sess-review",
+        };
+      }
+      return {
+        exitCode: 1,
+        turns: 0,
+        durationMs: 1_000,
+        costUsd: null,
+        failure: {
+          kind: "crash",
+          detail: `Error: Session ID ${request.runId} is already in use.`,
+        },
+        text: null,
+        sessionId: "sess-review",
+      };
+    },
+  };
+}
+
+/**
  * The six runs of ninety-two seconds, as one runtime.
  *
  * Zero turns, zero cost, an error — the three facts
@@ -941,6 +998,157 @@ describe("runOnce, with no world to run in", () => {
     const pause = paused[0]!.data as { reason: string };
     expect(pause.reason).toContain("fix review");
     expect(pause.reason).not.toContain("no turns taken, nothing spent");
+  });
+
+  /**
+   * **The defect `#196` is about: a reviewer that crashed bought a fix round.**
+   *
+   * The sequence, measured on `#192`'s `run-9e510ffc`: the reviewer exits 1 in
+   * one second with no receipt, `agent-gate.ts` returns `failed`, `gate.ts`
+   * appends `GateFailed` — the same event a reviewer that read the diff and
+   * refused it appends — and `run-once.ts` buys a round. The fixing agent's own
+   * first sentence was *I'm not fixing anything this round … the review never
+   * looked at the change.*
+   *
+   * Five things, because five were wrong:
+   *
+   *   the verdict   no `GateFailed`, and no `GatePassed` — nothing judged the
+   *                 diff, and both readings are claims nobody is entitled to
+   *   the log       `GateDidNotFinish`, twice, saying which attempt each was.
+   *                 An event and a field, never the evidence text (0057 §1)
+   *   the money     **no `FixRequested`** — nothing was learned about the diff,
+   *                 so there is nothing for a fixing agent to carry (§2)
+   *   the conductor **not** stood down. A crash is local, and stopping the
+   *                 queue for it is 0041's category error pointed the other
+   *                 way (§3)
+   *   the item      a person's, blocked with a diagnosis about the machinery
+   */
+  it("buys no round for a reviewer that crashed, retries it once, and asks a person", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const tried = { n: 0 };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerThatCrashes(Number.POSITIVE_INFINITY, tried),
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("gate");
+
+    // Twice, and only twice: the pipeline's one retry (0057 §4). A third would
+    // buy nothing these crashes can give, and the round it replaces cost more.
+    expect(tried.n).toBe(2);
+
+    const run = await store.read(result.runId!);
+    const types = run.map((e) => e.type);
+    // The implementer ran and was paid, so this is not the run's own ending.
+    expect(types).toContain("RunFinished");
+    expect(types).not.toContain("RunFailed");
+
+    expect(types).not.toContain("GateFailed");
+    expect(types).not.toContain("GatePassed");
+    // Nor 0041's: `never-started` is the adapter's word for an account-wide
+    // wall, and nothing here re-read a message to claim one.
+    expect(types).not.toContain("GateNeverRan");
+
+    const didNot = run.filter((e) => e.type === "GateDidNotFinish");
+    expect(didNot.map((e) => e.data)).toMatchObject([
+      { gate: "proposed", action: "review", attempt: 1, retrying: true },
+      { gate: "proposed", action: "review", attempt: 2, retrying: false },
+    ]);
+    // The runtime's own words, about the machinery.
+    expect((didNot[0]!.data as { detail: string }).detail).toContain("already in use");
+
+    // **The line this ticket exists for.** `decideFix` never saw it, so no
+    // agent was paid to answer a question nobody asked.
+    expect(types).not.toContain("FixRequested");
+    expect(types).not.toContain("FixDeclined");
+
+    // The conductor is untouched. Every other item in the queue is unaffected
+    // by one machine's crashed reviewer.
+    expect(await store.read("ctl-conductor")).toHaveLength(0);
+
+    // And the item is a person's, with a diagnosis that names the machinery
+    // rather than the diff — blocked, because the retry has already happened
+    // and a release would be the same failure again every backoff.
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const itemTypes = item.map((e) => e.type);
+    expect(itemTypes).toContain("WorkItemBlocked");
+    expect(itemTypes).not.toContain("WorkItemReleased");
+    expect(did).not.toContain("integrate");
+    const block = item.find((e) => e.type === "WorkItemBlocked")!.data as {
+      needs: string;
+      diagnosis: { what: string; raw: string } | null;
+    };
+    expect(block.needs).toBe("acknowledgement");
+    expect(block.diagnosis?.what).toContain("nothing judged this diff");
+    expect(block.diagnosis?.what).not.toContain("refused");
+    expect(block.diagnosis?.raw).toContain("already in use");
+
+    // Pushed on the way out, so the person being asked has the work to read.
+    expect(did).toContain("git push HEAD:refs/heads/agent/7");
+  });
+
+  /**
+   * **And when the retry answers, the first attempt costs the pass nothing**
+   * (0057 §4).
+   *
+   * A reused session id — the trigger `#195` fixed and the one this class was
+   * handed from — succeeds immediately on a second attempt under an id of its
+   * own. So the run lands: the retry's verdict is the action's verdict, the
+   * merge lane is reached, and the only trace of the first attempt is the event
+   * that says it happened.
+   */
+  it("continues the pass on the retry's verdict, with the first attempt on the log", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const tried = { n: 0 };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerThatCrashes(1, tried),
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(tried.n).toBe(2);
+
+    const types = (await store.read(result.runId!)).map((e) => e.type);
+    // The verdict is the retry's, and the pass went on to merge.
+    expect(types).toContain("GatePassed");
+    expect(types).not.toContain("GateFailed");
+    expect(types).not.toContain("FixRequested");
+    // The first attempt is still on the log, saying another followed — a retry
+    // nobody can see did not happen.
+    const didNot = (await store.read(result.runId!)).filter((e) => e.type === "GateDidNotFinish");
+    expect(didNot).toHaveLength(1);
+    expect(didNot[0]!.data).toMatchObject({ action: "review", attempt: 1, retrying: true });
+
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(item).toContain("WorkItemLanded");
+    expect(item).not.toContain("WorkItemBlocked");
   });
 
   /**

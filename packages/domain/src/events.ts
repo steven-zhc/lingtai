@@ -628,6 +628,40 @@ export const GateFailed = z.object({
  */
 export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
 
+/**
+ * The gate's agent **started**, ended without a receipt, and so judged nothing
+ * — [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1.
+ *
+ * The third of the three ways a gate's agent can end, and until this event the
+ * log had two. A reviewer that crashed after twenty turns wrote `GateFailed`,
+ * which is the event a reviewer that read the diff and refused it writes, and
+ * everything downstream believed it: `run-once.ts` bought a fix round, and a
+ * fixing agent was paid to answer a question nobody asked (`#196`,
+ * `run-9e510ffc`). The difference existed only inside the `evidence` sentence,
+ * and a sentence is not something `decideFix` or the board reads.
+ *
+ * **It is not `GateNeverRan` either, and that is 0057 §3.** *Never started*
+ * means an account-wide wall and stands the conductor down (0041); a crash is
+ * local — a bad settings path, a broken binary, a reused session id (`#195`) —
+ * and stopping the queue for it would be the same category error pointed the
+ * other way.
+ *
+ * `detail` is the runtime's own words, whole, for the reason `GateNeverRan`'s
+ * is: they are about the machinery and never about the diff.
+ *
+ * `attempt` and `retrying` are 0057 §4 **on the log**. The pipeline runs the
+ * action once more, and a retry nobody can see did not happen — so the first
+ * one says `attempt: 1, retrying: true` and the second, which stops the pass
+ * and gives the item to a person, says `attempt: 2, retrying: false`. Carried
+ * rather than derived from a constant a reader would have to know.
+ */
+export const GateDidNotFinish = z.object({
+  ...gateBase,
+  detail: z.string(),
+  attempt: z.number().int().min(1),
+  retrying: z.boolean(),
+});
+
 /** Humans need an escape hatch. It is recorded, never silent. */
 export const GateWaived = z.object({ ...gateBase, by: z.string(), reason: z.string() });
 
@@ -1661,6 +1695,7 @@ export const EVENTS = {
   GatePassed,
   GateFailed,
   GateNeverRan,
+  GateDidNotFinish,
   GateWaived,
   ApprovalRequested,
   ApprovalGranted,

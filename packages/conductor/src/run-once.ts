@@ -1509,8 +1509,18 @@ export function runOnce(
       let lease: string | null = worktree.remoteHead;
       /** The findings the next `proposed` run is asked about again (0038 §2). */
       let recheck: readonly GateFinding[] = [];
-      let pipeline: PipelineResult = { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results: [], skipped: [] };
-      let atMerge: PipelineResult = { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results: [], skipped: [] };
+      /** A point that has not run: every ending null, nothing judged, nothing skipped. */
+      const nothingRanYet = (): PipelineResult => ({
+        ok: true,
+        failedAt: null,
+        heldAt: null,
+        neverRanAt: null,
+        didNotFinishAt: null,
+        results: [],
+        skipped: [],
+      });
+      let pipeline: PipelineResult = nothingRanYet();
+      let atMerge: PipelineResult = nothingRanYet();
       let merged: Effect.Effect.Success<ReturnType<typeof repo.integrate>> | null = null;
 
       /**
@@ -1628,6 +1638,113 @@ export function runOnce(
               what.of === "gate"
                 ? `the ${what.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(detail)}${unpushed}`
                 : `the agent fixing ${what.action} never started, so nothing answered the refusal: ${said(detail)}${unpushed}`,
+          });
+        });
+
+      /**
+       * A gate's agent started, produced no receipt, and did it twice
+       * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
+       *
+       * **Not the ending above it, and §3 is the whole difference.** A
+       * `never-ran` measured the *account* — a quota, a signed-out runtime —
+       * and every queued item would meet it, so the conductor stands down and
+       * the item is released. A crash is local: a bad settings path, a broken
+       * binary, a reused session id (`#195`). Standing the queue down for one
+       * would be the same category error 0041 fixed, pointed the other way, so
+       * nothing here touches the conductor.
+       *
+       * **And it buys nothing** (§2). `buyRound` never sees this: 0025 spends an
+       * agent on a failure *of the diff*, and nothing was learned about the
+       * diff. That purchase is the defect this closes — `#192` spent rounds 2
+       * and 3 on a reviewer that died in one second, and the fixing agent's own
+       * first sentence was *the review never looked at the change*.
+       *
+       * **Blocked rather than released**, which is the other half of §4's *then
+       * it is a person's*. A release is a backoff and another claim, and the
+       * pipeline has already retried the action once: a third attempt on the
+       * next pass would be the same machine failing the same way, for ever,
+       * with nothing counting it. So it goes where a lane refusal goes, with a
+       * diagnosis naming the machine rather than the diff.
+       *
+       * Pushed on the way out for the reason every other stop pushes: the work
+       * exists and a person is being asked about it. Tolerant, like the
+       * stand-down's, because a rejected lease must not turn this ending into a
+       * push failure.
+       */
+      const gateDidNotFinish = (what: string, detail: string) =>
+        Effect.gen(function* () {
+          runLog.note("gate", `the ${what} action did not finish, twice — ${detail}`);
+          const question = `did-not-finish: the ${what} action's agent produced no verdict, twice`;
+          const pushed = yield* Effect.either(
+            gitInWorktree([
+              "push",
+              `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+              "origin",
+              `HEAD:refs/heads/${branch}`,
+            ]),
+          );
+          if (Either.isRight(pushed)) {
+            lease = head;
+          } else {
+            runLog.note("push", `not pushed, and the pass still stops here — ${pushed.left.detail}`);
+          }
+          const ended = yield* Effect.promise(async () => {
+            const blocked = await store.read(workItemId);
+            const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
+            await store.append(workItemId, blocked.length, [
+              {
+                type: "WorkItemBlocked",
+                actor: "conductor",
+                data: parsePayload("WorkItemBlocked", {
+                  question,
+                  needsFrom: "human",
+                  runId,
+                  // Nothing is being asked of anybody's judgement about the
+                  // diff — the machinery broke and the log is asking for it to
+                  // be acknowledged and the move taken.
+                  needs: "acknowledgement",
+                  diagnosis: {
+                    what:
+                      `the ${what} action's agent started and ended without a verdict twice, so ` +
+                      `nothing judged this diff. This is about the machinery and not about the ` +
+                      `change: ${said(detail)}`,
+                    done: "the same action was run once more and did the same (0057 §4)",
+                    raw: detail,
+                    recommendation: {
+                      action: "requeue",
+                      why:
+                        "fix what stopped the reviewer starting cleanly first; requeued as written " +
+                        "it meets the same thing and stops here again",
+                    },
+                  },
+                }),
+              },
+              ...resolvedEnd,
+            ]);
+            return resolvedEnd;
+          });
+          // The item reached a terminal state of its own, so the release must
+          // not undo it by putting the question back in the queue.
+          released = true;
+          yield* Effect.promise(() =>
+            tellGitHubAbout({
+              store,
+              github: options.client,
+              workItemId,
+              question,
+              labels: labelsFor("waiting"),
+              appended: ended,
+            }),
+          );
+          const unpushed = Either.isLeft(pushed)
+            ? ` (and ${branch} was not pushed: ${said(pushed.left.detail, 120)})`
+            : "";
+          return yield* new Stopped({
+            stage: "gate",
+            detail: `the ${what} action did not finish: ${detail}`,
+            release:
+              `the ${what} action's agent produced no verdict twice, so nothing judged this ` +
+              `diff: ${said(detail)}${unpushed}`,
           });
         });
 
@@ -1938,6 +2055,16 @@ export function runOnce(
           );
         }
 
+        // And the neighbouring absence, which must reach `buyRound` even less:
+        // a reviewer that started and produced no receipt judged nothing, and
+        // the pipeline has already run it twice (0057, `#196`).
+        if (pipeline.didNotFinishAt !== null) {
+          yield* gateDidNotFinish(
+            `proposed:${pipeline.didNotFinishAt.gate}`,
+            pipeline.didNotFinishAt.detail,
+          );
+        }
+
         // ---- the branch, on the remote -------------------------------------
         //
         // **Defined here, above every way out of this loop, because the last
@@ -2063,7 +2190,7 @@ export function runOnce(
         // reads it after. A `let` here would shadow the one the hold below asks
         // about — a hold that renders and does nothing, which is the exact shape
         // of #58.
-        atMerge = { ok: true, failedAt: null, heldAt: null, neverRanAt: null, results: [], skipped: [] };
+        atMerge = nothingRanYet();
         if (pipeline.ok) {
           atMerge = yield* Effect.promise(() =>
             runGatePipeline({
@@ -2093,6 +2220,12 @@ export function runOnce(
             yield* agentNeverStarted(
               { of: "gate", gate: `merge:${atMerge.neverRanAt.gate}` },
               atMerge.neverRanAt.detail,
+            );
+          }
+          if (atMerge.didNotFinishAt !== null) {
+            yield* gateDidNotFinish(
+              `merge:${atMerge.didNotFinishAt.gate}`,
+              atMerge.didNotFinishAt.detail,
             );
           }
         }

@@ -525,6 +525,30 @@ function refusalOn(run: RunView): Deciding | null {
     };
   }
 
+  /**
+   * And the neighbouring ending, for the same reason and with the same argument
+   * ([0057](../../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
+   *
+   * The run finished — exit 0, turns taken, money spent — so without this line
+   * the page falls through to an earlier round's genuine refusal and puts a red
+   * line about a commit that has moved at the top of a page whose actual answer
+   * is that the reviewer crashed twice. A gate that did not finish is always the
+   * last thing a pass did, so any refusal beside it is history.
+   *
+   * The sentence says the machinery and never the diff: *did not finish*, not
+   * *refused*.
+   */
+  const unfinished = [...run.gates].reverse().find((g) => g.state === "did-not-finish");
+  if (unfinished) {
+    return {
+      attempt: run.attempt,
+      source: unfinished.gate.replace(":", " / "),
+      line:
+        "did not finish — nothing judged this diff: " +
+        (oneLine(unfinished.evidence) ?? "no detail was recorded"),
+    };
+  }
+
   const refused = [...run.gates].reverse().find((g) => g.state === "failed");
   if (refused) {
     return {
@@ -864,6 +888,9 @@ const VERDICT: Record<string, string> = {
   /** No verdict, because the agent never started (#133) — not a refusal, and
    *  not a gate still running, which is what the absence of a line said. */
   GateNeverRan: "never-ran",
+  /** No verdict either, and not the same absence: the agent started and ended
+   *  with no receipt, which is local and was retried once (0057). */
+  GateDidNotFinish: "did-not-finish",
   GateWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "passed",
