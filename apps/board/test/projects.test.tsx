@@ -61,6 +61,39 @@ describe("adding a repository from the board", () => {
   });
 });
 
+/**
+ * The other thing this list leads to (#218): what the project in view is
+ * configured to do. One control and not one per project — the-bar.md moved a
+ * chip per project *off* the row, and putting one back inside the filter would
+ * be the same act with a different parent.
+ */
+describe("the recipe view, from the project list", () => {
+  it("offers it for the one project a single-project board is showing", () => {
+    const out = html(["lingtai"], true);
+
+    expect(out).toContain('href="/recipe/lingtai"');
+  });
+
+  it("offers it for the project the filter is on, and names that one", () => {
+    const out = html(["lingtai", "nextloom-ai-admin"], true, "nextloom-ai-admin");
+
+    expect(out).toContain('href="/recipe/nextloom-ai-admin"');
+    expect(out).not.toContain('href="/recipe/lingtai"');
+  });
+
+  /** `all` is not a project, so there is no single recipe to point at. */
+  it("offers nothing on all, where there is no one recipe to show", () => {
+    const out = html(["lingtai", "nextloom-ai-admin"], true);
+
+    expect(out).not.toContain("/recipe/");
+  });
+
+  /** And a board with no project has no recipe either — the slot keeps its one object. */
+  it("adds nothing to the empty board", () => {
+    expect(html([], true)).not.toContain("/recipe/");
+  });
+});
+
 describe("where it lands", () => {
   /**
    * The App is the test, not the register. A board that created the App and

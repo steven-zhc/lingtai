@@ -11,20 +11,28 @@
  * before the move was given the repository's copy, and that commit is where it
  * still is.
  */
-import { GATE_POINTS } from "@lingtai/domain";
+import { homedir } from "node:os";
+import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
 import {
+  LIMIT_DEFAULTS,
+  PROVENANCE_ARROW,
   RecipeInvalidError,
   RecipeMissingError,
   kindOfAction,
   parseDuration,
+  provenanceSource,
+  recipePath,
   resolveRecipe,
   type GateAction,
   type Recipe,
 } from "@lingtai/recipe";
+
+/** The limits `a pass` is made of, from the recipe rather than listed again here. */
+const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
 
 /**
  * `ResolvedRecipe`, named off the function that returns one.
@@ -323,6 +331,70 @@ export async function recipeOfRun(
 }
 
 /**
+ * What a project's recipe says today, and where every value in it came from
+ * (#218).
+ *
+ * **The board is the surface that carries this back.**
+ * [0046](../../../../doc/decisions/0046-lingtai-is-personal.md) §3 moved the
+ * recipe to `~/.lingtai/<project>/recipe.yml` and wrote down what that cost:
+ * nothing in the repository says Lingtai is in use, and a file under a home
+ * directory is not discoverable by looking at a clone. Two files decide one
+ * project — the recipe and `~/.lingtai/config.yml` — and `provenance` is the
+ * only thing that says which of them won.
+ *
+ * **Refused is an answer, not an empty page.** A recipe that will not parse is
+ * the failure that cost this project a whole queue with doctor green throughout
+ * (#76), and the page that exists to say what is configured must say *that*
+ * rather than render a page with no rows on it. `at` is the file either way, so
+ * the refusal names something a person can open.
+ */
+export type ProjectRecipe =
+  | {
+      ok: true;
+      project: string;
+      /** The file the recipe was read from, named whether it parsed or not. */
+      at: string;
+      /** Of the resolved recipe — what an attempt's is matched against (#217). */
+      configHash: string;
+      /** The base branch this recipe governs. */
+      ref: string;
+      rows: readonly Reading[];
+      provenance: Readonly<Record<string, string>>;
+    }
+  | { ok: false; project: string; at: string; problem: string };
+
+/**
+ * One project's recipe, resolved from this machine — **no request, and nothing
+ * read from the repository**.
+ *
+ * `currentRecipe` and not `projectFilter`: the filter builds a GitHub client
+ * first, and since #180 a recipe needs none, so a board with no App would be
+ * told about its App by the one page that has nothing to do with GitHub.
+ *
+ * Never throws, for `projectFilter`'s reason: a caller asking what a project is
+ * configured to do always gets an answer, and "it could not be read, because …"
+ * is one of the answers.
+ */
+export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe> {
+  const project = state.project ?? "(unnamed)";
+  const at = recipePath(project);
+  try {
+    const resolved = await currentRecipe(state);
+    return {
+      ok: true,
+      project,
+      at,
+      configHash: resolved.configHash,
+      ref: resolved.ref,
+      rows: readRecipe(resolved.recipe),
+      provenance: resolved.provenance ?? {},
+    };
+  } catch (err) {
+    return { ok: false, project, at, problem: (err as Error).message.replace(/\s*\n\s*/g, " ").trim() };
+  }
+}
+
+/**
  * What an action does, and what bounds it, as one line each.
  *
  * Only a command carries a clock of its own (`gatePlan` reads the same
@@ -361,6 +433,81 @@ export function describeAction(action: GateAction): { does: string; bound: strin
 export interface Reading {
   name: string;
   says: string;
+  /**
+   * The paths in `provenance` this row's value is made of, so the page that has
+   * one can say where the row came from (#218).
+   *
+   * Paths and not a source, because the reading is the same reading whether it
+   * was resolved on this machine or read out of a run's record: an attempt's
+   * recipe has no provenance at all, and `sourceOf` answers null for it rather
+   * than this function having two shapes.
+   *
+   * Several for a row that is several values — `a pass` is four limits and each
+   * can come from a different file, which is exactly the fact worth showing.
+   */
+  keys: readonly string[];
+}
+
+/**
+ * Where a row's value came from, as the source column reads it (#218).
+ *
+ * **Distinct sources, in the row's own order, and every one of them.** `a pass`
+ * is four limits: with `turns` in the machine file and the rest defaulted, one
+ * source printed there would be a sentence that is true of a number it is not
+ * made of — the failure the-bar.md records for `rounds ×N`. Null when nothing
+ * is known, which is what an attempt's recorded recipe always answers.
+ */
+export function sourceOf(row: Reading, provenance?: Readonly<Record<string, string>>): string | null {
+  if (provenance === undefined) return null;
+  const wheres: string[] = [];
+  for (const key of row.keys) {
+    const where = provenanceSource(provenance[key]);
+    if (where !== null && !wheres.includes(underHome(where))) wheres.push(underHome(where));
+  }
+  return wheres.length === 0 ? null : wheres.join(", ");
+}
+
+/**
+ * A path under this machine's home as its owner writes it — `~/.lingtai/…`.
+ *
+ * The source column is read across a row, and an absolute path spends most of
+ * its width on the part every row shares. Only the prefix is touched, so a
+ * source that is not a path (`default`, `detected — the only runtime signed
+ * in`) and a path with a section after it (`…/config.yml (projects.lingtai)`)
+ * both come back saying exactly what they said.
+ */
+export function underHome(where: string): string {
+  const home = homedir();
+  return home !== "" && where.startsWith(`${home}/`) ? `~${where.slice(home.length)}` : where;
+}
+
+/** One line of `lingtai doctor`'s provenance block, split into its columns. */
+export interface Provenance {
+  /** Its path in the recipe — `runtime.limits.turns`. */
+  key: string;
+  value: string;
+  /** The file, `detected …`, or `default`. */
+  from: string;
+}
+
+/**
+ * Every value the resolve knows the origin of, as three columns (#218).
+ *
+ * **The whole map and not the rows' keys.** `repo.base` and `env.required` are
+ * in it and in no reading, and a page whose exhaustive list was assembled from
+ * what the reading above already showed would be exhaustive of the wrong thing.
+ * This is `provenanceLines`' block, which `lingtai doctor` has printed since
+ * #180 and no surface with a screen ever has.
+ */
+export function provenanceRows(provenance: Readonly<Record<string, string>>): Provenance[] {
+  return Object.entries(provenance).map(([key, entry]) => {
+    const at = entry.indexOf(PROVENANCE_ARROW);
+    return {
+      key,
+      value: at === -1 ? entry : entry.slice(0, at),
+      from: underHome(provenanceSource(entry) ?? "(not said)"),
+    };
+  });
 }
 
 /**
@@ -390,26 +537,44 @@ export function readRecipe(recipe: Recipe): Reading[] {
       says:
         recipe.source.kinds.join(" > ") +
         (recipe.source.kinds.length > 1 ? " (in priority order)" : ""),
+      keys: ["source.kinds"],
     },
     {
       name: "excludes",
       says: recipe.source.exclude.length > 0 ? recipe.source.exclude.join(", ") : "nothing",
+      keys: ["source.exclude"],
     },
-    { name: "assignee", says: describeAssignee(recipe.runtime.assignee) },
+    {
+      name: "assignee",
+      says: describeAssignee(recipe.runtime.assignee),
+      keys: ["runtime.assignee.take", "runtime.assignee.login"],
+    },
     {
       name: "the points",
       says: GATE_POINTS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
+      keys: ["gates"],
     },
-    { name: "a pass", says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall) }) },
+    {
+      name: "a pass",
+      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall) }),
+      keys: LIMIT_KEYS.map((key) => `runtime.limits.${key}`),
+    },
+    // **Beside the limits, because it is the other half of the same answer.**
+    // Which CLI runs the work and what it may spend are the two the machine
+    // decides (0046 §3), and a reading that named the spend and not the runtime
+    // would leave the one value a machine can silently detect unattributed.
+    { name: "agent", says: recipe.runtime.agent, keys: ["runtime.agent"] },
     {
       name: "retries",
       says: `after ${recipe.source.backoff}, unless a repair is pending`,
+      keys: ["source.backoff"],
     },
     {
       name: "budget",
       says:
         `evidence ${budget.evidence} · attempts ${budget.attempts} · ` +
         `findings ${budget.findings} · diff ${budget.diff}`,
+      keys: ["runtime.budget"],
     },
   ];
 }

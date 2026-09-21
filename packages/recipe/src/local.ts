@@ -189,6 +189,29 @@ export async function resolveAgent(
   );
 }
 
+/**
+ * How a provenance entry joins its value to where the value came from.
+ *
+ * Written once because two readers now split on it: `lingtai doctor` prints the
+ * whole entry, and the board's recipe page prints the two halves in two columns
+ * (#218). A separator spelled out in both places is one nobody can change.
+ */
+export const PROVENANCE_ARROW = " ← ";
+
+/**
+ * The `where` half of a provenance entry — `value ← where` — or null when the
+ * entry says nothing about where it came from.
+ *
+ * Null rather than the whole entry: a reader that cannot find the source must
+ * say it has none, not print the value a second time under a heading claiming
+ * to be its origin.
+ */
+export function provenanceSource(entry: string | undefined): string | null {
+  if (entry === undefined) return null;
+  const at = entry.indexOf(PROVENANCE_ARROW);
+  return at === -1 ? null : entry.slice(at + PROVENANCE_ARROW.length);
+}
+
 export interface LocalRecipeOptions {
   /** `stateDir()` unless a test says otherwise. */
   home?: string;
@@ -250,7 +273,7 @@ export async function resolveLocalRecipe(
   const agent = await resolveAgent(named, options.signedIn, machineFile);
 
   const provenance: Record<string, string> = {
-    "runtime.agent": `${agent.agent} ← ${agent.from}`,
+    "runtime.agent": `${agent.agent}${PROVENANCE_ARROW}${agent.from}`,
   };
   const limits: Record<string, unknown> = {};
   for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
@@ -258,7 +281,7 @@ export async function resolveLocalRecipe(
     const from =
       scoped?.limits?.[key] !== undefined ? scopedAt : shared?.limits?.[key] !== undefined ? machineFile : "default";
     limits[key] = value ?? LIMIT_DEFAULTS[key];
-    provenance[`runtime.limits.${key}`] = `${limits[key]} ← ${from}`;
+    provenance[`runtime.limits.${key}`] = `${limits[key]}${PROVENANCE_ARROW}${from}`;
   }
 
   // Absent unless the machine said something, so a machine that has not heard
@@ -278,8 +301,8 @@ export async function resolveLocalRecipe(
     }
     assignee = parsed.data;
   }
-  provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"} ← ${assigneeFrom("take") ?? "default"}`;
-  provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"} ← ${assigneeFrom("login") ?? "default"}`;
+  provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"}${PROVENANCE_ARROW}${assigneeFrom("take") ?? "default"}`;
+  provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"}${PROVENANCE_ARROW}${assigneeFrom("login") ?? "default"}`;
 
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
     const refused: string[] = [];
@@ -309,12 +332,21 @@ export async function resolveLocalRecipe(
     "repo.base": recipe.repo.base,
     "source.kinds": recipe.source.kinds.join(" > "),
     "source.exclude": list(recipe.source.exclude),
+    // The two a reading says out loud and provenance did not carry, so that
+    // every row of one has a source beside it (#218). Neither can come from
+    // anywhere but this file — `runtime.budget` is refused in the machine's —
+    // and a row whose source column is blank reads as a source nobody knows
+    // rather than as one there was never a choice about.
+    "source.backoff": recipe.source.backoff,
+    "runtime.budget":
+      `evidence ${recipe.runtime.budget.evidence}, attempts ${recipe.runtime.budget.attempts}, ` +
+      `findings ${recipe.runtime.budget.findings}, diff ${recipe.runtime.budget.diff}`,
     "env.required": list(recipe.env.required),
     gates: Object.entries(recipe.gates)
       .map(([point, actions]) => `${point} ${actions.length}`)
       .join(", "),
   };
-  for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value} ← ${path}`;
+  for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value}${PROVENANCE_ARROW}${path}`;
   return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
 }
 

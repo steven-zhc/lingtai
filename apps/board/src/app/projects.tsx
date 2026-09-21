@@ -26,6 +26,16 @@
  * and the empty board keeps the sentence it already had — it is the same
  * object as the `+`, not a second one beside it.
  *
+ * **And the list is where the recipe view is reached from** (#218). It is the
+ * same act as the `+` and makes the same argument: the filter was already a
+ * list of tabs about projects, and it gains one more. What keeps it from being
+ * a chip per project — which is exactly what the-bar.md moved *off* the row —
+ * is that it is one control and it names the project in view: with one project
+ * that is the only one, with several it is whichever the board is filtered to,
+ * and on `all` there is no single recipe to show so there is no control. A chip
+ * that is absent whenever there is nothing to say is the property that makes a
+ * chip affordable at all.
+ *
  * **Where it lands is whether the App exists, and not whether anything is
  * registered.** `filters.length === 0` was the proxy for that and they come
  * apart in both directions: a board with an App and no repository yet wants
@@ -55,6 +65,10 @@ export function Projects({
   // answers, the picker is the rest of it and the first step is done.
   const where = app ? "/setup/repository" : "/setup/github-app";
   const why = app ? "add a repository" : "create the GitHub App, then install it";
+
+  // The project this board is showing, or none: with one there is nothing to
+  // choose between, with several it is the filter, and `all` is not a project.
+  const inView = filters.length === 1 ? filters[0] : only;
 
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fifth one: the slot already says *there is
@@ -89,6 +103,19 @@ export function Projects({
             </Link>
           ))}
         </>
+      )}
+      {/* What the project in view is configured to do, and which file each
+          value came from (#218). the-bar.md moved `<project>: rounds ×N` off
+          the row *to the recipe view*; this is the way to it, and it is one
+          control rather than one per project. */}
+      {inView === undefined ? null : (
+        <Link
+          className="tab"
+          href={`/recipe/${encodeURIComponent(inView)}`}
+          title={`what ${inView}'s recipe says today`}
+        >
+          recipe
+        </Link>
       )}
       {/* A `.tab`, because it is one of this list's controls. Not `.reading`,
           which is styled as text precisely so that the rail's one link does

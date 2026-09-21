@@ -49,7 +49,7 @@ while working on something else. Two questions, and no third:
 | `daemon N behind` + `current` | **merge into one health** | one dot, and a sentence only when it is red — two chips for two independent facts is two things to learn to read |
 | `10 queued · 1 running · 45 landed` | **stays, unboxed** | a box says *this is a thing*; this is a reading. Kept as parts — `#81` stands |
 | `$488.52` · `$81.83 answering` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
-| `<project>: rounds ×N` | **to the recipe view** | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
+| `<project>: rounds ×N` | **to the recipe view** (`/recipe/<project>`, built by `#218`) | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
 
 Eleven to four: filters left, reading and health right, the headline last where
 the eye lands. Nothing new in the palette — amber returns to meaning one thing,
@@ -119,12 +119,21 @@ Where the five that left went:
 | | |
 |---|---|
 | `$488.52` · `$81.83 answering` | `/spend`, off the reading. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried |
-| `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen |
+| `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen. **And `/recipe/<project>`, which is the view the row above named and which nothing built for a fortnight** (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
 | `current` + `daemon N behind` | one dot (`health.tsx`, folded by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
 
 `paused` and `draining` are still chips and still amber-free, because both are
 already absent when there is nothing to say — which is the property that makes a
-chip affordable at all.
+chip affordable at all. `recipe` in the filter is the same property, and `#218`
+is the second ticket asked to make `#216`'s argument: one control, naming the
+project in view, absent on `all` where there is no single recipe to name.
+
+**A destination that is not built is a fact deleted.** The row above was right
+that `rounds ×N` does not belong on a rail glanced at every few seconds, and for
+a fortnight the consequence was that 0025 §2's *visible* meant a terminal —
+worse, since `0046` §3 had by then moved the recipe to `~/.lingtai/` where a
+clone does not show it either. **Moving a fact off the bar is only finished when
+somewhere else is showing it.**
 
 **The claim is about the bar, and only the bar.** A card still wears the accent
 where a card has earned it — the `waiting` lane's own heading, an answering
