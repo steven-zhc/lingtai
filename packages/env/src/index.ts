@@ -35,6 +35,24 @@ const here = dirname(fileURLToPath(import.meta.url));
 declare const LINGTAI_BUNDLED: boolean | undefined;
 const root = resolve(here, typeof LINGTAI_BUNDLED === "undefined" ? "../../.." : "..");
 
+/**
+ * What was really exported into this process, taken **before** any env file is
+ * merged into `process.env` below.
+ *
+ * One reader, `storeChoice`, has to tell a variable somebody exported from a
+ * variable a checkout's `.env.local` supplied, and after `config()` has run
+ * `process.env` cannot be asked: dotenv sets a name it did not find and leaves
+ * one it did, so the merged environment holds no record of which happened.
+ * [0056 §4](../../../doc/decisions/0056-the-store-is-a-written-choice.md) is
+ * why that distinction exists — the file is found by walking up from this
+ * source file, so whether it exists depends on the directory a process started
+ * in, and a fact four processes must agree about cannot come from there.
+ *
+ * Every other reader here still asks the merged environment, which is what
+ * makes `.env.local` a convenience for everything else.
+ */
+const exported: NodeJS.ProcessEnv = { ...process.env };
+
 const loaded = config({
   path: [resolve(root, ".env.local"), resolve(root, ".env")],
   quiet: true,
@@ -265,6 +283,230 @@ function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
  */
 function machineUrlIfReadable(from: NodeJS.ProcessEnv): string | undefined {
   return from === process.env && !inTest(from) ? machineDatabase(from).url : undefined;
+}
+
+// --------------------------------------------------------------- the store --
+
+/** The two stores a machine can run (0055). */
+export type Store = "postgres" | "sqlite";
+
+/** Where a choice was read: this process's real environment, or the machine file. */
+export type StoreSource = "environment" | "config.yml";
+
+export type StoreChosen =
+  | { store: "postgres"; url: string; where: StoreSource; from: string }
+  | { store: "sqlite"; path: string; where: StoreSource; from: string };
+
+/**
+ * Which refusal it is.
+ *
+ * A caller that only reports prints `refused` and needs none of this. `lingtai
+ * init` is the one caller that *repairs* them, and it treats them differently:
+ * nothing chosen is the question it is about to ask anyway, while the other two
+ * are a file it is fixing and says so first.
+ */
+export type StoreUnchosen = "nothing chosen" | "no url" | "two keys" | "unreadable";
+
+export interface StoreRefused {
+  refused: string;
+  because: StoreUnchosen;
+}
+
+export type StoreChoice = StoreChosen | StoreRefused;
+
+/** The log's file when a machine chose SQLite, under `stateDir()` (doc/design/1.0.md). */
+export const SQLITE_LOG = "lingtai.db";
+
+/**
+ * **The one sentence anything operator-facing says about a SQLite machine.**
+ *
+ * A constant because the last attempt to change what this claim says had to
+ * edit six copies of it — `lingtai init`'s amber line, a `doctor` row's detail,
+ * the README, `.env.example`, `doc/operating.md` and an ADR — and the review
+ * that refused it named the six as the reason it could not be read (#215). Six
+ * copies is also six chances for one of them to go on saying the old thing
+ * after #179 lands.
+ *
+ * The documents point here rather than restating it. A caller may add its own
+ * remedy after it — which command *it* offers is its own business — and must
+ * not rewrite the claim.
+ */
+export const SQLITE_NOT_OPEN_YET =
+  "SQLite is a choice this machine can record and no version opens it yet — #179 is what makes a store open from the " +
+  "written choice. Until that lands, Postgres is the store this version runs on";
+
+/**
+ * The variables really exported into this process.
+ *
+ * An environment handed in never had an env file merged into it, so it is
+ * already its own answer — which is also what lets `lingtai init` and a test
+ * drive this function with an environment of their own.
+ */
+function realEnvironment(from: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return from === process.env ? exported : from;
+}
+
+/**
+ * The file the choice is read from, or null where this environment has none.
+ *
+ * This process's own environment reads the machine's file unless this is a test
+ * run — `machineUrl`'s rule, for its reason: the suite's environment must never
+ * reach the operator's file. An environment handed in reads one only when it
+ * names its own `LINGTAI_HOME`, so a test that hands in `{}` is answered
+ * without touching any machine at all.
+ */
+function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
+  if (from === process.env) return inTest(from) ? null : join(stateDir(from), "config.yml");
+  return from["LINGTAI_HOME"] ? join(stateDir(from), "config.yml") : null;
+}
+
+function notSetUp(name: string, path: string | null, url?: string): StoreRefused {
+  return {
+    because: "nothing chosen",
+    refused:
+      "nothing on this machine says which store it runs" +
+      (path === null ? "" : `: ${path} names no database.store`) +
+      (url === undefined ? "" : ", though it names a database.url — which store that URL is for was never written down") +
+      ` — lingtai init asks and writes the choice. An exported ${name} also decides, and supplies the URL with it.`,
+  };
+}
+
+/**
+ * **Which store this machine runs is a value somebody wrote down**, and this is
+ * the one function that reads it
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ *
+ * Nothing infers it from a variable being unset. *Unset* is not a fact a
+ * process can establish: the URL `postgresUrl()` reads has three sources, one
+ * of them a `.env.local` found by walking up from this file, so `pnpm lingtai`
+ * from the checkout and a launchd job started from `~` reach opposite answers
+ * about whether anything is there, and neither can tell.
+ * Four processes, four stores, and every append into the empty one reported as
+ * success — which, for a system whose first rule is that the log settles it, is
+ * the worst failure available.
+ *
+ * So there are **four answers and three of them are refusals**, returned as
+ * data rather than thrown: `lingtai upgrade` and `lingtai uninstall` are the
+ * commands that repair a broken install, and a half-written `config.yml` must
+ * not be what stops them (#213).
+ *
+ * | `config.yml` | this says |
+ * |---|---|
+ * | no `database.store` | refused — this machine has not been set up, `lingtai init` |
+ * | `store: sqlite` | SQLite, under `stateDir()` |
+ * | `store: postgres` with a URL | Postgres |
+ * | `store: postgres`, no URL anywhere | refused, saying where a URL is looked for |
+ * | `store: sqlite` beside a `url` | refused, quoting both |
+ *
+ * An exported `LINGTAI_DATABASE_URL` wins and supplies the URL, which is what
+ * makes CI, launchd and a container work with no file at all (0056 §3) — and it
+ * is the *exported* one, never a checkout's `.env.local` (§4).
+ *
+ * **What opens the store it names is still #179's.** This says what was chosen;
+ * nothing yet reads it to decide which implementation to construct, and
+ * `postgresUrl()` is what eighteen callers still ask for a connection string.
+ */
+export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice {
+  // The test side for a test, as every other read here does — so a suite that
+  // exists to assert Postgres can never be answered by the operator's machine.
+  const name = dbVar("DATABASE_URL", from);
+  const url = optional(name, realEnvironment(from));
+  if (url !== undefined) {
+    return { store: "postgres", url, where: "environment", from: `${name}, exported into this process` };
+  }
+
+  const path = machineChoiceFile(from);
+  if (path === null) return notSetUp(name, null);
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    // No file is no choice, and it is the same sentence: a machine that has not
+    // been set up is not a machine that chose SQLite.
+    return notSetUp(name, path);
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(text);
+  } catch (err) {
+    return {
+      because: "unreadable",
+      refused:
+        `${path} could not be parsed as YAML, so which store this machine runs went unanswered: ` +
+        `${(err as Error).message} — fix that file, or lingtai init writes it again`,
+    };
+  }
+  const database =
+    parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["database"] : undefined;
+  const at = database !== null && typeof database === "object" ? (database as Record<string, unknown>) : {};
+  const written = typeof at["url"] === "string" && at["url"] !== "" ? (at["url"] as string) : undefined;
+  const store = at["store"];
+  if (store === undefined || store === null || store === "") return notSetUp(name, path, written);
+  if (store !== "postgres" && store !== "sqlite") {
+    return {
+      because: "nothing chosen",
+      refused:
+        `${path} sets database.store to ${JSON.stringify(store)}, which is neither postgres nor sqlite, so which ` +
+        "store this machine runs went unanswered — lingtai init writes one of the two",
+    };
+  }
+  if (store === "sqlite") {
+    if (written !== undefined) {
+      return {
+        because: "two keys",
+        refused:
+          `${path} says database.store: sqlite and names database.url: ${redactUrl(written)} — two keys disagreeing ` +
+          "about which store this machine runs, and neither is guessed at. lingtai init writes the one you choose and " +
+          "removes the other",
+      };
+    }
+    return { store: "sqlite", path: join(stateDir(from), SQLITE_LOG), where: "config.yml", from: path };
+  }
+  if (written === undefined) {
+    return {
+      because: "no url",
+      refused:
+        `${path} says database.store: postgres and names no database.url — a URL is looked for in ${name} exported ` +
+        `into this process, then in database.url in that file, and nowhere else: a checkout's .env.local does not ` +
+        "decide this (0056 §4). lingtai init asks for one and writes it",
+    };
+  }
+  return { store: "postgres", url: written, where: "config.yml", from: `${path} database.url` };
+}
+
+/**
+ * The choice as a line somebody reads — **derived from the choice, never
+ * composed beside it**.
+ *
+ * `lingtai init` confirms what it wrote with this, and `lingtai doctor` reports
+ * with it, so the screen at the end of setup and the answer a later command
+ * gets cannot drift apart. They did: the last attempt printed *SQLite* from the
+ * answer that was typed while the file still held a `database.url` that went on
+ * selecting Postgres (#215).
+ */
+export function describeStore(choice: StoreChoice): string {
+  if ("refused" in choice) return choice.refused;
+  return choice.store === "postgres"
+    ? `Postgres, ${redactUrl(choice.url)} ← ${choice.from}`
+    : `SQLite, ${choice.path} ← ${choice.from}`;
+}
+
+/**
+ * A URL fit to print: the password is never shown.
+ *
+ * Here because both sides of the choice quote URLs — `lingtai init`'s
+ * confirmation, and the refusal that quotes a `database.url` beside a
+ * `store: sqlite` — and a second copy of this is a second chance to print a
+ * password.
+ */
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.password) parsed.password = "***";
+    return parsed.toString();
+  } catch {
+    return "(a URL that does not parse)";
+  }
 }
 
 /**

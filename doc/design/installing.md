@@ -189,7 +189,8 @@ at the board being open in a browser.**
   runs/<project>/…         run logs, 0034                   exists
   repos/  worktrees/       the mirror and the blast radius   exists
   chats/                                                     exists
-  lingtai.db               the log, when no DATABASE_URL     new
+  lingtai.db               the log, with database.store:     new
+                           sqlite (0056)
   <project>.yaml           the recipe (0046 §3)              new
 ```
 

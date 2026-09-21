@@ -56,7 +56,16 @@ import {
   readControl,
   readStatus,
 } from "@lingtai/daemon";
-import { directUrlIfSet, githubApp, hasGitHubApp, machineDatabaseUrl, postgresUrlIfSet } from "@lingtai/env";
+import {
+  SQLITE_NOT_OPEN_YET,
+  type StoreChoice,
+  directUrlIfSet,
+  githubApp,
+  hasGitHubApp,
+  machineDatabaseUrl,
+  postgresUrlIfSet,
+  storeChoice,
+} from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
@@ -126,6 +135,33 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
   } finally {
     await c.end();
   }
+}
+
+/**
+ * **Which store this machine says it runs**, from the one function that reads
+ * the choice (0056, #215) — so this row and `lingtai init`'s last line are one
+ * answer, and a machine that was never set up is told so by name.
+ *
+ * It renders the choice rather than printing `describeStore()`, for the reason
+ * `describeUrl` gives: a hosted Postgres carries its project identifier in the
+ * hostname, and no row here prints one. What it does not do is decide anything
+ * a second time — the store, and where it was read, are the choice's own.
+ *
+ * **A note and not a failure, until #179.** Nothing yet opens a store from this
+ * value: every process still finds Postgres through `LINGTAI_DATABASE_URL` and
+ * `database.url`, so a machine with no `database.store` is a machine that has
+ * something to do, not one that is broken. `warn` is exactly that (see
+ * `CheckStatus`), and it keeps `lingtai restart` — which gates on failures —
+ * out of the argument.
+ */
+export function storeRow(choice: StoreChoice): CheckResult {
+  const name = "store: the machine's written choice";
+  const unread = "nothing reads this to open a store yet (#179); until then a process finds Postgres through LINGTAI_DATABASE_URL and database.url";
+  if ("refused" in choice) return { name, status: "warn", detail: `${choice.refused} · ${unread}` };
+  if (choice.store === "sqlite") {
+    return { name, status: "warn", detail: `sqlite ← ${choice.from} · ${SQLITE_NOT_OPEN_YET}` };
+  }
+  return { name, status: "ok", detail: `postgres ← ${choice.from}` };
 }
 
 /**
@@ -1575,6 +1611,7 @@ export async function recipeGovernsItsBase(
 export async function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   machine: () => string | undefined = () => undefined,
+  store: () => StoreChoice = () => storeChoice(),
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -1588,6 +1625,10 @@ export async function runDoctor(
     // notices either. See doc/decisions/0010.
     detail: "every package this command imports loaded under Node's type stripping",
   });
+
+  // Before the connection rows, because it is the question they assume an
+  // answer to: what this machine says it runs.
+  results.push(storeRow(store()));
 
   let fromFile: string | undefined;
   let unreadable: string | undefined;
@@ -1667,7 +1708,10 @@ export async function runDoctor(
  */
 export async function doctorReport(): Promise<DoctorReport> {
   const env = doctorEnvironment();
-  return runDoctor(env, () => machineDatabaseUrl(env));
+  // `storeChoice()` and not `storeChoice(env)`: the choice is read from the
+  // variables really exported into this process, and `doctorEnvironment` hands
+  // out a copy carrying what the env files supplied too (0056 §4).
+  return runDoctor(env, () => machineDatabaseUrl(env), () => storeChoice());
 }
 
 /**

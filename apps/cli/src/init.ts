@@ -4,7 +4,7 @@
  * first run*).
  *
  *   look       git, which runtimes are installed and signed in, what ~/.lingtai holds
- *   database   a Postgres URL — connected to, and its tables created
+ *   store      postgres or sqlite, written down — a URL connected to, its tables created
  *   agent      detected; more than one signed in is asked; none is refused by name
  *   App        one already configured is verified by a real call
  *   board      started here, and a browser opened on the wizard's first screen
@@ -26,9 +26,27 @@
  * other thing silently, which is how a machine signed in to two runtimes ends
  * up running the one nobody picked.
  *
- * **SQLite is the absence, and it is not built** (#179). An empty answer is
- * that choice, and this says so and asks again rather than writing a machine
- * whose board cannot start.
+ * **The store is written, never inferred** (0056, #215). `database.store` is
+ * `postgres` or `sqlite` and it is this command that puts it there: an empty
+ * answer is the SQLite choice, and taking it *removes* `database.url` rather
+ * than reporting one store while leaving the other's value behind. What is
+ * confirmed at the end is `storeChoice()`'s reading of the file just written —
+ * the same function a later command asks — so the screen and the machine cannot
+ * disagree.
+ *
+ * **No version opens SQLite yet**, which is `SQLITE_NOT_OPEN_YET` and is said
+ * in one place. The choice is still recorded when it is made; what stops is
+ * this run, because there is no board to open on a store nobody opens.
+ *
+ * **Changing a store that answers is an edit, not a re-run** — 0056 left that
+ * open and this settles it. A store already written and connecting is reported
+ * and not asked about again, exactly as the agent is: re-asking would make
+ * every run of a finished `init` a chance to answer the wrong way. To switch,
+ * set `database.store` in `~/.lingtai/config.yml` and run `lingtai init`, which
+ * finds the half-state that edit leaves — `store: sqlite` beside the old
+ * `url` — refuses it by name, and completes the switch by asking. 0055 §3 is
+ * still the thing to know before doing it: the other store is a new log, not
+ * the same one somewhere else.
  *
  * **Subscriptions are not Lingtai's business.** Whether a runtime can run is
  * asked of the runtime; whether it is paid for is not asked at all.
@@ -45,7 +63,15 @@ import { join } from "node:path";
 import { Document, isMap, parseDocument } from "yaml";
 import { claudeCodeAuth, codexAuth } from "@lingtai/agent/auth";
 import { runnableEnv } from "@lingtai/agent-env";
-import { boardPort, stateDir } from "@lingtai/env";
+import {
+  SQLITE_NOT_OPEN_YET,
+  type StoreChosen,
+  boardPort,
+  describeStore,
+  redactUrl,
+  stateDir,
+  storeChoice,
+} from "@lingtai/env";
 import { createFileLocker, type HeldLock } from "@lingtai/env/lock";
 import { paint } from "@lingtai/env/colour";
 import { type SchemaOutcome, createSchema } from "@lingtai/event-store/schema";
@@ -72,6 +98,11 @@ export type AppCheck =
   | { configured: true; ok: false; why: string };
 
 export interface InitWorld {
+  /**
+   * The environment every choice is read against — `storeChoice()`'s argument,
+   * so a test drives the real reader by handing it a `LINGTAI_HOME` of its own
+   * and, where it means the exported variable, a `LINGTAI_DATABASE_URL`.
+   */
   env: NodeJS.ProcessEnv;
   log: (line: string) => void;
   /** One line from the person. Null when nobody is at a terminal to answer. */
@@ -80,8 +111,6 @@ export interface InitWorld {
   git: () => Promise<string | null>;
   /** Every runtime, asked whether it is installed and signed in. */
   runtimes: () => Promise<RuntimeFound[]>;
-  /** A URL set outside `config.yml` — the environment, or an env file — and where. */
-  presetDatabase: () => { url: string; from: string } | null;
   /** Connect, and create the tables where there are none. */
   database: (url: string) => Promise<DatabaseCheck>;
   /** The App this machine is configured with, asked with a real call. */
@@ -133,16 +162,13 @@ function writeConfig(path: string, doc: Document, home: string): void {
   renameSync(partial, path);
 }
 
-/** A URL fit to print: the password is never shown. */
-export function redact(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (parsed.password) parsed.password = "***";
-    return parsed.toString();
-  } catch {
-    return "(a URL that does not parse)";
-  }
-}
+/**
+ * A URL fit to print: the password is never shown.
+ *
+ * `@lingtai/env`'s, because the store's own refusals quote a `database.url`
+ * too — one redaction, so there is one place a password could escape from.
+ */
+export { redactUrl as redact } from "@lingtai/env";
 
 // ------------------------------------------------------------ the command --
 
@@ -191,9 +217,9 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const config = readConfig(path);
   if ("refused" in config) return refuse(world, config.refused);
 
-  // ---- the database ---------------------------------------------------------
-  const database = await chooseDatabase(world, config, path, home, flags["database-url"] ?? null);
-  if (database !== null) return database;
+  // ---- the store ------------------------------------------------------------
+  const store = await chooseStore(world, config, path, home, flags["database-url"] ?? null);
+  if (store !== null) return store;
 
   // ---- the agent ------------------------------------------------------------
   const agent = await chooseAgent(world, config, path, home, runtimes, flags["agent"] ?? null);
@@ -267,69 +293,140 @@ function describeSchema(schema: SchemaOutcome): string {
   return schema.repaired.length > 0 ? `tables present; put back ${schema.repaired.join(", ")}` : "tables present";
 }
 
-/** Null once a database is settled; an exit code when it cannot be. */
-async function chooseDatabase(
+/**
+ * Null once the store is settled; an exit code when it cannot be.
+ *
+ * **Choosing is an edit** (0056, #215): each answer is written as `store` and a
+ * `url` that agrees with it, and the other store's value is taken out in the
+ * same write. Then the file is read back with `storeChoice()` — the function a
+ * later command asks — and *that* is what is printed, so the line at the end of
+ * setup is a reading of the machine rather than a report of what was typed.
+ */
+async function chooseStore(
   world: InitWorld,
   config: Document,
   path: string,
   home: string,
   flag: string | null,
 ): Promise<number | null> {
-  const preset = world.presetDatabase();
-  if (preset !== null) {
+  // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
+  // and nothing is written for it: it is the process's answer, not the file's,
+  // and this command does not own the process a daemon will be started in.
+  const preset = storeChoice(world.env);
+  if (!("refused" in preset) && preset.where === "environment" && preset.store === "postgres") {
     const check = await world.database(preset.url);
     if (!check.ok) {
       return refuse(
         world,
-        `the database ${preset.from} names, ${redact(preset.url)}, does not answer — ${check.why}. ` +
+        `the database ${preset.from} names, ${redactUrl(preset.url)}, does not answer — ${check.why}. ` +
           "It is not this command's to replace: fix it, or remove it, and run lingtai init again",
       );
     }
-    world.log(paint.pass(`database     Postgres, ${redact(preset.url)} ← ${preset.from} · ${describeSchema(check.schema)}`));
+    world.log(paint.pass(`store        ${describeStore(preset)} · ${describeSchema(check.schema)}`));
     return null;
   }
 
-  const written = config.getIn(["database", "url"]);
   let candidate = flag;
-  if (typeof written === "string" && written !== "" && (candidate === null || candidate === written)) {
-    const check = await world.database(written);
-    if (check.ok) {
-      world.log(paint.pass(`database     Postgres, ${redact(written)} ← ${path} · ${describeSchema(check.schema)}`));
-      return null;
-    }
-    world.log(paint.fail(`database     ${redact(written)} ← ${path} does not answer — ${check.why}`));
-    candidate = null;
-  }
-
+  // The inherited URL below is tried **once**. Taking it again on the next pass
+  // would be a loop that never reaches the question, since what makes it
+  // inheritable — a `url` with no `store` — is still true after it failed.
+  let inherited = false;
   for (;;) {
+    if (candidate === null) {
+      const settled = storeChoice(world.env);
+      if (!("refused" in settled)) {
+        if (settled.store === "sqlite") return sqliteChosen(world, settled);
+        const check = await world.database(settled.url);
+        if (check.ok) {
+          world.log(paint.pass(`store        ${describeStore(settled)} · ${describeSchema(check.schema)}`));
+          return null;
+        }
+        world.log(paint.fail(`store        ${describeStore(settled)} does not answer — ${check.why}`));
+      } else if (settled.because === "unreadable") {
+        // `readConfig` refused this already; it is here because the two readers
+        // are separate and one of them must not be the only one that looks.
+        return refuse(world, settled.refused);
+      } else {
+        // *Nothing chosen* is the question this command is about to ask, so it
+        // is asked rather than reported — a refusal naming `lingtai init` is
+        // absurd inside `lingtai init`. The other two are a file being
+        // repaired, and what was wrong with it is said before asking again.
+        if (settled.because !== "nothing chosen") world.log(paint.fail(settled.refused));
+        // A machine set up before the store was a written value (#186) has a
+        // `database.url` and no `store`. That URL is the choice nobody
+        // recorded: it is verified and recorded, not asked for a second time.
+        const older = config.getIn(["database", "url"]);
+        if (!inherited && settled.because === "nothing chosen" && typeof older === "string" && older !== "") {
+          candidate = older;
+          inherited = true;
+        }
+      }
+    }
     if (candidate === null) {
       const answer = await world.ask(paint.signal("a Postgres URL for the log — empty for SQLite: "));
       if (answer === null) {
-        return refuse(world, `nobody is at a terminal to say which database — ${USAGE}. Nothing was written`);
+        return refuse(world, `nobody is at a terminal to say which store — ${USAGE}. Nothing was written`);
       }
       candidate = answer.trim();
     }
     if (candidate === "") {
-      world.log(
-        paint.fail(
-          "SQLite is the choice an empty answer makes, and it is not built yet (#179) — a Postgres URL is the one store " +
-            "this version runs on. Nothing was written",
-        ),
-      );
-    } else if (!/^postgres(ql)?:\/\//.test(candidate)) {
+      // The SQLite choice, written — and `database.url` removed in the same
+      // write. Left behind it would go on selecting Postgres under a screen
+      // that had just said SQLite, which is the whole of #215.
+      config.setIn(["database", "store"], "sqlite");
+      config.deleteIn(["database", "url"]);
+      writeConfig(path, config, home);
+      const read = confirm(world, path, "sqlite");
+      return typeof read === "number" ? read : sqliteChosen(world, read);
+    }
+    if (!/^postgres(ql)?:\/\//.test(candidate)) {
       world.log(paint.fail(`that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written`));
     } else {
       const check = await world.database(candidate);
       if (check.ok) {
+        config.setIn(["database", "store"], "postgres");
         config.setIn(["database", "url"], candidate);
         writeConfig(path, config, home);
-        world.log(paint.pass(`database     Postgres, ${redact(candidate)} → ${path} · ${describeSchema(check.schema)}`));
+        const read = confirm(world, path, "postgres");
+        if (typeof read === "number") return read;
+        world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`));
         return null;
       }
-      world.log(paint.fail(`${redact(candidate)} does not answer — ${check.why}. Nothing was written`));
+      world.log(paint.fail(`${redactUrl(candidate)} does not answer — ${check.why}. Nothing was written`));
     }
     candidate = null;
   }
+}
+
+/**
+ * What the machine says now, read back after the write — or an exit code.
+ *
+ * The confirmation is derived from `storeChoice()` and never composed from the
+ * answer that was typed, which is how the screen and the file came apart in the
+ * first place. A disagreement between them is that defect, so it is a refusal
+ * naming both rather than a line nobody would read.
+ */
+function confirm(world: InitWorld, path: string, expected: "postgres" | "sqlite"): StoreChosen | number {
+  const read = storeChoice(world.env);
+  if ("refused" in read || read.store !== expected) {
+    return refuse(world, `${expected} was written to ${path}, and reading it back does not say so — ${describeStore(read)}`);
+  }
+  return read;
+}
+
+/**
+ * The store is chosen and recorded, and this run stops here.
+ *
+ * Not a refusal of the choice: it is written, and `lingtai init` again reads it
+ * back and says this again. What there is no point continuing to is the board,
+ * which is served on a log — and no log opens from this choice yet. The claim
+ * itself is `SQLITE_NOT_OPEN_YET`, said in one place; the remedy after the dash
+ * is this command's own.
+ */
+function sqliteChosen(world: Pick<InitWorld, "log">, choice: StoreChosen): number {
+  world.log(paint.pass(`store        ${describeStore(choice)}`));
+  world.log(paint.signal(`${SQLITE_NOT_OPEN_YET} — lingtai init --database-url <postgres url> records that instead`));
+  return 1;
 }
 
 /** Null once an agent is settled; an exit code when it cannot be. */
@@ -453,10 +550,6 @@ export function liveInitWorld(): InitWorld {
         signedIn: asked[i]!.loggedIn,
         detail: asked[i]!.detail,
       }));
-    },
-    presetDatabase: () => {
-      const url = process.env["LINGTAI_DATABASE_URL"];
-      return url ? { url, from: "LINGTAI_DATABASE_URL (the environment, or .env.local)" } : null;
     },
     database: async (url) => {
       const pg = (await import("pg")).default;
