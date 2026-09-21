@@ -65,28 +65,34 @@ which is the argument none of the six tickets above was asked to make.
 It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx` — where
 the next chip would be added, and so where the argument has to be made.
 
-### And it is about `.rail`, which is half the row
+### Which half of the row does it govern? Both
 
-The four are the right rail: the reading, the health dot, paused/draining, and
-the headline. Left of the second separator is the brand and the filter, and the
-filter is a list of projects — it grew a tab when a third repository was
-registered, and *a tab is not a chip* is already said above.
+The four are filter, reading, health, headline, and only three of them are on
+`.rail`: the filter sits left of the second separator, and it is counted. So
+*it is on the other side of the separator* is not an argument this rule
+accepts, and `paused` and `draining` are not two of the four either — they are
+chips, absent whenever there is nothing to say, which is the property that
+makes a chip affordable at all (below).
 
-So **an action at the end of the project list is not a fifth object**, and
-`#216` is the ticket that tested this. The board offered a way to onboard a
-repository only while it had none: with one project the slot was a caption and
-with two a filter, and the only routes left were `lingtai add <owner>/<repo>`
-and typing `/setup/repository` from memory. The `+` that closed that is a
-`.tab` inside `.filter` (`apps/board/src/app/projects.tsx`), and
-`apps/board/test/projects.test.tsx`'s *is mounted left of the rail* is what
-keeps it there.
+`#216` is the first ticket asked to make this argument, and it makes it by
+adding nothing to the count. The board offered a way to onboard a repository
+only while it had none: with one project the slot was a caption and with two a
+filter, and the only routes left were `lingtai add <owner>/<repo>` and typing
+`/setup/repository` from memory. What closed that is a `+` at the end of the
+project list — a `.tab` inside `.filter` (`apps/board/src/app/projects.tsx`).
+The filter has been a list of projects since `#81` and grew a tab when a third
+repository was registered; *a tab is not a chip* is already said below. The
+fourth object gained the affordance a list of things has, and the row still
+carries four.
 
-**None of which loosens anything.** The rule is unchanged for what it was
-written about, and the reason the distinction is drawn here rather than left to
-be inferred is that an undrawn edge is one the next ticket cites this one past.
-A list gaining the affordance a list of things has is not the same act as a
-sixth reading arriving on a rail that is glanced at while you work on something
-else — and the second still has to be argued against the four.
+**None of which loosens anything**, and what it did cost is named rather than
+left to be found: a single-project board used to carry a bare caption and now
+carries a caption and one small tab. A list gaining its own action is not the
+same act as a fifth object arriving on a row that is glanced at while you work
+on something else — and that one still has to be argued for here.
+`apps/board/test/projects.test.tsx` holds both halves of it: *is mounted left
+of the rail*, and *leaves the four what they were* — because the way this
+ticket could have gone wrong was to make the `+` fit by redefining the set.
 
 ## What #141 and #142 changed under this
 

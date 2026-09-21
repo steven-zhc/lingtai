@@ -1,15 +1,20 @@
 /**
  * The left half of the bar: which repositories there are, and how to add one.
  *
- * **the-bar.md's rule governs `.rail`, and this is not on it.** *A chip is not
- * free, and the row is the unit* was written about the four objects right of
- * the second separator — the reading, the health dot, paused/draining, and the
- * headline — and it is stated in `page.tsx` at the end of `.bar`, where the
- * next chip would be added. What is here is the filter, which is a list of
- * projects and has been since #81. An action at the end of a list of things is
- * that list gaining the affordance a list of things has; it is not a fifth
- * object competing for the row, and nothing below may be cited to put one
- * there (#216).
+ * **The filter is one of the four, and this is the filter.** *A chip is not
+ * free, and the row is the unit* is stated in `page.tsx` at the end of `.bar`,
+ * where the next chip would be added, and the four it names are filter,
+ * reading, health, headline — the filter among them, left of the second
+ * separator. So this is not the other side of a line the rule stops at; it is
+ * one of the objects the rule is counting.
+ *
+ * What passes the test is that nothing is added to the count. The filter has
+ * been a list of projects since #81 and it grows a tab when a repository is
+ * registered — *a tab is not a chip* is the-bar.md's own sentence about that —
+ * so an action at the end of it is that object gaining the affordance a list
+ * of things has, and the row still carries four. **Nothing here may be cited to
+ * put a fifth on the row**, which is a different act and still has to be argued
+ * against the four (#216).
  *
  * **Onboarding does not stop being a thing you do once you have onboarded
  * once.** #169 put the setup link in the slot and it was right, but only for

@@ -13,11 +13,12 @@
  * whether anything is registered — `filters.length === 0` was the proxy for
  * that and the two come apart in both directions.
  *
- * The third claim is about where it is drawn. the-bar.md's *a chip is not
- * free, and the row is the unit* is about `.rail`, and this is left of it;
- * `bar.test.ts` is what holds the rail to its four objects, and it now reads
- * `projects.tsx` so that a class added here is still a class the bar's amber
- * guard has seen.
+ * The third claim is about the row. the-bar.md's *a chip is not free, and the
+ * row is the unit* counts the filter among its four, so the `+` is inside the
+ * rule and not beside it: what makes it allowed is that the filter was already
+ * a list of tabs and gained one more. Nothing opens in `.rail`, the four are
+ * still the four, and `bar.test.ts` now reads `projects.tsx` so that a class
+ * added here is still a class the bar's amber guard has seen.
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -86,15 +87,16 @@ describe("where it lands", () => {
   });
 });
 
-describe("which half of the row this is", () => {
-  const page = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+describe("which object on the row this is", () => {
+  const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+  const page = read("../src/app/page.tsx");
   const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'));
 
   /**
-   * the-bar.md's rule is about the four objects right of the second separator,
-   * and it is stated in the code at the end of `.bar` — where the next chip
-   * would go. This is mounted before `.rail` opens, so it is not one of them,
-   * and this test is what keeps that true rather than the comment saying so.
+   * the-bar.md's rule counts four objects on the row, and the filter is one of
+   * them — so what this has to show is not that it escaped the count but that
+   * it did not add to it. Nothing new opens inside `.rail`, and the `+` is a
+   * tab in a list that was already a list of tabs.
    */
   it("is mounted left of the rail, which keeps the four it was cut to", () => {
     expect(bar.indexOf("<Projects")).toBeGreaterThan(-1);
@@ -105,6 +107,28 @@ describe("which half of the row this is", () => {
     for (const object of ["<Projects", "/setup/repository", "/setup/github-app"]) {
       expect(rail).not.toContain(object);
     }
+  });
+
+  /**
+   * **The four are named in three files, and the way to get this wrong is to
+   * make the `+` fit by redefining them.** `page.tsx` says it twice — once in
+   * the module's docstring and once in the rule itself, at the end of `.bar` —
+   * and the-bar.md is where a later ticket goes to read what it must argue
+   * against. If one of them counted the rail instead, the `+` would look like
+   * an object outside the rule rather than an affordance of an object inside
+   * it, and the next person would get two answers from one render.
+   *
+   * Line breaks and comment stars are not the claim, so they are collapsed
+   * before the membership is read.
+   */
+  it("leaves the four what they were, in the code and in the doc", () => {
+    const said = (src: string) => src.replace(/[\s*]+/g, " ");
+    const four = "filter, reading, health, headline";
+
+    // Twice in `page.tsx`: the docstring and the rule it points at.
+    expect(said(page).split(four)).toHaveLength(3);
+    expect(said(read("../src/app/projects.tsx"))).toContain(four);
+    expect(said(read("../../../doc/design/the-bar.md"))).toContain(four);
   });
 
   /** It is a control in the list, and `.reading` is text for the opposite reason. */

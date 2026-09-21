@@ -200,9 +200,13 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 }
 
 /* The projects, as a control. They were a joined string beside a `loadBoard`
-   that has always taken a project (#81). Only drawn where there is more than
-   one — with a single project there is nothing to choose between, and a tab
-   that cannot narrow anything is a button that does nothing. */
+   that has always taken a project (#81). The *tabs* are only drawn where there
+   is more than one — with a single project there is nothing to choose between,
+   and a tab that cannot narrow anything is a button that does nothing — but
+   this box is drawn with one project too since #216, holding that project's
+   name as the caption it was and the list's own `+` after it. So nothing here
+   may assume a choice is being offered: a group treatment (a border, a
+   background, padding) would land on every single-project board. */
 .filter { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
 .tab {
   font-family: var(--mono); font-size: 10.5px;
@@ -212,9 +216,10 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .tab:hover { color: var(--ink); border-color: var(--rule-2); }
 .tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
 /* The list's own action, at the end of it (#216). A `.tab`, because it is one
-   of this list's controls — the filter is left of the rail, and the-bar.md's
-   rule about what the row may carry is about the rail. Set off by the gap so
-   `+` is read as the end of the list and not as a project named `+`. */
+   of this list's controls and the filter is already a list of tabs — *a tab is
+   not a chip*, so the row carries the four it was cut to and not a fifth. Set
+   off by the gap so `+` is read as the end of the list and not as a project
+   named `+`. */
 .filter .add { margin-left: 5px; }
 
 /* Repositories on their way in (#163) — recorded, and not yet conducted.

@@ -713,9 +713,10 @@ export default async function Page({
         </span>
         <span className="sep" />
         {/* The projects, and the way to add one — `projects.tsx`, which is
-            where that argument is made. In short: this is left of the rail,
-            the-bar.md's rule is about the rail, and a list of things gaining
-            an action at its end is not a fifth object on the row (#216). */}
+            where that argument is made. In short: the filter is one of the
+            four the rule below names, it has been a list of tabs since #81,
+            and a list gaining an action at its end is that object rather than
+            a fifth one (#216). */}
         <Projects filters={filters} only={only} app={hasGitHubApp()} />
         <span className="sep" />
         {/* Everything from here is the right rail, and it is a rail rather than
@@ -817,7 +818,15 @@ export default async function Page({
               argued against the four that are left — filter, reading, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend and the pass
-              limits are on `/spend`. */}
+              limits are on `/spend`.
+
+              **The four are not all on `.rail`, and #216 is where that
+              mattered.** The filter is one of them, so *it is on the other
+              side of the separator* is not an argument this rule accepts. What
+              #216 added — a `+` that onboards a repository — passes instead by
+              adding nothing to the count: the filter has been a list of tabs
+              since #81, and a list gaining an action at its end is that object
+              and not a fifth one. A fifth object is still argued for here. */}
         </span>
       </div>
 
