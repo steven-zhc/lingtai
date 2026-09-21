@@ -121,7 +121,24 @@ describe("conducting", () => {
     expect(said[0]).toBe("null");
     expect(said[1]).toContain("index refused");
     expect(said[1]).toContain("LINGTAI_DATABASE_URL is not set");
-  });
+    /**
+     * **The only test in this file that spawns, and the default timeout is not
+     * its bound.** Nothing above asserts a duration — the claims are an exit
+     * status and two lines of stdout — so what the 5s default actually measures
+     * is a cold Node start plus type-stripping the daemon's whole import graph,
+     * on whatever machine happened to run it.
+     *
+     * It takes ~1.9s idle, which reads as 2.6× of headroom and is not: under
+     * `pnpm -r` beside `apps/release`'s binary builds and `install.test.ts`'s
+     * spawning, the same pass reported `import 66.28s` against 25–32s idle, and
+     * this timed out at 5s. That red gate refused `#215`, whose diff does not
+     * touch this import graph — measured head against base, three runs each,
+     * 0.50–0.75s either way.
+     *
+     * **A longer bound weakens nothing here** and stops a loaded machine
+     * refusing a diff for something the diff did not do.
+     */
+  }, 30_000);
 });
 
 describe("the drain", () => {
