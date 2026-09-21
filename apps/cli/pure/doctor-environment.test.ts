@@ -8,9 +8,12 @@
  * install has to behave identically across this change; `postgresUrlIfSet` and
  * `directUrlIfSet` are the same two reads with the refusal left off.
  */
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { directPostgresUrl, postgresUrl } from "@lingtai/env";
-import { doctorEnvironment } from "../src/doctor.ts";
+import { SQLITE_NOT_OPEN_YET, directPostgresUrl, postgresUrl, storeChoice } from "@lingtai/env";
+import { doctorEnvironment, storeRow } from "../src/doctor.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
 const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
@@ -60,5 +63,52 @@ describe("the environment doctor reports on", () => {
   it("reads the test side for a test run, so the suite never reports on the operator's log", () => {
     const env = doctorEnvironment({ LINGTAI_TEST: "1", LINGTAI_TEST_DATABASE_URL: DIRECT, LINGTAI_DATABASE_URL: POOLED });
     expect(env["DATABASE_URL"]).toBe(DIRECT);
+  });
+});
+
+/**
+ * The row that says what this machine chose (#215, 0056 §3) — the same
+ * `storeChoice()` `lingtai init` confirms with, so *what was set up* and *what
+ * doctor reports* are one answer.
+ */
+describe("the store row", () => {
+  function home(config?: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-doctor-store-"));
+    if (config !== undefined) writeFileSync(join(dir, "config.yml"), config);
+    return dir;
+  }
+
+  it("names the exported variable where that is what decided", () => {
+    const row = storeRow(storeChoice({ LINGTAI_HOME: home(), LINGTAI_DATABASE_URL: DIRECT }));
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("postgres");
+    expect(row.detail).toContain("exported into this process");
+    // No row here prints a connection string, and this one is no exception.
+    expect(row.detail).not.toContain(DIRECT);
+  });
+
+  it("names the file where the file decided", () => {
+    const dir = home(`database:\n  store: postgres\n  url: ${DIRECT}\n`);
+    const row = storeRow(storeChoice({ LINGTAI_HOME: dir }));
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain(join(dir, "config.yml"));
+    expect(row.detail).not.toContain(DIRECT);
+  });
+
+  /**
+   * A note and not a failure: nothing opens a store from this value yet, so a
+   * machine with no `database.store` has something to do rather than something
+   * broken — and `lingtai restart`, which gates on failures, is kept out of it.
+   */
+  it("is a note on a machine that has not recorded a choice, naming lingtai init", () => {
+    const row = storeRow(storeChoice({ LINGTAI_HOME: home() }));
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain("lingtai init");
+  });
+
+  it("says the one sentence about SQLite, and says it from the one place", () => {
+    const row = storeRow(storeChoice({ LINGTAI_HOME: home("database:\n  store: sqlite\n") }));
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain(SQLITE_NOT_OPEN_YET);
   });
 });

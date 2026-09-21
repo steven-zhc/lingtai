@@ -40,7 +40,7 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 
 | | Lifetime | Why there |
 |---|---|---|
-| `config.yml` | Persistent | **This machine's half of the recipe** — `runtime.agent`, `runtime.limits`, `runtime.assignee`, `database.url`, `board.port`. Written by `lingtai init`, a value at a time, each after it was verified. |
+| `config.yml` | Persistent | **This machine's half of the recipe** — `runtime.agent`, `runtime.limits`, `runtime.assignee`, `database.store` and `database.url`, `board.port`. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). |
 | `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
@@ -130,14 +130,42 @@ LINGTAI_TEST=1 pnpm --filter @lingtai/event-store db:reset-test
 It refuses twice over if you point it at anything else: the flag has to be set,
 *and* the string it resolves has to differ from the one without the flag.
 
+### Which store this machine runs
+
+**It is a value in `~/.lingtai/config.yml`, and nothing infers it**
+([0056](decisions/0056-the-store-is-a-written-choice.md)). *Unset* is not a fact
+a process can establish: the URL used to be looked for in a `.env.local` found
+by walking up from `packages/env/src`, so `pnpm lingtai` from the checkout and a
+launchd job started from `~` could reach opposite answers and neither could say
+so.
+
+```yaml
+database:
+  store: postgres        # or: sqlite
+  url: postgres://…      # only with store: postgres
+```
+
+`lingtai init` writes it, at `0600`, and choosing one store removes the other's
+value in the same write. Four answers, and three of them are refusals that name
+what to do: no `database.store` is *this machine has not been set up*, `postgres`
+with no URL says where a URL is looked for, and `sqlite` beside a `url` is two
+keys disagreeing. An exported `LINGTAI_DATABASE_URL` still wins and supplies the
+URL — that is what makes CI, launchd and a container work with no file at all —
+and `lingtai doctor`'s **store** row says which of the two answered.
+
+The sentence about what a SQLite machine does today is `SQLITE_NOT_OPEN_YET` in
+`packages/env/src/index.ts`, and it is written once: `lingtai init` and `lingtai
+doctor` both print that constant, and this page deliberately does not repeat it.
+
 ### Bringing the database up
 
 > **`lingtai init` does this, and this section is what it does.** Since
 > [#186](https://github.com/steven-zhc/lingtai/issues/186) one command takes a
 > bare machine to the board: it asks for the URL, connects, creates the tables,
-> and only then writes the URL into `~/.lingtai/config.yml` — nothing is written
-> before its choice has been verified. The two scripts below are still here and
-> still work; from a checkout they are the same thing with the steps visible.
+> and only then writes `database.store` and the URL into `~/.lingtai/config.yml`
+> — nothing is written before its choice has been verified. The two scripts
+> below are still here and still work; from a checkout they are the same thing
+> with the steps visible.
 
 Prisma 8 splits planning from applying. Planning is offline; only the second
 half needs a reachable database.
