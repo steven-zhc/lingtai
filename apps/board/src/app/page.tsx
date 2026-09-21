@@ -17,6 +17,11 @@ import { elapsed } from "@/lib/progress";
 import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
 import { loadProjects } from "@lingtai/conductor/projects";
 import { Pending } from "./pending.tsx";
+// Whether there is an App at all, which is where the bar's add-a-repository
+// lands: the picker once it exists, step 0 before. Read here and handed down
+// so `projects.tsx` stays a fold over its arguments (#216).
+import { hasGitHubApp } from "@lingtai/env";
+import { Projects } from "./projects.tsx";
 import { inWords } from "@lingtai/conductor/queue";
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
@@ -707,37 +712,11 @@ export default async function Page({
           Lingtai
         </span>
         <span className="sep" />
-        {/* A filter, not a caption. With one project there is nothing to choose
-            between, so it stays the sentence it was.
-
-            **Nothing configured is the one board with somewhere to go**, and it
-            is the same object rather than a fifth one: the slot already says
-            *there is nothing here yet*, and step 0 — create the App, install
-            it, add a repository — is what a person on that board is looking
-            for (#169). A board with projects gets the filter it always had, so
-            the row does not grow. */}
-        {filters.length === 0 ? (
-          <Link className="tab" href="/setup/github-app" title="create the GitHub App, then install it">
-            no project configured
-          </Link>
-        ) : filters.length === 1 ? (
-          <span>{filters[0]}</span>
-        ) : (
-          <span className="filter">
-            <Link className={`tab${only === undefined ? " on" : ""}`} href="/">
-              all
-            </Link>
-            {filters.map((p) => (
-              <Link
-                key={p}
-                className={`tab${only === p ? " on" : ""}`}
-                href={`/?project=${encodeURIComponent(p)}`}
-              >
-                {p}
-              </Link>
-            ))}
-          </span>
-        )}
+        {/* The projects, and the way to add one — `projects.tsx`, which is
+            where that argument is made. In short: this is left of the rail,
+            the-bar.md's rule is about the rail, and a list of things gaining
+            an action at its end is not a fifth object on the row (#216). */}
+        <Projects filters={filters} only={only} app={hasGitHubApp()} />
         <span className="sep" />
         {/* Everything from here is the right rail, and it is a rail rather than
             four more children of `.bar` so that a narrow window breaks between

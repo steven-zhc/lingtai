@@ -211,6 +211,11 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 }
 .tab:hover { color: var(--ink); border-color: var(--rule-2); }
 .tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+/* The list's own action, at the end of it (#216). A `.tab`, because it is one
+   of this list's controls — the filter is left of the rail, and the-bar.md's
+   rule about what the row may carry is about the rail. Set off by the gap so
+   `+` is read as the end of the list and not as a project named `+`. */
+.filter .add { margin-left: 5px; }
 
 /* Repositories on their way in (#163) — recorded, and not yet conducted.
 

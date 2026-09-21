@@ -458,6 +458,13 @@ It checks the installation and its permissions **before** it writes anything, so
 a half-onboarded project is not a state that exists. Then it reads the recipe,
 hashes it, and records `ProjectConfigured`.
 
+**Or from the board, in any state it is in.** The `+` at the end of the project
+list on the bar goes to `/setup/repository` once the App exists and to
+`/setup/github-app` before it — so a second repository is something the console
+can do, and not only the first one (`#216`). Until then the slot was an entry
+with no projects, a caption with one and a filter with two, and the only route
+left was this command or typing the wizard's path from memory.
+
 There is nothing else to write. The tier, the gates, the priority order **and the
 base** are all the recipe's, in the managed repository — which is why this
 command takes a slug and nothing more.

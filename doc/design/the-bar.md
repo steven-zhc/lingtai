@@ -65,6 +65,29 @@ which is the argument none of the six tickets above was asked to make.
 It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx` — where
 the next chip would be added, and so where the argument has to be made.
 
+### And it is about `.rail`, which is half the row
+
+The four are the right rail: the reading, the health dot, paused/draining, and
+the headline. Left of the second separator is the brand and the filter, and the
+filter is a list of projects — it grew a tab when a third repository was
+registered, and *a tab is not a chip* is already said above.
+
+So **an action at the end of the project list is not a fifth object**, and
+`#216` is the ticket that tested this. The board offered a way to onboard a
+repository only while it had none: with one project the slot was a caption and
+with two a filter, and the only routes left were `lingtai add <owner>/<repo>`
+and typing `/setup/repository` from memory. The `+` that closed that is a
+`.tab` inside `.filter` (`apps/board/src/app/projects.tsx`), and
+`apps/board/test/projects.test.tsx`'s *is mounted left of the rail* is what
+keeps it there.
+
+**None of which loosens anything.** The rule is unchanged for what it was
+written about, and the reason the distinction is drawn here rather than left to
+be inferred is that an undrawn edge is one the next ticket cites this one past.
+A list gaining the affordance a list of things has is not the same act as a
+sixth reading arriving on a rail that is glanced at while you work on something
+else — and the second still has to be argued against the four.
+
 ## What #141 and #142 changed under this
 
 Two of the chips were renamed when
@@ -77,7 +100,7 @@ sentence as its title. Neither rename touched the argument.
 ## What it looks like now
 
 ```
-灵 Lingtai │ [all] lingtai nextloom-ai-admin        10 queued · 1 running · 45 landed  ●  [1 waiting on you]
+灵 Lingtai │ [all] lingtai nextloom-ai-admin  +     10 queued · 1 running · 45 landed  ●  [1 waiting on you]
 ```
 
 One line at 1440, and one line with a third project: the filter grows a tab, and

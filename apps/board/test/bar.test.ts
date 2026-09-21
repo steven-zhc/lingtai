@@ -210,7 +210,16 @@ describe("the bar's amber", () => {
     const read = (f: string) => readFileSync(new URL(`../src/app/${f}`, import.meta.url), "utf8");
     const page = read("page.tsx");
     const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'));
-    const sources = [bar, read("paused.tsx"), read("draining.tsx"), read("live.tsx")];
+    const sources = [
+      bar,
+      read("paused.tsx"),
+      read("draining.tsx"),
+      read("live.tsx"),
+      // The filter and its `+` (#216). It left `page.tsx` for a file of its
+      // own, and a component the bar mounts is the bar's whether or not its
+      // markup is still in this slice — which is the `.btn.pri` lesson again.
+      read("projects.tsx"),
+    ];
     const names = new Set<string>();
     for (const src of sources) {
       // `className="a b"` and ``className={`a ${x ? " b" : ""}`}`` alike: every
@@ -247,7 +256,7 @@ describe("the bar's amber", () => {
 
   /** The guard above is only as good as its reading of the source. */
   it("reads the bar's classes, including the ones its components bring", () => {
-    for (const c of ["bar", "head", "sig", "reading", "dot", "chip", "held", "btn", "why"]) {
+    for (const c of ["bar", "head", "sig", "reading", "dot", "chip", "held", "btn", "why", "filter", "tab", "add"]) {
       expect(barClasses.has(c)).toBe(true);
     }
   });
