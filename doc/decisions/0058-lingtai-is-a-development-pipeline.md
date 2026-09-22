@@ -271,10 +271,39 @@ the whole log, `merge` has refused 32 times:
 
 So *"the agent could not resolve the conflict"* is 6 of 32. The common merge
 failure is that **somebody else's work landed and this diff stopped being
-true** — which `proposed` should route as *the lines are wrong*, back to
-`implement` against the new base, not to a person. A step that sent every merge
-failure to `waiting` would interrupt somebody 32 times where 6 was the real
-number.
+true** — a clean textual merge that then fails its build. There is no conflict
+marker for an agent to look at, and what it needs is an ordinary fix round
+against the new base.
+
+**So `merge` does not decide; it reports a `reason` and `proposed` routes on
+it.** That is the whole of the answer to *should an agent resolve the conflict*:
+
+| `reason` | share | where `proposed` sends it |
+|---|---|---|
+| `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round |
+| `conflict`, text | 6 / 32 | resolved, then **back through `build` and `review`** — see below |
+| `conflict`, intent | — | `waiting`, carrying what each side changed |
+
+**The third row is the one an agent must not take.** Two changes that edited the
+same decision differently — one setting `rounds: 2` where the other set `5` —
+produce text an agent can merge and an intent it cannot know. That is not a
+code question, and an agent answering it is an agent guessing. This repository
+met the same shape today and did the right thing: `#179`'s branch found
+`logConfigured()` pulled two ways, **wrote down both and deferred to `#214`**
+rather than deciding.
+
+**And a resolved conflict is code no reviewer read**, because `review` has
+already passed by the time `merge` runs. With 6 conflicts in the whole log,
+buying an unreviewed path into `main` to save six interruptions is a poor
+trade — unless the resolution re-enters the loop at `proposed`, which the
+drawing already has it do. Then the plugin can stay and the hole closes.
+
+**What actually cleared a conflict here was not a resolver.** The one time the
+loop tried (`wi-lingtai-87`), it appended `RepairRequested conflict`, released
+the item, and the ticket was claimed again — and a new pass cuts its worktree
+from `origin/<base>` ([0039](0039-the-worktree-is-the-whole-of-a-pass.md)), so
+the rebase is a free side effect and the conflict is gone. It landed two claims
+later at `2d771db`.
 
 ### 4. Init configures every step; the person overrides any of it
 
