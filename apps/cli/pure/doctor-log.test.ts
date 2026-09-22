@@ -15,7 +15,7 @@
  * you cannot tell apart from its absence, in the one command built to prevent
  * it.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +77,33 @@ describe("a machine whose log is a file, and has no Postgres at all", () => {
     // Not LISTEN/NOTIFY, which is the other store's answer to the same
     // question — and was the only one anything asked (#178, #221).
     expect(row.detail).not.toContain("LISTEN");
+  });
+
+  /**
+   * **The one absence this row could have covered up.** Opening a file-backed
+   * log creates it, so a doctor that established reachability by opening would
+   * report `ok — opened and read … there is a log here at all` about a file it
+   * had made a millisecond earlier, and print a green summary over a machine
+   * whose log had been deleted. The file is asked for before anything opens,
+   * and nothing on this path opens at all.
+   */
+  it("fails for a path with no file at it, and makes no file saying so", async () => {
+    const gone = join(dir, "deleted-while-clearing-state.db");
+    let opened = false;
+    const row = await logReachable(
+      { store: "sqlite", path: gone, where: "config.yml", from: join(dir, "config.yml") },
+      async () => {
+        opened = true;
+        return log;
+      },
+    );
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain(gone);
+    expect(row.detail).toContain("no file at that path");
+    // The two halves of *the diagnostic did not become the thing it reports*.
+    expect(opened).toBe(false);
+    expect(existsSync(gone)).toBe(false);
   });
 
   /**

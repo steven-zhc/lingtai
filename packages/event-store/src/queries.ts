@@ -40,9 +40,15 @@
  *
  * A caller reaches these through `log.queries`, and which implementation is
  * behind them is whichever of the two this machine wrote down
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
- * `lingtai doctor` is the one caller that still names this one, reporting on a
- * URL it was given ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)), and
+ * **nothing outside `choose.ts` names this implementation.** `lingtai doctor`
+ * was the last that did: it put two of the questions below through a URL it had
+ * been handed, so they could only be asked of a Postgres machine, though both
+ * are questions about a log.
+ * [#214](https://github.com/steven-zhc/lingtai/issues/214) moved it onto
+ * `processLog()` — which is why `packages/env/test/one-choice.test.ts` carries
+ * no exception any more, and why a second direct caller here would be a new
+ * one rather than company.
  */
 import pg from "pg";
 import { postgresUrl } from "./env.ts";

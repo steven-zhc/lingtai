@@ -858,13 +858,26 @@ Postgres was told `0 failed` by a command that had never opened its log.
 `log: reachable` is the row the rest assume an answer to, and the one the
 summary line is a claim about: it reads a stream that cannot exist, so the
 answer is *the log is there and answered* and never anything about what is in
-it — which is `log: every type is readable`'s question, and a different one.
+it — which is `log: every type is readable`'s question, and a different one. On
+a SQLite machine **the file is asked for before anything opens it**, and on
+that path nothing opens at all: opening a file-backed log *creates* one, so a
+row that established reachability by opening would report `opened and read`
+about a file it had made during the diagnosis, and a log deleted while clearing
+state would be replaced by an empty one and called present. A missing file is a
+`fail` there, as a missing `events` table already was on Postgres.
 `log: a change reaches a second reader` opens the log's own waker:
 `LISTEN`/`NOTIFY` on a Postgres machine, a poll of the file on a SQLite one.
 It is the weaker of the two rows about waking on Postgres and says so — whether
 a notification *survives* the connection is `postgres: direct connection is
 session mode`, which is what [0009](decisions/0009-two-connections.md)
 demands.
+
+The two `gates:` rows ask the chosen log the comparison 0015 promised, and **a
+rejection there is a `fail` and never an `ok`**. They used to answer `no log to
+read yet` on any error; the one case that read described is `log: reachable`'s
+now, so what is left under it is a log that opened and then would not
+answer — and green there claims nothing landed past a point that never ran on
+the strength of a question nobody got to put.
 
 **Five more run once per configured project**, so the total depends on how many
 there are: `recipe: resolves for every project`,

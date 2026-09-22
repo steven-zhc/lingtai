@@ -315,6 +315,40 @@ describe("lingtai doctor — a machine whose log is a file", () => {
     expect(report.skipped).toBe(report.deferred + report.notChecked);
     expect(formatReport(report)).toContain(`${report.notChecked} not checked here`);
   });
+
+  /**
+   * **A gate audit that could not ask is never `ok`.** Both rows answered
+   * `ok — no log to read yet` on any rejection, which since #214 can only mean
+   * a log that opened and then would not answer — a dropped pooler, on the
+   * connection the conductor's own audit uses. Green there says *nothing
+   * landed past a point that never ran* on the strength of a question nobody
+   * put, which is #55 and #58's shape and shows nowhere on GitHub.
+   */
+  it("never answers ok for a gate audit the log refused to answer", async () => {
+    const dropped = new Error("Connection terminated unexpectedly");
+    const wontAnswer = async (): Promise<Log> => ({
+      ...log,
+      queries: {
+        ...log.queries,
+        endedWithoutEndActions: () => Promise.reject(dropped),
+        landedWithoutGatePoints: () => Promise.reject(dropped),
+      },
+    });
+
+    const report = await runDoctor(env({}), () => undefined, wroteSqlite, wontAnswer);
+
+    for (const name of ["gates: end ran on what landed", "gates: every point that was planned ran"]) {
+      const row = find(report.results, name);
+      expect(row.status, name).toBe("fail");
+      expect(row.detail).toContain(dropped.message);
+      // The sentence that contradicted `log: reachable` two rows above it.
+      expect(row.detail).not.toContain("no log to read yet");
+    }
+    // So the line at the bottom is not the green one, and the command exits
+    // non-zero: what `0 failed` may not stand for is a comparison nobody made.
+    expect(report.failed).toBeGreaterThanOrEqual(2);
+    expect(formatReport(report)).not.toContain("0 failed");
+  });
 });
 
 describe("lingtai doctor — the runtime's own login", () => {

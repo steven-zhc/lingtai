@@ -43,6 +43,13 @@ import type { GitHubClient } from "@lingtai/github";
 // `processLog()` is the one opened from the written choice (0056), so they now
 // answer on either store and `packages/env/test/one-choice.test.ts` no longer
 // carries this file as its exception.
+//
+// On Postgres that is the pooled connection rather than the direct one those
+// two rows used to be handed. It is the connection the conductor's own gate
+// audit runs on at every pass, and the one `projections: lag` is already asked
+// through — so a dropped pooler (#157) reds this command whichever they use,
+// and the thing that mattered was never the string: it was that the rejection
+// used to be reported `ok`. `auditDidNotRun` is where that is settled.
 import { type Log, type LogQueries, type WakeSession, processLog } from "@lingtai/event-store";
 import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
@@ -75,6 +82,7 @@ import { git } from "@lingtai/repo";
 import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
 import { backlogProjection, describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -203,6 +211,17 @@ export function storeRow(choice: StoreChoice): CheckResult {
  *
  * It says which store it reached, because a reader who has just been told the
  * machine chose one thing needs to know this row reached *that* one.
+ *
+ * **Existence is established before the open, never by it.** A file-backed log
+ * is *created* by opening one: `openSqliteLog` hands `node:sqlite` a path it
+ * makes where there is none and then runs `create table if not exists`. So a
+ * machine whose file was deleted — while clearing state, or restored from a
+ * `config.yml` without the database beside it — would be handed a fresh empty
+ * log by the diagnostic and then told it had had one all along: the absence
+ * this row exists to report, manufactured during the reporting, and a green
+ * summary over it. Postgres has no such shape, nothing here creating `events`,
+ * so a missing log throws out of the read below; the file is checked first so
+ * that the two stores give the same verdict for the same fault.
  */
 export const LOG_REACHABLE = "log: reachable";
 
@@ -261,6 +280,20 @@ export async function logReachable(
 ): Promise<CheckResult> {
   if ("refused" in choice) return noStoreWritten(LOG_REACHABLE, choice.refused);
   const where = choice.store === "sqlite" ? `sqlite at ${choice.path}` : "postgres";
+  // Asked of the filesystem and not of `open()`, because `open()` is what
+  // would create it — see above. Nothing is opened on this path at all, so the
+  // row that reports the absence does not cause it to stop being true.
+  if (choice.store === "sqlite" && !existsSync(choice.path)) {
+    return {
+      name: LOG_REACHABLE,
+      status: "fail",
+      detail:
+        `${where} — there is no file at that path. This machine wrote store: sqlite and its log ` +
+        "has never been opened, or has been deleted: nothing that was appended here survives, and " +
+        "the next command to run will make an empty one in its place. lingtai init finishes a " +
+        "machine that never got one",
+    };
+  }
   try {
     await (await open()).store.read(NO_SUCH_STREAM);
     return {
@@ -1206,6 +1239,38 @@ async function readableTypes(url: string): Promise<CheckResult> {
 }
 
 /**
+ * Either audit, asked and unable to ask — **and never `ok`** (#214).
+ *
+ * Both used to answer `ok, no log to read yet` on any rejection. That reading
+ * had one true case, a machine whose tables were not there yet, and
+ * `LOG_REACHABLE` above now answers it: a log that does not open is that row's
+ * `fail` and these two skip pointing at it. What is left under this `catch` is
+ * a log that opened a moment ago and then would not answer — so `ok` claims
+ * *nothing landed past a point that never ran* on the strength of a question
+ * nobody got to put, which is #55 and #58's exact shape and invisible from
+ * GitHub. It also contradicted the row two above it, which had just said
+ * `opened and read`.
+ *
+ * **A fail, matching the connection it is on.** Since #214 these ask the log
+ * this machine chose (0056) — on Postgres the pooled connection, which is the
+ * one the conductor's own audit at the pass uses and the one `projections: lag`
+ * a few rows up already fails over. So a dropped pooler reds this doctor
+ * whatever this row does (#157); what it must not do is go green while doing
+ * it.
+ */
+function auditDidNotRun(name: string, err: unknown): CheckResult {
+  return {
+    name,
+    status: "fail",
+    detail:
+      `the log would not answer — ${(err as Error).message}. The comparison did not run, so no ` +
+      "row here says whether something landed past a point that was planned and never ran, which " +
+      "nothing on GitHub would show either. Ask again: a dropped connection cures itself, and " +
+      `anything else ${LOG_REACHABLE} above will have named.`,
+  };
+}
+
+/**
  * Items that landed with an `end` point that was configured and did not run.
  *
  * The comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
@@ -1227,8 +1292,12 @@ async function readableTypes(url: string): Promise<CheckResult> {
  */
 async function endPointRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: end ran on what landed";
-  const found = await endedWithoutEndActions(queries).catch(() => null);
-  if (found === null) return { name, status: "ok", detail: "no log to read yet" };
+  let found: Awaited<ReturnType<typeof endedWithoutEndActions>>;
+  try {
+    found = await endedWithoutEndActions(queries);
+  } catch (err) {
+    return auditDidNotRun(name, err);
+  }
 
   if (found.length === 0) {
     return { name, status: "ok", detail: "every landed item with end actions resolved them" };
@@ -1267,8 +1336,12 @@ async function endPointRan(queries: LogQueries): Promise<CheckResult> {
  */
 async function gatePointsRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: every point that was planned ran";
-  const found = await landedWithoutGatePoints(queries).catch(() => null);
-  if (found === null) return { name, status: "ok", detail: "no log to read yet" };
+  let found: Awaited<ReturnType<typeof landedWithoutGatePoints>>;
+  try {
+    found = await landedWithoutGatePoints(queries);
+  } catch (err) {
+    return auditDidNotRun(name, err);
+  }
 
   if (found.length === 0) {
     return { name, status: "ok", detail: "every landed item recorded the points its run planned" };
