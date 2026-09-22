@@ -134,6 +134,103 @@ restart       the whole pass again, from the base, carrying the refusal   restar
 same thing is called `the agent` in `the-pass.py`, `RunStarted` on the log and
 nothing at all in the recipe.
 
+### 3b. The pipeline, drawn
+
+The sequence above with its loops and its endings. **A proposal, drawn from the
+one in discussion on 2026-09-22 and corrected against the log in four places**,
+each marked `←`.
+
+```
+                  ┌──────────────────────────────────────────┐
+                  │                                          │
+                  ▼                                          │
+              ┌───────┐   tag filter, kinds, assignee        │
+              │ claim │   work                                │
+              └───┬───┘                                       │
+                  ▼                                           │
+              ╔═══════╗   GATE                                 │
+              ║ admit ║   is this ticket workable at all?      │
+              ╚═══┬═══╝                                        │
+                  │                                            │
+                  ├────────────────▶ ( the ticket is unclear ) │
+                  │                    lingtai ask · a person  │
+                  ▼                                            │
+             ┌──────────┐  work                                │
+             │ worktree │  cut from the mirror at the base      │
+             └────┬─────┘                                      │
+                  ▼                                            │
+             ╔══════════╗  GATE                                │
+             ║ prepared ║  install · is the base green?   ←③   │
+             ╚════┬═════╝                                      │
+                  ▼                                            │
+             ┌────────┐    work                                │
+             │ design │    a document, before any code    ←①   │
+             └───┬────┘                                        │
+                 │                                             │
+                 ├─────────────────▶ ( the design needs you )  │
+                 ▼                                             │
+            ┌───────────┐  work                                │
+    ┌──────▶│ implement │  one agent, in that worktree         │
+    │       └─────┬─────┘                                      │
+    │             ▼                                            │
+    │       ╔══════════╗  GATE                                 │
+    │       ║ proposed ║  build, then review                   │
+    │       ╚════┬═════╝                                       │
+    │            │                                             │
+    │  ←②  lines │ approach ──────────────────────────────────┘
+    └────────────┤            restarts: 1 — a fresh pass
+       rounds: 3 │
+                 ▼
+             ╔═══════╗    GATE
+             ║ merge ║    a person, where one is declared
+             ╚═══┬═══╝
+                 ▼
+          ┌────────────┐  work
+          │ merge lane │  base in · verify · out        ←④
+          └──────┬─────┘
+                 ▼
+             ╔═════╗      GATE
+             ║ end ║      close · labels
+             ╚═════╝      ▲
+                          │
+        every other ending ┘   landed · waiting on you · released
+```
+
+**① `design` is the strongest part of the proposal**, and the evidence for it is
+this repository's own week. Five tickets written after a decision was written
+down landed on their first pass — `#219`, `#220`, `#221` after
+[0055](0055-two-implementations-chosen-at-init.md), `#215` after
+[0056](0056-the-store-is-a-written-choice.md), `#196` after
+[0057](0057-a-gate-that-did-not-finish.md). `#179`, which had none, took eleven
+passes and about $250 and was finished by hand. The station makes the thing that
+worked into a step rather than a habit.
+
+**② The fix round is the arrow the drawing must not omit.** `proposed` refuses
+→ back to `implement`, up to `rounds`, in the same worktree
+([0039](0039-the-worktree-is-the-whole-of-a-pass.md)). It is **49% of every turn
+the system spends** ([012](../experiments/012-where-the-turns-go.md)), and a
+drawing that shows only the restart shows the cheaper half of the loop. Which of
+the two a refusal should buy is
+[#223](https://github.com/steven-zhc/lingtai/issues/223).
+
+**③ `prepared` testing the base is a new refusal, and it needs a meaning.** It
+runs before any change exists, so red there says *the base is broken* — which is
+a reason not to start this ticket, not a verdict about it. Worth having; worth
+saying which it is, because `#179`'s eleven passes were mostly the system
+failing to tell those two apart.
+
+**④ A conflict fixed by an agent is code no reviewer read.** Putting an agent in
+the merge lane is a real capability and a real hole: `review` has already passed
+by then. Either the lane's output re-enters `proposed`, or the lane may not
+write code. Today `git` refuses and the item goes back, which is slower and has
+no hole.
+
+**`end` is reached by every ending, not only by a merge.** Landing, waiting on
+you and being released all arrive there — that is `aa3733f`, *the point runs on
+every outcome, not just an inline merge* — which is why its actions are effects
+and it cannot refuse. A drawing that hangs `end` off `merge` alone loses the
+labels and the close on every ticket that stopped.
+
 ### 4. Init configures every station; the person overrides any of it
 
 At `lingtai init` and at `lingtai add`, the repository is read and each station
@@ -156,8 +253,11 @@ generalises.**
 
 - **The five gate points stay five, and the set stays closed** (0015).
 - **A configured point that silently does not run is Lingtai's bug**
-  ([0016 §4](0016-the-settled-model.md)). `#61` measures ten of thirty cells
-  still silent; naming work stations does not excuse them.
+  ([0016 §4](0016-the-settled-model.md)). The ten silent cells `#61` measured
+  are closed — [0059](0059-a-point-carries-only-the-kinds-it-runs.md) landed on
+  2026-09-22 and a kind a point does not run is now refused by name when the
+  recipe resolves. **Naming work stations must not reopen that**: a station's
+  configuration has to refuse what it cannot run, the same way.
 - **The recipe is the machine's** ([0046 §3](0046-lingtai-is-personal.md)) and
   stays at `~/.lingtai/<project>/recipe.yml`.
 - **What a run was given is on the log**
@@ -176,10 +276,11 @@ card, it is far cheaper to learn that before the recipe carries the word.
 have nine. Whether work stations sit beside `gates:` or inside a single
 `pipeline:` is not decided here, and should not be decided before §2 is settled.
 
-**`admit` becomes harder to leave broken.** Under 0015's framing an unused point
-is a point nobody configured. Under §3 it is a station in a fixed sequence that
-does nothing — which is `#61`'s subject, now with a reason to close it rather
-than document it.
+**`admit` is now honest and still empty.** 0059 made every kind at `admit`
+refuse by name, so nothing is silently accepted there any more. What §3 adds is
+a reason to give it something to do — in the drawing it is where *is this ticket
+workable at all* is asked, which is `lingtai ask`'s question and has no station
+today.
 
 **Every ADR that says "five points" needs re-reading**, not rewriting: most of
 them mean gate points and are correct. The ones to check are the ones that use
