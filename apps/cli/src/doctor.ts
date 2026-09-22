@@ -1402,6 +1402,19 @@ export function limitsRow(
  * can clear.
  */
 /**
+ * Where an extension runs, which is the whole of what
+ * [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) lets an
+ * extension be: **in the loop, where the loop waits for it, or off the log,
+ * where it cannot change an outcome.** Nothing else about the two differs, and
+ * every question worth asking about a broken one turns on it.
+ */
+export interface DeclaredExtension {
+  name: string;
+  env: readonly string[];
+  where: "gate" | "subscriber";
+}
+
+/**
  * Every extension a recipe declares, and the names it asked for.
  *
  * A `run:` action at any of the five points, and every subscriber — which is
@@ -1411,15 +1424,15 @@ export function limitsRow(
  * shape rather than a list of points here means a sixth point, if one is ever
  * added, is covered by arithmetic instead of by remembering.
  */
-export function declaredExtensions(recipe: Recipe): { name: string; env: readonly string[] }[] {
-  const out: { name: string; env: readonly string[] }[] = [];
+export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
+  const out: DeclaredExtension[] = [];
   for (const point of Object.values(recipe.gates)) {
     for (const action of point) {
-      if ("run" in action) out.push({ name: action.name, env: action.env });
+      if ("run" in action) out.push({ name: action.name, env: action.env, where: "gate" });
     }
   }
   for (const subscriber of recipe.subscribers) {
-    out.push({ name: subscriber.name, env: subscriber.env });
+    out.push({ name: subscriber.name, env: subscriber.env, where: "subscriber" });
   }
   return out;
 }
@@ -1434,8 +1447,30 @@ export function declaredExtensions(recipe: Recipe): { name: string; env: readonl
  * exits — during a run, where the exit code of a subscriber is discarded and
  * nobody is told. Asking before a run is the only cheap time to ask.
  *
- * **Names only, never values**, exactly as the agent's row is. And a `fail`
- * rather than a `warn`, because it names the command that clears it.
+ * **Names only, never values**, exactly as the agent's row is.
+ *
+ * **How red depends on where the extension runs, because that is what a missing
+ * name costs.** A `run:` action at a gate point is in the loop and the loop
+ * waits for its verdict, so a name it will not find refuses every pass — after
+ * a worktree and an install, which is money. That is a `fail`. A subscriber
+ * runs off the log and cannot change an outcome (0015), so what a missing name
+ * costs is the notification and nothing else; every event it is owed appends
+ * `PluginFailed` saying so, which `subscribers: failures` reads back. That is a
+ * `warn`.
+ *
+ * It was a `fail` for both, and that was wrong in the way a check is wrong when
+ * nobody can clear it: this machine declares `telegram` and holds neither of
+ * its names, so `lingtai doctor` has been red for weeks over a notification
+ * nobody asked for yet — and `lingtai restart` is gated on doctor
+ * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)), so
+ * `--despite-doctor` became the ordinary way to restart. **A red that is always
+ * on is not a check, it is a habit.** `subscribers: failures` had already
+ * reached this conclusion about the same subscriber — *a check that is always
+ * red is a check nobody reads* — one row away, for the same fact.
+ *
+ * What stays a `fail` for either is a declared name whose *value* looks like
+ * production (`#51`): that is a credential about to be handed out, not a
+ * feature that will not run.
  */
 export function extensionRow(
   project: string,
@@ -1469,26 +1504,34 @@ export function extensionRow(
   }
 
   const layerOf = new Map(agentEnv.names.map((n) => [n.name, n.layer]));
-  const missing: string[] = [];
+  const missing: Record<DeclaredExtension["where"], string[]> = { gate: [], subscriber: [] };
   const detail = asking
     .map((extension) => {
       const names = extension.env.map((variable) => {
         const layer = layerOf.get(variable) ?? "not set";
-        if (!(variable in agentEnv.merged)) missing.push(variable);
+        if (!(variable in agentEnv.merged)) missing[extension.where].push(variable);
         return `${variable} ← ${layer === "project file" ? basename(agentEnv.file) : layer}`;
       });
       return `${extension.name}: ${names.join(", ")}`;
     })
     .join(" · ");
 
-  if (missing.length === 0) return { name, status: "ok", detail };
+  const absent = [...new Set([...missing.gate, ...missing.subscriber])];
+  if (absent.length === 0) return { name, status: "ok", detail };
+
+  // A gate action decides the pass, so one missing name is red however many
+  // subscribers are also short: the worst outcome sets the row.
+  const inTheLoop = missing.gate.length > 0;
   return {
     name,
-    status: "fail",
+    status: inTheLoop ? "fail" : "warn",
     detail:
-      `${detail}\n  ${[...new Set(missing)].join(", ")} declared by an extension and not set in either file. ` +
-      `An extension gets only what it declares (0037 §1), so it would run without them: ` +
-      `lingtai env set ${project} ${missing[0]} — it reads the value from stdin, unechoed.`,
+      `${detail}\n  ${absent.join(", ")} declared by an extension and not set in either file. ` +
+      `An extension gets only what it declares (0037 §1), so it would run without them — ` +
+      (inTheLoop
+        ? `and a gate action's verdict is what the loop waits for, so every pass is refused after a worktree and an install: `
+        : `a subscriber runs off the log and changes no outcome (0015), so what is lost is the notification, once per event, as a PluginFailed: `) +
+      `lingtai env set ${project} ${absent[0]} — it reads the value from stdin, unechoed.`,
   };
 }
 

@@ -322,9 +322,9 @@ subscribers:
   /** A `run:` at any point and every subscriber — the whole extension mechanism. */
   it("finds every extension, at a gate point or subscribed", async () => {
     expect(declaredExtensions(await recipeOf())).toEqual([
-      { name: "install", env: [] },
-      { name: "scan", env: ["SCANNER_TOKEN"] },
-      { name: "telegram", env: ["TELEGRAM_BOT_TOKEN"] },
+      { name: "install", env: [], where: "gate" },
+      { name: "scan", env: ["SCANNER_TOKEN"], where: "gate" },
+      { name: "telegram", env: ["TELEGRAM_BOT_TOKEN"], where: "subscriber" },
     ]);
   });
 
@@ -349,17 +349,48 @@ subscribers:
 
   /**
    * The failure this exists for. An extension gets *only* what it declares, so a
-   * name this machine does not hold is a bot that starts, finds nothing and
-   * exits — and a subscriber's exit code is discarded, so nobody is told.
+   * name this machine does not hold is a process that starts, finds nothing and
+   * exits — before a run, which is the only cheap time to ask.
+   *
+   * **A gate action is `fail` and a subscriber is `warn`**, and the two cases
+   * are asserted together because the pair *is* the rule: 0015's one difference
+   * between an extension in the loop and an extension off the log is the only
+   * thing that decides how red this row goes. Both name the command.
    */
-  it("is red before a run when a declared name is not set, and names it", async () => {
-    const row = extensionRow("demo", await recipeOf(), agentEnv({ SCANNER_TOKEN: "s" }));
+  it("is red when a gate action's declared name is not set — the loop waits for its verdict", async () => {
+    const row = extensionRow("demo", await recipeOf(), agentEnv({ TELEGRAM_BOT_TOKEN: "t" }));
 
     expect(row.status).toBe("fail");
+    expect(row.detail).toContain("SCANNER_TOKEN");
+    expect(row.detail).toContain("not set");
+    expect(row.detail).toContain("every pass is refused");
+    expect(row.detail).toContain("lingtai env set demo SCANNER_TOKEN");
+  });
+
+  /**
+   * `lingtai doctor` on this machine, before this: red for weeks over a
+   * Telegram bot nobody had configured yet, while `lingtai restart` is gated on
+   * doctor (0042) — so `--despite-doctor` became the ordinary way to restart,
+   * which is a check turning into a habit. A subscriber cannot change an
+   * outcome, so what a missing name costs is the notification.
+   */
+  it("is a note, not a failure, when only a subscriber's declared name is not set", async () => {
+    const row = extensionRow("demo", await recipeOf(), agentEnv({ SCANNER_TOKEN: "s" }));
+
+    expect(row.status).toBe("warn");
     expect(row.detail).toContain("TELEGRAM_BOT_TOKEN");
     expect(row.detail).toContain("not set");
-    // A red that names the command that clears it.
+    expect(row.detail).toContain("changes no outcome");
+    // A note that names the command that clears it, exactly as the red does.
     expect(row.detail).toContain("lingtai env set demo TELEGRAM_BOT_TOKEN");
+  });
+
+  /** Both short: the gate action decides the row, because it decides the pass. */
+  it("is red when a gate action and a subscriber are both short", async () => {
+    const row = extensionRow("demo", await recipeOf(), agentEnv({}));
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("SCANNER_TOKEN, TELEGRAM_BOT_TOKEN");
   });
 
   /**
@@ -367,7 +398,7 @@ subscribers:
    * names from the merged files, so a denied production value it declares is
    * only caught here — before a run, not at `gates.prepared` after the claim.
    */
-  it("is red before a run when an extension declares a denied production value", async () => {
+  it("is red before a run when an extension declares a denied production value, wherever it runs", async () => {
     const recipe = await resolveRecipe(
       async () =>
         RECIPE.replace("  required: []", "  required: []\n  deny: [SCANNER_TOKEN]\n  refuseHosts: [eliwlauokdzgsqfgczkv]"),
