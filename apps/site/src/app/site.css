@@ -352,6 +352,59 @@ p { max-width: var(--measure); }
 }
 .source a { color: var(--muted); }
 
+/* The tutorial is a path, not a reference page. Its source is still the same
+   Markdown file the repository reads; this only makes the steps scan like the
+   sequence they describe. */
+.tutorial-page .doc-layout {
+  grid-template-columns: minmax(0, 46rem) 16rem;
+  gap: clamp(42px, 7vw, 90px);
+}
+.tutorial-prose { max-width: 46rem; font-size: 16px; line-height: 1.72; }
+.tutorial-prose h1 {
+  max-width: 14ch; margin-bottom: 20px;
+  font-size: clamp(36px, 5vw, 52px); line-height: 1.05;
+}
+.tutorial-prose > h1 + p {
+  max-width: 53ch; margin-bottom: 12px;
+  color: var(--ink-2); font-size: 18px; line-height: 1.6;
+}
+.tutorial-prose blockquote {
+  margin: 24px 0 34px; padding: 14px 16px;
+  border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+  border-radius: 4px; background: var(--surface);
+}
+.tutorial-prose blockquote p { margin: 0; color: var(--ink-2); }
+.tutorial-prose h2 {
+  margin: 54px 0 18px; padding: 15px 0 0;
+  border-top: 2px solid var(--rule-2);
+  font-size: 25px; line-height: 1.15;
+}
+.tutorial-prose h2[id^="step-"] { border-top-color: var(--accent); }
+.tutorial-prose h3 { margin-top: 32px; font-size: 18px; }
+.tutorial-prose pre {
+  margin: 18px 0; border-left: 3px solid var(--accent);
+  box-shadow: 0 3px 10px rgba(15, 24, 28, .035);
+}
+.tutorial-prose ul, .tutorial-prose ol { padding-left: 24px; }
+.tutorial-prose li { margin: 8px 0; padding-left: 3px; }
+.tutorial-prose hr { margin: 42px 0; }
+.tutorial-page .contents { padding-left: 18px; }
+.tutorial-page .contents li:not(.sub) a {
+  display: grid; grid-template-columns: 7px 1fr; gap: 9px; align-items: baseline;
+}
+.tutorial-page .contents li:not(.sub) a::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--rule-2);
+}
+.tutorial-page .contents li:not(.sub) a:hover::before { background: var(--accent); }
+
+@media (max-width: 1080px) {
+  .tutorial-page .doc-layout { grid-template-columns: minmax(0, 1fr); }
+  /* On a narrow screen the tutorial is read in order. Repeating its full path
+     before step one is navigation furniture, not help. */
+  .tutorial-page .contents { display: none; }
+}
+
 footer.foot {
   border-top: 1px solid var(--rule); background: var(--surface);
   padding: 28px 0 40px; font-size: 13px; color: var(--muted);

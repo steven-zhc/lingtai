@@ -50,7 +50,7 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
           <>
             {" "}{snapshot.withheld} private-repository{" "}
             {snapshot.withheld === 1 ? "card has" : "cards have"} identifying details withheld;
-            its lane and totals still count.
+            {snapshot.withheld === 1 ? " its" : " their"} lane and totals still count.
           </>
         )}
       </p>

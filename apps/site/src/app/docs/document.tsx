@@ -86,7 +86,7 @@ export function Document({
   };
 
   return (
-    <div className="prose">
+    <div className={slug === "tutorial" ? "prose tutorial-prose" : "prose"}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components}>
         {body}
       </ReactMarkdown>

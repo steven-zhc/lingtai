@@ -54,7 +54,7 @@ export function Foot() {
         <p>
           <b>Lingtai runs on one machine of yours.</b> It owns a Postgres database, a clone of each
           repository it manages, and the agent processes it starts. There is no hosted service and
-          nothing to sign up for — <code>git clone</code>, and read{" "}
+          nothing to sign up for — install the CLI, run <code>lingtai init</code>, and follow{" "}
           <Link className="link" href="/docs/tutorial/">
             the tutorial
           </Link>

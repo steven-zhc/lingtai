@@ -62,7 +62,7 @@ Leave this terminal open while you onboard the repository. It is serving the
 board at [http://127.0.0.1:17820](http://127.0.0.1:17820). Later,
 `lingtai board start` starts the same board again.
 
-Before moving on:
+In a second terminal, before moving on:
 
 ```bash
 lingtai doctor
@@ -124,7 +124,8 @@ output tells you why. The common reasons are:
 - `excluded-label` — it carries a label the recipe holds back;
 - `blocked-by` — GitHub says an open issue blocks it.
 
-When the queue looks right:
+When the queue looks right, keep the board terminal open and start Lingtai in
+the second terminal:
 
 ```bash
 lingtai start

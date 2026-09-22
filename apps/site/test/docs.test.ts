@@ -64,6 +64,23 @@ describe("what the site publishes", () => {
   });
 });
 
+describe("the tutorial stays a first-run path", () => {
+  it("keeps the beginner path short and in order", async () => {
+    const body = await readFile(path.join(docRoot, "tutorial.md"), "utf8");
+    const words = body.trim().split(/\s+/).length;
+    expect(words, "the tutorial has become a reference manual again").toBeLessThan(1400);
+    expect(headingsOf(body).filter((h) => h.depth === 2).map((h) => h.text)).toEqual([
+      "Before you start",
+      "Step 1 — Set up this machine",
+      "Step 2 — Add one repository",
+      "Step 3 — Check the queue, then start",
+      "Step 4 — Label one issue",
+      "Step 5 — Read the result",
+      "Next: make it yours",
+    ]);
+  });
+});
+
 describe("what a document says it is", () => {
   it("takes the title from the file's own heading", () => {
     expect(titleOf("# The seams\n\nbody", "fallback")).toBe("The seams");
