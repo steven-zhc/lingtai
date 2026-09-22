@@ -211,11 +211,11 @@ flowchart TB
   RV --> PO
   PO -->|"pass"| MG
   MG --> EN
-  MG -->|"conflict"| PO
+  MG -->|"conflict, or the base broke it"| PO
 
-  PO -->|"the lines are wrong<br/>× rounds — the same worktree"| IM
+  PO -->|"the lines are wrong<br/>× rounds — the same worktree<br/>carrying what refused it"| IM
   PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
-  PO -->|"every ceiling spent"| WA
+  PO -->|"every ceiling spent<br/>carrying what refused it"| WA
   AD -->|"the requirement is not clear"| WA
   DS -->|"the design needs you"| WA
   WA -->|"after you clarify"| CL
@@ -239,6 +239,42 @@ through has a recorded decision saying it did.
 **Nothing refuses into `waiting` directly.** A conflict and a red build are
 judgements about the change and go where judgements go; only the step that
 counts the ceilings may decide that a person is next.
+
+### 3c. A refusal carries its reason, and the reason survives the routing
+
+`merge` refuses, `proposed` decides, `waiting` shows a person — and **what
+failed has to arrive intact at the end of that**. A route that forgets is a
+person reading *waiting on you* with no way to learn why without opening a run
+log.
+
+The log already carries both halves, which is the shape to keep:
+
+```
+IntegrationRefused { branch, workItemId,
+                     reason: "gate-failed" | "conflict",     ← machine-readable
+                     detail: "build: pnpm typecheck && pnpm test exited 1 …" }  ← the words
+```
+
+**Machine-readable, because `proposed` routes on it.** Human-readable, because
+`waiting` displays it. [0043](0043-evidence-is-plain-text.md) already says
+evidence is plain text and not a structure to be parsed; the classification
+beside it is what lets a step decide without reading English, which is
+[0031 §1](0031-a-run-that-never-started.md)'s rule.
+
+**And the distribution says the drawing's label is the minority case.** Over
+the whole log, `merge` has refused 32 times:
+
+```
+26  gate-failed   the base came in and the change no longer holds
+ 6  conflict      git could not merge it
+```
+
+So *"the agent could not resolve the conflict"* is 6 of 32. The common merge
+failure is that **somebody else's work landed and this diff stopped being
+true** — which `proposed` should route as *the lines are wrong*, back to
+`implement` against the new base, not to a person. A step that sent every merge
+failure to `waiting` would interrupt somebody 32 times where 6 was the real
+number.
 
 ### 4. Init configures every step; the person overrides any of it
 
