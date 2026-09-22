@@ -138,65 +138,60 @@ nothing at all in the recipe.
 
 The sequence above with its loops and its endings. **A proposal, drawn from the
 one in discussion on 2026-09-22 and corrected against the log in four places**,
-each marked `←`.
+listed under the figure.
 
-```
-                  ┌──────────────────────────────────────────┐
-                  │                                          │
-                  ▼                                          │
-              ┌───────┐   tag filter, kinds, assignee        │
-              │ claim │   work                                │
-              └───┬───┘                                       │
-                  ▼                                           │
-              ╔═══════╗   GATE                                 │
-              ║ admit ║   is this ticket workable at all?      │
-              ╚═══┬═══╝                                        │
-                  │                                            │
-                  ├────────────────▶ ( the ticket is unclear ) │
-                  │                    lingtai ask · a person  │
-                  ▼                                            │
-             ┌──────────┐  work                                │
-             │ worktree │  cut from the mirror at the base      │
-             └────┬─────┘                                      │
-                  ▼                                            │
-             ╔══════════╗  GATE                                │
-             ║ prepared ║  install · is the base green?   ←③   │
-             ╚════┬═════╝                                      │
-                  ▼                                            │
-             ┌────────┐    work                                │
-             │ design │    a document, before any code    ←①   │
-             └───┬────┘                                        │
-                 │                                             │
-                 ├─────────────────▶ ( the design needs you )  │
-                 ▼                                             │
-            ┌───────────┐  work                                │
-    ┌──────▶│ implement │  one agent, in that worktree         │
-    │       └─────┬─────┘                                      │
-    │             ▼                                            │
-    │       ╔══════════╗  GATE                                 │
-    │       ║ proposed ║  build, then review                   │
-    │       ╚════┬═════╝                                       │
-    │            │                                             │
-    │  ←②  lines │ approach ──────────────────────────────────┘
-    └────────────┤            restarts: 1 — a fresh pass
-       rounds: 3 │
-                 ▼
-             ╔═══════╗    GATE
-             ║ merge ║    a person, where one is declared
-             ╚═══┬═══╝
-                 ▼
-          ┌────────────┐  work
-          │ merge lane │  base in · verify · out        ←④
-          └──────┬─────┘
-                 ▼
-             ╔═════╗      GATE
-             ║ end ║      close · labels
-             ╚═════╝      ▲
-                          │
-        every other ending ┘   landed · waiting on you · released
+```mermaid
+flowchart TB
+  CL["<b>claim</b><br/>tag filter · kinds · assignee"]
+  AD{{admit}}
+  WT["<b>worktree</b><br/>cut from the mirror at the base"]
+  PR{{prepared}}
+  DS["<b>design</b><br/>a document, before any code"]
+  IM["<b>implement</b><br/>one agent, in that worktree"]
+  PO{{proposed}}
+  MG{{merge}}
+  ML["<b>merge lane</b><br/>base in · verify · out"]
+  EN{{end}}
+  ASK(["it needs you<br/>lingtai ask · a person"])
+  YOU(["waiting on you"])
+
+  CL --> AD
+  AD --> WT
+  AD -->|"nothing to work from"| ASK
+  WT --> PR
+  PR --> DS
+  DS --> IM
+  DS -->|"the design needs you"| ASK
+  IM --> PO
+  PO --> MG
+  MG --> ML
+  ML --> EN
+
+  PO -->|"the lines are wrong<br/>× rounds — the same worktree"| IM
+  PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
+  PO -->|"every ceiling spent"| YOU
+  MG -->|"a person is declared here"| YOU
+  ML -->|"conflict"| IM
+
+  YOU --> EN
+  ASK --> EN
+
+  classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
+  classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
+  classDef back fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
+  class AD,PR,PO,MG,EN gate;
+  class CL,WT,DS,IM,ML core;
+  class ASK,YOU back;
 ```
 
-**① `design` is the strongest part of the proposal**, and the evidence for it is
+**The hexagons judge and the rectangles work** — §2's division, drawn. The
+stadiums are the two ways a pass ends without landing, and **both still reach
+`end`**.
+
+Four corrections against the diagram this was drawn from, each of them a thing
+the log says and the drawing did not:
+
+**1. `design` is the strongest part of the proposal**, and the evidence for it is
 this repository's own week. Five tickets written after a decision was written
 down landed on their first pass — `#219`, `#220`, `#221` after
 [0055](0055-two-implementations-chosen-at-init.md), `#215` after
@@ -205,7 +200,7 @@ down landed on their first pass — `#219`, `#220`, `#221` after
 passes and about $250 and was finished by hand. The station makes the thing that
 worked into a step rather than a habit.
 
-**② The fix round is the arrow the drawing must not omit.** `proposed` refuses
+**2. The fix round is the arrow the drawing must not omit.** `proposed` refuses
 → back to `implement`, up to `rounds`, in the same worktree
 ([0039](0039-the-worktree-is-the-whole-of-a-pass.md)). It is **49% of every turn
 the system spends** ([012](../experiments/012-where-the-turns-go.md)), and a
@@ -213,13 +208,13 @@ drawing that shows only the restart shows the cheaper half of the loop. Which of
 the two a refusal should buy is
 [#223](https://github.com/steven-zhc/lingtai/issues/223).
 
-**③ `prepared` testing the base is a new refusal, and it needs a meaning.** It
+**3. `prepared` testing the base is a new refusal, and it needs a meaning.** It
 runs before any change exists, so red there says *the base is broken* — which is
 a reason not to start this ticket, not a verdict about it. Worth having; worth
 saying which it is, because `#179`'s eleven passes were mostly the system
 failing to tell those two apart.
 
-**④ A conflict fixed by an agent is code no reviewer read.** Putting an agent in
+**4. A conflict fixed by an agent is code no reviewer read.** Putting an agent in
 the merge lane is a real capability and a real hole: `review` has already passed
 by then. Either the lane's output re-enters `proposed`, or the lane may not
 write code. Today `git` refuses and the item goes back, which is slower and has
