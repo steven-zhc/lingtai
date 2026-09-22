@@ -141,6 +141,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0057](decisions/0057-a-gate-that-did-not-finish.md) | **A gate's agent that started and did not finish gets one retry, then a person** | accepted; extends 0041 with the neighbouring case; governed by 0031 §1 |
 | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) | **Lingtai is a development pipeline, and a pass is ten steps** | **proposed** — one step, plugins decide what it does, the pipeline fixes which may refuse; revises 0015's five attachment points and 0047's `GatesResolved`; generalises 0053 |
 | [0059](decisions/0059-a-point-carries-only-the-kinds-it-runs.md) | **A point carries only the kinds it runs, and the recipe refuses the rest** | accepted; completes 0016 §4 for the ten point × kind cells that were configurable and executed by nothing (#61) |
+| [0060](decisions/0060-the-gate-runs-unit-tests.md) | **The gate runs unit tests, and integration runs after the merge** | accepted; the line is whether a test can fail on something it did not create, not whether it needs Postgres; first instance of 0058 §2b choosing a step's contents on evidence |
 
 ## Experiments
 
