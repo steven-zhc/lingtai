@@ -54,11 +54,11 @@ import {
   type ProjectState,
   type WorkItemStatus,
 } from "@lingtai/domain";
-import { githubApp, hasGitHubApp, postgresUrl } from "@lingtai/env";
+import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { type EventStore, eventStore } from "@lingtai/event-store";
-import { createPostgresDaemonStore } from "./postgres.ts";
+import { withDaemonStore } from "./choose.ts";
 import type { DaemonStore } from "./store.ts";
 
 /**
@@ -123,7 +123,8 @@ export interface ConvergeOptions {
   store?: EventStore;
   url?: string;
   /**
-   * Where the candidate streams are looked up. Defaults to Postgres at `url`.
+   * Where the candidate streams are looked up. Defaults to the store this
+   * machine wrote down, at `url` where Postgres is what it wrote (#179).
    *
    * As `reconcile`'s: `store` is the log this reads and appends through, and
    * this answers the one question about the log that `EventStore` does not —
@@ -184,14 +185,20 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
  */
 export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Divergence[]> {
   const store = logOf(options);
-  const streams =
-    options.daemonStore ?? createPostgresDaemonStore({ url: options.url ?? postgresUrl() });
+  // One read through a store opened for it and closed after it — the whole use
+  // this makes of a `DaemonStore`. An injected one is the caller's and stays
+  // open (`choose.ts`).
+  const streams = await withDaemonStore(
+    options.daemonStore,
+    options.url === undefined ? {} : { url: options.url },
+    candidates,
+  );
   const projects = options.projects ?? (await loadProjects());
   const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]));
 
   const found: Divergence[] = [];
 
-  for (const workItemId of await candidates(streams)) {
+  for (const workItemId of streams) {
     const parsed = parseWorkItemStream(workItemId);
     if (!parsed) continue;
     const issue = Number(parsed.issue);

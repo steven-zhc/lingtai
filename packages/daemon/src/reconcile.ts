@@ -74,26 +74,27 @@ import { promisify } from "node:util";
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/domain";
 import { paint } from "@lingtai/env/colour";
-import { postgresUrl } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { projectionLag } from "@lingtai/projector";
 import { type ConvergeOptions, convergeIssues } from "./converge.ts";
 import { CONTROL_STREAM } from "./control.ts";
 import { DAEMON_LOCK_KEY } from "./lock.ts";
-import { createPostgresDaemonStore } from "./postgres.ts";
+import { withDaemonStore } from "./choose.ts";
 import type { DaemonStore } from "./store.ts";
 
 const execFile = promisify(execFileCb);
 
 /**
- * The store a pass reads the log's streams through.
+ * The store a pass reads the log's streams through, opened for the read and
+ * closed after it.
  *
- * Postgres at the pooled URL when nobody says otherwise, which is the
- * connection this file used before it had an interface — the choice itself is
- * #179's.
+ * Whichever one this machine wrote down (#179, `choose.ts`), at `url` when the
+ * caller named one — which is the connection this file used before it had an
+ * interface. A store the caller injected is used as it is and left open, for
+ * the reason a pool passed in is the caller's to end.
  */
-function daemonStore(options: ReconcileOptions): DaemonStore {
-  return options.daemonStore ?? createPostgresDaemonStore({ url: options.url ?? postgresUrl() });
+function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Promise<T> {
+  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn);
 }
 
 /**
@@ -163,7 +164,8 @@ export interface ReconcileOptions {
   log?: (line: string) => void;
   url?: string;
   /**
-   * Where the claimed work items are looked up. Defaults to Postgres at `url`.
+   * Where the claimed work items are looked up. Defaults to the store this
+   * machine wrote down, at `url` where Postgres is what it wrote (#179).
    *
    * Beside `store` rather than instead of it: `store` is the log this pass
    * reads and appends through, and this is the one question about the log that
@@ -404,7 +406,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
 export async function findLaggingProjections(options: ReconcileOptions = {}): Promise<Finding[]> {
   const known = new Set(options.projections ?? []);
   if (known.size === 0) return [];
-  const lags = await projectionLag(options.url ?? postgresUrl()).catch(() => null);
+  const lags = await projectionLag(options.url).catch(() => null);
   // No checkpoints table yet is a system that has never run, not a divergence.
   if (lags === null) return [];
   return lags
@@ -456,10 +458,13 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
   if (names.length === 0) return [];
 
-  const streams = await daemonStore(options)
-    .streams({ prefixes: names.map((n) => `wi-${n}-%`), types: ["WorkItemClaimed"] })
-    // No log to read is not a divergence.
-    .catch(() => []);
+  const streams = await withStreams(options, (it) =>
+    it.streams({ prefixes: names.map((n) => `wi-${n}-%`), types: ["WorkItemClaimed"] }),
+  )
+    // No log to read is not a divergence — and on a machine that has written no
+    // choice, `chosenStore()`'s refusal lands here too, which is the same
+    // answer: nothing to compare against.
+    .catch(() => [] as string[]);
 
   const findings: Finding[] = [];
   for (const workItemId of streams) {
@@ -611,10 +616,10 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
       ...(options.url === undefined ? {} : { url: options.url }),
       ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
       // Handed on for the same reason `store` is: without it the converge half
-      // builds a Postgres store of its own, so a pass given a working store
-      // would still refuse at `postgresUrl()` on a machine that has configured
-      // none — and where it did connect, it would be asking a second log which
-      // streams the first one's findings are about.
+      // opens a store of its own, so a pass given a working store would still
+      // be refused on a machine that has written no choice — and where it did
+      // open one, it would be asking a second log which streams the first
+      // one's findings are about.
       ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
       log,
     });

@@ -13,7 +13,9 @@
  */
 import { directPostgresUrl } from "@lingtai/env";
 import { parsePayload } from "@lingtai/domain";
-import { createDb, createEventStore, createPostgresLogQueries, type Db, type EventStore } from "@lingtai/event-store";
+import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+// Postgres by name, from its own module (#179).
+import { createPostgresLogQueries } from "@lingtai/event-store/queries";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { landedWithoutGatePoints } from "../src/gate-audit.ts";

@@ -46,9 +46,11 @@ export function live(): Live {
     holder: async () => {
       // `@lingtai/daemon/lock` and not `@lingtai/daemon`: the lock is a file
       // under `~/.lingtai/locks/` (#193, 0052) and reads with nothing
-      // configured, while the package's index reaches `@lingtai/event-store`,
-      // whose process-wide client calls `postgresUrl()` at import — which is
-      // the only reason a machine with no log could not ask who conducts.
+      // configured. The package's index used to reach `@lingtai/event-store`,
+      // whose process-wide client called `postgresUrl()` at import — the only
+      // reason a machine with no log could not ask who conducts, and closed by
+      // #179. The subpath stays: this asks about a file and should load a
+      // file's worth of code.
       const lock = await import("@lingtai/daemon/lock");
       return lock.conductorLockHolder();
     },

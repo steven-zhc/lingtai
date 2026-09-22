@@ -169,4 +169,226 @@ describe("a value the env files supplied", () => {
       where: "environment",
     });
   });
+
+  /**
+   * **And the test side is the other way round, because it is not a machine's.**
+   *
+   * 0056 §4 keeps `.env.local` out of *this machine's* selection — a fact four
+   * processes have to agree about cannot come from a file whose visibility
+   * depends on the directory a process started in. `LINGTAI_TEST_DATABASE_URL`
+   * is not that fact: §4 names it as a value the file goes on supplying, and
+   * `.env.example` is where a checkout is told to put it. Reading the snapshot
+   * for it would refuse `pnpm test:db` on every machine that followed those
+   * instructions, while `postgresUrl()` beside it answered — the two stores
+   * disagreeing about one process, which is the failure this whole ADR is
+   * about, in miniature.
+   *
+   * What 0046 forbids is a *fallback to the operator's log*, and there is
+   * none: with no test URL anywhere, a test run is still refused by name.
+   */
+  it("does decide a test's store, which is the one name that file is told to hold", () => {
+    const read = probe(
+      `process.env.LINGTAI_TEST_DATABASE_URL = ${JSON.stringify(URL_)};\n${say}`,
+      { LINGTAI_TEST: "1", LINGTAI_TEST_DATABASE_URL: "" },
+    );
+    expect(read).toMatchObject({ store: "postgres", url: URL_, where: "environment" });
+    // Said as it is, rather than claiming the stronger of the two.
+    expect(describeStore(read)).toContain("in this process's environment");
+    expect(describeStore(read)).not.toContain("exported into this process");
+  });
+
+  it("and with none anywhere, a test run is still refused rather than fallen back", () => {
+    expect(probe(say, { LINGTAI_TEST: "1", LINGTAI_TEST_DATABASE_URL: "" })).toMatchObject({
+      because: "nothing chosen",
+    });
+  });
+});
+
+/**
+ * **A Postgres choice carries both its connections**, and the second one is
+ * the reason this is part of the choice rather than a lookup beside it.
+ *
+ * `LISTEN`/`NOTIFY` needs a session-mode connection (0009), and the obvious
+ * way to get one — `directPostgresUrl()`, asked when a waker is built — reads
+ * this process's *merged* environment. That is a different question from
+ * *which store does this machine run*, and on this very repository the two
+ * answer differently: `~/.lingtai/config.yml` names one database and the
+ * checkout's `.env.local` names another. A log opened that way appends to the
+ * first and registers its `LISTEN` on the second, so every subscriber drains
+ * once on connect and is never nudged again while the board goes on rendering
+ * that one drain — silent, and the split-log failure 0056 exists to remove.
+ */
+describe("the session-mode connection that goes with a choice", () => {
+  it("is the chosen URL itself, where nothing else was exported", async () => {
+    const dir = await home(`database:\n  store: postgres\n  url: ${URL_}\n`);
+    expect(storeChoice({ LINGTAI_HOME: dir })).toMatchObject({ url: URL_, directUrl: URL_ });
+  });
+
+  it("is the exported session-mode name where there is one, which is 0009's case", async () => {
+    const dir = await home(`database:\n  store: postgres\n  url: ${URL_}\n`);
+    const direct = "postgresql://me:secret@db.example:5433/lingtai";
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: direct })).toMatchObject({
+      url: URL_,
+      directUrl: direct,
+    });
+  });
+
+  /**
+   * The scenario itself, in a child process for the reason the block above is:
+   * a value an env file supplied is in `process.env` by the time anything
+   * asks, and only a real process can put it there in that position.
+   *
+   * `directPostgresUrl()` goes on answering the other question — it is what
+   * `lingtai doctor` reports and what a caller asking *this process's merged
+   * environment* wants — and the assertion is that the two differ here and
+   * that the choice is not the one that moved.
+   */
+  it("is not the merged environment's, which is how the store and the waker came apart", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-store-probe-"));
+    writeFileSync(join(dir, "config.yml"), `database:\n  store: postgres\n  url: ${URL_}\n`);
+    const index = pathToFileURL(join(repoRoot(), "packages", "env", "src", "index.ts")).href;
+    const file = join(dir, "probe.mjs");
+    const supplied = "postgresql://me:secret@db.elsewhere:5432/other";
+    writeFileSync(
+      file,
+      `import { storeChoice, directPostgresUrl } from ${JSON.stringify(index)};\n` +
+        // Where dotenv puts one: after the import, into the merged environment.
+        // The direct name is emptied in the same position, so that a checkout
+        // which happens to carry one cannot answer for this case.
+        `process.env.LINGTAI_DIRECT_DATABASE_URL = "";\n` +
+        `process.env.LINGTAI_DATABASE_URL = ${JSON.stringify(supplied)};\n` +
+        `console.log(JSON.stringify({ choice: storeChoice(), merged: directPostgresUrl() }));\n`,
+    );
+    const ran = spawnSync(process.execPath, [file], {
+      encoding: "utf8",
+      env: { PATH: process.env["PATH"] ?? "", HOME: dir, LINGTAI_HOME: dir },
+    });
+    expect(ran.stderr, ran.stderr).toBe("");
+    const read = JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as {
+      choice: { url: string; directUrl: string };
+      merged: string;
+    };
+
+    // The file supplied a URL, and it is what the merged-environment reader says.
+    expect(read.merged).toBe(supplied);
+    // And it decided neither half of the choice.
+    expect(read.choice).toMatchObject({ url: URL_, directUrl: URL_ });
+  });
+
+  /**
+   * **And the direct name an env file supplied *is* the waker's**, which is the
+   * other half and the one a checkout actually has.
+   *
+   * 0056 §4 is about *which store this machine runs* — a fact four processes
+   * must agree about, so it may not come from a file whose visibility depends
+   * on where a process started. The session-mode URL is not that fact: the
+   * store is already chosen, and this only says how to reach **the same
+   * database** in a mode that can hold a `LISTEN` (0009). On Supabase the two
+   * strings genuinely differ, and `.env.example` is what tells an operator to
+   * put `LINGTAI_DIRECT_DATABASE_URL` in `.env.local`.
+   *
+   * Read from the snapshot instead, this machine's waker silently lost it:
+   * `init` writes whatever connects, the dashboard offers the transaction
+   * pooler first (#157), and through a pooler the `LISTEN` registration is
+   * handed away between statements. No notification ever arrives, every
+   * subscriber drains once at connect, `task_view` stops folding, the board
+   * renders stale cards, and nothing errors.
+   */
+  it("is the direct name the env files supplied, which is where a checkout keeps it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-store-probe-"));
+    // 0009's pair, as 0009 writes it: "the same host and credentials on port
+    // 5432 with the `pgbouncer` flag dropped". One database, two ports — which
+    // is also the only shape `lingtai doctor`'s environment row passes.
+    const pooled = "postgresql://me:secret@db.abcdef.supabase.co:6543/postgres?pgbouncer=true";
+    writeFileSync(join(dir, "config.yml"), `database:\n  store: postgres\n  url: ${pooled}\n`);
+    const index = pathToFileURL(join(repoRoot(), "packages", "env", "src", "index.ts")).href;
+    const file = join(dir, "probe.mjs");
+    const direct = "postgresql://me:secret@db.abcdef.supabase.co:5432/postgres";
+    writeFileSync(
+      file,
+      `import { storeChoice, directPostgresUrl } from ${JSON.stringify(index)};\n` +
+        // Where dotenv puts one: after the import, into the merged environment.
+        `process.env.LINGTAI_DIRECT_DATABASE_URL = ${JSON.stringify(direct)};\n` +
+        `console.log(JSON.stringify({ choice: storeChoice(), merged: directPostgresUrl() }));\n`,
+    );
+    const ran = spawnSync(process.execPath, [file], {
+      encoding: "utf8",
+      env: { PATH: process.env["PATH"] ?? "", HOME: dir, LINGTAI_HOME: dir },
+    });
+    expect(ran.stderr, ran.stderr).toBe("");
+    const read = JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as {
+      choice: { url: string; directUrl: string };
+      merged: string;
+    };
+
+    // The store is the file's, as §4 requires — the env file decided nothing there.
+    expect(read.choice.url).toBe(pooled);
+    // And the waker is on 5432 and not on the pooler, which is the whole of 0009.
+    expect(read.choice.directUrl).toBe(direct);
+    // `lingtai doctor`'s session-mode check reads this one; the two agree, so a
+    // green row is a report on the connection the waker actually opens.
+    expect(read.merged).toBe(direct);
+  });
+
+  /**
+   * **And a direct name on a *different* database decides nothing**, which is
+   * what makes the case above a rule rather than a hope.
+   *
+   * 0009 is "two variables, **one database**", and reading the merged
+   * environment for the second one is exactly what lets a stale pair answer for
+   * a machine that has been pointed somewhere else: `lingtai init
+   * --database-url …@db.NEW…` writes `config.yml` and never touches the
+   * checkout, whose `.env.local` still holds the OLD pair `.env.example` told
+   * it to keep. The store opens on NEW and the `LISTEN` registers on OLD, where
+   * nothing is ever appended — every subscriber drains once at connect and is
+   * never nudged again, `task_view` stops folding, the board renders stale
+   * cards, and nothing errors. It is the split-log failure 0056 exists to
+   * remove, reached through the one name that was still read the merged way.
+   *
+   * Handed in rather than spawned: an exported variable and one an env file
+   * supplied reach `sessionUrlFor` in the same position, and what is asserted
+   * here is the comparison, which the case above already proves is reached from
+   * a file.
+   */
+  it("is not a direct name on another database, however this process came by it", async () => {
+    const dir = await home(`database:\n  store: postgres\n  url: ${URL_}\n`);
+    const elsewhere = "postgresql://me:secret@db.elsewhere:5432/lingtai";
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: elsewhere })).toMatchObject({
+      url: URL_,
+      directUrl: URL_,
+    });
+
+    // Nor the same host with another database on it — a second log is a second
+    // log whichever half of the string names it.
+    const otherDb = "postgresql://me:secret@db.example:5432/other";
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: otherDb })).toMatchObject({
+      url: URL_,
+      directUrl: URL_,
+    });
+
+    // And a string nothing can parse is not a match either: the waker falls
+    // back to the store's own database rather than to a guess.
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: "not a url" })).toMatchObject({
+      directUrl: URL_,
+    });
+  });
+
+  /**
+   * The same rule where the store came from an exported variable rather than
+   * from the file — one function answers both, and a pair that disagrees there
+   * is the same split.
+   */
+  it("holds for a store the environment named, not only one the file did", () => {
+    const direct = "postgresql://me:secret@db.example:5433/lingtai";
+    expect(
+      storeChoice({ LINGTAI_DATABASE_URL: URL_, LINGTAI_DIRECT_DATABASE_URL: direct }),
+    ).toMatchObject({ url: URL_, directUrl: direct });
+
+    expect(
+      storeChoice({
+        LINGTAI_DATABASE_URL: URL_,
+        LINGTAI_DIRECT_DATABASE_URL: "postgresql://me:secret@db.elsewhere:5432/lingtai",
+      }),
+    ).toMatchObject({ url: URL_, directUrl: URL_ });
+  });
 });

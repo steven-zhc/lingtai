@@ -23,5 +23,17 @@ export function createDb(url: string = postgresUrl()) {
 
 export type Db = ReturnType<typeof createDb>;
 
-/** The process-wide client. Long-lived; never closed in a server. */
-export const db = createDb();
+/*
+ * There is no process-wide `db` here any more (#179).
+ *
+ * `export const db = createDb()` ran at import and called `postgresUrl()`
+ * there, so importing this package — which every `lingtai` command does — was
+ * a Postgres install's admission test: a machine that had written `sqlite` was
+ * refused before anything could read what it had written, and
+ * `apps/cli/src/entry.ts` had to answer five commands before `lingtai.ts`
+ * loaded at all.
+ *
+ * The one client a process holds is `processLog()`'s in `choose.ts`, built
+ * from the written choice at first use. This factory stays for the caller that
+ * wants a *second*, independent connection — 0009's reason, unchanged.
+ */

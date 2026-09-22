@@ -78,8 +78,8 @@
  * must not have. `lingtai doctor` reads them back.
  */
 import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
-import { type EventStore, createPostgresLog, eventStore, type Log, subscribe, type Subscription } from "@lingtai/event-store";
-import { createPostgresDaemonStore } from "./postgres.ts";
+import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from "@lingtai/event-store";
+import { withDaemonStore } from "./choose.ts";
 import type { DaemonStore } from "./store.ts";
 
 /**
@@ -247,7 +247,16 @@ export interface WorkLoopOptions {
   sweepMs?: number;
   /** Defaults to `COMPLETION_EVENTS`. */
   triggers?: readonly string[];
-  /** Session-mode connection for the subscription. */
+  /**
+   * A Postgres connection for the head read, **refining the choice and never
+   * replacing it** (#179): used where this machine wrote Postgres, ignored
+   * where it wrote a file. Nothing in production passes one.
+   *
+   * It no longer reaches the subscription. The log hands out its own waker
+   * and the log is the one this machine chose (#221), so a session-mode
+   * connection named here would have been a second answer to a question the
+   * store already settles.
+   */
   url?: string;
   /**
    * The log the daemon follows: what to read **and what says it moved**.
@@ -257,12 +266,15 @@ export interface WorkLoopOptions {
    * Postgres had no waker at all and died where #178's poll was sitting unused.
    * A log hands out its own, so choosing the store chooses the waking.
    *
-   * Defaults to the process-wide Postgres log, waking on `url`. Named
-   * `eventLog` because `log` here is the line printer.
+   * Defaults to the process-wide log — whichever store this machine wrote
+   * down, waking the way that store wakes: `LISTEN`/`NOTIFY` from Postgres, a
+   * poll from a file (#179). Named `eventLog` because `log` here is the line
+   * printer.
    */
   eventLog?: Log;
   /**
-   * Where the log's head is read from. Defaults to Postgres at `url`.
+   * Where the log's head is read from. Defaults to the store this machine wrote
+   * down, at `url` where Postgres is what it wrote (#179).
    */
   daemonStore?: DaemonStore;
   /**
@@ -516,13 +528,11 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       const from = await headSeq(options);
 
       // The log, not `options.store`: that one is where failures are recorded,
-      // and a test's store is not the log that wakes.
-      const following =
-        options.eventLog ??
-        createPostgresLog({
-          store: eventStore,
-          ...(options.url === undefined ? {} : { wakeUrl: options.url }),
-        });
+      // and a test's store is not the log that wakes. The process-wide one is
+      // the store this machine chose and the waker that goes with it — which is
+      // what #221 made inseparable, and #179 made a written choice rather than
+      // Postgres by default.
+      const following = options.eventLog ?? (await processLog());
 
       subscription = subscribe({
         fromSeq: from,
@@ -588,8 +598,9 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
  * (0055 §1).
  */
 async function headSeq(options: WorkLoopOptions): Promise<bigint> {
-  const store =
-    options.daemonStore ??
-    createPostgresDaemonStore(options.url === undefined ? {} : { url: options.url });
-  return store.head();
+  return withDaemonStore(
+    options.daemonStore,
+    options.url === undefined ? {} : { url: options.url },
+    (store) => store.head(),
+  );
 }

@@ -23,6 +23,8 @@ const SRC = fileURLToPath(new URL("../src", import.meta.url));
 /** The one file allowed to know what a driver is. Its twin knows `node:sqlite`. */
 const POSTGRES = "postgres.ts";
 const SQLITE = "sqlite.ts";
+/** And the one allowed to know there are two. #179 put it there; nothing else may. */
+const CHOICE = "choose.ts";
 
 const sources = readdirSync(SRC)
   .filter((f) => f.endsWith(".ts"))
@@ -37,7 +39,7 @@ describe("one store, and one place that knows which", () => {
     // A rename that emptied this list would leave every assertion below
     // vacuously true, which is the failure mode a source-reading test has.
     expect(sources.map((s) => s.file)).toEqual(
-      expect.arrayContaining(["projection.ts", "shape.ts", "task-view.ts", "backlog.ts", POSTGRES, SQLITE]),
+      expect.arrayContaining(["projection.ts", "shape.ts", "task-view.ts", "backlog.ts", POSTGRES, SQLITE, CHOICE]),
     );
   });
 
@@ -59,15 +61,22 @@ describe("one store, and one place that knows which", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("names both implementations in neither of them", () => {
-    // What "nothing chooses between them here" means as a check: no file under
-    // `src/` mentions both stores, so there is nowhere a selection could have
-    // been written. That decision is #179's.
+  it("names both implementations in choose.ts and nowhere else", () => {
+    // The rule #179 inherited and did not delete. Before it, no file under
+    // `src/` mentioned both stores, so there was nowhere a selection could have
+    // been written — which is what "nothing chooses between them" meant while
+    // the implementations were being built.
     //
-    // **No file is exempt**, least of all `index.ts` and `store.ts`. Those two
-    // were, and they are precisely where a selection would be written — a
-    // `projectionStore()` reading an env var, exported from the barrel, breaks
-    // the rule this file exists for and left all four assertions green.
+    // Something has to choose now, and what is worth keeping is that **exactly
+    // one file does**. `choose.ts` is it: it reads `@lingtai/env`'s
+    // `chosenStore()` and nothing else, and the moment a second file here names
+    // both, this fails.
+    //
+    // **No other file is exempt**, least of all `index.ts` and `store.ts` — a
+    // barrel re-exporting both, or a store module picking one from an env var,
+    // is precisely the second decision
+    // [0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)
+    // exists to remove.
     const both = sources
       .filter((s) => {
         const c = code(s.text);
@@ -75,6 +84,6 @@ describe("one store, and one place that knows which", () => {
       })
       .map((s) => s.file);
 
-    expect(both).toEqual([]);
+    expect(both).toEqual([CHOICE]);
   });
 });

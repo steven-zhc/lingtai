@@ -12,7 +12,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SQLITE_NOT_OPEN_YET, directPostgresUrl, postgresUrl, storeChoice } from "@lingtai/env";
+import { SQLITE_MACHINE, directPostgresUrl, postgresUrl, storeChoice } from "@lingtai/env";
 import { doctorEnvironment, storeRow } from "../src/doctor.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
@@ -96,19 +96,24 @@ describe("the store row", () => {
   });
 
   /**
-   * A note and not a failure: nothing opens a store from this value yet, so a
-   * machine with no `database.store` has something to do rather than something
-   * broken — and `lingtai restart`, which gates on failures, is kept out of it.
+   * **A failure, since #179, and the row's whole job is that it is.** Every
+   * store opens from this value now, so a machine with no `database.store`
+   * refuses `lingtai status`, the board and the daemon at first use. A `warn`
+   * — whose own docstring says *nothing is wrong* — would be the one row that
+   * names the cause telling the reader it is not the cause, and would let
+   * `lingtai restart` drain a daemon and start one that cannot open a log.
    */
-  it("is a note on a machine that has not recorded a choice, naming lingtai init", () => {
+  it("fails on a machine that has not recorded a choice, naming lingtai init", () => {
     const row = storeRow(storeChoice({ LINGTAI_HOME: home() }));
-    expect(row.status).toBe("warn");
+    expect(row.status).toBe("fail");
     expect(row.detail).toContain("lingtai init");
+    // And it does not tell the reader something else is finding Postgres.
+    expect(row.detail).toContain("refused");
   });
 
-  it("says the one sentence about SQLite, and says it from the one place", () => {
+  it("says the one sentence about SQLite, from the one place, on a machine that is not broken", () => {
     const row = storeRow(storeChoice({ LINGTAI_HOME: home("database:\n  store: sqlite\n") }));
-    expect(row.status).toBe("warn");
-    expect(row.detail).toContain(SQLITE_NOT_OPEN_YET);
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain(SQLITE_MACHINE);
   });
 });

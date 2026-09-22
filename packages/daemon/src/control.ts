@@ -73,7 +73,7 @@ import {
 import { conductorWorker } from "@lingtai/conductor/claim";
 import { readTasks } from "@lingtai/projector";
 import type { CodeVersion } from "./currency.ts";
-import { createPostgresDaemonStore } from "./postgres.ts";
+import { withDaemonStore } from "./choose.ts";
 import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore } from "./store.ts";
 
 // The stream name, the state and the fold moved to `@lingtai/domain` when
@@ -387,20 +387,20 @@ export async function requestRun(
 // ------------------------------------------------------------- liveness ----
 
 /**
- * The Postgres beacon, which is what a caller gets when nobody says otherwise.
+ * The beacon this machine wrote down, which is what a caller gets when nobody
+ * says otherwise (#179, `choose.ts`).
  *
- * Constructed per call rather than held: the implementation opens a connection
- * per operation and ends it, so a store is a value and there is nothing to
- * leak. Which implementation a machine runs is #179's question — this is the
- * default that keeps the Postgres path exactly as it was.
+ * **Opened per call and closed after it**, rather than held. The Postgres
+ * implementation opens a connection per operation and has nothing to release;
+ * the SQLite one holds the log's file, and a beat every `HEARTBEAT_MS` that
+ * never closed would leak a handle for the life of a daemon. `withDaemonStore`
+ * is what makes the two the same shape — and a store a caller handed in is
+ * still the caller's to close.
  */
-function defaultStore(): DaemonStore {
-  return createPostgresDaemonStore();
-}
 
 /** Idempotent DDL for the beacon's row. Called once, at every daemon start. */
-export async function createStatusTable(store: DaemonStore = defaultStore()): Promise<void> {
-  await store.create();
+export async function createStatusTable(store?: DaemonStore): Promise<void> {
+  await withDaemonStore(store, {}, (it) => it.create());
 }
 
 export interface BeatOptions {
@@ -414,7 +414,7 @@ export interface BeatOptions {
    * has moved on underneath the modules Node already loaded.
    */
   code?: CodeVersion | null;
-  /** Where the row is. Defaults to Postgres, as everything does until #179. */
+  /** Where the row is. Defaults to the store this machine wrote down (#179). */
   store?: DaemonStore;
 }
 
@@ -426,15 +426,17 @@ export interface BeatOptions {
  * process and not about a database.
  */
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null, store = defaultStore() } = options;
-  await store.beat({
-    pid: process.pid,
-    host: hostname(),
-    state,
-    currentRunId,
-    codeSha: code?.sha ?? null,
-    codeDirty: code?.dirty ?? false,
-  });
+  const { currentRunId = null, code = null } = options;
+  await withDaemonStore(options.store, {}, (store) =>
+    store.beat({
+      pid: process.pid,
+      host: hostname(),
+      state,
+      currentRunId,
+      codeSha: code?.sha ?? null,
+      codeDirty: code?.dirty ?? false,
+    }),
+  );
 }
 
 /**
@@ -549,8 +551,8 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
 }
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
-export async function readStatus(store: DaemonStore = defaultStore()): Promise<DaemonStatus | null> {
-  return store.status();
+export async function readStatus(store?: DaemonStore): Promise<DaemonStatus | null> {
+  return withDaemonStore(store, {}, (it) => it.status());
 }
 
 function hostname(): string {

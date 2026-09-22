@@ -34,9 +34,10 @@
  * the same function a later command asks — so the screen and the machine cannot
  * disagree.
  *
- * **No version opens SQLite yet**, which is `SQLITE_NOT_OPEN_YET` and is said
- * in one place. The choice is still recorded when it is made; what stops is
- * this run, because there is no board to open on a store nobody opens.
+ * **Either store finishes setup**, since #179: a written `sqlite` opens a log,
+ * a projection and a beacon, so the run goes on to the agent, the App and the
+ * board exactly as a Postgres one does. What is said about such a machine is
+ * `SQLITE_MACHINE`, in one place.
  *
  * **Changing a store that answers is an edit, not a re-run** — 0056 left that
  * open and this settles it. A store already written and connecting is reported
@@ -64,7 +65,7 @@ import { Document, isMap, parseDocument } from "yaml";
 import { claudeCodeAuth, codexAuth } from "@lingtai/agent/auth";
 import { runnableEnv } from "@lingtai/agent-env";
 import {
-  SQLITE_NOT_OPEN_YET,
+  SQLITE_MACHINE,
   type StoreChosen,
   boardPort,
   describeStore,
@@ -415,18 +416,27 @@ function confirm(world: InitWorld, path: string, expected: "postgres" | "sqlite"
 }
 
 /**
- * The store is chosen and recorded, and this run stops here.
+ * The store is chosen and recorded, and **setup goes on from here** — null, as
+ * the Postgres branch returns when its URL answered.
  *
- * Not a refusal of the choice: it is written, and `lingtai init` again reads it
- * back and says this again. What there is no point continuing to is the board,
- * which is served on a log — and no log opens from this choice yet. The claim
- * itself is `SQLITE_NOT_OPEN_YET`, said in one place; the remedy after the dash
- * is this command's own.
+ * It used to return 1 with an amber line, on the grounds that there was no
+ * board to serve because no log opened from this choice. #179 opened one, so
+ * the exit code went with the claim: a machine that is set up correctly must
+ * not be told to run `init` again with a Postgres URL instead.
+ *
+ * There is no `world.database()` check to make first. A Postgres URL has to be
+ * connected to and its tables created before anything is written; a SQLite log
+ * is a file this machine will create on first open, with its own schema
+ * (`openSqliteLog`), so the write above *is* the verification — and `confirm`
+ * has already read the file back with the function every later command asks.
+ *
+ * The claim itself is `SQLITE_MACHINE`, said in one place. Muted rather than
+ * amber: nothing here needs doing.
  */
-function sqliteChosen(world: Pick<InitWorld, "log">, choice: StoreChosen): number {
+function sqliteChosen(world: Pick<InitWorld, "log">, choice: StoreChosen): null {
   world.log(paint.pass(`store        ${describeStore(choice)}`));
-  world.log(paint.signal(`${SQLITE_NOT_OPEN_YET} — lingtai init --database-url <postgres url> records that instead`));
-  return 1;
+  world.log(paint.muted(SQLITE_MACHINE));
+  return null;
 }
 
 /** Null once an agent is settled; an exit code when it cannot be. */

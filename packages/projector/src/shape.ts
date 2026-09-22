@@ -31,8 +31,7 @@
  * so it can run on every `lingtai doctor` and at every daemon start — which is
  * the whole point, because the alternative is finding out when the daemon stops.
  */
-import { postgresUrl } from "@lingtai/env";
-import { createPostgresProjectionStore } from "./postgres.ts";
+import { withProjectionStore } from "./choose.ts";
 import type { Projection, ProjectionContext, ProjectionStore } from "./store.ts";
 
 /** One table that exists and does not match the DDL that declares it. */
@@ -233,14 +232,14 @@ export async function shapeIn(
  */
 export async function projectionShape(
   projection: Projection,
-  url = postgresUrl(),
+  url?: string,
 ): Promise<ProjectionShape> {
-  const store = createPostgresProjectionStore({ url, max: 1 });
-  try {
-    return await shapeIn(projection, store);
-  } finally {
-    await store.close();
-  }
+  // `url` refines a Postgres connection and never picks the store: `lingtai
+  // doctor` is the one caller that names one (#214), and a URL in an argument
+  // must not open a store this machine did not choose (0056).
+  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) =>
+    shapeIn(projection, store),
+  );
 }
 
 /**
