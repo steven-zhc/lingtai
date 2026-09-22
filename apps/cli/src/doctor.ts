@@ -57,7 +57,7 @@ import {
   readStatus,
 } from "@lingtai/daemon";
 import {
-  SQLITE_NOT_OPEN_YET,
+  SQLITE_MACHINE,
   type StoreChoice,
   directUrlIfSet,
   githubApp,
@@ -147,19 +147,29 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
  * hostname, and no row here prints one. What it does not do is decide anything
  * a second time — the store, and where it was read, are the choice's own.
  *
- * **A note and not a failure, until #179.** Nothing yet opens a store from this
- * value: every process still finds Postgres through `LINGTAI_DATABASE_URL` and
- * `database.url`, so a machine with no `database.store` is a machine that has
- * something to do, not one that is broken. `warn` is exactly that (see
- * `CheckStatus`), and it keeps `lingtai restart` — which gates on failures —
- * out of the argument.
+ * **A refusal here is a failure, since #179.** It was a `warn` while nothing
+ * opened a store from this value and a process found Postgres through
+ * `LINGTAI_DATABASE_URL` and `database.url` anyway — then a machine with no
+ * `database.store` had something to do rather than something broken. Every
+ * store now opens from the choice (0056), so the same machine refuses
+ * `lingtai status`, the board and the daemon at first use: `warn` would be the
+ * one row that names the cause telling the reader it is not the cause, in the
+ * status whose own docstring says *nothing is wrong* (see `CheckStatus`).
+ *
+ * **And `lingtai restart` gating on failures is the reason, not an argument
+ * against it.** A daemon started on a machine that cannot open a log drains
+ * the old one and starts nothing that works; `restart` refusing until `lingtai
+ * init` has run is the behaviour that check exists for (0042).
+ *
+ * A written `sqlite` is `ok`. It is a log that opens, and what is worth saying
+ * about it is `SQLITE_MACHINE`.
  */
 export function storeRow(choice: StoreChoice): CheckResult {
   const name = "store: the machine's written choice";
-  const unread = "nothing reads this to open a store yet (#179); until then a process finds Postgres through LINGTAI_DATABASE_URL and database.url";
-  if ("refused" in choice) return { name, status: "warn", detail: `${choice.refused} · ${unread}` };
+  const shut = "every command that opens the log is refused until this is written — nothing falls back to LINGTAI_DATABASE_URL or database.url (#179, 0056 §2)";
+  if ("refused" in choice) return { name, status: "fail", detail: `${choice.refused} · ${shut}` };
   if (choice.store === "sqlite") {
-    return { name, status: "warn", detail: `sqlite ← ${choice.from} · ${SQLITE_NOT_OPEN_YET}` };
+    return { name, status: "ok", detail: `sqlite ← ${choice.from} · ${SQLITE_MACHINE}` };
   }
   return { name, status: "ok", detail: `postgres ← ${choice.from}` };
 }

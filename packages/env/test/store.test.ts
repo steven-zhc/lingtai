@@ -274,4 +274,56 @@ describe("the session-mode connection that goes with a choice", () => {
     // And it decided neither half of the choice.
     expect(read.choice).toMatchObject({ url: URL_, directUrl: URL_ });
   });
+
+  /**
+   * **And the direct name an env file supplied *is* the waker's**, which is the
+   * other half and the one a checkout actually has.
+   *
+   * 0056 §4 is about *which store this machine runs* — a fact four processes
+   * must agree about, so it may not come from a file whose visibility depends
+   * on where a process started. The session-mode URL is not that fact: the
+   * store is already chosen, and this only says how to reach **the same
+   * database** in a mode that can hold a `LISTEN` (0009). On Supabase the two
+   * strings genuinely differ, and `.env.example` is what tells an operator to
+   * put `LINGTAI_DIRECT_DATABASE_URL` in `.env.local`.
+   *
+   * Read from the snapshot instead, this machine's waker silently lost it:
+   * `init` writes whatever connects, the dashboard offers the transaction
+   * pooler first (#157), and through a pooler the `LISTEN` registration is
+   * handed away between statements. No notification ever arrives, every
+   * subscriber drains once at connect, `task_view` stops folding, the board
+   * renders stale cards, and nothing errors.
+   */
+  it("is the direct name the env files supplied, which is where a checkout keeps it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-store-probe-"));
+    const pooled = "postgresql://me:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+    writeFileSync(join(dir, "config.yml"), `database:\n  store: postgres\n  url: ${pooled}\n`);
+    const index = pathToFileURL(join(repoRoot(), "packages", "env", "src", "index.ts")).href;
+    const file = join(dir, "probe.mjs");
+    const direct = "postgresql://me:secret@db.abcdef.supabase.co:5432/postgres";
+    writeFileSync(
+      file,
+      `import { storeChoice, directPostgresUrl } from ${JSON.stringify(index)};\n` +
+        // Where dotenv puts one: after the import, into the merged environment.
+        `process.env.LINGTAI_DIRECT_DATABASE_URL = ${JSON.stringify(direct)};\n` +
+        `console.log(JSON.stringify({ choice: storeChoice(), merged: directPostgresUrl() }));\n`,
+    );
+    const ran = spawnSync(process.execPath, [file], {
+      encoding: "utf8",
+      env: { PATH: process.env["PATH"] ?? "", HOME: dir, LINGTAI_HOME: dir },
+    });
+    expect(ran.stderr, ran.stderr).toBe("");
+    const read = JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as {
+      choice: { url: string; directUrl: string };
+      merged: string;
+    };
+
+    // The store is the file's, as §4 requires — the env file decided nothing there.
+    expect(read.choice.url).toBe(pooled);
+    // And the waker is on 5432 and not on the pooler, which is the whole of 0009.
+    expect(read.choice.directUrl).toBe(direct);
+    // `lingtai doctor`'s session-mode check reads this one; the two agree, so a
+    // green row is a report on the connection the waker actually opens.
+    expect(read.merged).toBe(direct);
+  });
 });

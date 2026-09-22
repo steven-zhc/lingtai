@@ -74,7 +74,10 @@ async function open(): Promise<Log> {
     // `LISTEN` on B, and every subscriber would drain once and never be nudged
     // again while the board went on rendering that one drain. 0009's
     // session-mode requirement is kept by the choice itself: `directUrl` is
-    // `url` unless a session-mode name was really exported.
+    // `LINGTAI_DIRECT_DATABASE_URL` where this process names one — including
+    // from a checkout's `.env.local`, which is where `.env.example` says to put
+    // it — and `url` where it does not. Never `LINGTAI_DATABASE_URL`, which is
+    // the fallback that could name a different database.
     return createPostgresLog({
       store: createEventStore(createDb(choice.url)),
       url: choice.url,

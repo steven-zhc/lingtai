@@ -303,21 +303,24 @@ export type StoreChosen =
        * `NOTIFY` (0009).
        *
        * It is part of the choice rather than a second lookup because
-       * `directPostgresUrl()` answers a different question — *what does this
-       * process's merged environment name* — and the two are not the same
-       * database. A machine whose `config.yml` says `url: A` beside a
-       * checkout's `.env.local` holding `LINGTAI_DATABASE_URL=B` would open
-       * the store on A and register the `LISTEN` on B: every append lands in
-       * A, no notification from A ever reaches a session on B, and each
-       * subscriber drains once on connect and is never nudged again while the
-       * board goes on rendering that one drain. Silent, and exactly the
-       * split-log failure 0056 exists to remove.
+       * `directPostgresUrl()` answers a different question — *what connection
+       * string can this process find* — and its answer need not be the same
+       * database. It falls back to `LINGTAI_DATABASE_URL`, so a machine whose
+       * `config.yml` says `url: A` beside a checkout's `.env.local` holding
+       * `LINGTAI_DATABASE_URL=B` would open the store on A and register the
+       * `LISTEN` on B: every append lands in A, no notification from A ever
+       * reaches a session on B, and each subscriber drains once on connect and
+       * is never nudged again while the board goes on rendering that one
+       * drain. Silent, and exactly the split-log failure 0056 exists to
+       * remove. Here the only fallback is `url` itself, so the waker is on the
+       * store's own database or on nothing.
        *
-       * So it is `url` itself unless a session-mode name was *really exported*
-       * — the one legitimate second URL, because on Supabase the pooled and
-       * direct strings genuinely differ (0009). A `config.yml` carries one URL
-       * and it stands in for both names, which is what `machineDatabaseUrl`
-       * already says.
+       * So it is `url` itself unless this process names a session-mode URL —
+       * the one legitimate second string, because on Supabase the pooled and
+       * direct strings genuinely differ (0009), and on a checkout that string
+       * lives in `.env.local`, which is where `.env.example` says to put it.
+       * A `config.yml` carries one URL and it stands in for both names, which
+       * is what `machineDatabaseUrl` already says.
        */
       directUrl: string;
       where: StoreSource;
@@ -359,23 +362,24 @@ export const SQLITE_LOG = "lingtai.db";
  * remedy after it — which command *it* offers is its own business — and must
  * not rewrite the claim.
  *
- * **#179 does not rewrite it, though #179 is the ticket named in it.** Both
- * readers are under `apps/cli/` — `lingtai init`'s amber line and a `doctor`
- * row — and both still act on the old claim: `sqliteChosen` prints this and
- * returns 1 without serving a board, and `storeRow` renders the machine as
- * `warn`. Changing the sentence alone would tell an operator that SQLite runs,
- * one line above a command that exits non-zero and offers Postgres instead.
+ * **#179 rewrote it, because #179 is what made the old sentence false**, and
+ * the two readers moved in the same edit — which is the whole argument for a
+ * constant. They are both under `apps/cli/`: `lingtai init`'s line about the
+ * store, which printed this in amber and returned 1 without serving a board,
+ * and a `doctor` row, which rendered the machine `warn`. A store opens from a
+ * written `sqlite` now
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)) —
+ * `packages/daemon/pure/the-written-choice.test.ts` appends, folds
+ * `task_view`, renders the board's cards and beats the beacon on one, in a
+ * process where opening a socket throws — so `init` goes on to the board and
+ * the row is `ok`.
  *
- * So it goes stale here, knowingly: the stores do open from a written `sqlite`
- * now, and this line and its two readers move together at
- * [#214](https://github.com/steven-zhc/lingtai/issues/214), where `init` and
- * `doctor` read the choice. That is what one constant is *for* — the claim
- * changes in one edit, beside the commands that act on it, rather than in six
- * files that then disagree.
+ * What is left to say about such a machine is what is *true* of it and not
+ * obvious: the log is that one file, and no second reader can reach it.
  */
-export const SQLITE_NOT_OPEN_YET =
-  "SQLite is a choice this machine can record and no version opens it yet — #179 is what makes a store open from the " +
-  "written choice. Until that lands, Postgres is the store this version runs on";
+export const SQLITE_MACHINE =
+  "SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one " +
+  "can read it, and switching stores later is a new log rather than the same one somewhere else (0055 §3)";
 
 /**
  * The variables really exported into this process.
@@ -407,13 +411,30 @@ function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
  * `StoreChosen.directUrl` for why it is part of the choice and not a second
  * lookup.
  *
- * Read by the same rule the choice itself is: the *exported* name for a
- * machine, the merged one for a test, which is what keeps a checkout's
- * `.env.local` out of a machine's selection (0056 §4) while leaving
- * `LINGTAI_TEST_DIRECT_DATABASE_URL` exactly where the suite is told to put it.
+ * **Read the merged way, which is deliberately not the rule the selection is
+ * read by.** 0056 §4 keeps `.env.local` out of *which store this machine
+ * runs*, because that is a fact four processes have to agree about. This is
+ * not that fact: the store is already chosen, and this only says how to reach
+ * **the same database** in a mode that can hold a `LISTEN` (0009).
+ *
+ * The second string is exactly what a checkout carries — `.env.example` is
+ * what tells an operator to put `LINGTAI_DIRECT_DATABASE_URL` there — so
+ * reading the snapshot for it lost the direct URL on every machine that
+ * followed those instructions and left the waker on whatever `init` wrote,
+ * which on Supabase is the transaction pooler the dashboard offers first
+ * (#157). There the registration is handed away between statements and no
+ * notification ever arrives: every subscriber drains once at connect and is
+ * never nudged again, and nothing errors.
+ *
+ * So it is read the way `directUrlIfSet` and `lingtai doctor`'s session-mode
+ * check read it — this process's environment, env files included — and those
+ * two cannot report on a connection the waker does not open. **The direct name
+ * and nothing else**: `directUrlIfSet`'s fallback to `LINGTAI_DATABASE_URL` is
+ * the one that could name a different database, and here the fallback is the
+ * chosen `url`.
  */
 function sessionUrlFor(url: string, from: NodeJS.ProcessEnv): string {
-  return optional(dbVar("DIRECT_DATABASE_URL", from), inTest(from) ? from : realEnvironment(from)) ?? url;
+  return optional(dbVar("DIRECT_DATABASE_URL", from), from) ?? url;
 }
 
 function notSetUp(name: string, path: string | null, url?: string): StoreRefused {

@@ -275,8 +275,11 @@ describe("a machine that wrote postgres", () => {
    * not happen is the reverse — the waker on a *different database* from the
    * store, which is what `directPostgresUrl()` resolved at `waker()` time
    * would give a machine whose `config.yml` names one URL and whose checkout's
-   * `.env.local` names another. `directUrl` is part of the choice for that
-   * reason, and it is `url` unless this line's variable was really exported.
+   * `.env.local` names another under `LINGTAI_DATABASE_URL`, the fallback that
+   * reader has and this one does not. `directUrl` is part of the choice for
+   * that reason, and it is `url` unless this line's variable names a session
+   * one — from the environment or from an env file, since that string is what
+   * `.env.example` tells a checkout to keep.
    */
   it("sends the waker, alone, to an exported session-mode URL", () => {
     const read = said<Reached>(

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, exists
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SQLITE_NOT_OPEN_YET, describeStore, storeChoice } from "@lingtai/env";
+import { SQLITE_MACHINE, describeStore, storeChoice } from "@lingtai/env";
 import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initCommand, redact } from "../src/init.ts";
 
 /**
@@ -425,17 +425,21 @@ describe("the store is written down, and the screen is a reading of it (#215)", 
 
     const { world: w, seen } = world(home, { answers: [""] });
 
-    // The choice is recorded; the run stops, because no board can be served on
-    // a store nothing opens yet.
-    expect(await initCommand([], w)).toBe(1);
-    expect(seen.boards).toBe(0);
+    // The choice is recorded and **setup finishes on it**: since #179 a written
+    // `sqlite` opens a log, so there is a board to serve and no reason to exit
+    // non-zero. Exiting 1 here told an operator whose machine was correctly set
+    // up to go back and give a Postgres URL instead.
+    expect(await initCommand([], w)).toBe(0);
+    expect(seen.boards).toBe(1);
 
     expect(config(home)).toContain("store: sqlite");
     expect(config(home)).not.toContain("url:");
     // The assertion this ticket exists for: what is read afterwards is not Postgres.
     const read = storeChoice({ LINGTAI_HOME: home });
     expect(read).toMatchObject({ store: "sqlite", path: join(home, "lingtai.db") });
-    expect(seen.lines.join("\n")).toContain(SQLITE_NOT_OPEN_YET);
+    expect(seen.lines.join("\n")).toContain(SQLITE_MACHINE);
+    // And nothing offers Postgres as the store this version runs on.
+    expect(seen.lines.join("\n")).not.toContain("--database-url");
   });
 
   it("confirms with the same function a later command asks, and never with the answer typed", async () => {

@@ -153,9 +153,13 @@ keys disagreeing. An exported `LINGTAI_DATABASE_URL` still wins and supplies the
 URL — that is what makes CI, launchd and a container work with no file at all —
 and `lingtai doctor`'s **store** row says which of the two answered.
 
-The sentence about what a SQLite machine does today is `SQLITE_NOT_OPEN_YET` in
+The sentence about what a SQLite machine is, is `SQLITE_MACHINE` in
 `packages/env/src/index.ts`, and it is written once: `lingtai init` and `lingtai
 doctor` both print that constant, and this page deliberately does not repeat it.
+Since [#179](https://github.com/steven-zhc/lingtai/issues/179) either answer
+finishes setup — a written `sqlite` opens the log, the projections and the
+beacon — and a machine with *no* choice written is a `lingtai doctor` failure
+rather than a note, because nothing falls back for it.
 
 ### Bringing the database up
 
