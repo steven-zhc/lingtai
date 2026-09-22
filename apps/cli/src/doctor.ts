@@ -390,7 +390,12 @@ async function schema(url: string): Promise<CheckResult[]> {
   }
 }
 
-async function projections(url: string): Promise<CheckResult> {
+/**
+ * `url` refines a Postgres connection and never picks the store: left out, this
+ * folds through the one this machine wrote down (#179), which is what lets a
+ * file-backed machine have this row at all.
+ */
+async function projections(url?: string): Promise<CheckResult> {
   try {
     const lags = await projectionLag(url);
     if (lags.length === 0) {
@@ -430,7 +435,7 @@ async function projections(url: string): Promise<CheckResult> {
  * `information_schema` only, so it obeys the rule at the top of this file and
  * runs on every doctor.
  */
-async function projectionShapes(url: string): Promise<CheckResult> {
+async function projectionShapes(url?: string): Promise<CheckResult> {
   const name = "projections: shape";
   try {
     // Every projection, not the first one: `finding_backlog` (#137) has a
@@ -1638,28 +1643,76 @@ export async function runDoctor(
 
   // Before the connection rows, because it is the question they assume an
   // answer to: what this machine says it runs.
-  results.push(storeRow(store()));
+  const choice = store();
+  results.push(storeRow(choice));
+
+  /**
+   * **A machine that wrote `sqlite` is never asked for a connection string.**
+   *
+   * `environment` is a report on the Postgres pair, and on this machine there
+   * is no pair. Pushed unconditionally, it failed a machine `lingtai init` had
+   * just set up correctly — one that appends, folds `task_view`, renders the
+   * cards and beats the beacon
+   * (`packages/daemon/pure/the-written-choice.test.ts`) — by the name of a
+   * variable it is right not to have, and named giving a Postgres URL as the
+   * remedy. And a failure carrying no `restartAnswers` gates `lingtai restart`
+   * (`gatingFailures`, 0042), so the working machine could not start a daemon
+   * either: setup said correct, doctor said broken, and the way out it offered
+   * was to abandon the configuration.
+   */
+  const fileBacked = !("refused" in choice) && choice.store === "sqlite";
 
   let fromFile: string | undefined;
   let unreadable: string | undefined;
-  if (!env["LINGTAI_DATABASE_URL"]) {
+  if (!fileBacked && !env["LINGTAI_DATABASE_URL"]) {
     try {
       fromFile = machine();
     } catch (err) {
       unreadable = (err as Error).message;
     }
   }
-  const pooled = env["LINGTAI_DATABASE_URL"] || fromFile;
+  const pooled = fileBacked ? undefined : env["LINGTAI_DATABASE_URL"] || fromFile;
   // Absent, the pooled one stands in (#176) — the rule `directPostgresUrl`
   // follows, so the doctor checks the connection the system will actually use.
   const standIn = !env["LINGTAI_DIRECT_DATABASE_URL"];
-  const direct = env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
-  const envResult = unreadable
-    ? { name: "environment", status: "fail" as const, detail: unreadable }
-    : environment(pooled, direct, standIn && Boolean(pooled), fromFile ? "~/.lingtai/config.yml database.url" : undefined);
+  const direct = fileBacked ? undefined : env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
+  const envResult = fileBacked
+    ? {
+        name: "environment",
+        status: "skip" as const,
+        detail:
+          "not read on this machine — it wrote store: sqlite, so there is no connection string to report on, " +
+          "and the store row above says where the log is",
+      }
+    : unreadable
+      ? { name: "environment", status: "fail" as const, detail: unreadable }
+      : environment(pooled, direct, standIn && Boolean(pooled), fromFile ? "~/.lingtai/config.yml database.url" : undefined);
   results.push(envResult);
 
-  if (envResult.status === "ok" && pooled && direct) {
+  if (fileBacked) {
+    // Every row below that is about **a log** rather than about Postgres: each
+    // opens the store this machine chose, so each answers here too. Losing the
+    // projection lag, the shape check, the beacon and the lock along with the
+    // connection rows was the same defect's other half.
+    //
+    // Still nothing written, in the sense the rule at the top of this file
+    // means it: no row appends, and none is a probe. Opening a file-backed
+    // store runs its own `create table if not exists` — `events` and
+    // `daemon_status` — which is how that store is opened at all and how the
+    // very next command would open it; not one row goes in.
+    results.push(await projections());
+    results.push(await projectionShapes());
+    results.push(await daemonLiveness());
+    results.push(await daemonCurrency());
+    results.push(await passRefusals());
+    results.push(await conductorLock());
+    results.push(await orphans());
+    results.push({
+      name: "postgres",
+      status: "skip",
+      detail: "not attempted — this machine wrote store: sqlite, and there is no connection to make",
+    });
+  } else if (envResult.status === "ok" && pooled && direct) {
     results.push(await pooledConnection(pooled));
     results.push(await directIsSessionMode(direct, standIn));
     results.push(...(await schema(direct)));

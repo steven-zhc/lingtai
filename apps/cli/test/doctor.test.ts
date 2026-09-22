@@ -12,6 +12,7 @@ import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
+import type { StoreChoice } from "@lingtai/env";
 import {
   daemonLiveness,
   declaredExtensions,
@@ -21,6 +22,10 @@ import {
   limitsRow,
   runDoctor,
 } from "../src/doctor.ts";
+// The count `lingtai restart` gates on, asked of this report rather than
+// restated: a row that stops a restart is the half of #179's refusal a status
+// alone does not show (0042).
+import { gatingFailures } from "../src/restart.ts";
 
 const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
 const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
@@ -139,6 +144,89 @@ describe("lingtai doctor — environment", () => {
     // not a configuration with a meaning.
     expect(find(report.results, "environment").status).toBe("fail");
     expect(find(report.results, "environment").detail).toContain("one database");
+  });
+});
+
+/**
+ * **A machine that wrote `store: sqlite` is set up, and doctor has to say so**
+ * (#179, [0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ *
+ * `lingtai init` finishes on a SQLite answer now, and that machine works —
+ * `packages/daemon/pure/the-written-choice.test.ts` appends, folds `task_view`,
+ * renders the cards and beats the beacon on one in a process where opening a
+ * socket throws. Doctor then called it broken: `environment` was pushed
+ * whatever the store was, found no `LINGTAI_DATABASE_URL` and no
+ * `database.url` — the sqlite branch of `storeChoice` refuses a file carrying
+ * one — and failed by the name of a variable this machine is right not to
+ * have, naming a Postgres URL as the remedy. Carrying no `restartAnswers`, that
+ * failure also refused `lingtai restart` (`gatingFailures`, 0042). Setup said
+ * correct, doctor said broken, and the way out it offered was to abandon a
+ * working configuration.
+ *
+ * The choice is handed in rather than written to a `config.yml`, because what
+ * is under test is the fork `runDoctor` takes on it. The rows after the fork
+ * open the store *this process* chose, which in this suite is the test
+ * Postgres; what is asserted about them is that they are asked at all.
+ */
+describe("lingtai doctor — a machine whose log is a file", () => {
+  const wroteSqlite = (): StoreChoice => ({
+    store: "sqlite",
+    path: "/var/empty/lingtai/lingtai.db",
+    where: "config.yml",
+    from: "/var/empty/lingtai/config.yml",
+  });
+
+  it("asks it for no connection string, and fails it for nothing", async () => {
+    const report = await runDoctor(
+      env({}),
+      () => {
+        throw new Error("the machine file was asked for a database.url");
+      },
+      wroteSqlite,
+    );
+
+    const e = find(report.results, "environment");
+    expect(e.status).toBe("skip");
+    // Never the sentence that sent the operator back to `lingtai init` with a
+    // Postgres URL: there is nothing here to set.
+    expect(e.detail).not.toContain("lingtai init writes one");
+    expect(e.detail).not.toContain(".env.local");
+    // The row that does speak about this machine is green, and it is the only
+    // one that decides anything.
+    expect(find(report.results, "store: the machine's written choice").status).toBe("ok");
+    // The whole of the refusal, counted the way the command it blocked counts
+    // it. These three rows are what this fork decides; everything after them is
+    // GitHub and the operator's own projects, which are the same question on
+    // either store and are not this machine's store saying it is broken.
+    const thisFork = report.results.filter((r) =>
+      ["store: the machine's written choice", "environment", "postgres"].includes(r.name),
+    );
+    expect(thisFork).toHaveLength(3);
+    expect(gatingFailures(thisFork)).toBe(0);
+  });
+
+  it("still gets every row that is about a log rather than about Postgres", async () => {
+    const report = await runDoctor(env({}), () => undefined, wroteSqlite);
+
+    // Each of these opens the store this machine chose, so each answers on a
+    // file too — and losing them along with the connection rows was the same
+    // defect's other half.
+    for (const name of [
+      "projections: lag",
+      "projections: shape",
+      "daemon: liveness",
+      "daemon: currency",
+      "conductor: lock",
+      "worktrees: reconciliation",
+    ]) {
+      expect(find(report.results, name)).toBeDefined();
+    }
+    // And what is genuinely Postgres and nothing else says why it was not run,
+    // in terms of the store rather than of a check that failed.
+    const pg = find(report.results, "postgres");
+    expect(pg.status).toBe("skip");
+    expect(pg.detail).toContain("sqlite");
+    expect(pg.detail).not.toContain("the environment check failed");
   });
 });
 
