@@ -294,7 +294,35 @@ export type Store = "postgres" | "sqlite";
 export type StoreSource = "environment" | "config.yml";
 
 export type StoreChosen =
-  | { store: "postgres"; url: string; where: StoreSource; from: string }
+  | {
+      store: "postgres";
+      url: string;
+      /**
+       * The session-mode connection **to the database `url` names**, for the
+       * one thing that cannot go through a transaction pooler: `LISTEN`/
+       * `NOTIFY` (0009).
+       *
+       * It is part of the choice rather than a second lookup because
+       * `directPostgresUrl()` answers a different question — *what does this
+       * process's merged environment name* — and the two are not the same
+       * database. A machine whose `config.yml` says `url: A` beside a
+       * checkout's `.env.local` holding `LINGTAI_DATABASE_URL=B` would open
+       * the store on A and register the `LISTEN` on B: every append lands in
+       * A, no notification from A ever reaches a session on B, and each
+       * subscriber drains once on connect and is never nudged again while the
+       * board goes on rendering that one drain. Silent, and exactly the
+       * split-log failure 0056 exists to remove.
+       *
+       * So it is `url` itself unless a session-mode name was *really exported*
+       * — the one legitimate second URL, because on Supabase the pooled and
+       * direct strings genuinely differ (0009). A `config.yml` carries one URL
+       * and it stands in for both names, which is what `machineDatabaseUrl`
+       * already says.
+       */
+      directUrl: string;
+      where: StoreSource;
+      from: string;
+    }
   | { store: "sqlite"; path: string; where: StoreSource; from: string };
 
 /**
@@ -331,17 +359,23 @@ export const SQLITE_LOG = "lingtai.db";
  * remedy after it — which command *it* offers is its own business — and must
  * not rewrite the claim.
  *
- * **What it says changed when #179 landed, and that is what one place is for.**
- * It used to say no version opened a SQLite machine; `chosenStore()` now does,
- * and the four readers — `lingtai init`'s amber line, a `doctor` row, the
- * README and `doc/operating.md` — each said the new thing the moment this line
- * did. The *name* still says `NOT_OPEN_YET` because every reader is under
- * `apps/cli/`, which #214 owns; it is a rename and not a claim.
+ * **#179 does not rewrite it, though #179 is the ticket named in it.** Both
+ * readers are under `apps/cli/` — `lingtai init`'s amber line and a `doctor`
+ * row — and both still act on the old claim: `sqliteChosen` prints this and
+ * returns 1 without serving a board, and `storeRow` renders the machine as
+ * `warn`. Changing the sentence alone would tell an operator that SQLite runs,
+ * one line above a command that exits non-zero and offers Postgres instead.
+ *
+ * So it goes stale here, knowingly: the stores do open from a written `sqlite`
+ * now, and this line and its two readers move together at
+ * [#214](https://github.com/steven-zhc/lingtai/issues/214), where `init` and
+ * `doctor` read the choice. That is what one constant is *for* — the claim
+ * changes in one edit, beside the commands that act on it, rather than in six
+ * files that then disagree.
  */
 export const SQLITE_NOT_OPEN_YET =
-  "SQLite is the store this machine runs: the log, its questions, the projections and the beacon are one file under " +
-  "~/.lingtai, with no server and no connection string. Switching stores later is a new database and nothing " +
-  "converts one into the other (0055 §3)";
+  "SQLite is a choice this machine can record and no version opens it yet — #179 is what makes a store open from the " +
+  "written choice. Until that lands, Postgres is the store this version runs on";
 
 /**
  * The variables really exported into this process.
@@ -366,6 +400,20 @@ function realEnvironment(from: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
   if (from === process.env) return inTest(from) ? null : join(stateDir(from), "config.yml");
   return from["LINGTAI_HOME"] ? join(stateDir(from), "config.yml") : null;
+}
+
+/**
+ * The session-mode connection that goes with a chosen Postgres URL — see
+ * `StoreChosen.directUrl` for why it is part of the choice and not a second
+ * lookup.
+ *
+ * Read by the same rule the choice itself is: the *exported* name for a
+ * machine, the merged one for a test, which is what keeps a checkout's
+ * `.env.local` out of a machine's selection (0056 §4) while leaving
+ * `LINGTAI_TEST_DIRECT_DATABASE_URL` exactly where the suite is told to put it.
+ */
+function sessionUrlFor(url: string, from: NodeJS.ProcessEnv): string {
+  return optional(dbVar("DIRECT_DATABASE_URL", from), inTest(from) ? from : realEnvironment(from)) ?? url;
 }
 
 function notSetUp(name: string, path: string | null, url?: string): StoreRefused {
@@ -437,7 +485,7 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
     const said = inTest(from) && optional(name, realEnvironment(from)) === undefined
       ? `${name}, in this process's environment`
       : `${name}, exported into this process`;
-    return { store: "postgres", url, where: "environment", from: said };
+    return { store: "postgres", url, directUrl: sessionUrlFor(url, from), where: "environment", from: said };
   }
 
   const path = machineChoiceFile(from);
@@ -496,7 +544,13 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
         "decide this (0056 §4). lingtai init asks for one and writes it",
     };
   }
-  return { store: "postgres", url: written, where: "config.yml", from: `${path} database.url` };
+  return {
+    store: "postgres",
+    url: written,
+    directUrl: sessionUrlFor(written, from),
+    where: "config.yml",
+    from: `${path} database.url`,
+  };
 }
 
 /**

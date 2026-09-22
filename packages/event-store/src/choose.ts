@@ -4,7 +4,8 @@
  * `@lingtai/env`'s `chosenStore()` is the only thing in the repository that
  * reads *which store*; this is the only thing that turns that answer into a
  * `Log`. Nothing else names `createPostgresLog` or `createSqliteLog` —
- * `pure/one-log.test.ts` reads the sources and fails on a second one.
+ * `packages/env/test/one-choice.test.ts` reads every package's sources and
+ * fails on a second namer, and on a second reader of `chosenStore()`.
  *
  * ## Deferred, and refused by name at first use
  *
@@ -32,7 +33,9 @@
  *
  * `./sqlite.ts` is behind an `await import` and `@lingtai/event-store/sqlite`
  * is its subpath, so a Postgres machine never loads it — the boundary #178
- * raised, asserted by `pure/no-sqlite-on-postgres.test.ts`.
+ * raised, asserted by `packages/daemon/pure/the-written-choice.test.ts`, which
+ * opens all three stores in one Postgres process and reads
+ * `process.moduleLoadList` back.
  */
 import { chosenStore } from "@lingtai/env";
 import { createDb } from "./db.ts";
@@ -63,13 +66,20 @@ export async function processEventStore(): Promise<EventStore> {
 async function open(): Promise<Log> {
   const choice = chosenStore();
   if (choice.store === "postgres") {
-    // The pooled connection is the written one. **`wakeUrl` is deliberately
-    // not**: 0009 requires the waker's connection to be session-mode and the
-    // written choice carries one URL, so the pooled/direct pair keeps the rule
-    // it has always had — `directPostgresUrl()`, resolved when a waker is asked
-    // for, whose third source is that same `database.url`. `lingtai doctor` is
-    // what says where each of the two came from (0056 §3, #214).
-    return createPostgresLog({ store: createEventStore(createDb(choice.url)), url: choice.url });
+    // **Both connections come out of the choice**, and the waker's is the one
+    // that matters here: left out, `createPostgresWaker` resolves
+    // `directPostgresUrl()`, which reads this process's *merged* environment —
+    // so a machine whose `config.yml` names A beside a checkout's `.env.local`
+    // holding `LINGTAI_DATABASE_URL=B` would append to A and register its
+    // `LISTEN` on B, and every subscriber would drain once and never be nudged
+    // again while the board went on rendering that one drain. 0009's
+    // session-mode requirement is kept by the choice itself: `directUrl` is
+    // `url` unless a session-mode name was really exported.
+    return createPostgresLog({
+      store: createEventStore(createDb(choice.url)),
+      url: choice.url,
+      wakeUrl: choice.directUrl,
+    });
   }
   const sqlite = await import("./sqlite.ts");
   return sqlite.createSqliteLog({ db: sqlite.openSqliteLog(choice.path), path: choice.path });

@@ -13,8 +13,10 @@
  *
  * **The SQLite half arrives through a dynamic import**, which is the whole
  * reason `./sqlite.ts` is published at `@lingtai/projector/sqlite`: a Postgres
- * install must never load `node:sqlite`, and `pure/no-sqlite-on-postgres.test.ts`
- * is what holds that.
+ * install must never load `node:sqlite`, and
+ * `packages/daemon/pure/the-written-choice.test.ts` is what holds that — it
+ * opens all three stores in one Postgres process and reads
+ * `process.moduleLoadList` back.
  */
 import { chosenStore } from "@lingtai/env";
 import { createPostgresProjectionStore } from "./postgres.ts";

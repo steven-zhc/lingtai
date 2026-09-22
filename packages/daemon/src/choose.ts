@@ -15,8 +15,9 @@
  *
  * **The SQLite half arrives through a dynamic import**, which is why
  * `./sqlite.ts` is published at `@lingtai/daemon/sqlite`: a Postgres install
- * must never load `node:sqlite`, and `pure/no-sqlite-on-postgres.test.ts` holds
- * it.
+ * must never load `node:sqlite`, and `pure/the-written-choice.test.ts` holds it
+ * — it opens all three stores in one Postgres process and reads
+ * `process.moduleLoadList` back.
  *
  * **Close what this opens.** A Postgres store holds nothing — it connects per
  * operation — but a SQLite one holds the log's file, so every caller here now

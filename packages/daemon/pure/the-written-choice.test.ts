@@ -168,44 +168,128 @@ describe("a machine that wrote sqlite", () => {
  * It also pins the other half: what the three factories opened is Postgres, at
  * the URL that was written, which is the connection this repository has always
  * made.
+ *
+ * **Every connection is made and every connection is named**, which is the
+ * difference between this and a test that watches one. Constructing a
+ * `pg.Pool` opens no socket, so a version of this that only *built* the three
+ * stores recorded a single address — the daemon's, from `status()` — and
+ * `createDb(postgresUrl())` put back into `choose.ts` would have left it
+ * green, which is the bug this whole ticket exists to remove. So each of the
+ * five faces is used, the recorder is cleared between them, and each is
+ * asserted to have gone to the written port **and nowhere else**.
  */
 describe("a machine that wrote postgres", () => {
   const URL_ = "postgresql://nobody:secret@127.0.0.1:5599/none";
+  const DIRECT = "postgresql://nobody:secret@127.0.0.1:5600/none";
 
-  it("opens Postgres at the written URL and never loads node:sqlite", () => {
-    const script = `
+  /**
+   * Each face of the choice, used once, with the addresses it reached.
+   *
+   * `tried` is cleared before each so that an address can be attributed rather
+   * than pooled into one list — the waker's is a different question from the
+   * store's, and the whole finding here is that they can differ.
+   */
+  const probe = `
       import net from "node:net";
       // Recorded rather than allowed: the assertion is *which* address the
       // store went to, and a real connection would hang on a closed port.
+      //
+      // Refused the way a closed port refuses — the socket is returned and
+      // destroyed a tick later — rather than by throwing out of \`connect\`.
+      // A throw there happens before pg has attached its own handlers, and the
+      // \`client.end()\` a waker's \`close()\` makes then writes to a socket
+      // nobody is listening to, which takes the process down with an unhandled
+      // 'error' and loses the reading.
       const tried = [];
       net.Socket.prototype.connect = function (...args) {
         tried.push(typeof args[0] === "object" ? args[0].port : args[0]);
-        throw new Error("connection refused by this test");
+        process.nextTick(() => this.destroy(new Error("connection refused by this test")));
+        return this;
+      };
+      const at = async (fn) => {
+        tried.length = 0;
+        await fn().catch(() => {});
+        return [...tried];
       };
 
       const { processLog } = await import(${EVENT_STORE});
       const { projectionStore } = await import(${PROJECTOR});
       const { processDaemonStore } = await import(${DAEMON});
 
-      await processLog();
+      const log = await processLog();
       const projections = await projectionStore();
       const daemon = await processDaemonStore();
-      await daemon.status().catch(() => {});
+
+      const store = await at(() => log.store.readAll(0n, 1));
+      const queries = await at(() => log.queries.projectStreams("wi-"));
+      const waker = await at(async () => {
+        const session = log.waker("probe").open({ nudge() {}, lost() {} });
+        try { await session.ready; } finally { session.close(); }
+      });
+      const fold = await at(() => projections.lags());
+      const beacon = await at(() => daemon.status());
       await projections.close().catch(() => {});
 
       console.log(JSON.stringify({
-        tried,
+        store, queries, waker, fold, beacon,
         sqlite: process.moduleLoadList.filter((m) => m.includes("sqlite")),
       }));
     `;
-    const read = said<{ tried: number[]; sqlite: string[] }>(
-      run(script, `database:\n  store: postgres\n  url: ${URL_}\n`),
-    );
+
+  interface Reached {
+    store: number[];
+    queries: number[];
+    waker: number[];
+    fold: number[];
+    beacon: number[];
+    sqlite: string[];
+  }
+
+  /** Went to that port, and to no other. `toContain` alone would miss a second database. */
+  function only(ports: number[], port: number, what: string): void {
+    expect(ports.length, `${what} opened no connection`).toBeGreaterThan(0);
+    expect([...new Set(ports)], what).toEqual([port]);
+  }
+
+  it("opens all five connections at the written URL, and never loads node:sqlite", () => {
+    const read = said<Reached>(run(probe, `database:\n  store: postgres\n  url: ${URL_}\n`));
 
     // The boundary, stated as what the process loaded.
     expect(read.sqlite).toEqual([]);
-    // And Postgres is what it went to, at the port the file named.
-    expect(read.tried).toContain(5599);
+    // The log's three faces (#221), the fold, and the beacon — each at the port
+    // the file named, none of them anywhere else.
+    only(read.store, 5599, "the log's store");
+    only(read.queries, 5599, "the log's queries");
+    only(read.waker, 5599, "the log's waker");
+    only(read.fold, 5599, "the projections");
+    only(read.beacon, 5599, "the beacon");
+  }, 90_000);
+
+  /**
+   * **And the waker's connection, and only the waker's, follows an exported
+   * session-mode name.**
+   *
+   * 0009's one genuine second URL: through a transaction pooler the `LISTEN`
+   * registration is handed to someone else between statements and the
+   * notification never comes, so on Supabase the two strings differ. What must
+   * not happen is the reverse — the waker on a *different database* from the
+   * store, which is what `directPostgresUrl()` resolved at `waker()` time
+   * would give a machine whose `config.yml` names one URL and whose checkout's
+   * `.env.local` names another. `directUrl` is part of the choice for that
+   * reason, and it is `url` unless this line's variable was really exported.
+   */
+  it("sends the waker, alone, to an exported session-mode URL", () => {
+    const read = said<Reached>(
+      run(probe, `database:\n  store: postgres\n  url: ${URL_}\n`, {
+        LINGTAI_DIRECT_DATABASE_URL: DIRECT,
+      }),
+    );
+
+    only(read.waker, 5600, "the log's waker");
+    only(read.store, 5599, "the log's store");
+    only(read.queries, 5599, "the log's queries");
+    only(read.fold, 5599, "the projections");
+    only(read.beacon, 5599, "the beacon");
   }, 90_000);
 });
 
