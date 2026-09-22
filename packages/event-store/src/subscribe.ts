@@ -34,7 +34,7 @@ interface SubscribeBase {
    */
   fromSeq: bigint;
 
-  /** What is read after a nudge. The process-wide `eventStore`, outside a test. */
+  /** What is read after a nudge. The process-wide `eventStore` — whichever store this machine chose — outside a test. */
   store: EventStore;
 
   /**

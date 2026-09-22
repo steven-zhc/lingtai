@@ -41,12 +41,13 @@
  * through one object, and the contract holds both implementations to the
  * watermark (`#159`) as well as to the beat.
  *
- * ## Nothing here chooses
+ * ## Nothing here chooses, and since #179 exactly one file next door does
  *
- * `readStatus`, `beat`, `createStatusTable`, the work loop and `reconcile` all
- * still open Postgres when nobody says otherwise. Which implementation a
- * machine gets is [#179](https://github.com/steven-zhc/lingtai/issues/179)'s
- * question, and this exists so that it has somewhere to be asked.
+ * `readStatus`, `beat`, `createStatusTable`, the work loop and `reconcile` each
+ * ask `choose.ts` for a store, which reads the one value
+ * `~/.lingtai/config.yml` holds
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)). This
+ * interface is what made that a single edit rather than five.
  */
 import type { EventStore } from "@lingtai/event-store/store";
 

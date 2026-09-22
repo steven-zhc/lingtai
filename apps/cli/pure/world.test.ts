@@ -89,15 +89,27 @@ describe("conducting", () => {
   /**
    * And the live `holder` can answer there, which is the whole of the claim
    * above: it imports `@lingtai/daemon/lock`, whose only dependency is
-   * `@lingtai/env/lock`. `@lingtai/daemon` itself cannot be asked — its index
-   * reaches `@lingtai/event-store`, whose process-wide client calls
-   * `postgresUrl()` at import — so the gate this replaced was, in the end,
-   * about the import and never about the lock.
+   * `@lingtai/env/lock`.
+   *
+   * **`@lingtai/daemon`'s index now loads there too, and that is #179.** It
+   * used to be the counter-example this test carried — its index reaches
+   * `@lingtai/event-store`, whose process-wide client called `postgresUrl()`
+   * *at import* — so the gate this replaced was, in the end, about the import
+   * and never about the lock. The store is a written choice now
+   * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)), and
+   * a choice is read when a store is opened rather than when a module is
+   * loaded.
+   *
+   * **What must not have moved is the refusal**, and the second half asserts
+   * it: on a machine that has written nothing, the first use is refused by
+   * name and names `lingtai init` — never defaulted to SQLite, which would
+   * open a second, empty log and report every append into it as success
+   * (0056 §2).
    *
    * A child process because that is what a module's import cost is measured in,
    * and `dir` so the probe never reads the operator's own lock.
    */
-  it("reads the lock with nothing configured, where the daemon's index cannot even load", () => {
+  it("reads the lock with nothing configured, where the daemon's index now loads and its first use is refused", () => {
     const dir = mkdtempSync(join(tmpdir(), "lingtai-lock-"));
     const script = join(dir, "probe.mjs");
     const module = (file: string) =>
@@ -107,7 +119,10 @@ describe("conducting", () => {
       `const { conductorLockHolder } = await import(${module("lock.ts")});\n` +
         `console.log(JSON.stringify(await conductorLockHolder({ dir: ${JSON.stringify(dir)} })));\n` +
         `try { await import(${module("index.ts")}); console.log("index loaded"); }\n` +
-        `catch (err) { console.log("index refused: " + err.message.split("\\n")[0]); }\n`,
+        `catch (err) { console.log("index refused: " + err.message.split("\\n")[0]); }\n` +
+        `const { readStatus } = await import(${module("control.ts")});\n` +
+        `try { await readStatus(); console.log("status answered"); }\n` +
+        `catch (err) { console.log("first use refused: " + err.message.split("\\n")[0]); }\n`,
     );
     const ran = spawnSync(process.execPath, [script], {
       encoding: "utf8",
@@ -119,8 +134,10 @@ describe("conducting", () => {
     expect(ran.status).toBe(0);
     const said = ran.stdout.trim().split("\n");
     expect(said[0]).toBe("null");
-    expect(said[1]).toContain("index refused");
-    expect(said[1]).toContain("LINGTAI_DATABASE_URL is not set");
+    expect(said[1]).toBe("index loaded");
+    expect(said[2]).toContain("first use refused");
+    expect(said[2]).toContain("which store it runs");
+    expect(said[2]).toContain("lingtai init");
     /**
      * **The only test in this file that spawns, and the default timeout is not
      * its bound.** Nothing above asserts a duration — the claims are an exit

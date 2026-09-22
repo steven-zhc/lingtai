@@ -36,12 +36,13 @@
  * of event types that count as proof, and hands back column names; parsing
  * `wi-lingtai-52` into a project and an issue is the conductor's, as it was.
  *
- * ## Nothing here chooses
+ * ## Nothing here chooses, and since #179 `choose.ts` does
  *
- * `createPostgresLogQueries` is what every caller in this repository gets when
- * nobody says otherwise. Which implementation a machine runs is
- * [#179](https://github.com/steven-zhc/lingtai/issues/179)'s question, and this
- * exists so that it has somewhere to be asked.
+ * A caller reaches these through `log.queries`, and which implementation is
+ * behind them is whichever of the two this machine wrote down
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ * `lingtai doctor` is the one caller that still names this one, reporting on a
+ * URL it was given ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
  */
 import pg from "pg";
 import { postgresUrl } from "./env.ts";

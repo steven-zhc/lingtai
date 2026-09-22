@@ -13,7 +13,9 @@
  * conductor is writing to.
  */
 import { afterAll, beforeAll } from "vitest";
-import { createDb, createEventStore, createPostgresLogQueries, type Db, directPostgresUrl } from "../src/index.ts";
+import { createDb, createEventStore, type Db, directPostgresUrl } from "../src/index.ts";
+// The implementation under test by its own module, not the barrel (#179).
+import { createPostgresLogQueries } from "../src/queries.ts";
 import { cleanupStreams, created } from "./support.ts";
 import { describeLogQueriesContract } from "./queries-contract.ts";
 

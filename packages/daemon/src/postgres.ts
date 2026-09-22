@@ -30,9 +30,16 @@ import type { Beat, DaemonStatus, DaemonStore, StreamQuery } from "./store.ts";
 
 export interface PostgresDaemonStoreOptions {
   /**
-   * Session-mode connection. Resolved at each call rather than here, so that
-   * constructing a store costs nothing and cannot refuse on a machine that has
-   * not configured one yet.
+   * The connection. `choose.ts` passes the machine's written one; left out it
+   * is `directPostgresUrl()`, which is what every caller got before the choice
+   * was a value.
+   *
+   * Resolved at each call rather than here, so that constructing a store costs
+   * nothing and cannot refuse on a machine that has not configured one yet.
+   *
+   * Session mode is not required: every operation here is one statement on a
+   * connection this opens and ends. What needs it is `LISTEN`/`NOTIFY`, which
+   * is the log's waker and not this (0009).
    */
   url?: string;
   /**

@@ -49,7 +49,7 @@
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from "@lingtai/domain";
 import { parseWorkItemStream } from "@lingtai/domain";
-import { createPostgresProjectionStore } from "./postgres.ts";
+import { withProjectionStore } from "./choose.ts";
 import type { Projection, ProjectionContext } from "./store.ts";
 
 /**
@@ -1126,28 +1126,25 @@ export interface ReadTasksOptions {
 }
 
 /**
- * The board's cards, out of Postgres unless a caller says otherwise.
+ * The board's cards, out of whichever store this machine wrote down (#179).
  *
  * The query and the mapping moved into `postgres.ts` with #219 and did not
- * change on the way; what is left here is the default — a store opened for this
- * read and closed after it, exactly as the client it replaced was. **Nothing
- * here chooses between the implementations**: that is
- * [#179](https://github.com/steven-zhc/lingtai/issues/179)'s, and a caller that
- * already has a store calls `store.tasks` and skips this.
+ * change on the way; what is left here is a store opened for this read and
+ * closed after it, exactly as the client it replaced was. **Nothing here
+ * chooses between the implementations** — `choose.ts` is the one place that
+ * does — and a caller that already has a store calls `store.tasks` and skips
+ * this.
  */
 export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCard[]> {
-  const store = createPostgresProjectionStore({ url: options.url, max: 1 });
-  try {
-    return await store.tasks({
+  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
+    store.tasks({
       project: options.project,
       // Resolved here rather than in the store, so that changing the window
       // stays a different query and a store never has to know the board's
       // default.
       retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
-    });
-  } finally {
-    await store.close();
-  }
+    }),
+  );
 }
 
 /**
@@ -1166,12 +1163,7 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
 export async function readTaskProjects(
   options: Pick<ReadTasksOptions, "retentionDays" | "url"> = {},
 ): Promise<string[]> {
-  const store = createPostgresProjectionStore({ url: options.url, max: 1 });
-  try {
-    return await store.taskProjects({
-      retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
-    });
-  } finally {
-    await store.close();
-  }
+  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
+    store.taskProjects({ retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS }),
+  );
 }

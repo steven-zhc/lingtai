@@ -22,12 +22,14 @@ import { isPending, projectStream } from "@lingtai/domain";
 import {
   createDb,
   createEventStore,
-  createPostgresLog,
   type Db,
   directPostgresUrl,
   type EventStore,
   type Log,
 } from "@lingtai/event-store";
+// Postgres by name, from its own module: the barrel hands out the store this
+// machine chose and names no implementation (#179).
+import { createPostgresLog } from "@lingtai/event-store/log";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";

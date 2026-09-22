@@ -22,12 +22,13 @@
  * duplicated or spurious, and a missed one costs the sweep the conductor runs
  * anyway (`SWEEP_MS`) — that is `wake.ts`'s contract and it is unchanged here.
  *
- * ## Nothing here chooses
+ * ## Nothing here chooses, and since #179 `choose.ts` does
  *
- * `log` in `index.ts` is Postgres, as every caller in this repository is today.
- * Which implementation a machine runs is
- * [#179](https://github.com/steven-zhc/lingtai/issues/179)'s question, and this
- * exists so that it has one place to be answered instead of three.
+ * `log` in `index.ts` is whichever of the two this machine wrote down, opened
+ * at first use
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)). This
+ * file is the Postgres half of that pair, and the reason the answer had one
+ * place to land instead of three.
  */
 import type { EventStore } from "./event-store.ts";
 import { createPostgresLogQueries, type LogQueries } from "./queries.ts";

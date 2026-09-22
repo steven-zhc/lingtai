@@ -16,14 +16,10 @@
  */
 import type { Envelope } from "@lingtai/domain";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  createDb,
-  createEventStore,
-  createPostgresWaker,
-  type Db,
-  type EventStore,
-  subscribe,
-} from "../src/index.ts";
+import { createDb, createEventStore, type Db, type EventStore, subscribe } from "../src/index.ts";
+// The Postgres waker by its own module: the barrel stopped naming an
+// implementation when #179 made the log a written choice.
+import { createPostgresWaker } from "../src/wake.ts";
 import type { Subscription } from "../src/index.ts";
 import {
   cleanupStreams,

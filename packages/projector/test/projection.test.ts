@@ -13,8 +13,10 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+// Postgres by name, from its own module: the barrel hands out the store this
+// machine chose and names no implementation (#179).
+import { createPostgresProjectionStore } from "../src/postgres.ts";
 import {
-  createPostgresProjectionStore,
   createProjectionRunner,
   declaredColumns,
   describeShape,

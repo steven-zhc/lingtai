@@ -29,7 +29,7 @@
  */
 import type { Finding, PayloadOf } from "@lingtai/domain";
 import { findingKey, parseWorkItemStream } from "@lingtai/domain";
-import { createPostgresProjectionStore } from "./postgres.ts";
+import { withProjectionStore } from "./choose.ts";
 import type { Projection } from "./store.ts";
 
 export const BACKLOG_TABLE = "finding_backlog";
@@ -230,20 +230,18 @@ export interface ReadBacklogOptions {
 /**
  * Oldest first within a project: a backlog is worked from the bottom.
  *
- * Out of Postgres unless a caller says otherwise. The query and the mapping are
- * `postgres.ts`'s since #219 and unchanged by the move, including the one thing
- * that is easy to lose: **a database no projector has ever started has no
- * table, and that is an empty backlog rather than a failure.**
+ * Out of whichever store this machine wrote down (#179). The query and the
+ * mapping are `postgres.ts`'s and `sqlite.ts`'s since #219 and unchanged by the
+ * move, including the one thing that is easy to lose: **a database no projector
+ * has ever started has no table, and that is an empty backlog rather than a
+ * failure.**
  */
 export async function readBacklog(options: ReadBacklogOptions = {}): Promise<BacklogEntry[]> {
-  const store = createPostgresProjectionStore({ url: options.url, max: 1 });
-  try {
-    return await store.backlog({
+  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
+    store.backlog({
       project: options.project,
       status: options.status,
       key: options.key,
-    });
-  } finally {
-    await store.close();
-  }
+    }),
+  );
 }

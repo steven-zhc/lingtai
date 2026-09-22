@@ -18,17 +18,18 @@ import type { RuntimeId } from "@lingtai/domain";
 import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 // **Type-only, and the submodules rather than the barrel** (`#157`, #221).
-// Importing `@lingtai/event-store` constructs the process-wide client as a side
-// effect of the import, and `createDb()` reads `postgresUrl()` eagerly — which
-// throws where nothing is configured. This file is the first thing `lingtai
-// status` reaches, so an eager import here is the machine with no Postgres
-// losing its first command before a line of it runs. The default log is
-// imported when one is actually wanted, and a caller that brings its own never
-// loads it.
+// Importing `@lingtai/event-store` used to construct the process-wide client as
+// a side effect of the import, and `createDb()` read `postgresUrl()` eagerly —
+// which threw where nothing was configured. This file is the first thing
+// `lingtai status` reaches, so an eager import here was the machine with no
+// Postgres losing its first command before a line of it ran. #179 made the
+// store a written choice, opened at first use, so the barrel no longer builds
+// anything at import; the split stays because a caller that brings its own log
+// should still load no store at all.
 import type { EventStore } from "@lingtai/event-store/store";
 import type { Log, LogQueries } from "@lingtai/event-store/log";
 
-/** The process-wide Postgres log, reached only when nobody supplied one. */
+/** The process-wide log — whichever store this machine chose — reached only when nobody supplied one. */
 async function defaultLog(): Promise<Log> {
   return (await import("@lingtai/event-store")).log;
 }

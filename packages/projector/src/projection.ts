@@ -11,8 +11,8 @@
  * a paragraph about `pg`, which is the whole of #219: this file used to open a
  * pool and a client of its own, so the runner *was* the Postgres path and there
  * was nothing to swap. It now holds a store and states the rule to it; which
- * store it holds is decided by whoever builds it, and by default that is still
- * Postgres.
+ * store it holds is the caller's when the caller named one, and otherwise the
+ * one this machine wrote down — `choose.ts`, and nothing here (#179).
  *
  * Reads of the log still go through the `EventStore`: `readAll` is the only
  * cursor, and its payloads are validated and upcast on the way out.
@@ -24,18 +24,18 @@
  * selected.
  */
 import type { Envelope } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
 // The two submodules rather than the barrel, and that is #157's argument one
-// package over: importing `@lingtai/event-store` constructs the process-wide
-// client as a side effect, so a runner handed both a log and a projection store
-// would still have needed a Postgres to exist. `subscribe` and `wake` build
-// nothing at import, and the process-wide `eventStore` is reached for only when
-// nobody supplied a log.
+// package over: importing `@lingtai/event-store` used to construct the
+// process-wide client as a side effect, so a runner handed both a log and a
+// projection store would still have needed a Postgres to exist. #179 made that
+// client lazy, and the split stays for the reason it was made: `subscribe` and
+// `wake` build nothing at import, and the process-wide log is reached for only
+// when nobody supplied one.
 import type { EventStore } from "@lingtai/event-store/store";
 import type { Log } from "@lingtai/event-store/log";
 import { type Subscription, subscribe } from "@lingtai/event-store/subscribe";
 import type { Waker } from "@lingtai/event-store/wake";
-import { createPostgresProjectionStore } from "./postgres.ts";
+import { projectionStore, withProjectionStore } from "./choose.ts";
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from "./shape.ts";
 import type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from "./store.ts";
 
@@ -93,8 +93,8 @@ export interface ProjectionRunnerOptions {
    * it — it failed to open a `LISTEN` on a database that was not there. A log
    * hands out its own waker, so there is no pair to get wrong.
    *
-   * The process-wide Postgres log outside a test, imported on demand so that a
-   * runner given one opens no client.
+   * The process-wide log outside a test — whichever store this machine chose —
+   * imported on demand so that a runner given one opens no client.
    */
   log?: Log;
   /** The store alone, overriding `log.store`. A test's recorder. */
@@ -102,18 +102,20 @@ export interface ProjectionRunnerOptions {
   /**
    * Where the fold lands, and the checkpoint with it.
    *
-   * **Nothing chooses here.** Left out, this is Postgres at `url` — which is
-   * every caller in this repository today. It is an argument so that
-   * [#179](https://github.com/steven-zhc/lingtai/issues/179) has somewhere to
-   * put an answer, and so that a test can hold the runner to a store with no
-   * server behind it.
+   * **Nothing chooses here.** Left out, this is whatever `choose.ts` opens from
+   * `~/.lingtai/config.yml` — one place, read once (#179). It is an argument so
+   * that a test can hold the runner to a store with no server behind it.
    *
    * A runner given one does not own it: `close()` closes a store the runner
    * built and leaves one it was handed, for the reason a pool passed in is the
    * caller's to end.
    */
   into?: ProjectionStore;
-  /** Pooled connection for the default Postgres store. */
+  /**
+   * A Postgres connection for the store this machine chose, **refining it and
+   * never replacing it** — see `ProjectionStoreOptions.url`. Ignored where the
+   * machine chose a file.
+   */
   url?: string;
   /**
    * What says the log has moved, overriding `log.waker(…)`. Left out it is the
@@ -128,7 +130,19 @@ export interface ProjectionRunnerOptions {
 export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
   const { projection } = options;
   const mine = options.into === undefined;
-  const into = options.into ?? createPostgresProjectionStore({ url: options.url });
+  /**
+   * Where the fold lands: the caller's store, or the one this machine wrote
+   * down — **opened at first use and not at construction**.
+   *
+   * Lazily because reading the choice is asynchronous (`choose.ts` reaches the
+   * SQLite half through a dynamic import) and a runner is built synchronously.
+   * Nothing opened at construction before this either: the pool it used to
+   * build connected on its first query.
+   */
+  let opened: Promise<ProjectionStore> | null =
+    options.into === undefined ? null : Promise.resolve(options.into);
+  const landing = (): Promise<ProjectionStore> =>
+    (opened ??= projectionStore(options.url === undefined ? {} : { url: options.url }));
 
   let subscription: Subscription | null = null;
   let failure: unknown = null;
@@ -136,10 +150,11 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
   async function commitBatch(events: readonly Envelope[]): Promise<void> {
     const last = events[events.length - 1];
     if (!last) return;
-    await into.transact(async (ctx: ProjectionContext) => {
+    const store = await landing();
+    await store.transact(async (ctx: ProjectionContext) => {
       await projection.apply(events, ctx);
       // The whole point: this is not a separate write.
-      await into.advance(ctx, projection.name, last.seq);
+      await store.advance(ctx, projection.name, last.seq);
     });
   }
 
@@ -155,7 +170,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
       waker ??= from.waker(`lingtai-projection-${projection.name}`);
     }
 
-    const fromSeq = await into.checkpoint(projection.name);
+    const fromSeq = await (await landing()).checkpoint(projection.name);
     const sub = subscribe({
       fromSeq,
       store,
@@ -183,9 +198,10 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
 
     async start() {
       failure = null;
-      await into.transact(async (ctx) => {
+      const store = await landing();
+      await store.transact(async (ctx) => {
         await projection.create(ctx);
-        await into.register(ctx, projection.name);
+        await store.register(ctx, projection.name);
       });
 
       // After `create`, so a fresh database has just been given the current
@@ -212,7 +228,8 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
       // rebuild must not do.
       await this.stop();
 
-      await into.transact(async (ctx) => {
+      const store = await landing();
+      await store.transact(async (ctx) => {
         // Remove first, then recreate. The other order drops what was just
         // built and leaves nothing behind.
         await projection.reset(ctx);
@@ -220,7 +237,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
         // Zeroed rather than deleted: the projection still exists and is still
         // being run, and a missing row would make it look like one nobody had
         // ever started.
-        await into.rewind(ctx, projection.name);
+        await store.rewind(ctx, projection.name);
       });
 
       failure = null;
@@ -229,15 +246,18 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
 
     async close() {
       await this.stop();
-      if (mine) await into.close();
+      // `opened` and not `landing()`: a runner closed without ever having been
+      // started opened nothing, and opening a store in order to close it would
+      // refuse on a machine that has written no choice.
+      if (mine && opened !== null) await (await opened).close();
     },
 
     async shape() {
-      return shapeIn(projection, into);
+      return shapeIn(projection, await landing());
     },
 
     async lag() {
-      return into.lag(projection.name);
+      return (await landing()).lag(projection.name);
     },
   };
 }
@@ -249,11 +269,8 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
  * `updatedAt` is old is a stopped subscriber, and the old loop had no way to
  * notice the equivalent at all.
  */
-export async function projectionLag(url = postgresUrl()): Promise<ProjectionLag[]> {
-  const store = createPostgresProjectionStore({ url, max: 1 });
-  try {
-    return await store.lags();
-  } finally {
-    await store.close();
-  }
+export async function projectionLag(url?: string): Promise<ProjectionLag[]> {
+  // As `projectionShape`: a URL refines a Postgres connection and never picks
+  // the store (#214, 0056).
+  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => store.lags());
 }

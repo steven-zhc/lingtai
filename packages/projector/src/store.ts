@@ -22,11 +22,12 @@
  * rebuild, the catalogue read behind the shape check, and the queries the
  * board's columns are.
  *
- * **Nothing here chooses.** `readTasks`, `readBacklog`, `projectionLag`,
- * `projectionShape` and `createProjectionRunner` still open Postgres when
- * nobody says otherwise. Which implementation a project gets is
- * [#179](https://github.com/steven-zhc/lingtai/issues/179)'s question, and this
- * exists so that it has somewhere to be asked.
+ * **Nothing here chooses, and since #179 exactly one file next door does.**
+ * `readTasks`, `readBacklog`, `projectionLag`, `projectionShape` and
+ * `createProjectionRunner` each ask `choose.ts` for a store, which reads the
+ * one value `~/.lingtai/config.yml` holds
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)). This
+ * interface is what made that a single edit rather than six.
  */
 import type { Envelope } from "@lingtai/domain";
 // Type-only, both ways. `store.ts` names the row shapes the board reads and

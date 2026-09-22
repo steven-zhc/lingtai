@@ -310,16 +310,23 @@ describe("sqlite: on a Node without node:sqlite", () => {
        process.getBuiltinModule = (id) => (gone(id) ? undefined : real.call(process, id));`,
     );
     const barrel = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+    // The SQLite half by its own module since #179: the barrel hands out the
+    // store this machine chose and re-exports neither implementation, so the
+    // refusal has to be asked of `sqlite.ts` — which is the same claim, one
+    // import further on. Importing *it* on this Node is fine too; only opening
+    // a log reaches `node:sqlite`.
+    const sqliteModule = fileURLToPath(new URL("../src/sqlite.ts", import.meta.url));
     const script = `
-      const m = await import(${JSON.stringify(barrel)});
+      await import(${JSON.stringify(barrel)});
       console.log("imported");
+      const m = await import(${JSON.stringify(sqliteModule)});
       try { m.openSqliteLog(${JSON.stringify(join(dir, "log.db"))}); } catch (e) { console.log(e.message); }`;
     const out = await new Promise<string>((resolve, reject) =>
       execFile(
         process.execPath,
         ["--import", hook, "--input-type=module", "-e", script],
-        // The barrel builds a Postgres client, which reads its address and
-        // never connects to it.
+        // A URL exported, so the barrel has a store to choose — it builds
+        // nothing until something uses it, and nothing here does.
         { env: { ...process.env, LINGTAI_DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" }, timeout: 30_000 },
         (err, stdout, stderr) => (err ? reject(new Error(`${err.message}\n${stderr}`)) : resolve(stdout)),
       ),

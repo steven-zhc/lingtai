@@ -11,11 +11,12 @@
  * under test is which store the row came from, not what the rows say about a
  * commit, which `test/doctor.test.ts` covers against the real one.
  *
- * **What is still Postgres's is the default and the module graph**, not these
- * rows: importing `@lingtai/daemon/control` builds the process-wide log client,
- * so a machine that has configured no Postgres at all cannot yet run `doctor`.
- * That is [#179](https://github.com/steven-zhc/lingtai/issues/179), which this
- * ticket deliberately does not decide.
+ * **What was still Postgres's is the module graph**, and #179 closed that:
+ * importing `@lingtai/daemon/control` used to build the process-wide log client
+ * at import, so a machine that had configured no Postgres at all could not run
+ * `doctor` however file-backed these two rows were. The store is a written
+ * choice now and it is read when a store is opened, so nothing here is reached
+ * by importing anything.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

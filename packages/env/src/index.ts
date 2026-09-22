@@ -330,10 +330,18 @@ export const SQLITE_LOG = "lingtai.db";
  * The documents point here rather than restating it. A caller may add its own
  * remedy after it — which command *it* offers is its own business — and must
  * not rewrite the claim.
+ *
+ * **What it says changed when #179 landed, and that is what one place is for.**
+ * It used to say no version opened a SQLite machine; `chosenStore()` now does,
+ * and the four readers — `lingtai init`'s amber line, a `doctor` row, the
+ * README and `doc/operating.md` — each said the new thing the moment this line
+ * did. The *name* still says `NOT_OPEN_YET` because every reader is under
+ * `apps/cli/`, which #214 owns; it is a rename and not a claim.
  */
 export const SQLITE_NOT_OPEN_YET =
-  "SQLite is a choice this machine can record and no version opens it yet — #179 is what makes a store open from the " +
-  "written choice. Until that lands, Postgres is the store this version runs on";
+  "SQLite is the store this machine runs: the log, its questions, the projections and the beacon are one file under " +
+  "~/.lingtai, with no server and no connection string. Switching stores later is a new database and nothing " +
+  "converts one into the other (0055 §3)";
 
 /**
  * The variables really exported into this process.
@@ -402,17 +410,34 @@ function notSetUp(name: string, path: string | null, url?: string): StoreRefused
  * makes CI, launchd and a container work with no file at all (0056 §3) — and it
  * is the *exported* one, never a checkout's `.env.local` (§4).
  *
- * **What opens the store it names is still #179's.** This says what was chosen;
- * nothing yet reads it to decide which implementation to construct, and
- * `postgresUrl()` is what eighteen callers still ask for a connection string.
+ * **What opens the store it names is `chosenStore()` below** (#179): the three
+ * factories — the log, the projections and the beacon — each ask that, and no
+ * other file in the repository reads a variable or a file to decide.
  */
 export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice {
   // The test side for a test, as every other read here does — so a suite that
   // exists to assert Postgres can never be answered by the operator's machine.
   const name = dbVar("DATABASE_URL", from);
-  const url = optional(name, realEnvironment(from));
+  // **`realEnvironment` is how 0056 §4 is kept**, and it is kept for the
+  // machine's name only. The snapshot predates dotenv, so a checkout's
+  // `.env.local` cannot decide, for a machine, which store that machine runs.
+  //
+  // **A test side is not a machine's.** `dbVar` has already moved to
+  // `LINGTAI_TEST_DATABASE_URL`, which 0056 §4 names as a value `.env.local`
+  // goes on supplying and `.env.example` documents there — so reading the
+  // snapshot for it would refuse every suite whose URL is in the one file the
+  // suite is told to put it in, while `postgresUrl()` beside it answered.
+  // What 0046 forbids is a *fallback*, and there is none: with no test URL
+  // anywhere this still refuses, by name.
+  const url = optional(name, inTest(from) ? from : realEnvironment(from));
   if (url !== undefined) {
-    return { store: "postgres", url, where: "environment", from: `${name}, exported into this process` };
+    // Said as it is: a machine's name was really exported, and a test's may
+    // have come from the env files. A line somebody reads must not claim the
+    // stronger of the two.
+    const said = inTest(from) && optional(name, realEnvironment(from)) === undefined
+      ? `${name}, in this process's environment`
+      : `${name}, exported into this process`;
+    return { store: "postgres", url, where: "environment", from: said };
   }
 
   const path = machineChoiceFile(from);
@@ -472,6 +497,36 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
     };
   }
   return { store: "postgres", url: written, where: "config.yml", from: `${path} database.url` };
+}
+
+/**
+ * The choice, or the refusal **thrown by name** — what a factory that is about
+ * to open a store calls (#179).
+ *
+ * `storeChoice` is total because `lingtai upgrade`, `lingtai uninstall` and
+ * `lingtai doctor` report on a machine rather than open it. This is the other
+ * face, for the three factories that cannot carry on without an answer: the
+ * log (`@lingtai/event-store`), the projections (`@lingtai/projector`) and the
+ * beacon (`@lingtai/daemon`).
+ *
+ * **It throws where nothing was written, and never defaults.** A machine that
+ * has not been set up is not a machine that chose SQLite
+ * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md) §2),
+ * and the refusal it throws names `lingtai init`. That is the whole of the
+ * blocker that refused #179's ninth pass: under a rule that read *absence* as
+ * *SQLite*, a process that could not see the checkout's `.env.local` opened a
+ * second, empty log and reported every append into it as success.
+ *
+ * **At first use and not at import.** `eventStore` and `log` are deferred
+ * (`@lingtai/event-store/choose`), so `lingtai version`, `upgrade`, `rollback`,
+ * `uninstall` and `init` load the modules that reach a store and are refused by
+ * nothing — the refusal arrives at the first append, read or beat, which is the
+ * first moment a process needs the answer.
+ */
+export function chosenStore(from: NodeJS.ProcessEnv = process.env): StoreChosen {
+  const choice = storeChoice(from);
+  if ("refused" in choice) throw new Error(choice.refused);
+  return choice;
 }
 
 /**
@@ -607,12 +662,23 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
  * name — a `try`/`catch` around a getter is what made this invisible for five
  * passes of #179. Where a log stops having to be Postgres, this body changes
  * and its callers do not: one place decides, and no caller decides again by
- * catching. That is all it is — the eighteen callers of `postgresUrl()` still
- * each want a connection string, and giving them one is #179's actual work
- * (doc/design/installing.md).
+ * catching.
  *
- * Today it is exactly what `postgresUrl()` reads, so the two still coincide —
- * a direct URL alone is not a log, as it was not before this had a name.
+ * It is still exactly what `postgresUrl()` reads, and **since #179 that is no
+ * longer the same set of machines as *has a log*.** A machine that wrote
+ * `store: sqlite` runs one, in a file, and this answers false about it; so does
+ * a machine that carries a `database.url` and no `database.store`, which 0056
+ * calls not set up and must not collapse into *chose SQLite* (0016 §4).
+ *
+ * That is left standing deliberately and it is not this function's decision to
+ * make. Its three callers are `lingtai uninstall`, `lingtai upgrade` and the
+ * drain beneath both (`apps/cli/src/world.ts`), and what they do with a
+ * file-backed log — whether `~/.lingtai` holding the log changes what an
+ * uninstall may remove, and what it must say first — is a question about those
+ * commands, which [#214](https://github.com/steven-zhc/lingtai/issues/214)
+ * opens and #179 deliberately does not answer. Until then this reads as it
+ * always has: *is Postgres configured*, which on every machine that exists
+ * today is also *is there a log*.
  *
  * **Total.** It answers on every machine, including one whose `config.yml` was
  * truncated mid-write: `false`, because nothing here names a log, while

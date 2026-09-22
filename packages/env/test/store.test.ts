@@ -169,4 +169,37 @@ describe("a value the env files supplied", () => {
       where: "environment",
     });
   });
+
+  /**
+   * **And the test side is the other way round, because it is not a machine's.**
+   *
+   * 0056 §4 keeps `.env.local` out of *this machine's* selection — a fact four
+   * processes have to agree about cannot come from a file whose visibility
+   * depends on the directory a process started in. `LINGTAI_TEST_DATABASE_URL`
+   * is not that fact: §4 names it as a value the file goes on supplying, and
+   * `.env.example` is where a checkout is told to put it. Reading the snapshot
+   * for it would refuse `pnpm test:db` on every machine that followed those
+   * instructions, while `postgresUrl()` beside it answered — the two stores
+   * disagreeing about one process, which is the failure this whole ADR is
+   * about, in miniature.
+   *
+   * What 0046 forbids is a *fallback to the operator's log*, and there is
+   * none: with no test URL anywhere, a test run is still refused by name.
+   */
+  it("does decide a test's store, which is the one name that file is told to hold", () => {
+    const read = probe(
+      `process.env.LINGTAI_TEST_DATABASE_URL = ${JSON.stringify(URL_)};\n${say}`,
+      { LINGTAI_TEST: "1", LINGTAI_TEST_DATABASE_URL: "" },
+    );
+    expect(read).toMatchObject({ store: "postgres", url: URL_, where: "environment" });
+    // Said as it is, rather than claiming the stronger of the two.
+    expect(describeStore(read)).toContain("in this process's environment");
+    expect(describeStore(read)).not.toContain("exported into this process");
+  });
+
+  it("and with none anywhere, a test run is still refused rather than fallen back", () => {
+    expect(probe(say, { LINGTAI_TEST: "1", LINGTAI_TEST_DATABASE_URL: "" })).toMatchObject({
+      because: "nothing chosen",
+    });
+  });
 });

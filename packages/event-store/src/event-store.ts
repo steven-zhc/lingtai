@@ -30,8 +30,9 @@ import {
 // client as a side effect of the import, and `createDb()` reads `postgresUrl()`
 // eagerly. A test that never touches a database still had to be given one, and
 // that, rather than anything in the test bodies, is what put 29 files in the
-// half that needs one. The singleton now lives in `index.ts`, one import closer
-// to the callers that actually want it.
+// half that needs one. Since #179 there is no client at import anywhere: the
+// one this process holds is `choose.ts`'s, opened at first use from the store
+// this machine wrote down.
 import type { Db } from "./db.ts";
 import type { CodecTypes } from "./prisma/contract.d.ts";
 import { parseTimestamptz } from "./timestamptz.ts";
