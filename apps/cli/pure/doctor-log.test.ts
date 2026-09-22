@@ -107,6 +107,31 @@ describe("a machine whose log is a file, and has no Postgres at all", () => {
   });
 
   /**
+   * **And nor does the row underneath it.** Reporting the absence buys nothing
+   * if the next question opens the log anyway: `createPollingWaker` runs the
+   * same `openSqliteLog`, so this row answering `ok — a session opened` would
+   * both contradict the row above it and leave a fresh empty log behind, which
+   * is what makes the *second* `lingtai doctor` on that machine green. The
+   * question is not asked at all, and the skip names the row that fails.
+   */
+  it("does not ask whether a log that is not there would wake, and makes no file", async () => {
+    const gone = join(dir, "deleted-while-clearing-state.db");
+    let opened = false;
+    const row = await logWakes(
+      { store: "sqlite", path: gone, where: "config.yml", from: join(dir, "config.yml") },
+      async () => {
+        opened = true;
+        return log;
+      },
+    );
+
+    expect(row.status).toBe("skip");
+    expect(row.detail).toContain(LOG_REACHABLE);
+    expect(opened).toBe(false);
+    expect(existsSync(gone)).toBe(false);
+  });
+
+  /**
    * A log that will not open is the one failure every green row after it would
    * be green *about*. It fails, and the detail says what stops working —
    * not the exception alone, which sends a reader to the driver's issue tracker.

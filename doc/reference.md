@@ -865,6 +865,19 @@ row that established reachability by opening would report `opened and read`
 about a file it had made during the diagnosis, and a log deleted while clearing
 state would be replaced by an empty one and called present. A missing file is a
 `fail` there, as a missing `events` table already was on Postgres.
+
+**And then nothing else in the command opens one either.** A `fail` that the
+very next row undoes is worth nothing: every row below `log: reachable` opens
+the log to answer — the waker, the two projections, the beacon, the refusals,
+the worktrees, the two `gates:` rows and the three that read the project
+streams — and any one of them would leave a fresh empty log behind, so the
+*second* `lingtai doctor` on that machine would be green and the `lingtai
+restart` it gates would start a daemon against it. So on a SQLite machine whose
+file is gone they are all a `skip` naming `log: reachable`, and the fault is
+still true when the command is run again. `conductor: lock` is the exception
+and answers: it is a file under `~/.lingtai/locks` (#193) and not a row in any
+log.
+
 `log: a change reaches a second reader` opens the log's own waker:
 `LISTEN`/`NOTIFY` on a Postgres machine, a poll of the file on a SQLite one.
 It is the weaker of the two rows about waking on Postgres and says so — whether

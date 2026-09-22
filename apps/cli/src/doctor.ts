@@ -268,6 +268,43 @@ function notForThisStore(name: string, store: string, instead: string): CheckRes
 }
 
 /**
+ * **A file-backed log whose file is not there** — the one state in which this
+ * command could end the absence it exists to report.
+ *
+ * Asked of the filesystem and never of a log: `openSqliteLog` hands
+ * `node:sqlite` a path it *makes* where there is none and then runs its
+ * `create table if not exists`, so for a file-backed store opening **is**
+ * creating. `LOG_REACHABLE` reporting the absence buys nothing if the row
+ * under it opens the log anyway: the file would exist by the end of the same
+ * run, the next `lingtai doctor` would be green, and the `lingtai restart` it
+ * gates (0042) would start a daemon against an empty log with everything that
+ * was ever appended gone and no row saying so. So every row that would have to
+ * open the log is held back by this, and the fault stays true until somebody
+ * fixes it. Postgres has no such shape — nothing here creates `events` — so
+ * there a missing log throws out of the read instead.
+ */
+export function logFileGone(choice: StoreChoice): boolean {
+  return !("refused" in choice) && choice.store === "sqlite" && !existsSync(choice.path);
+}
+
+/**
+ * A row that could only be answered by opening a log that is not there — a
+ * `skip` naming the row that fails over it, and **never an `ok`**. The reason
+ * it is not simply asked is `logFileGone`: asking is what would make the answer
+ * yes.
+ */
+function logIsGone(name: string): CheckResult {
+  return {
+    name,
+    status: "skip",
+    detail:
+      `not asked — there is no log file at this machine's path, which ${LOG_REACHABLE} above ` +
+      "fails over. Answering would mean opening one, and opening a file-backed log creates it: " +
+      "this run would have ended the absence the row above reports, and the next one would be green",
+  };
+}
+
+/**
  * A stream no run, project or subscriber can be called. Reading it costs one
  * indexed lookup and returns nothing, which is the whole point: the answer is
  * *the log answered*, and never anything about what is in it.
@@ -283,7 +320,7 @@ export async function logReachable(
   // Asked of the filesystem and not of `open()`, because `open()` is what
   // would create it — see above. Nothing is opened on this path at all, so the
   // row that reports the absence does not cause it to stop being true.
-  if (choice.store === "sqlite" && !existsSync(choice.path)) {
+  if (logFileGone(choice)) {
     return {
       name: LOG_REACHABLE,
       status: "fail",
@@ -320,6 +357,11 @@ export async function logWakes(
   timeoutMs = 15_000,
 ): Promise<CheckResult> {
   if ("refused" in choice) return noStoreWritten(LOG_WAKES, choice.refused);
+  // The row immediately above has just reported that there is no file here, and
+  // opening a waker opens the log: `createPollingWaker` runs the same
+  // `openSqliteLog` a second time. Answering this question would make the
+  // answer to that one stop being true, so it is not asked (`logFileGone`).
+  if (logFileGone(choice)) return logIsGone(LOG_WAKES);
   const how =
     choice.store === "sqlite"
       ? "a poll of the file"
@@ -2005,37 +2047,61 @@ export async function runDoctor(
   // **Reachability leads**, because it is what every row after it assumes and
   // what nothing asked on a machine with no Postgres.
   results.push(await logReachable(choice, open));
+
+  /**
+   * **A row that has to open the log to answer, asked only where there is one
+   * to open.**
+   *
+   * `logFileGone` is the whole of why: on a machine that wrote `sqlite` and
+   * lost the file, every row below is one `openSqliteLog` away from creating
+   * what the row above just reported missing — and the value of that report is
+   * entirely in its still being true when the operator, or the `lingtai
+   * restart` that gates on it, runs the command again.
+   */
+  const noLog = logFileGone(choice);
+  const askingTheLog = async (name: string, row: () => Promise<CheckResult>): Promise<CheckResult> =>
+    noLog ? logIsGone(name) : row();
+
   results.push(await logWakes(choice, open));
   // The refinement only where the pair it came from is sound. A URL the
   // environment row has just failed over is one nothing should dial: these
   // fold through the written choice instead, which is what the rest of the
   // system opens anyway.
   const refine = envResult.status === "ok" ? pooled : undefined;
-  results.push(await projections(refine));
-  results.push(await projectionShapes(refine));
-  results.push(await daemonLiveness());
+  results.push(await askingTheLog("projections: lag", () => projections(refine)));
+  results.push(await askingTheLog("projections: shape", () => projectionShapes(refine)));
+  results.push(await askingTheLog("daemon: liveness", () => daemonLiveness()));
   // Beside liveness, never folded into it: up and current are two facts, and
   // for thirty-nine minutes only one of them was measured.
-  results.push(await daemonCurrency());
+  results.push(await askingTheLog("daemon: currency", () => daemonCurrency()));
   // What the conductor refused, from the log — not what this checkout would
   // refuse, which the recipe rows answer, and which is a different question
   // whenever the two are at different commits (#148).
-  results.push(await passRefusals());
+  results.push(await askingTheLog("conductor: refusals on the log", () => passRefusals()));
+  // Not gated: the lock is a file under `~/.lingtai/locks` since #193 and not a
+  // row in any log, so it is one of the few things still worth saying about a
+  // machine whose log has gone.
   results.push(await conductorLock());
-  results.push(await orphans());
+  results.push(await askingTheLog("worktrees: reconciliation", () => orphans()));
   // Two comparisons of the plan against the log — 0015's, and the one that
   // would have found #55 and #58 the day they happened. They took a Postgres
   // URL until #214 and so were asked only on half the machines.
-  const queries = await open()
-    .then((l) => l.queries)
-    .catch(() => null);
+  const queries = noLog
+    ? null
+    : await open()
+        .then((l) => l.queries)
+        .catch(() => null);
   if (queries === null) {
     for (const name of ["gates: end ran on what landed", "gates: every point that was planned ran"]) {
-      results.push({
-        name,
-        status: "skip",
-        detail: `not checked — the log did not open, which ${LOG_REACHABLE} above reports`,
-      });
+      results.push(
+        noLog
+          ? logIsGone(name)
+          : {
+              name,
+              status: "skip",
+              detail: `not checked — the log did not open, which ${LOG_REACHABLE} above reports`,
+            },
+      );
     }
   } else {
     results.push(await endPointRan(queries));
@@ -2043,9 +2109,18 @@ export async function runDoctor(
   }
 
   results.push(githubCredentials(env));
-  results.push(...(await projectRecipes(env)));
-  results.push(...(await declaredEnvironment(env)));
-  results.push(...(await recipeGovernsItsBase(env)));
+  // The three groups below read the *project streams* — out of the log, through
+  // `loadProjects` — so the same gate holds them, and for the same reason: a
+  // machine with no log has no projects to have recipes, and asking would make
+  // it have a log. The names are the ones each group falls back to when it
+  // cannot read the streams at all.
+  results.push(...(noLog ? [logIsGone("recipe: resolves for every project")] : await projectRecipes(env)));
+  results.push(...(noLog ? [logIsGone("env: declared names, and which layer")] : await declaredEnvironment(env)));
+  results.push(
+    ...(noLog
+      ? [logIsGone("recipe: the rules and the merge target are one branch")]
+      : await recipeGovernsItsBase(env)),
+  );
   results.push(await settingsSources());
   results.push(await runtimeAuth());
   for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });

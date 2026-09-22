@@ -11,7 +11,7 @@ import { type Log, createDb, createEventStore, directPostgresUrl, postgresUrl } 
 import { createSqliteLog, openSqliteLog } from "@lingtai/event-store/sqlite";
 import { beat, createStatusTable } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -348,6 +348,81 @@ describe("lingtai doctor — a machine whose log is a file", () => {
     // non-zero: what `0 failed` may not stand for is a comparison nobody made.
     expect(report.failed).toBeGreaterThanOrEqual(2);
     expect(formatReport(report)).not.toContain("0 failed");
+  });
+
+  /**
+   * **A whole run over a log that is not there opens nothing** — which is the
+   * only thing that makes `log: reachable`'s failure worth printing.
+   *
+   * For a file-backed store, opening *is* creating: `openSqliteLog` makes the
+   * path and runs its `create table if not exists`. One row anywhere in the
+   * command that opened the log would leave a fresh empty one behind, so the
+   * operator's second `lingtai doctor` — and the `lingtai restart` that gates
+   * on the same report (0042) — would read `0 failed` and start a daemon
+   * against a log holding none of what was appended, with nothing saying so.
+   * So every row that would have to open it skips, naming the row that fails.
+   */
+  it("opens nothing when the log file is gone, so the run after it fails too", async () => {
+    const gone = join(dir, "deleted-while-clearing-state.db");
+    const wroteGone = (): StoreChoice => ({
+      store: "sqlite",
+      path: gone,
+      where: "config.yml",
+      from: join(dir, "config.yml"),
+    });
+    let opened = 0;
+
+    const report = await runDoctor(env({}), () => undefined, wroteGone, async () => {
+      opened++;
+      return log;
+    });
+
+    expect(find(report.results, LOG_REACHABLE).status).toBe("fail");
+    expect(opened).toBe(0);
+    // The assertion the whole row exists for: the absence is still true after
+    // the command that reported it, so the next run reports it again.
+    expect(existsSync(gone)).toBe(false);
+
+    for (const name of [
+      LOG_WAKES,
+      "projections: lag",
+      "projections: shape",
+      "daemon: liveness",
+      "daemon: currency",
+      "conductor: refusals on the log",
+      "worktrees: reconciliation",
+      "gates: end ran on what landed",
+      "gates: every point that was planned ran",
+      // The project streams are in the log too, so the recipe and env groups
+      // are held back by the same gate.
+      "recipe: resolves for every project",
+      "env: declared names, and which layer",
+      "recipe: the rules and the merge target are one branch",
+    ]) {
+      const row = find(report.results, name);
+      expect(row.status, name).toBe("skip");
+      expect(row.detail, name).toContain(LOG_REACHABLE);
+    }
+
+    // The lock is a file under ~/.lingtai/locks (#193), not a row in the log,
+    // so it is still answered rather than lost with the rest.
+    expect(find(report.results, "conductor: lock").status).toBe("ok");
+    expect(formatReport(report)).not.toContain("0 failed");
+
+    // **The same rows, under the same names.** A row held back is still a row:
+    // the block reads identically to the one a machine with a log gets, so a
+    // skip cannot be a check that quietly stopped existing — and a name typed
+    // into the gate that no row actually has would show up here as a
+    // difference rather than as a plausible-looking skip.
+    const worked = await runDoctor(env({}), () => undefined, wroteSqlite, itsLog);
+    const block = (r: typeof report) =>
+      r.results
+        .slice(
+          r.results.findIndex((x) => x.name === LOG_REACHABLE),
+          r.results.findIndex((x) => x.name === "gates: every point that was planned ran") + 1,
+        )
+        .map((x) => x.name);
+    expect(block(report)).toEqual(block(worked));
   });
 });
 
