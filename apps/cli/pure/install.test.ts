@@ -127,7 +127,7 @@ function world(overrides: Partial<World> = {}): World {
       return { ok: true, after: async () => void calls.push("after") };
     },
     app: async () => null,
-    logConfigured: () => false,
+    logWhere: () => ({ kind: "none" }) as const,
     ...overrides,
   };
 }
@@ -333,7 +333,7 @@ describe("lingtai uninstall", () => {
       conducting: async () => {
         throw new Error(`EACCES: permission denied, open '${join(locks, "lingtai:daemon")}'`);
       },
-      logConfigured: () => true,
+      logWhere: () => ({ kind: "elsewhere" }) as const,
     });
     expect(await installCommand(["uninstall", "--yes"], w)).toBe(1);
     const said = lines.join("\n");
@@ -409,7 +409,7 @@ describe("lingtai uninstall", () => {
         appAsked = existsSync(join(home, ".lingtai"));
         return { slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 2, key: { path: join(home, ".lingtai", "lingtai", "app.pem") } };
       },
-      logConfigured: () => true,
+      logWhere: () => ({ kind: "elsewhere" }) as const,
     });
     expect(await installCommand(["uninstall"], w)).toBe(0);
 
@@ -421,6 +421,52 @@ describe("lingtai uninstall", () => {
     expect(said).toContain("Its private key is gone and cannot be recovered");
     expect(said).toContain("https://github.com/settings/apps/lingtai-steven");
     expect(said).toContain("the database LINGTAI_DATABASE_URL names is untouched");
+  });
+
+  /**
+   * **The log is the thing this command cannot give back** (#214).
+   *
+   * 0051 §Uninstall's whole argument is that what an uninstall *cannot* delete
+   * matters more than what it can — the App, the key. On a machine that wrote
+   * `store: sqlite` it is the reverse: the log is a file inside what `rmSync`
+   * takes, and because `logConfigured()` meant *is Postgres configured* it read
+   * `false` there and the command **suppressed** the one line it prints about
+   * the log rather than warning about it.
+   *
+   * Said before the question, so it is a thing somebody can say no to, and
+   * again at the end, so `--yes` does not make it scroll past unread.
+   */
+  it("names the log it is about to destroy on a machine whose store is a file, before it asks", async () => {
+    await installOld();
+    const db = join(home, ".lingtai", "lingtai.db");
+    let saidBeforeAsking: string[] = [];
+    const asked: string[] = [];
+    const w = world({
+      ask: async (q) => (asked.push(q), (saidBeforeAsking = [...lines]), true),
+      logWhere: () => ({ kind: "file", path: db }) as const,
+    });
+
+    expect(await installCommand(["uninstall"], w)).toBe(0);
+
+    const said = lines.join("\n");
+    expect(said).toContain(`The event log is ${db}`);
+    expect(said).toContain("destroys every event this machine recorded");
+    expect(said).toContain("cannot be recovered");
+    // Before the question and not after the removal: what had been printed by
+    // the time the prompt went up already named the file.
+    expect(asked).toHaveLength(1);
+    expect(saidBeforeAsking.join("\n")).toContain(`The event log is ${db}`);
+    // And never the sentence for a log somewhere else, which would be the same
+    // defect turned inside out.
+    expect(said).not.toContain("is untouched");
+  });
+
+  it("says nothing about a log where none is configured", async () => {
+    await installOld();
+    expect(await installCommand(["uninstall", "--yes"], world())).toBe(0);
+    const said = lines.join("\n");
+    expect(said).not.toContain("The event log");
+    expect(said).not.toContain("is untouched");
   });
 });
 

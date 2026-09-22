@@ -2,7 +2,7 @@
  * The live `World` the install commands run against — separate from `entry.ts`
  * so a test can run it, the way `upgrade-drain.ts` was.
  *
- * **Two of its answers turn on whether a log is configured**, and three used to
+ * **Two of its answers turn on where this machine's log is**, and three used to
  * ask that by catching an exception from the Postgres getter (#213):
  *
  *     logConfigured: () => { try { return Boolean(databaseUrl()); } catch { return false; } }
@@ -10,8 +10,11 @@
  * That is *is there a log* written as *does `databaseUrl()` throw*, which is
  * the same sentence only while every log is Postgres. #178 landed a store that
  * is a file, and nothing in the type system would have noticed the day the two
- * parted: a `catch` keeps compiling and starts lying. They ask
- * `logConfigured()` now, which is a boolean and reads rather than throws.
+ * parted: a `catch` keeps compiling and starts lying. #213 made it
+ * `logConfigured()`, a boolean that reads rather than throws — and #179 was
+ * the day the two parted, so a boolean was no longer enough either. `logWhere`
+ * is where the log **is** and `liveDrain` asks the lock; see both below
+ * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
  *
  * The third was `conducting`, and separating the two questions is what showed
  * that it never belonged in this list: the lock it asks about is a file under
@@ -25,8 +28,8 @@
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 // Only the loader, which reads `.env.local` and connects to nothing.
-import { logConfigured } from "@lingtai/env";
-import { runningFrom, type AppFacts, type Drained, type World } from "./install.ts";
+import { logConfigured, storeChoice } from "@lingtai/env";
+import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from "./install.ts";
 
 /** Everything the live world reaches that a test must not: the log, and what is behind it. */
 export interface Live {
@@ -34,7 +37,7 @@ export interface Live {
   log: (line: string) => void;
   /** Who holds the conductor lock. Asked whether or not a log is configured — it is a file (#193). */
   holder: () => Promise<string | null>;
-  /** The drain proper — the doctor gate, the request and the wait. Reached only where a log is configured. */
+  /** The drain proper — the doctor gate, the request and the wait. Reached unless nothing conducts and no store is written. */
   drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
 }
 
@@ -91,21 +94,70 @@ export function liveWorld(self: string, outside: Live = live()): World {
     conducting: () => outside.holder(),
     drain: (reason, despiteDoctor) => liveDrain(reason, despiteDoctor, outside),
     app: liveApp,
-    logConfigured: () => logConfigured(outside.env),
+    logWhere: () => logLocation(outside.env),
   };
+}
+
+/**
+ * Where this machine's log is — the written choice, not a connection string
+ * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+ *
+ * **A `sqlite` machine is the whole of what changed.** Every other answer is
+ * the one `logConfigured()` gave: a machine naming a Postgres URL — in the
+ * variable, or in a `config.yml` that names a `database.url` without having
+ * written a `database.store`, which 0056 §2 calls *not set up* and which
+ * `storeChoice` therefore refuses — has a log somewhere else either way, and
+ * an uninstall should go on saying so. So the refusal falls back to the read it
+ * used to be, and only a written `sqlite` takes the new branch.
+ *
+ * Reads and never throws, for the reason `logConfigured` was a boolean: the two
+ * commands that call it, `uninstall` and `upgrade`, are the ones that repair a
+ * broken install, and a half-written `config.yml` must not be what stops them
+ * (#213). `storeChoice` is total and returns its refusals as data.
+ */
+export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
+  const choice = storeChoice(env);
+  // `logConfigured` under the name it always meant: *is Postgres configured*.
+  // It is the right question for a refusal and the wrong one for everything
+  // else, which is why it is here and nowhere above.
+  if ("refused" in choice) return logConfigured(env) ? { kind: "elsewhere" } : { kind: "none" };
+  return choice.store === "sqlite" ? { kind: "file", path: choice.path } : { kind: "elsewhere" };
 }
 
 /**
  * `lingtai shutdown`'s drain, and `lingtai restart`'s wait on the lock, before
  * the shim moves (0042).
  *
- * With no log configured nothing conducts from this copy, so there is nothing
- * to drain and nothing behind the log is reached — the daemon is not imported,
- * the doctor is not run.
+ * **The question is whether anything conducts, and the lock answers it.** This
+ * asked `logConfigured()` — *is Postgres configured* — which since #179 says
+ * `false` about a machine that wrote `store: sqlite` **while a daemon is
+ * conducting on it**: `lingtai upgrade` there reported a drain that never
+ * happened and moved the shim under a live conductor
+ * ([#214](https://github.com/steven-zhc/lingtai/issues/214)). 0042's rule is
+ * that a refusal comes before the drain, because a refusal after the drain is a
+ * system that is down; this was worse than a late refusal — no refusal, no
+ * drain, and the shim moved anyway.
+ *
+ * The conductor lock is a file under `~/.lingtai/locks/` since #193, so it is
+ * asked and answered with no database at all, which is exactly why `conducting`
+ * on the `World` beside this one is already asked unconditionally.
+ *
+ * **A held lock is not the only reason to reach the drain**, so this is an
+ * `and` and not a swap. `drainForUpgrade` runs the doctor gate, adopts a drain
+ * this person left standing and withdraws it — all of which want a log even
+ * where nothing holds the lock this second. So the drain is skipped only where
+ * *both* are absent: nothing conducts, and this machine has written no store.
+ * That is strictly narrower than what it skipped before.
+ *
+ * A lock that cannot be read throws rather than answering null
+ * (`daemon/src/lock.ts`), and it throws out of here: a drain that quietly
+ * decided *nothing conducts* because it could not read the file is the failure
+ * this whole docstring is about.
  */
 export async function liveDrain(reason: string, despiteDoctor: boolean, outside: Live = live()): Promise<Drained> {
-  if (!logConfigured(outside.env)) {
-    outside.log("no log is configured here, so nothing conducts from it — nothing to drain");
+  const holder = await outside.holder();
+  if (holder === null && logLocation(outside.env).kind === "none") {
+    outside.log("nothing holds the conductor lock and this machine has written no store — nothing to drain");
     return { ok: true, after: async () => {} };
   }
   return outside.drain(reason, despiteDoctor);

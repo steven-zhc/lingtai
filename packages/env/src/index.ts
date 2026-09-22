@@ -785,14 +785,18 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
  * calls not set up and must not collapse into *chose SQLite* (0056 §2).
  *
  * That is left standing deliberately and it is not this function's decision to
- * make. Its three callers are `lingtai uninstall`, `lingtai upgrade` and the
- * drain beneath both (`apps/cli/src/world.ts`), and what they do with a
- * file-backed log — whether `~/.lingtai` holding the log changes what an
- * uninstall may remove, and what it must say first — is a question about those
- * commands, which [#214](https://github.com/steven-zhc/lingtai/issues/214)
- * opens and #179 deliberately does not answer. Until then this reads as it
- * always has: *is Postgres configured*, which on every machine that exists
- * today is also *is there a log*.
+ * make, and [#214](https://github.com/steven-zhc/lingtai/issues/214) answered
+ * it where it belonged — in the commands. `lingtai uninstall` and `lingtai
+ * upgrade` no longer ask this: `logWhere` on their `World` says **where the log
+ * is** (`apps/cli/src/world.ts`'s `logLocation`), because on a machine that
+ * wrote `store: sqlite` the answer here is `false` about a log that exists, is
+ * a file under `~/.lingtai`, and is inside what an uninstall removes.
+ *
+ * **One caller is left and it is the right one.** `logLocation` asks this where
+ * `storeChoice` *refuses* — a machine that named a `database.url` and wrote no
+ * `database.store`, which 0056 §2 calls not set up — to decide whether its log
+ * is nonetheless somewhere else. That is exactly *is Postgres configured*,
+ * which is what this reads and has always read.
  *
  * **Total.** It answers on every machine, including one whose `config.yml` was
  * truncated mid-write: `false`, because nothing here names a log, while

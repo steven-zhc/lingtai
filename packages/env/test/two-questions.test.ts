@@ -105,10 +105,11 @@ describe("the two questions", () => {
  * it cannot parse (#186), and both reads fall back to that file.
  *
  * `lingtai upgrade` and `lingtai uninstall` are the two commands that repair a
- * broken install, and both begin by asking `logConfigured()` — so a `config.yml`
- * truncated mid-write must not be what stops them. What it does stop is a
- * connection: `postgresUrl()` still names the file, which is the one remedy
- * that works.
+ * broken install, and both begin by asking where this machine's log is —
+ * `storeChoice()`, which is total, falling back to `logConfigured()` for the
+ * refusals (#214) — so a `config.yml` truncated mid-write must not be what
+ * stops them. What it does stop is a connection: `postgresUrl()` still names
+ * the file, which is the one remedy that works.
  *
  * **In a child process, because this question cannot be asked in-process.**
  * The machine file is read only for `process.env` and only outside a test

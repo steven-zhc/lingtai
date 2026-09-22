@@ -42,6 +42,12 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { paint } from "@lingtai/env/colour";
+// The one sentence anything operator-facing says about a machine whose log is a
+// file — quoted, never restated (`SQLITE_MACHINE`, #215). The barrel and not a
+// subpath, and it costs this module nothing: `entry.ts` imports `world.ts`
+// beside this one, which has loaded it already. It reaches no store; what this
+// file may not import is `@lingtai/event-store`, and it does not.
+import { SQLITE_MACHINE } from "@lingtai/env";
 import workspace from "../../../package.json" with { type: "json" };
 import { platformName, versionLine } from "./version.ts";
 
@@ -123,9 +129,38 @@ export interface World {
   drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
   /** The GitHub App this machine is configured with, asked before anything is removed. */
   app: () => Promise<AppFacts | null | { unread: string }>;
-  /** Whether a log is configured, so an uninstall can say it is not under `~/.lingtai`. */
-  logConfigured: () => boolean;
+  /**
+   * **Where this machine's log is**, so an uninstall can say what it is about
+   * to destroy and what it is leaving behind.
+   *
+   * This was `logConfigured(): boolean`, which meant *is Postgres configured* —
+   * the same set of machines as *has a log* only until #179 landed a store that
+   * is a file. On a machine that wrote `store: sqlite` it answered `false`, and
+   * `uninstall` suppressed the one line it prints about the log rather than
+   * warning that the `rmSync` two lines above was about to take it
+   * ([#214](https://github.com/steven-zhc/lingtai/issues/214)). 0051's
+   * §Uninstall argues that *what an uninstall cannot delete matters more than
+   * what it can*; that was the reverse of it, in the one command where it costs
+   * the log.
+   */
+  logWhere: () => LogLocation;
 }
+
+/**
+ * Where a machine's log lives, in the only three shapes that change what
+ * `lingtai uninstall` must say.
+ *
+ * Not `Store`: which engine it is, is `storeChoice`'s answer and not this
+ * command's question. What this command needs to know is whether the log is
+ * **inside what is about to be removed**.
+ */
+export type LogLocation =
+  /** A server somewhere else. Removing `~/.lingtai` does not touch it. */
+  | { kind: "elsewhere" }
+  /** A file under `~/.lingtai`. It goes with the directory, and there is no copy. */
+  | { kind: "file"; path: string }
+  /** Nothing is configured, so there is no log to say anything about either way. */
+  | { kind: "none" };
 
 // ------------------------------------------------------------- versions --
 
@@ -532,13 +567,25 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
     return 1;
   }
-  // Only for the last line of all: whether the log this copy reads is somewhere
-  // else, and so survives the removal.
-  const log = world.logConfigured();
+  // Whether the log this copy reads survives the removal — read before
+  // anything goes, because on a machine whose store is a file the answer is
+  // *no* and that has to be said before the question, not after the `rmSync`.
+  const where = world.logWhere();
 
   const app = await world.app().catch((err: unknown) => ({ unread: (err as Error).message }));
 
   const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`;
+  // **Before the question, and before `--yes` can answer it.** On a machine
+  // whose store is a file the log is inside `what`, and "this cannot be undone"
+  // is a sentence about a directory unless somebody says which file it is.
+  if (where.kind === "file") {
+    world.log(
+      paint.fail(
+        `The event log is ${where.path}, which is under ${paths.home}: removing it destroys every event this ` +
+          `machine recorded, and it cannot be recovered. ${SQLITE_MACHINE}`,
+      ),
+    );
+  }
   if (!argv.includes("--yes") && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
     world.log("nothing was removed");
     return 1;
@@ -588,8 +635,10 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
       }`,
     );
   }
-  if (log) {
+  if (where.kind === "elsewhere") {
     world.log("The log is not under ~/.lingtai: the database LINGTAI_DATABASE_URL names is untouched, and its tables are yours to drop.");
+  } else if (where.kind === "file") {
+    world.log(paint.fail(`The event log at ${where.path} went with it, and cannot be recovered.`));
   }
   return 0;
 }
