@@ -211,11 +211,12 @@ flowchart TB
   RV --> PO
   PO -->|"pass"| MG
   MG --> EN
-  MG -->|"conflict, or the base broke it"| PO
+  MG -->|"conflict · the base changed under it"| PO
+  MG -->|"a conflict the agent resolved<br/>is a new diff"| BU
 
-  PO -->|"the lines are wrong<br/>× rounds — the same worktree<br/>carrying what refused it"| IM
+  PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
   PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
-  PO -->|"every ceiling spent<br/>carrying what refused it"| WA
+  PO -->|"every ceiling spent · a conflict<br/>the agent could not resolve"| WA
   AD -->|"the requirement is not clear"| WA
   DS -->|"the design needs you"| WA
   WA -->|"after you clarify"| CL
@@ -228,6 +229,11 @@ flowchart TB
   class CL,AD,PR,DS,IM,RV,EN core;
   class WA back;
 ```
+
+**Every path into `end` has been through `build` and `review`.** That is the
+invariant the drawing exists to make checkable, and the edge from `merge` back
+to `build` is what buys it: a conflict the agent resolved is code written after
+the review passed, so it goes round again.
 
 **The hexagons are the three steps that may refuse, and all three arrive at the
 same place.** That is the property worth keeping: `proposed` is the only step
@@ -297,6 +303,14 @@ already passed by the time `merge` runs. With 6 conflicts in the whole log,
 buying an unreviewed path into `main` to save six interruptions is a poor
 trade — unless the resolution re-enters the loop at `proposed`, which the
 drawing already has it do. Then the plugin can stay and the hole closes.
+
+**A conflict the agent resolves is a new diff, and it goes back to `build`.**
+That is the one edge that closes the hole above rather than describing it:
+`review` passed on the diff as it was, and the resolution is code written
+after. Sending it round again costs a build and a review — measured, 313s and
+149s — on a path the whole log has taken **six times**. Against that, it is
+what makes the invariant say itself: **every path into `end` has been through
+`build` and `review`.**
 
 **What actually cleared a conflict here was not a resolver.** The one time the
 loop tried (`wi-lingtai-87`), it appended `RepairRequested conflict`, released
