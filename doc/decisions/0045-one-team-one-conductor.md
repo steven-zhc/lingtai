@@ -1,7 +1,7 @@
 # 0045 — One team, one conductor, one recipe
 
-**Status** accepted · 2026-09-15 · records a topology the code has assumed since
-`#93` and no document has stated
+**Status** superseded by [0046](0046-lingtai-is-personal.md) · 2026-09-15 ·
+records a topology the code has assumed since `#93` and no document has stated
 
 ## Context
 
