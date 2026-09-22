@@ -40,7 +40,12 @@ import type { GitHubClient } from "@lingtai/github";
 // connection, and the barrel's `log` is the pooled one. Through a pooler is
 // where the suite learned what a dropped connection costs (#157), and an audit
 // that reds on one would hold `lingtai restart`.
-import { createPostgresLogQueries } from "@lingtai/event-store/queries";
+import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/queries";
+// The barrel's `log`, which is the store **this machine wrote down** (0056) and
+// opens nothing until something asks it a question. It is what the rows above
+// are asked on a machine whose log is a file; a Postgres machine keeps naming
+// the direct connection, for the reason the import above gives.
+import { log } from "@lingtai/event-store";
 import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
@@ -87,6 +92,15 @@ import { RUN_UNDER_A_PAUSE } from "./run.ts";
  * red is a check nobody reads.
  */
 export type CheckStatus = "ok" | "warn" | "fail" | "skip";
+
+/**
+ * How far back `subscribers: failures` counts as *recent*.
+ *
+ * A window and not an all-time count, for the reason that check's own docstring
+ * gives: nothing retries a subscriber, so a total would be red for ever over a
+ * notifier that broke once in March.
+ */
+const A_DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface CheckResult {
   name: string;
@@ -172,6 +186,127 @@ export function storeRow(choice: StoreChoice): CheckResult {
     return { name, status: "ok", detail: `sqlite ← ${choice.from} · ${SQLITE_MACHINE}` };
   }
   return { name, status: "ok", detail: `postgres ← ${choice.from}` };
+}
+
+/**
+ * **Is the log reachable at all**, asked of a log that is a file.
+ *
+ * `postgres: pooled connection` is this question on a machine with a server,
+ * and until [#214](https://github.com/steven-zhc/lingtai/issues/214) it was the
+ * only asker of it — so on a machine that wrote `store: sqlite` the one thing
+ * anybody runs `lingtai doctor` to find out was answered by nothing, under a
+ * summary line that said `0 failed`.
+ *
+ * **It opens the log; it does not look for a file.** A path that is not there
+ * yet is the ordinary state of a machine `lingtai init` has just finished:
+ * `init` writes `database.store: sqlite` and stops, because "a SQLite log is a
+ * file this machine will create on first open" — `init.ts`'s own words — and
+ * no command creates it early. A row that stat()ed the path would fail that
+ * machine for ever, naming a remedy (`lingtai init`) that had just run and
+ * would never write the file, and a failure carrying no `restartAnswers` gates
+ * `lingtai restart` (0042): setup correct, doctor red, no way out. So this asks
+ * the store a question, which opens it exactly as the next command would
+ * — `create table if not exists`, and not one row written, which is the rule
+ * at the top of this file.
+ *
+ * What it therefore fails on is what is worth failing on: a directory that is
+ * not writable, a file that is not a database, a file another process has
+ * locked past the busy timeout.
+ *
+ * **And it is the only row that does fail on those.** Every audit below reads
+ * the log behind a `.catch(() => null)` and reports *no log to read yet* as
+ * `ok`, which is right for a machine that has genuinely never appended and
+ * indistinguishable from a machine whose store will not open. That row is what
+ * tells the two apart, so it is placed before them and never after.
+ */
+export async function logReachable(where: string, queries: LogQueries): Promise<CheckResult> {
+  const name = "log: reachable";
+  try {
+    const streams = await queries.projectStreams("prj-");
+    return {
+      name,
+      status: "ok",
+      detail: `${where} opened and answered — ${streams.length} project stream(s) in it`,
+    };
+  } catch (err) {
+    return {
+      name,
+      status: "fail",
+      detail:
+        `${where} could not be opened or read — ${(err as Error).message}. ` +
+        "Every command that appends or reads is refused the same way until it can be",
+    };
+  }
+}
+
+/**
+ * The rows that are about **Postgres** and not about a log, and the sentence
+ * each gives a machine that runs a file instead.
+ *
+ * Skipping them is right: there is no server here, and inventing a green row
+ * for a connection nobody made would be worse than the silence it replaces.
+ * What was wrong is that they *vanished* — ten checks collapsed into one line
+ * saying `postgres: not attempted`, so a reader counting rows could not see the
+ * nine that were gone, and `0 failed` covered the lot. ADR 0016 §4's rule
+ * about a thing you cannot tell apart from its absence, in the one command
+ * built to prevent it.
+ *
+ * So each keeps its own name, and each says **why it does not apply, naming the
+ * store** — not a bare `skip`. Where the question survives the store the
+ * sentence says which row asks it instead; where it does not survive, it says
+ * what stands in its place, including where nothing does. `schema:
+ * append-only` is the one that has to be read carefully: Postgres enforces it
+ * with a rule and a file does not enforce it at all.
+ *
+ * **Every row here can only ever be a `skip`.** A row that could have *failed*
+ * on this machine and did not run is a machine nobody checked, and there is
+ * none of those: the questions that can fail — reachability, the projections,
+ * the readable types, the two gate audits — are asked of whatever store is
+ * open. `apps/cli/test/doctor.test.ts` pins that, by name.
+ */
+export function postgresOnlyRows(): { name: string; because: string }[] {
+  return [
+    {
+      name: "postgres: pooled connection",
+      because:
+        "there is no server to connect to — log: reachable above opens the file instead, which is the same question",
+    },
+    {
+      name: "postgres: direct connection is session mode",
+      because:
+        "session mode is about a pooler handing a LISTEN registration to someone else (0009); a reader of a file " +
+        "is told about an append by polling it (createPollingWaker, #178), so there is no connection here to be in " +
+        "the wrong mode",
+    },
+    {
+      name: "schema: tables",
+      because:
+        "events and checkpoints are created by the store itself on every open (packages/event-store/src/sqlite.ts, " +
+        "packages/projector/src/sqlite.ts), so there is no bootstrap step that could have been missed",
+    },
+    {
+      name: "schema: optimistic concurrency",
+      because:
+        "UNIQUE (stream_id, version) is in that same CREATE TABLE and cannot be absent from a file this build opened",
+    },
+    {
+      name: "schema: append-only",
+      because:
+        "and nothing stands in for it: UPDATE and DELETE on events are refused by Postgres rules, and a file " +
+        "has no rules — what keeps this log append-only is that the store is the only writer of it",
+    },
+    {
+      name: "schema: notify trigger",
+      because:
+        "nothing announces an append from inside the file; a second reader finds out by polling (0055 §3)",
+    },
+    {
+      name: "schema: payload column",
+      because:
+        "data is TEXT holding JSON, read with json_extract rather than jsonb operators — there is no column type " +
+        "here that could be the wrong one",
+    },
+  ];
 }
 
 /**
@@ -638,6 +773,23 @@ export interface DoctorReport {
   ok: number;
   failed: number;
   skipped: number;
+  /**
+   * Of `skipped`, the ones in `DEFERRED`: not implemented here at all, on any
+   * machine.
+   */
+  deferred: number;
+  /**
+   * Of `skipped`, the ones about **this machine** — a question that does not
+   * apply to the store it runs, or one an earlier failure stopped.
+   *
+   * Counted apart from `deferred` because the summary line has to tell them
+   * apart ([#214](https://github.com/steven-zhc/lingtai/issues/214)): *not
+   * implemented yet* is a fact about Lingtai and reads the same on every
+   * machine, while *not checked here* is a fact about the machine in front of
+   * you, and folding the two made `0 failed` the only thing the last line said
+   * about a machine whose log had never been opened.
+   */
+  notChecked: number;
   /** Reported, not wrong. See `CheckStatus`. */
   warned: number;
 }
@@ -988,25 +1140,21 @@ async function orphans(): Promise<CheckResult> {
  * or this build is older than the writer. Either way the log is not fully
  * replayable, which is the one property the whole system rests on.
  */
-async function readableTypes(url: string): Promise<CheckResult> {
+async function readableTypes(queries: LogQueries): Promise<CheckResult> {
   const name = "log: every type is readable";
-  const rows = await withClient(url, (c) =>
-    c.query<{ type: string; n: number }>(
-      `select type, count(*)::int as n from events group by type order by type`,
-    ),
-  ).catch(() => null);
+  const rows = await queries.typeCounts().catch(() => null);
   if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
 
-  const orphaned = rows.rows.filter((r) => !isEventType(r.type));
+  const orphaned = rows.filter((r) => !isEventType(r.type));
   if (orphaned.length === 0) {
-    return { name, status: "ok", detail: `${rows.rows.length} types, all in the catalogue` };
+    return { name, status: "ok", detail: `${rows.length} types, all in the catalogue` };
   }
   return {
     name,
     status: "fail",
     detail:
-      `${orphaned.reduce((n, r) => n + r.n, 0)} row(s) of ${orphaned.length} type(s) this build cannot read — ` +
-      `${orphaned.map((r) => `${r.type} ×${r.n}`).join(", ")}. ` +
+      `${orphaned.reduce((n, r) => n + r.rows, 0)} row(s) of ${orphaned.length} type(s) this build cannot read — ` +
+      `${orphaned.map((r) => `${r.type} ×${r.rows}`).join(", ")}. ` +
       "Reading any stream that holds one throws, and a projection rebuild cannot run.",
   };
 }
@@ -1031,9 +1179,9 @@ async function readableTypes(url: string): Promise<CheckResult> {
  * From the log alone, and from the *item's own stream* for the second half, so
  * it says nothing about what the recipe happens to contain today.
  */
-async function endPointRan(url: string): Promise<CheckResult> {
+async function endPointRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: end ran on what landed";
-  const found = await endedWithoutEndActions(createPostgresLogQueries({ url })).catch(() => null);
+  const found = await endedWithoutEndActions(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
@@ -1071,9 +1219,9 @@ async function endPointRan(url: string): Promise<CheckResult> {
  * un-merge a change that landed unapproved. What closes it is a person
  * deciding on the record — the board's waiver, which names who and why.
  */
-async function gatePointsRan(url: string): Promise<CheckResult> {
+async function gatePointsRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: every point that was planned ran";
-  const found = await landedWithoutGatePoints(createPostgresLogQueries({ url })).catch(() => null);
+  const found = await landedWithoutGatePoints(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
@@ -1111,37 +1259,16 @@ async function gatePointsRan(url: string): Promise<CheckResult> {
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
  */
-async function unconverged(url: string): Promise<CheckResult> {
+async function unconverged(queries: LogQueries): Promise<CheckResult> {
   const name = "github: what we said and did not manage";
-  const rows = await withClient(url, (c) =>
-    c.query<{ project: string; issue: string; change: string }>(
-      `with said as (
-         select type,
-                data->>'project' as project,
-                data->>'issue'   as issue,
-                data->>'change'  as change,
-                max(seq)         as seq
-         from events
-         where type in ('IssueUpdated', 'IssueUpdateFailed')
-         group by 1, 2, 3, 4
-       ),
-       failed as (select * from said where type = 'IssueUpdateFailed'),
-       ok     as (select * from said where type = 'IssueUpdated')
-       select failed.project, failed.issue, failed.change
-       from failed
-       left join ok
-         on ok.project = failed.project and ok.issue = failed.issue and ok.change = failed.change
-       where ok.seq is null or ok.seq < failed.seq
-       order by failed.project, failed.issue`,
-    ),
-  ).catch(() => null);
+  const rows = await queries.unconvergedUpdates().catch(() => null);
   if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
-  if (rows.rows.length === 0) {
+  if (rows.length === 0) {
     return { name, status: "ok", detail: "every issue carries what the log last said about it" };
   }
 
-  const comments = rows.rows.filter((r) => r.change === "comment");
-  const computable = rows.rows.filter((r) => r.change !== "comment");
+  const comments = rows.filter((r) => r.change === "comment");
+  const computable = rows.filter((r) => r.change !== "comment");
   const say = (r: { project: string; issue: string; change: string }) =>
     `${r.project}#${r.issue} (${r.change})`;
 
@@ -1186,29 +1313,18 @@ async function unconverged(url: string): Promise<CheckResult> {
  * red is a check nobody reads. Older failures are still counted in the detail,
  * because "and 400 before that" is the sentence that turns one bad night into a
  * subscriber that has never worked.
+ *
+ * **The day is measured here and the rows are counted in the store.** Which
+ * window is worth being red over is this command's rule and not a log's, so it
+ * is the parameter `subscriberFailures` takes.
  */
-async function subscribers(url: string): Promise<CheckResult> {
+async function subscribers(queries: LogQueries): Promise<CheckResult> {
   const name = "subscribers: failures";
-  const rows = await withClient(url, (c) =>
-    c.query<{ name: string; n: number; recent: number; last: string | null }>(
-      `select data->>'name'                                        as name,
-              count(*)::int                                        as n,
-              count(*) filter (where at > now() - interval '1 day')::int as recent,
-              -- The latest reason, not the largest one: a plain max() over the
-              -- text would sort them alphabetically and print whichever failure
-              -- happened to start with a z.
-              (array_agg(data->>'reason' order by seq desc)
-                 filter (where at > now() - interval '1 day'))[1]   as last
-       from events
-       where type = 'PluginFailed'
-       group by 1
-       order by recent desc, n desc`,
-    ),
-  ).catch(() => null);
+  const rows = await queries.subscriberFailures(new Date(Date.now() - A_DAY_MS)).catch(() => null);
   if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
 
-  const recent = rows.rows.filter((r) => r.recent > 0);
-  const older = rows.rows.reduce((n, r) => n + r.n - r.recent, 0);
+  const recent = rows.filter((r) => r.recent > 0);
+  const older = rows.reduce((n, r) => n + r.total - r.recent, 0);
   if (recent.length === 0) {
     return {
       name,
@@ -1224,7 +1340,7 @@ async function subscribers(url: string): Promise<CheckResult> {
     status: "warn",
     detail:
       `${recent.map((r) => `${r.name} ×${r.recent}`).join(", ")} in the last day — ` +
-      `last: ${recent[0]?.last ?? "?"}. ` +
+      `last: ${recent[0]?.lastReason ?? "?"}. ` +
       "A subscriber is never retried (0015), so nothing converges this: what it was going to " +
       "do was not done." +
       (older > 0 ? ` ${older} older failure(s) besides.` : ""),
@@ -1627,6 +1743,7 @@ export async function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   machine: () => string | undefined = () => undefined,
   store: () => StoreChoice = () => storeChoice(),
+  queries: LogQueries = log.queries,
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -1693,26 +1810,45 @@ export async function runDoctor(
     // Every row below that is about **a log** rather than about Postgres: each
     // opens the store this machine chose, so each answers here too. Losing the
     // projection lag, the shape check, the beacon and the lock along with the
-    // connection rows was the same defect's other half.
+    // connection rows was the same defect's other half, and losing the
+    // reachability of the log itself along with the pooled connection was the
+    // half that let `0 failed` print for a machine nobody had checked (#214).
     //
     // Still nothing written, in the sense the rule at the top of this file
     // means it: no row appends, and none is a probe. Opening a file-backed
     // store runs its own `create table if not exists` — `events` and
     // `daemon_status` — which is how that store is opened at all and how the
     // very next command would open it; not one row goes in.
+    results.push(await logReachable(choice.path, queries));
     results.push(await projections());
     results.push(await projectionShapes());
     results.push(await daemonLiveness());
     results.push(await daemonCurrency());
     results.push(await passRefusals());
     results.push(await conductorLock());
+    results.push(await readableTypes(queries));
     results.push(await orphans());
-    results.push({
-      name: "postgres",
-      status: "skip",
-      detail: "not attempted — this machine wrote store: sqlite, and there is no connection to make",
-    });
+    results.push(await unconverged(queries));
+    results.push(await subscribers(queries));
+    results.push(await endPointRan(queries));
+    results.push(await gatePointsRan(queries));
+    // Named one at a time, each saying why it does not apply and naming the
+    // store. See `postgresOnlyRows`.
+    for (const row of postgresOnlyRows()) {
+      results.push({
+        name: row.name,
+        status: "skip",
+        detail: `not asked on this machine: it wrote store: sqlite, and ${row.because}`,
+      });
+    }
   } else if (envResult.status === "ok" && pooled && direct) {
+    // **The direct connection, and not `queries`.** These read the log, and on
+    // this machine the log has two connection strings: `log.queries` is the
+    // pooled one, and through a pooler a dropped connection turns an audit into
+    // a red check that has nothing to do with the log (#157). The rows take a
+    // `LogQueries` so that the file-backed branch above can ask them at all;
+    // which connection *this* branch hands them is unchanged.
+    const audit = createPostgresLogQueries({ url: direct });
     results.push(await pooledConnection(pooled));
     results.push(await directIsSessionMode(direct, standIn));
     results.push(...(await schema(direct)));
@@ -1727,12 +1863,12 @@ export async function runDoctor(
     // whenever the two are at different commits (#148).
     results.push(await passRefusals());
     results.push(await conductorLock());
-    results.push(await readableTypes(direct));
+    results.push(await readableTypes(audit));
     results.push(await orphans());
-    results.push(await unconverged(direct));
-    results.push(await subscribers(direct));
-    results.push(await endPointRan(direct));
-    results.push(await gatePointsRan(direct));
+    results.push(await unconverged(audit));
+    results.push(await subscribers(audit));
+    results.push(await endPointRan(audit));
+    results.push(await gatePointsRan(audit));
   } else {
     results.push({
       name: "postgres",
@@ -1754,6 +1890,8 @@ export async function runDoctor(
     ok: results.filter((r) => r.status === "ok").length,
     failed: results.filter((r) => r.status === "fail").length,
     skipped: results.filter((r) => r.status === "skip").length,
+    deferred: results.filter((r) => r.status === "skip" && r.deferred === true).length,
+    notChecked: results.filter((r) => r.status === "skip" && r.deferred !== true).length,
     warned: results.filter((r) => r.status === "warn").length,
   };
 }
@@ -1819,8 +1957,24 @@ const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
   skip: { text: " skip ", ink: paint.muted },
 };
 
+/**
+ * **`0 failed` is a claim about what ran**, so the line beside it says what did
+ * not ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+ *
+ * The two kinds of skip were one number and one sentence — *N not implemented
+ * yet* — which is true of the three in `DEFERRED` and a lie about a check this
+ * machine did not get. On a machine whose log is a file that lie covered ten
+ * rows, one of which was the only asker of *is the log reachable*, and the
+ * summary read as a clean bill of health for a machine nothing had checked.
+ *
+ * Both halves are printed, and neither is hidden when it is zero on the green
+ * line: a reader who has been told `4 not checked here` once will look for the
+ * number again, and its absence would read as *none* rather than as *this
+ * build stopped saying*.
+ */
 export function formatReport(report: DoctorReport): string {
   const notes = report.warned > 0 ? `, ${report.warned} to note` : "";
+  const here = `, ${report.notChecked} not checked here`;
   const lines = report.results.map((r) => {
     const tag = TAG[r.status];
     return `${tag.ink(tag.text)} ${r.name}\n         ${r.detail}`;
@@ -1828,9 +1982,9 @@ export function formatReport(report: DoctorReport): string {
   lines.push("");
   lines.push(
     report.failed === 0
-      ? `${paint.pass(`${report.ok} ok`)}${notes}, ${report.skipped} not implemented yet, 0 failed`
+      ? `${paint.pass(`${report.ok} ok`)}${notes}${here}, ${report.deferred} not implemented yet, 0 failed`
       : paint.fail(
-          `${report.failed} check(s) FAILED — ${report.ok} ok${notes}, ${report.skipped} not implemented yet`,
+          `${report.failed} check(s) FAILED — ${report.ok} ok${notes}${here}, ${report.deferred} not implemented yet`,
         ),
   );
   return lines.join("\n");
