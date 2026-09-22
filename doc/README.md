@@ -140,6 +140,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0056](decisions/0056-the-store-is-a-written-choice.md) | **The store is a written choice; absence decides nothing at open time** | accepted, implementation pending; supersedes 0055 §2 and 0046's *selected by the presence of LINGTAI_DATABASE_URL* |
 | [0057](decisions/0057-a-gate-that-did-not-finish.md) | **A gate's agent that started and did not finish gets one retry, then a person** | accepted; extends 0041 with the neighbouring case; governed by 0031 §1 |
 | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) | **Lingtai is a development pipeline, and a pass is nine stations** | **proposed** — under discussion; revises 0015's framing and none of its rules; generalises 0053 |
+| [0059](decisions/0059-a-point-carries-only-the-kinds-it-runs.md) | **A point carries only the kinds it runs, and the recipe refuses the rest** | accepted; completes 0016 §4 for the ten point × kind cells that were configurable and executed by nothing (#61) |
 
 ## Experiments
 

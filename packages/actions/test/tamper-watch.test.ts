@@ -51,7 +51,7 @@ async function documented(): Promise<GateAction[]> {
 
 /** The documented watches, judging a diff of exactly these files. */
 async function judge(files: string[]) {
-  const gates = gatesFromRecipe(await documented(), { watch: { changedFiles: async () => files } });
+  const gates = gatesFromRecipe("proposed", await documented(), { watch: { changedFiles: async () => files } });
   return runGatePipeline({ point: "proposed", gates, context, emit: () => {} });
 }
 

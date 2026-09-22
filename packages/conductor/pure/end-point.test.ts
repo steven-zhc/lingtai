@@ -57,11 +57,17 @@ describe("the end point", () => {
     expect(ev?.data).toEqual({ outcome: "failed", actions: [] });
   });
 
-  it("ignores an action at `end` that has no verdict to give", () => {
-    // A `run:` at `end` is a misconfiguration: the point cannot refuse, so
-    // there is nothing for a command's exit code to mean. The point still ran.
-    const [ev] = resolveEndActions([], [BUILD], "landed");
-    expect(ev?.data).toEqual({ outcome: "landed", actions: [] });
+  /**
+   * It used to *ignore* one, and that was four of `end`'s six cells: a `run:`,
+   * an `agent:`, a `watch:` or a `human:` here resolved to an empty list and
+   * the recipe never heard about it (`#61`). A recipe cannot say it any more —
+   * the schema refuses the kind at the point — so what is left to assert is
+   * that the resolver does not quietly absorb one either.
+   */
+  it("refuses an action at `end` that has no effect to run, rather than dropping it", () => {
+    expect(() => resolveEndActions([], [BUILD], "landed")).toThrow(
+      /the "build" action is a "run" at the "end" point/,
+    );
   });
 
   it("resolves once per outcome, from the item's own stream", () => {

@@ -39,7 +39,7 @@
  * skip is the user's decision, and `GatesResolved` already records it.
  */
 import { workItemStream } from "@lingtai/domain";
-import type { GateAction } from "@lingtai/recipe";
+import { type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
@@ -106,10 +106,16 @@ export function resolveEndActions(
   type Resolved = { name: string; close: true } | { name: string; labels: string[] };
   const resolved: Resolved[] = [];
   for (const a of actions) {
-    // `when` is only on the two kinds that run for effect. Anything else at
-    // `end` is a misconfiguration the recipe cannot express a verdict for, and
-    // skipping it here is what the pipeline does with it too.
-    if (!("when" in a)) continue;
+    // `when` is only on the two kinds that run for effect, and the other four
+    // are refused when the recipe resolves (`whyNoKindAt`) — so this is
+    // unreachable from a recipe and is left in for the case it is not: an
+    // action list built in code. It used to `continue`, which is the one thing
+    // this point must never do (`#61`): four of `end`'s six cells were
+    // declarable, drawn, and dropped by that line.
+    if (!("when" in a)) {
+      const kind = kindOfAction(a);
+      throw new Error(kindRefusedAt("end", kind, a.name, whyNoKindAt("end", kind) ?? "it produces no effect"));
+    }
     if (a.when !== outcome && a.when !== "any") continue;
     resolved.push("close" in a ? { name: a.name, close: true } : { name: a.name, labels: a.labels });
   }

@@ -442,6 +442,7 @@ describe("the pipeline", () => {
 describe("gatesFromRecipe", () => {
   it("builds the process gates", () => {
     const gates = gatesFromRecipe(
+      "proposed",
       [{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }],
       { env: () => runnable },
     );
@@ -458,6 +459,7 @@ describe("gatesFromRecipe", () => {
   it("asks the resolver for exactly what the action declared", () => {
     const asked: (readonly string[])[] = [];
     gatesFromRecipe(
+      "proposed",
       [
         { name: "telegram", run: "npx @lingtai/telegram", timeout: "30s", env: ["TELEGRAM_TOKEN"] },
         { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
@@ -480,9 +482,9 @@ describe("gatesFromRecipe", () => {
     // All four exist now. The factory has an exhaustiveness check against the
     // schema union, so a fifth kind is a type error rather than a gate that
     // falls through and silently does nothing.
-    expect(gatesFromRecipe([{ name: "approval", human: "Merge?" }])).toHaveLength(1);
+    expect(gatesFromRecipe("proposed", [{ name: "approval", human: "Merge?" }])).toHaveLength(1);
     expect(
-      gatesFromRecipe([{ name: "tamper", watch: ["**/x"], then: "fail" }], {
+      gatesFromRecipe("proposed", [{ name: "tamper", watch: ["**/x"], then: "fail" }], {
         watch: { changedFiles: async () => [] },
       }),
     ).toHaveLength(1);
@@ -493,20 +495,20 @@ describe("gatesFromRecipe", () => {
     // callers that only want to know whether a recipe *parses* do not have
     // them. Absent deps refuse for the same reason an unbuilt kind does: a gate
     // that is silently not run is worse than a run that will not start.
-    expect(() => gatesFromRecipe([{ name: "review", agent: "p" }])).toThrow(
+    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "p" }])).toThrow(
       GateActionUnavailableError,
     );
-    expect(() => gatesFromRecipe([{ name: "review", agent: "p" }])).toThrow(
+    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "p" }])).toThrow(
       /no reviewer was supplied/,
     );
     expect(() =>
-      gatesFromRecipe([{ name: "tamper", watch: ["**/x"], then: "fail" }]),
+      gatesFromRecipe("proposed", [{ name: "tamper", watch: ["**/x"], then: "fail" }]),
     ).toThrow(/no file list was supplied/);
     // A `run:` action's whole environment is now a dependency like the other
     // two. Without a resolver it would have no `PATH` either, so the failure
     // would read as a broken build rather than as a gate built wrong.
     expect(() =>
-      gatesFromRecipe([{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }]),
+      gatesFromRecipe("proposed", [{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }]),
     ).toThrow(/no environment resolver was supplied/);
   });
 });

@@ -422,7 +422,7 @@ Source: `GatePoint` and `GATE_POINTS` in `packages/domain/src/events.ts`.
 
 | Point | When | May refuse? |
 |---|---|---|
-| `admit` | the queue offers an item, before it is claimed | yes |
+| `admit` | the queue offers an item, before it is claimed | nothing runs here — see the matrix below |
 | `prepared` | after the worktree exists, before the agent starts | yes |
 | `proposed` | the agent stopped and there are commits — a change has been proposed | yes |
 | `merge` | after `proposed` passes, before the merge lane | yes |
@@ -433,8 +433,10 @@ action asks or when `--no-merge` does; `end` runs too, its actions being effects
 rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
-`admit` is declared and empty, which is what an unconfigured point *is* rather
-than a gap.
+`admit` is empty here and empty everywhere: nothing constructs a pipeline for
+it, so an action declared there is refused when the recipe resolves rather than
+accepted and skipped (`#61`). It stays one of the five — the closed set is about
+the places in the loop, not about what is built today.
 
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
@@ -453,11 +455,12 @@ What runs at a point. Source: `GateAction` and `kindOfAction` in
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
 | `labels:` | — same | a GitHub client |
 
-The last two carry `when:` (`landed` / `blocked` / `failed` / `any`), because
+The last two carry `when:` (`landed` / `blocked` / `failed` / `closed` / `any`), because
 `end` fires on *every* terminal outcome. "Close it when it lands, label it when
 it is blocked" is one configuration rather than two mechanisms. Putting either
 at a gating point is refused by name — a gate that silently did nothing would be
-worse.
+worse. Which kind may be at which point is the matrix below, and every cell in
+it answers one way or the other.
 
 The shape is GitHub Actions': a `name`, exactly one of the keys above, and its
 parameters beside it. Order within a point is the array's, the first refusal
@@ -472,6 +475,70 @@ second silently overwrite the first.
 
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
 it by arithmetic rather than by anybody noticing.
+
+## point × kind — the 30 cells, and which of them run
+
+Not every kind runs at every point, and for a year ten of the thirty cells said
+neither yes nor no: an action there was accepted by the schema, resolved into
+`GatesResolved`, printed by `lingtai add`, drawn on the board — and never
+called (`#61`). `merge` was a sixteenth until `#58` built its pipeline. **The
+set is two-valued now**: a cell runs, or the recipe does not resolve and the
+refusal names the action, its kind, the point and why.
+
+Source: `KINDS_AT` and `whyNoKindAt` in `packages/recipe/src/recipe.ts`. This
+table is checked against that constant, cell for cell, by
+`packages/conductor/pure/gate-matrix.test.ts` — the copy in `#61`'s own body
+was wrong about `merge` within three weeks of being written, so a copy nothing
+checks is not worth having.
+
+✅ runs · ✋ refused when the recipe resolves, by name
+
+| | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` |
+|---|---|---|---|---|---|---|
+| `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ |
+| `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ |
+| `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ |
+
+Where each row comes from:
+
+```
+prepared   run-once.ts   gatesFromRecipe("prepared", …, { env })    an environment, and nothing else
+proposed   run-once.ts   gatesFromRecipe("proposed", …, gateDeps)   every dependency
+merge      run-once.ts   gatesFromRecipe("merge",    …, gateDeps)   every dependency   ← #58
+end        end-point.ts  resolveEndActions                          the two effects
+admit      —             no pipeline is constructed anywhere
+```
+
+**Every ✋ is a fact about the point, not about the caller.**
+
+- **`admit` carries nothing.** No code reaches it, so an action there would be
+  resolved, printed and never called. The point stays in the closed set and the
+  day something runs a pipeline there its row grows — but a recipe may only say
+  what today's code does. A question that must be asked *before* anything is
+  spent is `lingtai ask`, which holds the item in the queue and is answered
+  without a worktree ([`ask.ts`](../packages/conductor/src/ask.ts)).
+- **`prepared` is narrower than `proposed`, and this is where that is written
+  down.** Nothing has been committed yet, so `agent:` would be handed no diff to
+  read and `watch:` no file list to match — it is a point before a change
+  exists, not a point missing a dependency. `human:` is refused for a different
+  reason and a sharper one: a hold there is turned into a *release* back to the
+  queue, so the person would be asked a question that re-asks itself — and pays
+  for a worktree and an install — on every pass, and can never be answered. Ask
+  before the claim, or at `proposed`, where there is a diff to approve.
+- **`end` produces no verdict**, so the four kinds that produce one have nothing
+  to be there. Its two carry `when:`, which is how one point serves every
+  terminal outcome.
+- **`close:` and `labels:` at a point that decides** are effects rather than
+  verdicts, and only `end` carries out effects. This is the direction the
+  codebase already got right, and its wording is the argument for the rest:
+  *an action that is silently absent is worse than a run that will not start.*
+
+The refusal arrives when the recipe resolves — so `lingtai doctor`, `lingtai
+add` and the first moment of a pass all name it, before a ticket is claimed or
+an install paid for. `gatesFromRecipe` asks the same table again for a caller
+that builds actions in code rather than reading a recipe.
 
 ## extension environment — declared, and the declaration is the whole of it
 

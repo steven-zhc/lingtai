@@ -960,7 +960,7 @@ export function runOnce(
       // that agent committed (0038 §1). The same actions, in the same order,
       // with one thing added — the scenarios the last refusal was made of,
       // which the reviewer is asked about by name (0038 §2).
-      const gates = gatesFromRecipe(recipe.gates.proposed, gateDeps);
+      const gates = gatesFromRecipe("proposed", recipe.gates.proposed, gateDeps);
       const judge = (onSha: string, recheck: readonly GateFinding[], round: number) =>
         Effect.promise(() =>
           runGatePipeline({
@@ -1041,7 +1041,7 @@ export function runOnce(
           const prepared = yield* Effect.promise(() =>
             runGatePipeline({
               point: "prepared",
-              gates: gatesFromRecipe(recipe.gates.prepared, { env: envForExtension }),
+              gates: gatesFromRecipe("prepared", recipe.gates.prepared, { env: envForExtension }),
               context: {
                 runId,
                 onSha: worktree.baseSha,
@@ -2195,7 +2195,7 @@ export function runOnce(
           atMerge = yield* Effect.promise(() =>
             runGatePipeline({
               point: "merge",
-              gates: gatesFromRecipe(recipe.gates.merge, gateDeps),
+              gates: gatesFromRecipe("merge", recipe.gates.merge, gateDeps),
               context: {
                 runId,
                 onSha: head,

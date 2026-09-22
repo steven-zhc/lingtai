@@ -16,7 +16,7 @@
  * read from*.
  */
 import { z } from "zod";
-import { Tier, RuntimeId, isEventType, isRetiredEventType } from "@lingtai/domain";
+import { Tier, RuntimeId, type GatePoint, isEventType, isRetiredEventType } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import { parseDuration } from "./duration.ts";
 
@@ -145,6 +145,130 @@ export const GateAction = z.union([
 ]);
 export type GateAction = z.infer<typeof GateAction>;
 
+/** The action's kind, for an event and for dispatch. Exactly one key decides it. */
+export type ActionKind = "run" | "agent" | "watch" | "human" | "close" | "labels";
+
+export function kindOfAction(action: GateAction): ActionKind {
+  if ("run" in action) return "run";
+  if ("agent" in action) return "agent";
+  if ("watch" in action) return "watch";
+  if ("close" in action) return "close";
+  if ("labels" in action) return "labels";
+  return "human";
+}
+
+/**
+ * **Which of the six kinds each of the five points actually runs.**
+ *
+ * Thirty cells, and ten of them used to be accepted here, resolved into
+ * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
+ * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
+ * the weeks it spent declared-but-unbuilt are the argument for writing the
+ * table down: *a control the log claims and the code does not have is worse
+ * than an unimplemented one, because every signal an operator has says it is
+ * there* (`run-once.ts`, section 11).
+ *
+ * So the matrix lives beside the schema that enforces it, and
+ * `doc/reference.md`'s copy is checked against this constant by a test rather
+ * than kept by hand — the copy in `#61`'s own body was wrong about `merge`
+ * within three weeks of being written.
+ *
+ * **It does not narrow the closed set of points** ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)).
+ * All five are still points and the set may still never grow; what is narrowed
+ * is what a recipe may *say* today, to exactly what today's code does. The day
+ * something runs a pipeline at `admit`, its row grows and nothing else moves.
+ */
+export const KINDS_AT = {
+  /** Nothing yet: no pipeline is constructed at `admit` anywhere. */
+  admit: [],
+  /** A command. The other three want a diff or an answer, and there is neither yet. */
+  prepared: ["run"],
+  proposed: ["run", "agent", "watch", "human"],
+  merge: ["run", "agent", "watch", "human"],
+  /** The two effects — the two kinds that carry `when:`. */
+  end: ["close", "labels"],
+} as const satisfies Record<GatePoint, readonly ActionKind[]>;
+
+/**
+ * Why a point does not run a kind, in the words the refusal carries — or `null`
+ * when it does.
+ *
+ * Every reason is a fact about the **point**, and that is why they are spelled
+ * out rather than left as "unsupported": an operator told that `agent:` is
+ * refused at `prepared` should not have to read `run-once.ts` to discover that
+ * the reason is that nothing has been committed yet.
+ */
+export function whyNoKindAt(point: GatePoint, kind: ActionKind): string | null {
+  if ((KINDS_AT[point] as readonly ActionKind[]).includes(kind)) return null;
+  if (point === "admit") {
+    return (
+      "nothing runs a pipeline at `admit` — the point is in the closed set and no code reaches it, " +
+      "so an action here would be resolved, printed, and never called. A question that has to be " +
+      "asked before anything is spent is `lingtai ask`, which holds the item in the queue instead"
+    );
+  }
+  if (point === "end") {
+    return (
+      "`end` fires on every terminal outcome and produces no verdict, so the only actions it can " +
+      "carry are the two that run for effect — `close:` and `labels:`, the two that take `when:`"
+    );
+  }
+  if (kind === "close" || kind === "labels") {
+    return "it is an effect rather than a verdict, and only the `end` point carries out effects";
+  }
+  if (kind === "agent") {
+    return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";
+  }
+  if (kind === "watch") {
+    return "nothing has been committed at `prepared`, so the globs would be matched against no file list";
+  }
+  return (
+    "a hold at `prepared` cannot be answered — the run is released back to the queue and the " +
+    "question goes with it, so the item would re-claim, re-install and ask again on every pass. " +
+    "Ask before the claim with `lingtai ask`, or at `proposed`, where there is a diff to approve"
+  );
+}
+
+/** The refusal, in the one wording the schema and `gatesFromRecipe` both use. */
+export function kindRefusedAt(
+  point: GatePoint,
+  kind: ActionKind,
+  action: string,
+  why: string,
+): string {
+  return (
+    `the "${action}" action is a "${kind}" at the "${point}" point, and ${why}. ` +
+    "Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start."
+  );
+}
+
+/**
+ * One point's actions, refusing any kind that point does not run.
+ *
+ * The refusal is here rather than in the conductor because this is the file a
+ * recipe is read by, and a point that cannot run the action should say so when
+ * the recipe resolves — before a ticket is claimed, a worktree cut, or an
+ * install paid for. `lingtai doctor`, `lingtai add` and every pass resolve the
+ * recipe, so all three name it.
+ */
+function actionsAt(point: GatePoint) {
+  return z
+    .array(GateAction)
+    .superRefine((actions, ctx) => {
+      actions.forEach((action, i) => {
+        const kind = kindOfAction(action);
+        const why = whyNoKindAt(point, kind);
+        if (why === null) return;
+        ctx.addIssue({
+          code: "custom",
+          path: [i],
+          message: kindRefusedAt(point, kind, action.name, why),
+        });
+      });
+    })
+    .default([]);
+}
+
 /**
  * What runs at each of the five points.
  *
@@ -165,28 +289,22 @@ export type GateAction = z.infer<typeof GateAction>;
  * bug (ADR 0016 §4). It is also what a recipe still saying `diff:` would hit
  * after [0018](../../../doc/decisions/0018-the-proposed-point.md): it fails to
  * resolve, loudly, naming the key.
+ *
+ * **Strict about the kind at a point, too, and for the same reason** (`#61`).
+ * A key that *is* one of the five, carrying an action that point does not run,
+ * is the identical failure reached one level down: it resolves, it is drawn,
+ * and nothing happens. `KINDS_AT` is which pairs run and `whyNoKindAt` is what
+ * the refusal says.
  */
 export const GateMap = z.strictObject({
-  admit: z.array(GateAction).default([]),
-  prepared: z.array(GateAction).default([]),
+  admit: actionsAt("admit"),
+  prepared: actionsAt("prepared"),
   /** Was `diff` until [0018](../../../doc/decisions/0018-the-proposed-point.md). */
-  proposed: z.array(GateAction).default([]),
-  merge: z.array(GateAction).default([]),
-  end: z.array(GateAction).default([]),
+  proposed: actionsAt("proposed"),
+  merge: actionsAt("merge"),
+  end: actionsAt("end"),
 });
 export type GateMap = z.infer<typeof GateMap>;
-
-/** The action's kind, for an event and for dispatch. Exactly one key decides it. */
-export type ActionKind = "run" | "agent" | "watch" | "human" | "close" | "labels";
-
-export function kindOfAction(action: GateAction): ActionKind {
-  if ("run" in action) return "run";
-  if ("agent" in action) return "agent";
-  if ("watch" in action) return "watch";
-  if ("close" in action) return "close";
-  if ("labels" in action) return "labels";
-  return "human";
-}
 
 /**
  * An event type the log actually has, as a subscription's `on:` entry.

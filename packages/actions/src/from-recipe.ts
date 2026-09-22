@@ -6,7 +6,8 @@
  * supplied it would produce a green board for a change nobody approved — which
  * is worse than a run that will not start.
  */
-import { type GateAction, kindOfAction } from "@lingtai/recipe";
+import type { GatePoint } from "@lingtai/domain";
+import { type ActionKind, type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type AgentGateDeps, createAgentGate } from "./agent-gate.ts";
 import type { Gate } from "./gate.ts";
 import { createHumanGate } from "./human-gate.ts";
@@ -40,20 +41,45 @@ export class GateActionUnavailableError extends Error {
   override readonly name = "GateActionUnavailableError";
   readonly kind: string;
   readonly action: string;
+  /** The point it was declared at, when it was a point that decided. */
+  readonly point: GatePoint | null;
 
-  constructor(action: string, kind: string, missing: string) {
+  constructor(action: string, kind: string, missing: string, point: GatePoint | null = null) {
     super(
-      `the "${action}" action is a "${kind}", and ${missing}. ` +
-        "Refusing to run rather than skipping it: an action that is silently absent is worse than a run that will not start.",
+      point === null
+        ? `the "${action}" action is a "${kind}", and ${missing}. ` +
+            "Refusing to run rather than skipping it: an action that is silently absent is worse than a run that will not start."
+        : kindRefusedAt(point, kind as ActionKind, action, missing),
     );
     this.action = action;
     this.kind = kind;
+    this.point = point;
   }
 }
 
-export function gatesFromRecipe(actions: readonly GateAction[], deps: GateDeps = {}): Gate[] {
+/**
+ * The point's actions as gates, or a refusal naming the first one it cannot run.
+ *
+ * **The point is an argument because the answer depends on it** (`#61`).
+ * `KINDS_AT` in `@lingtai/recipe` is which of the thirty point × kind cells run,
+ * and it is asked here as well as in the schema: a recipe cannot reach this
+ * with a cell that does not run, and a caller constructing actions in code
+ * gets the same sentence rather than a gate that silently does nothing.
+ */
+export function gatesFromRecipe(
+  point: GatePoint,
+  actions: readonly GateAction[],
+  deps: GateDeps = {},
+): Gate[] {
   return actions.map((action) => {
     const kind = kindOfAction(action);
+
+    // The point's own answer first: "there is no diff at `prepared`" is a
+    // better refusal than "no file list was supplied", and it is the true one.
+    const wrongPoint = whyNoKindAt(point, kind);
+    if (wrongPoint !== null) {
+      throw new GateActionUnavailableError(action.name, kind, wrongPoint, point);
+    }
 
     if ("run" in action) {
       if (!deps.env) {
@@ -98,14 +124,15 @@ export function gatesFromRecipe(actions: readonly GateAction[], deps: GateDeps =
       return createHumanGate({ name: action.name, question: action.human });
     }
 
-    // `close` and `labels` are effects, not verdicts — they belong at `end`,
-    // the one point that cannot refuse, and are carried out by `tell.ts`
-    // rather than run here. Reaching this is a recipe that put one at a gating
-    // point, and refusing loudly beats a gate that silently does nothing.
+    // `close` and `labels` are effects, not verdicts. The check above refuses
+    // one at any point that decides; reaching here is `gatesFromRecipe("end",
+    // …)`, which nothing does — `end` is resolved by `end-point.ts` and carried
+    // out by `tell.ts`, and there is no pipeline for it to be a gate in.
     throw new GateActionUnavailableError(
       action.name,
       kind,
-      "it is an effect and only runs at the `end` point, which produces no verdict",
+      "the `end` point resolves its effects rather than running them as gates — see `resolveEndActions`",
+      point,
     );
   });
 }
