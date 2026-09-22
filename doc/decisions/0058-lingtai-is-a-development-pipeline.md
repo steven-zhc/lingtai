@@ -1,14 +1,16 @@
-# 0058 — Lingtai is a development pipeline, and a pass is nine stations
+# 0058 — Lingtai is a development pipeline, and a pass is ten steps
 
 **Status** **proposed** · 2026-09-22 · **the first ADR here that is not
-`accepted`**, deliberately: §2's division is the foundation everything else
-rests on, and it is under discussion. · **revises
+`accepted`**, deliberately: §2 went through three drafts with the
+person it is for, and §What-is-not-decided still holds the question that
+decides whether the rest is buildable. · **revises
 [0015](0015-five-gates-and-two-extensions.md)'s framing and none of its rules**
 
 Lingtai is not a general workflow engine with five extension points. It is a
-development pipeline whose shape is fixed, and the five points are the places
-where it *judges*. The other four stations are where it *works*, and they are as
-configurable as the five — but they never produce a verdict.
+development pipeline whose sequence is fixed and whose every step is configured
+by plugins. What the pipeline keeps for itself is the order, and which steps may
+refuse — because a refusal costs a fix round, holds the ticket and reaches a
+person, and none of that is a plugin's to invent.
 
 ## Context
 
@@ -59,17 +61,24 @@ are three commands.
 
 ### Most of the pipeline is already on the log
 
-Eight of the nine stations append events today:
+Eight of the ten steps append events today:
 
 ```
 claim        WorkItemClaimed                                          263
-admit…end    GateRequested · GateStarted · GatePassed · GateFailed
-worktree     — no event of its own; its path rides on RunStarted
+admit        — no event of its own; the worktree's path rides on RunStarted
+prepared     GateRequested · GateStarted · GatePassed · GateFailed
+design       — does not exist yet
 implement    RunStarted 260 · RunFinished 227
-fix rounds   FixRequested 203 · FixApplied 202 · FixDeclined 24
-merge lane   IntegrationAttempted 153 · Succeeded 123 · Refused 31
+build        the `build` action at proposed: 395 runs, 34 refusals
+review       the `review` action at proposed: 318 runs, 231 refusals
+proposed     FixRequested 203 · FixApplied 202 · FixDeclined 24
+merge        IntegrationAttempted 153 · Succeeded 123 · Refused 31
 end          EndActionsResolved                                       237
 ```
+
+**Only `design` is genuinely new.** `build` and `review` are two actions at one
+point today and become two steps; `proposed` keeps its name and takes over the
+routing that `run-once.ts` does now.
 
 So the vocabulary below is mostly a name for what the log already records.
 
@@ -87,155 +96,160 @@ buys what a general engine cannot: **the system can propose the configuration**,
 because it knows what each station is for. `#161` already does this for the gate
 points — reading the repository's scripts, labels and default branch.
 
-### 2. Two kinds of station, and only one of them judges
+### 2. Every step is a step. The workflow fixes which of them may refuse
 
-| | configures | produces | may refuse |
-|---|---|---|---|
-| **gate point** | what to judge with — a command, a reviewer, globs, a person | a **verdict** | **yes** |
-| **work station** | how to do the thing — a ref, an agent, a merge strategy | the thing | **no** |
+There are not two classes of node. **There is one — a step — and plugins decide
+what it does.** What the workflow fixes, and a plugin may not change, is:
 
-**This is the load-bearing line of the ADR and the reason it is `proposed`.**
+- **the sequence**, and
+- **which steps may refuse**, and **what a refusal buys**.
 
-A work station can *fail* — a clone can 404, an agent can crash — and failing is
-not refusing. A refusal is a sentence about the change; a failure is a sentence
-about the machinery. [0057](0057-a-gate-that-did-not-finish.md) drew exactly
-that distinction one level down, for an agent inside a gate, and
-[012 §4](../experiments/012-where-the-turns-go.md) measured what conflating them
-costs: 10% of `review` refusals carry no findings and buy a fix round anyway.
+**Refusal is not an ordinary return value**, which is why it cannot be a
+plugin's to invent. In this codebase a refusal is a chain of real consequences:
+it buys a fix round (~31 turns, ~$3.40), it holds the work item, and it reaches
+a person on the board. If a `claim` plugin could "refuse", none of that has a
+meaning. So the set of refusing steps is part of the fixed pipeline, and a
+plugin at a refusing step supplies the *judgement*, never the *consequence*.
 
-**The guardrail.** Without this line, *every station is configurable* quietly
-turns the closed set of gate points into an open one, and 0015's whole argument
-for a plugin — *the set of points is closed forever, so a plugin can rely on
-them* — goes with it. **A work station is not a gate point and cannot become
-one by being configured.**
+This replaces an earlier draft of this section that split stations into *gate
+points* and *work stations*. That split was the wrong shape twice over: it made
+`claim` unconfigurable, when swapping tag-pickup for assignee-pickup is the
+plainest thing a project wants; and it could not place the merge lane, which
+does work and does refuse. **The distinction that is real is between kinds of
+outcome, not kinds of node.**
 
-### 3. The nine stations are the vocabulary, shared by the UI and the recipe
+### 2b. The core is the sequence and the outcome rules. Everything that acts is a plugin
+
+List what each step does and you have listed everything Lingtai does:
+
+| step | plugins |
+|---|---|
+| `claim` | tag filter · assignee · kind |
+| `admit` | analysis of the requirement · git worktree |
+| `prepared` | `pnpm install` · `pnpm test` |
+| `design` | document generation |
+| `implement` | the agent call |
+| `build` | `pnpm build` · `pnpm test` |
+| `review` | the cold reviewer |
+| `proposed` | the workflow check · line-mistake-or-approach-mistake |
+| `merge` | `git merge` · an agent that resolves a conflict |
+| `end` | the GitHub update |
+
+**Lingtai ships that whole set, and the set is exactly today's behaviour.** A
+recipe that says nothing gets it. A project changes a step by naming a
+different plugin there, which is what makes one pipeline serve repositories
+that want different things.
+
+**This unifies something that is a special case today.** The six gate action
+kinds — `run:`, `agent:`, `watch:`, `human:`, `close:`, `labels:` — are six
+built-in plugins, and [0059](0059-a-point-carries-only-the-kinds-it-runs.md)'s
+rule (*a kind a point does not run is refused when the recipe resolves*) becomes
+one rule rather than two: **a step refuses a plugin it cannot run.**
+
+### 3. The ten steps are the vocabulary, shared by the UI, the recipe and the log
 
 ```
-1  claim         work      the ticket, its kind and its priority
-2  admit         GATE
-3  worktree      work      where the working copy comes from
-4  prepared      GATE
-5  implement     work      which agent, model and limits write the change
-6  proposed      GATE
-7  merge         GATE
-8  merge lane    work      how the change is integrated
-9  end           GATE
+1   claim        ─ pick the ticket
+2   admit        ─ start work on it; the worktree is cut here
+3   prepared     ─ the tree is ready to be worked in
+4   design       ─ a document, before any code
+5   implement    ─ one agent, in that worktree
+6   build        ─ REFUSES
+7   review       ─ reads the diff, returns findings, judges nothing
+8   proposed     ─ REFUSES · the only step that routes
+9   merge        ─ REFUSES
+10  end          ─ runs on every outcome, and cannot refuse
+    waiting      ─ not a step: where a pass rests until a person moves it
 ```
 
-Plus two loops, which are not stations and must still be drawable:
+**Three steps may refuse, and every refusal goes to `proposed`.** That is what
+makes the loops bounded: each one passes through the workflow check, which is
+where the ceilings live. Today those ceilings are `buyRound` and `passCeiling`
+inside `run-once.ts`, visible to nobody.
 
-```
-fix round     proposed refuses → back to implement → proposed again   rounds: 3
-restart       the whole pass again, from the base, carrying the refusal   restarts: 1
-```
+**`review` judging nothing is the change with the most evidence behind it.**
+Today a review's verdict *is* the decision — which is why a reviewer that
+crashed still bought a fix round: **10% of `review` refusals in 14 days carried
+no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md),
+and [0057](0057-a-gate-that-did-not-finish.md) is the narrow fix). With the
+decision in its own step, a review that returns nothing is a review that found
+nothing, and the step that decides can see that.
 
-**One name per station, used by the rail, the recipe and the log.** Today the
-same thing is called `the agent` in `the-pass.py`, `RunStarted` on the log and
-nothing at all in the recipe.
+**`build` before `review`, and a red build skips it.** Not because build is
+quick — measured over 14 days it is the slower of the two, median 313s against
+review's 149s — but because it spends no tokens where a review spends an agent.
+The recipe already says this in as many words: *a diff that does not compile is
+never paid to be reviewed*.
+
+**And the agent still runs the build itself while it works** — 1–9 times in a
+pass that lands, 35–57 in one that enters the fix loop. That is a tool, not the
+step. The step's run is the independent one, and it is the one that appends a
+verdict with evidence. [Experiment 001](../experiments/001-cold-review-issue-58.md)'s
+argument for the cold reviewer — *self-review after ~89 turns of committed
+reasoning is not a second opinion* — is the same argument here: the agent's own
+green is not evidence that the tree is green.
 
 ### 3b. The pipeline, drawn
 
-The sequence above with its loops and its endings. **A proposal, drawn from the
-one in discussion on 2026-09-22 and corrected against the log in four places**,
-listed under the figure.
-
 ```mermaid
 flowchart TB
-  CL["<b>claim</b><br/>tag filter · kinds · assignee"]
-  AD{{admit}}
-  WT["<b>worktree</b><br/>cut from the mirror at the base"]
-  PR{{prepared}}
+  CL["<b>claim</b><br/>tag filter · assignee · kind"]
+  AD["<b>admit</b><br/>the requirement · the worktree"]
+  PR["<b>prepared</b><br/>install · is the base green?"]
   DS["<b>design</b><br/>a document, before any code"]
   IM["<b>implement</b><br/>one agent, in that worktree"]
-  PO{{proposed}}
-  MG{{merge}}
-  ML["<b>merge lane</b><br/>base in · verify · out"]
-  EN{{end}}
-  ASK(["it needs you<br/>lingtai ask · a person"])
-  YOU(["waiting on you"])
+  BU{{"<b>build</b>"}}
+  RV["<b>review</b><br/>findings, and no verdict"]
+  PO{{"<b>proposed</b><br/>the only step that routes"}}
+  MG{{"<b>merge</b>"}}
+  EN["<b>end</b><br/>runs on every outcome"]
+  WA(["waiting on you"])
 
-  CL --> AD
-  AD --> WT
-  AD -->|"nothing to work from"| ASK
-  WT --> PR
-  PR --> DS
-  DS --> IM
-  DS -->|"the design needs you"| ASK
-  IM --> PO
-  PO --> MG
-  MG --> ML
-  ML --> EN
+  CL --> AD --> PR --> DS --> IM --> BU
+  BU -->|"green"| RV
+  BU -->|"red — review is never paid for a diff that will not compile"| PO
+  RV --> PO
+  PO -->|"pass"| MG
+  MG --> EN
+  MG -->|"conflict"| PO
 
   PO -->|"the lines are wrong<br/>× rounds — the same worktree"| IM
   PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
-  PO -->|"every ceiling spent"| YOU
-  MG -->|"a person is declared here"| YOU
-  ML -->|"conflict"| IM
-
-  YOU --> EN
-  ASK --> EN
+  PO -->|"every ceiling spent"| WA
+  AD -->|"the requirement is not clear"| WA
+  DS -->|"the design needs you"| WA
+  WA -->|"after you clarify"| CL
+  WA -->|"you close it"| EN
 
   classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
   classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
   classDef back fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
-  class AD,PR,PO,MG,EN gate;
-  class CL,WT,DS,IM,ML core;
-  class ASK,YOU back;
+  class BU,PO,MG gate;
+  class CL,AD,PR,DS,IM,RV,EN core;
+  class WA back;
 ```
 
-**The hexagons judge and the rectangles work** — §2's division, drawn. The
-stadiums are the two ways a pass ends without landing, and **both still reach
-`end`**.
+**The hexagons are the three steps that may refuse, and all three arrive at the
+same place.** That is the property worth keeping: `proposed` is the only step
+that routes, so every loop in the drawing passes through the workflow check, and
+**no loop is unbounded**. It is also why the log ends up complete — `proposed`
+runs on the way through as well as on the way back, so a pass that sailed
+through has a recorded decision saying it did.
 
-Four corrections against the diagram this was drawn from, each of them a thing
-the log says and the drawing did not:
+**Nothing refuses into `waiting` directly.** A conflict and a red build are
+judgements about the change and go where judgements go; only the step that
+counts the ceilings may decide that a person is next.
 
-**1. `design` is the strongest part of the proposal**, and the evidence for it is
-this repository's own week. Five tickets written after a decision was written
-down landed on their first pass — `#219`, `#220`, `#221` after
-[0055](0055-two-implementations-chosen-at-init.md), `#215` after
-[0056](0056-the-store-is-a-written-choice.md), `#196` after
-[0057](0057-a-gate-that-did-not-finish.md). `#179`, which had none, took eleven
-passes and about $250 and was finished by hand. The station makes the thing that
-worked into a step rather than a habit.
+### 4. Init configures every step; the person overrides any of it
 
-**2. The fix round is the arrow the drawing must not omit.** `proposed` refuses
-→ back to `implement`, up to `rounds`, in the same worktree
-([0039](0039-the-worktree-is-the-whole-of-a-pass.md)). It is **49% of every turn
-the system spends** ([012](../experiments/012-where-the-turns-go.md)), and a
-drawing that shows only the restart shows the cheaper half of the loop. Which of
-the two a refusal should buy is
-[#223](https://github.com/steven-zhc/lingtai/issues/223).
-
-**3. `prepared` testing the base is a new refusal, and it needs a meaning.** It
-runs before any change exists, so red there says *the base is broken* — which is
-a reason not to start this ticket, not a verdict about it. Worth having; worth
-saying which it is, because `#179`'s eleven passes were mostly the system
-failing to tell those two apart.
-
-**4. A conflict fixed by an agent is code no reviewer read.** Putting an agent in
-the merge lane is a real capability and a real hole: `review` has already passed
-by then. Either the lane's output re-enters `proposed`, or the lane may not
-write code. Today `git` refuses and the item goes back, which is slower and has
-no hole.
-
-**`end` is reached by every ending, not only by a merge.** Landing, waiting on
-you and being released all arrive there — that is `aa3733f`, *the point runs on
-every outcome, not just an inline merge* — which is why its actions are effects
-and it cannot refuse. A drawing that hangs `end` off `merge` alone loses the
-labels and the close on every ticket that stopped.
-
-### 4. Init configures every station; the person overrides any of it
-
-At `lingtai init` and at `lingtai add`, the repository is read and each station
-gets a proposed configuration — the package manager for `prepared`, the default
+At `lingtai init` and at `lingtai add`, the repository is read and each step
+gets a proposed set of plugins — the package manager for `prepared`, the default
 branch for `worktree`, the signed-in runtime for `implement`, the test script
 for `proposed`. The person may change any of it, and what they change is
 recorded in the recipe exactly as the gates are.
 
 **Detected is a default, not a replacement for being told** —
-[0046 §3](0046-lingtai-is-personal.md)'s rule, applied to every station rather
+[0046 §3](0046-lingtai-is-personal.md)'s rule, applied to every step rather
 than to `runtime.agent` alone.
 
 [0053](0053-the-recipe-chooses-the-agent-for-each-role.md) is already the first
@@ -244,51 +258,93 @@ model, which limits — and it is accepted with its implementation on an unmerge
 branch. **It is not superseded by this ADR; it is the pattern this one
 generalises.**
 
-### 5. What this does not change
+### 5. What this revises, and what it leaves alone
 
-- **The five gate points stay five, and the set stays closed** (0015).
-- **A configured point that silently does not run is Lingtai's bug**
+**[0015](0015-five-gates-and-two-extensions.md) is revised, not worked around.**
+It says *a plugin may do exactly two things*, and the first is a gate action
+attached to one of five points. Under §2b a plugin attaches to **any of the ten
+steps**. The number changes; the shape does not — a plugin still either runs in
+the loop and the loop waits for it, or it runs off the log and cannot affect
+the outcome. The `Gate` interface 0015 names as the contract is the plugin
+contract still.
+
+**The closed set survives, and it is the set of steps.** 0015's argument was
+that a plugin can rely on the points because the set never grows. That argument
+is what §1 buys by narrowing the product: the pipeline is fixed, so the ten are
+closed the way the five were.
+
+**[0047](0047-the-recipe-a-run-got-is-on-the-log.md) needs `GatesResolved` to
+grow, and this is the concrete break.** It records five points and asserts it:
+
+```ts
+points: z.array(z.object({ gate: GatePoint, actions: z.array(z.string()) })).length(5)
+```
+
+0047's claim is *what a run was given is on the log*. If every step's behaviour
+is a plugin and the log records only five of ten, then **the log stops saying
+what the run was actually configured to do** — whether `claim` picked by tag or
+by assignee would be nowhere. That `.length(5)` is a hard assertion and has to
+move with this ADR, or 0047 quietly becomes false.
+
+Left alone:
+
+- **A configured thing that silently does not run is Lingtai's bug**
   ([0016 §4](0016-the-settled-model.md)). The ten silent cells `#61` measured
   are closed — [0059](0059-a-point-carries-only-the-kinds-it-runs.md) landed on
-  2026-09-22 and a kind a point does not run is now refused by name when the
-  recipe resolves. **Naming work stations must not reopen that**: a station's
-  configuration has to refuse what it cannot run, the same way.
-- **The recipe is the machine's** ([0046 §3](0046-lingtai-is-personal.md)) and
-  stays at `~/.lingtai/<project>/recipe.yml`.
-- **What a run was given is on the log**
-  ([0047](0047-the-recipe-a-run-got-is-on-the-log.md)). A station's
-  configuration is part of that record.
+  2026-09-22. §2b folds its rule into the general one: **a step refuses a plugin
+  it cannot run.**
+- **The recipe is the machine's** ([0046 §3](0046-lingtai-is-personal.md)),
+  at `~/.lingtai/<project>/recipe.yml`.
+- **The worktree is the whole of a pass**
+  ([0039](0039-the-worktree-is-the-whole-of-a-pass.md)). `admit` cuts it; it
+  outlives that step and encloses everything to the merge. A plugin whose result
+  lives past its own step is a thing the plugin contract has to admit exists.
 
 ## Consequences
 
-**The rail can line up before any of this is built.** Eight of nine stations are
-already on the log, so drawing the pass as it happens needs no schema change, no
-recipe change and nothing from 0015. That is worth doing first for its own sake
-and as a test of §3's names: if `implement` or `merge lane` reads wrong on a
-card, it is far cheaper to learn that before the recipe carries the word.
+**The rail can line up before any of this is built.** Eight of the ten steps are
+already on the log, so drawing a pass as it happens needs no schema change and
+nothing from 0015. Worth doing first for its own sake and as a test of §3's
+names: if `implement` or `proposed` reads wrong on a card, it is far cheaper to
+learn that before the recipe carries the word.
 
-**The recipe grows a shape it does not have.** `gates:` has five keys; stations
-have nine. Whether work stations sit beside `gates:` or inside a single
-`pipeline:` is not decided here, and should not be decided before §2 is settled.
+**`review` stops deciding, and three things follow.**
+[#223](https://github.com/steven-zhc/lingtai/issues/223) changes shape — it was
+*add a field to the reviewer's contract saying lines-or-approach*, and becomes
+*that judgement is a plugin at `proposed`*, which is better because the reviewer
+keeps one job. [0057](0057-a-gate-that-did-not-finish.md)'s narrow fix stays
+correct and stops being load-bearing. And the ceilings come out of
+`run-once.ts` into a plugin a person can read.
 
-**`admit` is now honest and still empty.** 0059 made every kind at `admit`
-refuse by name, so nothing is silently accepted there any more. What §3 adds is
-a reason to give it something to do — in the drawing it is where *is this ticket
-workable at all* is asked, which is `lingtai ask`'s question and has no station
-today.
+**The recipe grows a shape it does not have.** `gates:` has five keys; steps
+have ten, and the two that are not gates today (`design`, `implement`) carry
+plugins. Whether steps sit beside `gates:` or replace it is not decided here.
 
-**Every ADR that says "five points" needs re-reading**, not rewriting: most of
-them mean gate points and are correct. The ones to check are the ones that use
-"point" to mean "stage".
+**Two test runs per attempt, and one of them may not earn it.** `prepared` runs
+the suite against the base and `build` runs it against the change — median 313s
+each. Over the 263 claims in the 14 days measured, the first is about **23 hours
+of wall clock** to catch a base that was already broken, which `build` catches
+anyway one agent run later. Keeping it is a choice; it should be a stated one.
+
+**Every ADR that says "five points" needs re-reading**, not rewriting: most mean
+gate points and are correct. The ones to check use "point" to mean "stage".
 
 ## What is not decided
 
-- **Whether §2's division is the right one.** A merge lane that refuses to
-  integrate looks a lot like a verdict, and the answer may be that it *is* a
-  gate point nobody declared. This is the discussion this ADR is `proposed` for.
-- **Where work stations live in the recipe**, and whether their configuration is
-  hashed into `configHash` the way gates are.
-- **Whether a work station may be replaced by an extension**, or only
-  configured. 0015 allows a plugin two things; this would be a third.
-- **What `claim` is configurable with.** It is listed as a station because the
-  sequence is not honest without it, not because anything about it is decided.
+- **Some plugins are only correct together.** `admit`'s worktree and `merge`'s
+  `git merge` must agree about one repository, branch and base; `prepared`'s
+  install and `build`'s test must agree about one package manager. A model that
+  lets either be swapped alone lets a person assemble a pipeline that is legal,
+  passes `doctor`, and breaks on the first merge. The shape of the answer is
+  probably the one the code already has — `gatesFromRecipe(…, deps)` refuses by
+  name when a dependency is missing — widened from within-a-step to across
+  steps. **This is the largest open question here.**
+- **Where plugins live in the recipe**, and whether their configuration is
+  hashed into `configHash` the way gates are. It follows §5's `GatesResolved`
+  point and should be settled with it.
+- **Whether `prepared` should test the base at all**, given the number in
+  Consequences.
+- **What `end` does for a ticket that a person closed from `waiting`** — it runs,
+  but `close:` and `labels:` were written for a ticket that landed.
+- **Whether a plugin may replace a step wholesale** rather than configure it.
+  0015 allows two powers; this would be a third.
