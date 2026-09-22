@@ -32,7 +32,7 @@ import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Envelope } from "@lingtai/domain";
 import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from "./event-store.ts";
 import type { Log } from "./log.ts";
-import type { LogQueries } from "./queries.ts";
+import type { LogQueries, UnconvergedUpdate } from "./queries.ts";
 import type { Waker } from "./wake.ts";
 
 /**
@@ -415,6 +415,53 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
      ORDER BY over.streamId`,
   );
 
+  const types = db.prepare("SELECT type, count(*) AS n FROM events GROUP BY type ORDER BY type");
+
+  const unconverged = db.prepare(
+    `WITH said AS (
+       SELECT type AS type,
+              json_extract(data, '$.project') AS project,
+              json_extract(data, '$.issue')   AS issue,
+              json_extract(data, '$.change')  AS change,
+              max(seq)                        AS seq
+       FROM events
+       WHERE type IN ('IssueUpdated', 'IssueUpdateFailed')
+       GROUP BY type,
+                json_extract(data, '$.project'),
+                json_extract(data, '$.issue'),
+                json_extract(data, '$.change')
+     ),
+     failed AS (SELECT * FROM said WHERE type = 'IssueUpdateFailed'),
+     ok     AS (SELECT * FROM said WHERE type = 'IssueUpdated')
+     SELECT failed.project AS project, failed.issue AS issue, failed.change AS change
+     FROM failed
+     LEFT JOIN ok
+       ON ok.project = failed.project AND ok.issue = failed.issue AND ok.change = failed.change
+     WHERE ok.seq IS NULL OR ok.seq < failed.seq
+     ORDER BY failed.project, failed.issue, failed.change`,
+  );
+
+  // `e.data` inside the correlated subquery is a bare column under a GROUP BY,
+  // which SQLite allows and which is unambiguous here for the one reason that
+  // matters: the group is *by that very expression*, so every row in it carries
+  // the same name.
+  const subscriberRows = db.prepare(
+    `SELECT json_extract(e.data, '$.name')                        AS name,
+            count(*)                                              AS total,
+            sum(CASE WHEN e.at > ? THEN 1 ELSE 0 END)             AS recent,
+            (SELECT json_extract(x.data, '$.reason')
+               FROM events x
+              WHERE x.type = 'PluginFailed'
+                AND json_extract(x.data, '$.name') = json_extract(e.data, '$.name')
+                AND x.at > ?
+              ORDER BY x.seq DESC
+              LIMIT 1)                                            AS last
+     FROM events e
+     WHERE e.type = 'PluginFailed'
+     GROUP BY json_extract(e.data, '$.name')
+     ORDER BY recent DESC, total DESC, name`,
+  );
+
   return {
     async projectStreams(prefix) {
       return streams.all(`${prefix}%`).map((r) => (r as { streamId: string }).streamId);
@@ -470,6 +517,39 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
       return statement
         .all(...ranTypes)
         .map((r) => r as unknown as { workItemId: string; runId: string; gate: string });
+    },
+
+    async typeCounts() {
+      return types.all().map((r) => {
+        const row = r as { type: string; n: number };
+        return { type: row.type, rows: Number(row.n) };
+      });
+    },
+
+    async unconvergedUpdates() {
+      return unconverged.all().map((r) => r as unknown as UnconvergedUpdate);
+    },
+
+    /**
+     * **The cutoff is compared as text, and that is safe for exactly one
+     * reason**: `at` is written by the `DEFAULT` in `SCHEMA` above, which is
+     * `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` — the same fixed-width shape
+     * `Date.prototype.toISOString` produces, so lexicographic order is
+     * chronological order. `datetime('now', '-1 day')` would not be: it renders
+     * a space where the stored value has a `T` and no `Z` at all, and every
+     * comparison against it would be wrong in the same silent direction.
+     */
+    async subscriberFailures(since) {
+      const cutoff = since.toISOString();
+      return subscriberRows.all(cutoff, cutoff).map((r) => {
+        const row = r as { name: string; total: number; recent: number; last: string | null };
+        return {
+          name: row.name,
+          total: Number(row.total),
+          recent: Number(row.recent),
+          lastReason: row.last,
+        };
+      });
     },
   };
 }

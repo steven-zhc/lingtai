@@ -35,7 +35,15 @@ import { createPostgresLogQueries, type LogQueries } from "./queries.ts";
 import { createPostgresWaker, type Waker } from "./wake.ts";
 
 // Re-exported so that a caller holding a log names one submodule and not three.
-export type { EndedOutcome, EndedWithoutEnd, LogQueries, PointNeverRan } from "./queries.ts";
+export type {
+  EndedOutcome,
+  EndedWithoutEnd,
+  LogQueries,
+  PointNeverRan,
+  SubscriberFailures,
+  TypeCount,
+  UnconvergedUpdate,
+} from "./queries.ts";
 
 export interface Log {
   /** Append and read. */
