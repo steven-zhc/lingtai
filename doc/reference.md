@@ -878,6 +878,19 @@ still true when the command is run again. `conductor: lock` is the exception
 and answers: it is a file under `~/.lingtai/locks` (#193) and not a row in any
 log.
 
+**Nor does `lingtai restart`, which is the command that `fail` was written to
+gate.** It runs the same report (0042) and refuses on it — and it used to go on
+reading the beacon and the control stream for the rest of the refusal's reasons
+first, both of which open the store this machine chose. So the operator was
+handed the right refusal over an absence their own command had just ended: the
+next `lingtai doctor` printed `0 failed` and the next `lingtai restart` found
+nothing gating and started a daemon against an empty log. Once the doctor
+settles the refusal, nothing further is asked — the lock, the beacon and a
+standing drain are left unread, since no answer any of them could give changes
+a refusal that already stands. `--despite-doctor` reads them as before: a
+person who passed it is starting a daemon that opens the log on its first pass
+anyway.
+
 `log: a change reaches a second reader` opens the log's own waker:
 `LISTEN`/`NOTIFY` on a Postgres machine, a poll of the file on a SQLite one.
 It is the weaker of the two rows about waking on Postgres and says so — whether

@@ -502,6 +502,15 @@ interface Outcome {
   withdrew: number[];
   /** The timeout and force every drain this command asked for carried. */
   asks: { timeoutMs: number | null; force: boolean }[];
+  /**
+   * Which of the facts that reach the log were asked, in order.
+   *
+   * `holder` is a file under `~/.lingtai/locks` (#193), but `daemonUp` is
+   * `readStatus()` and `control` is `readControl()`, and each resolves
+   * `processLog()` → `openSqliteLog(path)` — which *makes* the file and its
+   * tables. So on a machine whose log is gone, asking is creating.
+   */
+  asked: string[];
 }
 
 function worldOf(scene: Scene) {
@@ -511,6 +520,7 @@ function worldOf(scene: Scene) {
     askedToStop: false,
     withdrew: [] as number[],
     asks: [] as { timeoutMs: number | null; force: boolean }[],
+    asked: [] as string[],
   };
   let holderAsks = 0;
   let drainedReads = 0;
@@ -527,12 +537,19 @@ function worldOf(scene: Scene) {
       results: Array.from({ length: scene.doctorFailed ?? 0 }, (_, i) => ({ name: `check ${i}`, status: "fail", detail: "red" })),
     }),
     holder: async () => {
+      w.asked.push("holder");
       if (holderAsks++ === 0) return (scene.holder ?? (async () => "lingtai daemon pid 5123"))();
       w.phase = "drained";
       return null;
     },
-    daemonUp: scene.daemonUp ?? (async () => true),
-    control: async () => ({ shutdown: shutdownNow() }),
+    daemonUp: async () => {
+      w.asked.push("daemonUp");
+      return (scene.daemonUp ?? (async () => true))();
+    },
+    control: async () => {
+      w.asked.push("control");
+      return { shutdown: shutdownNow() };
+    },
     inFlight: async () => [],
     ask: async (_by, _reason, timeoutMs, force) => {
       w.asks.push({ timeoutMs, force });
@@ -555,7 +572,7 @@ function worldOf(scene: Scene) {
     pollMs: 1,
   };
   const log = (line: string): void => void w.lines.push(line);
-  const outcome = (code: number): Outcome => ({ code, said: w.lines.join("\n"), askedToStop: w.askedToStop, withdrew: w.withdrew, asks: w.asks });
+  const outcome = (code: number): Outcome => ({ code, said: w.lines.join("\n"), askedToStop: w.askedToStop, withdrew: w.withdrew, asks: w.asks, asked: w.asked });
   return { w, facts, log, outcome, shutdownNow };
 }
 
@@ -886,6 +903,41 @@ describe("the table of refusals", () => {
       expect(waved.code, waved.said).toBe(0);
       expect(waved.said).toContain("--dirty: ");
       expect((await run({ ...dirty, doctorFailed: 1 }, { ...ARGS, dirty: true })).code).toBe(1);
+    }
+  });
+
+  /**
+   * **The refusal has to be true when the command that made it has exited.**
+   *
+   * `lingtai doctor` opens no log on a machine whose SQLite file is gone — that
+   * is the whole of `log: reachable`'s value (#214) — and this is the command
+   * that row was written to gate. But the doctor gate had no early return: with
+   * `gating` already counted and the refusal already decided, this went on to
+   * ask the beacon and the control stream for reasons to add to it, and both
+   * resolve `processLog()` → `openSqliteLog(path)`, which makes the file and
+   * runs its `create table if not exists`. So the operator got the right
+   * refusal over an absence that no longer existed: their next `lingtai doctor`
+   * read `0 failed`, their next `lingtai restart` found nothing gating, and a
+   * daemon started against an empty log with everything ever appended gone.
+   */
+  it("asks nothing that opens the log once the doctor has refused, on both paths", async () => {
+    for (const run of [terminal, supervised]) {
+      const out = await run({ doctorFailed: 1 });
+
+      expect(out.code, out.said).toBe(1);
+      expect(out.said).toContain("lingtai doctor reports 1 failed check(s)");
+      // The assertion the whole round is about: not one of the three is asked,
+      // so nothing in this command opens — and the file doctor reported missing
+      // is still missing when it exits.
+      expect(out.asked).toEqual([]);
+      expect(out.askedToStop).toBe(false);
+
+      // And the flag still starts in spite of it, which reads them: a person
+      // who passed --despite-doctor has read the failure and means it, and the
+      // daemon they are starting opens the log on its first pass regardless.
+      const waved = await run({ doctorFailed: 1 }, { ...ARGS, despiteDoctor: true });
+      expect(waved.code, waved.said).toBe(0);
+      expect(waved.asked).toContain("daemonUp");
     }
   });
 });

@@ -717,48 +717,80 @@ async function checkBeforeTheDrain(args: RestartArgs, by: string, facts: Restart
   const gating = gatingFailures(report.results);
   log(formatFailures(report.results, gating));
 
+  /**
+   * **Once the doctor has settled the refusal, nothing else is asked** — and
+   * that is not economy, it is the refusal staying true.
+   *
+   * `facts.daemonUp()` and `facts.control()` read the store this machine chose,
+   * and opening a file-backed one **creates** it: `openSqliteLog` makes the path
+   * and runs its `create table if not exists`. So on the machine `log:
+   * reachable` has just failed over, gathering the remaining reasons for a
+   * refusal that is already decided would end the absence being refused over —
+   * the file would exist by the time this command printed the failure, the
+   * operator's next `lingtai doctor` would print `0 failed`, and their next
+   * `lingtai restart` would find nothing gating and start a daemon against an
+   * empty log with everything ever appended gone and no row saying so.
+   *
+   * `lingtai doctor` opens nothing on that path for exactly this reason (#214),
+   * and this is the command it was reported as gating. A refusal that the
+   * command making it undoes is worth nothing.
+   *
+   * Nothing is lost but reasons: what is left unread below is a lock, a beacon
+   * and a standing drain, and `doctorFailed > 0` with no `--despite-doctor`
+   * refuses whatever any of them says.
+   */
+  const settled = gating > 0 && !args.despiteDoctor;
+
   // A failed query is not an empty lock. Read as "nobody is conducting" it would
   // plan a start beside a daemon that is up, so it refuses — nothing has been
   // stopped yet, which is what makes refusing here free.
-  let conducting: string | null;
-  try {
-    conducting = await facts.holder();
-  } catch (err) {
-    sayRefusal("not restarting:", [
-      {
-        line:
-          `who is conducting could not be asked — ${(err as Error).message}. Nothing was asked to stop ` +
-          `and nothing was stopped. lingtai restart asks again`,
-        waiver: null,
-      },
-    ], log);
-    return { ok: false, code: 1 };
+  let conducting: string | null = null;
+  if (!settled) {
+    try {
+      conducting = await facts.holder();
+    } catch (err) {
+      sayRefusal("not restarting:", [
+        {
+          line:
+            `who is conducting could not be asked — ${(err as Error).message}. Nothing was asked to stop ` +
+            `and nothing was stopped. lingtai restart asks again`,
+          waiver: null,
+        },
+      ], log);
+      return { ok: false, code: 1 };
+    }
   }
 
   // The same rule for the beacon. Read as "no daemon" it would plan a wait with
   // nothing asked to stop, on a process that never exits by itself.
-  let up: boolean;
-  try {
-    up = await facts.daemonUp();
-  } catch (err) {
-    sayRefusal("not restarting:", [
-      {
-        line:
-          `whether a daemon is up could not be read — ${(err as Error).message}. Nothing was asked to stop ` +
-          `and nothing was stopped. lingtai restart asks again`,
-        waiver: null,
-      },
-    ], log);
-    return { ok: false, code: 1 };
+  let up = false;
+  if (!settled) {
+    try {
+      up = await facts.daemonUp();
+    } catch (err) {
+      sayRefusal("not restarting:", [
+        {
+          line:
+            `whether a daemon is up could not be read — ${(err as Error).message}. Nothing was asked to stop ` +
+            `and nothing was stopped. lingtai restart asks again`,
+          waiver: null,
+        },
+      ], log);
+      return { ok: false, code: 1 };
+    }
   }
 
   const before: Before = {
     by,
     identity,
     doctorFailed: gating,
+    // The three below are what was read, or the unread defaults where `settled`
+    // stopped this command asking. They cannot turn a refusal into a start:
+    // each only chooses between `drain`, `wait` and `start`, or adds a refusal
+    // of its own, and `settled` means one already stands.
     conducting,
     daemonUp: up,
-    shutdown: (await facts.control().catch(() => null))?.shutdown ?? null,
+    shutdown: settled ? null : (await facts.control().catch(() => null))?.shutdown ?? null,
     // `identity` is the first thing this command read, so it is the loaded code.
     loaded: null,
     startedSince: null,
