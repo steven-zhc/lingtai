@@ -312,15 +312,18 @@ export type StoreChosen =
        * reaches a session on B, and each subscriber drains once on connect and
        * is never nudged again while the board goes on rendering that one
        * drain. Silent, and exactly the split-log failure 0056 exists to
-       * remove. Here the only fallback is `url` itself, so the waker is on the
-       * store's own database or on nothing.
+       * remove. Here there is no such fallback, and the session-mode name is
+       * taken only where it names **the same database as `url`** — so the
+       * waker is on the store's own database, and never on a second one.
        *
-       * So it is `url` itself unless this process names a session-mode URL —
-       * the one legitimate second string, because on Supabase the pooled and
-       * direct strings genuinely differ (0009), and on a checkout that string
-       * lives in `.env.local`, which is where `.env.example` says to put it.
-       * A `config.yml` carries one URL and it stands in for both names, which
-       * is what `machineDatabaseUrl` already says.
+       * So it is `url` itself unless this process names a session-mode URL on
+       * that database — the one legitimate second string, because on Supabase
+       * the pooled and direct strings genuinely differ in their port (0009),
+       * and on a checkout that string lives in `.env.local`, which is where
+       * `.env.example` says to put it. A stale one there, left over from a
+       * database this machine has been pointed away from, names another and is
+       * ignored. A `config.yml` carries one URL and it stands in for both
+       * names, which is what `machineDatabaseUrl` already says.
        */
       directUrl: string;
       where: StoreSource;
@@ -432,9 +435,45 @@ function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
  * and nothing else**: `directUrlIfSet`'s fallback to `LINGTAI_DATABASE_URL` is
  * the one that could name a different database, and here the fallback is the
  * chosen `url`.
+ *
+ * **And only where it names the same database as `url`**, which is what makes
+ * the sentence above a rule rather than a hope. Reading the merged environment
+ * is what a checkout needs and is also what lets a stale pair in `.env.local`
+ * answer for a machine that has since been pointed somewhere else: `config.yml`
+ * says NEW, the file still holds the OLD pair, and the store opens on NEW while
+ * the `LISTEN` registers on OLD — where nothing is ever appended, so no
+ * notification arrives, every subscriber drains once at connect and is never
+ * nudged again, and nothing errors. A direct name that is not the chosen
+ * database is not 0009's second string at all, so it is ignored and `url`
+ * stands.
  */
 function sessionUrlFor(url: string, from: NodeJS.ProcessEnv): string {
-  return optional(dbVar("DIRECT_DATABASE_URL", from), from) ?? url;
+  const named = optional(dbVar("DIRECT_DATABASE_URL", from), from);
+  return named !== undefined && sameDatabase(named, url) ? named : url;
+}
+
+/**
+ * Whether two connection strings name **one database** — 0009's whole demand of
+ * the pair ("Two variables, one database"), and the same relation `lingtai
+ * doctor`'s environment row already fails a machine for breaking.
+ *
+ * Host and database, never the port: the port is exactly what the two
+ * legitimately differ in — 6543 pooled beside 5432 session, "the same host and
+ * credentials on port 5432 with the `pgbouncer` flag dropped" (0009). Nor the
+ * credentials, for the reason `describeUrl` does not print them.
+ *
+ * A string that will not parse is **not** a match: the waker then falls back to
+ * `url`, which is the store's own database by construction. Guessing the other
+ * way is the split this exists to make impossible.
+ */
+function sameDatabase(a: string, b: string): boolean {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    return x.hostname === y.hostname && x.pathname === y.pathname;
+  } catch {
+    return false;
+  }
 }
 
 function notSetUp(name: string, path: string | null, url?: string): StoreRefused {
@@ -743,7 +782,7 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
  * longer the same set of machines as *has a log*.** A machine that wrote
  * `store: sqlite` runs one, in a file, and this answers false about it; so does
  * a machine that carries a `database.url` and no `database.store`, which 0056
- * calls not set up and must not collapse into *chose SQLite* (0016 §4).
+ * calls not set up and must not collapse into *chose SQLite* (0056 §2).
  *
  * That is left standing deliberately and it is not this function's decision to
  * make. Its three callers are `lingtai uninstall`, `lingtai upgrade` and the

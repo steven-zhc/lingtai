@@ -296,7 +296,10 @@ describe("the session-mode connection that goes with a choice", () => {
    */
   it("is the direct name the env files supplied, which is where a checkout keeps it", () => {
     const dir = mkdtempSync(join(tmpdir(), "lingtai-store-probe-"));
-    const pooled = "postgresql://me:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+    // 0009's pair, as 0009 writes it: "the same host and credentials on port
+    // 5432 with the `pgbouncer` flag dropped". One database, two ports — which
+    // is also the only shape `lingtai doctor`'s environment row passes.
+    const pooled = "postgresql://me:secret@db.abcdef.supabase.co:6543/postgres?pgbouncer=true";
     writeFileSync(join(dir, "config.yml"), `database:\n  store: postgres\n  url: ${pooled}\n`);
     const index = pathToFileURL(join(repoRoot(), "packages", "env", "src", "index.ts")).href;
     const file = join(dir, "probe.mjs");
@@ -325,5 +328,67 @@ describe("the session-mode connection that goes with a choice", () => {
     // `lingtai doctor`'s session-mode check reads this one; the two agree, so a
     // green row is a report on the connection the waker actually opens.
     expect(read.merged).toBe(direct);
+  });
+
+  /**
+   * **And a direct name on a *different* database decides nothing**, which is
+   * what makes the case above a rule rather than a hope.
+   *
+   * 0009 is "two variables, **one database**", and reading the merged
+   * environment for the second one is exactly what lets a stale pair answer for
+   * a machine that has been pointed somewhere else: `lingtai init
+   * --database-url …@db.NEW…` writes `config.yml` and never touches the
+   * checkout, whose `.env.local` still holds the OLD pair `.env.example` told
+   * it to keep. The store opens on NEW and the `LISTEN` registers on OLD, where
+   * nothing is ever appended — every subscriber drains once at connect and is
+   * never nudged again, `task_view` stops folding, the board renders stale
+   * cards, and nothing errors. It is the split-log failure 0056 exists to
+   * remove, reached through the one name that was still read the merged way.
+   *
+   * Handed in rather than spawned: an exported variable and one an env file
+   * supplied reach `sessionUrlFor` in the same position, and what is asserted
+   * here is the comparison, which the case above already proves is reached from
+   * a file.
+   */
+  it("is not a direct name on another database, however this process came by it", async () => {
+    const dir = await home(`database:\n  store: postgres\n  url: ${URL_}\n`);
+    const elsewhere = "postgresql://me:secret@db.elsewhere:5432/lingtai";
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: elsewhere })).toMatchObject({
+      url: URL_,
+      directUrl: URL_,
+    });
+
+    // Nor the same host with another database on it — a second log is a second
+    // log whichever half of the string names it.
+    const otherDb = "postgresql://me:secret@db.example:5432/other";
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: otherDb })).toMatchObject({
+      url: URL_,
+      directUrl: URL_,
+    });
+
+    // And a string nothing can parse is not a match either: the waker falls
+    // back to the store's own database rather than to a guess.
+    expect(storeChoice({ LINGTAI_HOME: dir, LINGTAI_DIRECT_DATABASE_URL: "not a url" })).toMatchObject({
+      directUrl: URL_,
+    });
+  });
+
+  /**
+   * The same rule where the store came from an exported variable rather than
+   * from the file — one function answers both, and a pair that disagrees there
+   * is the same split.
+   */
+  it("holds for a store the environment named, not only one the file did", () => {
+    const direct = "postgresql://me:secret@db.example:5433/lingtai";
+    expect(
+      storeChoice({ LINGTAI_DATABASE_URL: URL_, LINGTAI_DIRECT_DATABASE_URL: direct }),
+    ).toMatchObject({ url: URL_, directUrl: direct });
+
+    expect(
+      storeChoice({
+        LINGTAI_DATABASE_URL: URL_,
+        LINGTAI_DIRECT_DATABASE_URL: "postgresql://me:secret@db.elsewhere:5432/lingtai",
+      }),
+    ).toMatchObject({ url: URL_, directUrl: URL_ });
   });
 });
