@@ -81,16 +81,16 @@ const CHOOSERS = [
 ];
 
 /**
- * The one exception, with its ticket.
+ * **There is no exception any more.**
  *
- * `lingtai doctor` still asks the log two questions through
- * `createPostgresLogQueries` — reading a URL it was given and reporting on it.
- * [#214](https://github.com/steven-zhc/lingtai/issues/214) is where `doctor`
- * reads the choice instead, and it is deliberately after this: a diagnostic
- * that reports on a machine is a different problem from a factory that opens
- * it, and #179 is the second one.
+ * `apps/cli/src/doctor.ts` was one until
+ * [#214](https://github.com/steven-zhc/lingtai/issues/214): it asked the log
+ * two questions through `createPostgresLogQueries`, handing it a URL it had
+ * been given, so *gates: end ran on what landed* and its pair were questions
+ * only a Postgres machine could be asked — though both are questions about a
+ * log. They go through `processLog()` now, which is the choice, and the list
+ * below is the whole of what may name a store.
  */
-const NOT_YET = ["apps/cli/src/doctor.ts"];
 
 describe("one selection", () => {
   it("is a scan that sees the shape it exists for", () => {
@@ -105,11 +105,11 @@ describe("one selection", () => {
   it("finds the files it is about", () => {
     const files = new Set(sources().map((s) => s.file));
     expect(files.size).toBeGreaterThan(100);
-    for (const file of [...IMPLEMENTATIONS, ...CHOOSERS, ...NOT_YET]) expect(files).toContain(file);
+    for (const file of [...IMPLEMENTATIONS, ...CHOOSERS]) expect(files).toContain(file);
   });
 
   it("names an implementation in an implementation, a chooser, and nowhere else", () => {
-    const allowed = new Set([...IMPLEMENTATIONS, ...CHOOSERS, ...NOT_YET]);
+    const allowed = new Set([...IMPLEMENTATIONS, ...CHOOSERS]);
     const offenders = sources()
       .filter((s) => !allowed.has(s.file))
       .filter((s) => NAMES.test(code(s.text)))

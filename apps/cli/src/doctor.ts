@@ -36,11 +36,14 @@ import {
   projectFilters,
 } from "@lingtai/conductor";
 import type { GitHubClient } from "@lingtai/github";
-// The submodule, not the barrel: these two checks run on the *direct*
-// connection, and the barrel's `log` is the pooled one. Through a pooler is
-// where the suite learned what a dropped connection costs (#157), and an audit
-// that reds on one would hold `lingtai restart`.
-import { createPostgresLogQueries } from "@lingtai/event-store/queries";
+// The log this machine chose, not a Postgres one built here (#214). Two of the
+// rows below used to name `createPostgresLogQueries` and hand it the direct
+// URL, which made *gates: end ran on what landed* and its pair questions only a
+// Postgres machine could be asked — though both are questions about a log.
+// `processLog()` is the one opened from the written choice (0056), so they now
+// answer on either store and `packages/env/test/one-choice.test.ts` no longer
+// carries this file as its exception.
+import { type Log, type LogQueries, type WakeSession, processLog } from "@lingtai/event-store";
 import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
@@ -172,6 +175,157 @@ export function storeRow(choice: StoreChoice): CheckResult {
     return { name, status: "ok", detail: `sqlite ← ${choice.from} · ${SQLITE_MACHINE}` };
   }
   return { name, status: "ok", detail: `postgres ← ${choice.from}` };
+}
+
+/**
+ * **The row every other row assumes an answer to** (#214).
+ *
+ * The block above is about *a Postgres*, and on a machine that wrote `sqlite`
+ * every row in it is a `skip` — rightly, there is no Postgres. What was wrong
+ * is that the question they were the only asker of went with them: *is the log
+ * reachable at all*. Doctor printed `0 failed` for a machine whose log it had
+ * never opened, which is
+ * [0016](../../../doc/decisions/0016-the-settled-model.md) §4's thing you
+ * cannot tell apart from its absence, in the one command built to prevent it.
+ * `formatReport` refuses to print that summary without this row.
+ *
+ * Reachability is a property of *a log* and not of Postgres, so this asks it of
+ * whichever store opened, and **reads rather than probes** — the rule at the
+ * top of this file. What it reads is a stream that cannot exist: the store's
+ * own primary read path, the connection under it and the `events` table, and
+ * an empty answer back.
+ *
+ * **Nothing is decoded, deliberately.** Reading the log's *first row* would
+ * have been a richer detail and would fail this row over an event type this
+ * build cannot read — which is a true fault with a row of its own (`log: every
+ * type is readable`) and a different one. *Is there a log here* must not borrow
+ * another question's verdict, in either direction.
+ *
+ * It says which store it reached, because a reader who has just been told the
+ * machine chose one thing needs to know this row reached *that* one.
+ */
+export const LOG_REACHABLE = "log: reachable";
+
+/**
+ * The other half: **can a second process be told the log moved.**
+ *
+ * The waker comes from the log itself (#221), so this asks the one question in
+ * whichever of its two shapes applies — `LISTEN`/`NOTIFY` on a Postgres
+ * machine, a poll of the file on a SQLite one — and a machine with no Postgres
+ * gets an answer rather than a blank. Without it every subscriber, and the
+ * board behind them, is only as fresh as the conductor's sweep.
+ *
+ * On Postgres it is the weaker of the two rows about waking and says so:
+ * `ready` means the `LISTEN` is registered, and a transaction pooler will
+ * register one happily and then hand the backend to somebody else. Whether a
+ * notification *survives* the connection is `postgres: direct connection is
+ * session mode`, which runs beside this and is what 0009 demands.
+ */
+export const LOG_WAKES = "log: a change reaches a second reader";
+
+/**
+ * A row that cannot be run because no store was chosen — **never a bare
+ * `skip`**, and never a green one either: it says what is missing and points at
+ * the row that failed over it. A `skip` a reader takes for a pass is the defect
+ * this whole ticket is about.
+ */
+function noStoreWritten(name: string, refused: string): CheckResult {
+  return {
+    name,
+    status: "skip",
+    detail:
+      `not checked — this machine has written no store, so there is no log to reach: ${refused}. ` +
+      "The store row above is the failure; this is a question it stops anything from asking",
+  };
+}
+
+/**
+ * Why a row that is genuinely about one store is not run here — **naming the
+ * store**, so that a reader can tell *does not apply* from *was not looked at*
+ * without knowing which rows belong to which implementation.
+ */
+function notForThisStore(name: string, store: string, instead: string): CheckResult {
+  return { name, status: "skip", detail: `not attempted — this machine wrote store: ${store}, and ${instead}` };
+}
+
+/**
+ * A stream no run, project or subscriber can be called. Reading it costs one
+ * indexed lookup and returns nothing, which is the whole point: the answer is
+ * *the log answered*, and never anything about what is in it.
+ */
+const NO_SUCH_STREAM = "lingtai-doctor-no-such-stream";
+
+export async function logReachable(
+  choice: StoreChoice,
+  open: () => Promise<Log> = processLog,
+): Promise<CheckResult> {
+  if ("refused" in choice) return noStoreWritten(LOG_REACHABLE, choice.refused);
+  const where = choice.store === "sqlite" ? `sqlite at ${choice.path}` : "postgres";
+  try {
+    await (await open()).store.read(NO_SUCH_STREAM);
+    return {
+      name: LOG_REACHABLE,
+      status: "ok",
+      detail:
+        `${where} — opened and read. What is in it is the rows below; ` +
+        "this one is only that there is a log here at all",
+    };
+  } catch (err) {
+    return {
+      name: LOG_REACHABLE,
+      status: "fail",
+      detail:
+        `${where} — ${(err as Error).message}. Nothing that appends, folds or reads can run ` +
+        "against this machine until it opens",
+    };
+  }
+}
+
+export async function logWakes(
+  choice: StoreChoice,
+  open: () => Promise<Log> = processLog,
+  timeoutMs = 15_000,
+): Promise<CheckResult> {
+  if ("refused" in choice) return noStoreWritten(LOG_WAKES, choice.refused);
+  const how =
+    choice.store === "sqlite"
+      ? "a poll of the file"
+      : "LISTEN/NOTIFY — and whether a notification survives the connection is the session-mode row, not this one (0009)";
+
+  let session: WakeSession | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const log = await open();
+    // `lost` is a no-op and has to be: `close()` below ends the connection,
+    // which `pg` reports as a lost session, and a waker that takes the process
+    // down on its own teardown would be a diagnostic with a side effect.
+    session = log.waker("lingtai-doctor").open({ nudge: () => {}, lost: () => {} });
+    await Promise.race([
+      session.ready,
+      // `ready` may never settle when nothing answers, which is exactly the
+      // failure worth reporting — so it is raced rather than awaited.
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no waker was ready within ${timeoutMs}ms`)), timeoutMs);
+        timer.unref();
+      }),
+    ]);
+    return {
+      name: LOG_WAKES,
+      status: "ok",
+      detail: `${how} — a session opened, so an append from now on reaches a subscriber`,
+    };
+  } catch (err) {
+    return {
+      name: LOG_WAKES,
+      status: "fail",
+      detail:
+        `${how} — ${(err as Error).message}. Nothing would wake on an append: every subscriber, ` +
+        "and the board behind them, would be only as fresh as the conductor's sweep",
+    };
+  } finally {
+    clearTimeout(timer);
+    session?.close();
+  }
 }
 
 /**
@@ -637,9 +791,49 @@ export interface DoctorReport {
   results: CheckResult[];
   ok: number;
   failed: number;
+  /** Every `skip`, of either kind below. */
   skipped: number;
+  /**
+   * Skips that are `deferred` — **not implemented yet**, a fact about the
+   * design that is the same on every machine.
+   */
+  deferred: number;
+  /**
+   * Skips that are not: **not checked here**, a fact about *this* machine and
+   * this run. The summary line keeps them apart because folding them together
+   * is what let `0 failed` stand for a machine whose log had never been opened
+   * (#214): `not implemented yet` reads as *nobody has got to it*, and `not
+   * checked here` reads as *nobody looked*, and only one of those is a reason
+   * to go on reading.
+   */
+  notChecked: number;
   /** Reported, not wrong. See `CheckStatus`. */
   warned: number;
+}
+
+/** The counts, from the rows — so a caller that appends a row recounts rather than guessing. */
+export function tally(results: readonly CheckResult[]): Omit<DoctorReport, "results"> {
+  const skips = results.filter((r) => r.status === "skip");
+  return {
+    ok: results.filter((r) => r.status === "ok").length,
+    failed: results.filter((r) => r.status === "fail").length,
+    skipped: skips.length,
+    deferred: skips.filter((r) => r.deferred).length,
+    notChecked: skips.filter((r) => !r.deferred).length,
+    warned: results.filter((r) => r.status === "warn").length,
+  };
+}
+
+/**
+ * Whether the log's own reachability was actually established, either way.
+ *
+ * A `skip` here is the case this exists for: nothing opened the log, so every
+ * green row after it is green about a machine nobody checked, and `0 failed`
+ * would be the most misleading thing doctor could print (0016 §4).
+ */
+export function reachabilityChecked(results: readonly CheckResult[]): boolean {
+  const row = results.find((r) => r.name === LOG_REACHABLE);
+  return row !== undefined && row.status !== "skip";
 }
 
 /**
@@ -1031,9 +1225,9 @@ async function readableTypes(url: string): Promise<CheckResult> {
  * From the log alone, and from the *item's own stream* for the second half, so
  * it says nothing about what the recipe happens to contain today.
  */
-async function endPointRan(url: string): Promise<CheckResult> {
+async function endPointRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: end ran on what landed";
-  const found = await endedWithoutEndActions(createPostgresLogQueries({ url })).catch(() => null);
+  const found = await endedWithoutEndActions(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
@@ -1071,9 +1265,9 @@ async function endPointRan(url: string): Promise<CheckResult> {
  * un-merge a change that landed unapproved. What closes it is a person
  * deciding on the record — the board's waiver, which names who and why.
  */
-async function gatePointsRan(url: string): Promise<CheckResult> {
+async function gatePointsRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: every point that was planned ran";
-  const found = await landedWithoutGatePoints(createPostgresLogQueries({ url })).catch(() => null);
+  const found = await landedWithoutGatePoints(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
@@ -1627,6 +1821,13 @@ export async function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   machine: () => string | undefined = () => undefined,
   store: () => StoreChoice = () => storeChoice(),
+  /**
+   * The log the store-agnostic rows open. `processLog` — the one this machine
+   * wrote down — everywhere but a test, which hands in a log on a store of its
+   * own so that *a machine with no Postgres* can be asserted by a test that has
+   * none either.
+   */
+  open: () => Promise<Log> = processLog,
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -1689,56 +1890,83 @@ export async function runDoctor(
       : environment(pooled, direct, standIn && Boolean(pooled), fromFile ? "~/.lingtai/config.yml database.url" : undefined);
   results.push(envResult);
 
+  // ----------------------------------------------------- about a Postgres ---
+  //
+  // These rows read `information_schema`, `pg_rules`, a pooled URL and a
+  // session-mode one. **They are right to skip on a machine that wrote
+  // `sqlite`** — there is no Postgres — and what was wrong is only that the
+  // questions they were standing in for skipped with them (#214). Those are
+  // below, and they run whatever the store.
   if (fileBacked) {
-    // Every row below that is about **a log** rather than about Postgres: each
-    // opens the store this machine chose, so each answers here too. Losing the
-    // projection lag, the shape check, the beacon and the lock along with the
-    // connection rows was the same defect's other half.
-    //
-    // Still nothing written, in the sense the rule at the top of this file
-    // means it: no row appends, and none is a probe. Opening a file-backed
-    // store runs its own `create table if not exists` — `events` and
-    // `daemon_status` — which is how that store is opened at all and how the
-    // very next command would open it; not one row goes in.
-    results.push(await projections());
-    results.push(await projectionShapes());
-    results.push(await daemonLiveness());
-    results.push(await daemonCurrency());
-    results.push(await passRefusals());
-    results.push(await conductorLock());
-    results.push(await orphans());
-    results.push({
-      name: "postgres",
-      status: "skip",
-      detail: "not attempted — this machine wrote store: sqlite, and there is no connection to make",
-    });
+    results.push(
+      notForThisStore("postgres", "sqlite", "there is no connection to make: the rows below ask the log itself"),
+    );
   } else if (envResult.status === "ok" && pooled && direct) {
     results.push(await pooledConnection(pooled));
     results.push(await directIsSessionMode(direct, standIn));
     results.push(...(await schema(direct)));
-    results.push(await projections(pooled));
-    results.push(await projectionShapes(pooled));
-    results.push(await daemonLiveness());
-    // Beside liveness, never folded into it: up and current are two facts, and
-    // for thirty-nine minutes only one of them was measured.
-    results.push(await daemonCurrency());
-    // What the conductor refused, from the log — not what this checkout would
-    // refuse, which the recipe rows answer, and which is a different question
-    // whenever the two are at different commits (#148).
-    results.push(await passRefusals());
-    results.push(await conductorLock());
     results.push(await readableTypes(direct));
-    results.push(await orphans());
     results.push(await unconverged(direct));
     results.push(await subscribers(direct));
-    results.push(await endPointRan(direct));
-    results.push(await gatePointsRan(direct));
   } else {
     results.push({
       name: "postgres",
       status: "skip",
       detail: "not attempted — the environment check failed first",
     });
+  }
+
+  // --------------------------------------------------------- about a log ---
+  //
+  // Every row here is a property of *a log* rather than of Postgres, so each
+  // asks the store this machine chose and each answers on either. `url`
+  // refines a Postgres connection where there is one and never picks the store
+  // (0056): left out, these fold through the written choice.
+  //
+  // Still nothing written, in the sense the rule at the top of this file means
+  // it: no row appends, and none is a probe. Opening a file-backed store runs
+  // its own `create table if not exists` — `events` and `daemon_status` —
+  // which is how that store is opened at all and how the very next command
+  // would open it; not one row goes in.
+  //
+  // **Reachability leads**, because it is what every row after it assumes and
+  // what nothing asked on a machine with no Postgres.
+  results.push(await logReachable(choice, open));
+  results.push(await logWakes(choice, open));
+  // The refinement only where the pair it came from is sound. A URL the
+  // environment row has just failed over is one nothing should dial: these
+  // fold through the written choice instead, which is what the rest of the
+  // system opens anyway.
+  const refine = envResult.status === "ok" ? pooled : undefined;
+  results.push(await projections(refine));
+  results.push(await projectionShapes(refine));
+  results.push(await daemonLiveness());
+  // Beside liveness, never folded into it: up and current are two facts, and
+  // for thirty-nine minutes only one of them was measured.
+  results.push(await daemonCurrency());
+  // What the conductor refused, from the log — not what this checkout would
+  // refuse, which the recipe rows answer, and which is a different question
+  // whenever the two are at different commits (#148).
+  results.push(await passRefusals());
+  results.push(await conductorLock());
+  results.push(await orphans());
+  // Two comparisons of the plan against the log — 0015's, and the one that
+  // would have found #55 and #58 the day they happened. They took a Postgres
+  // URL until #214 and so were asked only on half the machines.
+  const queries = await open()
+    .then((l) => l.queries)
+    .catch(() => null);
+  if (queries === null) {
+    for (const name of ["gates: end ran on what landed", "gates: every point that was planned ran"]) {
+      results.push({
+        name,
+        status: "skip",
+        detail: `not checked — the log did not open, which ${LOG_REACHABLE} above reports`,
+      });
+    }
+  } else {
+    results.push(await endPointRan(queries));
+    results.push(await gatePointsRan(queries));
   }
 
   results.push(githubCredentials(env));
@@ -1749,13 +1977,7 @@ export async function runDoctor(
   results.push(await runtimeAuth());
   for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });
 
-  return {
-    results,
-    ok: results.filter((r) => r.status === "ok").length,
-    failed: results.filter((r) => r.status === "fail").length,
-    skipped: results.filter((r) => r.status === "skip").length,
-    warned: results.filter((r) => r.status === "warn").length,
-  };
+  return { results, ...tally(results) };
 }
 
 /**
@@ -1819,19 +2041,37 @@ const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
   skip: { text: " skip ", ink: paint.muted },
 };
 
+/**
+ * **`0 failed` is a claim about what was checked, and it may only be printed
+ * where the log itself was** (#214).
+ *
+ * The summary said `N ok, M not implemented yet, 0 failed` for a machine with
+ * no Postgres whose entire Postgres block had skipped — including every row
+ * that could have said whether the log was reachable. The reader was told
+ * nothing failed by a command that had not looked. So the two kinds of skip are
+ * counted apart, and the green line is withheld when `LOG_REACHABLE` is one of
+ * the second kind: amber, naming what was not checked, rather than a green that
+ * means *nobody looked*.
+ */
 export function formatReport(report: DoctorReport): string {
   const notes = report.warned > 0 ? `, ${report.warned} to note` : "";
+  const unchecked = report.notChecked > 0 ? `, ${report.notChecked} not checked here` : "";
   const lines = report.results.map((r) => {
     const tag = TAG[r.status];
     return `${tag.ink(tag.text)} ${r.name}\n         ${r.detail}`;
   });
+  const counted = `${report.ok} ok${notes}${unchecked}, ${report.deferred} not implemented yet`;
   lines.push("");
   lines.push(
-    report.failed === 0
-      ? `${paint.pass(`${report.ok} ok`)}${notes}, ${report.skipped} not implemented yet, 0 failed`
-      : paint.fail(
-          `${report.failed} check(s) FAILED — ${report.ok} ok${notes}, ${report.skipped} not implemented yet`,
-        ),
+    report.failed > 0
+      ? paint.fail(`${report.failed} check(s) FAILED — ${counted}`)
+      : reachabilityChecked(report.results)
+        ? `${paint.pass(`${report.ok} ok`)}${notes}${unchecked}, ${report.deferred} not implemented yet, 0 failed`
+        : paint.signal(
+            `${counted} — no check failed, which is not the same as nothing being wrong: ` +
+              `${LOG_REACHABLE} was never asked, so no row here says this machine has a log at all. ` +
+              "Run lingtai init.",
+          ),
   );
   return lines.join("\n");
 }

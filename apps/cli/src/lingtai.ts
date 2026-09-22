@@ -57,7 +57,7 @@ import { approveCommand } from "./approve.ts";
 import { answerCommand, askCommand } from "./ask.ts";
 import { closeCommand } from "./close.ts";
 import { backlogCommand } from "./backlog.ts";
-import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
+import { daemonLiveness, doctorReport, formatReport, tally } from "./doctor.ts";
 import { openDaemon, parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from "./restart.ts";
 import { endReplay } from "./end.ts";
 import { envCommand } from "./env.ts";
@@ -267,9 +267,10 @@ async function doctor(): Promise<number> {
   // and a restart is neither.
   const release = await releaseCheck({ fetch, env: process.env, self: import.meta.filename });
   report.results.push(release);
-  if (release.status === "ok") report.ok++;
-  else if (release.status === "warn") report.warned++;
-  else report.skipped++;
+  // Recounted from the rows rather than incremented by hand: the summary keeps
+  // *not implemented yet* apart from *not checked here* (#214), and a `++` on
+  // one counter would have had to know which of the two this row is.
+  Object.assign(report, tally(report.results));
   console.log(formatReport(report));
   // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
   // does not refuse on the same number: a failure marked `restartAnswers` exits

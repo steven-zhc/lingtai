@@ -828,25 +828,43 @@ asks.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 23 fixed, 5 per project, 3 deferred
+## doctor check — 27 fixed, 5 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
 version of this section was transcribed from one run's output and had drifted
 by four checks and two names.
 
+**Two groups, and which one a row is in is the whole of what
+[#214](https://github.com/steven-zhc/lingtai/issues/214) decided.** *About a
+Postgres* reads `information_schema`, `pg_rules` and two connection strings; on
+a machine that wrote `store: sqlite` every one of those rows is a `skip`, and
+rightly. *About a log* asks the store this machine chose, whichever it is, so
+those rows answer on both. Before #214 the second group did not exist: the
+questions in it were asked through a Postgres connection, so a machine with no
+Postgres was told `0 failed` by a command that had never opened its log.
+
 | Group | Checks |
 |---|---|
 | load (1) | `packages load under Node` |
-| environment (1) | `environment` |
-| connections (2) | `postgres: pooled connection` · `postgres: direct connection is session mode` |
-| schema (5) | `schema: tables` · `schema: optimistic concurrency` · `schema: append-only` · `schema: notify trigger` · `schema: payload column` |
-| projections (2) | `projections: lag` · `projections: shape` |
-| running system (6) | `daemon: liveness` · `conductor: refusals on the log` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` · `subscribers: failures` |
-| the log itself (1) | `log: every type is readable` |
-| gates ran (2) | `gates: end ran on what landed` · `gates: every point that was planned ran` |
-| credentials (2) | `github: app credentials` · `runtime: signed in` |
-| visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
+| the machine's choice (2) | `store: the machine's written choice` · `environment` |
+| about a Postgres (10) | `postgres: pooled connection` · `postgres: direct connection is session mode` · `schema: tables` · `schema: optimistic concurrency` · `schema: append-only` · `schema: notify trigger` · `schema: payload column` · `log: every type is readable` · `github: what we said and did not manage` · `subscribers: failures` |
+| about a log (11) | `log: reachable` · `log: a change reaches a second reader` · `projections: lag` · `projections: shape` · `daemon: liveness` · `daemon: currency` · `conductor: refusals on the log` · `conductor: lock` · `worktrees: reconciliation` · `gates: end ran on what landed` · `gates: every point that was planned ran` |
+| credentials and visibility (3) | `github: app credentials` · `runtime: other settings in scope` — what configures a run besides the recipe — · `runtime: signed in` |
+
+`github: app credentials` prints immediately after the log group and the two
+`runtime:` rows print last, with the per-project rows between them.
+
+`log: reachable` is the row the rest assume an answer to, and the one the
+summary line is a claim about: it reads a stream that cannot exist, so the
+answer is *the log is there and answered* and never anything about what is in
+it — which is `log: every type is readable`'s question, and a different one.
+`log: a change reaches a second reader` opens the log's own waker:
+`LISTEN`/`NOTIFY` on a Postgres machine, a poll of the file on a SQLite one.
+It is the weaker of the two rows about waking on Postgres and says so — whether
+a notification *survives* the connection is `postgres: direct connection is
+session mode`, which is what [0009](decisions/0009-two-connections.md)
+demands.
 
 **Five more run once per configured project**, so the total depends on how many
 there are: `recipe: resolves for every project`,
@@ -874,6 +892,16 @@ Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
 `fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding
 it into `ok` hides it in a wall of green, and into `fail` makes doctor red for a
 file everybody has.
+
+**A `skip` is two things and the summary line counts them apart** (#214).
+*Not implemented yet* is the three deferred rows — a fact about the design, the
+same on every machine. *Not checked here* is a row this run could not ask: the
+Postgres group on a SQLite machine, `github: app credentials` with no App. They
+read as the same word and mean opposite things, and folding them together is
+what let `0 failed` stand for a machine nobody had checked. So the green line
+is withheld entirely when `log: reachable` is a `skip`: *no check failed* is
+printed instead, amber, saying that no row here establishes there is a log at
+all.
 
 The three deferred are `repository, base branch, submodules`,
 `hook: fail closed` and `github: installation and labels`. A deferred detail says

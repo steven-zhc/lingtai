@@ -5,21 +5,30 @@
  * The last one does need it, and it is the one that matters — it is Phase 0's
  * exit criterion written as an assertion.
  */
-import { createDb, createEventStore, directPostgresUrl, postgresUrl } from "@lingtai/event-store";
+import { type Log, createDb, createEventStore, directPostgresUrl, postgresUrl } from "@lingtai/event-store";
+// A store named in a test, never in `src` — `packages/env/test/one-choice.test.ts`
+// is the scan that keeps it that way.
+import { createSqliteLog, openSqliteLog } from "@lingtai/event-store/sqlite";
 import { beat, createStatusTable } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pg from "pg";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
 import type { StoreChoice } from "@lingtai/env";
 import {
+  LOG_REACHABLE,
+  LOG_WAKES,
   daemonLiveness,
   declaredExtensions,
   describeRefusal,
   extensionRow,
   formatReport,
   limitsRow,
+  reachabilityChecked,
   runDoctor,
 } from "../src/doctor.ts";
 // The count `lingtai restart` gates on, asked of this report rather than
@@ -164,16 +173,32 @@ describe("lingtai doctor — environment", () => {
  * working configuration.
  *
  * The choice is handed in rather than written to a `config.yml`, because what
- * is under test is the fork `runDoctor` takes on it. The rows after the fork
- * open the store *this process* chose, which in this suite is the test
+ * is under test is the fork `runDoctor` takes on it. The log is handed in too
+ * (#214), and is a real SQLite file: the two rows that answer *is the log
+ * reachable* and *can a second process be told it moved* have to be answered by
+ * something, and answering them against the suite's Postgres would prove
+ * nothing about the machine this block is named for. The remaining rows after
+ * the fork open the store *this process* chose, which in this suite is the test
  * Postgres; what is asserted about them is that they are asked at all.
  */
 describe("lingtai doctor — a machine whose log is a file", () => {
-  const wroteSqlite = (): StoreChoice => ({
-    store: "sqlite",
-    path: "/var/empty/lingtai/lingtai.db",
-    where: "config.yml",
-    from: "/var/empty/lingtai/config.yml",
+  let dir: string;
+  let db: ReturnType<typeof openSqliteLog>;
+  let log: Log;
+  let wroteSqlite: () => StoreChoice;
+  const itsLog = async (): Promise<Log> => log;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "lingtai-doctor-file-"));
+    const path = join(dir, "lingtai.db");
+    db = openSqliteLog(path);
+    log = createSqliteLog({ db, path, intervalMs: 10 });
+    wroteSqlite = () => ({ store: "sqlite", path, where: "config.yml", from: join(dir, "config.yml") });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("asks it for no connection string, and fails it for nothing", async () => {
@@ -183,6 +208,7 @@ describe("lingtai doctor — a machine whose log is a file", () => {
         throw new Error("the machine file was asked for a database.url");
       },
       wroteSqlite,
+      itsLog,
     );
 
     const e = find(report.results, "environment");
@@ -206,7 +232,7 @@ describe("lingtai doctor — a machine whose log is a file", () => {
   });
 
   it("still gets every row that is about a log rather than about Postgres", async () => {
-    const report = await runDoctor(env({}), () => undefined, wroteSqlite);
+    const report = await runDoctor(env({}), () => undefined, wroteSqlite, itsLog);
 
     // Each of these opens the store this machine chose, so each answers on a
     // file too — and losing them along with the connection rows was the same
@@ -218,6 +244,10 @@ describe("lingtai doctor — a machine whose log is a file", () => {
       "daemon: currency",
       "conductor: lock",
       "worktrees: reconciliation",
+      // The two comparisons of the plan against the log. They took a Postgres
+      // URL until #214, so on this machine they were not asked at all.
+      "gates: end ran on what landed",
+      "gates: every point that was planned ran",
     ]) {
       expect(find(report.results, name)).toBeDefined();
     }
@@ -227,6 +257,63 @@ describe("lingtai doctor — a machine whose log is a file", () => {
     expect(pg.status).toBe("skip");
     expect(pg.detail).toContain("sqlite");
     expect(pg.detail).not.toContain("the environment check failed");
+  });
+
+  /**
+   * **The ticket's first box** (#214). The reviewer's finding was that on this
+   * machine `doctor` reported `0 failed` while the one check that answers
+   * whether the log is reachable answered nothing — every Postgres row `skip`,
+   * and skips counted as not failed.
+   */
+  it("says whether the log is reachable and whether it wakes — asked, not skipped", async () => {
+    const report = await runDoctor(env({}), () => undefined, wroteSqlite, itsLog);
+
+    const reach = find(report.results, LOG_REACHABLE);
+    expect(reach.status).toBe("ok");
+    expect(reach.detail).toContain("sqlite");
+
+    const wakes = find(report.results, LOG_WAKES);
+    expect(wakes.status).toBe("ok");
+    expect(wakes.detail).toContain("poll");
+
+    // And the projections, which are the other half of the question: caught up
+    // is a fact about a fold, not about Postgres.
+    expect(find(report.results, "projections: lag").status).not.toBe("skip");
+    expect(find(report.results, "projections: shape").status).not.toBe("skip");
+
+    // So the summary may say it: the log was reached, and nothing failed.
+    expect(reachabilityChecked(report.results)).toBe(true);
+  });
+
+  /**
+   * **Box four.** A `skip` a reader takes for a pass is the whole defect, so a
+   * row that genuinely does not apply says why and names the store. The
+   * deferred ones are exempt and say so themselves: their reason is a fact
+   * about the design, the same on every machine (`DEFERRED`).
+   */
+  it("gives every skip that is about this machine a reason that names the store", async () => {
+    const report = await runDoctor(env({}), () => undefined, wroteSqlite, itsLog);
+    const situational = report.results.filter((r) => r.status === "skip" && !r.deferred);
+
+    expect(situational.length).toBeGreaterThan(0);
+    // A reason, not a shrug — the rule `DEFERRED`'s own test states, applied to
+    // the other kind of skip.
+    for (const r of situational) {
+      expect(r.detail.length, `${r.name} gives no reason`).toBeGreaterThan(40);
+    }
+    // And the ones that are there *because* of the store name it.
+    expect(find(report.results, "postgres").detail).toContain("store: sqlite");
+    expect(find(report.results, "environment").detail).toContain("store: sqlite");
+  });
+
+  /** **Box five**, as the line a person actually reads. */
+  it("counts what was not checked here apart from what is not implemented yet", async () => {
+    const report = await runDoctor(env({}), () => undefined, wroteSqlite, itsLog);
+
+    expect(report.deferred).toBe(3);
+    expect(report.notChecked).toBeGreaterThan(0);
+    expect(report.skipped).toBe(report.deferred + report.notChecked);
+    expect(formatReport(report)).toContain(`${report.notChecked} not checked here`);
   });
 });
 
@@ -573,6 +660,65 @@ describe("lingtai doctor — against the real database", () => {
     // are listed here so neither can be quietly absorbed into the other.
     expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
     expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
+
+    // And the two rows #214 added run here too, on the store this machine
+    // chose: they are questions about *a log*, so a Postgres machine answers
+    // them as well and `0 failed` means the same thing on both.
+    expect(find(report.results, LOG_REACHABLE).status).toBe("ok");
+    expect(find(report.results, LOG_WAKES).status).toBe("ok");
+    expect(reachabilityChecked(report.results)).toBe(true);
+    expect(formatReport(report)).toContain("0 failed");
+  }, 60_000);
+
+  /**
+   * **The ticket's second box: a Postgres machine's output is unchanged** —
+   * pinned, because #214 moves rows between two branches of `runDoctor` and a
+   * row silently lost there is the exact defect it is fixing.
+   *
+   * Every name below was produced before it, in a different order. The two
+   * `log:` rows are the additions, and `gates: …` moved from the Postgres
+   * branch to the one that runs on either store — same names, same verdicts,
+   * asked through the chosen log rather than through a URL handed in.
+   *
+   * The tail is not pinned: `github:`, `recipe:`, `env:` and `runtime:` are one
+   * row per project on the operator's machine, and this asserts the block that
+   * is about the log.
+   */
+  it("gets every row it got before, and the two the ticket adds", async () => {
+    const report = await runDoctor(
+      env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
+    );
+    const upTo = report.results.findIndex((r) => r.name === "gates: every point that was planned ran");
+
+    expect(report.results.slice(0, upTo + 1).map((r) => r.name)).toEqual([
+      "packages load under Node",
+      "store: the machine's written choice",
+      "environment",
+      "postgres: pooled connection",
+      "postgres: direct connection is session mode",
+      "schema: tables",
+      "schema: optimistic concurrency",
+      "schema: append-only",
+      "schema: notify trigger",
+      "schema: payload column",
+      "log: every type is readable",
+      "github: what we said and did not manage",
+      "subscribers: failures",
+      LOG_REACHABLE,
+      LOG_WAKES,
+      "projections: lag",
+      "projections: shape",
+      "daemon: liveness",
+      "daemon: currency",
+      "conductor: refusals on the log",
+      "conductor: lock",
+      "worktrees: reconciliation",
+      "gates: end ran on what landed",
+      "gates: every point that was planned ran",
+    ]);
+    // And not one of them is a skip: on a working Postgres machine every
+    // question about the log is asked, which is what `0 failed` has to mean.
+    expect(report.results.slice(0, upTo + 1).filter((r) => r.status === "skip")).toEqual([]);
   }, 60_000);
 
   /**
