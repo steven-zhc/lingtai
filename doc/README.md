@@ -109,13 +109,13 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [0025](decisions/0025-a-failure-buys-one-agent.md) | **A failure buys one agent, and the person approves a diff** | accepted |
 | [0026](decisions/0026-the-conversion-past-the-seam.md) | **The conversion goes past the seam: `runOnce` and the adapters are Effect** | accepted |
 | [0027](decisions/0027-the-lease-is-deleted.md) | **The lease is deleted: the constraint excludes, the lock proves liveness** | accepted; supersedes 0013's claim-recovery paragraph |
+| [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
+| [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
 | [0030](decisions/0030-shutting-down-safely.md) | **Shutting down safely: the boundary is the pass, and the trigger is a command** | accepted; §2's *a daemon that is down finds it waiting* superseded by 0048 |
 | [0031](decisions/0031-a-run-that-never-started.md) | **A run that never started is its own outcome, and a quota stops the conductor** | accepted |
 | [0032](decisions/0032-the-page-is-organised-by-attempt.md) | **The task page is organised by attempt, and its control is the prompt** | accepted |
 | [0033](decisions/0033-the-third-kind-of-agent.md) | **The third kind of agent: one that reads, and cannot run** | accepted; configurable runtime under 0053 and role boundary extended by 0054 (implementation pending) |
 | [0034](decisions/0034-the-run-log.md) | **A run leaves a log you can watch, and it is a trace, not a record** | accepted |
-| [0028](decisions/0028-the-backoff-is-the-recipes.md) | **The backoff is the recipe's: an hour, flat, and only a blind retry waits** | accepted |
-| [0029](decisions/0029-the-prompt-budget-is-the-recipes.md) | **The prompt budget is the recipe's, and a limit is written down where a kind is** | accepted; records 0012's retention value |
 | [0035](decisions/0035-the-site-is-a-projection.md) | **The site is a projection of this repository, and its hero is the real board** | accepted |
 | [0036](decisions/0036-the-core-takes-a-ticket.md) | **The core takes a ticket, and where it came from is an adapter's business** | accepted; clarifies 0016 §1's queue row |
 | [0037](decisions/0037-an-extension-is-a-command.md) | **An extension is a command, and the only question is whether the core waits** | accepted; supersedes 0016 §5's "plugins are trusted code" |

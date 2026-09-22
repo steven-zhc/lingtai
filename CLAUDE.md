@@ -19,7 +19,16 @@ spirit: a decision that turns out wrong gets a superseding file, not an edit.
 ## The log settles it
 
 Behavioural claims are settled by reading `events`, not by reasoning about the
-code. A finding that cites a seq number is worth more than one that argues.
+code. A finding that cites a seq number is worth more than one that argues, and
+that stays true. What a `seq` is not is a **durable citation** — that is a
+GitHub issue number, never a seq ([1.0](doc/design/1.0.md)) — because the log is
+a file somebody may reset. This one has been reset twice already
+([007](doc/experiments/007-the-log-before-the-reset.md),
+[010](doc/experiments/010-the-log-before-the-second-reset.md)), and
+[0055](doc/decisions/0055-two-implementations-chosen-at-init.md) §3 makes
+choosing the other store start an empty one rather than carry the history over.
+So: quote the seq where you are proving what happened, and cite the issue where
+somebody has to follow you there later.
 
 There are two projections, `task_view` (the board) and `finding_backlog` (the
 minors passing gates raised, #137), and the way to correct either is
@@ -93,6 +102,8 @@ Leave the row out when there is no trap; never leave the trap in the prose.
 Then, under a rule, the evidence — house style as in #52, #55, #58:
 
 - Lead with the evidence — the seq numbers, the log excerpt, the exact output.
+  The seq proves it on the spot; the thing a reader follows later is an issue
+  number, because the log under a seq may have been reset by then.
 - Say **why it stayed hidden**, when it did. That is usually the real finding.
 - Cite `file.ts:line`, and quote the comment or doc that makes the claim.
 - `## Done when`, as checkboxes each of which a person or a test can check.
