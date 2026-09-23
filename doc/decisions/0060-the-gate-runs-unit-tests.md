@@ -22,12 +22,17 @@ suite and a red gate had stopped meaning anything — and it is not the question
 a gate asks. Counted on 2026-09-22, the half the `build` step runs:
 
 ```
-115 test files
- 18 import node:child_process — they start real OS processes
+115 test files, of which 44 leave the system (38%)
+
+  40  make a scratch directory        18  start an OS process
+  38  write a file                     1  reads the real $HOME
+                                       1  reaches the network
 ```
 
-plus others that read the real `$HOME`, run `git`, or reach the network. The
-directory most of them sit in is called `pure/`.
+A further 24 read files out of the checkout, which is the system reading
+itself and stays unit. So **71 of the 115 are unit already** and the split is
+not a rewrite — it is a line drawn through a set that is mostly on the right
+side of it. The directory most of the other 44 sit in is called `pure/`.
 
 ### It has already refused three diffs that were fine
 
@@ -61,20 +66,40 @@ also hides every package after it: `#196`'s refusal said nothing about
 
 ## Decision
 
-### 1. Two categories, and the line is what the test did not create
+### 1. Two categories, and the line is the system's external dependencies
+
+**A test is integration when it exercises a dependency outside the system.**
+Everything else is unit. That is the ordinary meaning of the two words and it
+is deliberately the ordinary meaning: a rule a reader already knows is a rule
+that survives being applied by somebody who did not read this file.
+
+The system is the code in this repository. Outside it:
 
 ```
-unit          in-process. Starts no process, reads no real $HOME, runs no git,
-              opens no socket, connects to no database. What it reads, it made.
-              Its duration is bounded by CPU, never by a clock on a shared machine.
-
-integration   everything else — including the whole of today's test:db half.
+Postgres · the GitHub API · the `git` binary · any OS process
+the filesystem · the network · the real $HOME · the wall clock
 ```
 
-**The line is not "is it slow" and not "does it need Postgres".** It is
-**whether the test can fail because of something it did not create**. That is
-the property a gate needs, because it is exactly the property that makes a red
-mean *this diff is wrong*.
+```
+unit          touches none of them. Reaches only this repository's own code
+              and values the test itself constructed.
+
+integration   touches any one of them — including the whole of today's
+              test:db half, and the 18 files that spawn a process.
+```
+
+**The line is not "is it slow" and not "does it need Postgres".** Slowness is a
+symptom and Postgres is one dependency out of eight. Naming the boundary
+instead of one crossing of it is what makes the rule decide the cases nobody
+has met yet — and it settles the ones already on the table without argument:
+a temporary directory is still the filesystem, and a spawned `node` is still a
+process, however carefully the test cleans up after itself.
+
+**Why this boundary and not another.** A dependency outside the system is
+exactly a thing the diff does not control. It can be busy, missing,
+pre-configured by whoever owns this machine, or simply slower today — and every
+one of those is a red that says nothing about the change. Inside the system,
+red means the change.
 
 ### 2. The `build` step runs unit, and nothing else
 
@@ -130,13 +155,15 @@ a refusal carries `pnpm -r`'s first failing package and a reader cannot tell a
 loaded-machine timeout from a broken tree; after this, a red at `build` is a
 claim about the diff and can be treated as one.
 
-**Some tests will be hard to classify, and the hard ones are the finding.**
-`world.test.ts` asserts that an import graph does not reach Postgres — a real
-claim about the code, expressed as a spawned process because module loading is
-what it is measuring. Moving it to integration does not answer it. **A claim
-worth making at a gate and only expressible by touching the world is a claim
-whose subject is probably wrong** — the same shape `#179` spent eleven passes
-finding.
+**Classifying is easy; what it costs is that some real claims lose their gate.**
+`world.test.ts` spawns a process, so §1 answers it in one word — and the claim
+it makes is a good one: *the daemon's import graph does not reach Postgres*.
+That claim now runs after the merge. **A claim worth making at a gate and only
+expressible by leaving the system is a claim whose subject is probably wrong**
+— here, that *does this module load* was ever the question, when what #179 was
+actually about was when a store is opened. The rule does not lose such claims;
+it makes the awkward ones visible as a list, which is more than the present
+arrangement does.
 
 **The `main` branch is no longer proven green by the thing that merged into
 it.** Branch protection is where a team would put this; here the answer is the
@@ -150,8 +177,18 @@ person.
 - **Whether `merge` should hold for the run in §3.** It cannot here —
   `gates.merge` is `[]` and this repository merges unattended — but a managed
   repository with a human at `merge` could wait for it.
-- **The per-package mechanism.** `unit/` and `test/` by directory, or one
-  config with a tag, is a question for whoever moves the files.
+- **The per-package mechanism**, though vitest 4 answers it and the answer is
+  worth more than this ADR. There are twenty `vitest*.config.ts` files here and
+  no root config; a root config with two `projects`, `unit` and `integration`,
+  makes §1 a flag (`vitest --project unit`) instead of a directory convention
+  — **and it retires `pnpm -r`'s first-failure bail
+  ([#222](https://github.com/steven-zhc/lingtai/issues/222)) as a side effect**,
+  because one vitest run over every project reports every project. Three
+  problems, one move.
+- **Whether the boundary is checkable rather than remembered.** A lint rule
+  that refuses `node:child_process`, `node:fs`, `node:net` and a live client
+  inside `unit/` would make §1 a thing the tree enforces — which is the only
+  version of this that does not rot, since `pure/` rotted exactly here.
 
 ## Related
 
