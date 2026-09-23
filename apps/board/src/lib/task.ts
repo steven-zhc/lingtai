@@ -532,8 +532,8 @@ function refusalOn(run: RunView): Deciding | null {
    * The run finished — exit 0, turns taken, money spent — so without this line
    * the page falls through to an earlier round's genuine refusal and puts a red
    * line about a commit that has moved at the top of a page whose actual answer
-   * is that the reviewer crashed twice. A gate that did not finish is always the
-   * last thing a pass did, so any refusal beside it is history.
+   * is that the reviewer crashed. A gate that did not finish is always the last
+   * thing a pass did, so any refusal beside it is history.
    *
    * The sentence says the machinery and never the diff: *did not finish*, not
    * *refused*.
@@ -889,7 +889,8 @@ const VERDICT: Record<string, string> = {
    *  not a gate still running, which is what the absence of a line said. */
   GateNeverRan: "never-ran",
   /** No verdict either, and not the same absence: the agent started and ended
-   *  with no receipt, which is local and was retried once (0057). */
+   *  with no receipt, which is local and ends the pass (0057 §1–3; §4's retry
+   *  is deleted, `#234`). */
   GateDidNotFinish: "did-not-finish",
   GateWaived: "waived",
   ApprovalRequested: "pending",

@@ -70,7 +70,7 @@ function segTitle(p: PointProgress): string {
     return `${p.point}: ${p.planned.join(", ")} — configured and did not run, which is Lingtai's bug (0016 §4)`;
   }
   if (p.state === "did-not-finish") {
-    return `${p.point}: ${p.planned.join(", ")} — its agent started and produced no verdict, twice (0057)`;
+    return `${p.point}: ${p.planned.join(", ")} — its agent started and produced no verdict (0057)`;
   }
   return `${p.point}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
 }

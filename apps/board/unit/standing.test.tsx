@@ -216,11 +216,13 @@ describe("the evidence", () => {
    * The neighbouring ending, and the same trap
    * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
    *
-   * The reviewer started, crashed, was run once more and crashed again — and
-   * this run also *finished*, exit 0, three turns, forty-two cents. Looking for
-   * a refusal first would put attempt 1's build failure at the top of a page
-   * whose actual answer is that the reviewer never produced a verdict. And the
-   * line must not call it a refusal: nothing judged the diff.
+   * The reviewer started and crashed — and this run also *finished*, exit 0,
+   * three turns, forty-two cents. Looking for a refusal first would put attempt
+   * 1's build failure at the top of a page whose actual answer is that the
+   * reviewer never produced a verdict. And the line must not call it a refusal:
+   * nothing judged the diff.
+   *
+   * One `GateDidNotFinish`, because the action is run once (`#234`).
    */
   it("names a gate that did not finish, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
@@ -236,16 +238,6 @@ describe("the evidence", () => {
         action: "review",
         onSha: SHA,
         detail: "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.",
-        attempt: 1,
-        retrying: true,
-      }),
-      e(RUN_2, "GateDidNotFinish", {
-        gate: "proposed",
-        action: "review",
-        onSha: SHA,
-        detail: "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.",
-        attempt: 2,
-        retrying: false,
       }),
       e(RUN_2, "RunFinished", { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
     ]);

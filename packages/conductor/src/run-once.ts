@@ -1642,7 +1642,7 @@ export function runOnce(
         });
 
       /**
-       * A gate's agent started, produced no receipt, and did it twice
+       * A gate's agent started and produced no receipt
        * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
        *
        * **Not the ending above it, and §3 is the whole difference.** A
@@ -1659,12 +1659,14 @@ export function runOnce(
        * and 3 on a reviewer that died in one second, and the fixing agent's own
        * first sentence was *the review never looked at the change*.
        *
-       * **Blocked rather than released**, which is the other half of §4's *then
-       * it is a person's*. A release is a backoff and another claim, and the
-       * pipeline has already retried the action once: a third attempt on the
-       * next pass would be the same machine failing the same way, for ever,
-       * with nothing counting it. So it goes where a lane refusal goes, with a
-       * diagnosis naming the machine rather than the diff.
+       * **Blocked rather than released**, and that survives the deletion of
+       * §4's retry (`#234`). A release is a backoff and another claim, and the
+       * thing that crashed is a bad settings path or a broken binary: the next
+       * pass would be the same machine failing the same way, for ever, with
+       * nothing counting it. So it goes where a lane refusal goes, with a
+       * diagnosis naming the machine rather than the diff — which is what makes
+       * the retry's absence cost nothing here, because a person is asked either
+       * way and is asked one attempt sooner.
        *
        * Pushed on the way out for the reason every other stop pushes: the work
        * exists and a person is being asked about it. Tolerant, like the
@@ -1673,8 +1675,8 @@ export function runOnce(
        */
       const gateDidNotFinish = (what: string, detail: string) =>
         Effect.gen(function* () {
-          runLog.note("gate", `the ${what} action did not finish, twice — ${detail}`);
-          const question = `did-not-finish: the ${what} action's agent produced no verdict, twice`;
+          runLog.note("gate", `the ${what} action did not finish — ${detail}`);
+          const question = `did-not-finish: the ${what} action's agent produced no verdict`;
           const pushed = yield* Effect.either(
             gitInWorktree([
               "push",
@@ -1705,10 +1707,10 @@ export function runOnce(
                   needs: "acknowledgement",
                   diagnosis: {
                     what:
-                      `the ${what} action's agent started and ended without a verdict twice, so ` +
+                      `the ${what} action's agent started and ended without a verdict, so ` +
                       `nothing judged this diff. This is about the machinery and not about the ` +
                       `change: ${said(detail)}`,
-                    done: "the same action was run once more and did the same (0057 §4)",
+                    done: "the action was run once and the pass stopped here (0057 §1)",
                     raw: detail,
                     recommendation: {
                       action: "requeue",
@@ -1743,7 +1745,7 @@ export function runOnce(
             stage: "gate",
             detail: `the ${what} action did not finish: ${detail}`,
             release:
-              `the ${what} action's agent produced no verdict twice, so nothing judged this ` +
+              `the ${what} action's agent produced no verdict, so nothing judged this ` +
               `diff: ${said(detail)}${unpushed}`,
           });
         });
@@ -2056,8 +2058,8 @@ export function runOnce(
         }
 
         // And the neighbouring absence, which must reach `buyRound` even less:
-        // a reviewer that started and produced no receipt judged nothing, and
-        // the pipeline has already run it twice (0057, `#196`).
+        // a reviewer that started and produced no receipt judged nothing (0057,
+        // `#196`).
         if (pipeline.didNotFinishAt !== null) {
           yield* gateDidNotFinish(
             `proposed:${pipeline.didNotFinishAt.gate}`,

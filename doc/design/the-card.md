@@ -123,12 +123,13 @@ carries the distinction the sentence above demands:
 | `pending` | flat `--rule`. Quiet, because nothing is wrong |
 | `skipped` | dashed outline, no fill. Nothing configured (`admit: []`, `merge: []`, and the six steps no pipeline is constructed at); it keeps its place without claiming anything happened in it |
 | `never-ran` | hatched, `--fail`. The one segment that breaks the bar's rhythm, and the only place the fail colour appears with no verdict behind it |
-| `did-not-finish` | the same hatch. The agent *started* here and produced no receipt, twice ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
+| `did-not-finish` | the same hatch. The agent *started* here and produced no receipt ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
 
 **The two hatched states share a tone and not a sentence.** `never-ran` says the
 account is walled and the conductor has stood down; `did-not-finish` says this
-action's agent crashed, was run once more, did the same, and the item is now a
-person's. To a reader scanning a row they are one mark — *a step that was
+action's agent crashed and the item is now a person's — it is run once, 0057
+§4's retry having been deleted (`#234`) for reusing the crashed attempt's
+session id and so running nothing. To a reader scanning a row they are one mark — *a step that was
 reached and judged nothing* — and a sixth colour would be asking the bar to
 carry a distinction only a sentence can. The distinction survives where it is
 acted on: two events on the log, two verdicts in the fold, two different things

@@ -77,8 +77,8 @@ export type PointState =
    * not the account's** ([0057](../../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
    *
    * The point was reached, its agent started, and it ended with no receipt —
-   * a crash, a timeout, a turn budget spent. The pipeline ran it once more and
-   * it did the same, so the pass stopped and the item is a person's.
+   * a crash, a timeout, a turn budget spent. The pass stopped there and the item
+   * is a person's; it is run once, 0057 §4's retry having been deleted (`#234`).
    *
    * Beside `never-ran` rather than inside it: they read alike on a rail and
    * they are opposite facts to an operator, because one says *the account is
@@ -413,9 +413,9 @@ export function foldProgress(
         break;
 
       case "GateDidNotFinish":
-        // Every attempt, including the one a retry answered — and then the
-        // retry's own verdict closes over it. A point that ends here is one
-        // whose last word was this, which is what the pass stopped on.
+        // One of these per action, because the action is run once (`#234`). A
+        // point that ends here is one whose last word was this, which is what
+        // the pass stopped on.
         close(data, "did-not-finish");
         break;
 

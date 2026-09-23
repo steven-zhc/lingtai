@@ -681,8 +681,10 @@ export const GateFailed = z.object({
  * Version 1, and it stays there. The **nine** types ADR 0018's rename moved —
  * `GatesResolved`, the four `Gate*` verdicts, `GateWaived` and the three
  * `Approval*` — are at 2 or above because each needed a step from 1; nothing
- * ever wrote one of *these* with the old name, so there is nothing to upcast,
- * and the same is true of `GateDidNotFinish`, which is younger still. 0061 §7
+ * ever wrote one of *these* with the old name, so there is nothing to upcast.
+ * `GateDidNotFinish` is younger still and never carried the old name either; it
+ * is at 2 for a reason of its own, which is `#234` dropping the two fields
+ * 0057 §4's retry wrote and nothing to do with the rename. 0061 §7
  * will spend those nine steps along with the log they walk — **when the reset
  * happens**, which is `the-pipeline.md`'s T5 and has not: a reader lowering
  * those numbers before then makes every stored row of those nine unreadable
@@ -711,18 +713,22 @@ export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
  * `detail` is the runtime's own words, whole, for the reason `GateNeverRan`'s
  * is: they are about the machinery and never about the diff.
  *
- * `attempt` and `retrying` are 0057 §4 **on the log**. The pipeline runs the
- * action once more, and a retry nobody can see did not happen — so the first
- * one says `attempt: 1, retrying: true` and the second, which stops the pass
- * and gives the item to a person, says `attempt: 2, retrying: false`. Carried
- * rather than derived from a constant a reader would have to know.
+ * **`attempt` and `retrying` are gone, and the retry they described with them**
+ * (`#234`, `schemaVer: 2`). 0057 §4 ran the action once more and said which
+ * attempt each event was; the retry recomputed the crashed attempt's session id
+ * — `sessionIdFor` hashes `<runId>:review:<action>:<sha>`, which a second
+ * attempt does not move (`agent-gate.ts:356`, `claude-code.ts:93`) — so
+ * `claude` refused it in zero seconds, twice on this machine's logs and never
+ * once reaching a reviewer. What the two fields bought the reader was a *second
+ * attempt that never ran*: an event saying `attempt: 2, retrying: false` about a
+ * pass in which the action was tried once. So the action is run once, one of
+ * these is appended, and there is no number to carry.
+ *
+ * The rows already written keep both fields and the upcaster drops them on read,
+ * for `WorkItemClaimed`'s `leaseUntilMs` reason: no event is rewritten, so the
+ * reader is what has to stop believing them.
  */
-export const GateDidNotFinish = z.object({
-  ...gateBase,
-  detail: z.string(),
-  attempt: z.number().int().min(1),
-  retrying: z.boolean(),
-});
+export const GateDidNotFinish = z.object({ ...gateBase, detail: z.string() });
 
 /** Humans need an escape hatch. It is recorded, never silent. */
 export const GateWaived = z.object({ ...gateBase, by: z.string(), reason: z.string() });
@@ -1856,6 +1862,10 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // passing review is structured rather than prose inside `evidence` (#135).
   GatePassed: 3,
   GateFailed: 2,
+  // 2: dropped `attempt` and `retrying` with the retry they described (`#234`,
+  // 0057 §4). Nothing carried the `diff` point here — this type is younger than
+  // that rename — so 1 → 2 is the drop and not the rename's step.
+  GateDidNotFinish: 2,
   GateWaived: 2,
   ApprovalRequested: 2,
   ApprovalGranted: 2,

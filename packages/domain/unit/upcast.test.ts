@@ -495,6 +495,45 @@ describe("the lease, dropped on read", () => {
 });
 
 /**
+ * The second step that removes a field, and the log it has to keep readable
+ * (`#234`, [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4).
+ *
+ * `attempt` and `retrying` described a retry that never once ran: it recomputed
+ * the crashed attempt's session id, so `claude` refused it in zero seconds
+ * having reviewed nothing, and the second event then said the action did not
+ * finish *twice* about a pass in which it was tried once. The retry is deleted
+ * and the two fields with it — but the rows saying `attempt: 2, retrying: false`
+ * are on the log and are not rewritten, so this step is what stops the reader
+ * believing them.
+ */
+describe("the retry's two fields, dropped on read", () => {
+  const stored = {
+    gate: "proposed" as const,
+    action: "review",
+    runId: "run-f8dc341e",
+    onSha: "b198b57",
+    detail: "the reviewer did not finish (crash): Error: Session ID b99f35a0 is already in use.",
+  };
+
+  it("drops both fields from a v1 event and touches nothing else", () => {
+    const v1 = { ...stored, attempt: 2, retrying: false };
+    expect(parseStoredPayload("GateDidNotFinish", 1, v1)).toEqual(stored);
+  });
+
+  it("leaves a v2 event alone", () => {
+    expect(parseStoredPayload("GateDidNotFinish", 2, stored)).toEqual(stored);
+  });
+
+  it("is at v2, which is the drop and not 0018's rename", () => {
+    expect(SCHEMA_VER.GateDidNotFinish).toBe(2);
+    // Nothing ever wrote one of these with the `diff` point — the type is
+    // younger than that rename — so a v1 `gate` is already `proposed` and the
+    // step must not be the renamer.
+    expect(UPCASTERS.GateDidNotFinish?.[1]?.({ ...stored, gate: "proposed", attempt: 1 })).toEqual(stored);
+  });
+});
+
+/**
  * The block that carried only a question (#83).
  *
  * Every `WorkItemBlocked` on the log at the time the field was added is a v1:

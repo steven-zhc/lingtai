@@ -272,11 +272,13 @@ const refusingRuntime: Runtime = {
  * The adapter says `crash`; nothing downstream re-reads the message to disagree
  * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
  *
- * `after` is how many of the reviewer's attempts crash before it starts
- * answering — 0 for a reviewer that works, 1 for one that a retry rescues, and
- * anything above `ATTEMPTS` for one that does not come back.
+ * `tried.n` counts the reviewer's attempts, and the assertion on it is that
+ * there is exactly one: the pipeline runs the action once (`#234`). It took
+ * `after` — how many attempts crash before it starts answering — while 0057 §4's
+ * retry existed, and the arm that arrangement needed, a reviewer a retry
+ * rescues, is a shape nothing can produce now.
  */
-function reviewerThatCrashes(after: number, tried: { n: number }): Runtime {
+function reviewerThatCrashes(tried: { n: number }): Runtime {
   return {
     ...runtime,
     run: async (request) => {
@@ -292,17 +294,6 @@ function reviewerThatCrashes(after: number, tried: { n: number }): Runtime {
         };
       }
       tried.n += 1;
-      if (tried.n > after) {
-        return {
-          exitCode: 0,
-          turns: 5,
-          durationMs: 2_000,
-          costUsd: 1.25,
-          failure: null,
-          text: JSON.stringify({ findings: [] }),
-          sessionId: "sess-review",
-        };
-      }
       return {
         exitCode: 1,
         turns: 0,
@@ -1020,8 +1011,8 @@ describe("runOnce, with no world to run in", () => {
    *
    *   the verdict   no `GateFailed`, and no `GatePassed` — nothing judged the
    *                 diff, and both readings are claims nobody is entitled to
-   *   the log       `GateDidNotFinish`, twice, saying which attempt each was.
-   *                 An event and a field, never the evidence text (0057 §1)
+   *   the log       `GateDidNotFinish`, once, for the one run of the action. An
+   *                 event and a field, never the evidence text (0057 §1)
    *   the money     **no `FixRequested`** — nothing was learned about the diff,
    *                 so there is nothing for a fixing agent to carry (§2)
    *   the conductor **not** stood down. A crash is local, and stopping the
@@ -1029,7 +1020,7 @@ describe("runOnce, with no world to run in", () => {
    *                 way (§3)
    *   the item      a person's, blocked with a diagnosis about the machinery
    */
-  it("buys no round for a reviewer that crashed, retries it once, and asks a person", async () => {
+  it("buys no round for a reviewer that crashed, runs it once, and asks a person", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const said: string[] = [];
@@ -1039,7 +1030,7 @@ describe("runOnce, with no world to run in", () => {
       {
         project,
         client: fakeGitHub(said, REVIEWED),
-        runtime: reviewerThatCrashes(Number.POSITIVE_INFINITY, tried),
+        runtime: reviewerThatCrashes(tried),
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
         prompt: "fix {{issue}}",
@@ -1054,9 +1045,10 @@ describe("runOnce, with no world to run in", () => {
     if (result.ok !== false) return;
     expect(result.stage).toBe("gate");
 
-    // Twice, and only twice: the pipeline's one retry (0057 §4). A third would
-    // buy nothing these crashes can give, and the round it replaces cost more.
-    expect(tried.n).toBe(2);
+    // Once, and only once (`#234`). 0057 §4's retry recomputed the crashed
+    // attempt's session id, so it was refused in zero seconds having reviewed
+    // nothing — and the log then said this action did not finish *twice*.
+    expect(tried.n).toBe(1);
 
     const run = await store.read(result.runId!);
     const types = run.map((e) => e.type);
@@ -1071,10 +1063,11 @@ describe("runOnce, with no world to run in", () => {
     expect(types).not.toContain("GateNeverRan");
 
     const didNot = run.filter((e) => e.type === "GateDidNotFinish");
-    expect(didNot.map((e) => e.data)).toMatchObject([
-      { gate: "proposed", action: "review", attempt: 1, retrying: true },
-      { gate: "proposed", action: "review", attempt: 2, retrying: false },
-    ]);
+    expect(didNot.map((e) => e.data)).toMatchObject([{ gate: "proposed", action: "review" }]);
+    // And nothing on it claiming an attempt number: the two fields went with the
+    // retry (`#234`), so a reader cannot be told a second attempt happened.
+    expect(didNot[0]!.data).not.toHaveProperty("attempt");
+    expect(didNot[0]!.data).not.toHaveProperty("retrying");
     // The runtime's own words, about the machinery.
     expect((didNot[0]!.data as { detail: string }).detail).toContain("already in use");
 
@@ -1088,8 +1081,9 @@ describe("runOnce, with no world to run in", () => {
     expect(await store.read("ctl-conductor")).toHaveLength(0);
 
     // And the item is a person's, with a diagnosis that names the machinery
-    // rather than the diff — blocked, because the retry has already happened
-    // and a release would be the same failure again every backoff.
+    // rather than the diff — blocked, because a release is a backoff and another
+    // claim, and the bad settings path or broken binary underneath would meet
+    // the next pass the same way, for ever, with nothing counting it.
     const item = await store.read(`wi-${PROJECT}-7`);
     const itemTypes = item.map((e) => e.type);
     expect(itemTypes).toContain("WorkItemBlocked");
@@ -1106,55 +1100,6 @@ describe("runOnce, with no world to run in", () => {
 
     // Pushed on the way out, so the person being asked has the work to read.
     expect(did).toContain("git push HEAD:refs/heads/agent/7");
-  });
-
-  /**
-   * **And when the retry answers, the first attempt costs the pass nothing**
-   * (0057 §4).
-   *
-   * A reused session id — the trigger `#195` fixed and the one this class was
-   * handed from — succeeds immediately on a second attempt under an id of its
-   * own. So the run lands: the retry's verdict is the action's verdict, the
-   * merge lane is reached, and the only trace of the first attempt is the event
-   * that says it happened.
-   */
-  it("continues the pass on the retry's verdict, with the first attempt on the log", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const tried = { n: 0 };
-
-    const result = await once(
-      {
-        project,
-        client: fakeGitHub(said, REVIEWED),
-        runtime: reviewerThatCrashes(1, tried),
-        issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
-        home: "/tmp/fake-home",
-        store,
-      },
-      fakePorts(did, store, true),
-    );
-
-    expect(result.ok, JSON.stringify(result)).toBe(true);
-    expect(tried.n).toBe(2);
-
-    const types = (await store.read(result.runId!)).map((e) => e.type);
-    // The verdict is the retry's, and the pass went on to merge.
-    expect(types).toContain("GatePassed");
-    expect(types).not.toContain("GateFailed");
-    expect(types).not.toContain("FixRequested");
-    // The first attempt is still on the log, saying another followed — a retry
-    // nobody can see did not happen.
-    const didNot = (await store.read(result.runId!)).filter((e) => e.type === "GateDidNotFinish");
-    expect(didNot).toHaveLength(1);
-    expect(didNot[0]!.data).toMatchObject({ action: "review", attempt: 1, retrying: true });
-
-    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
-    expect(item).toContain("WorkItemLanded");
-    expect(item).not.toContain("WorkItemBlocked");
   });
 
   /**

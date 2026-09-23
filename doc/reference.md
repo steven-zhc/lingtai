@@ -139,7 +139,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 17 chains, 22 steps
+## upcaster — 18 chains, 23 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -159,6 +159,7 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `Step`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
 | `GatesResolved` | 2 → 3 | `recipe`, the canonical recipe the run resolved against ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)). The step adds **nothing** — absent, not null and not `{}`, so *not recorded* stays distinguishable from *recorded, and empty* |
 | `GatesResolved` | 3 → 4 | `points` names all **ten** steps where it named five ([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3). The five the vocabulary did not have get `[]`, which is not a guess but what that recipe said: there was nothing at `claim`, `design`, `implement`, `build` or `review` to configure. Without it `.length(10)` refuses every plan this log holds |
+| `GateDidNotFinish` | 1 → 2 | `attempt` and `retrying` **removed** with 0057 §4's retry (`#234`). The second step that drops a field, and a step for `WorkItemClaimed`'s reason: the rows saying `attempt: 2, retrying: false` are not rewritten, so the reader is what stops believing them. There is nothing to recover — the retry those numbers described reused the crashed attempt's session id, so `claude` refused it in zero seconds having run nothing. This type is younger than 0018, so 1 never said `diff` |
 | `GatePassed` | 2 → 3 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v2 pass gets `[]`, not a parse of that prose, which is untouched |
 
 **The counts in this heading are counted off the table, never computed.** Nine
@@ -759,7 +760,7 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/site/src/lib/snapshot.ts` | `gates` ×1 |
 | `packages/actions/src/agent-gate.ts` | `AgentGateDeps` ×2 · `AgentGateSpec` ×3 · `Gate` ×2 · `GateContext` ×2 · `GateFinding` ×8 · `GateResult` ×2 · `createAgentGate` ×1 · `gate` ×1 · `point` ×1 |
 | `packages/actions/src/from-recipe.ts` | `AgentGateDeps` ×2 · `Gate` ×2 · `GateAction` ×2 · `GateActionUnavailableError` ×7 · `GateDeps` ×2 · `WatchGateDeps` ×2 · `createAgentGate` ×2 · `createHumanGate` ×2 · `createProcessGate` ×2 · `createWatchGate` ×2 · `gate` ×5 · `gates` ×1 · `gatesFromRecipe` ×4 · `point` ×11 · `wrongPoint` ×3 |
-| `packages/actions/src/gate.ts` | `Gate` ×2 · `GateContext` ×3 · `GateDidNotFinish` ×3 · `GateEvent` ×2 · `GateFailed` ×3 · `GateFinding` ×4 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateResult` ×3 · `GateStarted` ×3 · `GateVerdict` ×3 · `gate` ×21 · `gates` ×7 · `point` ×4 · `runGatePipeline` ×1 |
+| `packages/actions/src/gate.ts` | `Gate` ×2 · `GateContext` ×3 · `GateDidNotFinish` ×3 · `GateEvent` ×2 · `GateFailed` ×3 · `GateFinding` ×4 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateResult` ×3 · `GateStarted` ×3 · `GateVerdict` ×3 · `gate` ×19 · `gates` ×7 · `point` ×4 · `runGatePipeline` ×1 |
 | `packages/actions/src/human-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `HumanGateSpec` ×2 · `createHumanGate` ×1 · `gate` ×1 |
 | `packages/actions/src/index.ts` | `AgentGateDeps` ×1 · `AgentGateSpec` ×1 · `Gate` ×1 · `GateActionUnavailableError` ×1 · `GateContext` ×1 · `GateDeps` ×1 · `GateEvent` ×1 · `GateFinding` ×1 · `GateResult` ×1 · `GateVerdict` ×1 · `HumanGateSpec` ×1 · `ProcessGateSpec` ×1 · `WatchGateDeps` ×1 · `WatchGateSpec` ×1 · `createAgentGate` ×1 · `createHumanGate` ×1 · `createProcessGate` ×1 · `createWatchGate` ×1 · `gate` ×5 · `gatesFromRecipe` ×1 · `runGatePipeline` ×1 |
 | `packages/actions/src/process-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `ProcessGateSpec` ×2 · `createProcessGate` ×1 · `gate` ×1 |
@@ -786,10 +787,10 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/daemon/src/control.ts` | `gates` ×1 |
 | `packages/daemon/src/converge.ts` | `point` ×1 |
 | `packages/domain/src/backlog.ts` | `gate` ×2 |
-| `packages/domain/src/events.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `GateWaived` ×3 · `GatesResolved` ×3 · `gate` ×3 · `gateBase` ×11 · `points` ×1 |
+| `packages/domain/src/events.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `GateWaived` ×3 · `GatesResolved` ×3 · `gate` ×3 · `gateBase` ×11 · `points` ×1 |
 | `packages/domain/src/run.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateFinding` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateRequested` ×3 · `GateStarted` ×1 · `GateState` ×5 · `GateVerdict` ×2 · `GateWaived` ×2 · `gate` ×28 · `gates` ×13 · `gatesOn` ×1 · `withGate` ×10 |
 | `packages/domain/src/streams.ts` | `gates` ×1 |
-| `packages/domain/src/upcast.ts` | `GateFailed` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×11 · `gatePointRenamed` ×9 · `points` ×6 |
+| `packages/domain/src/upcast.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×11 · `gatePointRenamed` ×9 · `points` ×6 |
 | `packages/env/src/colour.ts` | `gates` ×1 |
 | `packages/env/src/index.ts` | `Point` ×1 |
 | `packages/event-store/src/index.ts` | `PointNeverRan` ×1 |

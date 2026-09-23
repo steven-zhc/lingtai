@@ -104,8 +104,10 @@ describe("what a document says it is", () => {
     // *starts* accepted — the shape the 0027 assertion below already uses.
     expect(status.get("decisions/0014-one-loop-one-log")).toMatch(/superseded/);
     expect(status.get("decisions/0016-the-settled-model")).toMatch(/^accepted/);
-    // 0057 is built — `GateDidNotFinish` and the one retry are in
-    // `packages/actions/src/gate.ts`, and the state is drawn by the task view.
+    // 0057 is built — `GateDidNotFinish` is in `packages/actions/src/gate.ts`
+    // and the state is drawn by the task view. Its §4 retry is not, and that is
+    // the index's cell to say (`#234`): built is not the same as *every section
+    // in force*.
     // The index went on saying *implementation pending* after it landed, and
     // `statusParts` carries that cell word for word onto the decisions page, so
     // a reader was told on the site to go and build what was already merged.

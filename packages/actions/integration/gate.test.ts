@@ -303,74 +303,7 @@ describe("the pipeline", () => {
   });
 
   /**
-   * **A gate whose agent started and did not finish is run once more**
-   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4,
-   * `#196`).
-   *
-   * The retry is the pipeline's and not the action's, for the reason that ADR
-   * gives: the adapter classifies, and what a classification costs is decided
-   * where events are emitted — so the second attempt is on the log by
-   * construction rather than hidden inside a gate that ran twice and said so
-   * once.
-   *
-   * **And when the retry answers, the pass continues as though the first had
-   * not happened.** No `GateFailed`, nothing refused, nothing to buy a round
-   * for — the gate after this one runs and the pipeline is `ok`.
-   */
-  it("runs an action whose agent did not finish once more, and takes the retry's verdict", async () => {
-    const { events, emit } = collector();
-    let attempts = 0;
-    const result = await runGatePipeline({
-      point: "proposed",
-      gates: [
-        {
-          name: "review",
-          kind: "agent" as const,
-          run: async () => {
-            attempts += 1;
-            return attempts === 1
-              ? {
-                  verdict: "did-not-finish" as const,
-                  evidence: "the reviewer did not finish (crash): Session ID is already in use.",
-                  findings: [],
-                }
-              : { verdict: "passed" as const, evidence: "no findings", findings: [] };
-          },
-        },
-        processGate({ name: "test", run: "exit 0" }),
-      ],
-      context,
-      emit,
-    });
-
-    expect(attempts).toBe(2);
-    expect(result.ok).toBe(true);
-    expect(result.didNotFinishAt).toBeNull();
-    // One verdict for the action, and it is the retry's. A `results` carrying
-    // both would hand `run-once.ts` an ending the retry already answered.
-    expect(result.results.map((r) => `${r.gate}=${r.verdict}`)).toEqual([
-      "review=passed",
-      "test=passed",
-    ]);
-
-    const types = events.map((e) => e.type);
-    expect(types).not.toContain("GateFailed");
-    // The retry, visible: one attempt that did not finish, saying another
-    // follows, and two starts for the one action.
-    const didNot = events.filter((e) => e.type === "GateDidNotFinish");
-    expect(didNot).toHaveLength(1);
-    expect(didNot[0]!.data).toMatchObject({ action: "review", attempt: 1, retrying: true });
-    expect(
-      events.filter((e) => e.type === "GateStarted" && e.data.action === "review"),
-    ).toHaveLength(2);
-    // Requested once: the action was asked for once and attempted twice.
-    expect(
-      events.filter((e) => e.type === "GateRequested" && e.data.action === "review"),
-    ).toHaveLength(1);
-  });
-
-  /**
-   * **Twice is a person's, and it still refuses nothing** (0057 §2, §4).
+   * **Once is a person's, and it still refuses nothing** (0057 §1–3).
    *
    * The pipeline stops the way `never-ran` stops it and for a nearer reason —
    * this action is not going to produce a verdict this pass — but no verdict
@@ -378,8 +311,15 @@ describe("the pipeline", () => {
    * `run-once.ts` tells this ending from a refusal without reading a sentence,
    * which is the whole of the defect: the difference used to live only inside
    * `evidence`, and `decideFix` bought a round off it.
+   *
+   * **And the action is run once, which is `#234`.** 0057 §4 ran it a second
+   * time under the same session id `sessionIdFor` computes from
+   * `<runId>:<point>:<action>:<sha>`, so every retry this machine took was
+   * refused in zero seconds with `Session ID … is already in use` and reached no
+   * reviewer. One run, one event, and nothing on that event claiming an attempt
+   * number — the fields went with the retry.
    */
-  it("appends no verdict for a gate that did not finish twice, and stops", async () => {
+  it("appends one verdictless event for a gate that did not finish, and stops", async () => {
     const { events, emit } = collector();
     const said = "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.";
     let attempts = 0;
@@ -401,8 +341,10 @@ describe("the pipeline", () => {
       emit,
     });
 
-    // One retry, not two. A third buys nothing these crashes can give.
-    expect(attempts).toBe(2);
+    // Once. A retry recomputes the session id the first attempt opened, so it
+    // never ran a reviewer — `#234` deleted it rather than leaving the log
+    // saying the action did not finish twice when it was tried once.
+    expect(attempts).toBe(1);
     expect(result.ok).toBe(false);
     expect(result.failedAt).toBeNull();
     expect(result.heldAt).toBeNull();
@@ -418,13 +360,17 @@ describe("the pipeline", () => {
     // The build's own verdict stands: one gate did judge the diff.
     expect(types.filter((t) => t === "GatePassed")).toHaveLength(1);
 
-    // Both attempts on the log, and the second says no more are coming — so a
-    // reader does not need `ATTEMPTS` to know the pass stopped here.
+    // One event for one run of the action, and one start for it: a second of
+    // either would be the retry back, or a board drawing an attempt nobody made.
     const didNot = events.filter((e) => e.type === "GateDidNotFinish");
-    expect(didNot.map((e) => e.data)).toMatchObject([
-      { gate: "proposed", action: "review", onSha: "sha-a", attempt: 1, retrying: true },
-      { gate: "proposed", action: "review", onSha: "sha-a", attempt: 2, retrying: false },
+    expect(didNot.map((e) => e.data)).toEqual([
+      { gate: "proposed", action: "review", runId: context.runId, onSha: "sha-a", detail: said },
     ]);
+    expect(didNot[0]!.data).not.toHaveProperty("attempt");
+    expect(didNot[0]!.data).not.toHaveProperty("retrying");
+    expect(
+      events.filter((e) => e.type === "GateStarted" && e.data.action === "review"),
+    ).toHaveLength(1);
   });
 
   it("turns a gate that throws into a failure rather than an escaped exception", async () => {

@@ -57,8 +57,13 @@ import type { Step, PayloadOf } from "@lingtai/domain";
  * stands the whole conductor down on the grounds that the wall is account-wide
  * (0031 §3) and a crash is local.
  *
- * What it costs is 0057 §2 and §4, and both are the pipeline's below: no fix
- * round, and one retry of the same action before the pass stops.
+ * What it costs is 0057 §2, and it is the pipeline's below: no fix round, and
+ * the pass stops. **§4's retry is gone** (`#234`) — it reused the crashed
+ * attempt's session id, so `claude` refused every one of them in zero seconds
+ * having run nothing, and the log then said the action did not finish *twice*
+ * when it had been tried once. 0057 §1–3 is what is kept, and it is the half
+ * that works: this is not a refusal, it buys no round, and it stands the pass
+ * down rather than the conductor.
  */
 export type GateVerdict = "passed" | "failed" | "needs-approval" | "never-ran" | "did-not-finish";
 
@@ -153,8 +158,8 @@ export type GateEvent =
    *  rather than as one still running. */
   | { type: "GateNeverRan"; data: PayloadOf<"GateNeverRan"> }
   /** The point was reached, its agent started and ended with no receipt, so
-   *  nothing judged the diff. Appended once per attempt, saying which attempt
-   *  it was and whether another follows (0057 §4). */
+   *  nothing judged the diff. Appended once, because the action is run once
+   *  (0057 §1, and §4's retry deleted by `#234`). */
   | { type: "GateDidNotFinish"; data: PayloadOf<"GateDidNotFinish"> }
   /** The same event `--no-merge` emits. One vocabulary for one idea. */
   | { type: "ApprovalRequested"; data: PayloadOf<"ApprovalRequested"> };
@@ -177,9 +182,8 @@ export interface PipelineResult {
    */
   neverRanAt: { gate: string; detail: string } | null;
   /**
-   * The gate whose agent started and did not finish — after its retry, because
-   * a first attempt the retry answered is not an ending
-   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4).
+   * The gate whose agent started and did not finish
+   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1).
    *
    * Its own field for the same reason `neverRanAt` is one: this ending buys no
    * fix round (§2) and does not stand the conductor down (§3), and a caller
@@ -216,17 +220,6 @@ export interface PipelineOptions {
 }
 
 /**
- * How many times the pipeline runs one action whose agent started and did not
- * finish — [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4.
- *
- * Two: the attempt and one retry. A constant rather than a recipe key because
- * it is not a budget somebody tunes — it is what these crashes are. They
- * either succeed immediately on a second attempt or fail identically, so a
- * third buys neither.
- */
-const ATTEMPTS = 2;
-
-/**
  * Runs the gates in recipe order and stops at the first failure.
  *
  * Stopping is deliberate. Running the remaining gates after one has already
@@ -256,72 +249,41 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
     const round = context.round ? ` · round ${context.round}` : "";
 
     /**
-     * **The retry [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)
-     * §4 decided, and it lives here** rather than inside `agent-gate.ts`, for
-     * the two reasons that ADR gives: the adapter classifies and the pipeline
-     * decides what a classification *costs* (0031 §1), and a retry nobody can
-     * see did not happen — this loop is what appends, so every attempt is on
-     * the log by construction.
+     * **One run of the action, and no retry** (`#234`).
      *
-     * Only a `did-not-finish` goes round again. A refusal is a verdict about
-     * the diff and running it twice would be asking a reviewer whether it still
-     * means it; a `never-ran` would meet the same account-wide wall; a pass is
-     * a pass. `GateStarted` is inside the loop for the same reason the event
-     * below is: the second attempt is a second start, and a board that drew one
-     * start for two runs of an action would be back to a retry nobody can see.
+     * [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4 put
+     * one here and it never once ran. The session id is a hash of
+     * `<runId>:review:<action>:<sha>` (`agent-gate.ts:356`, `sessionIdFor` at
+     * `claude-code.ts:93`) and a second attempt moves none of the four, so the
+     * retry computed the id attempt 1 had already opened a session with and
+     * `claude` refused it in zero seconds: two retries on this machine's run
+     * logs, both `Session ID … is already in use`, neither reaching a reviewer.
+     * A retry could only help where attempt 1 died *before* opening a session,
+     * and 0057's own subject is an agent that started — which opened one.
+     *
+     * So what a `did-not-finish` costs is 0057 §1–3 and nothing else, and
+     * that is the half that works: no round (§2), no stand-down (§3), and the
+     * pass reports it to a person. Whether to spend another agent on it is
+     * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+     * §3c's judge, not a constant in a loop here.
      */
-    let result!: GateResult;
-    for (let attempt = 1; ; attempt += 1) {
-      await emit({ type: "GateStarted", data: base });
-      const started = Date.now();
-      const again = attempt > 1 ? ` · attempt ${attempt}` : "";
-      context.log?.note(tag, `started · ${gate.kind} on ${context.onSha.slice(0, 7)}${round}${again}`);
+    await emit({ type: "GateStarted", data: base });
+    const started = Date.now();
+    context.log?.note(tag, `started · ${gate.kind} on ${context.onSha.slice(0, 7)}${round}`);
 
-      try {
-        result = await gate.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context);
-      } catch (err) {
-        // A gate that throws is a gate that failed. The alternative is an
-        // exception escaping the pipeline and a run ending with no verdict at all.
-        result = {
-          verdict: "failed",
-          evidence: `the ${gate.name} gate threw: ${(err as Error).message}`,
-          findings: [],
-        };
-      }
-      context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}${again}`);
-
-      if (result.verdict !== "did-not-finish") break;
-
-      // **One retry, not two** (0057 §4). The observed causes either succeed
-      // immediately on a second attempt or fail identically, so the ceiling
-      // this puts on a pass is one review — where the bug it replaces spent a
-      // *fix* round, which is a whole agent run plus the re-review after it.
-      const retrying = attempt < ATTEMPTS;
-      await emit({
-        type: "GateDidNotFinish",
-        data: { ...base, detail: result.evidence, attempt, retrying },
-      });
-      if (retrying) continue;
-
-      // Twice is a person's. No verdict event, because nothing judged the diff
-      // — the same rule `never-ran` follows below, and the reason
-      // `didNotFinishAt` is a field rather than a sentence to be re-read.
-      results.push({
-        gate: gate.name,
-        verdict: result.verdict,
-        evidence: result.evidence,
-        findings: result.findings,
-      });
-      return {
-        ok: false,
-        failedAt: null,
-        heldAt: null,
-        neverRanAt: null,
-        didNotFinishAt: { gate: gate.name, detail: result.evidence },
-        results,
-        skipped: gates.slice(index + 1).map((g) => g.name),
+    let result: GateResult;
+    try {
+      result = await gate.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context);
+    } catch (err) {
+      // A gate that throws is a gate that failed. The alternative is an
+      // exception escaping the pipeline and a run ending with no verdict at all.
+      result = {
+        verdict: "failed",
+        evidence: `the ${gate.name} gate threw: ${(err as Error).message}`,
+        findings: [],
       };
     }
+    context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`);
 
     results.push({
       gate: gate.name,
@@ -354,6 +316,24 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
         heldAt: null,
         neverRanAt: { gate: gate.name, detail: result.evidence },
         didNotFinishAt: null,
+        results,
+        skipped: gates.slice(index + 1).map((g) => g.name),
+      };
+    }
+
+    if (result.verdict === "did-not-finish") {
+      // The neighbouring absence, and no verdict event for the same reason: the
+      // agent started, produced no receipt, and nothing judged the diff. One
+      // event, because the action ran once — and it stops the pass rather than
+      // the conductor, because a crash is local (0057 §3). `didNotFinishAt` is
+      // a field rather than a sentence to be re-read.
+      await emit({ type: "GateDidNotFinish", data: { ...base, detail: result.evidence } });
+      return {
+        ok: false,
+        failedAt: null,
+        heldAt: null,
+        neverRanAt: null,
+        didNotFinishAt: { gate: gate.name, detail: result.evidence },
         results,
         skipped: gates.slice(index + 1).map((g) => g.name),
       };

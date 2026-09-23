@@ -276,6 +276,23 @@ export const UPCASTERS: UpcastRegistry = {
     2: (data) => ({ ...(data as object), findings: [] }),
   },
   GateFailed: { 1: gatePointRenamed },
+  GateDidNotFinish: {
+    /**
+     * 1 → 2: `attempt` and `retrying` are dropped with 0057 §4's retry (`#234`).
+     * The second step in this file that removes a field rather than adding one,
+     * and it is a step for `WorkItemClaimed`'s `leaseUntilMs` reason: no event is
+     * rewritten, so the reader is what stops believing them. There is nothing to
+     * recover — the retry those two numbers described reused the crashed
+     * attempt's session id and so ran nothing, which is why it is gone.
+     *
+     * This type is younger than 0018's rename, so 1 is the shape that carried
+     * the two fields and never the one that said `diff`.
+     */
+    1: (data) => {
+      const { attempt: _n, retrying: _more, ...rest } = data as { attempt?: unknown; retrying?: unknown };
+      return rest;
+    },
+  },
   GateWaived: { 1: gatePointRenamed },
   ApprovalRequested: { 1: gatePointRenamed },
   ApprovalGranted: { 1: gatePointRenamed },
