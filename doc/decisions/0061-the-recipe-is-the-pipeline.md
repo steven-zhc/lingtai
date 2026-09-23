@@ -81,7 +81,12 @@ A plugin's value is a scalar where one reads well and a map where it does not:
 - worktree: { base: main, submodules: false } # map
 ```
 
-`name`, `when`, `timeout` and `env` stay universal keys, as they are today.
+**A universal key is the workflow's bound on a plugin; the plugin's own key is
+its configuration.** `name`, `when`, `timeout` and `env` are universal today and
+`rounds`/`restarts` join them (§3). The distinction is not cosmetic and
+`timeout:` already shows why: a `run:` plugin cannot ignore its timeout, because
+the runner enforces it rather than the plugin honouring it. Every universal key
+works that way — **the plugin is told, it does not decide.**
 
 ### 3. The plugins
 
@@ -95,7 +100,7 @@ A plugin's value is a scalar where one reads well and a map where it does not:
 | `implement` | `agent:` | runtime · model · `turns` · `wall` |
 | `build` | `run:` | the command |
 | `review` | `agent:` | the prompt · `findings` · `diff` |
-| `proposed` | `route:` | **`rounds` · `restarts`** |
+| `proposed` | `judge:` | how the decision is made; **`rounds` · `restarts` are universal, not its own** |
 | `merge` | `merge:` | strategy |
 | | `agent:` | the conflict prompt |
 | `end` | `close:` `labels:` | `when` |
@@ -108,15 +113,42 @@ one plugin with four configurations. That is
 the agent for each role*, as a consequence of the shape rather than as a rule
 beside it.
 
-**`route:` makes the ceilings sayable.** `rounds` and `restarts` become the
-configuration of the plugin at the step that counts them, which is
-[0058](0058-lingtai-is-a-development-pipeline.md) §Consequences' *the ceilings
-come out of `run-once.ts` into a plugin a person can read*, literally.
+**The ceilings become sayable, and they do not become the plugin's.** `rounds`
+and `restarts` move out of `buyRound` at `run-once.ts:1761` — where
+[0058](0058-lingtai-is-a-development-pipeline.md) §3 says they are *visible to
+nobody* — and onto the step, beside `timeout:`.
+
+**Every plugin is replaceable, including `judge:`, and the loop is still
+bounded.** Those two are only compatible because of the split above, and the
+reason is an asymmetry worth stating plainly:
+
+```
+a misconfiguration that fails    is cheap — it errors, you fix it
+a misconfiguration that loops    is not — it never errors, it only spends
+```
+
+A replaced `judge:` that could carry its own ceilings could answer *back to
+`implement`* for ever, at ~31 turns and ~$3.40 a round
+([012 §3](../experiments/012-where-the-turns-go.md)), and nothing anywhere
+would report a fault. So:
+
+> **`judge:` decides which step is next. The workflow decides which steps it
+> may choose from.**
+
+The workflow counts the rounds and restarts spent — it is the thing appending
+the events — and hands the judge the result as a fact: the findings, the
+refusal's `reason`, and **the set of steps on offer**. When `rounds` is spent,
+`implement` is not in that set. A judge that returns a step it was not offered
+is refused by name, which is §8's rule used once more: *a step refuses a plugin
+it cannot run* becomes *a step refuses a destination it did not offer.*
+
+**This is why no plugin has to be un-replaceable.** The bound lives in the key,
+not in a privileged built-in.
 
 ### 4. A setting moves to the step that owns it
 
 ```
-runtime.limits.rounds / restarts   →  proposed:   route:
+runtime.limits.rounds / restarts   →  proposed:   universal keys on the step
 runtime.limits.turns / wall        →  implement:  agent:
 repo.base / submodules             →  admit:      worktree:
 source.kinds / exclude / backoff   →  claim:      queue:
@@ -224,8 +256,9 @@ replaces, this ADR was wrong and the file will say so.
 **A plugin's configuration has to be hashed into `configHash`**, the way a
 gate's is, or 0047's *what a run was given is on the log* loses everything that
 moved out of `runtime:`. This is the open item 0058 §What-is-not-decided named,
-and it is now concrete: `route:`'s `rounds` is exactly as load-bearing as an
-action's command.
+and it is now concrete: `proposed`'s `rounds` is exactly as load-bearing as an
+action's command, and it is a universal key rather than a plugin's, so the hash
+has to reach both.
 
 ## What is not decided
 

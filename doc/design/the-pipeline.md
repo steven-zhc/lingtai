@@ -26,8 +26,8 @@ Lingtai dispatched, one unheld ticket at a time.
    build and review are two            build is its own step, and a red one
    actions at one point                skips review
 
-   ceilings inside run-once.ts         a `route:` plugin at proposed
-   (buyRound, passCeiling)             a person can read
+   ceilings inside run-once.ts         universal keys on `proposed`, next to
+   (buyRound, passCeiling)             the judge they bound
 
    recipe: four sections               recipe: `steps:`, ten names, read down
    per pass                            the file is the pipeline
@@ -86,7 +86,7 @@ the schema means writing it twice.
 
 **The behaviour changes are not tickets.** *`build` is its own step*, *`review`
 returns findings*, *`proposed` routes*, *`merge` reports a reason*, *the
-ceilings are `route:`'s configuration* — under a migration each is a ticket.
+ceilings are universal keys the workflow enforces* — under a migration each is a ticket.
 Under a clean cut they are simply what the new pass does, because it is written
 from the ADR rather than bent towards it. **That is the largest saving here,
 and it is why the list below is shorter than the one a migration needs.**
@@ -160,8 +160,8 @@ value rather than declaring it again.*
 | **T2** | The ten plugins, as one interface |
 | kind | `tech-debt` |
 | blocked by | T1 |
-| what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `route:` `merge:` behind one contract, with the step × plugin matrix and its refusal ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
-| watch out | Four of the ten are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim`, `route:` is `buyRound` and `passCeiling`, `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. |
+| what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `merge:` behind one contract, with the universal keys the workflow enforces on any of them (`timeout`, and `rounds`/`restarts` at `proposed`), with the step × plugin matrix and its refusal ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
+| watch out | Four of the ten are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim`, `judge:` is `buyRound`'s decision, with `passCeiling`'s counting left to the workflow, `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. |
 
 | | |
 |---|---|
@@ -169,7 +169,7 @@ value rather than declaring it again.*
 | kind | `tech-debt` |
 | blocked by | T0b, T2 |
 | what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `rounds`/`restarts`/`turns`/`wall`/`base`/`kinds` move to the step that owns them; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. |
-| watch out | **A plugin's configuration must be hashed into `configHash`**, or [0047](../decisions/0047-the-recipe-a-run-got-is-on-the-log.md)'s *what a run was given is on the log* loses everything that moved out of `runtime:` — `route:`'s `rounds` is exactly as load-bearing as an action's command. |
+| watch out | **A plugin's configuration must be hashed into `configHash`**, or [0047](../decisions/0047-the-recipe-a-run-got-is-on-the-log.md)'s *what a run was given is on the log* loses everything that moved out of `runtime:` — `rounds` on `proposed` is exactly as load-bearing as an action's command. |
 
 ### Phase 2 — the pass
 
@@ -186,7 +186,7 @@ value rather than declaring it again.*
 | **T4b** | `pass.ts` — `build`, `review`, `proposed`, `merge` |
 | kind | `tech-debt` |
 | blocked by | T4a |
-| what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes and its ceilings are `route:`'s configuration; `merge` reports a `reason` and a `detail` and decides nothing. |
+| what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: a replaceable `judge:` chooses the next step, from the set the workflow offers it; `merge` reports a `reason` and a `detail` and decides nothing. |
 | evidence | `build` first **not because it is quick** — median 313s against review's 149s — but because it spends no tokens where a review spends an agent. `review` stops judging because **10% of its refusals in 14 days carried no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md)). `merge` reports rather than decides because over the whole log it has refused 32 times: **26 `gate-failed`, 6 `conflict`** — the common failure is that somebody else's work landed and the diff stopped being true. |
 | watch out | **Every path into `end` must have been through `build` and `review`**, which is what the edge from `merge` back to `build` buys: an agent that resolves a conflict writes code *after* the review passed. And the intent conflict is the row an agent must not take — two changes that edited the same decision differently produce text an agent can merge and an intent it cannot know. |
 
@@ -267,7 +267,7 @@ the diff is wrong**, which every ticket above is then graded by.
 - [ ] A person reads `~/.lingtai/<project>/recipe.yml` downward and has read the pass
 - [ ] `run-once.ts` does not exist
 - [ ] The board's rail shows which of the ten steps a run is in, during a fix round included
-- [ ] `rounds` and `restarts` are readable beside the step that spends them
+- [ ] `rounds` and `restarts` are readable beside the step that spends them, and a replaced `judge:` cannot widen them
 - [ ] A red at `build` is a claim about the diff — no test in it leaves the system
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`
