@@ -274,7 +274,27 @@ invariant the drawing exists to make checkable, and the edge from `merge` back
 to `build` is what buys it: a conflict the agent resolved is code written after
 the review passed, so it goes round again.
 
-**The hexagons are the three steps that may refuse, and all three arrive at the
+**Three shapes, and the one they turn on is what a step costs when it does not
+simply pass:**
+
+```
+{{ hexagon }}   may refuse        prepared · build · proposed · merge
+[ rectangle ]   may not           claim · admit · design · implement · review · end
+([ rounded ])   not a step        waiting on you
+```
+
+**That line is the money.** A refusal buys a fix round — ~31 turns and ~$3.40
+([012 §3](../experiments/012-where-the-turns-go.md)) — holds the work item and
+may reach a person. A step that *did not finish* buys none of it
+([0057](0057-a-gate-that-did-not-finish.md)). So `admit`, `design` and
+`implement` reach `proposed` too, carrying `needs-input`, and stay rectangles:
+**arriving at the router and refusing are different things, and only one of
+them is charged for.**
+
+`claim` is a rectangle for a reason §2 gives rather than by omission: if a
+`claim` plugin could refuse, not one of those consequences would mean anything.
+
+**The hexagons are the four steps that may refuse, and all four arrive at the
 same place.** That is the property worth keeping: `proposed` is the only step
 that routes, so every loop in the drawing passes through the workflow check, and
 **no loop is unbounded**. It is also why the log ends up complete — `proposed`
