@@ -11,21 +11,29 @@
  * `doc/tamper-watch.md` and `packages/actions/unit/tamper-watch.test.ts` follow,
  * and 0059 §5's *the document cannot drift from the code without a red test* a
  * third time. There is one home for the words, one home for the exemptions and
- * one home for the allowlist, and it is that document.
+ * one home for the allowlist, and it is that document. **The single exception is
+ * `MEASURED` below, and it is a ratchet rather than a second home**: a frozen
+ * copy of the debt as it was measured, which a document that an author edits in
+ * the same motion cannot be.
  *
  * **This ticket renames nothing.** It records what is still wrong and bounds it:
  * every violation has a row, a row with nothing behind it is as red as a
- * violation with no row, and `MAY_NOT_EXCEED` below refuses a longer list than
- * the one that was measured. So a ticket that renames its area deletes its rows
- * and needs no ceremony, and a ticket that would widen the debt cannot do it
- * quietly.
+ * violation with no row, and `MEASURED` below refuses any `(file, token)` pair
+ * the measurement did not hold. So a ticket that renames its area deletes its
+ * rows and needs no ceremony, and a ticket that would widen the debt cannot do
+ * it quietly — not by adding a name, and not by swapping one name for another
+ * and leaving the count where it found it.
  *
  * **Whole words inside a token, never substrings.** `checkpoint` (55),
- * `checkpoints` (34), `pointer` (17) and `pointed` (29) are the projector's and
- * the installer's own vocabulary and have nothing to do with a step; a substring
- * ban on `point` destroys all four. *does not reach inside a word* below is the
- * test that says so, and it is the reason the document holds a list of words
- * rather than a regex.
+ * `checkpoints` (34), `pointer` (17) and `pointed` (29) occurrences of the
+ * source text are the projector's and the installer's own vocabulary and have
+ * nothing to do with a step; a substring ban on `point` — a grep, which is what
+ * anybody reaches for first — destroys all four. *does not reach inside a word*
+ * below is the test that says so, and it is the reason the document holds a list
+ * of words rather than a regex. Three of the four are also names the **rule**
+ * reads; `pointer` is not, because all 17 of its occurrences are comments, and
+ * that test says which is which — a guard that asserts a live subject over text
+ * the rule never sees asserts nothing.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -35,12 +43,106 @@ import { describe, expect, it } from "vitest";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 /**
- * The allowlist's ceiling, and the only number in this file that is not read
- * from the document. **It may be lowered and never raised**: lowering it is what
- * a rename ticket earns, raising it is the sentence *align the terms* becoming
- * untrue one row at a time.
+ * **The debt as it was measured, pair by pair, and the only copy of it that is
+ * not read from the document.** This is the ratchet, and it is a set rather than
+ * a count because a count is not one. Two ordinary sequences walk straight past
+ * a total. A **swap inside one file**: `packages/conductor/src/filter.ts` reads
+ * `` GatePlan · gatePlan · gates · point ``, a ticket renames that `point` and
+ * introduces a `gateStep` in the same diff, the row becomes
+ * `` GatePlan · gatePlan · gateStep · gates `` and the total is still 340 — a
+ * retired name added with nothing red. And **after any shrink**: rename the
+ * `actions` package away, its seven rows and 81 entries go with it, and a
+ * hand-written 340 is 81 entries of slack that brand-new names arrive in one at a
+ * time, each of them red on the equality below and made green again by the row
+ * somebody adds to pass it.
+ *
+ * So the rule is per `(file, token)` pair: **the allowlist may hold nothing this
+ * table does not.** Deleting a row stays free and touches only the document —
+ * that is what a rename ticket earns. Widening the debt is not a row in
+ * `doc/reference.md` any more, it is an edit here, where the word *measured* and
+ * the date say what it costs.
+ *
+ * Pruning this table as rows go is housekeeping and nothing depends on it; the
+ * one thing it may never do is grow.
  */
-const MAY_NOT_EXCEED = 340;
+const MEASURED: Readonly<Record<string, string>> = {
+  "apps/board/src/app/backlog/page.tsx": "gate",
+  "apps/board/src/app/evidence.tsx": "GateEvidence gate gates",
+  "apps/board/src/app/page.tsx": "gate gatesApproved gatesFailed gatesPassed gatesWaived points",
+  "apps/board/src/app/plan.tsx": "point points",
+  "apps/board/src/app/rail.tsx": "PointProgress PointState point pointOf points",
+  "apps/board/src/app/recipe/[project]/page.tsx": "point",
+  "apps/board/src/app/setup/wizard/finish.ts": "wholeGates",
+  "apps/board/src/app/setup/wizard/wizard.tsx": "gates",
+  "apps/board/src/app/standing.tsx": "gate",
+  "apps/board/src/app/task/[id]/page.tsx": "gate gates point points",
+  "apps/board/src/lib/board.ts": "GatePlan gates gatesApproved gatesFailed gatesPassed gatesWaived",
+  "apps/board/src/lib/history.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GateRequested GateStarted GateWaived GatesResolved gate gateAt points",
+  "apps/board/src/lib/progress.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GatePlan GateRequested GateStarted GateWaived GatesResolved PointProgress PointState gate point pointOf points",
+  "apps/board/src/lib/queued.ts": "GatePlan PlannedPoint point points",
+  "apps/board/src/lib/recipe.ts": "GateAction GatesResolved gates point points",
+  "apps/board/src/lib/task.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GatePlan GateRequested GateStarted GateVerdict GateWaived GatesResolved gate gates",
+  "apps/cli/src/backlog.ts": "gate",
+  "apps/cli/src/conduct.ts": "gate",
+  "apps/cli/src/doctor.ts": "GatesResolved endPointRan gate gates point points",
+  "apps/cli/src/end.ts": "gates",
+  "apps/cli/src/install.ts": "points",
+  "apps/cli/src/lingtai.ts": "gate gates point",
+  "apps/cli/src/restart.ts": "gates",
+  "apps/cli/src/service.ts": "gates point",
+  "apps/cli/src/status.ts": "gates",
+  "apps/site/src/lib/snapshot.ts": "gates",
+  "packages/actions/src/agent-gate.ts": "AgentGateDeps AgentGateSpec Gate GateContext GateFinding GateResult createAgentGate gate point",
+  "packages/actions/src/from-recipe.ts": "AgentGateDeps Gate GateAction GateActionUnavailableError GateDeps WatchGateDeps createAgentGate createHumanGate createProcessGate createWatchGate gate gates gatesFromRecipe point wrongPoint",
+  "packages/actions/src/gate.ts": "Gate GateContext GateDidNotFinish GateEvent GateFailed GateFinding GateNeverRan GatePassed GateRequested GateResult GateStarted GateVerdict gate gates point runGatePipeline",
+  "packages/actions/src/human-gate.ts": "Gate GateContext GateResult HumanGateSpec createHumanGate gate",
+  "packages/actions/src/index.ts": "AgentGateDeps AgentGateSpec Gate GateActionUnavailableError GateContext GateDeps GateEvent GateFinding GateResult GateVerdict HumanGateSpec ProcessGateSpec WatchGateDeps WatchGateSpec createAgentGate createHumanGate createProcessGate createWatchGate gate gatesFromRecipe runGatePipeline",
+  "packages/actions/src/process-gate.ts": "Gate GateContext GateResult ProcessGateSpec createProcessGate gate",
+  "packages/actions/src/watch-gate.ts": "Gate GateContext GateResult WatchGateDeps WatchGateSpec createWatchGate gate gates",
+  "packages/conductor/src/approve.ts": "GateAction GateWaived GatesResolved gate gates gatesPassed point points splitGate",
+  "packages/conductor/src/attempts.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GateStarted GateWaived gate",
+  "packages/conductor/src/attribution.ts": "gate",
+  "packages/conductor/src/backlog.ts": "gate",
+  "packages/conductor/src/close.ts": "GateAction gates point",
+  "packages/conductor/src/create-app.ts": "point",
+  "packages/conductor/src/end-point.ts": "GateAction",
+  "packages/conductor/src/filter.ts": "GatePlan gatePlan gates point",
+  "packages/conductor/src/fix.ts": "GateFinding gates point",
+  "packages/conductor/src/gate-audit.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GateRequested GateStarted GateWaived gate point points",
+  "packages/conductor/src/gates-resolved.ts": "gate gates gatesResolved points",
+  "packages/conductor/src/index.ts": "GatePlan gate gatePlan point",
+  "packages/conductor/src/labels.ts": "gates",
+  "packages/conductor/src/never-started.ts": "gate",
+  "packages/conductor/src/onboard.ts": "gates point",
+  "packages/conductor/src/run-once.ts": "GateFinding GatesResolved gate gateDeps gateDetail gateDidNotFinish gates gatesFromRecipe gatesPassed gatesResolved gitForGates point runGatePipeline",
+  "packages/conductor/src/schedule.ts": "gate",
+  "packages/conductor/src/wizard-page.ts": "GateAction gates wholeGates",
+  "packages/conductor/src/wizard.ts": "gates",
+  "packages/daemon/src/control.ts": "gates",
+  "packages/daemon/src/converge.ts": "point",
+  "packages/domain/src/backlog.ts": "gate",
+  "packages/domain/src/events.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GateRequested GateStarted GateWaived GatesResolved gate gateBase points",
+  "packages/domain/src/run.ts": "GateDidNotFinish GateFailed GateFinding GateNeverRan GatePassed GateRequested GateStarted GateState GateVerdict GateWaived gate gates gatesOn withGate",
+  "packages/domain/src/streams.ts": "gates",
+  "packages/domain/src/upcast.ts": "GateFailed GatePassed GateRequested GateStarted GateWaived GatesResolved gate gatePointRenamed points",
+  "packages/env/src/colour.ts": "gates",
+  "packages/env/src/index.ts": "Point",
+  "packages/event-store/src/index.ts": "PointNeverRan",
+  "packages/event-store/src/log.ts": "PointNeverRan",
+  "packages/event-store/src/queries.ts": "GatesResolved PointNeverRan gate point points",
+  "packages/event-store/src/sqlite.ts": "GatesResolved gate point points",
+  "packages/projector/src/backlog.ts": "GatePassed gate",
+  "packages/projector/src/postgres.ts": "gate gates gatesApproved gatesFailed gatesPassed gatesWaived",
+  "packages/projector/src/sqlite.ts": "gate gates gatesApproved gatesFailed gatesPassed gatesWaived",
+  "packages/projector/src/task-view.ts": "GateDidNotFinish GateFailed GateNeverRan GatePassed GateWaived gate gates gatesApproved gatesFailed gatesPassed gatesWaived point setGate",
+  "packages/recipe/src/local.ts": "gates gatesRefusal point",
+  "packages/recipe/src/presets.ts": "gates",
+  "packages/recipe/src/propose.ts": "gates",
+  "packages/recipe/src/recipe.ts": "GateAction GateMap GatesResolved gates point",
+  "packages/recipe/src/resolve.ts": "gates",
+  "packages/recipe/src/watch.ts": "gate",
+  "packages/repo/src/integrate.ts": "gate gateDetail gatesPassed",
+};
 
 /** `GatesResolved` → `gates` · `resolved`; `checkpoint` → `checkpoint`, one word and safe. */
 function words(token: string): string[] {
@@ -152,7 +254,13 @@ async function glossary() {
   };
 
   const glossaryRows = rows("the words");
+  // The allowlist's headline sentence, which is prose and not a row, and so is
+  // the one number in the section that could once say anything at all.
+  const headline = /\*\*(\d+) entries in (\d+) files/.exec(section);
+  expect(headline, "doc/reference.md's allowlist does not say how big it is").not.toBeNull();
   return {
+    /** What the section's own sentence claims the table below it comes to. */
+    headline: { entries: Number(headline![1]), files: Number(headline![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
     /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
@@ -227,10 +335,22 @@ describe("the retired names in doc/reference.md", () => {
       expect(exempt.has(token), `${token} needs no exemption — whole-word matching already leaves it alone`).toBe(false);
     }
 
-    const everything = (await Promise.all((await sources()).map((f) => readFile(`${root}${f}`, "utf8")))).join("\n");
-    for (const token of innocent) {
-      expect(new RegExp(`\\b${token}\\b`, "i").test(everything), `no ${token} in src/ — this case has gone stale`).toBe(true);
+    // And live **to the rule**, not to a grep. Asserting this against the raw
+    // file text is the mistake to make here: all 17 of `pointer`'s occurrences
+    // are comments — `standing.tsx:63`, `latch.tsx:89`,
+    // `task/[id]/page.tsx:139` — and the rule reads no comment, so a text guard
+    // reports a subject the matcher can never be handed and stays green with
+    // every `pointer` identifier in the repository renamed away. `pointer` is
+    // therefore a shape case, asserted above and nowhere else; the other three
+    // are names `src/` really hands over, and this is what says so.
+    const read = new Set(
+      (await Promise.all((await sources()).map(async (f) => tokens(await readFile(`${root}${f}`, "utf8"), f)))).flat(),
+    );
+
+    for (const token of ["checkpoint", "checkpoints", "pointed"]) {
+      expect(read.has(token), `the rule reads no ${token} in src/ — this case has gone stale`).toBe(true);
     }
+    expect(read.has("pointer"), "`pointer` is a token the rule reads now — it has a live subject and belongs above").toBe(false);
   });
 
   it("reads the list from doc/reference.md and enforces it nowhere in doc/", async () => {
@@ -352,17 +472,43 @@ describe("the allowlist", () => {
   });
 
   /**
-   * And it may only shrink. `MAY_NOT_EXCEED` is the count measured on
-   * 2026-09-23; a 341st entry is red whether it arrived as a new name in `src/`
-   * or as a row somebody added to make one green. Removing entries is free.
+   * And it may only shrink, **pair by pair rather than in total**. A retired name
+   * arriving in `src/` is red on the equality above until somebody edits the
+   * allowlist to match it, and red here afterwards: `MEASURED` is what the debt
+   * *was*, so a pair that is not in it is a pair being added — whether it arrived
+   * as a new file, as a new token in an old file, or as a swap that left the
+   * count where it found it. Removing entries is free, which is the whole point.
    */
   it("may only shrink", async () => {
     const g = await glossary();
+
+    const added = [...g.allowlist]
+      .flatMap(([file, tokens]) => {
+        const measured = new Set((MEASURED[file] ?? "").split(" ").filter((t) => t.length > 0));
+        return tokens.filter((t) => !measured.has(t)).map((t) => `${file} · ${t}`);
+      })
+      .sort();
+
+    expect(added, "the allowlist has grown — a retired name may not be added to the debt").toEqual([]);
+    expect(g.allowlist.size).toBeGreaterThan(0);
+  });
+
+  /**
+   * **And the section's own headline is one of the things that may not drift.**
+   * `340 entries in 76 files` is what `#233` sizes the remaining debt from, and it
+   * is what a rename ticket makes wrong by deleting rows: take the `projector`
+   * and `event-store` rows away — eight of them, 38 entries — and nothing parsed
+   * that sentence, so both tests above stayed green while the headline said 340 in
+   * 76 and the table underneath it came to 302 in 68. It is counted here rather
+   * than remembered, so correcting it is part of deleting a row.
+   */
+  it("says how big it is, and that sentence is counted rather than remembered", async () => {
+    const g = await glossary();
     const entries = [...g.allowlist.values()].reduce((n, tokens) => n + tokens.length, 0);
 
-    expect(entries, "the allowlist has grown — a retired name may not be added to the debt").toBeLessThanOrEqual(
-      MAY_NOT_EXCEED,
-    );
-    expect(g.allowlist.size).toBeGreaterThan(0);
+    expect(
+      { entries, files: g.allowlist.size },
+      "doc/reference.md's headline count is not the table underneath it",
+    ).toEqual(g.headline);
   });
 });

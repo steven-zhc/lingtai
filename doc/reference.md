@@ -550,14 +550,26 @@ than it was shown:
 `checkpoint`, `checkpoints`, `pointer` and `pointed` are **not on this list and
 do not need to be** — whole-word matching never reaches inside them. They are
 what a substring ban on `point` would have destroyed: 55, 34, 17 and 29
-occurrences of the projector's own vocabulary.
+occurrences of the projector's own vocabulary — all 17 of `pointer`'s in
+comments, which the rule never reads, so the test asserts a live subject for the
+other three and the shape of the match for that one.
 
 ### the allowlist
 
-**340 entries in 76 files, counted 2026-09-23.** That count is a ceiling the
-test refuses to let grow, and the rest of the epic empties the table: a ticket
-that renames its area deletes its rows, and needs no ceremony to do it. A
-ticket that *adds* a row is widening the debt and gets a red test instead.
+**340 entries in 76 files, counted 2026-09-23** — and that sentence is counted
+by the test rather than remembered, so it is the size of the table below and not
+a number somebody forgot to lower when the table shrank. The rest of the epic
+empties the table: a ticket that renames its area deletes its rows, and needs no
+ceremony beyond correcting that count.
+
+A ticket that *adds* a row is widening the debt and gets a red test instead. The
+ratchet is `MEASURED` in `packages/domain/unit/retired-names.test.ts` — one
+frozen `file → tokens` copy of the debt as it was measured — and the rule is per
+`(file, token)` pair: **the allowlist may hold nothing that table does not.**
+Deleting rows stays free, and touches this file only. **A ceiling on the total
+would not do it**: a rename that swaps one retired name for another leaves the
+total where it found it, and after any shrink a hand-written total is slack for
+new names to arrive in.
 
 Each row is one file and every retired token still in it. The test computes the
 same set from `src/` and asserts it is exactly this — so a row that has been
