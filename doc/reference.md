@@ -487,6 +487,207 @@ Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
 
+## retired name — 4 words, and an allowlist that may only shrink
+
+**This is the one section that describes code the repository is still moving
+away from.** Everything else here says what is true; this says what is *not* and
+has not finished being untrue. The pipeline epic
+([the-pipeline](design/the-pipeline.md)) renames the vocabulary over several
+tickets, and a rename spread over several tickets ends as two vocabularies for
+one thing unless something counts — which is
+[0058](decisions/0058-lingtai-is-a-development-pipeline.md) §Context's own
+defect. `packages/domain/unit/retired-names.test.ts` reads the tables below out
+of this file and holds the code to them.
+
+### the words
+
+Matched as **whole words inside a token**, never as substrings — so `checkpoint`,
+`checkpoints`, `pointer` and `pointed` are untouched, because none of them
+splits into a word that is on this list. That is the whole reason this is a list
+of words rather than a regex over `point`.
+
+| retired | current | decided by |
+|---|---|---|
+| `gate` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `gates` | `steps` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §1 — *`gates:` is gone, not renamed, replaced* |
+| `point` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `points` | `steps` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+
+And two tokens whose replacement is **not** the word substitution, so a renamer
+reading the four rows above would get them wrong. Both are already caught by
+`gate`; these rows say what to put in their place:
+
+| retired | current | decided by |
+|---|---|---|
+| `GatePoint` | `Step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3, landed as `#227` |
+| `GateAction` | `Plugin` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §2 — a step is a list of plugins, and the plugin is the key |
+
+**Where it is enforced:** every `.ts` and `.tsx` under `{apps,packages}/*/src/`
+— identifiers, types, event types, recipe keys, and the strings and JSX a person
+reads: the board's copy, a refusal's text, `lingtai`'s output.
+
+**Where it is not:** comments, and everything under `doc/`. A comment or a
+document describing *history* keeps the name that history happened under —
+[0018](decisions/0018-the-proposed-point.md) records that the point called
+`diff` became `proposed`, and
+[0059](decisions/0059-a-point-carries-only-the-kinds-it-runs.md) says *`#58` was
+that bug at `merge`*; both are correct and both must keep their words. Nothing
+mechanical can tell a comment about the past from a comment about the present,
+so the test reads neither. **A comment describing what the code does now takes
+the new name** — that rule is a reviewer's, not a test's.
+
+### not the retired name
+
+Two tokens contain one of the four words and mean something else. Each is
+exempt **by name and in one file**, reviewed once, rather than by a pattern —
+or by a bare token — that would exempt more than it was shown:
+
+| token | where | what it is |
+|---|---|---|
+| `pointShim` | `apps/cli/src/install.ts` | *point the shim at a version* — the English verb. Nothing to do with a step |
+| `entryPoints` | `apps/release/src/build.ts` | esbuild's own option. Not ours to rename |
+
+**This table is a second door into the debt, and it is bolted differently.** An
+exemption is not a row in a ledger, it is a `continue` before the match — so one
+row added here excuses its token everywhere at once and nothing underneath it
+moves: the allowlist does not grow, the count below does not change, and a
+brand-new retired name is green in all 216 files at once. That is the one edit
+to this section a reader cannot size by reading it, so the pair in each row is
+pinned in `packages/domain/unit/retired-names.test.ts` as the four words are,
+and the file column is enforced: a row added, dropped or widened to a second
+file is a red test, and `pointShim` in any file but `install.ts` is a violation
+like any other.
+
+`checkpoint`, `checkpoints`, `pointer` and `pointed` are **not on this list and
+do not need to be** — whole-word matching never reaches inside them. They are
+what a substring ban on `point` would have destroyed: 55, 34, 17 and 29
+occurrences of the projector's own vocabulary — all 17 of `pointer`'s in
+comments, which the rule never reads, so the test asserts a live subject for the
+other three and the shape of the match for that one.
+
+### the allowlist
+
+**340 entries in 76 files, counted 2026-09-23** — and that sentence is counted
+by the test rather than remembered, so it is the size of the table below and not
+a number somebody forgot to lower when the table shrank. The rest of the epic
+empties the table: a ticket that renames its area deletes its rows and corrects
+that number, and that is the whole of the ceremony.
+
+Each row is one file and every retired token still in it. **The table is not a
+subset of the debt, it is the debt**: the test computes the same set from `src/`
+and asserts it is exactly this, so **a row with nothing behind it is as red as a
+name with no row**. A rename that landed and left its ledger standing is how
+*align the terms* becomes a sentence everybody agrees with and the last ticket
+discovers is untrue.
+
+**So a retired name cannot arrive quietly, and what stops it is that there is
+nowhere quiet to put it.** One added to `src/` is red until a row is added here,
+and a row added makes the sentence above it false until the number is raised
+too — two edits in this document, in one diff, one of them a line that says what
+it is counting. **The test is what makes that number true; a review is what
+makes it go down.** That division is the honest one: no test can tell a retired
+name that had to arrive from one that did not, and a test that claimed to would
+be refusing the diff that fixes something.
+
+**The baseline is this table, and there is deliberately no second copy of it in
+the test.** The other design reads better than it works — freeze today's
+`file → tokens` in the test file and refuse any pair it does not hold — because
+**this epic renames files**, by construction: eight files under `src/` say a
+retired word in their own name, `gate.ts`, `agent-gate.ts`, `gate-audit.ts`,
+`gates-resolved.ts` and `end-point.ts` among them, and every one of them is
+renamed by the ticket that renames what is inside it. A frozen copy keyed by
+path reads a file that moved or was renamed as a widening that did not happen,
+and the only way back to green is to hand-edit
+the one table whose edits were supposed to be expensive — teaching, on the
+epic's ordinary path, exactly the habit it was added to prevent. Here a file
+that moves costs what any move costs: its row is edited, in the ledger a person
+is already reading, and nothing else moves.
+
+**`0 entries in 0 files` passes.** That is `#233`'s acceptance, and a test with
+a lower bound under it would red the `build` gate on the diff that finishes the
+job. Nothing guards against this table being read as empty by mistake, because
+nothing has to: while any debt is left in `src/` an empty parse fails the
+equality above, and when none is left an empty table is the truth.
+
+| file | retired names in it |
+|---|---|
+| `apps/board/src/app/backlog/page.tsx` | `gate` |
+| `apps/board/src/app/evidence.tsx` | `GateEvidence` · `gate` · `gates` |
+| `apps/board/src/app/page.tsx` | `gate` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` · `points` |
+| `apps/board/src/app/plan.tsx` | `point` · `points` |
+| `apps/board/src/app/rail.tsx` | `PointProgress` · `PointState` · `point` · `pointOf` · `points` |
+| `apps/board/src/app/recipe/[project]/page.tsx` | `point` |
+| `apps/board/src/app/setup/wizard/finish.ts` | `wholeGates` |
+| `apps/board/src/app/setup/wizard/wizard.tsx` | `gates` |
+| `apps/board/src/app/standing.tsx` | `gate` |
+| `apps/board/src/app/task/[id]/page.tsx` | `gate` · `gates` · `point` · `points` |
+| `apps/board/src/lib/board.ts` | `GatePlan` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
+| `apps/board/src/lib/history.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gateAt` · `points` |
+| `apps/board/src/lib/progress.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GatePlan` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `PointProgress` · `PointState` · `gate` · `point` · `pointOf` · `points` |
+| `apps/board/src/lib/queued.ts` | `GatePlan` · `PlannedPoint` · `point` · `points` |
+| `apps/board/src/lib/recipe.ts` | `GateAction` · `GatesResolved` · `gates` · `point` · `points` |
+| `apps/board/src/lib/task.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GatePlan` · `GateRequested` · `GateStarted` · `GateVerdict` · `GateWaived` · `GatesResolved` · `gate` · `gates` |
+| `apps/cli/src/backlog.ts` | `gate` |
+| `apps/cli/src/conduct.ts` | `gate` |
+| `apps/cli/src/doctor.ts` | `GatesResolved` · `endPointRan` · `gate` · `gates` · `point` · `points` |
+| `apps/cli/src/end.ts` | `gates` |
+| `apps/cli/src/install.ts` | `points` |
+| `apps/cli/src/lingtai.ts` | `gate` · `gates` · `point` |
+| `apps/cli/src/restart.ts` | `gates` |
+| `apps/cli/src/service.ts` | `gates` · `point` |
+| `apps/cli/src/status.ts` | `gates` |
+| `apps/site/src/lib/snapshot.ts` | `gates` |
+| `packages/actions/src/agent-gate.ts` | `AgentGateDeps` · `AgentGateSpec` · `Gate` · `GateContext` · `GateFinding` · `GateResult` · `createAgentGate` · `gate` · `point` |
+| `packages/actions/src/from-recipe.ts` | `AgentGateDeps` · `Gate` · `GateAction` · `GateActionUnavailableError` · `GateDeps` · `WatchGateDeps` · `createAgentGate` · `createHumanGate` · `createProcessGate` · `createWatchGate` · `gate` · `gates` · `gatesFromRecipe` · `point` · `wrongPoint` |
+| `packages/actions/src/gate.ts` | `Gate` · `GateContext` · `GateDidNotFinish` · `GateEvent` · `GateFailed` · `GateFinding` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateResult` · `GateStarted` · `GateVerdict` · `gate` · `gates` · `point` · `runGatePipeline` |
+| `packages/actions/src/human-gate.ts` | `Gate` · `GateContext` · `GateResult` · `HumanGateSpec` · `createHumanGate` · `gate` |
+| `packages/actions/src/index.ts` | `AgentGateDeps` · `AgentGateSpec` · `Gate` · `GateActionUnavailableError` · `GateContext` · `GateDeps` · `GateEvent` · `GateFinding` · `GateResult` · `GateVerdict` · `HumanGateSpec` · `ProcessGateSpec` · `WatchGateDeps` · `WatchGateSpec` · `createAgentGate` · `createHumanGate` · `createProcessGate` · `createWatchGate` · `gate` · `gatesFromRecipe` · `runGatePipeline` |
+| `packages/actions/src/process-gate.ts` | `Gate` · `GateContext` · `GateResult` · `ProcessGateSpec` · `createProcessGate` · `gate` |
+| `packages/actions/src/watch-gate.ts` | `Gate` · `GateContext` · `GateResult` · `WatchGateDeps` · `WatchGateSpec` · `createWatchGate` · `gate` · `gates` |
+| `packages/conductor/src/approve.ts` | `GateAction` · `GateWaived` · `GatesResolved` · `gate` · `gates` · `gatesPassed` · `point` · `points` · `splitGate` |
+| `packages/conductor/src/attempts.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateStarted` · `GateWaived` · `gate` |
+| `packages/conductor/src/attribution.ts` | `gate` |
+| `packages/conductor/src/backlog.ts` | `gate` |
+| `packages/conductor/src/close.ts` | `GateAction` · `gates` · `point` |
+| `packages/conductor/src/create-app.ts` | `point` |
+| `packages/conductor/src/end-point.ts` | `GateAction` |
+| `packages/conductor/src/filter.ts` | `GatePlan` · `gatePlan` · `gates` · `point` |
+| `packages/conductor/src/fix.ts` | `GateFinding` · `gates` · `point` |
+| `packages/conductor/src/gate-audit.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `gate` · `point` · `points` |
+| `packages/conductor/src/gates-resolved.ts` | `gate` · `gates` · `gatesResolved` · `points` |
+| `packages/conductor/src/index.ts` | `GatePlan` · `gate` · `gatePlan` · `point` |
+| `packages/conductor/src/labels.ts` | `gates` |
+| `packages/conductor/src/never-started.ts` | `gate` |
+| `packages/conductor/src/onboard.ts` | `gates` · `point` |
+| `packages/conductor/src/run-once.ts` | `GateFinding` · `GatesResolved` · `gate` · `gateDeps` · `gateDetail` · `gateDidNotFinish` · `gates` · `gatesFromRecipe` · `gatesPassed` · `gatesResolved` · `gitForGates` · `point` · `runGatePipeline` |
+| `packages/conductor/src/schedule.ts` | `gate` |
+| `packages/conductor/src/wizard-page.ts` | `GateAction` · `gates` · `wholeGates` |
+| `packages/conductor/src/wizard.ts` | `gates` |
+| `packages/daemon/src/control.ts` | `gates` |
+| `packages/daemon/src/converge.ts` | `point` |
+| `packages/domain/src/backlog.ts` | `gate` |
+| `packages/domain/src/events.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gateBase` · `points` |
+| `packages/domain/src/run.ts` | `GateDidNotFinish` · `GateFailed` · `GateFinding` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateState` · `GateVerdict` · `GateWaived` · `gate` · `gates` · `gatesOn` · `withGate` |
+| `packages/domain/src/streams.ts` | `gates` |
+| `packages/domain/src/upcast.ts` | `GateFailed` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gatePointRenamed` · `points` |
+| `packages/env/src/colour.ts` | `gates` |
+| `packages/env/src/index.ts` | `Point` |
+| `packages/event-store/src/index.ts` | `PointNeverRan` |
+| `packages/event-store/src/log.ts` | `PointNeverRan` |
+| `packages/event-store/src/queries.ts` | `GatesResolved` · `PointNeverRan` · `gate` · `point` · `points` |
+| `packages/event-store/src/sqlite.ts` | `GatesResolved` · `gate` · `point` · `points` |
+| `packages/projector/src/backlog.ts` | `GatePassed` · `gate` |
+| `packages/projector/src/postgres.ts` | `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
+| `packages/projector/src/sqlite.ts` | `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
+| `packages/projector/src/task-view.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateWaived` · `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` · `point` · `setGate` |
+| `packages/recipe/src/local.ts` | `gates` · `gatesRefusal` · `point` |
+| `packages/recipe/src/presets.ts` | `gates` |
+| `packages/recipe/src/propose.ts` | `gates` |
+| `packages/recipe/src/recipe.ts` | `GateAction` · `GateMap` · `GatesResolved` · `gates` · `point` |
+| `packages/recipe/src/resolve.ts` | `gates` |
+| `packages/recipe/src/watch.ts` | `gate` |
+| `packages/repo/src/integrate.ts` | `gate` · `gateDetail` · `gatesPassed` |
+
 ## gate action — 6 keys, of which 4 produce a verdict
 
 What runs at a point. Source: `GateAction` and `kindOfAction` in
