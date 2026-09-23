@@ -26,8 +26,8 @@ Lingtai dispatched, one unheld ticket at a time.
    build and review are two            build is its own step, and a red one
    actions at one point                skips review
 
-   ceilings inside run-once.ts         universal keys on `proposed`, next to
-   (buyRound, passCeiling)             the judge they bound
+   ceilings inside run-once.ts         `rounds` on implement, `restarts` on
+   (buyRound, passCeiling)             claim — on the step each one bounds
 
    recipe: four sections               recipe: `steps:`, ten names, read down
    per pass                            the file is the pipeline
@@ -186,7 +186,7 @@ value rather than declaring it again.*
 | **T4b** | `pass.ts` — `build`, `review`, `proposed`, `merge` |
 | kind | `tech-debt` |
 | blocked by | T4a |
-| what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: a replaceable `judge:` chooses the next step, from the set the workflow offers it; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
+| what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: **one `judge:` per `when:`**, each choosing from the set the workflow offers it — only the `findings` direction is a judgement worth an agent, the mechanical ones are built in; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
 | evidence | `build` first **not because it is quick** — median 313s against review's 149s — but because it spends no tokens where a review spends an agent. `review` stops judging because **10% of its refusals in 14 days carried no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md)). `merge` reports rather than decides because over the whole log it has refused 32 times: **26 `gate-failed`, 6 `conflict`** — the common failure is that somebody else's work landed and the diff stopped being true. |
 | watch out | **Every path into `end` must have been through `build` and `review`**, which is what the edge from `merge` back to `build` buys: an agent that resolves a conflict writes code *after* the review passed. And the intent conflict is the row an agent must not take — two changes that edited the same decision differently produce text an agent can merge and an intent it cannot know. |
 
@@ -267,7 +267,7 @@ the diff is wrong**, which every ticket above is then graded by.
 - [ ] A person reads `~/.lingtai/<project>/recipe.yml` downward and has read the pass
 - [ ] `run-once.ts` does not exist
 - [ ] The board's rail shows which of the ten steps a run is in, during a fix round included
-- [ ] `rounds` and `restarts` are readable beside the step that spends them, and a replaced `judge:` cannot widen them
+- [ ] `rounds` is readable on `implement` and `restarts` on `claim` — the step each bounds — and no replaced `judge:` can widen either
 - [ ] A red at `build` is a claim about the diff — no test in it leaves the system
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`

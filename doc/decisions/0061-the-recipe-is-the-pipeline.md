@@ -88,19 +88,27 @@ its configuration.** `name`, `when`, `timeout` and `env` are universal today and
 the runner enforces it rather than the plugin honouring it. Every universal key
 works that way — **the plugin is told, it does not decide.**
 
+**And a bound sits on the step it bounds, exactly as `timeout:` does.** Not on
+the step that enforces it: `timeout:` is written on the plugin that may run too
+long, never on the runner that stops it. So `rounds` is written on `implement`
+— *this step may run three times in one pass* — and `restarts` on `claim` —
+*this item may be claimed twice* — though the step that counts both is
+`proposed`. **The one that counts and the one that is counted are not the same
+step**, and the file follows the second, because that is where a reader looks.
+
 ### 3. The plugins
 
 | step | plugin | carries |
 |---|---|---|
-| `claim` | `queue:` | `kinds` · `exclude` · `backoff` |
+| `claim` | `queue:` | `kinds` · `exclude` · `backoff` · **`restarts`** |
 | | `assignee:` | who |
 | `admit` | `worktree:` | `base` · `submodules` |
 | `prepared` | `run:` | the command |
 | `design` | `agent:` | the prompt |
-| `implement` | `agent:` | runtime · model · `turns` · `wall` |
+| `implement` | `agent:` | runtime · model · `turns` · `wall` · **`rounds`** |
 | `build` | `run:` | the command |
 | `review` | `agent:` | the prompt · `findings` · `diff` |
-| `proposed` | `judge:` | how the decision is made; **`rounds` · `restarts` are universal, not its own** |
+| `proposed` | `judge:` | one per `when:` — how that direction is decided |
 | `merge` | `merge:` | strategy |
 | | `agent:` | the conflict prompt |
 | `end` | `close:` `labels:` | `when` |
@@ -113,10 +121,45 @@ one plugin with four configurations. That is
 the agent for each role*, as a consequence of the shape rather than as a rule
 beside it.
 
-**The ceilings become sayable, and they do not become the plugin's.** `rounds`
+**`proposed` carries one judge per direction, and `when:` already exists to say
+which.** Five things arrive there, and only one of them is a judgement worth an
+agent:
+
+```
+reason              seen      what deciding actually is
+build   red           34      back to implement with the error — mechanical
+merge   gate-failed   26      back to implement with the new base — mechanical
+merge   conflict       6      text: resolve · intent: a person
+implement needs-input   —     interrupt, or go round stating the assumption
+review  findings      231     the lines or the approach  ← the judgement
+```
+
+One judge for all five pays an agent sixty times to reach a mechanical
+conclusion, and worse: **anyone replacing it has to reimplement the mechanical
+branches correctly or the loop breaks** — which is the thing §2's split exists
+to prevent. So:
+
+```yaml
+proposed:
+  - when: red | gate-failed
+    judge: same-worktree        # built in, spends nothing
+  - when: findings
+    judge: claude-code          # the one that thinks
+  - when: conflict
+    judge: claude-code
+  - when: needs-input
+    judge: ask-or-assume
+```
+
+`when:` is not new — `recipe.ts:137` already carries it on `end`'s two kinds.
+A recipe that writes none of this gets the whole set, which is today's
+behaviour; a project that wants a different *lines-or-approach* call changes
+one entry.
+
+**The ceilings become sayable, and they do not become any plugin's.** `rounds`
 and `restarts` move out of `buyRound` at `run-once.ts:1761` — where
 [0058](0058-lingtai-is-a-development-pipeline.md) §3 says they are *visible to
-nobody* — and onto the step, beside `timeout:`.
+nobody* — and onto `implement` and `claim`, the steps they bound.
 
 **Every plugin is replaceable, including `judge:`, and the loop is still
 bounded.** Those two are only compatible because of the split above, and the
@@ -136,9 +179,9 @@ would report a fault. So:
 > may choose from.**
 
 The workflow counts the rounds and restarts spent — it is the thing appending
-the events — and hands the judge the result as a fact: the findings, the
-refusal's `reason`, and **the set of steps on offer**. When `rounds` is spent,
-`implement` is not in that set. A judge that returns a step it was not offered
+the events — reading `implement`'s `rounds` and `claim`'s `restarts`, and hands
+the judge the result as a fact: the findings, the refusal's `reason`, and **the
+set of steps on offer**. When `rounds` is spent, `implement` is not in that set. A judge that returns a step it was not offered
 is refused by name, which is §8's rule used once more: *a step refuses a plugin
 it cannot run* becomes *a step refuses a destination it did not offer.*
 
@@ -148,7 +191,8 @@ not in a privileged built-in.
 ### 4. A setting moves to the step that owns it
 
 ```
-runtime.limits.rounds / restarts   →  proposed:   universal keys on the step
+runtime.limits.rounds             →  implement:  a universal key on the step it bounds
+runtime.limits.restarts           →  claim:      the same
 runtime.limits.turns / wall        →  implement:  agent:
 repo.base / submodules             →  admit:      worktree:
 source.kinds / exclude / backoff   →  claim:      queue:
