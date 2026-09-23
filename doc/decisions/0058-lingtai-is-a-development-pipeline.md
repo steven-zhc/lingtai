@@ -208,10 +208,10 @@ green is not evidence that the tree is green.
 
 ```mermaid
 flowchart TB
-  CL["<b>claim</b><br/>tag filter · assignee · kind"]
+  CL["<b>claim</b><br/>pick the ticket"]
   AD["<b>admit</b><br/>the requirement · the worktree"]
   PR{{"<b>prepared</b><br/>install · is the base green?"}}
-  DS["<b>design</b><br/>a document, before any code"]
+  DS["<b>design</b><br/>a document, or none"]
   IM["<b>implement</b><br/>one agent, in that worktree"]
   BU{{"<b>build</b>"}}
   RV["<b>review</b><br/>findings, and no verdict"]
@@ -220,24 +220,27 @@ flowchart TB
   EN["<b>end</b><br/>runs on every outcome"]
   WA(["waiting on you"])
 
+  %% the way through
   CL --> AD --> PR --> DS --> IM --> BU
-  AD -->|"the requirement is not clear<br/>reason: needs-input"| PO
-  PR -->|"install failed · the base is not green"| PO
-  DS -->|"the design needs a decision<br/>reason: needs-input"| PO
-  IM -->|"the agent stopped to ask<br/>reason: needs-input"| PO
-  BU -->|"green"| RV
-  BU -->|"red — review is never paid for a diff that will not compile"| PO
-  RV --> PO
-  PO -->|"pass"| MG
-  MG -->|"merged — the base came in, it verified,<br/>and it went out"| EN
-  MG -->|"a conflict the agent resolved<br/>is a new diff"| BU
-  MG -->|"the base came in and the change no longer<br/>holds · a conflict nobody resolved"| PO
+  BU -->|green| RV --> PO
+  PO -->|pass| MG
+  MG -->|merged| EN
 
-  PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
-  PO -->|"the approach is wrong — requeued<br/>× restarts — a fresh pass, and<br/>another ticket may go first"| CL
-  PO -->|"every ceiling spent · a conflict the agent<br/>could not resolve · a question only you can answer"| WA
-  WA -->|"after you clarify"| CL
-  WA -->|"you close it"| EN
+  %% everything that did not simply pass
+  AD -.->|needs-input| PO
+  PR -.->|"install failed"| PO
+  DS -.->|needs-input| PO
+  IM -.->|needs-input| PO
+  BU -.->|red| PO
+  MG -.->|"the base moved · a conflict nobody resolved"| PO
+
+  %% and what proposed does with it
+  MG -->|"a conflict an agent resolved"| BU
+  PO -.->|"the lines · × rounds"| IM
+  PO -.->|"the approach · × restarts"| CL
+  PO -.->|"every ceiling spent"| WA
+  WA -.-> CL
+  WA -.-> EN
 
   classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
   classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
@@ -273,6 +276,12 @@ an earlier label got wrong by writing them as one:
 invariant the drawing exists to make checkable, and the edge from `merge` back
 to `build` is what buys it: a conflict the agent resolved is code written after
 the review passed, so it goes round again.
+
+**A solid line is the way through; a dotted one is a step that did not simply
+pass.** Every dotted line but two ends at `proposed`, and the two that do not
+are `proposed`'s own: what it sends back. The labels are short because the
+reason is underneath — the shapes here, the merge's three exits below that, and
+§3c's table for what each `reason` buys.
 
 **Three shapes, and the one they turn on is what a step costs when it does not
 simply pass:**
