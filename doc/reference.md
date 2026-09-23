@@ -139,7 +139,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 15 chains, 17 steps
+## upcaster — 10 chains, 13 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -154,8 +154,22 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `WorkItemBlocked` | 1 → 2 | `needs` and `diagnosis` (`#83`). A block could say only *what is your question*, so a `human:` gate asking for a decision and a conflict nobody had looked at were the same event with a different string on it. Both null on a v1: the upcaster is handed a payload rather than a stream, and the question's wording is a convention of the three call sites and not a field |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
-| `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `GatePoint`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
-| `GatePassed` | 2 → 3 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v2 pass gets `[]`, not a parse of that prose, which is untouched |
+| `PromptEdited` | 1 → 2 | `hash` and `basedOn`, when the board grew the box that writes these (`#104`). Both null: the digest could be recomputed from `text`, but *what that text hashes to now* and *what the writer put on the log* are different claims and only the second is what the field is for |
+| `FixRequested` | 1 → 2 | `of`, the `rounds` ceiling the round is counted against (`#146`). Zero, meaning *not recorded* — the ceiling is the recipe's at that moment, and the recipe is re-read from the base branch every pass |
+| `GatesResolved` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)), inside the `points` array rather than on a `gate` field. The only chain that still walks that rename: the eight other types carried it on `gate` through one shared upcaster, and `#227` deleted it with the five-name enum |
+| `GatesResolved` | 2 → 3 | `recipe`, the canonical recipe `configHash` is the hash of ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)). The step adds **nothing** — absent, not null and not `{}`, which is what a reader already handles for a run with no `GatesResolved` at all |
+| `GatePassed` | 1 → 2 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. An earlier pass gets `[]`, not a parse of that prose, which is untouched |
+
+**Eight gate and approval types left this table with `#227`.**
+`GateRequested`, `GateStarted`, `GateFailed`, `GateWaived`, `ApprovalRequested`,
+`ApprovalGranted` and `ApprovalRevoked` — and `GatePassed`'s first step — were at
+2 for 0018's rename, sharing one `gatePointRenamed` upcaster. That upcaster's
+subject is gone: those payloads name `Step`, and
+[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 spends this log rather
+than carrying it across the five-to-ten change, so no stored row spells a step
+`diff` for it to walk. The eight went back to version 1 with it — a version that
+counts a step this build does not have is a version nothing can be read at, and
+`upcast.test.ts`'s chain invariant is what says so.
 
 Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
 `packages/domain/src/events.ts`; everything absent from it is 1.
@@ -197,7 +211,7 @@ Lingtai never decided which issues exist ([ADR 0012](decisions/0012-one-task-vie
 
 ## policy — every number that decides behaviour
 
-Every other section counts a **kind**: event types, gate points, doctor checks,
+Every other section counts a **kind**: event types, steps, doctor checks,
 tiers. This one lists **limits** — the numbers that decide what a run is told,
 what it may spend and how long a card survives. Nothing here names a thing; each
 row is a rule, and until [0029](decisions/0029-the-prompt-budget-is-the-recipes.md)
@@ -415,31 +429,58 @@ process startup alone was 17ms.
 **Four tools count as mutations** (`hook-socket.ts`), and only these produce
 `RunTouchedFile`: `Write` · `Edit` · `MultiEdit` · `NotebookEdit`.
 
-## gate point — 5, closed forever
+## step — 10, closed
 
-A gate is a **place in the loop**, not a kind of check. The set may never grow.
-Source: `GatePoint` and `GATE_POINTS` in `packages/domain/src/events.ts`.
+A step is a **place in a pass**, not a kind of check. The sequence is fixed and
+the set may never grow ([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §1, §3).
+Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 
-| Point | When | May refuse? |
+| Step | When | May refuse? |
 |---|---|---|
-| `admit` | the queue offers an item, before it is claimed | nothing runs here — see the matrix below |
+| `claim` | the ticket is picked | no |
+| `admit` | the queue offers an item, before it is claimed; the worktree is cut here | nothing runs here — see the matrix below |
 | `prepared` | after the worktree exists, before the agent starts | yes |
-| `proposed` | the agent stopped and there are commits — a change has been proposed | yes |
+| `design` | a document, before any code — or nothing, which is an answer | no |
+| `implement` | one agent, in that worktree | no |
+| `build` | the change is compiled and the suite is run | yes |
+| `review` | reads the diff and returns findings; judges nothing | no |
+| `proposed` | the agent stopped and there are commits — a change has been proposed. The only step that routes | yes |
 | `merge` | after `proposed` passes, before the merge lane | yes |
 | `end` | the work item reached any terminal outcome | **no** |
 
-`prepared` and `proposed` run the recipe's actions; `merge` holds when a `human`
-action asks or when `--no-merge` does; `end` runs too, its actions being effects
-rather than verdicts. The conductor calls GitHub and appends the outcome; what
-did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
-durability is convergence here, not a queue.
+**Five of the ten carry gate actions today**, and they are `GATE_STEPS` in the
+same file — `admit`, `prepared`, `proposed`, `merge`, `end`, the keys a recipe's
+`gates:` map may name. `prepared` and `proposed` run the recipe's actions;
+`merge` holds when a `human` action asks or when `--no-merge` does; `end` runs
+too, its actions being effects rather than verdicts. The conductor calls GitHub
+and appends the outcome; what did not land, `reconcile` converges
+([0022](decisions/0022-the-seams.md)) — durability is convergence here, not a
+queue.
+
+`claim`, `design`, `implement`, `build` and `review` run, and nothing configures
+them yet: `gates:` has no key for them, so they resolve to `[]` and read
+`skipped` everywhere the plan is drawn. `GATE_STEPS` is temporary for exactly
+that reason and goes when `gates:` becomes `steps:` — ten keys, each a list of
+plugins ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §1).
+
 `admit` is empty here and empty everywhere: nothing constructs a pipeline for
 it, so an action declared there is refused when the recipe resolves rather than
-accepted and skipped (`#61`). It stays one of the five — the closed set is about
-the places in the loop, not about what is built today.
+accepted and skipped (`#61`). It stays one of the ten — the closed set is about
+the places in a pass, not about what is built today.
 
-`proposed` was called `diff` until
-[0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
+Four steps may refuse — `prepared`, `build`, `proposed`, `merge` — and every
+refusal arrives at `proposed`, which is the one that routes. `end` is the one
+that cannot: nothing can be stopped once a merge has landed.
+
+There were five of these until `#227`, named `GatePoint` and `GATE_POINTS`, and
+`claim`, `design`, `implement`, `build` and `review` had no name in the code, the
+log or the board. The enum was replaced rather than kept beside a second one —
+two vocabularies for one thing is worse than one vocabulary for half of it
+([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §Context).
+
+`proposed` was called `diff` until [0018](decisions/0018-the-proposed-point.md).
+Only `GatesResolved` still walks that rename on read; the eight other types that
+carried it went back to version 1 with the log `#227` spent.
 
 ## gate action — 6 keys, of which 4 produce a verdict
 

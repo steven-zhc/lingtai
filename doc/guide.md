@@ -141,8 +141,9 @@ scoped too large — a megabyte produces a worse review, not a better one."*
 
 ## Gate what has failed here, and delete the gate that never fails
 
-Five points, closed forever — `admit`, `prepared`, `proposed`, `merge`, `end`
-([reference](reference.md#gate-point--5-closed-forever)). Six action kinds, of
+Ten steps, closed, of which five carry a recipe's gate actions — `admit`,
+`prepared`, `proposed`, `merge`, `end`
+([reference](reference.md#step--10-closed)). Six action kinds, of
 which four produce a verdict
 ([reference](reference.md#gate-action--6-keys-of-which-4-produce-a-verdict)).
 The design question a repository actually faces is not which points exist; it is

@@ -77,20 +77,32 @@ function segTitle(p: PointProgress): string {
 }
 
 /**
- * The five gate steps, in pass order, as a bar.
+ * The steps of a pass, in pass order, as a bar.
  *
- * **All five, always.** A step that is merely omitted is indistinguishable
- * from one that was configured and silently did not run, and only the second of
- * those is Lingtai's bug (0016 §4).
+ * **Nothing that has anything to say is omitted.** A step that is merely left
+ * out is indistinguishable from one that was configured and silently did not
+ * run, and only the second of those is Lingtai's bug (0016 §4).
  *
- * **Five of the fold's ten, and that is this file's decision rather than the
- * fold's** (#227). `foldProgress` folds every step `GatesResolved` records —
- * ten since 0058 §5 — and this bar draws the five that carry gate actions,
- * because the other five say `skipped` on every card there has ever been and
- * because ten names do not fit: `.segs` is `repeat(5, …)` inside a 22rem card,
- * and the CSS test below measures the longest label against the column it gets.
- * Drawing the pass as ten is 0058's *the rail can line up before any of this is
- * built*, and it is a card redesign rather than a rename.
+ * **The five gate steps always, plus anything else in a state** (#227).
+ * `foldProgress` folds every step `GatesResolved` records — ten since 0058 §5 —
+ * and drawing ten names is a card redesign rather than a rename: `.segs` is
+ * `repeat(5, …)` inside a 22rem card, and the CSS test below measures the
+ * longest label against the column it gets. So the five that carry gate actions
+ * are always drawn, and the other five are dropped **only while they are
+ * `skipped`** — which is the fold's word for *nothing is configured here*, and
+ * is what all five of them say on every card there has ever been.
+ *
+ * **The condition is the whole point, and it is 0016 §4 and not an
+ * optimisation.** A step is omitted here only when it has nothing to say;
+ * `stateOf` returns `skipped` exactly when the plan named nothing *and* the log
+ * recorded nothing, so anything that was configured — or that a stray approval
+ * landed at — keeps its place in the bar. The day `gates:` becomes `steps:`
+ * (0061 §1) and a recipe declares an action at `implement`, that step is drawn
+ * with the rest, hatched if it was configured and did not run. Filtering on the
+ * *name* instead would have dropped it silently, which is the one failure a bar
+ * of this kind may not have: a step that is merely absent is indistinguishable
+ * from one that was configured and did not run, and only the second is
+ * Lingtai's bug. The bar wraps to a second row before it lies about that.
  *
  * **One cell per action.** `prepared: [install]` draws one; `proposed` holds
  * `build` and `review` and draws two, each with its own verdict, so a point
@@ -117,7 +129,7 @@ export function Segs({
   return (
     <ol className="segs">
       {points
-        .filter((p) => (GATE_STEPS as readonly string[]).includes(p.point))
+        .filter((p) => (GATE_STEPS as readonly string[]).includes(p.point) || p.state !== "skipped")
         .map((p) => (
           <li key={p.point} className={`seg s-${p.state}`} title={segTitle(p)}>
             <span className="sbar">

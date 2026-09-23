@@ -48,8 +48,15 @@ import type { GatePlan } from "@lingtai/conductor/filter";
  *
  * `skipped` is a state and not an absence (ADR 0016 §4): a step nobody
  * configured does not run, which is the user's decision, and a step that was
- * configured and did not run is Lingtai's bug. Only showing all ten keeps them
- * apart. `pending` is the honest third thing — configured, not reached yet.
+ * configured and did not run is Lingtai's bug. `pending` is the honest third
+ * thing — configured, not reached yet.
+ *
+ * **What keeps them apart is that nothing but `skipped` may be omitted**, and
+ * that is a rule about the surfaces rather than about this fold. This fold
+ * returns all ten, always. `Segs` in `rail.tsx` is the one that draws them, and
+ * it drops a step only where this file has said `skipped` — so a step that is
+ * missing from a bar is provably one the plan named nothing at, and every step
+ * that was configured is on it whether or not it is one of `GATE_STEPS`.
  */
 export type PointState =
   | "skipped"

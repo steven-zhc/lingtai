@@ -130,7 +130,7 @@ mark for *configured and did not run*, or that state renders as something it is
 not — which is the failure `0016 §4` names. It reached `lingtai doctor` as a FAIL
 naming `#49`, `#53` and `#55` at the merge point and reached the board as nothing
 at all. It costs no projection: `foldProgress` now makes
-`landedWithoutGatePoints`'s own comparison, and the same one rather than a
+`landedWithoutSteps`'s own comparison, and the same one rather than a
 looser one, because this mark accuses Lingtai and a false one is worse than
 none. All three halves of it:
 

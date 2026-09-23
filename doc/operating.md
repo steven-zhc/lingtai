@@ -1356,7 +1356,7 @@ read and judged unrelated — is one you meet at a prompt, not in a browser
 on the run's current head can be named, whatever it says — including one left
 `running` by a run that gave up on it, which nothing else will ever answer — and
 so can any gate the run planned and never reported, which is how a
-`landedWithoutGatePoints` failure in `lingtai doctor` is closed. A name that is
+`landedWithoutSteps` failure in `lingtai doctor` is closed. A name that is
 neither is refused by listing the gates there are. `--reason` is required and is
 never filled in for you: *recorded, never silent* is the whole of what makes a
 waiver acceptable. It appends the same `GateWaived` `approve --note` does,

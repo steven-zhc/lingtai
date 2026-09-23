@@ -832,6 +832,72 @@ describe("the hatch, and what may not draw it", () => {
       "pending",
     ]);
   });
+
+  /**
+   * **The hatch at a step `gates:` has no key for**, which is the case a
+   * name-based filter on the bar would have lost in silence (#227).
+   *
+   * `GatesResolved` records all ten steps and `foldProgress` folds all ten, so
+   * this state is reachable from the log today; 0061 §1 makes it reachable from
+   * a recipe the day `gates:` becomes `steps:`. Either way the rule is 0016 §4
+   * and it does not care which five the recipe can name: a step that was
+   * configured and did not run must be **on** the bar wearing the hatch,
+   * because a step that is merely missing from it reads as one nobody
+   * configured — and only the first of those is Lingtai's bug.
+   */
+  const IMPLEMENT_PLAN: GatePlan = new Map([...PLAN, ["implement", [{ name: "design", budgetMs: null }]]]);
+
+  function landedPastImplement(): Envelope[] {
+    seq = 0n;
+    return [
+      at("2026-09-15T17:12:30Z", "RunStarted", {
+        workItemId: "wi-lingtai-227",
+        invocation: {
+          command: "claude",
+          args: [],
+          tier: "guarded",
+          limits: { turns: 150, wallMs: 3_600_000 },
+        },
+      }),
+      resolved(IMPLEMENT_PLAN),
+      at("2026-09-15T17:20:42Z", "RunFinished", {
+        exitCode: 0,
+        turns: 25,
+        durationMs: 492_000,
+        costUsd: 1.46,
+      }),
+    ];
+  }
+
+  it("draws a step outside GATE_STEPS that was configured and did not run", () => {
+    const over = foldProgress(landedPastImplement(), IMPLEMENT_PLAN, true);
+    expect(over?.points.find((p) => p.point === "implement")?.state).toBe("never-ran");
+
+    const html = render({ state: "landed" }, landedPastImplement(), IMPLEMENT_PLAN, true);
+
+    // The five, plus `implement` — in pass order, so it sits after `prepared`.
+    expect(labels(html).map(([, name]) => name)).toEqual([
+      "admit",
+      "prepared",
+      "implement",
+      "proposed",
+      "merge",
+      "end",
+    ]);
+    expect(segments(html)[2]).toBe("never-ran");
+  });
+
+  /**
+   * And the other half of the same rule: a step nothing is configured at is
+   * `skipped`, which is the one state the bar may leave out — the five that
+   * `gates:` cannot name say it on every card there has ever been, and drawing
+   * ten names is a card redesign rather than a rename (`.segs` is `repeat(5,…)`).
+   */
+  it("leaves out the five that say nothing, and only those", () => {
+    const html = render({ state: "landed" }, landedPastMerge(), MERGE_PLAN, true);
+
+    expect(labels(html).map(([, name]) => name)).toEqual([...GATE_STEPS]);
+  });
 });
 
 // --- what a lane costs, and what it says -----------------------------------
