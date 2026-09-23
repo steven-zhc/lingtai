@@ -1,6 +1,8 @@
 # The pipeline — the design, the roadmap and the tickets
 
-**Status** design agreed, implementation not started · 2026-09-22 ·
+**Status** design settled, implementation started · 2026-09-22, revised 09-23 ·
+**#224 and #225 have landed** — the suite is split and the `build` gate runs
+`unit` ·
 **Decisions** [0058](../decisions/0058-lingtai-is-a-development-pipeline.md)
 (ten steps, everything that acts is a plugin) ·
 [0060](../decisions/0060-the-gate-runs-unit-tests.md) (the gate runs unit
@@ -95,7 +97,7 @@ and it is why the list below is shorter than the one a migration needs.**
 0   decide       T0b  the v2 recipe, written out                 ← the target
 
 1   vocabulary   T1   Step replaces GatePoint
-                 T2   the ten plugins, as one interface
+                 T2   the eleven plugins, as one interface
                  T3   the recipe is `steps:`                     (0061)
 
 2   the pass     T4a  pass.ts — the skeleton and the steps that cannot refuse
@@ -157,12 +159,12 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T2** | The ten plugins, as one interface |
+| **T2** | The eleven plugins, as one interface |
 | kind | `tech-debt` |
 | blocked by | T1 |
-| what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `merge:` behind one contract, with the universal keys the workflow enforces on any of them (`timeout`, and `rounds`/`restarts` at `proposed`), with the step × plugin matrix and its refusal ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
-| also | **The matrix goes from thirty cells to a hundred, and two things carry it.** [0059](../decisions/0059-a-point-carries-only-the-kinds-it-runs.md) §5 put the table in `doc/reference.md` and made `packages/conductor/unit/gate-matrix.test.ts` walk all thirty cells, comparing the document to `KINDS_AT` cell for cell. Ten steps against ten plugins is a hundred, and **both the document and that test grow with this ticket** — 0059's rule was that the document cannot drift from the code without a red test, and this is where that rule is either kept or quietly dropped. |
-| watch out | **Each plugin owns its own schema and its own validation, and the core calls it at resolve time** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9) — one source of truth, no second documentation block, `env:` a field in the plugin's schema rather than a universal key, `no_log` on any secret field, and **every problem reported in one answer** rather than the first one found. Four of the ten are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim`, `judge:` is `buyRound`'s decision, with `passCeiling`'s counting left to the workflow, `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. |
+| what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `backlog:` `merge:` behind one contract, with the universal keys the workflow enforces on any of them (`timeout`, and `rounds`/`restarts` at `proposed`), with the step × plugin matrix and its refusal ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
+| also | **The matrix goes from thirty cells to a hundred, and two things carry it.** [0059](../decisions/0059-a-point-carries-only-the-kinds-it-runs.md) §5 put the table in `doc/reference.md` and made `packages/conductor/unit/gate-matrix.test.ts` walk all thirty cells, comparing the document to `KINDS_AT` cell for cell. Ten steps against eleven plugins is a hundred and ten, and **both the document and that test grow with this ticket** — 0059's rule was that the document cannot drift from the code without a red test, and this is where that rule is either kept or quietly dropped. |
+| watch out | **Each plugin owns its own schema and its own validation, and the core calls it at resolve time** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9) — one source of truth, no second documentation block, `env:` a field in the plugin's schema rather than a universal key, `no_log` on any secret field, and **every problem reported in one answer** rather than the first one found. Four of the ten are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim`, `judge:` is `buyRound`'s decision with `passCeiling`'s counting left to the workflow, and `backlog:` is `acceptFinding` (#137), `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. |
 
 | | |
 |---|---|
@@ -179,7 +181,8 @@ value rather than declaring it again.*
 | **T4a** | `pass.ts` — the skeleton, and the steps that cannot refuse |
 | kind | `tech-debt` |
 | blocked by | T3 |
-| what | The ten steps as data, driven by the recipe, **in a new file beside `run-once.ts`, wired to nothing.** This ticket does `claim`, `admit`, `prepared`, `implement`, `end`. |
+| what | The ten steps as data, driven by the recipe, **in a new file beside `run-once.ts`, wired to nothing.** This ticket does `claim`, `admit`, `prepared`, `design`, `implement`, `end`. |
+| watch out | **`design` may return an empty document and that is not a failure** — `implement` is handed the issue's own text and the design, and works from the issue when the design is empty, which is what every pass does today ([0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3). No conditional step, no skip. And **`prepared` refuses** — a failed install is the cheapest refusal in the pass, and it reports to `proposed` like the rest. |
 | watch out | Nothing calls it yet, so it lands on its own tests. That is deliberate: **a reviewer reads it against the ADR rather than against a diff**, which is the one reading a cold reviewer is good at. |
 
 | | |
@@ -189,6 +192,7 @@ value rather than declaring it again.*
 | blocked by | T4a |
 | what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: **one `judge:` per `when:`**, each choosing from the set the workflow offers it — only the `findings` direction is a judgement worth an agent, the mechanical ones are built in; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
 | evidence | `build` first **not because it is quick** — median 313s against review's 149s — but because it spends no tokens where a review spends an agent. `review` stops judging because **10% of its refusals in 14 days carried no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md)). `merge` reports rather than decides because over the whole log it has refused 32 times: **26 `gate-failed`, 6 `conflict`** — the common failure is that somebody else's work landed and the diff stopped being true. |
+| watch out | **The set of steps the workflow offers the judge depends on how far the pass got, not only on what is left to spend** — `prepared`'s refusal happens before any agent has run, so `implement` is not on offer there and a judge that knows nothing about `prepared` still cannot choose wrongly. A judge answers *which of these*, never *what is legal*. And the edge back to `claim` is a **requeue**: the item is released and a higher-priority ticket opened in the meantime goes first. |
 | watch out | **Every path into `end` must have been through `build` and `review`**, which is what the edge from `merge` back to `build` buys: an agent that resolves a conflict writes code *after* the review passed. And the intent conflict is the row an agent must not take — two changes that edited the same decision differently produce text an agent can merge and an intent it cannot know. |
 
 | | |
@@ -243,14 +247,20 @@ value rather than declaring it again.*
 
 ### Independent — the gate's contents ([0060](../decisions/0060-the-gate-runs-unit-tests.md))
 
-Neither of these blocks or is blocked by anything above. They can run at any
-point, and the earlier the better: **they are what makes a red at `build` mean
-the diff is wrong**, which every ticket above is then graded by.
+Neither of these blocks or is blocked by anything above, and the first is done.
+They were worth doing first for a reason the rest of this plan depends on:
+**they are what makes a red at `build` mean the diff is wrong**, which every
+ticket above is then graded by.
+
+**T10 landed on 2026-09-23.** `pnpm test` is now `vitest run --project unit`
+and `pnpm test:integration` its other half, one process over every package —
+so [#222](https://github.com/steven-zhc/lingtai/issues/222)'s first-failure
+bail has nothing left to bail from.
 
 | | |
 |---|---|
 | **T10** | A root vitest config, with `unit` and `integration` projects |
-| kind | `tech-debt` |
+| kind | `tech-debt` · **landed 2026-09-23 as [#225](https://github.com/steven-zhc/lingtai/issues/225)**, after [#224](https://github.com/steven-zhc/lingtai/issues/224) |
 | what | Twenty `vitest*.config.ts` files and no root config become one root config with two projects. The 44 files that leave the system move to `integration`; `pure/` becomes `unit/`. **Closes [#222](https://github.com/steven-zhc/lingtai/issues/222)** — one vitest run over every project reports every project, so there is no first-failure bail to be silent about. |
 | watch out | **A tag does not stop a file being imported** — measured: a file whose every test is `@integration`, run under `--tagsFilter '@unit'`, still threw from module scope and still failed the run. Projects and include globs do the file-level split; tags are for the mixed file. And the `build` command lives in `~/.lingtai/lingtai/recipe.yml`, **outside every worktree, so an agent cannot change it** — a person does. |
 
@@ -269,7 +279,7 @@ the diff is wrong**, which every ticket above is then graded by.
 - [ ] `run-once.ts` does not exist
 - [ ] The board's rail shows which of the ten steps a run is in, during a fix round included
 - [ ] `rounds` is readable on `implement` and `restarts` on `claim` — the step each bounds — and no replaced `judge:` can widen either
-- [ ] A red at `build` is a claim about the diff — no test in it leaves the system
+- [x] A red at `build` is a claim about the diff — no test in it leaves the system *(#225)*
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`
 - [ ] A plugin a step cannot run is refused when the recipe resolves, by name
