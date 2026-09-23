@@ -229,9 +229,9 @@ flowchart TB
   BU -->|"red — review is never paid for a diff that will not compile"| PO
   RV --> PO
   PO -->|"pass"| MG
-  MG --> EN
-  MG -->|"conflict · the base changed under it"| PO
+  MG -->|"merged — the base came in, it verified,<br/>and it went out"| EN
   MG -->|"a conflict the agent resolved<br/>is a new diff"| BU
+  MG -->|"the base came in and the change no longer<br/>holds · a conflict nobody resolved"| PO
 
   PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
   PO -->|"the approach is wrong — requeued<br/>× restarts — a fresh pass, and<br/>another ticket may go first"| CL
@@ -245,6 +245,28 @@ flowchart TB
   class PR,BU,PO,MG gate;
   class CL,AD,DS,IM,RV,EN core;
   class WA back;
+```
+
+**`merge` has three ways out and they are not degrees of the same thing.** The
+lane merges the base in, verifies, and merges out
+([`integrate.ts`](../../packages/repo/src/integrate.ts)), so:
+
+```
+merged                     → end       a base that moved is ordinary: it came in,
+                                       it verified, it went out
+a conflict an agent resolved → build   new code, written after review passed
+anything else              → proposed  and only proposed may send it to a person
+```
+
+**The third arrow carries two things and neither of them is the other**, which
+an earlier label got wrong by writing them as one:
+
+```
+26 / 32   the base came in and the change no longer holds
+          — a clean textual merge whose verify then failed. There is no
+            conflict marker to look at; it wants an ordinary round against
+            the new base
+ 6 / 32   git could not merge it
 ```
 
 **Every path into `end` has been through `build` and `review`.** That is the
@@ -337,7 +359,7 @@ it.** That is the whole of the answer to *should an agent resolve the conflict*:
 
 | `reason` | share | where `proposed` sends it |
 |---|---|---|
-| `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round |
+| `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round — **and the name is the misleading half**: nothing conflicted, a gate the lane re-ran after merging the base in went red |
 | `conflict`, text | 6 / 32 | resolved, then **back through `build` and `review`** — see below |
 | `conflict`, intent | — | `waiting`, carrying what each side changed |
 | `needs-input` | from `admit`, `design` or `implement` | the judge's call: `waiting` with the question, or that step again with *state your assumption* |
