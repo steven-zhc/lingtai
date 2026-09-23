@@ -36,7 +36,7 @@ describe("the files a watch is shown", () => {
     await git("init", "-q", "-b", "main");
     // Rename detection on, and said so: a user's `diff.renames` must not decide it.
     await git("config", "diff.renames", "true");
-    await mkdir(join(dir, "packages/actions/test"), { recursive: true });
+    await mkdir(join(dir, "packages/actions/unit"), { recursive: true });
     await writeFile(
       join(dir, "packages/actions/unit/tamper-watch.test.ts"),
       Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"),
