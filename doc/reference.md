@@ -487,6 +487,162 @@ Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
 
+## retired name — 4 words, and an allowlist that may only shrink
+
+**This is the one section that describes code the repository is still moving
+away from.** Everything else here says what is true; this says what is *not* and
+has not finished being untrue. The pipeline epic
+([the-pipeline](design/the-pipeline.md)) renames the vocabulary over several
+tickets, and a rename spread over several tickets ends as two vocabularies for
+one thing unless something counts — which is
+[0058](decisions/0058-lingtai-is-a-development-pipeline.md) §Context's own
+defect. `packages/domain/unit/retired-names.test.ts` reads both tables below out
+of this file and holds the code to them.
+
+### the words
+
+Matched as **whole words inside a token**, never as substrings — so `checkpoint`,
+`checkpoints`, `pointer` and `pointed` are untouched, because none of them
+splits into a word that is on this list. That is the whole reason this is a list
+of words rather than a regex over `point`.
+
+| retired | current | decided by |
+|---|---|---|
+| `gate` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `gates` | `steps` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §1 — *`gates:` is gone, not renamed, replaced* |
+| `point` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `points` | `steps` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+
+And two tokens whose replacement is **not** the word substitution, so a renamer
+reading the four rows above would get them wrong. Both are already caught by
+`gate`; these rows say what to put in their place:
+
+| retired | current | decided by |
+|---|---|---|
+| `GatePoint` | `Step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3, landed as `#227` |
+| `GateAction` | `Plugin` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §2 — a step is a list of plugins, and the plugin is the key |
+
+**Where it is enforced:** every `.ts` and `.tsx` under `{apps,packages}/*/src/`
+— identifiers, types, event types, recipe keys, and the strings and JSX a person
+reads: the board's copy, a refusal's text, `lingtai`'s output.
+
+**Where it is not:** comments, and everything under `doc/`. A comment or a
+document describing *history* keeps the name that history happened under —
+[0018](decisions/0018-the-proposed-point.md) records that the point called
+`diff` became `proposed`, and
+[0059](decisions/0059-a-point-carries-only-the-kinds-it-runs.md) says *`#58` was
+that bug at `merge`*; both are correct and both must keep their words. Nothing
+mechanical can tell a comment about the past from a comment about the present,
+so the test reads neither. **A comment describing what the code does now takes
+the new name** — that rule is a reviewer's, not a test's.
+
+### not the retired name
+
+Two tokens contain one of the four words and mean something else. Each is
+exempt by name, reviewed once, rather than by a pattern that would exempt more
+than it was shown:
+
+| token | what it is |
+|---|---|
+| `pointShim` | *point the shim at a version* — the English verb, in `apps/cli/src/install.ts`. Nothing to do with a step |
+| `entryPoints` | esbuild's own option in `apps/release/src/build.ts`. Not ours to rename |
+
+`checkpoint`, `checkpoints`, `pointer` and `pointed` are **not on this list and
+do not need to be** — whole-word matching never reaches inside them. They are
+what a substring ban on `point` would have destroyed: 55, 34, 17 and 29
+occurrences of the projector's own vocabulary.
+
+### the allowlist
+
+**345 entries in 77 files, counted 2026-09-23.** That count is a ceiling the
+test refuses to let grow, and the rest of the epic empties the table: a ticket
+that renames its area deletes its rows, and needs no ceremony to do it. A
+ticket that *adds* a row is widening the debt and gets a red test instead.
+
+Each row is one file and every retired token still in it. The test computes the
+same set from `src/` and asserts it is exactly this — so a row that has been
+renamed away is as red as a name that has appeared.
+
+| file | retired names in it |
+|---|---|
+| `apps/board/src/app/backlog/page.tsx` | `gate` |
+| `apps/board/src/app/evidence.tsx` | `GateEvidence` · `gate` · `gates` |
+| `apps/board/src/app/page.tsx` | `Gates` · `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` · `point` · `points` |
+| `apps/board/src/app/rail.tsx` | `PointProgress` · `PointState` · `point` · `pointOf` · `points` |
+| `apps/board/src/app/recipe/[project]/page.tsx` | `gates` |
+| `apps/board/src/app/setup/wizard/finish.ts` | `wholeGates` |
+| `apps/board/src/app/setup/wizard/wizard.tsx` | `gates` |
+| `apps/board/src/app/spend/page.tsx` | `gate` · `point` |
+| `apps/board/src/app/standing.tsx` | `gate` |
+| `apps/board/src/app/task/[id]/page.tsx` | `GatesResolved` · `gate` · `gates` · `point` · `points` |
+| `apps/board/src/lib/board.ts` | `GatePlan` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
+| `apps/board/src/lib/history.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gateAt` · `points` |
+| `apps/board/src/lib/progress.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GatePlan` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `PointProgress` · `PointState` · `gate` · `point` · `pointOf` · `points` |
+| `apps/board/src/lib/queued.ts` | `GatePlan` · `PlannedPoint` · `point` · `points` |
+| `apps/board/src/lib/recipe.ts` | `GateAction` · `GatesResolved` · `gates` · `point` · `points` |
+| `apps/board/src/lib/task.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GatePlan` · `GateRequested` · `GateStarted` · `GateVerdict` · `GateWaived` · `GatesResolved` · `gate` · `gates` |
+| `apps/cli/src/backlog.ts` | `gate` |
+| `apps/cli/src/conduct.ts` | `gate` |
+| `apps/cli/src/doctor.ts` | `GatesResolved` · `endPointRan` · `gate` · `gates` · `point` · `points` |
+| `apps/cli/src/end.ts` | `gates` |
+| `apps/cli/src/install.ts` | `points` |
+| `apps/cli/src/lingtai.ts` | `gate` · `gates` · `point` |
+| `apps/cli/src/restart.ts` | `gates` |
+| `apps/cli/src/service.ts` | `gates` · `point` |
+| `apps/cli/src/status.ts` | `gates` |
+| `apps/site/src/app/snapshot-board.tsx` | `gates` |
+| `apps/site/src/lib/snapshot.ts` | `gates` |
+| `packages/actions/src/agent-gate.ts` | `AgentGateDeps` · `AgentGateSpec` · `Gate` · `GateContext` · `GateFinding` · `GateResult` · `createAgentGate` · `gate` · `point` |
+| `packages/actions/src/from-recipe.ts` | `AgentGateDeps` · `Gate` · `GateAction` · `GateActionUnavailableError` · `GateDeps` · `WatchGateDeps` · `createAgentGate` · `createHumanGate` · `createProcessGate` · `createWatchGate` · `gate` · `gates` · `gatesFromRecipe` · `point` · `wrongPoint` |
+| `packages/actions/src/gate.ts` | `Gate` · `GateContext` · `GateDidNotFinish` · `GateEvent` · `GateFailed` · `GateFinding` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateResult` · `GateStarted` · `GateVerdict` · `gate` · `gates` · `point` · `runGatePipeline` |
+| `packages/actions/src/human-gate.ts` | `Gate` · `GateContext` · `GateResult` · `HumanGateSpec` · `createHumanGate` · `gate` |
+| `packages/actions/src/index.ts` | `AgentGateDeps` · `AgentGateSpec` · `Gate` · `GateActionUnavailableError` · `GateContext` · `GateDeps` · `GateEvent` · `GateFinding` · `GateResult` · `GateVerdict` · `HumanGateSpec` · `ProcessGateSpec` · `WatchGateDeps` · `WatchGateSpec` · `createAgentGate` · `createHumanGate` · `createProcessGate` · `createWatchGate` · `gate` · `gatesFromRecipe` · `runGatePipeline` |
+| `packages/actions/src/process-gate.ts` | `Gate` · `GateContext` · `GateResult` · `ProcessGateSpec` · `createProcessGate` · `gate` |
+| `packages/actions/src/watch-gate.ts` | `Gate` · `GateContext` · `GateResult` · `WatchGateDeps` · `WatchGateSpec` · `createWatchGate` · `gate` · `gates` |
+| `packages/conductor/src/approve.ts` | `GateAction` · `GateWaived` · `GatesResolved` · `gate` · `gates` · `gatesPassed` · `point` · `points` · `splitGate` |
+| `packages/conductor/src/attempts.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateStarted` · `GateWaived` · `gate` |
+| `packages/conductor/src/attribution.ts` | `gate` |
+| `packages/conductor/src/backlog.ts` | `gate` |
+| `packages/conductor/src/close.ts` | `GateAction` · `gates` · `point` |
+| `packages/conductor/src/create-app.ts` | `point` |
+| `packages/conductor/src/end-point.ts` | `GateAction` |
+| `packages/conductor/src/filter.ts` | `GatePlan` · `gatePlan` · `gates` · `point` |
+| `packages/conductor/src/fix.ts` | `GateFinding` · `gates` · `point` |
+| `packages/conductor/src/gate-audit.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `gate` · `point` · `points` |
+| `packages/conductor/src/gates-resolved.ts` | `gate` · `gates` · `gatesResolved` · `points` |
+| `packages/conductor/src/index.ts` | `GatePlan` · `gate` · `gatePlan` · `point` |
+| `packages/conductor/src/labels.ts` | `gates` |
+| `packages/conductor/src/never-started.ts` | `gate` |
+| `packages/conductor/src/onboard.ts` | `gates` · `point` |
+| `packages/conductor/src/run-once.ts` | `GateFinding` · `GatesResolved` · `gate` · `gateDeps` · `gateDetail` · `gateDidNotFinish` · `gates` · `gatesFromRecipe` · `gatesPassed` · `gatesResolved` · `gitForGates` · `point` · `runGatePipeline` |
+| `packages/conductor/src/schedule.ts` | `gate` |
+| `packages/conductor/src/wizard-page.ts` | `GateAction` · `gates` · `wholeGates` |
+| `packages/conductor/src/wizard.ts` | `gates` |
+| `packages/daemon/src/control.ts` | `gates` |
+| `packages/daemon/src/converge.ts` | `point` |
+| `packages/domain/src/backlog.ts` | `gate` |
+| `packages/domain/src/events.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gateBase` · `points` |
+| `packages/domain/src/run.ts` | `GateDidNotFinish` · `GateFailed` · `GateFinding` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateState` · `GateVerdict` · `GateWaived` · `gate` · `gates` · `gatesOn` · `withGate` |
+| `packages/domain/src/streams.ts` | `gates` |
+| `packages/domain/src/upcast.ts` | `GateFailed` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gatePointRenamed` · `points` |
+| `packages/env/src/colour.ts` | `gates` |
+| `packages/env/src/index.ts` | `Point` |
+| `packages/event-store/src/index.ts` | `PointNeverRan` |
+| `packages/event-store/src/log.ts` | `PointNeverRan` |
+| `packages/event-store/src/queries.ts` | `GatesResolved` · `PointNeverRan` · `gate` · `point` · `points` |
+| `packages/event-store/src/sqlite.ts` | `GatesResolved` · `gate` · `point` · `points` |
+| `packages/projector/src/backlog.ts` | `GatePassed` · `gate` |
+| `packages/projector/src/postgres.ts` | `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
+| `packages/projector/src/sqlite.ts` | `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
+| `packages/projector/src/task-view.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateWaived` · `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` · `point` · `setGate` |
+| `packages/recipe/src/local.ts` | `gates` · `gatesRefusal` · `point` |
+| `packages/recipe/src/presets.ts` | `gates` |
+| `packages/recipe/src/propose.ts` | `gates` |
+| `packages/recipe/src/recipe.ts` | `GateAction` · `GateMap` · `GatesResolved` · `gates` · `point` |
+| `packages/recipe/src/resolve.ts` | `gates` |
+| `packages/recipe/src/watch.ts` | `gate` |
+| `packages/repo/src/integrate.ts` | `gate` · `gateDetail` · `gatesPassed` |
+
 ## gate action — 6 keys, of which 4 produce a verdict
 
 What runs at a point. Source: `GateAction` and `kindOfAction` in

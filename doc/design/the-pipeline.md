@@ -113,7 +113,7 @@ and it is why the list below is shorter than the one a migration needs.**
 4   the new one  T9   design — a document, before any code
 
 —   the vocabulary, alongside:
-                 #232 the glossary, and an allowlist that may only shrink
+                 #232 the glossary, and an allowlist that may only shrink  ✓
                  #233 the allowlist is empty — the epic's last acceptance
 
 —   the gate's contents (0060), independent of all of the above:
