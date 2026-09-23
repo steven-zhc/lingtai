@@ -18,7 +18,7 @@
  * the kernel kills an unsigned binary at `exec` — status 137, no dialog, no
  * message. `codesign -s -` is an ad-hoc signature, which is all `exec` asks
  * for; a Developer ID and notarisation are for browser downloads.
- * `test/build.test.ts` builds one unsigned and asserts it is killed, so this
+ * `integration/build.test.ts` builds one unsigned and asserts it is killed, so this
  * step cannot be dropped and stay green.
  */
 import { spawnSync } from "node:child_process";

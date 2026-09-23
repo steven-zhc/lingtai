@@ -3,7 +3,7 @@
  *
  * #220 built `postgres.ts` beside `sqlite.ts` and stopped one step short on
  * purpose: *nothing in this package chooses between them.* This is that step,
- * and it is the only file under `src/` that names both — `pure/one-store.test.ts`
+ * and it is the only file under `src/` that names both — `unit/one-store.test.ts`
  * asserts there is no second one.
  *
  * **It decides nothing itself.** `@lingtai/env`'s `chosenStore()` is the one
@@ -15,7 +15,7 @@
  *
  * **The SQLite half arrives through a dynamic import**, which is why
  * `./sqlite.ts` is published at `@lingtai/daemon/sqlite`: a Postgres install
- * must never load `node:sqlite`, and `pure/the-written-choice.test.ts` holds it
+ * must never load `node:sqlite`, and `integration/the-written-choice.test.ts` holds it
  * — it opens all three stores in one Postgres process and reads
  * `process.moduleLoadList` back.
  *

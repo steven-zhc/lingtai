@@ -82,7 +82,7 @@ export interface AgentHostPort {
    * The one method whose *shape* the conversion changed. It returned a
    * `HookServer` the caller then had to `listen()` and `close()`; it now hands
    * back one already listening, and closes it when the scope closes. A fake
-   * implements the same pair, which is what lets `pure/run-once.test.ts` assert
+   * implements the same pair, which is what lets `integration/run-once-against-fakes.test.ts` assert
    * that the close happened at all.
    */
   serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>;

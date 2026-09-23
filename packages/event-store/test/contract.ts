@@ -7,12 +7,12 @@
  * notices. So the behaviours are written down here, once, and both stores are
  * run against them:
  *
- * - `test/event-store.test.ts` runs it against Postgres, where a database is
+ * - `integration/event-store.test.ts` runs it against Postgres, where a database is
  *   available. That run is what says the `UNIQUE (stream_id, version)` index
  *   really exists and really raises.
- * - `pure/memory.test.ts` runs it against `createMemoryEventStore`, where none
+ * - `unit/memory.test.ts` runs it against `createMemoryEventStore`, where none
  *   is. That run is what says the fake answers the same way.
- * - `pure/sqlite.test.ts` runs it against `createSqliteEventStore` (#178), a
+ * - `integration/sqlite.test.ts` runs it against `createSqliteEventStore` (#178), a
  *   real store in a file, where its own `UNIQUE (stream_id, version)` is what
  *   raises.
  *

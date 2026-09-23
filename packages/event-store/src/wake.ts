@@ -3,7 +3,7 @@
  *
  * `subscribe()` reads through an `EventStore` and is woken by a `Waker`, and it
  * constructs neither. A second store supplies both; `test/wake-contract.ts` is
- * what a waker is held to, and `test/subscribe.test.ts` runs it against this
+ * what a waker is held to, and `integration/subscribe.test.ts` runs it against this
  * file's Postgres implementation.
  *
  * **Which waker a subscriber gets is `log.ts`'s and not the subscriber's**

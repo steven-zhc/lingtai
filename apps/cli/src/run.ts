@@ -67,7 +67,7 @@ export interface RunOptions {
 /**
  * What `lingtai run` does under a standing pause, as `lingtai pause` and
  * `lingtai doctor` say it. One sentence in one place, and
- * `pure/run-pause.test.ts` holds it against what `run` actually does — `#159`'s
+ * `unit/run-pause.test.ts` holds it against what `run` actually does — `#159`'s
  * second attempt printed a sentence about this command that was false.
  */
 export const RUN_UNDER_A_PAUSE =

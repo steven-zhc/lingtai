@@ -144,7 +144,7 @@ export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL", from: NodeJS
  *
  * `TEST_` goes *after* the prefix: `LINGTAI_TEST_DATABASE_URL`, so the rule
  * "begins with `LINGTAI_`" has no exceptions and is therefore checkable — see
- * `test/prefix.test.ts`, which reads this file.
+ * `unit/prefix.test.ts`, which reads this file.
  *
  * **A project's own file is not covered.** `DATABASE_URL` in
  * `nextloom-ai-admin.env` stays `DATABASE_URL`, because that is what admin's
@@ -372,7 +372,7 @@ export const SQLITE_LOG = "lingtai.db";
  * and a `doctor` row, which rendered the machine `warn`. A store opens from a
  * written `sqlite` now
  * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)) —
- * `packages/daemon/pure/the-written-choice.test.ts` appends, folds
+ * `packages/daemon/integration/the-written-choice.test.ts` appends, folds
  * `task_view`, renders the board's cards and beats the beacon on one, in a
  * process where opening a socket throws — so `init` goes on to the board and
  * the row is `ok`.
@@ -705,7 +705,7 @@ export const BOARD_PORT = 17820;
  * It is reserved rather than bound because **a port with no use is a port the
  * next reader has to explain**, and the two ways that ends — inventing a
  * purpose for it, or deleting it — are both worse than a number written down.
- * `packages/env/test/board-port.test.ts` reads every package's `src` and fails
+ * `packages/env/integration/board-port.test.ts` reads every package's `src` and fails
  * if any mention of the number **or of this name** is anything but prose — an
  * import of `RESERVED_PORT` included, since importing it is the only way to
  * bind the port without writing the digits.

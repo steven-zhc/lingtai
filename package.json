@@ -12,15 +12,17 @@
     "build": "pnpm --filter @lingtai/release build",
     "binary": "pnpm --filter @lingtai/release binary",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --workspace-concurrency=1 --if-present test",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:db": "pnpm test:integration",
+    "test:all": "vitest run",
     "lingtai": "node apps/cli/src/entry.ts",
     "contract:emit": "pnpm --filter @lingtai/event-store contract:emit",
     "db:plan": "pnpm --filter @lingtai/event-store db:plan",
     "db:init": "pnpm --filter @lingtai/event-store db:init",
     "db:bootstrap": "pnpm --filter @lingtai/event-store db:bootstrap",
     "db:migrate": "pnpm --filter @lingtai/event-store db:migrate",
-    "db:verify": "pnpm --filter @lingtai/event-store db:verify",
-    "test:db": "pnpm -r --workspace-concurrency=1 --if-present test:db"
+    "db:verify": "pnpm --filter @lingtai/event-store db:verify"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

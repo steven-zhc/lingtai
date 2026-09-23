@@ -600,7 +600,7 @@ async function daemonCommand(
   // The lock, the status table, the code this process loaded, and — for a
   // restart — the refusals only a started daemon can be asked. One function for
   // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
-  // `pure/restart.test.ts` runs and not a copy of it (#167).
+  // `integration/restart.test.ts` runs and not a copy of it (#167).
   const opened = await openDaemon(restart, {
     start: () => startDaemon({ projections: PROJECTIONS, log: (line) => console.log(line) }),
     code: async () => {

@@ -7,7 +7,7 @@
  * connection string and no network between an append and the disk.
  *
  * It is held to the same two contracts Postgres is — `test/contract.ts` and
- * `test/wake-contract.ts` — by `pure/sqlite.test.ts`, which is why it can sit
+ * `test/wake-contract.ts` — by `integration/sqlite.test.ts`, which is why it can sit
  * beside the Postgres store rather than beneath it.
  *
  * What it replaces, one for one:

@@ -6,8 +6,7 @@
   "scripts": {
     "build": "node src/build.ts",
     "binary": "node src/binary.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

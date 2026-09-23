@@ -950,7 +950,7 @@ would be the one the documented fallback ignored.
 
 `17821` is **reserved and bound by nothing** — the daemon listens on nothing at
 all, and a second listener, if one is ever needed, has an obvious home instead
-of being scattered. `packages/env/test/board-port.test.ts` reads every
+of being scattered. `packages/env/integration/board-port.test.ts` reads every
 package's `src` and fails if any mention of the number, or of the
 `RESERVED_PORT` that holds it, is anything but prose.
 

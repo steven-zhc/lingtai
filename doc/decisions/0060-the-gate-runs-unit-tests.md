@@ -36,7 +36,7 @@ side of it. The directory most of the other 44 sit in is called `pure/`.
 
 ### It has already refused three diffs that were fine
 
-**`apps/cli/pure/world.test.ts`** spawns a child `node` that type-strips the
+**`apps/cli/integration/world.test.ts`** spawns a child `node` that type-strips the
 daemon's whole import graph and asserts an exit status and two lines of stdout
 — nothing about time. Its bound was vitest's 5000ms default, which nobody
 chose. Idle, the probe takes ~0.5–1.9s; under `pnpm -r` beside `apps/release`'s
@@ -46,7 +46,7 @@ then refused [#196](https://github.com/steven-zhc/lingtai/issues/196) at 5686ms
 — on a branch cut from `main` **110 seconds before** the fix that raised the
 bound was pushed. Neither diff went near that import graph.
 
-**`packages/conductor/pure/create-app.test.ts`** is red on `main` today, on
+**`packages/conductor/integration/create-app.test.ts`** is red on `main` today, on
 this machine, for a reason no diff can fix — and it is the better example of
 the two, because **the test tried**. It passes `env: {}` (`:191`), closing the
 `process.env` door by hand. It does not pass `envFile`, so

@@ -4,7 +4,7 @@
  * `@lingtai/env`'s `chosenStore()` is the only thing in the repository that
  * reads *which store*; this is the only thing that turns that answer into a
  * `Log`. Nothing else names `createPostgresLog` or `createSqliteLog` —
- * `packages/env/test/one-choice.test.ts` reads every package's sources and
+ * `packages/env/unit/one-choice.test.ts` reads every package's sources and
  * fails on a second namer, and on a second reader of `chosenStore()`.
  *
  * ## Deferred, and refused by name at first use
@@ -33,7 +33,7 @@
  *
  * `./sqlite.ts` is behind an `await import` and `@lingtai/event-store/sqlite`
  * is its subpath, so a Postgres machine never loads it — the boundary #178
- * raised, asserted by `packages/daemon/pure/the-written-choice.test.ts`, which
+ * raised, asserted by `packages/daemon/integration/the-written-choice.test.ts`, which
  * opens all three stores in one Postgres process and reads
  * `process.moduleLoadList` back.
  */

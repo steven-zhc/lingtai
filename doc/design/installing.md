@@ -364,7 +364,7 @@ is nothing to `curl`.
 needed, has an obvious home instead of being scattered. **Binding it today with
 no use would be a port the next reader has to explain**, and the two ways that
 ends — inventing a purpose, or deleting it — are both worse than an empty line
-in this table. `packages/env/test/board-port.test.ts` reads every package's
+in this table. `packages/env/integration/board-port.test.ts` reads every package's
 `src` and fails if any mention of the number, or of the `RESERVED_PORT` that
 holds it, is anything but prose — so the sentence above stays true rather than
 merely having been true.

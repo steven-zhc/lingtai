@@ -90,7 +90,7 @@ left to be found: a single-project board used to carry a bare caption and now
 carries a caption and one small tab. A list gaining its own action is not the
 same act as a fifth object arriving on a row that is glanced at while you work
 on something else — and that one still has to be argued for here.
-`apps/board/test/projects.test.tsx` holds both halves of it: *is mounted left
+`apps/board/unit/projects.test.tsx` holds both halves of it: *is mounted left
 of the rail*, and *leaves the four what they were* — because the way this
 ticket could have gone wrong was to make the `+` fit by redefining the set.
 
@@ -140,6 +140,6 @@ where a card has earned it — the `waiting` lane's own heading, an answering
 round's `pill sig` (`#84`), an open question. Cards are read one at a time and on
 purpose; the bar is glanced at while you are doing something else, and it is
 that difference, not the palette, that makes a second amber cost something here
-and nothing there. `apps/board/test/bar.test.ts` asserts the scoped version:
+and nothing there. `apps/board/unit/bar.test.ts` asserts the scoped version:
 of everything that can render inside `.bar`, exactly one selector paints with
 `--signal`, and it is the headline's.

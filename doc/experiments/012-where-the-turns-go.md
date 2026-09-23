@@ -174,7 +174,7 @@ against 21,126 turns is **~148 turns, ~$16 per landed ticket** in agent time
 §4's *10% of `review` refusals carry no findings* has a `build` counterpart, and
 it turned up twice within an hour of this being written.
 
-`apps/cli/pure/world.test.ts:100` spawns a child `node` that type-strips the
+`apps/cli/integration/world.test.ts:100` spawns a child `node` that type-strips the
 daemon's whole import graph, and asserts an exit status and two lines of stdout
 — **nothing about time**. Its bound was vitest's 5000ms default, which nobody
 chose: idle the probe takes ~0.5–1.9s. Under `pnpm -r`, beside `apps/release`'s

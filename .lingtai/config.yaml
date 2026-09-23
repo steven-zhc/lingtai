@@ -129,6 +129,19 @@ gates:
     # That is also why it could not be declared here if it wanted to be: an
     # extension may not name one of Lingtai's own.
     - name: build
+      # **`pnpm test` is the `unit` project since #225**, which is the whole of
+      # what this gate now runs and is deliberate rather than incidental: a gate
+      # is a claim about the diff, and a test that can go red for something the
+      # diff did not create is not that claim
+      # ([0060](../doc/decisions/0060-the-gate-runs-unit-tests.md)). The line is
+      # *does this exercise a dependency outside the system*, not *does this
+      # need Postgres* — so a temporary directory and a spawned `node` are on
+      # the other side of it too, and 73 of the 166 files are.
+      #
+      # **What the paragraph below says about `test:db` now applies to all of
+      # `pnpm test:integration`**, and the reason has widened with it: the
+      # network was one dependency, and there are eight.
+      #
       # **`pnpm test:db` is suspended from this gate, and that is a loss.**
       #
       # The sentence that stood here said both halves are named or the gate
@@ -284,8 +297,10 @@ gates:
     # The rest decide what `install` and `build` above actually run, so a
     # change to them is a change to the verification — `TAMPER_WATCH`'s reason:
     # every `package.json`, the lockfile and `.npmrc` (what is installed), the
-    # workspace file (which packages `pnpm -r test` visits), every `tsconfig`
-    # (what `typecheck` checks), and every vitest config (what `test` collects).
+    # workspace file (which packages the root config's globs reach), every
+    # `tsconfig` (what `typecheck` checks), and every vitest config — which
+    # since #225 is one file at the root, deciding both what `test` collects and
+    # which project it collects it into.
     #
     # What stays unwatched is what neither judges nor records a judgement:
     # `apps/site`, `doc`, `scripts`.
@@ -298,8 +313,8 @@ gates:
     # and nobody has reviewed. Here the person is asked only about a change
     # every other gate passed.
     #
-    # `packages/actions/test/tamper-watch.test.ts` reads this block, and fails if a
-    # path above stops being held.
+    # `packages/actions/unit/tamper-watch.test.ts` reads this block, and fails
+    # if a path above stops being held.
     # **`tamper` is off here, deliberately, and the block that turns it on is
     # [doc/tamper-watch.md](../doc/tamper-watch.md).**
     #
@@ -330,7 +345,7 @@ gates:
   # stopped being true the moment the block above turned `tamper` off, and the
   # two halves of this file then disagreed for as long as nobody read both. The
   # `watch:` list lives in `doc/tamper-watch.md` and
-  # `packages/actions/test/tamper-watch.test.ts` reads it from there, so the
+  # `packages/actions/unit/tamper-watch.test.ts` reads it from there, so the
   # list stays correct while it is not wired — but a list that is correct and
   # not wired holds nothing.
   merge: []
