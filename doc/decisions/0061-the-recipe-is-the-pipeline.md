@@ -163,7 +163,13 @@ proposed:
     judge: ask-or-assume
 ```
 
-`when:` is not new — `recipe.ts:137` already carries it on `end`'s two kinds.
+**`when:` is one key and its legal values are the step's.** `end` reads
+`landed | blocked | failed | closed | any` (`recipe.ts:137`) — the outcome of
+the work item. `proposed` reads the reason the last step gave. Different steps,
+different vocabularies, and a value one step does not know is refused by name
+when the recipe resolves. That needs no new machinery because it is
+[0059](0059-a-point-carries-only-the-kinds-it-runs.md)'s rule a third time:
+**the step decides what is legal at it, and the refusal is the recipe's.**
 A recipe that writes none of this gets the whole set, which is today's
 behaviour; a project that wants a different *lines-or-approach* call changes
 one entry.
@@ -393,15 +399,9 @@ holds without a line of work.
 
 ## What is not decided
 
-- **Whether `when:` is one key with a vocabulary per step, or two keys sharing
-  a name.** `end` reads `landed | blocked | failed | closed | any`
-  (`recipe.ts:137`) — the *outcome of the work item*. `proposed` reads
-  `red | findings | conflict | gate-failed | needs-input` (§3) — the *reason the
-  last step gave*. Both are "when does this entry apply" and neither value
-  means anything at the other step. Left open because the honest answer is
-  probably *one key whose legal values are the step's*, which is
-  [0059](0059-a-point-carries-only-the-kinds-it-runs.md)'s matrix again in a
-  third place, and worth settling once rather than guessing twice.
+Nothing, at the level this ADR works at. What is left is what the code decides
+when it is written — a plugin's fields are its own (§9), and the step × plugin
+matrix is filled in as each plugin lands.
 
 ## Related
 
