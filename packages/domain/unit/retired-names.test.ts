@@ -25,12 +25,22 @@
  * its own is the allowlist — the one table whose every row is checked against
  * `src/`, and whose size is checked against the sentence above it.
  *
+ * **The ledger counts occurrences, and that is the half a set cannot do.** Keyed
+ * by distinct `file · token` — which is what this shipped as — a name already
+ * recorded in a file already listed is recorded, however many more times it
+ * arrives: `export const gate = "…the gate failed"` appended to `run-once.ts`,
+ * a new identifier and a new operator-facing string, moves nothing and lands
+ * green. Every file the epic is going to touch already says `gate` or `point`
+ * once, so that hole is exactly the shape of the epic. A count closes it, and
+ * closes it in both directions at once — a use deleted is as red as a use
+ * added, which is the same equality that makes a stale row red.
+ *
  * **This ticket renames nothing.** It records what is still wrong and makes it
- * countable: every violation has a row, and **a row with nothing behind it is as
- * red as a violation with no row**. So a ticket that renames its area deletes
- * its rows and corrects one number, and a ticket that would widen the debt
- * cannot do it out of sight — the name needs a row, and the row makes that
- * number wrong until it is raised, on a line that says what it is counting.
+ * countable: every violation is counted in a row, and **a count with nothing
+ * behind it is as red as one that is short**. So a ticket that renames its area
+ * deletes its rows and corrects one number, and a ticket that would widen the
+ * debt cannot do it out of sight — the use needs a count, and the count makes
+ * that number wrong until it is raised, on a line that says what it is counting.
  * Whether it should have been raised is a reading, and belongs to the review
  * rather than to this file.
  *
@@ -40,15 +50,20 @@
  * nothing to do with a step; a substring ban on `point` — a grep, which is what
  * anybody reaches for first — destroys all four. *does not reach inside a word*
  * below is the test that says so, and it is the reason the document holds a list
- * of words rather than a regex. Three of the four are also names the **rule**
- * reads, and that test says so, because a guard that asserts a live subject over
- * text the rule never sees asserts nothing. `pointer` is not one of them today —
- * all 17 of its occurrences are comments — and **that is a fact about `src/` and
- * not a rule, so nothing asserts it either way**: `cursor: "pointer"` in a
- * component makes it live, and a guard reading *the rule sees no `pointer`* is a
- * red `build` gate on a diff that introduces no retired name. What holds for all
- * four, live or not, is that the rule does not flag them, and that is what is
- * asserted over everything `src/` hands over.
+ * of words rather than a regex.
+ *
+ * Two of the four are also names the **rule** reads in quantity — `checkpoint` 9
+ * times in 7 files, `checkpoints` 22 in 5 — and a case asserts that, because a
+ * guard that asserts a live subject over text the rule never sees asserts
+ * nothing. The other two are **not** asserted live, and that is deliberate:
+ * `pointer`'s 17 occurrences are all comments, which the rule never reads, and
+ * `pointed`'s reads are all the one local `install.ts:465` declares. **An
+ * assertion resting on a single local is a red `build` gate the day somebody
+ * renames it**, on a diff that introduces no retired name and with no action in
+ * the failure a reader could take — `cursor: "pointer"` added to a component is
+ * the same trap from the other side. What holds for all four, live or not, is
+ * that the rule does not flag them, and that is what is asserted over everything
+ * `src/` hands over.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -139,11 +154,14 @@ async function sources(): Promise<string[]> {
   return found.sort();
 }
 
+/** file → token → how many times the rule reads it there. */
+type Counted = ReadonlyMap<string, ReadonlyMap<string, number>>;
+
 /**
  * One markdown document's `## retired name` section, subsection by subsection.
  *
  * **It takes the text rather than reading the file**, so that *the ledger* below
- * can hand it a section it wrote — a row added, a row deleted, a file moved, an
+ * can hand it a section it wrote — a row added, a count raised, a file moved, an
  * empty table — and assert what each one does. A rule asserted only against
  * today's document is a rule asserted only where it already holds.
  */
@@ -175,14 +193,25 @@ function parse(doc: string) {
       .filter((cells) => !/^-+$/.test(cells[0]!) && cells[0] !== "retired" && cells[0] !== "token" && cells[0] !== "file");
   };
 
+  /** `` `gate` ×12 · `gates` ×3 `` — the count is the entry, so a cell without one is a broken row. */
+  const counts = (cell: string): Map<string, number> => {
+    const read = new Map<string, number>();
+    for (const piece of cell.split("·")) {
+      const said = /^(\S+)\s*×\s*(\d+)$/.exec(piece.trim().replace(/`/g, ""));
+      expect(said, `doc/reference.md's allowlist has "${piece.trim()}", which says no count`).not.toBeNull();
+      read.set(said![1]!, Number(said![2]));
+    }
+    return read;
+  };
+
   const glossaryRows = rows("the words");
   // The allowlist's headline sentence, which is prose and not a row, and so is
   // the one number in the section that could once say anything at all.
-  const headline = /\*\*(\d+) entries in (\d+) files/.exec(section);
+  const headline = /\*\*(\d+) occurrences in (\d+) files, counted /.exec(section);
   expect(headline, "doc/reference.md's allowlist does not say how big it is").not.toBeNull();
   return {
     /** What the section's own sentence claims the table below it comes to. */
-    headline: { entries: Number(headline![1]), files: Number(headline![2]) },
+    headline: { occurrences: Number(headline![1]), files: Number(headline![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
     /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
@@ -193,8 +222,19 @@ function parse(doc: string) {
      * same spelling in all 216 of them.
      */
     exempt: rows("not the retired name").map((r) => [r[0]!, r[1]!] as const),
-    /** file → every retired token still in it. */
-    allowlist: new Map(rows("the allowlist").map((r) => [r[0]!, r[1]!.split("·").map((t) => t.trim().replace(/`/g, ""))])),
+    /** file → token → how many times, which is the ledger itself. */
+    allowlist: new Map(rows("the allowlist").map((r) => [r[0]!, counts(r[1]!)])) as Counted,
+    /**
+     * The occurrences inside the allowlist that are the English word and not the
+     * retired term. **This excuses nothing** — every one is still counted above;
+     * the table says which counts a rename will not reach, so `#233` inherits
+     * them rather than discovering them. `1 of 2` is *one of this row's two*.
+     */
+    english: rows("ordinary English").map((r) => {
+      const said = /^(\d+) of (\d+)$/.exec(r[2]!);
+      expect(said, `doc/reference.md's English table says "${r[2]}", which is not "<n> of <n>"`).not.toBeNull();
+      return { file: r[0]!, token: r[1]!, english: Number(said![1]), of: Number(said![2]) };
+    }),
   };
 }
 
@@ -205,45 +245,58 @@ async function glossary() {
 
 /**
  * **The two ways the ledger and `src/` can disagree, and there are only two.**
- * `unrecorded` is a retired name with no row — debt that arrived without being
- * written down. `stale` is a row with nothing behind it — a rename that landed
- * and left its ledger standing, which is how *align the terms* ends as a
- * sentence everybody agrees with and the last ticket discovers is untrue.
+ * `unrecorded` is a retired name the ledger is short on — a name with no row at
+ * all, or, just as much, one more use of a name that already has one. `stale` is
+ * a count with nothing behind it — a rename that landed and left its ledger
+ * standing, which is how *align the terms* ends as a sentence everybody agrees
+ * with and the last ticket discovers is untrue.
  *
- * Both are red, and that is what makes the table the debt rather than a bound on
- * it. A file that moves shows up as one of each, naming the path to delete and
- * the path to add — two edits to the document a person is already reading, and
- * to nothing else.
+ * **Both are counted rather than set against each other**, and that is what
+ * makes the table the debt rather than a bound on it. Keyed by distinct
+ * `file · token`, a second `gate` in a file that already says `gate` is a pair
+ * already present and nothing moves — which is every file this epic will touch.
+ *
+ * A file that moves shows up as one of each, naming the path to delete and the
+ * path to add — two edits to the document a person is already reading, and to
+ * nothing else.
  */
-function disagreement(found: ReadonlyMap<string, string[]>, allowlist: ReadonlyMap<string, string[]>) {
-  const pairs = (table: ReadonlyMap<string, string[]>) =>
-    new Set([...table].flatMap(([file, ours]) => ours.map((token) => `${file} · ${token}`)));
-  const real = pairs(found);
-  const recorded = pairs(allowlist);
+function disagreement(found: Counted, allowlist: Counted) {
+  const flat = (table: Counted) =>
+    new Map([...table].flatMap(([file, ours]) => [...ours].map(([token, n]) => [`${file} · ${token}`, n] as const)));
+  const real = flat(found);
+  const recorded = flat(allowlist);
 
+  const unrecorded: string[] = [];
+  const stale: string[] = [];
+  for (const pair of new Set([...real.keys(), ...recorded.keys()])) {
+    const says = real.get(pair) ?? 0;
+    const ledger = recorded.get(pair) ?? 0;
+    if (says > ledger) unrecorded.push(`${pair} — src/ reads ${says}, the ledger says ${ledger}`);
+    else if (ledger > says) stale.push(`${pair} — src/ reads ${says}, the ledger says ${ledger}`);
+  }
+  return { unrecorded: unrecorded.sort(), stale: stale.sort() };
+}
+
+/** What a table of `file → token → count` comes to, as the document says it. */
+function size(allowlist: Counted) {
   return {
-    unrecorded: [...real].filter((pair) => !recorded.has(pair)).sort(),
-    stale: [...recorded].filter((pair) => !real.has(pair)).sort(),
+    occurrences: [...allowlist.values()].reduce((n, ours) => n + [...ours.values()].reduce((m, c) => m + c, 0), 0),
+    files: allowlist.size,
   };
 }
 
-/** What a table of `file → retired tokens` comes to, as the document says it. */
-function size(allowlist: ReadonlyMap<string, string[]>) {
-  return { entries: [...allowlist.values()].reduce((n, ours) => n + ours.length, 0), files: allowlist.size };
-}
-
-/** What `src/` actually says today: file → the retired tokens in it, sorted. */
-async function violations(g: ReturnType<typeof parse>) {
+/** What `src/` actually says today: file → token → how many times the rule reads it. */
+async function violations(g: ReturnType<typeof parse>): Promise<Counted> {
   const retired = new Set(g.retired);
   const exempt = new Set(g.exempt.map(([token, file]) => `${file} · ${token}`));
-  const found = new Map<string, string[]>();
+  const found = new Map<string, Map<string, number>>();
   for (const file of await sources()) {
-    const hit = new Set<string>();
+    const hit = new Map<string, number>();
     for (const token of tokens(await readFile(`${root}${file}`, "utf8"), file)) {
       if (exempt.has(`${file} · ${token}`)) continue;
-      if (words(token).some((w) => retired.has(w))) hit.add(token);
+      if (words(token).some((w) => retired.has(w))) hit.set(token, (hit.get(token) ?? 0) + 1);
     }
-    if (hit.size > 0) found.set(file, [...hit].sort());
+    if (hit.size > 0) found.set(file, new Map([...hit].sort(([a], [b]) => (a < b ? -1 : 1))));
   }
   return found;
 }
@@ -278,6 +331,22 @@ describe("the retired names in doc/reference.md", () => {
   });
 
   /**
+   * **And neither of them is one of the four words spelled out.** That is the
+   * property that keeps this door small, and it is worth a case of its own: a
+   * row excusing the bare token `point` in a file would excuse the step there
+   * too, and the step is what the ledger is for. It is why the nine English
+   * occurrences below are *listed* rather than excused.
+   */
+  it("excuses no token that is itself one of the four words", async () => {
+    const g = await glossary();
+    const retired = new Set(g.retired);
+
+    for (const [token, file] of g.exempt) {
+      expect(retired.has(token), `${token} is excused in ${file}, and the retired term is spelled the same`).toBe(false);
+    }
+  });
+
+  /**
    * And the file column is the rule and not a note: `pointShim` is the English
    * verb **in `install.ts`**, and a `pointShim` somewhere else is a token
    * nobody reviewed.
@@ -286,11 +355,14 @@ describe("the retired names in doc/reference.md", () => {
     const g = await glossary();
     const elsewhere = { ...g, exempt: g.exempt.filter(([, file]) => file !== "apps/cli/src/install.ts") };
 
-    expect((await violations(g)).get("apps/cli/src/install.ts"), "pointShim is excused in install.ts").toEqual(["points"]);
     expect(
-      (await violations(elsewhere)).get("apps/cli/src/install.ts"),
+      Object.fromEntries((await violations(g)).get("apps/cli/src/install.ts")!),
+      "pointShim is excused in install.ts",
+    ).toEqual({ points: 3 });
+    expect(
+      Object.fromEntries((await violations(elsewhere)).get("apps/cli/src/install.ts")!),
       "the same token, read in a file the document does not excuse it in",
-    ).toEqual(["pointShim", "points"]);
+    ).toEqual({ pointShim: 3, points: 3 });
   });
 
   /**
@@ -313,8 +385,7 @@ describe("the retired names in doc/reference.md", () => {
    * environment's. A substring ban on `point` flags all four and takes a
    * vocabulary that was never ours down with it.
    *
-   * Asserted against the real matcher rather than against a list, and asserted
-   * live: each one is in `src/` today, so this is a case rather than a claim.
+   * Asserted against the real matcher rather than against a list.
    */
   it("does not reach inside a word — checkpoint, checkpoints, pointer and pointed are not ours", async () => {
     const g = await glossary();
@@ -341,23 +412,28 @@ describe("the retired names in doc/reference.md", () => {
       (await Promise.all((await sources()).map(async (f) => tokens(await readFile(`${root}${f}`, "utf8"), f)))).flat(),
     );
 
-    for (const token of ["checkpoint", "checkpoints", "pointed"]) {
+    for (const token of ["checkpoint", "checkpoints"]) {
       expect(read.has(token), `the rule reads no ${token} in src/ — this case has gone stale`).toBe(true);
     }
 
-    // `pointer` is the fourth, and it is **not** in that loop: all 17 of its
-    // occurrences are comments today — `standing.tsx:63`, `latch.tsx:89`,
-    // `task/[id]/page.tsx:139` — and the rule reads none of them. Which way
-    // round that goes is a fact about `src/` and not a rule, so neither
-    // direction is asserted: written the other way, as *the rule reads no
-    // `pointer`*, a `style={{ cursor: "pointer" }}` added to a component is a
-    // red `build` gate on a diff that introduces no retired name, with no action
-    // in the failure a reader could take. What is true of all four whether they
-    // are live or not is that nothing flags them, and that is asserted here over
-    // every file, through the rule a violation really goes through — exemptions
-    // and all.
+    // `pointer` and `pointed` are the other two, and they are **not** in that
+    // loop. All 17 of `pointer`'s occurrences are comments today —
+    // `standing.tsx:63`, `latch.tsx:89`, `task/[id]/page.tsx:139` — and the rule
+    // reads none of them; every one of `pointed`'s seven reads is the single
+    // local `const pointed = shim ?? current` at `apps/cli/src/install.ts:465`
+    // and its uses. Which way round either goes is a fact about `src/` and not a
+    // rule, so neither direction is asserted for either: *the rule reads no
+    // `pointer`* makes a `style={{ cursor: "pointer" }}` a red `build` gate, and
+    // *the rule reads `pointed`* makes an ordinary rename of that one local a
+    // red `build` gate — both on a diff that introduces no retired name, and
+    // both with no action in the failure a reader could take. `checkpoint` (9
+    // reads in 7 files) and `checkpoints` (22 in 5) carry the live half, and
+    // carry it on more than one identifier each. What is true of all four
+    // whether they are live or not is that nothing flags them, and that is
+    // asserted here over every file, through the rule a violation really goes
+    // through — exemptions and all.
     const flagged = [...(await violations(g))].flatMap(([file, found]) =>
-      found.filter((t) => innocent.includes(t)).map((t) => `${file} · ${t}`),
+      [...found.keys()].filter((t) => innocent.includes(t)).map((t) => `${file} · ${t}`),
     );
 
     expect(flagged, "a word that was never ours was flagged as a retired name").toEqual([]);
@@ -462,6 +538,14 @@ describe("the scanner", () => {
     expect(tokens(src, "f.ts")).not.toContain("gate");
     expect(tokens(src, "f.tsx")).toContain("gate");
   });
+
+  /** Every read counts, and the same name twice in one file is two of them. */
+  it("counts a name once per read, not once per file", () => {
+    const read = tokens('const gate = 1;\nconst s = "the gate refused at the gate";\nexport { gate };\n', "f.ts");
+
+    // The declaration, twice in one string, and the re-export.
+    expect(read.filter((t) => t === "gate")).toHaveLength(4);
+  });
 });
 
 /**
@@ -470,11 +554,12 @@ describe("the scanner", () => {
  * src/ says today* below is green whatever the rule does; these are what say it
  * is green for a reason. Each case writes a `## retired name` section, parses it
  * with the same parser the document goes through, and reads it against a `src/`
- * it states — so *adding a row is red* is asserted rather than described.
+ * it states — so *one more use of a listed name is red* is asserted rather than
+ * described.
  */
 describe("the ledger", () => {
   /** A section with the headline and the rows a case wants, and nothing else. */
-  const written = (headline: string, rows: string[]) =>
+  const written = (headline: string, rows: string[], english: string[] = []) =>
     parse(
       [
         "# Reference",
@@ -500,18 +585,24 @@ describe("the ledger", () => {
         ...(rows.length > 0 ? ["| file | retired names in it |", "|---|---|"] : []),
         ...rows,
         "",
+        "### ordinary English",
+        "",
+        ...(english.length > 0 ? ["| file | token | of which English | the sentence |", "|---|---|---|---|"] : []),
+        ...english,
+        "",
         "## the next term",
         "",
       ].join("\n"),
     );
 
   const filter = "packages/conductor/src/filter.ts";
-  const src = new Map([[filter, ["GatePlan", "gatePlan", "gates", "point"]]]);
+  const counted = (ours: Record<string, number>) => new Map(Object.entries(ours));
+  const src: Counted = new Map([[filter, counted({ GatePlan: 2, gatePlan: 3, gates: 1, point: 4 })]]);
   const row = (file: string, ours: string) => `| \`${file}\` | ${ours} |`;
-  const four = "`GatePlan` · `gatePlan` · `gates` · `point`";
+  const four = "`GatePlan` ×2 · `gatePlan` ×3 · `gates` ×1 · `point` ×4";
 
   it("passes when the table is what src/ says", () => {
-    expect(disagreement(src, written("4 entries in 1 files", [row(filter, four)]).allowlist)).toEqual({
+    expect(disagreement(src, written("10 occurrences in 1 files", [row(filter, four)]).allowlist)).toEqual({
       unrecorded: [],
       stale: [],
     });
@@ -524,18 +615,54 @@ describe("the ledger", () => {
    * widened on its own — a row costs a violation to go with it.
    */
   it("reds a row with nothing behind it", () => {
-    const added = written("5 entries in 2 files", [row(filter, four), row("packages/conductor/src/close.ts", "`gates`")]);
+    const added = written("11 occurrences in 2 files", [row(filter, four), row("packages/conductor/src/close.ts", "`gates` ×1")]);
 
-    expect(disagreement(src, added.allowlist).stale).toEqual(["packages/conductor/src/close.ts · gates"]);
+    expect(disagreement(src, added.allowlist).stale).toEqual([
+      "packages/conductor/src/close.ts · gates — src/ reads 0, the ledger says 1",
+    ]);
   });
 
   /** And the other direction: a name that arrived and was not written down. */
   it("reds a retired name that no row records", () => {
-    const arrived = new Map([[filter, [...src.get(filter)!, "gateStep"].sort()]]);
+    const arrived: Counted = new Map([[filter, counted({ GatePlan: 2, gatePlan: 3, gateStep: 1, gates: 1, point: 4 })]]);
 
-    expect(disagreement(arrived, written("4 entries in 1 files", [row(filter, four)]).allowlist).unrecorded).toEqual([
-      `${filter} · gateStep`,
+    expect(disagreement(arrived, written("10 occurrences in 1 files", [row(filter, four)]).allowlist).unrecorded).toEqual([
+      `${filter} · gateStep — src/ reads 1, the ledger says 0`,
     ]);
+  });
+
+  /**
+   * **The hole a set had, and the one this ticket exists to close.** The name is
+   * already in the table and the file is already listed, so a ledger of distinct
+   * `file · token` pairs sees nothing: `export const gate = "…the gate failed"`
+   * appended to a file that already says `gate` is a new identifier and a new
+   * operator-facing string arriving under a row that does not move. **Every file
+   * this epic will touch already says `gate` or `point` once**, so that is not a
+   * corner — it is the ordinary case. The count is what sees it, and the failure
+   * names the file, the token and both numbers.
+   */
+  it("reds one more use of a name the table already carries", () => {
+    const grown: Counted = new Map([[filter, counted({ GatePlan: 2, gatePlan: 3, gates: 1, point: 7 })]]);
+
+    expect(disagreement(grown, written("10 occurrences in 1 files", [row(filter, four)]).allowlist)).toEqual({
+      unrecorded: [`${filter} · point — src/ reads 7, the ledger says 4`],
+      stale: [],
+    });
+  });
+
+  /** And the same equality from the other side: a use deleted needs its count lowered. */
+  it("reds a count left standing when a use went", () => {
+    const shrunk: Counted = new Map([[filter, counted({ GatePlan: 2, gatePlan: 3, gates: 1, point: 1 })]]);
+
+    expect(disagreement(shrunk, written("10 occurrences in 1 files", [row(filter, four)]).allowlist)).toEqual({
+      unrecorded: [],
+      stale: [`${filter} · point — src/ reads 1, the ledger says 4`],
+    });
+  });
+
+  /** A row that says a name but not how many times is a row the parser refuses. */
+  it("refuses a row that gives no count", () => {
+    expect(() => written("10 occurrences in 1 files", [row(filter, "`GatePlan` · `point`")])).toThrow(/says no count/);
   });
 
   /**
@@ -545,10 +672,10 @@ describe("the ledger", () => {
    */
   it("passes when a row goes because the name went", () => {
     const close = "packages/conductor/src/close.ts";
-    const before = new Map([...src, [close, ["gates"]]]);
-    const both = written("5 entries in 2 files", [row(filter, four), row(close, "`gates`")]);
+    const before: Counted = new Map([...src, [close, counted({ gates: 1 })]]);
+    const both = written("11 occurrences in 2 files", [row(filter, four), row(close, "`gates` ×1")]);
     // `close.ts`'s `gates` renamed away: its row goes, the other stays.
-    const after = written("4 entries in 1 files", [row(filter, four)]);
+    const after = written("10 occurrences in 1 files", [row(filter, four)]);
 
     expect(disagreement(before, both.allowlist)).toEqual({ unrecorded: [], stale: [] });
     expect(disagreement(src, after.allowlist)).toEqual({ unrecorded: [], stale: [] });
@@ -556,9 +683,9 @@ describe("the ledger", () => {
 
   /** Deleting a row the name is still behind is the debt it still is. */
   it("reds a row deleted while the name stays", () => {
-    expect(disagreement(src, written("3 entries in 1 files", [row(filter, "`GatePlan` · `gatePlan` · `gates`")]).allowlist)).toEqual(
-      { unrecorded: [`${filter} · point`], stale: [] },
-    );
+    expect(
+      disagreement(src, written("6 occurrences in 1 files", [row(filter, "`GatePlan` ×2 · `gatePlan` ×3 · `gates` ×1")]).allowlist),
+    ).toEqual({ unrecorded: [`${filter} · point — src/ reads 4, the ledger says 0`], stale: [] });
   });
 
   /**
@@ -573,30 +700,35 @@ describe("the ledger", () => {
    */
   it("names both paths when a file moves, and asks for nothing else", () => {
     const to = "packages/conductor/src/step/filter.ts";
-    const moved = new Map([[to, src.get(filter)!]]);
-    const ours = ["GatePlan", "gatePlan", "gates", "point"];
+    const moved: Counted = new Map([[to, src.get(filter)!]]);
+    const ours = [
+      ["GatePlan", 2],
+      ["gatePlan", 3],
+      ["gates", 1],
+      ["point", 4],
+    ] as const;
 
-    expect(disagreement(moved, written("4 entries in 1 files", [row(filter, four)]).allowlist)).toEqual({
-      unrecorded: ours.map((token) => `${to} · ${token}`),
-      stale: ours.map((token) => `${filter} · ${token}`),
+    expect(disagreement(moved, written("10 occurrences in 1 files", [row(filter, four)]).allowlist)).toEqual({
+      unrecorded: ours.map(([token, n]) => `${to} · ${token} — src/ reads ${n}, the ledger says 0`),
+      stale: ours.map(([token, n]) => `${filter} · ${token} — src/ reads 0, the ledger says ${n}`),
     });
     // And the edit the failure asks for is that row's path, in the document.
-    expect(disagreement(moved, written("4 entries in 1 files", [row(to, four)]).allowlist)).toEqual({
+    expect(disagreement(moved, written("10 occurrences in 1 files", [row(to, four)]).allowlist)).toEqual({
       unrecorded: [],
       stale: [],
     });
   });
 
   /**
-   * **`0 entries in 0 files` is a state this passes, not one it refuses** — it
-   * is `#233`'s acceptance, and a lower bound under the table would red the
+   * **`0 occurrences in 0 files` is a state this passes, not one it refuses** —
+   * it is `#233`'s acceptance, and a lower bound under the table would red the
    * `build` gate on the diff that finishes the epic. Nothing guards against an
    * empty parse either, because nothing has to: while `src/` still carries debt
    * an empty table is red on the rule above, and when it carries none an empty
    * table is the truth.
    */
   it("passes on the empty allowlist #233 is aiming at", () => {
-    const empty = written("0 entries in 0 files", []);
+    const empty = written("0 occurrences in 0 files", []);
 
     expect(empty.allowlist.size).toBe(0);
     expect(size(empty.allowlist)).toEqual(empty.headline);
@@ -606,25 +738,60 @@ describe("the ledger", () => {
   /**
    * **And the headline is the number a review reads the direction off.** The
    * test cannot tell a retired name that had to arrive from one that did not —
-   * nothing can — so what it does is make that sentence true: a row added or
-   * deleted without correcting it is red, and raising it is one line in a diff,
-   * saying what it is counting.
+   * nothing can — so what it does is make that sentence true: a row added, a row
+   * deleted or a count moved without correcting it is red, and raising it is one
+   * line in a diff, saying what it is counting.
    */
   it("counts the table rather than reading the sentence above it", () => {
-    const left = written("340 entries in 76 files", [row(filter, four)]);
+    const left = written("1064 occurrences in 76 files", [row(filter, four)]);
 
-    expect(left.headline, "the sentence, as the document says it").toEqual({ entries: 340, files: 76 });
-    expect(size(left.allowlist), "the table, counted — and what the document is held to").toEqual({ entries: 4, files: 1 });
+    expect(left.headline, "the sentence, as the document says it").toEqual({ occurrences: 1064, files: 76 });
+    expect(size(left.allowlist), "the table, counted — and what the document is held to").toEqual({ occurrences: 10, files: 1 });
+  });
+
+  /**
+   * **The English table excuses nothing, and is held to the one that does.** Its
+   * rows say which of the allowlist's counts a rename will not reach, so a row
+   * naming a file or token the allowlist does not carry — or claiming more
+   * English than the ledger counts at all — is a claim about `src/` with nothing
+   * behind it, exactly like a stale row.
+   */
+  it("reds an English row the allowlist does not carry", () => {
+    const table = (cells: string) => written("10 occurrences in 1 files", [row(filter, four)], [cells]);
+    const held = (g: ReturnType<typeof parse>) => english(g);
+
+    expect(held(table(`| \`${filter}\` | \`point\` | 2 of 4 | *would point at* |`))).toEqual([]);
+    expect(held(table(`| \`${filter}\` | \`point\` | 5 of 4 | *more English than there are* |`))).toEqual([
+      `${filter} · point — 5 English of a count the ledger puts at 4`,
+    ]);
+    expect(held(table(`| \`${filter}\` | \`gate\` | 1 of 1 | *a token no row carries* |`))).toEqual([
+      `${filter} · gate — the allowlist does not carry it`,
+    ]);
+    expect(held(table("| `packages/conductor/src/close.ts` | `gates` | 1 of 1 | *a file no row carries* |"))).toEqual([
+      "packages/conductor/src/close.ts · gates — the allowlist does not carry it",
+    ]);
   });
 });
 
+/** Where the English table and the allowlist disagree, which must be nowhere. */
+function english(g: ReturnType<typeof parse>): string[] {
+  return g.english.flatMap((row) => {
+    const carried = g.allowlist.get(row.file)?.get(row.token);
+    if (carried === undefined) return [`${row.file} · ${row.token} — the allowlist does not carry it`];
+    if (row.of !== carried) return [`${row.file} · ${row.token} — says "of ${row.of}", the allowlist says ${carried}`];
+    if (row.english > carried) return [`${row.file} · ${row.token} — ${row.english} English of a count the ledger puts at ${carried}`];
+    return [];
+  });
+}
+
 describe("the allowlist", () => {
   /**
-   * The whole ticket, in one assertion, and it is an equality rather than a
-   * subset on purpose. A violation with no row is new debt; **a row with no
-   * violation is a rename that landed and left its ledger behind**, which is how
-   * *align the terms* becomes a sentence everybody agrees with and the last
-   * ticket discovers is untrue.
+   * The whole ticket, in one assertion, and it is an equality over counts rather
+   * than a subset over names on purpose. A count `src/` is over is new debt — a
+   * name nobody wrote down, or one more use of a name somebody did; **a count
+   * `src/` is under is a rename that landed and left its ledger behind**, which
+   * is how *align the terms* becomes a sentence everybody agrees with and the
+   * last ticket discovers is untrue.
    */
   it("is exactly what src/ says today", async () => {
     const g = await glossary();
@@ -632,23 +799,42 @@ describe("the allowlist", () => {
 
     expect(
       disagreement(found, g.allowlist),
-      "doc/reference.md's allowlist and src/ disagree — `unrecorded` is debt with no row, `stale` is a row with nothing behind it",
+      "doc/reference.md's allowlist and src/ disagree — `unrecorded` is debt the ledger is short on, `stale` is a count with nothing behind it",
     ).toEqual({ unrecorded: [], stale: [] });
   });
 
   /**
    * **And the section's own headline is the other thing that may not drift.**
-   * `340 entries in 76 files` is what `#233` sizes the remaining debt from, and
-   * it is what a rename ticket makes wrong by deleting rows: take the
-   * `projector` and `event-store` rows away — eight of them, 38 entries — and
-   * nothing parsed that sentence, so the equality above stayed green while the
-   * headline said 340 in 76 and the table underneath it came to 302 in 68. It is
-   * counted here rather than remembered, so correcting it is part of deleting a
-   * row — and part of adding one.
+   * `1064 occurrences in 76 files` is what `#233` sizes the remaining debt from,
+   * and it is what a rename ticket makes wrong by deleting rows: take the
+   * `projector` and `event-store` rows away — eight of them — and nothing parsed
+   * that sentence, so the equality above stayed green while the headline said
+   * one number and the table underneath it came to another. It is counted here
+   * rather than remembered, so correcting it is part of deleting a row — and
+   * part of adding one, and part of raising a count by one.
    */
   it("says how big it is, and that sentence is counted rather than remembered", async () => {
     const g = await glossary();
 
     expect(size(g.allowlist), "doc/reference.md's headline count is not the table underneath it").toEqual(g.headline);
+  });
+
+  /**
+   * **The nine occurrences a rename will not reach, listed rather than excused.**
+   * `points at` in the installer is the English verb, and the same spelling in
+   * `lingtai.ts` is the `end` point sixty-nine lines away — so no exemption row can
+   * separate them, and none tries. What this table does is tell `#233` that its
+   * `0 occurrences in 0 files` costs nine reworded sentences on top of the
+   * renames, and what this case does is stop the table saying it about a row the
+   * ledger does not carry.
+   */
+  it("names the English occurrences against rows the allowlist really carries", async () => {
+    const g = await glossary();
+
+    expect(english(g), "doc/reference.md's English table and its allowlist disagree").toEqual([]);
+    expect(
+      g.english.reduce((n, row) => n + row.english, 0),
+      "the English residue #233 inherits",
+    ).toBe(9);
   });
 });
