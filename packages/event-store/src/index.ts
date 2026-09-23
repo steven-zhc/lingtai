@@ -23,6 +23,9 @@ export {
   type LogQueries,
   type PointNeverRan,
   type PostgresLogQueriesOptions,
+  type SubscriberFailures,
+  type TypeCount,
+  type UnconvergedUpdate,
 } from "./queries.ts";
 export {
   ConcurrencyError,

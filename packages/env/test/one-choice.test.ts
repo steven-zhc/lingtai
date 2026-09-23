@@ -81,14 +81,22 @@ const CHOOSERS = [
 ];
 
 /**
- * The one exception, with its ticket.
+ * The one exception, and since
+ * [#214](https://github.com/steven-zhc/lingtai/issues/214) a settled one rather
+ * than a ticket.
  *
- * `lingtai doctor` still asks the log two questions through
- * `createPostgresLogQueries` — reading a URL it was given and reporting on it.
- * [#214](https://github.com/steven-zhc/lingtai/issues/214) is where `doctor`
- * reads the choice instead, and it is deliberately after this: a diagnostic
- * that reports on a machine is a different problem from a factory that opens
- * it, and #179 is the second one.
+ * `lingtai doctor` names `createPostgresLogQueries` on a machine that runs
+ * Postgres, and only there. Its rows take a `LogQueries` — so on a machine
+ * whose log is a file they are asked of the file, through `log.queries`, which
+ * is the written choice — and what this one call supplies is **the direct
+ * connection**: the audits read the log, and through a pooler a dropped
+ * connection turns an audit into a red check that has nothing to do with the
+ * log (#157). `log.queries` there is the pooled string.
+ *
+ * So this is not a second decision about *which store*. It is a report choosing
+ * which of one store's two connection strings to read, on the one machine that
+ * has two — the distinction the comment below draws between the face that
+ * reports and the face that opens.
  */
 const NOT_YET = ["apps/cli/src/doctor.ts"];
 

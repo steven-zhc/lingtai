@@ -251,7 +251,10 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 below the current, unless named
   lingtai uninstall                 ask once, remove everything under ~/.lingtai
                                 and the shim, then name what it could not: the
-                                GitHub App, and the log in Postgres
+                                GitHub App, and the log where the log is a
+                                server. Where the log is a file under
+                                ~/.lingtai it is named before the question,
+                                because the removal takes it
     --yes                       do not ask
     --nothing-conducts          remove a conductor's state though the lock
                                 under ~/.lingtai/locks could not be read
@@ -269,7 +272,13 @@ async function doctor(): Promise<number> {
   report.results.push(release);
   if (release.status === "ok") report.ok++;
   else if (release.status === "warn") report.warned++;
-  else report.skipped++;
+  else {
+    // `notChecked` and not `deferred`: a release check that skipped did so
+    // because *this copy* is not an installed one, which is a fact about this
+    // machine and belongs on the half of the summary that says so (#214).
+    report.skipped++;
+    report.notChecked++;
+  }
   console.log(formatReport(report));
   // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
   // does not refuse on the same number: a failure marked `restartAnswers` exits

@@ -20,8 +20,15 @@ import {
   extensionRow,
   formatReport,
   limitsRow,
+  logReachable,
+  postgresOnlyRows,
   runDoctor,
 } from "../src/doctor.ts";
+import { createSqliteLogQueries, openSqliteLog } from "@lingtai/event-store/sqlite";
+import type { LogQueries } from "@lingtai/event-store";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 // The count `lingtai restart` gates on, asked of this report rather than
 // restated: a row that stops a restart is the half of #179's refusal a status
 // alone does not show (0042).
@@ -169,64 +176,222 @@ describe("lingtai doctor — environment", () => {
  * Postgres; what is asserted about them is that they are asked at all.
  */
 describe("lingtai doctor — a machine whose log is a file", () => {
+  const home = mkdtempSync(join(tmpdir(), "lingtai-doctor-"));
+  const dbPath = join(home, "lingtai.db");
   const wroteSqlite = (): StoreChoice => ({
     store: "sqlite",
-    path: "/var/empty/lingtai/lingtai.db",
+    path: dbPath,
     where: "config.yml",
-    from: "/var/empty/lingtai/config.yml",
+    from: join(home, "config.yml"),
   });
 
-  it("asks it for no connection string, and fails it for nothing", async () => {
-    const report = await runDoctor(
-      env({}),
-      () => {
-        throw new Error("the machine file was asked for a database.url");
-      },
-      wroteSqlite,
-    );
+  /**
+   * **A real SQLite log, so the rows below are answered rather than merely
+   * reached.** The file is created by opening it, which is the whole of what
+   * `log: reachable` asserts about a machine `lingtai init` has just finished:
+   * `init` writes the choice and never the file.
+   */
+  const openFile = (): { queries: LogQueries; close: () => void } => {
+    const db = openSqliteLog(dbPath);
+    return { queries: createSqliteLogQueries(db), close: () => db.close() };
+  };
 
-    const e = find(report.results, "environment");
-    expect(e.status).toBe("skip");
-    // Never the sentence that sent the operator back to `lingtai init` with a
-    // Postgres URL: there is nothing here to set.
-    expect(e.detail).not.toContain("lingtai init writes one");
-    expect(e.detail).not.toContain(".env.local");
-    // The row that does speak about this machine is green, and it is the only
-    // one that decides anything.
-    expect(find(report.results, "store: the machine's written choice").status).toBe("ok");
-    // The whole of the refusal, counted the way the command it blocked counts
-    // it. These three rows are what this fork decides; everything after them is
-    // GitHub and the operator's own projects, which are the same question on
-    // either store and are not this machine's store saying it is broken.
-    const thisFork = report.results.filter((r) =>
-      ["store: the machine's written choice", "environment", "postgres"].includes(r.name),
-    );
-    expect(thisFork).toHaveLength(3);
-    expect(gatingFailures(thisFork)).toBe(0);
+  /** The rows this fork decides. Everything after them is GitHub and the operator's own projects. */
+  const OF_THIS_FORK = [
+    "store: the machine's written choice",
+    "environment",
+    "log: reachable",
+    ...postgresOnlyRows().map((r) => r.name),
+  ];
+
+  it("asks it for no connection string, and fails it for nothing", async () => {
+    const file = openFile();
+    try {
+      const report = await runDoctor(
+        env({}),
+        () => {
+          throw new Error("the machine file was asked for a database.url");
+        },
+        wroteSqlite,
+        file.queries,
+      );
+
+      const e = find(report.results, "environment");
+      expect(e.status).toBe("skip");
+      // Never the sentence that sent the operator back to `lingtai init` with a
+      // Postgres URL: there is nothing here to set.
+      expect(e.detail).not.toContain("lingtai init writes one");
+      expect(e.detail).not.toContain(".env.local");
+      // The row that does speak about this machine is green, and it is the only
+      // one that decides anything.
+      expect(find(report.results, "store: the machine's written choice").status).toBe("ok");
+      // The whole of the refusal, counted the way the command it blocked counts
+      // it.
+      const thisFork = report.results.filter((r) => OF_THIS_FORK.includes(r.name));
+      expect(thisFork).toHaveLength(OF_THIS_FORK.length);
+      expect(gatingFailures(thisFork)).toBe(0);
+    } finally {
+      file.close();
+    }
+  });
+
+  /**
+   * **The row that answers the one question anybody runs this command for**
+   * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+   *
+   * `postgres: pooled connection` was the only asker of *is the log reachable*,
+   * so on a machine with no Postgres nothing asked it and the summary said
+   * `0 failed` anyway.
+   */
+  it("says whether the log is reachable, and opens it rather than looking for the file", async () => {
+    // Deliberately not opened first: this is the machine `lingtai init` leaves
+    // behind, whose `config.yml` names a path with no file at it yet. A row
+    // that stat()ed the path would fail it for ever — `init` never writes the
+    // file — and that failure gates `lingtai restart`.
+    const fresh = join(mkdtempSync(join(tmpdir(), "lingtai-fresh-")), "lingtai.db");
+    expect(existsSync(fresh)).toBe(false);
+    const db = openSqliteLog(fresh);
+    try {
+      const row = await logReachable(fresh, createSqliteLogQueries(db));
+      expect(row.status).toBe("ok");
+      expect(row.detail).toContain(fresh);
+    } finally {
+      db.close();
+    }
+    expect(existsSync(fresh)).toBe(true);
+  });
+
+  it("fails, rather than skipping, where the log cannot be opened", async () => {
+    const row = await logReachable("/var/empty/nowhere/lingtai.db", {
+      projectStreams: async () => {
+        throw new Error("SQLITE_CANTOPEN: unable to open database file");
+      },
+    } as unknown as LogQueries);
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("SQLITE_CANTOPEN");
+    // No `restartAnswers`: restarting a daemon does not make a log openable,
+    // and this is a failure `lingtai restart` is right to stop for.
+    expect(gatingFailures([row])).toBe(1);
   });
 
   it("still gets every row that is about a log rather than about Postgres", async () => {
-    const report = await runDoctor(env({}), () => undefined, wroteSqlite);
+    const file = openFile();
+    try {
+      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
 
-    // Each of these opens the store this machine chose, so each answers on a
-    // file too — and losing them along with the connection rows was the same
-    // defect's other half.
-    for (const name of [
-      "projections: lag",
-      "projections: shape",
-      "daemon: liveness",
-      "daemon: currency",
-      "conductor: lock",
-      "worktrees: reconciliation",
-    ]) {
-      expect(find(report.results, name)).toBeDefined();
+      // Each of these asks the store this machine chose, so each answers on a
+      // file too — and losing them along with the connection rows was the same
+      // defect's other half.
+      for (const name of [
+        "log: reachable",
+        "projections: lag",
+        "projections: shape",
+        "daemon: liveness",
+        "daemon: currency",
+        "conductor: lock",
+        "worktrees: reconciliation",
+        "log: every type is readable",
+        "github: what we said and did not manage",
+        "subscribers: failures",
+        "gates: end ran on what landed",
+        "gates: every point that was planned ran",
+      ]) {
+        expect(find(report.results, name).status, `${name} did not run`).not.toBe("skip");
+      }
+    } finally {
+      file.close();
     }
-    // And what is genuinely Postgres and nothing else says why it was not run,
-    // in terms of the store rather than of a check that failed.
-    const pg = find(report.results, "postgres");
-    expect(pg.status).toBe("skip");
-    expect(pg.detail).toContain("sqlite");
-    expect(pg.detail).not.toContain("the environment check failed");
+  });
+
+  /**
+   * **Twelve rows used to vanish into one line** saying `postgres: not
+   * attempted`, so a reader could not tell a check that does not apply from a
+   * check that was never written — ADR 0016 §4's rule about a thing you cannot
+   * tell apart from its absence, in the one command built to prevent it.
+   *
+   * Seven of the twelve are about Postgres and are `postgresOnlyRows()`, which
+   * this iterates; the other five were questions about a log, and are asked of
+   * the file above rather than given a line saying why they do not apply. The
+   * list is the count: nothing here restates its length.
+   *
+   * Each keeps its name, each is a `skip` and never a silent pass, and each
+   * detail **names the store** and says why the question does not apply here.
+   * The assertion is on the sentence and not on its length: a detail long
+   * enough to look like a reason is not a reason.
+   */
+  it("gives every Postgres row its own line, its own reason, and the store's name", async () => {
+    const file = openFile();
+    try {
+      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
+
+      for (const expected of postgresOnlyRows()) {
+        const row = find(report.results, expected.name);
+        expect(row.status, `${expected.name} is not a skip`).toBe("skip");
+        expect(row.detail, `${expected.name} does not name the store`).toContain("store: sqlite");
+        expect(row.detail, `${expected.name} gives no reason`).toContain(expected.because);
+        // Not deferred: this is a fact about this machine, not about what
+        // Lingtai has not built.
+        expect(row.deferred).toBeUndefined();
+      }
+      // And `environment`, the eighth skip this fork produces, on the same
+      // terms: a reason that names the store, not a bare skip.
+      const e = find(report.results, "environment");
+      expect(e.status).toBe("skip");
+      expect(e.detail).toContain("store: sqlite");
+      // And the single collapsed row is gone.
+      expect(report.results.some((r) => r.name === "postgres")).toBe(false);
+    } finally {
+      file.close();
+    }
+  });
+
+  /**
+   * The ticket's third box, as a structural claim rather than a string match:
+   * **`0 failed` is only ever printed for a machine whose log was reached.**
+   *
+   * It holds by construction — a green summary needs the store row to be `ok`,
+   * and every branch that follows an `ok` store row pushes a reachability row,
+   * `log: reachable` on a file and `postgres: pooled connection` on a server.
+   * Asserted here so that a branch added without one is a failing test.
+   *
+   * **Unconditionally, and that is the point of it.** The rows around this one
+   * — the recipes, the declared environment, `runtimeAuth`, the projections —
+   * run against the real machine and the shared test database, so on a machine
+   * with no `~/.lingtai/lingtai/recipe.yml`, or with projection drift,
+   * `report.failed` is not zero. Asserted under `if (report.failed === 0)`,
+   * this test would assert nothing there and stay green over a branch that
+   * pushed no reachability row at all — which is the one thing it exists to
+   * catch, and CI is the obvious machine it would have been silent on.
+   */
+  it("never prints 0 failed without a row that reached the log", async () => {
+    const file = openFile();
+    try {
+      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
+      // `postgres: pooled connection` is here too, as the `skip` saying why it
+      // does not apply — and a skip reached nothing, which is the distinction
+      // the whole ticket is about.
+      const reached = report.results.filter(
+        (r) =>
+          (r.name === "log: reachable" || r.name === "postgres: pooled connection") && r.status !== "skip",
+      );
+
+      // The row is there and it reached the log, whatever else on this machine
+      // did or did not pass — so `0 failed`, printed or not, is never printed
+      // without it.
+      expect(reached.map((r) => r.name)).toEqual(["log: reachable"]);
+      expect(reached[0]?.status).toBe("ok");
+      if (report.failed === 0) expect(formatReport(report)).toContain("0 failed");
+      // And the summary distinguishes what was not checked here from what is
+      // not implemented anywhere: one number for each.
+      expect(report.notChecked).toBeGreaterThanOrEqual(postgresOnlyRows().length);
+      expect(report.deferred).toBe(report.results.filter((r) => r.deferred).length);
+      expect(report.notChecked + report.deferred).toBe(report.skipped);
+      expect(formatReport(report)).toContain(`${report.notChecked} not checked here`);
+      expect(formatReport(report)).toContain(`${report.deferred} not implemented yet`);
+    } finally {
+      file.close();
+    }
   });
 });
 

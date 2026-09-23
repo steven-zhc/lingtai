@@ -127,7 +127,7 @@ function world(overrides: Partial<World> = {}): World {
       return { ok: true, after: async () => void calls.push("after") };
     },
     app: async () => null,
-    logConfigured: () => false,
+    logWhere: () => ({ kind: "none" }) as const,
     ...overrides,
   };
 }
@@ -333,7 +333,7 @@ describe("lingtai uninstall", () => {
       conducting: async () => {
         throw new Error(`EACCES: permission denied, open '${join(locks, "lingtai:daemon")}'`);
       },
-      logConfigured: () => true,
+      logWhere: () => ({ kind: "elsewhere", named: "LINGTAI_DATABASE_URL names" }) as const,
     });
     expect(await installCommand(["uninstall", "--yes"], w)).toBe(1);
     const said = lines.join("\n");
@@ -409,7 +409,7 @@ describe("lingtai uninstall", () => {
         appAsked = existsSync(join(home, ".lingtai"));
         return { slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 2, key: { path: join(home, ".lingtai", "lingtai", "app.pem") } };
       },
-      logConfigured: () => true,
+      logWhere: () => ({ kind: "elsewhere", named: "LINGTAI_DATABASE_URL names" }) as const,
     });
     expect(await installCommand(["uninstall"], w)).toBe(0);
 
@@ -421,6 +421,108 @@ describe("lingtai uninstall", () => {
     expect(said).toContain("Its private key is gone and cannot be recovered");
     expect(said).toContain("https://github.com/settings/apps/lingtai-steven");
     expect(said).toContain("the database LINGTAI_DATABASE_URL names is untouched");
+  });
+
+  /**
+   * **And the other machine with a log somewhere else** (#214): one whose URL
+   * was typed into `lingtai init` and so lives in the `~/.lingtai/config.yml`
+   * this command has just deleted, with nothing exported.
+   * `LINGTAI_DATABASE_URL` names nothing there, so the one line saying which
+   * database survived would have pointed at an unset variable *after*
+   * destroying the only local record of the answer. It quotes the URL instead,
+   * and `logLocation` redacts it.
+   */
+  it("names the surviving database by its URL where no variable names it", async () => {
+    await installOld();
+    const w = world({
+      logWhere: () => ({ kind: "elsewhere", named: "at postgresql://u:***@db.example.com:5432/postgres" }) as const,
+    });
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(0);
+
+    const said = lines.join("\n");
+    expect(said).toContain(
+      "the database at postgresql://u:***@db.example.com:5432/postgres is untouched, and its tables are yours to drop",
+    );
+    expect(said).not.toContain("LINGTAI_DATABASE_URL");
+  });
+
+  /**
+   * **The log is the thing this command cannot give back** (#214).
+   *
+   * 0051 §Uninstall's whole argument is that what an uninstall *cannot* delete
+   * matters more than what it can — the App, the key. On a machine that wrote
+   * `store: sqlite` it is the reverse: the log is a file inside what `rmSync`
+   * takes, and because `logConfigured()` meant *is Postgres configured* it read
+   * `false` there and the command **suppressed** the one line it prints about
+   * the log rather than warning about it.
+   *
+   * Said before the question, so it is a thing somebody can say no to, and
+   * again at the end, so `--yes` does not make it scroll past unread.
+   */
+  it("names the log it is about to destroy on a machine whose store is a file, before it asks", async () => {
+    await installOld();
+    const db = join(home, ".lingtai", "lingtai.db");
+    let saidBeforeAsking: string[] = [];
+    const asked: string[] = [];
+    const w = world({
+      ask: async (q) => (asked.push(q), (saidBeforeAsking = [...lines]), true),
+      logWhere: () => ({ kind: "file", path: db, alsoElsewhere: false }) as const,
+    });
+
+    expect(await installCommand(["uninstall"], w)).toBe(0);
+
+    const said = lines.join("\n");
+    expect(said).toContain(`The event log is ${db}`);
+    expect(said).toContain("destroys every event this machine recorded");
+    expect(said).toContain("cannot be recovered");
+    // Before the question and not after the removal: what had been printed by
+    // the time the prompt went up already named the file.
+    expect(asked).toHaveLength(1);
+    expect(saidBeforeAsking.join("\n")).toContain(`The event log is ${db}`);
+    // And never the sentence for a log somewhere else, which would be the same
+    // defect turned inside out.
+    expect(said).not.toContain("is untouched");
+  });
+
+  /**
+   * **Both, and neither in the other's words** (#214).
+   *
+   * A machine that recorded into `lingtai.db` and was then pointed at Postgres
+   * — by exporting `LINGTAI_DATABASE_URL`, which is how 0056 §3 says to do it
+   * — has a log the removal takes *and* a database it leaves standing. Printed
+   * as *the log is not under ~/.lingtai … untouched*, that is the sentence this
+   * ticket exists about: every event recorded before the switch deleted, under
+   * a line saying nothing under `~/.lingtai` held the log. 0055 §3 is why the
+   * Postgres side holds no copy — it started empty.
+   */
+  it("warns about the file and says the server survived, where a machine has both", async () => {
+    await installOld();
+    const db = join(home, ".lingtai", "lingtai.db");
+    let saidBeforeAsking: string[] = [];
+    const w = world({
+      ask: async () => ((saidBeforeAsking = [...lines]), true),
+      logWhere: () => ({ kind: "file", path: db, alsoElsewhere: true }) as const,
+    });
+
+    expect(await installCommand(["uninstall"], w)).toBe(0);
+
+    const said = lines.join("\n");
+    // Warned before the question, naming the file, and never the claim that the
+    // log is somewhere else.
+    expect(saidBeforeAsking.join("\n")).toContain(`The event log ${db} is under`);
+    expect(said).toContain("every event in that file was recorded before it did");
+    expect(said).toContain(`The SQLite log at ${db} went with it, and cannot be recovered.`);
+    expect(said).not.toContain("The log is not under ~/.lingtai");
+    // And the database it does leave standing is still said to be standing.
+    expect(said).toContain("The Postgres database this machine reads is untouched");
+  });
+
+  it("says nothing about a log where none is configured", async () => {
+    await installOld();
+    expect(await installCommand(["uninstall", "--yes"], world())).toBe(0);
+    const said = lines.join("\n");
+    expect(said).not.toContain("The event log");
+    expect(said).not.toContain("is untouched");
   });
 });
 
