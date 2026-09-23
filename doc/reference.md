@@ -524,10 +524,28 @@ reading the four rows above would get them wrong. Both are already caught by
 
 **Where it is enforced:** every `.ts` and `.tsx` under `{apps,packages}/*/src/`
 — identifiers, types, event types, recipe keys, and the strings and JSX a person
-reads: the board's copy, a refusal's text, `lingtai`'s output.
+reads: the board's copy, a refusal's text, `lingtai`'s output. **A module
+specifier is one of those strings**, and deliberately: eight files under `src/`
+carry a retired word in their own name — `gate.ts`, `agent-gate.ts`,
+`gate-audit.ts`, `gates-resolved.ts`, `end-point.ts` among them — each renamed
+by the ticket that renames what is inside it, and `./gate.ts` in an import is
+the only place the ledger can count that. `packages/actions/src/index.ts`'s
+`gate` ×5 is five re-export lines and no identifier at all.
 
-**Where it is not:** comments, and everything under `doc/`. A comment or a
-document describing *history* keeps the name that history happened under —
+**A recipe key is enforced through the schema that declares it**, which is
+`packages/recipe/src/recipe.ts` and is read like any other file; no `.yml` or
+`.yaml` is. The repository's own `.lingtai/config.yaml` is not read and nothing
+is lost by that — nothing reads it either ([0046](decisions/0046-lingtai-is-personal.md)
+§3: the recipe is `~/.lingtai/<project>/recipe.yml`, outside every worktree),
+and a key the schema does not declare is refused by name before it reaches
+anything.
+
+**Where it is not**, and there are three of them: comments; everything under
+`doc/`; and everything outside `{apps,packages}/*/src/`, which is the two test
+halves, `scripts/`, `prompts/` and every config file.
+
+**The first two are the ticket's.** A comment or a document describing *history*
+keeps the name that history happened under —
 [0018](decisions/0018-the-proposed-point.md) records that the point called
 `diff` became `proposed`, and
 [0059](decisions/0059-a-point-carries-only-the-kinds-it-runs.md) says *`#58` was
@@ -535,6 +553,19 @@ that bug at `merge`*; both are correct and both must keep their words. Nothing
 mechanical can tell a comment about the past from a comment about the present,
 so the test reads neither. **A comment describing what the code does now takes
 the new name** — that rule is a reviewer's, not a test's.
+
+**The third is a boundary and not an oversight**, and the tests are the part of
+it worth arguing. They are a real residue rather than an empty set:
+`GATE_CARRYING` in `packages/domain/unit/upcast.test.ts` and `GateCheckPassed`
+in `apps/board/unit/run-recipe.test.tsx` are locals a rename of `src/` does not
+reach. They are out because a name that survives only in a test is one no
+operator reads and no shipped code calls, and because a test names the thing it
+tests: `gate-matrix.test.ts` is the test of a matrix that is still called that,
+and it is renamed by the ticket that renames the matrix rather than ahead of it.
+**So `#233`'s acceptance is about `src/`**, and the test halves are one grep on
+the day the last row here goes. The scope is checked rather than described: the
+test asserts that what it reads is exactly `{apps,packages}/*/src/`, so it
+cannot widen or narrow without going red.
 
 ### not the retired name
 
@@ -551,7 +582,7 @@ or by a bare token — that would exempt more than it was shown:
 exemption is not a row in a ledger, it is a `continue` before the match — so one
 row added here excuses its token everywhere at once and nothing underneath it
 moves: the allowlist does not grow, the count below does not change, and a
-brand-new retired name is green in all 216 files at once. That is the one edit
+brand-new retired name is green in every file at once. That is the one edit
 to this section a reader cannot size by reading it, so the pair in each row is
 pinned in `packages/domain/unit/retired-names.test.ts` as the four words are,
 and the file column is enforced: a row added, dropped or widened to a second
@@ -567,12 +598,15 @@ the English residue below is *listed* rather than excused.
 `checkpoint`, `checkpoints`, `pointer` and `pointed` are **not on this list and
 do not need to be** — whole-word matching never reaches inside them. They are
 what a substring ban on `point` would have destroyed: 55, 34, 17 and 29
-occurrences of the projector's and the installer's own vocabulary. What the rule
-actually reads of them is smaller and uneven, and the test follows that rather
-than the grep: `checkpoint` is read 9 times in 7 files and `checkpoints` 22 in
-5, so those two are asserted to be live subjects; `pointer` is read **nowhere**
-(all 17 are comments) and `pointed` is read only as the one local
-`install.ts:465` declares, so neither is — an assertion resting on a single
+occurrences of the projector's and the installer's own vocabulary, as `#232`
+counted them on 2026-09-22. What the rule actually reads of them is smaller and
+uneven, and the test follows that rather than the grep: on 2026-09-23
+`checkpoint` was read 9 times in 7 files and `checkpoints` 22 in 5, so those two
+are asserted to be live subjects — the assertion is *read at all*, not read that
+many times, so the numbers here are a measurement and not a claim the test
+holds. `pointer` is read **nowhere** (all 17 are comments) and `pointed` is read
+only as the one local `install.ts:465` declares, so neither is — an assertion
+resting on a single
 local is a red `build` gate the day somebody renames it, on a diff that
 introduces no retired name. What is asserted of all four, live or not, is that
 the rule does not flag them.

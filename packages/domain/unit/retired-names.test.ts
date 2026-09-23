@@ -46,16 +46,19 @@
  *
  * **Whole words inside a token, never substrings.** `checkpoint` (55),
  * `checkpoints` (34), `pointer` (17) and `pointed` (29) occurrences of the
- * source text are the projector's and the installer's own vocabulary and have
+ * source text, as `#232` counted them on 2026-09-22, are the projector's and
+ * the installer's own vocabulary and have
  * nothing to do with a step; a substring ban on `point` — a grep, which is what
  * anybody reaches for first — destroys all four. *does not reach inside a word*
  * below is the test that says so, and it is the reason the document holds a list
  * of words rather than a regex.
  *
- * Two of the four are also names the **rule** reads in quantity — `checkpoint` 9
- * times in 7 files, `checkpoints` 22 in 5 — and a case asserts that, because a
- * guard that asserts a live subject over text the rule never sees asserts
- * nothing. The other two are **not** asserted live, and that is deliberate:
+ * Two of the four are also names the **rule** reads in quantity — on 2026-09-23,
+ * `checkpoint` 9 times in 7 files and `checkpoints` 22 in 5 — and a case asserts
+ * that they are read *at all*, because a guard that asserts a live subject over
+ * text the rule never sees asserts nothing. The numbers are a measurement and
+ * not what is held: pinning them would red the gate on any diff that adds a
+ * checkpoint. The other two are **not** asserted live, and that is deliberate:
  * `pointer`'s 17 occurrences are all comments, which the rule never reads, and
  * `pointed`'s reads are all the one local `install.ts:465` declares. **An
  * assertion resting on a single local is a red `build` gate the day somebody
@@ -219,7 +222,7 @@ function parse(doc: string) {
     /**
      * Tokens that carry one of the words and are not the retired concept, each
      * with **the one file it is excused in**. A bare token would excuse the
-     * same spelling in all 216 of them.
+     * same spelling in every one of them.
      */
     exempt: rows("not the retired name").map((r) => [r[0]!, r[1]!] as const),
     /** file → token → how many times, which is the ledger itself. */
@@ -315,7 +318,7 @@ describe("the retired names in doc/reference.md", () => {
    * in a ledger, it is a `continue` before the match — so one row added here
    * excuses its token everywhere at once and nothing underneath it moves: the
    * allowlist does not grow, the headline is unchanged, and a brand-new retired
-   * name is green in all 216 files at once. It is the one edit to that section a
+   * name is green in every file at once. It is the one edit to that section a
    * reader cannot size by reading it, and the door is small enough to nail shut:
    * two pairs, reviewed once, pinned here exactly as the four words are. A row
    * added, deleted or repointed is this test going red, and the same
@@ -439,12 +442,32 @@ describe("the retired names in doc/reference.md", () => {
     expect(flagged, "a word that was never ours was flagged as a retired name").toEqual([]);
   });
 
-  it("reads the list from doc/reference.md and enforces it nowhere in doc/", async () => {
+  /**
+   * **The scope, which the document states in three clauses and this checks in
+   * two.** Comments are the third and are handled by the scanner above, where
+   * *reads no comment* is the case for them. `doc/` is read for the tables and
+   * never for violations, which is the ticket's own line: a document describing
+   * history keeps the name it happened under. And everything outside
+   * `{apps,packages}/*<!---->/src/` is out — mostly **the two test halves**,
+   * which really do carry retired names a rename of `src/` will not reach. That
+   * last one is a boundary rather than an oversight, and what makes it one is
+   * that it is stated in the document, checked here, and cannot widen or narrow
+   * without this going red.
+   */
+  it("reads doc/reference.md for the tables and {apps,packages}/*/src/ for the violations, and nothing else", async () => {
     const files = await sources();
 
     expect(files.length).toBeGreaterThan(100);
-    expect(files.filter((f) => f.startsWith("doc/"))).toEqual([]);
-    expect(files.every((f) => /^(apps|packages)\/[^/]+\/src\//.test(f))).toBe(true);
+    expect(files.filter((f) => f.startsWith("doc/")), "a document was read for violations").toEqual([]);
+    expect(
+      files.filter((f) => !/^(apps|packages)\/[^/]+\/src\//.test(f)),
+      "something outside {apps,packages}/*/src/ was read",
+    ).toEqual([]);
+    // Named separately from the line above, which already implies it, because
+    // it is the clause a reader comes here to check: `packages/*/unit/`,
+    // `integration/` and `test/` are the halves `#233` sweeps with a grep on
+    // the day the last row goes, and they are out of this rule until then.
+    expect(files.filter((f) => /\/(unit|integration|test)\//.test(f)), "a test was read").toEqual([]);
   });
 });
 
@@ -545,6 +568,22 @@ describe("the scanner", () => {
 
     // The declaration, twice in one string, and the re-export.
     expect(read.filter((t) => t === "gate")).toHaveLength(4);
+  });
+
+  /**
+   * **A module specifier is read, and that is the decision rather than a
+   * side-effect of reading string literals.** Eight files under `src/` carry a
+   * retired word in their own name and each is renamed by the ticket that
+   * renames what is inside it; an import of `./gate.ts` is the only place a
+   * ledger over file contents can count that. `packages/actions/src/index.ts`'s
+   * `gate` ×5 is five re-export lines and no identifier at all, which is the
+   * row that would be wrong if this ever stopped being true.
+   */
+  it("reads a module specifier, so a file named for a retired word is counted where it is imported", () => {
+    const read = tokens('export { createWatchGate } from "./watch-gate.ts";\n', "f.ts");
+
+    expect(read.filter((t) => t === "gate")).toHaveLength(1);
+    expect(read).toContain("createWatchGate");
   });
 });
 
