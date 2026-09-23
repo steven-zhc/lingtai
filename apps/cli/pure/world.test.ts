@@ -94,19 +94,90 @@ describe("logWhere", () => {
   });
 
   /**
-   * A refusal still reads the URL, so a machine `storeChoice` calls *not set
-   * up* (0056 §2) — a `config.yml` with a `database.url` and no
-   * `database.store` — goes on being told its log is somewhere else, exactly
-   * as `logConfigured()` told it. Only a written `sqlite` takes the new branch.
+   * **The refusals, which are where the log is in front of you and the choice
+   * is not.**
    *
-   * The variable is the half a handed-in environment can reach;
-   * `postgresUrlIfSet` reads the machine file only for the real
-   * `process.env` (`machineUrlIfReadable`), which
-   * `packages/env/test/env.test.ts` covers.
+   * A machine that wrote `store: sqlite` and later added a `database.url` to
+   * the same file, halfway to Postgres, is `two keys` — and its log is still
+   * the file it has been recording into all along. Asked `logConfigured()`
+   * there, the answer is `true`, because the `database.url` it just refused
+   * over is the URL that read finds: `elsewhere`, about a log two lines above
+   * an `rmSync` that takes it (#214).
    */
-  it("falls back to the URL read, so a machine with no written store is still elsewhere", () => {
-    expect(where({ LINGTAI_DATABASE_URL: URL_ })).toEqual({ kind: "elsewhere" });
+  it("names the file under a two keys refusal, where the log is the one being destroyed", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-two-keys-"));
+    writeFileSync(join(home, "config.yml"), `database:\n  store: sqlite\n  url: ${URL_}\n`);
+    // Content nothing reads: whether the log is there is the whole question.
+    writeFileSync(join(home, "lingtai.db"), "");
+
+    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "file", path: join(home, "lingtai.db") });
   });
+
+  /**
+   * And the same machine with its `config.yml` truncated mid-write, which is
+   * the case `storeChoice` is total *for*: `unreadable` says nothing about the
+   * store, `logConfigured()` answers `false` because there is no URL left to
+   * read, and `none` would have let `lingtai uninstall --yes` delete the log
+   * without one word about it.
+   */
+  it("names the file under an unreadable config.yml too, which is the one storeChoice is total for", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-unreadable-"));
+    writeFileSync(join(home, "config.yml"), "database:\n  store: sqli");
+    // Content nothing reads: whether the log is there is the whole question.
+    writeFileSync(join(home, "lingtai.db"), "");
+
+    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "file", path: join(home, "lingtai.db") });
+  });
+
+  /**
+   * Only *no file* is nothing to lose. A machine `storeChoice` calls **not set
+   * up** (0056 §2) — a `config.yml` with a `database.url` and no
+   * `database.store` — has never opened a log here, so the question left is the
+   * one `logConfigured()` always answered, and the answer is the one it gave.
+   */
+  it("falls back to the URL read where the refusal has left no file behind", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-no-store-"));
+    writeFileSync(join(home, "config.yml"), `database:\n  url: ${URL_}\n`);
+
+    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "none" });
+  });
+
+  /**
+   * **And that fallback is `logConfigured()` and not a constant**, which is a
+   * claim no handed-in environment can check: `postgresUrlIfSet` reads the
+   * machine's `config.yml` only for the real `process.env`
+   * (`machineUrlIfReadable`), so in-process the refusal with no file is
+   * `none` whatever that file says.
+   *
+   * So: a child, whose `process.env` really is this machine's, whose
+   * `config.yml` names a `database.url` and no `database.store`, and whose
+   * `~/.lingtai` holds no log. `elsewhere` there is the sentence `lingtai
+   * uninstall` prints about a Postgres log it leaves standing, and its two
+   * remedies both name that URL.
+   *
+   * `LINGTAI_DATABASE_URL` empty for the reason the probe below gives: absent
+   * to `optional`, present to dotenv, so the checkout's `.env.local` cannot be
+   * what answers this.
+   */
+  it("reads that URL from the machine file, on a process whose environment is a machine's", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-refused-"));
+    writeFileSync(join(dir, "config.yml"), `database:\n  url: ${URL_}\n`);
+    const script = join(dir, "probe.mjs");
+    const world = JSON.stringify(pathToFileURL(join(repoRoot(), "apps", "cli", "src", "world.ts")).href);
+    writeFileSync(
+      script,
+      `const { logLocation } = await import(${world});\n` +
+        `console.log(JSON.stringify(logLocation(process.env)));\n`,
+    );
+    const ran = spawnSync(process.execPath, [script], {
+      encoding: "utf8",
+      env: { PATH: process.env["PATH"] ?? "", HOME: dir, LINGTAI_HOME: dir, LINGTAI_DATABASE_URL: "" },
+    });
+
+    expect(ran.stderr).toBe("");
+    expect(ran.status).toBe(0);
+    expect(JSON.parse(ran.stdout.trim())).toEqual({ kind: "elsewhere" });
+  }, 30_000);
 });
 
 describe("conducting", () => {

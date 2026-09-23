@@ -25,10 +25,11 @@
  * lock being asked anyway. That is the assertion the three `catch` blocks never
  * had.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 // Only the loader, which reads `.env.local` and connects to nothing.
-import { logConfigured, storeChoice } from "@lingtai/env";
+import { logConfigured, SQLITE_LOG, stateDir, storeChoice } from "@lingtai/env";
 import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from "./install.ts";
 
 /** Everything the live world reaches that a test must not: the log, and what is behind it. */
@@ -102,26 +103,64 @@ export function liveWorld(self: string, outside: Live = live()): World {
  * Where this machine's log is — the written choice, not a connection string
  * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
  *
- * **A `sqlite` machine is the whole of what changed.** Every other answer is
- * the one `logConfigured()` gave: a machine naming a Postgres URL — in the
- * variable, or in a `config.yml` that names a `database.url` without having
- * written a `database.store`, which 0056 §2 calls *not set up* and which
- * `storeChoice` therefore refuses — has a log somewhere else either way, and
- * an uninstall should go on saying so. So the refusal falls back to the read it
- * used to be, and only a written `sqlite` takes the new branch.
+ * **A written `sqlite` is where the answer is certain, and it is not where the
+ * damage is.** A machine naming a Postgres URL has its log somewhere else and
+ * an uninstall should go on saying so, exactly as `logConfigured()` said it.
+ *
+ * **But a refusal is not a promise that no file is there**, and that is the
+ * half `logConfigured()` could not see. `storeChoice` refuses two machines
+ * that have a SQLite log sitting under `~/.lingtai` at that moment: `two keys`
+ * — one that wrote `store: sqlite`, recorded its whole log into that file, and
+ * later added a `database.url` to the same `config.yml` while moving to
+ * Postgres — and `unreadable`, that same machine with the file truncated
+ * mid-write. Asked there, `logConfigured()` answers `elsewhere` for the first
+ * (it reads the `database.url` it just found) and `none` for the second, so
+ * `uninstall` would `rmSync` the log and then print *the database
+ * LINGTAI_DATABASE_URL names is untouched*, or say nothing at all
+ * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+ *
+ * So under a refusal the **file decides**: `stateDir()/lingtai.db` is the only
+ * place a SQLite log is, it is inside what the removal takes, and whether it is
+ * there is a question no `config.yml` has to be parseable to answer. Only where
+ * there is no such file is there nothing to lose, and the read `logConfigured`
+ * always was answers the rest.
  *
  * Reads and never throws, for the reason `logConfigured` was a boolean: the two
  * commands that call it, `uninstall` and `upgrade`, are the ones that repair a
  * broken install, and a half-written `config.yml` must not be what stops them
- * (#213). `storeChoice` is total and returns its refusals as data.
+ * (#213). `storeChoice` is total and returns its refusals as data, and
+ * `existsSync` answers false rather than throwing.
  */
 export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
   const choice = storeChoice(env);
-  // `logConfigured` under the name it always meant: *is Postgres configured*.
-  // It is the right question for a refusal and the wrong one for everything
-  // else, which is why it is here and nowhere above.
-  if ("refused" in choice) return logConfigured(env) ? { kind: "elsewhere" } : { kind: "none" };
+  if ("refused" in choice) {
+    const file = sqliteLogIn(env);
+    if (file !== null && existsSync(file)) return { kind: "file", path: file };
+    // `logConfigured` under the name it always meant: *is Postgres configured*.
+    // It is the right question for a refusal with no log in front of it, and
+    // the wrong one everywhere else, which is why it is here and nowhere above.
+    return logConfigured(env) ? { kind: "elsewhere" } : { kind: "none" };
+  }
   return choice.store === "sqlite" ? { kind: "file", path: choice.path } : { kind: "elsewhere" };
+}
+
+/**
+ * Where a SQLite log would be **for the environment `storeChoice` was just
+ * asked**, or null where that environment names no machine at all.
+ *
+ * The rule is `machineChoiceFile`'s, and it has to be the same one: looking for
+ * a log in a directory the choice was never read from is a question about
+ * somebody else's machine. This process's own environment is a machine, unless
+ * this is a test run — the suite's environment must never reach the operator's
+ * files — and an environment handed in is one only when it names its own
+ * `LINGTAI_HOME`, so a test that hands in `{}` is answered without touching any
+ * machine. Without that, `stateDir({})` falls back to `homedir()` and this
+ * would report the operator's own log to a test that configured nothing.
+ */
+function sqliteLogIn(env: NodeJS.ProcessEnv): string | null {
+  const machine =
+    env === process.env ? !env["VITEST"] && !env["LINGTAI_TEST"] : env["LINGTAI_HOME"] !== undefined;
+  return machine ? join(stateDir(env), SQLITE_LOG) : null;
 }
 
 /**

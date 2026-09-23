@@ -794,9 +794,12 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
  *
  * **One caller is left and it is the right one.** `logLocation` asks this where
  * `storeChoice` *refuses* — a machine that named a `database.url` and wrote no
- * `database.store`, which 0056 §2 calls not set up — to decide whether its log
- * is nonetheless somewhere else. That is exactly *is Postgres configured*,
- * which is what this reads and has always read.
+ * `database.store`, which 0056 §2 calls not set up — **and only where no
+ * `lingtai.db` is sitting under `stateDir()`**, because a refusal is not a
+ * promise that there is no file: `two keys` and `unreadable` are both machines
+ * that may have a SQLite log right there, and this would answer `elsewhere` or
+ * `none` about it. With no such file the question left really is *is Postgres
+ * configured*, which is what this reads and has always read.
  *
  * **Total.** It answers on every machine, including one whose `config.yml` was
  * truncated mid-write: `false`, because nothing here names a log, while
