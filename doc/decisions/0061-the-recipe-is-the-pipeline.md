@@ -121,6 +121,7 @@ step**, and the file follows the second, because that is where a reader looks.
 | `build` | `run:` | the command |
 | `review` | `agent:` | the prompt · `findings` · `diff` |
 | `proposed` | `judge:` | one per `when:` — how that direction is decided |
+| | `backlog:` | what a finding below the bar becomes instead of a round |
 | `merge` | `merge:` | strategy |
 | | `agent:` | the conflict prompt |
 | `end` | `close:` `labels:` | `when` |
@@ -153,6 +154,8 @@ to prevent. So:
 
 ```yaml
 proposed:
+  - when: findings
+    backlog: minor              # everything at or below this is filed, not fixed
   - when: red | gate-failed
     judge: same-worktree        # built in, spends nothing
   - when: findings
@@ -162,6 +165,14 @@ proposed:
   - when: needs-input
     judge: ask-or-assume
 ```
+
+**`backlog:` routes nothing; it is an effect, like `end`'s two.** `review`
+returns findings with a severity and no verdict (§3's `agent:`), and this is
+where a severity stops being an opinion and becomes an outcome: at or below the
+bar it is filed as a `finding_backlog` entry
+([#137](https://github.com/steven-zhc/lingtai/issues/137)) and buys no round.
+A step may hold plugins that route and plugins that only act; `proposed` is
+still the only one that routes.
 
 **`when:` is one key and its legal values are the step's.** `end` reads
 `landed | blocked | failed | closed | any` (`recipe.ts:137`) — the outcome of
@@ -199,7 +210,15 @@ would report a fault. So:
 The workflow counts the rounds and restarts spent — it is the thing appending
 the events — reading `implement`'s `rounds` and `claim`'s `restarts`, and hands
 the judge the result as a fact: the findings, the refusal's `reason`, and **the
-set of steps on offer**. When `rounds` is spent, `implement` is not in that set. A judge that returns a step it was not offered
+set of steps on offer**. When `rounds` is spent, `implement` is not in that set.
+
+**And the set depends on how far the pass got, not only on what is left to
+spend.** `prepared` can refuse — a failed install — and it refuses before any
+agent has run, so there is no diff and no error in one to fix: `implement` is
+not on offer there either, and a judge that knows nothing about `prepared`
+still cannot choose wrongly. **A judge is never asked to know which step it is
+answering for.** That is the whole benefit of the workflow computing the set:
+the judge answers *which of these*, never *what is legal*. A judge that returns a step it was not offered
 is refused by name, which is §8's rule used once more: *a step refuses a plugin
 it cannot run* becomes *a step refuses a destination it did not offer.*
 

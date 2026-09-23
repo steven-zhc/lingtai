@@ -144,7 +144,7 @@ one rule rather than two: **a step refuses a plugin it cannot run.**
 1   claim        ─ pick the ticket
 2   admit        ─ start work on it; the worktree is cut here
 3   prepared     ─ REFUSES · the tree is ready to be worked in
-4   design       ─ a document, before any code
+4   design       ─ a document, before any code — or nothing, which is an answer
 5   implement    ─ one agent, in that worktree
 6   build        ─ REFUSES
 7   review       ─ reads the diff, returns findings, judges nothing
@@ -179,6 +179,16 @@ no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-g
 and [0057](0057-a-gate-that-did-not-finish.md) is the narrow fix). With the
 decision in its own step, a review that returns nothing is a review that found
 nothing, and the step that decides can see that.
+
+**`design` may produce nothing, and that is how *does this need designing* gets
+answered without a branch.** The step always runs; its plugin may return an
+empty document. `implement` is handed two things — the issue's own text and the
+design — and when the design is empty it works from the issue, which is exactly
+what every pass does today. So a typo fix costs no design and a project that
+wants none at all writes `design: []` (§5 of
+[0061](0061-the-recipe-is-the-pipeline.md)): **the sequence stays fixed, and the
+judgement sits in the one thing that could make it.** A conditional step would
+have put that judgement in the workflow, where nothing knows enough to make it.
 
 **`build` before `review`, and a red build skips it.** Not because build is
 quick — measured over 14 days it is the slower of the two, median 313s against
@@ -224,7 +234,7 @@ flowchart TB
   MG -->|"a conflict the agent resolved<br/>is a new diff"| BU
 
   PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
-  PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
+  PO -->|"the approach is wrong — requeued<br/>× restarts — a fresh pass, and<br/>another ticket may go first"| CL
   PO -->|"every ceiling spent · a conflict the agent<br/>could not resolve · a question only you can answer"| WA
   WA -->|"after you clarify"| CL
   WA -->|"you close it"| EN
@@ -260,6 +270,14 @@ so both have already spent.** *We paid once; do we pay again, or is this a
 question only a person can close?* is the same question in all three places,
 and it is a judgement. A step that reaches `waiting` on its own is a step
 deciding how to spend your attention with no ceiling and no plugin.
+
+**A restart is a requeue, and the next ticket taken may not be this one.** The
+edge back to `claim` releases the item ([0040](0040-rounds-bound-depth-restarts-bound-breadth.md));
+the queue's next pass orders by kind and then by number as it always does, so a
+higher-priority ticket opened in the meantime goes first. That is why
+`restarts` is written on `claim` and reads *this item may be claimed twice*
+rather than *this pass may run twice* — the two are different, and only the
+first one is true.
 
 **And a destination the judge may choose needs a bound on the step it goes
 to** (§the-bound-sits-on-the-step-it-bounds, [0061](0061-the-recipe-is-the-pipeline.md) §2).
