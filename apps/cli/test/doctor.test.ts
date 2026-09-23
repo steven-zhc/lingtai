@@ -305,10 +305,15 @@ describe("lingtai doctor — a machine whose log is a file", () => {
   });
 
   /**
-   * **Nine rows used to vanish into one line** saying `postgres: not
+   * **Twelve rows used to vanish into one line** saying `postgres: not
    * attempted`, so a reader could not tell a check that does not apply from a
    * check that was never written — ADR 0016 §4's rule about a thing you cannot
    * tell apart from its absence, in the one command built to prevent it.
+   *
+   * Seven of the twelve are about Postgres and are `postgresOnlyRows()`, which
+   * this iterates; the other five were questions about a log, and are asked of
+   * the file above rather than given a line saying why they do not apply. The
+   * list is the count: nothing here restates its length.
    *
    * Each keeps its name, each is a `skip` and never a silent pass, and each
    * detail **names the store** and says why the question does not apply here.
@@ -349,19 +354,34 @@ describe("lingtai doctor — a machine whose log is a file", () => {
    * and every branch that follows an `ok` store row pushes a reachability row,
    * `log: reachable` on a file and `postgres: pooled connection` on a server.
    * Asserted here so that a branch added without one is a failing test.
+   *
+   * **Unconditionally, and that is the point of it.** The rows around this one
+   * — the recipes, the declared environment, `runtimeAuth`, the projections —
+   * run against the real machine and the shared test database, so on a machine
+   * with no `~/.lingtai/lingtai/recipe.yml`, or with projection drift,
+   * `report.failed` is not zero. Asserted under `if (report.failed === 0)`,
+   * this test would assert nothing there and stay green over a branch that
+   * pushed no reachability row at all — which is the one thing it exists to
+   * catch, and CI is the obvious machine it would have been silent on.
    */
   it("never prints 0 failed without a row that reached the log", async () => {
     const file = openFile();
     try {
       const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
+      // `postgres: pooled connection` is here too, as the `skip` saying why it
+      // does not apply — and a skip reached nothing, which is the distinction
+      // the whole ticket is about.
       const reached = report.results.filter(
-        (r) => r.name === "log: reachable" || r.name === "postgres: pooled connection",
+        (r) =>
+          (r.name === "log: reachable" || r.name === "postgres: pooled connection") && r.status !== "skip",
       );
 
-      if (report.failed === 0) {
-        expect(formatReport(report)).toContain("0 failed");
-        expect(reached.some((r) => r.status === "ok")).toBe(true);
-      }
+      // The row is there and it reached the log, whatever else on this machine
+      // did or did not pass — so `0 failed`, printed or not, is never printed
+      // without it.
+      expect(reached.map((r) => r.name)).toEqual(["log: reachable"]);
+      expect(reached[0]?.status).toBe("ok");
+      if (report.failed === 0) expect(formatReport(report)).toContain("0 failed");
       // And the summary distinguishes what was not checked here from what is
       // not implemented anywhere: one number for each.
       expect(report.notChecked).toBeGreaterThanOrEqual(postgresOnlyRows().length);

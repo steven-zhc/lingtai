@@ -245,11 +245,19 @@ export async function logReachable(where: string, queries: LogQueries): Promise<
  *
  * Skipping them is right: there is no server here, and inventing a green row
  * for a connection nobody made would be worse than the silence it replaces.
- * What was wrong is that they *vanished* — ten checks collapsed into one line
- * saying `postgres: not attempted`, so a reader counting rows could not see the
- * nine that were gone, and `0 failed` covered the lot. ADR 0016 §4's rule
- * about a thing you cannot tell apart from its absence, in the one command
+ * What was wrong is that they *vanished* — **twelve** checks collapsed into one
+ * line saying `postgres: not attempted`, so a reader counting rows could not
+ * see the twelve that were gone, and `0 failed` covered the lot. ADR 0016 §4's
+ * rule about a thing you cannot tell apart from its absence, in the one command
  * built to prevent it.
+ *
+ * **Twelve, and this list is seven of them.** The other five — `log: every type
+ * is readable`, `github: what we said and did not manage`, `subscribers:
+ * failures` and the two gate audits — are questions about a log and not about
+ * Postgres, so they did not need a line here saying why they do not apply: they
+ * are asked of whatever store is open, above. Somebody adding a Postgres-only
+ * check later adds it to this list, and the number to audit it against is the
+ * length of the list itself.
  *
  * So each keeps its own name, and each says **why it does not apply, naming the
  * store** — not a bare `skip`. Where the question survives the store the
@@ -1963,9 +1971,10 @@ const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
  *
  * The two kinds of skip were one number and one sentence — *N not implemented
  * yet* — which is true of the three in `DEFERRED` and a lie about a check this
- * machine did not get. On a machine whose log is a file that lie covered ten
- * rows, one of which was the only asker of *is the log reachable*, and the
- * summary read as a clean bill of health for a machine nothing had checked.
+ * machine did not get. On a machine whose log is a file it covered the one row
+ * that stood in for twelve checks — among them the only asker of *is the log
+ * reachable* — and the summary read as a clean bill of health for a machine
+ * nothing had checked.
  *
  * Both halves are printed, and neither is hidden when it is zero on the green
  * line: a reader who has been told `4 not checked here` once will look for the
