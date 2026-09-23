@@ -168,8 +168,8 @@ value rather than declaring it again.*
 | **T3** | The recipe is `steps:` |
 | kind | `tech-debt` |
 | blocked by | T0b, T2 |
-| what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `rounds`/`restarts`/`turns`/`wall`/`base`/`kinds` move to the step that owns them; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. |
-| watch out | **A plugin's configuration must be hashed into `configHash`**, or [0047](../decisions/0047-the-recipe-a-run-got-is-on-the-log.md)'s *what a run was given is on the log* loses everything that moved out of `runtime:` — `rounds` on `proposed` is exactly as load-bearing as an action's command. |
+| what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `discuss:` and `subscribers:` beside it; `turns`/`wall`/`base`/`kinds` move to the step that owns them and `rounds`/`restarts` to the step each one bounds; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. |
+| watch out | **`configHash` needs nothing** — `hashRecipe` is already `sha256(canonical(recipe))` over the whole resolved recipe (`resolve.ts:102`), so everything that moves is inside the hash by construction. Checked rather than assumed; do not add a second hashing path. |
 
 ### Phase 2 — the pass
 

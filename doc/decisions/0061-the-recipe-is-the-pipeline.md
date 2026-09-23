@@ -82,7 +82,14 @@ A plugin's value is a scalar where one reads well and a map where it does not:
 ```
 
 **A universal key is the workflow's bound on a plugin; the plugin's own key is
-its configuration.** `name`, `when`, `timeout` and `env` are universal today and
+its configuration.** **A step's plugins run in the order they are written, and what the step does
+with their results is the step's.** That is already true of gate actions and it
+is what `claim` needs: `queue:` and `assignee:` are two plugins, the first that
+yields a work item wins, and a person reorders them by reordering the list. At
+`prepared` the same list means every one must pass. The ordering is universal;
+the reduction is the step's.
+
+`name`, `when`, `timeout` and `env` are universal today and
 `rounds`/`restarts` join them (§3). The distinction is not cosmetic and
 `timeout:` already shows why: a `run:` plugin cannot ignore its timeout, because
 the runner enforces it rather than the plugin honouring it. Every universal key
@@ -203,7 +210,7 @@ setting whose owning step is knowable today and unwritten today. A setting that
 cannot be placed under a step is a setting whose owner nobody has established,
 and it stays top-level until someone does.
 
-Top-level after the move: `version`, `env`, `steps`, `subscribers`.
+Top-level after the move: `version`, `env`, `steps`, `discuss`, `subscribers`.
 
 **A setting has exactly one home, and a step that needs another step's setting
 receives the value rather than declaring it again.** `base` is written once,
@@ -236,11 +243,28 @@ distinguishable*. The distinction belongs in what a reader is **shown**; making
 them type `design: []` buys nothing. The mechanism already exists —
 `recipe.ts:583` defaults the five gates exactly this way.
 
-### 6. `subscribers:` stays outside `steps:`
+### 6. Three top-level nodes, because three things are not the same
 
-A subscriber is not a step. 0015's one real division is that it **runs off the
-log and cannot change an outcome**, and that is the only division this ADR does
-not flatten. Filing subscribers under a step would erase it.
+```yaml
+steps:        # what a pass does, in order
+discuss:      # what answers a person's question about a ticket — not on a pass
+subscribers:  # what is told, off the log — cannot change an outcome
+```
+
+**A subscriber is not a step.** 0015's one real division is that it *runs off
+the log and cannot change an outcome*, and that is the only division this ADR
+does not flatten. Filing subscribers under a step would erase it.
+
+**A discussion is not a step either, and for a different reason.** It is
+started by a person — `apps/cli/src/discuss.ts:316` calls `holdDiscussion` —
+and it can happen while nothing is running, on a ticket no pass has claimed. It
+does not advance anything. But it is unlike a subscriber in the way that
+matters for this file: **it calls an agent and it spends money**, so it needs a
+plugin and a budget of its own rather than being invisible.
+
+[0053](0053-the-recipe-chooses-the-agent-for-each-role.md) already names
+discussion as one of the roles the recipe chooses an agent for. This is where
+that choice lives.
 
 ### 7. No migration — not for the file, and not for the log
 
@@ -297,16 +321,18 @@ mattered.
 also the test: if the v2 file is not plainly easier to read than the v1 it
 replaces, this ADR was wrong and the file will say so.
 
-**A plugin's configuration has to be hashed into `configHash`**, the way a
-gate's is, or 0047's *what a run was given is on the log* loses everything that
-moved out of `runtime:`. This is the open item 0058 §What-is-not-decided named,
-and it is now concrete: `proposed`'s `rounds` is exactly as load-bearing as an
-action's command, and it is a universal key rather than a plugin's, so the hash
-has to reach both.
+**`configHash` needs no work, and that is worth checking rather than assuming.**
+0058 §What-is-not-decided asked whether a plugin's configuration would be
+hashed the way a gate's is. It already is: `hashRecipe` is
+`sha256(canonical(recipe))` over the **whole resolved recipe**
+(`resolve.ts:102`), chosen that way on purpose — *two files that differ only in
+comments or key order describe the same run*. So `steps:`, the universal keys
+and `discuss:` are inside the hash by construction, and `implement`'s `rounds`
+changes it the moment it is edited. [0047](0047-the-recipe-a-run-got-is-on-the-log.md)
+holds without a line of work.
 
 ## What is not decided
 
-- **Whether `queue:` and `assignee:` at `claim` compose or exclude each other.**
 - **What a plugin's own schema is**, and whether a `run:` action's `env:` list
   ([0037](0037-an-extension-is-a-command.md) §1) generalises to every plugin or
   stays the property of the ones that spawn a process.
