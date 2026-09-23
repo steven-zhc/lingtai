@@ -269,6 +269,14 @@
   :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 </style>
 
+.banner{background:#fdf6e3;border:1px solid #c9a227;border-left-width:4px;
+  border-radius:4px;padding:.7rem .9rem;margin:.6rem 0 1.1rem;font-size:.86rem;
+  line-height:1.55;color:#4a3c14}
+.banner a{color:#7a5c0e}
+@media (prefers-color-scheme:dark){
+  .banner{background:#2a2517;border-color:#8a6a2e;color:#e6dcc0}
+  .banner a{color:#e9c96a}
+}
 <style>
   pre.code {
     margin: 26px 0 0;
@@ -291,6 +299,7 @@
 
   <header class="mast">
     <p class="eyebrow">Lingtai · 灵台 —— 一趟 pass，从头到尾 · <a href="the-pass.html">English</a></p>
+    <p class="banner"><b>这张图画的是代码<u>今天</u>跑的那趟 pass —— 五个 gate point，<a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a>。</b>它是准确的，但它不是已经定下来的那个形状：<a href="decisions/0058-lingtai-is-a-development-pipeline.md">0058</a> §3b 用十步加一个路由器取代了它，<a href="decisions/0061-the-recipe-is-the-pipeline.md">0061</a> 则让 recipe 本身就是那条流水线。两份都已接受，两份都还没建 —— <a href="design/the-pipeline.md">计划</a>是它们怎么落地，而这张图在它们落地<u>之后</u>才从代码重画，不在之前。</p>
     <h1>一趟 pass 与工作树</h1>
     <p class="sub">一趟 pass 就是一次 claim 买到的东西：一个分支、一个 agent、五个 gate 点，外加一条合并道。这张图画的是一次拒绝去哪里，以及 <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a> 把它改成了什么。图上的一切都来自已经存在的代码。</p>
   </header>

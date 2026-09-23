@@ -21,6 +21,14 @@ STYLE = ARCH[ARCH.index("<style>"):ARCH.index("</style>") + len("</style>")]
 
 # the page adds two things architecture.html has no use for
 EXTRA_CSS = """
+.banner{background:#fdf6e3;border:1px solid #c9a227;border-left-width:4px;
+  border-radius:4px;padding:.7rem .9rem;margin:.6rem 0 1.1rem;font-size:.86rem;
+  line-height:1.55;color:#4a3c14}
+.banner a{color:#7a5c0e}
+@media (prefers-color-scheme:dark){
+  .banner{background:#2a2517;border-color:#8a6a2e;color:#e6dcc0}
+  .banner a{color:#e9c96a}
+}
 <style>
   pre.code {
     margin: 26px 0 0;
@@ -114,6 +122,15 @@ EN = dict(
   one self-contained file: no build, no assets, no script. The only thing it
   fetches is the typeface.""",
     eyebrow="Lingtai · 灵台 — one pass, end to end",
+    banner="<b>This draws the pass as the code runs it today — five gate points, "
+           "<a href=\"decisions/0039-the-worktree-is-the-whole-of-a-pass.md\">0039</a>.</b> "
+           "It is accurate and it is not the shape that was decided: "
+           "<a href=\"decisions/0058-lingtai-is-a-development-pipeline.md\">0058</a> §3b "
+           "replaces it with ten steps and one router, and "
+           "<a href=\"decisions/0061-the-recipe-is-the-pipeline.md\">0061</a> with a recipe "
+           "that is the pipeline. Both are accepted and neither is built — "
+           "<a href=\"design/the-pipeline.md\">the plan</a> is how they get there, and this "
+           "page is redrawn from the code when they land, not before.",
     h1="The Pass and the Worktree",
     sub="A pass is what one claim buys: a branch, an agent, five gate points and a "
         "merge lane. This page draws where a refusal goes — and what "
@@ -294,6 +311,15 @@ ZH = dict(
   直接改这个文件会丢掉改动。它仍然是一个自足的文件：不需要构建，没有资源，
   没有脚本。只取一次字体。""",
     eyebrow="Lingtai · 灵台 —— 一趟 pass，从头到尾",
+    banner="<b>这张图画的是代码<u>今天</u>跑的那趟 pass —— 五个 gate point，"
+           "<a href=\"decisions/0039-the-worktree-is-the-whole-of-a-pass.md\">0039</a>。</b>"
+           "它是准确的，但它不是已经定下来的那个形状："
+           "<a href=\"decisions/0058-lingtai-is-a-development-pipeline.md\">0058</a> §3b "
+           "用十步加一个路由器取代了它，"
+           "<a href=\"decisions/0061-the-recipe-is-the-pipeline.md\">0061</a> "
+           "则让 recipe 本身就是那条流水线。两份都已接受，两份都还没建 —— "
+           "<a href=\"design/the-pipeline.md\">计划</a>是它们怎么落地，"
+           "而这张图在它们落地<u>之后</u>才从代码重画，不在之前。",
     h1="一趟 pass 与工作树",
     sub="一趟 pass 就是一次 claim 买到的东西：一个分支、一个 agent、五个 gate 点，"
         "外加一条合并道。这张图画的是一次拒绝去哪里，以及 "
@@ -607,6 +633,7 @@ def page(T, other):
 
   <header class="mast">
     <p class="eyebrow">{T['eyebrow']} · <a href="{other}">{T['otherlang']}</a></p>
+    <p class="banner">{T['banner']}</p>
     <h1>{T['h1']}</h1>
     <p class="sub">{T['sub']}</p>
   </header>

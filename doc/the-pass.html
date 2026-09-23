@@ -271,6 +271,14 @@
   :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 </style>
 
+.banner{background:#fdf6e3;border:1px solid #c9a227;border-left-width:4px;
+  border-radius:4px;padding:.7rem .9rem;margin:.6rem 0 1.1rem;font-size:.86rem;
+  line-height:1.55;color:#4a3c14}
+.banner a{color:#7a5c0e}
+@media (prefers-color-scheme:dark){
+  .banner{background:#2a2517;border-color:#8a6a2e;color:#e6dcc0}
+  .banner a{color:#e9c96a}
+}
 <style>
   pre.code {
     margin: 26px 0 0;
@@ -293,6 +301,7 @@
 
   <header class="mast">
     <p class="eyebrow">Lingtai · 灵台 — one pass, end to end · <a href="the-pass.zh.html">中文</a></p>
+    <p class="banner"><b>This draws the pass as the code runs it today — five gate points, <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a>.</b> It is accurate and it is not the shape that was decided: <a href="decisions/0058-lingtai-is-a-development-pipeline.md">0058</a> §3b replaces it with ten steps and one router, and <a href="decisions/0061-the-recipe-is-the-pipeline.md">0061</a> with a recipe that is the pipeline. Both are accepted and neither is built — <a href="design/the-pipeline.md">the plan</a> is how they get there, and this page is redrawn from the code when they land, not before.</p>
     <h1>The Pass and the Worktree</h1>
     <p class="sub">A pass is what one claim buys: a branch, an agent, five gate points and a merge lane. This page draws where a refusal goes — and what <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a> changed about that. Everything on it is drawn from code that exists.</p>
   </header>

@@ -292,6 +292,11 @@ bail has nothing left to bail from.
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`
 - [ ] A plugin a step cannot run is refused when the recipe resolves, by name
+- [ ] **`doc/the-pass.html` and its Chinese twin are redrawn from the code**,
+      not before it. They draw 0039's five gate points today, which is accurate
+      and is not the decided shape; a banner says so until the pass they draw is
+      the one that runs. `scripts/the-pass.py` is the source — the HTML is
+      generated
 - [ ] **No retired name survives** — not in an identifier, a type, an event
       type, a recipe key, or a string a person reads. `gate` is gone entirely
       rather than kept as a descriptive word, because a token that is sometimes
