@@ -177,14 +177,29 @@ person.
 - **Whether `merge` should hold for the run in §3.** It cannot here —
   `gates.merge` is `[]` and this repository merges unattended — but a managed
   repository with a human at `merge` could wait for it.
-- **The per-package mechanism**, though vitest 4 answers it and the answer is
-  worth more than this ADR. There are twenty `vitest*.config.ts` files here and
-  no root config; a root config with two `projects`, `unit` and `integration`,
-  makes §1 a flag (`vitest --project unit`) instead of a directory convention
-  — **and it retires `pnpm -r`'s first-failure bail
-  ([#222](https://github.com/steven-zhc/lingtai/issues/222)) as a side effect**,
-  because one vitest run over every project reports every project. Three
-  problems, one move.
+- **The per-package mechanism**, though vitest 4 narrows it and one measurement
+  settles most of it. There are twenty `vitest*.config.ts` files here and no
+  root config, and two candidates:
+
+  **Tags are real** — vitest 4.1.11 has `tags` in the config, `{ tags: [...] }`
+  on a `describe` or an `it` (a suite's tag is inherited), `--tagsFilter` with
+  `&&`/`||`/`!`, `--listTags`, and `strictTags` on by default, so a typo in a
+  tag name is an error rather than a test that silently never runs. Probed
+  directly on the installed version rather than taken from the docs.
+
+  **And a tag does not stop the file being imported**, which is the fact that
+  decides this. Probed: a file whose every test is `@integration`, run under
+  `--tagsFilter '@unit'`, still threw from module scope and still failed the
+  run. A tag filters *tests*; the file is loaded to find them. So for a file
+  that is integration all the way down — a pool at import, a spawn in
+  `beforeAll` — the tag buys nothing and the cost is paid anyway.
+
+  Which leaves: **projects (or include globs) to keep an integration file out
+  of the gate's run entirely, and tags for the mixed file** that is mostly unit
+  with two cases that reach out. A root config with `unit` and `integration`
+  projects also **retires `pnpm -r`'s first-failure bail
+  ([#222](https://github.com/steven-zhc/lingtai/issues/222))**, because one
+  vitest run over every project reports every project.
 - **Whether the boundary is checkable rather than remembered.** A lint rule
   that refuses `node:child_process`, `node:fs`, `node:net` and a live client
   inside `unit/` would make §1 a thing the tree enforces — which is the only
