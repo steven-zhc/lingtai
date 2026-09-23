@@ -5,14 +5,14 @@
  * is the whole of what 0047 promises and refuses — the canonical recipe beside
  * the hash it verifies against, and nothing that is not in the recipe.
  */
-import { GATE_POINTS } from "@lingtai/domain";
+import { STEPS } from "@lingtai/domain";
 import { type ResolvedRecipe, canonicalRecipe } from "@lingtai/recipe";
 
 export function gatesResolved(runId: string, resolved: ResolvedRecipe) {
   return {
     runId,
     configHash: resolved.configHash,
-    points: GATE_POINTS.map((gate) => ({
+    points: STEPS.map((gate) => ({
       gate,
       actions: resolved.recipe.gates[gate].map((a) => a.name),
     })),

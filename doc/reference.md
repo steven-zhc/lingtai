@@ -139,7 +139,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 15 chains, 17 steps
+## upcaster — 17 chains, 21 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -154,8 +154,31 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `WorkItemBlocked` | 1 → 2 | `needs` and `diagnosis` (`#83`). A block could say only *what is your question*, so a `human:` gate asking for a decision and a conflict nobody had looked at were the same event with a different string on it. Both null on a v1: the upcaster is handed a payload rather than a stream, and the question's wording is a convention of the three call sites and not a field |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
-| `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `GatePoint`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
+| `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
+| `FixRequested` | 1 → 2 | `of` — the `rounds` ceiling the round is counted against (`#146`). Zero means *not recorded*, and the number is not guessable: the recipe is read from the base branch every pass |
+| `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `Step`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
+| `GatesResolved` | 2 → 3 | `recipe`, the canonical recipe the run resolved against ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)). The step adds **nothing** — absent, not null and not `{}`, so *not recorded* stays distinguishable from *recorded, and empty* |
 | `GatePassed` | 2 → 3 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v2 pass gets `[]`, not a parse of that prose, which is untouched |
+
+**The counts in this heading are counted off the table, never computed.** Nine
+of the seventeen chains are one row above, because ADR 0018 moved nine types
+together and reads as one fact; the heading still counts them as nine. It read
+*15 chains, 17 steps* while `PromptEdited` and `FixRequested` were missing
+rows — a heading that is arithmetic on a number nobody re-derived is how a
+reader comes to believe four rows are stale and deletable.
+
+**The nine `1 → 2` steps go when the log goes, and not before.**
+[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 spends this history
+rather than upcasting it to ten steps, and the thing that spends it is the
+**reset** — [the-pipeline](design/the-pipeline.md)'s T5, with T5b's fold of the
+log before it, neither landed. Until they are, the store holds `schemaVer: 1`
+rows of all nine, so the step stays and so do the nine `SCHEMA_VER`s that
+depend on it: lowering a version below what the writer stamped sends every
+stored row down `upcast`'s *the writer is newer than the reader* branch, which
+names the wrong party. **The mechanism is untouched either way**
+([0001](decisions/0001-event-sourcing.md)): it was built before it was needed
+because the first upcaster is written under time pressure against real history,
+and a Lingtai whose log nobody may reset will want it.
 
 Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
 `packages/domain/src/events.ts`; everything absent from it is 1.
@@ -197,7 +220,7 @@ Lingtai never decided which issues exist ([ADR 0012](decisions/0012-one-task-vie
 
 ## policy — every number that decides behaviour
 
-Every other section counts a **kind**: event types, gate points, doctor checks,
+Every other section counts a **kind**: event types, steps, doctor checks,
 tiers. This one lists **limits** — the numbers that decide what a run is told,
 what it may spend and how long a card survives. Nothing here names a thing; each
 row is a rule, and until [0029](decisions/0029-the-prompt-budget-is-the-recipes.md)
@@ -415,28 +438,42 @@ process startup alone was 17ms.
 **Four tools count as mutations** (`hook-socket.ts`), and only these produce
 `RunTouchedFile`: `Write` · `Edit` · `MultiEdit` · `NotebookEdit`.
 
-## gate point — 5, closed forever
+## step — 10, closed forever
 
-A gate is a **place in the loop**, not a kind of check. The set may never grow.
-Source: `GatePoint` and `GATE_POINTS` in `packages/domain/src/events.ts`.
+A step is a **place in the pass**, not a kind of check. The set may never grow.
+It was five until 2026-09-23, when
+[0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 widened it to the
+ten a pass actually goes through: *the board cannot draw what the model does not
+name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 
-| Point | When | May refuse? |
-|---|---|---|
-| `admit` | the queue offers an item, before it is claimed | nothing runs here — see the matrix below |
-| `prepared` | after the worktree exists, before the agent starts | yes |
-| `proposed` | the agent stopped and there are commits — a change has been proposed | yes |
-| `merge` | after `proposed` passes, before the merge lane | yes |
-| `end` | the work item reached any terminal outcome | **no** |
+| Step | When | May refuse? | Built? |
+|---|---|---|---|
+| `claim` | the queue picks the item | no | not yet |
+| `admit` | work starts on it; the worktree is cut here | nothing runs here — see the matrix below | not yet |
+| `prepared` | after the worktree exists, before the agent starts | yes | yes |
+| `design` | a document, before any code — or nothing, which is an answer | no | not yet |
+| `implement` | one agent, in that worktree | no | not yet |
+| `build` | the independent build of what was written | yes | not yet |
+| `review` | reads the diff, returns findings, judges nothing | no | not yet |
+| `proposed` | the agent stopped and there are commits — a change has been proposed | yes | yes |
+| `merge` | after `proposed` passes, before the merge lane | yes | yes |
+| `end` | the work item reached any terminal outcome | **no** | yes |
 
 `prepared` and `proposed` run the recipe's actions; `merge` holds when a `human`
 action asks or when `--no-merge` does; `end` runs too, its actions being effects
 rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
-`admit` is empty here and empty everywhere: nothing constructs a pipeline for
-it, so an action declared there is refused when the recipe resolves rather than
-accepted and skipped (`#61`). It stays one of the five — the closed set is about
-the places in the loop, not about what is built today.
+
+**Six of the ten are empty here and empty everywhere, and that is what the last
+column is for.** Nothing constructs a pipeline for `claim`, `admit`, `design`,
+`implement`, `build` or `review`, so an action declared at one is refused when
+the recipe resolves rather than accepted and skipped (`#61`). Today's build and
+review run as actions at `proposed`, and today's implementing agent is
+dispatched by `run-once.ts` directly. They are all ten steps regardless — the
+closed set is about the places in the pass, not about what is built today — and
+naming them is what lets the log, the recipe and the board say where a pass is.
+Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
 
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
@@ -476,14 +513,20 @@ second silently overwrite the first.
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
 it by arithmetic rather than by anybody noticing.
 
-## point × kind — the 30 cells, and which of them run
+## step × kind — the 60 cells, and which of them run
 
-Not every kind runs at every point, and for a year ten of the thirty cells said
+Not every kind runs at every step, and for a year ten of the cells said
 neither yes nor no: an action there was accepted by the schema, resolved into
 `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
 called (`#61`). `merge` was a sixteenth until `#58` built its pipeline. **The
 set is two-valued now**: a cell runs, or the recipe does not resolve and the
-refusal names the action, its kind, the point and why.
+refusal names the action, its kind, the step and why.
+
+It was thirty cells until the vocabulary went to ten names. Thirty-six of the
+sixty are refusals, because six steps have no call site — which is the same
+two-valued rule and not an exception to it: **naming a step is not building
+it**, and a `design:` block a recipe could write and nothing would run is `#61`
+with a new spelling.
 
 Source: `KINDS_AT` and `whyNoKindAt` in `packages/recipe/src/recipe.ts`. This
 table is checked against that constant, cell for cell, by
@@ -495,8 +538,13 @@ checks is not worth having.
 
 | | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` |
 |---|---|---|---|---|---|---|
+| `claim` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
 | `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
 | `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `design` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `implement` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `build` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `review` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
 | `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ |
 | `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ |
 | `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ |
@@ -504,14 +552,19 @@ checks is not worth having.
 Where each row comes from:
 
 ```
-prepared   run-once.ts   gatesFromRecipe("prepared", …, { env })    an environment, and nothing else
-proposed   run-once.ts   gatesFromRecipe("proposed", …, gateDeps)   every dependency
-merge      run-once.ts   gatesFromRecipe("merge",    …, gateDeps)   every dependency   ← #58
-end        end-point.ts  resolveEndActions                          the two effects
-admit      —             no pipeline is constructed anywhere
+prepared    run-once.ts   gatesFromRecipe("prepared", …, { env })    an environment, and nothing else
+proposed    run-once.ts   gatesFromRecipe("proposed", …, gateDeps)   every dependency
+merge       run-once.ts   gatesFromRecipe("merge",    …, gateDeps)   every dependency   ← #58
+end         end-point.ts  resolveEndActions                          the two effects
+claim       —             no pipeline is constructed anywhere
+admit       —             no pipeline is constructed anywhere
+design      —             no pipeline is constructed anywhere        ← 0058 §3, not yet built
+implement   —             no pipeline is constructed anywhere        ← run-once.ts dispatches the agent directly
+build       —             no pipeline is constructed anywhere        ← today a `run:` action at `proposed`
+review      —             no pipeline is constructed anywhere        ← today an `agent:` action at `proposed`
 ```
 
-**Every ✋ is a fact about the point, not about the caller.**
+**Every ✋ is a fact about the step, not about the caller.**
 
 - **`admit` carries nothing.** No code reaches it, so an action there would be
   resolved, printed and never called. The point stays in the closed set and the
@@ -527,10 +580,16 @@ admit      —             no pipeline is constructed anywhere
   queue, so the person would be asked a question that re-asks itself — and pays
   for a worktree and an install — on every pass, and can never be answered. Ask
   before the claim, or at `proposed`, where there is a diff to approve.
+- **The five steps 0058 §3 named carry nothing yet**, and each refusal says
+  where that work is done today instead — the queue's filter for `claim`, the
+  issue body for `design`, `run-once.ts`'s own dispatch for `implement`, and
+  the `proposed` point's actions for `build` and `review`. The refusal is the
+  half an operator can act on; *nothing runs here* on its own is a recipe key
+  and no next move.
 - **`end` produces no verdict**, so the four kinds that produce one have nothing
-  to be there. Its two carry `when:`, which is how one point serves every
+  to be there. Its two carry `when:`, which is how one step serves every
   terminal outcome.
-- **`close:` and `labels:` at a point that decides** are effects rather than
+- **`close:` and `labels:` at a step that decides** are effects rather than
   verdicts, and only `end` carries out effects. This is the direction the
   codebase already got right, and its wording is the argument for the rest:
   *an action that is silently absent is worse than a run that will not start.*
@@ -586,7 +645,19 @@ beside it.
 ## what the log says was *supposed* to happen
 
 `GatesResolved`, one per run, appended before anything is claimed. It names all
-five points and the ordered actions resolved for each — empty arrays included.
+ten steps and the ordered actions resolved for each — empty arrays included.
+
+**Ten is the schema's assertion and not a description of it**: `points` is
+`.length(10)` (`packages/domain/src/events.ts`), pinned by *refuses a plan that
+is not all ten steps* in `packages/domain/unit/upcast.test.ts`. It was five
+until 2026-09-23 and grew **without a version bump and without an upcaster**,
+which [0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 pays for by
+resetting the log rather than carrying it forward — [the-pipeline](design/the-pipeline.md)'s
+T5, which has not run. So a stored five-point plan is refused on read, and
+`Too small: expected array to have exactly 10 items` — raised from
+`parsePayload`, rethrown unwrapped by `decodeRow` with no type, stream or seq on
+it — is **the reader's schema having been widened ahead of the reset**, never a
+writer that emitted a malformed plan.
 
 Without it the log could not distinguish "nothing was configured here" from
 "this point does not exist", because `ProjectConfigured` carries a config *hash*
@@ -699,16 +770,24 @@ says an issue should look like against what GitHub says it does.
 
 ### where `skipped` is rendered
 
-The board and the task page draw **all five points**, always, marking an empty
+The board and the task page draw **all ten steps**, always, marking an empty
 one `skipped` rather than leaving it out — `Segs` in `apps/board/src/app/rail.tsx`,
 over `foldProgress` in `apps/board/src/lib/progress.ts`, which folds
-`GatesResolved` against the verdicts that followed. A point not reached yet is
+`GatesResolved` against the verdicts that followed. A step not reached yet is
 `pending`; one configured, recorded nothing, on an item that landed is
 `never-ran`, hatched in the fail colour — that is where "configured but did not
 run" becomes visible. It used to be a `pending` count off a second fold,
 `PointView`, which could not tell the two apart (#189).
 
-`lingtai add` prints the same five at onboarding. Neither surface omits a point.
+It was five until 2026-09-23 — the count moved with the vocabulary and the rule
+did not, because the rule never counted. `apps/board/unit/rail.test.tsx` asserts
+ten segments in all three lanes that fold, so **an operator counting ten
+segments on a card is looking at correct behaviour**, and six of them are
+`skipped` on every card this repository draws because nothing constructs a
+pipeline at them yet.
+
+`lingtai add` prints the same ten at onboarding (`for (const point of STEPS)` in
+`packages/conductor/src/onboard.ts`). Neither surface omits a step.
 
 ## the `end` plan, continued
 
@@ -844,7 +923,7 @@ by four checks and two names.
 | projections (2) | `projections: lag` · `projections: shape` |
 | running system (6) | `daemon: liveness` · `conductor: refusals on the log` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` · `subscribers: failures` |
 | the log itself (1) | `log: every type is readable` |
-| gates ran (2) | `gates: end ran on what landed` · `gates: every point that was planned ran` |
+| gates ran (2) | `gates: end ran on what landed` · `gates: every step that was planned ran` |
 | credentials (2) | `github: app credentials` · `runtime: signed in` |
 | visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
 

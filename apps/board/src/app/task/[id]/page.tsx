@@ -244,10 +244,10 @@ export function Attempt({
         <RunLog runId={run.runId} live={running} />
       )}
 
-      {/* All five, always — including the ones nothing was configured at. A
-          point that is merely omitted looks exactly like a point that was
+      {/* All ten, always — including the ones nothing was configured at. A
+          step that is merely omitted looks exactly like a step that was
           configured and silently did not run, and only one of those is our bug
-          (ADR 0016 §4). Under the attempt, because a gate runs once per
+          (ADR 0016 §4, and 0061 §5 for the ten). Under the attempt, because a gate runs once per
           attempt: attempt 1's failing `proposed` and attempt 2's have nothing
           to do with each other and used to sit in one list.
 

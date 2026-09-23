@@ -81,17 +81,31 @@ describe("projectFilter", () => {
    * for the reason `backoffMs` is, so the board never gets its own idea of what
    * `20m` is.
    *
-   * All five points, including the ones nothing is configured at: an empty
-   * point is `skipped` and the skip has to be visible, or a point that *was*
+   * All ten steps, including the ones nothing is configured at: an empty
+   * step is `skipped` and the skip has to be visible, or a step that *was*
    * configured and silently did not run is indistinguishable from it
-   * (ADR 0016 §4).
+   * (ADR 0016 §4). It was five until `#227` and the rule never counted — what
+   * this asserts is *every step the vocabulary has*, whatever it has.
    */
-  it("carries every point's actions with the timeouts already numbers", async () => {
+  it("carries every step's actions with the timeouts already numbers", async () => {
     const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
 
     expect(filter.ok).toBe(true);
     if (!filter.ok) return;
-    expect([...filter.plan.keys()]).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
+    // All ten, in pass order, whatever the recipe configured — which is the
+    // property this line is for, not the five it used to name.
+    expect([...filter.plan.keys()]).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "design",
+      "implement",
+      "build",
+      "review",
+      "proposed",
+      "merge",
+      "end",
+    ]);
     expect(filter.plan.get("prepared")).toEqual([{ name: "install", budgetMs: 10 * 60_000 }]);
     // A reviewer has no clock on it, and null is not zero: a card that showed a
     // budget of 0 would say it was already out of time.

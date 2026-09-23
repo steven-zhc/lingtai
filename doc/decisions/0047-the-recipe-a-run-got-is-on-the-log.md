@@ -1,7 +1,12 @@
 # 0047 — The recipe a run was given is on the log, and nothing resolves from it
 
 **Status** accepted · 2026-09-16 · **qualifies
-[0005](0005-config-in-target-repo.md)**, which it does not supersede
+[0005](0005-config-in-target-repo.md)**, which it does not supersede · its
+`.length(5)` is **ten** since 2026-09-23
+([0058](0058-lingtai-is-a-development-pipeline.md) §5, `#227`), which is this
+ADR's own claim applied to a wider vocabulary rather than a change to it: if
+every step's behaviour is configurable and the log records only five of ten,
+*what a run was given is on the log* stops being true
 
 `GatesResolved` carries the canonical recipe the run was resolved against, in
 addition to the hash of it that it already carries. It is a record. No code path

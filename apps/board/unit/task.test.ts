@@ -168,14 +168,14 @@ describe("one attempt", () => {
     ]);
   });
 
-  it("still shows all five points, including the ones nothing was configured at", () => {
+  it("still shows all ten steps, including the ones nothing was configured at", () => {
     const run = foldRun(CLAIM, 1, [
       e(RUN_1, "GatesResolved", { points: [{ gate: "proposed", actions: ["build"] }] }),
     ]);
 
     // `progress.ts`'s fold, which is the one the rail reads (#189).
-    expect(run.progress?.points).toHaveLength(5);
-    expect(run.progress?.points.filter((p) => p.state === "skipped")).toHaveLength(4);
+    expect(run.progress?.points).toHaveLength(10);
+    expect(run.progress?.points.filter((p) => p.state === "skipped")).toHaveLength(9);
   });
 });
 

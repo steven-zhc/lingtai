@@ -372,29 +372,39 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    force-push simply made it about a different diff. */
 .pill.stale { opacity: 0.45; text-decoration: line-through; }
 /* --- the sequence ---------------------------------------------------------
-   The five points, drawn as the sequence they are (#170,
+   The ten steps, drawn as the sequence they are (#170,
    `doc/design/the-card.md`).
 
    They were a wrapped row of equal pills in the same `.meta` class as the
    counters above, which made `pill pass` green mean *a gate action passed* in
-   one list and *this point passed* in the other — six tones doing two jobs, and
+   one list and *this step passed* in the other — six tones doing two jobs, and
    a reader had to know which list they were in before the colour meant
    anything. Nothing below reuses the pill vocabulary for that reason: these
    tones belong to the sequence and appear nowhere else on the card.
 
-   **A grid of five equal columns, and never a flex row.** Five columns is what
-   makes the labels line up under their own segments and what stops the bar
+   **A grid of ten equal columns, and never a flex row.** Equal columns are what
+   make the labels line up under their own segments and what stop the bar
    wrapping at the width a column actually gives a card (22rem); a flex row with
-   `wrap` is the shape this replaced. */
+   `wrap` is the shape this replaced, and it is the shape a bar of ten would
+   fall back into.
+
+   It was five columns until the vocabulary went to ten (0058 §3). What the
+   extra five cost is **label width and not a segment**: the gap is 3px rather
+   than 4px so the ten share as much of the 22rem as they can, and the words
+   clip where they must (see `.slab`). That is the trade 0016 §4 forces — a
+   segment dropped to make room is indistinguishable from one that was
+   configured and silently did not run, and a word clipped to five characters
+   (`.slab` below, and the number is computed there rather than claimed) is
+   characters a `title` gives back. */
 .seq { display: grid; gap: 3px; margin: 1px 0 0; }
 .segs {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px;
+  display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px;
   margin: 0; padding: 0; list-style: none;
 }
 .seg { display: grid; gap: 2px; min-width: 0; }
-/* One cell per planned action, so a point holding `build` and `review` is half
+/* One cell per planned action, so a step holding `build` and `review` is half
    a bar when half of it has run — the granularity the `N passed` counter had
-   and the flattened row did not. A point the recipe left empty draws one cell. */
+   and the flattened row did not. A step the recipe left empty draws one cell. */
 .sbar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px; height: 5px; }
 .scell { display: block; border-radius: 1px; background: var(--rule); }
 .scell.t-pass { background: var(--pass); }
@@ -405,7 +415,8 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .scell.t-waived { background: var(--held); }
 /* Configured, not reached yet. Quiet, because nothing is wrong. */
 .scell.t-pending { background: var(--rule); }
-/* Nothing configured — `admit: []`, `merge: []`. No fill at all, so the point
+/* Nothing configured — `admit: []`, `merge: []`, and the five steps 0058 §3
+   names that nothing constructs a pipeline for yet. No fill at all, so the step
    keeps its place in the sequence without claiming anything happened in it. */
 .scell.t-skipped { background: transparent; border: 1px dashed var(--rule-2); }
 /* **Configured, and did not run** — the one segment that breaks the bar's
@@ -429,11 +440,22 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 @keyframes seg-live { 50% { opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .scell.t-run { animation: none; } }
 
-/* The five names, which let the sentence below drop the point name: it read
+/* The ten names, which let the sentence below drop the step name: it read
    `proposed:build 42s / 20m` and now reads `build 42s / 20m`, because the
-   highlighted label already said `proposed`. */
+   highlighted label already said `proposed`.
+
+   **Clipped on purpose, and the clip is the concession the bar makes to ten.**
+   Ten columns in 22rem leave five characters at 9px — `prepa`, `imple`,
+   `propo` — and every one of the ten is still unique at that length, with one
+   character to spare: at four they start colliding. `clip` rather than
+   `ellipsis` because an ellipsis spends one of the five characters saying
+   there are more; the `title` on the segment carries the whole name.
+
+   The number is not prose: `rail.test.tsx` computes it from the values below
+   and asserts it is five, so changing the size, the gap or the tracking fails
+   there rather than leaving this comment describing a card nobody renders. */
 .slab {
-  font-family: var(--mono); font-size: 9px; letter-spacing: -0.02em;
+  font-family: var(--mono); font-size: 9px; letter-spacing: -0.03em;
   color: var(--muted);
   overflow: hidden; text-overflow: clip; white-space: nowrap;
 }
@@ -1280,8 +1302,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   margin: 0;
   font-size: 0.7rem;
 }
-/* Tighter than an attempt's five, which sit on a wider column: this is half a
-   row and the same five points have to fit beside a prompt. */
+/* Tighter than an attempt's, which sit on a wider column: this is half a
+   row and the same ten steps have to fit beside a prompt. */
 .plan .points { gap: 0.25rem; }
 .plan .point { padding: 0.3rem 0.55rem; grid-template-columns: 5.5rem 1fr; font-size: 0.72rem; }
 .plan > .empty { margin: 0; }
@@ -1747,9 +1769,11 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   overflow-wrap: anywhere;
 }
 
-/* The five gate points. Every one is listed, including the empty ones — a
-   point that is merely omitted looks exactly like one that was configured and
-   silently did not run, and only the second is a bug (ADR 0016 §4). */
+/* The ten steps. Every one is listed, including the empty ones — a step that
+   is merely omitted looks exactly like one that was configured and silently did
+   not run, and only the second is a bug (ADR 0016 §4). These are the stacked
+   rows the task and queued pages draw, not the card's bar, so ten rows cost
+   height rather than width and nothing has to clip. */
 .points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .point {
   display: grid;

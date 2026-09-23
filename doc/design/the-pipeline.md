@@ -48,7 +48,7 @@ not by the code. What that removes is real and most of it is invisible work:
 
 ```
 no upcaster for GatesResolved             the log is reset instead (§4, T5b)
-no GatePoint kept beside Step             the five-name enum is deleted
+no GatePoint kept beside Step             the five-name enum is deleted  ✓ #227
 no v1 recipe path                         a v1 file is refused by name
 no flag, no dual-write, no bridge         one shape at a time, not two
 ```
@@ -97,7 +97,7 @@ and it is why the list below is shorter than the one a migration needs.**
 ```
 0   decide       T0b  the v2 recipe, written out          ✓ #226  ← the target
 
-1   vocabulary   T1   Step replaces GatePoint
+1   vocabulary   T1   Step replaces GatePoint             ✓ #227
                  T2   the twelve plugins, as one interface
                  T3   the recipe is `steps:`                     (0061)
 
@@ -159,11 +159,12 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T1** | `Step` replaces `GatePoint` |
+| **T1** | `Step` replaces `GatePoint` — **landed, `#227`** |
 | kind | `tech-debt` |
 | blocked by | — |
 | what | One enum of ten (`events.ts:74`), and the five-name one is **deleted**, not kept beside it. `GatesResolved`'s `points: …length(5)` (`:514`) becomes ten. **No schema version bump and no upcaster** — the log is reset at T5. |
 | watch out | `gatePointRenamed` in [`upcast.ts`](../../packages/domain/src/upcast.ts) (`diff` → `proposed`, ADR 0018) dies with the reset and can go. **The upcast mechanism stays**: 0001 built it before it was needed because *the first upcaster is written under time pressure against real history*, and a Lingtai somebody else runs has a log nobody may reset. Deleting one upcaster is not deleting the machinery. |
+| what it also did | **Three things followed from the enum and could not be deferred**, and each is noted where it landed rather than left for a reader to find. **(a) The recipe's `gates:` has ten keys**, six of them accepting nothing (`KINDS_AT`, `whyNoKindAt`), because `GatesResolved` records ten and its source is `recipe.gates[step]` — which is also [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §5's *the resolved recipe may not omit a step*, at `recipe.ts:583`, the line that ADR names as the mechanism. The matrix went from thirty cells to sixty, in `doc/reference.md` and in `gate-matrix.test.ts`, which is T2's hundred and twenty arriving in two stages rather than one. **(b) The board's bar draws ten**, because `foldProgress` folds over the enum — so half of T6 below is done, and the half that is not is named there. **(c) Nothing moved in `schemaVer`, and `gatePointRenamed` stayed — the one line of the ticket that is not satisfiable as written.** `#227` asks for it gone with *the mechanism, its tests and its other upcasters untouched*, and those two clauses contradict each other at one type. `GatePassed` is at `schemaVer: 3`: `1 → 2` is the rename, `2 → 3` is `findings` (#135), and `upcast.test.ts`'s *has an unbroken chain of steps for every type past version 1* — the invariant that file opens by naming — requires a step at every version below the current one. So deleting the `1 → 2` step leaves `GatePassed` at 3 with a hole at 1; the only exits are to lower its version (which deletes `findings`, one of the *other upcasters*), or to edit that invariant (one of *its tests*), or to leave a do-nothing step behind claiming a version moved. The seven pure ones could go alone, and would leave one vocabulary spread across two rules. The weaker half of the same argument, which expires where this one does not: §4's reset is T5b and T5 below, neither landed, so the store still holds `schemaVer: 1` rows of all nine. **T5 is where this line gets closed** — a reset log has no row of any version, and the nine versions and every step under them come down together in one commit. `GatesResolved` did grow to ten **in the schema** (`.length(10)`), which refuses a stored five-point plan from now until that reset; that is where this ticket's cost is paid, and it is the cost the row above named. |
 
 | | |
 |---|---|
@@ -222,10 +223,11 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T6** | The rail draws ten steps |
+| **T6** | The rail marks where a fix round is — **half done by `#227`** |
 | kind | `bug` |
 | blocked by | T5 |
-| what | `rail.tsx:109` draws `points.map(...)` — five segments — and highlights the one whose name matches the fold's label. During a fix round that label is `fixing round 1 of 3`, which is none of the five, so **no segment is marked and the eye lands on the last green one**. Observed on #179: the rail read as stopped at `prepared` while the run was eighteen minutes into a fix round at `proposed`. |
+| what | `rail.tsx` draws `points.map(...)` and highlights the one whose name matches the fold's label. **The segment count is no longer the issue**: `#227` made `foldProgress` fold over the ten-name enum, so the bar draws ten and `rail.test.tsx` holds it at ten in all three lanes. What is left is the original bug — during a fix round that label is `fixing round 1 of 3`, which is none of the ten, so **no segment is marked and the eye lands on the last green one**. Observed on #179: the rail read as stopped at `prepared` while the run was eighteen minutes into a fix round at `proposed`. |
+| what it costs | **Nothing about the width is still open.** Ten labels in a 22rem column clip at **five** characters — `rail.test.tsx` computes that from the font size, the gap and the tracking in `globals.css` and pins it at exactly five, and checks the ten stay unique at it; the whole name is on each segment's `title`. Five and not six: the number is derived rather than claimed, and three files said six for a day. The trade and its argument are in [`the-card.md`](the-card.md) § *What ten cost, and what it did not*. |
 
 ### Phase 3 — configure
 
@@ -299,6 +301,15 @@ bail has nothing left to bail from.
       reader cannot tell apart. Prose describing *history* keeps the name that
       history happened under. Held to it by a table in `doc/reference.md` and a
       test that reads it (#232), and emptied by #233
+- [ ] **The two drawings say ten.** `#227` left them at five on purpose, and it
+      is a redraw rather than a rename: `doc/architecture.html`'s prose moved
+      because its figure draws a *pass* and never enumerated the vocabulary,
+      but `scripts/the-pass.py` puts five nodes on a spine and says so in the
+      subtitle, the caption and the figure's `alt` — so changing the count
+      without moving the geometry would leave a page describing something it
+      does not draw. The HTML is generated; the edit is to the script
+      (`doc/the-pass.html` and `doc/the-pass.zh.html` are its output, and the
+      Chinese page moves in the same commit)
 - [ ] Everything 012 measured is in a file before the log that carried it is reset
 
 ## 6. Related

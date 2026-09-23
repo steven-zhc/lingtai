@@ -8,11 +8,12 @@
  * the recipe, and the limits beside it — and none of them was on any page
  * (#113).
  *
- * **All five points, including the ones nothing is configured at.** ADR 0016
- * §4's rule holds before a run exactly as it holds after one: a point that is
- * merely left out looks identical to a point that was configured and silently
+ * **All ten steps, including the ones nothing is configured at.** ADR 0016
+ * §4's rule holds before a run exactly as it holds after one: a step that is
+ * merely left out looks identical to a step that was configured and silently
  * did not run, and only the second is Lingtai's bug. The attempt's own ledger
- * says `skipped` for the same reason and in the same word.
+ * says `skipped` for the same reason and in the same word. These are stacked
+ * rows rather than the card's bar, so the ten cost height and nothing clips.
  *
  * A box, because it sits beside `WILL BE SENT` and the layout notes allow the
  * decision column two of them. Neutral, like that one: the amber on this page
@@ -67,7 +68,7 @@ export function Plan({ plan }: { plan: PlanView | null }) {
         // will not parse and a GitHub that would not answer all look like "no
         // plan", and the reason is one line up — the block that could not ask
         // says why. What must not happen is a guessed plan: a page that
-        // invented five points would be inviting somebody to press a button on
+        // invented a plan would be inviting somebody to press a button on
         // a description of something else.
         <p className="empty">
           The recipe could not be read, so what a run would do here is not known.

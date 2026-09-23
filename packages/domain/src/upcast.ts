@@ -26,8 +26,10 @@ export type Upcaster = (data: unknown) => unknown;
 export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>>;
 
 /**
- * 1 → 2 for every type whose payload carries a `GatePoint`: the point called
- * `diff` is called `proposed` (ADR 0018).
+ * 1 → 2 for the nine types that carried a gate point when ADR 0018 renamed it:
+ * the point called `diff` is called `proposed`. (`GateNeverRan` and
+ * `GateDidNotFinish` carry a `Step` too and are younger than the rename, so
+ * nothing ever wrote one of those with the old name.)
  *
  * A pure rename, and the only one of these steps that could have been skipped
  * by leaving the old value in the enum. It was not, because the enum is what a
@@ -36,9 +38,33 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * would look like a different kind of run from the one that wrote `proposed`.
  *
  * It is written as a conditional rather than an unconditional overwrite so that
- * a v1 event from one of the other four points is returned untouched — the
+ * a v1 event from one of the other points is returned untouched — the
  * upcaster's job is to move the one value that moved, not to assert what the
  * rest were.
+ *
+ * **It goes when the log goes and not before, and `GatePassed` is why it
+ * cannot go alone.** `#227` asked for this constant deleted while leaving the
+ * mechanism, its tests and the other upcasters untouched. At eight of the nine
+ * types that is a deletion; at `GatePassed` it is not. That type is at
+ * `schemaVer: 3` — `1 → 2` is this rename, `2 → 3` adds `findings` (#135) —
+ * and the invariant this file opens by naming, pinned by *has an unbroken
+ * chain of steps for every type past version 1*, is that every version below
+ * the current one has a step. Removing `1 → 2` leaves a hole at 1, and the
+ * ways out are all worse than the constant: lowering the version deletes the
+ * `findings` step, editing the invariant removes the guard that makes the
+ * mechanism worth having, and a do-nothing step in its place is a lie about a
+ * version that moved.
+ *
+ * The other half, which expires where that one does not: 0061 §7 spends this
+ * history rather than upcasting it to ten steps, and the thing that spends it
+ * is the *reset* — `the-pipeline.md`'s T5, with T5b's fold of the log before
+ * it. Until those land the store holds `schemaVer: 1` rows this walks, and
+ * deleting the step (or lowering the nine `SCHEMA_VER`s that depend on it)
+ * makes every one of them throw.
+ *
+ * **So T5 is where this dies**, and it dies as one commit: a reset log holds no
+ * row of any version, so the nine versions and every step beneath them come
+ * down together rather than one type at a time.
  */
 const gatePointRenamed: Upcaster = (data) => {
   const d = data as { gate?: string };
@@ -169,6 +195,18 @@ export const UPCASTERS: UpcastRegistry = {
     1: (data) => ({ ...(data as object), of: 0 }),
   },
   GatesResolved: {
+    /**
+     * 1 → 2: the point called `diff` is called `proposed` (ADR 0018), and here
+     * it is nested — this is the event the board reads to show an unconfigured
+     * step as `skipped`, so a half-upcast would not throw; it would render a
+     * run as having a step nobody has ever heard of.
+     *
+     * The list's *length* is untouched, and deliberately: a stored plan names
+     * the five steps that existed when it was written, and `.length(10)`
+     * refuses it. That refusal is 0061 §7's cost, paid where the ticket put
+     * it — in the schema, loudly — and it is not a reason to move `schemaVer`,
+     * which is about this field and not that one.
+     */
     1: (data) => ({
       ...(data as object),
       points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>

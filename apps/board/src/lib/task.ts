@@ -245,7 +245,7 @@ export interface RunView {
   awaitingSha: string | null;
   gates: GateVerdict[];
   /**
-   * Where this attempt got to, as the board's rail reads it — all five points,
+   * Where this attempt got to, as the board's rail reads it — all ten steps,
    * one verdict per action, and the phase in flight with its bound. Null for a
    * claim whose stream is empty: there is no start to measure from.
    *

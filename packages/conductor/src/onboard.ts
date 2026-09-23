@@ -46,7 +46,7 @@ import {
   resolveRecipe,
 } from "@lingtai/recipe";
 import { signedInHere } from "./projects.ts";
-import { GATE_POINTS, type Tier, parsePayload } from "@lingtai/domain";
+import { STEPS, type Tier, parsePayload } from "@lingtai/domain";
 import {
   type Installation,
   NotInstalledError,
@@ -305,15 +305,16 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
 
   const fromSha = await client.refSha(base);
   log(`recipe: ${recipePath(repo)} for ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`);
-  // All five points, including the empty ones. Onboarding is the first place a
-  // person sees the shape of their workflow, and a point that is not mentioned
-  // is exactly the thing that must not be invisible (ADR 0016 §4).
+  // All ten steps, including the empty ones. Onboarding is the first place a
+  // person sees the shape of their workflow, and a step that is not mentioned
+  // is exactly the thing that must not be invisible (ADR 0016 §4, 0061 §5).
   //
-  // From `GATE_POINTS` rather than a list written here, which is what that
-  // tuple is exported for: this line had its own copy of the five names, and
-  // renaming one of them (0018) would have left onboarding printing a point
-  // that no longer exists.
-  for (const point of GATE_POINTS) {
+  // From `STEPS` rather than a list written here, which is what that tuple is
+  // exported for: this line had its own copy of the five names, and renaming
+  // one of them (0018) would have left onboarding printing a step that no
+  // longer exists. Widening the set to ten (0058 §3) collected on that: this
+  // line prints all ten without being touched.
+  for (const point of STEPS) {
     const actions = resolved.recipe.gates[point];
     log(`  ${point.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(", ") : "(skipped)"}`);
   }

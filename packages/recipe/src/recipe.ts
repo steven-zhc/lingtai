@@ -16,7 +16,7 @@
  * read from*.
  */
 import { z } from "zod";
-import { Tier, RuntimeId, type GatePoint, isEventType, isRetiredEventType } from "@lingtai/domain";
+import { Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import { parseDuration } from "./duration.ts";
 
@@ -158,9 +158,9 @@ export function kindOfAction(action: GateAction): ActionKind {
 }
 
 /**
- * **Which of the six kinds each of the five points actually runs.**
+ * **Which of the six kinds each of the ten steps actually runs.**
  *
- * Thirty cells, and ten of them used to be accepted here, resolved into
+ * Sixty cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
  * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
  * the weeks it spent declared-but-unbuilt are the argument for writing the
@@ -173,38 +173,86 @@ export function kindOfAction(action: GateAction): ActionKind {
  * than kept by hand — the copy in `#61`'s own body was wrong about `merge`
  * within three weeks of being written.
  *
- * **It does not narrow the closed set of points** ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)).
- * All five are still points and the set may still never grow; what is narrowed
- * is what a recipe may *say* today, to exactly what today's code does. The day
- * something runs a pipeline at `admit`, its row grows and nothing else moves.
+ * **It does not narrow the closed set of steps** ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md),
+ * widened to ten by [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §5).
+ * All ten are still steps and the set may still never grow; what is narrowed is
+ * what a recipe may *say* today, to exactly what today's code does. The day
+ * something runs a pipeline at `design`, its row grows and nothing else moves.
+ *
+ * **Six empty rows, and they are the honest half of widening the vocabulary.**
+ * Naming `claim`, `design`, `implement`, `build` and `review` is what lets the
+ * log and the board draw the pass 0058 §3 describes; it does not build the
+ * pass, which is that plan's next ticket. Until it is built, an action written
+ * at one of them is the exact `#61` failure one level up — resolved, recorded,
+ * drawn, never called — so it is refused by name when the recipe resolves.
  */
 export const KINDS_AT = {
+  /** Nothing yet: the queue picks the item and no pipeline is constructed here. */
+  claim: [],
   /** Nothing yet: no pipeline is constructed at `admit` anywhere. */
   admit: [],
   /** A command. The other three want a diff or an answer, and there is neither yet. */
   prepared: ["run"],
+  /** Nothing yet: 0058 §3's design step is named here and built by the pass ticket. */
+  design: [],
+  /** Nothing yet: the implementing agent is dispatched by `run-once.ts`, not by a recipe entry here. */
+  implement: [],
+  /** Nothing yet: today's build is a `run:` action at `proposed`. */
+  build: [],
+  /** Nothing yet: today's review is an `agent:` action at `proposed`. */
+  review: [],
   proposed: ["run", "agent", "watch", "human"],
   merge: ["run", "agent", "watch", "human"],
   /** The two effects — the two kinds that carry `when:`. */
   end: ["close", "labels"],
-} as const satisfies Record<GatePoint, readonly ActionKind[]>;
+} as const satisfies Record<Step, readonly ActionKind[]>;
 
 /**
- * Why a point does not run a kind, in the words the refusal carries — or `null`
+ * Where the work a not-yet-built step names is actually done today.
+ *
+ * The half of the refusal that is worth reading. *Nothing runs here* leaves an
+ * operator with a recipe key and no next move; *the build runs as a `run:`
+ * action at `proposed`* is the line they can act on, and it is also the thing
+ * that will stop being true when the pass ticket lands — at which point this
+ * table and that step's `KINDS_AT` row move together.
+ */
+const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review", string> = {
+  claim: "the queue picks the item by `source.kinds`, `source.exclude` and `runtime.assignee`",
+  design: "there is no design step: the implementing agent is handed the issue body and works from it",
+  implement: "`run-once.ts` dispatches the implementing agent directly, under `runtime.limits`",
+  build: "the build is a `run:` action at `proposed`",
+  review: "the review is an `agent:` action at `proposed`",
+};
+
+/**
+ * Why a step does not run a kind, in the words the refusal carries — or `null`
  * when it does.
  *
- * Every reason is a fact about the **point**, and that is why they are spelled
+ * Every reason is a fact about the **step**, and that is why they are spelled
  * out rather than left as "unsupported": an operator told that `agent:` is
  * refused at `prepared` should not have to read `run-once.ts` to discover that
  * the reason is that nothing has been committed yet.
  */
-export function whyNoKindAt(point: GatePoint, kind: ActionKind): string | null {
+export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
   if ((KINDS_AT[point] as readonly ActionKind[]).includes(kind)) return null;
   if (point === "admit") {
     return (
-      "nothing runs a pipeline at `admit` — the point is in the closed set and no code reaches it, " +
+      "nothing runs a pipeline at `admit` — the step is in the closed set and no code reaches it, " +
       "so an action here would be resolved, printed, and never called. A question that has to be " +
       "asked before anything is spent is `lingtai ask`, which holds the item in the queue instead"
+    );
+  }
+  // The five 0058 §3 named and the pipeline does not yet construct. One
+  // sentence per step and not one for the group: *nothing runs here* is the
+  // same refusal at all five, and **where the work actually happens today** is
+  // different at each — which is the only part an operator can act on.
+  if (point === "claim" || point === "design" || point === "implement" || point === "build" || point === "review") {
+    return (
+      `nothing runs a pipeline at \`${point}\` yet — the step is named by ` +
+      "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
+      `have a word for it, and the pass that runs it is that plan's next ticket. Today ${WHERE_INSTEAD[point]}. ` +
+      "Refused rather than accepted here because an action at a step no code reaches would be resolved, recorded " +
+      "in `GatesResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
   }
   if (point === "end") {
@@ -231,7 +279,7 @@ export function whyNoKindAt(point: GatePoint, kind: ActionKind): string | null {
 
 /** The refusal, in the one wording the schema and `gatesFromRecipe` both use. */
 export function kindRefusedAt(
-  point: GatePoint,
+  point: Step,
   kind: ActionKind,
   action: string,
   why: string,
@@ -243,15 +291,15 @@ export function kindRefusedAt(
 }
 
 /**
- * One point's actions, refusing any kind that point does not run.
+ * One step's actions, refusing any kind that step does not run.
  *
  * The refusal is here rather than in the conductor because this is the file a
- * recipe is read by, and a point that cannot run the action should say so when
+ * recipe is read by, and a step that cannot run the action should say so when
  * the recipe resolves — before a ticket is claimed, a worktree cut, or an
  * install paid for. `lingtai doctor`, `lingtai add` and every pass resolve the
  * recipe, so all three name it.
  */
-function actionsAt(point: GatePoint) {
+function actionsAt(point: Step) {
   return z
     .array(GateAction)
     .superRefine((actions, ctx) => {
@@ -270,19 +318,22 @@ function actionsAt(point: GatePoint) {
 }
 
 /**
- * What runs at each of the five points.
+ * What runs at each of the ten steps.
  *
- * Every point is present and defaults to empty, which is the whole design in
- * one line: **an unconfigured gate is skipped, and the skip is visible.** A
+ * Every step is present and defaults to empty, which is the whole design in
+ * one line: **an unconfigured step is skipped, and the skip is visible.** A
  * missing key here is not "undefined", it is "nothing runs, and the board says
- * so" (ADR 0016 §4).
+ * so" (ADR 0016 §4). That is also
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5 — *the
+ * file may omit a step; the resolved recipe may not* — and this object is the
+ * mechanism that ADR names.
  *
- * Order within a point is the array's. The first refusal wins and the actions
+ * Order within a step is the array's. The first refusal wins and the actions
  * after it do not run — continuing would spend money producing verdicts about a
  * diff that is not going anywhere.
  *
  * **Strict, and that is what makes the closed set enforceable.** A key that is
- * not one of the five is a typo or a stale name, and zod's default is to drop
+ * not one of the ten is a typo or a stale name, and zod's default is to drop
  * it silently — which would mean a recipe whose `merg:` block never runs and a
  * board that says `skipped` because it was told nothing was configured. That is
  * exactly the "configured and did not run" failure the model calls Lingtai's
@@ -290,15 +341,22 @@ function actionsAt(point: GatePoint) {
  * after [0018](../../../doc/decisions/0018-the-proposed-point.md): it fails to
  * resolve, loudly, naming the key.
  *
- * **Strict about the kind at a point, too, and for the same reason** (`#61`).
- * A key that *is* one of the five, carrying an action that point does not run,
+ * **Strict about the kind at a step, too, and for the same reason** (`#61`).
+ * A key that *is* one of the ten, carrying an action that step does not run,
  * is the identical failure reached one level down: it resolves, it is drawn,
  * and nothing happens. `KINDS_AT` is which pairs run and `whyNoKindAt` is what
- * the refusal says.
+ * the refusal says — and it is what keeps the five steps 0058 §3 named but has
+ * not yet built from becoming five silent cells: their keys parse, and any
+ * action in them is refused with the step's own sentence.
  */
 export const GateMap = z.strictObject({
+  claim: actionsAt("claim"),
   admit: actionsAt("admit"),
   prepared: actionsAt("prepared"),
+  design: actionsAt("design"),
+  implement: actionsAt("implement"),
+  build: actionsAt("build"),
+  review: actionsAt("review"),
   /** Was `diff` until [0018](../../../doc/decisions/0018-the-proposed-point.md). */
   proposed: actionsAt("proposed"),
   merge: actionsAt("merge"),
@@ -578,9 +636,21 @@ export const Recipe = z.object({
     plantAt: z.string(),
   }),
 
-  // Spelled out rather than `.default({})`: all five points exist whether or
-  // not a recipe mentions them, and writing that here says so once.
-  gates: GateMap.default({ admit: [], prepared: [], proposed: [], merge: [], end: [] }),
+  // Spelled out rather than `.default({})`: all ten steps exist whether or
+  // not a recipe mentions them, and writing that here says so once. 0061 §5 is
+  // this line — the file may omit a step, the resolved recipe may not.
+  gates: GateMap.default({
+    claim: [],
+    admit: [],
+    prepared: [],
+    design: [],
+    implement: [],
+    build: [],
+    review: [],
+    proposed: [],
+    merge: [],
+    end: [],
+  }),
 
   /**
    * Who is told what happened, and about which events.

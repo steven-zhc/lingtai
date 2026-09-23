@@ -1,7 +1,11 @@
 # The card, and the sequence inside it
 
 **Status** built · 2026-09-16 · `#170` · a picture at
-`claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d`
+`claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d` · **the bar
+became ten segments on 2026-09-23** (`#227`), when the vocabulary widened from
+five names to ten ([0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3).
+Everything below is unchanged except the count and what the count costs, which
+is [its own section](#what-ten-cost-and-what-it-did-not).
 
 What is in `apps/board/src/app/rail.tsx` is `Segs` and `Rail`; what holds the
 line is `apps/board/unit/rail.test.tsx`, which counts the objects on a running
@@ -46,7 +50,7 @@ sequence**, flattened into a wrapped row of equal pills, which loses the one
 thing a sequence has: that it runs one way, and one of its members is *here*.
 
 **And the same six tones mean different things across the two.** `pill pass`
-green is *a gate action passed* above and *this point passed* below. A reader has
+green is *a gate action passed* above and *this step passed* below. A reader has
 to know which list they are in before the colour means anything — which is a
 thing you can only know by reading the code.
 
@@ -68,11 +72,11 @@ The first two are sequences and were drawn as sets. That is the whole of it.
 ## The rule to keep
 
 **A sequence is not a set, and a pill cannot say which.** Anything that has an
-order — the five points, the rounds, anything added later that runs one way —
+order — the ten steps, the rounds, anything added later that runs one way —
 gets a form that shows the order. Anything that does not stays a pill.
 
 It is in the code beside `Rail` in `apps/board/src/app/rail.tsx`, where the next
-point-shaped thing would be added, and so where the argument has to be made.
+step-shaped thing would be added, and so where the argument has to be made.
 
 ## Which surfaces draw it
 
@@ -81,15 +85,15 @@ defined in neither:
 
 | surface | what it draws | fed by |
 |---|---|---|
-| the board, a Running or Waiting card | `Rail` — the segments, the five names, the one sentence | `laneProgress`, cut by `railCandidates` |
+| the board, a Running or Waiting card | `Rail` — the segments, the ten names, the one sentence | `laneProgress`, cut by `railCandidates` |
 | the board, a Landed row drawn open | `Segs`, unlabelled — scanned for the hatch | the same |
-| the task page, rank 2 of a **running** item | `Rail`, live — which point, the action, its elapsed and its bound | `loadTask`, the run in flight folded with the recipe's plan |
+| the task page, rank 2 of a **running** item | `Rail`, live — which step, the action, its elapsed and its bound | `loadTask`, the run in flight folded with the recipe's plan |
 | the task page, under every attempt in the record | `Segs`, labelled, nothing lit | `foldRun`, with `over` only on the attempt that landed |
 
-It was the board's alone for a day. The task page listed the points off
+It was the board's alone for a day. The task page listed the steps off
 `task.ts`'s own `PointView` — a second fold over the same events, with no
 `running` and no `never-ran` — so it lit nothing and printed `N pending` for a
-point that had been configured and never ran, while quoting 0016 §4 beside it.
+step that had been configured and never ran, while quoting 0016 §4 beside it.
 `PointView` is gone rather than kept beside `RunProgress`: once the rail was on
 the page nothing read it that the other fold did not serve better, and two folds
 over one stream is how the two surfaces came to disagree. A third surface
@@ -97,10 +101,15 @@ imports `rail.tsx` and reads `foldProgress`; it does not grow a list.
 
 ## Why the bar cannot be "filled means done"
 
-> **All five, always.** A point that is merely omitted is indistinguishable from
+> **All ten, always.** A step that is merely omitted is indistinguishable from
 > one that was configured and silently did not run, and **only the second of
 > those is Lingtai's bug**.
-> — `page.tsx`, on the five points ([0016 §4](../decisions/0016-the-settled-model.md))
+> — `rail.tsx`, on the ten steps ([0016 §4](../decisions/0016-the-settled-model.md),
+> [0061 §5](../decisions/0061-the-recipe-is-the-pipeline.md))
+
+It read *all five* until `#227`, and the sentence is the one thing that did not
+change: the rule never counted, it quantified. `Segs` iterates `foldProgress`'s
+whole list and filters nothing, which is the only form this rule has.
 
 Three of the eight states look empty and mean different things, so the segment
 carries the distinction the sentence above demands:
@@ -112,25 +121,25 @@ carries the distinction the sentence above demands:
 | `failed` | filled, `--fail` |
 | `waived` | filled, `--held`. Never green — an override of a red build must not look like a green one |
 | `pending` | flat `--rule`. Quiet, because nothing is wrong |
-| `skipped` | dashed outline, no fill. Nothing configured (`admit: []`, `merge: []`); it keeps its place without claiming anything happened in it |
+| `skipped` | dashed outline, no fill. Nothing configured (`admit: []`, `merge: []`, and the six steps no pipeline is constructed at); it keeps its place without claiming anything happened in it |
 | `never-ran` | hatched, `--fail`. The one segment that breaks the bar's rhythm, and the only place the fail colour appears with no verdict behind it |
 | `did-not-finish` | the same hatch. The agent *started* here and produced no receipt, twice ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
 
 **The two hatched states share a tone and not a sentence.** `never-ran` says the
 account is walled and the conductor has stood down; `did-not-finish` says this
 action's agent crashed, was run once more, did the same, and the item is now a
-person's. To a reader scanning a row they are one mark — *a point that was
+person's. To a reader scanning a row they are one mark — *a step that was
 reached and judged nothing* — and a sixth colour would be asking the bar to
 carry a distinction only a sentence can. The distinction survives where it is
 acted on: two events on the log, two verdicts in the fold, two different things
 for an operator to do.
 
-**`never-ran` is not an extra.** A bar that draws all five points must have a
+**`never-ran` is not an extra.** A bar that draws all ten steps must have a
 mark for *configured and did not run*, or that state renders as something it is
 not — which is the failure `0016 §4` names. It reached `lingtai doctor` as a FAIL
-naming `#49`, `#53` and `#55` at the merge point and reached the board as nothing
+naming `#49`, `#53` and `#55` at the merge step and reached the board as nothing
 at all. It costs no projection: `foldProgress` now makes
-`landedWithoutGatePoints`'s own comparison, and the same one rather than a
+`landedWithoutSteps`'s own comparison, and the same one rather than a
 looser one, because this mark accuses Lingtai and a false one is worse than
 none. All three halves of it:
 
@@ -138,21 +147,58 @@ none. All three halves of it:
 |---|---|
 | the plan named actions here | and **`GatesResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything (doctor's `planned` CTE selects from those rows and nothing else) |
 | the run recorded none | no request, no verdict, no approval, no waiver |
-| **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later points recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. Doctor is anchored on `WorkItemLanded`; so is this |
+| **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later steps recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. Doctor is anchored on `WorkItemLanded`; so is this |
 
 The caller supplies the last of those, because the landing is on the merge
 lane's stream and the work item's, not on the run's — `railCandidates` is where
 it is decided and where a test holds it.
 
-**Four points and not five**, and doctor makes the same exclusion in as many
+**Every step but `end`**, and doctor makes the same exclusion in as many
 words: `end`'s record is `EndActionsResolved` on the work item's stream, which
 this fold does not read. A silent `end` here is a question the run's stream
-cannot answer rather than a point that did not run.
+cannot answer rather than a step that did not run. It read *four and not five*
+before `#227` and the exclusion is still exactly one name — the six steps
+nothing constructs a pipeline for never reach this rule, because their plan is
+empty and `skipped` answers them first.
+
+## What ten cost, and what it did not
+
+**A segment, never.** Six of the ten — `claim`, `admit`, `design`, `implement`,
+`review` and `build` — are `skipped` on every card this repository draws today,
+because nothing constructs a pipeline at them yet (0058 §3 names them; its own
+plan builds them). Drawing only the four that are configured would fit
+comfortably and would be the exact failure 0016 §4 exists to prevent: a step
+omitted for width is indistinguishable from one that was configured and silently
+did not run. `rail.test.tsx` asserts ten segments in all three lanes for that
+reason, and says so where it does.
+
+**A label's tail, yes.** Ten columns in the 22rem a card's column gives leave
+**five** characters at 9px, so `prepared`, `implement` and `proposed` render as
+`prepa`, `imple` and `propo`. That trade is the right way round — characters a
+hover gives back, against a distinction nothing gives back — and it is checked
+rather than asserted: `rail.test.tsx` reads the font size, the gap and the
+tracking out of `globals.css`, computes how many characters a column shows, and
+fails both if that number moves off five and if the ten stop being unique at it.
+The whole name is on each segment's `title`.
+
+**Five is computed and then pinned, because three files say it in prose.** This
+paragraph, `globals.css`'s `.slab` comment and `Segs`'s doc in `rail.tsx` each
+name the count and the three words, and for a day all three said six — a number
+nobody derived from the values the stylesheet actually carries, which give five.
+A card rendering
+`prepa` against a stylesheet promising `prepar` sends a maintainer looking for a
+`letter-spacing` or font regression that never happened, so the test asserts the
+exact number rather than a floor, and names those three files in its failure
+message.
+
+The test that used to ask *do the five names fit whole* is that test. It was the
+right question at five and the wrong one at ten, and replacing it with *are they
+still distinguishable* is the honest version of the same care.
 
 ## The labels, and what they let go
 
-The five names sit under the five segments, which lets the sentence below drop
-the point name: `proposed:build 42s / 20m` becomes `build 42s / 20m`, because
+The ten names sit under the ten segments, which lets the sentence below drop
+the step name: `proposed:build 42s / 20m` becomes `build 42s / 20m`, because
 the highlighted label already said `proposed`.
 
 Four tones, and the third does work no colour alone can:
@@ -166,16 +212,17 @@ Four tones, and the third does work no colour alone can:
 
 **The sentence under the bar has four readings and not two.** `build 42s / 20m`
 while something is running, `between points` while the agent has finished and no
-point has started — and `build refused`, because a refusal clears the live phase
+step has started — and `build refused`, because a refusal clears the live phase
 and leaves neither. Drawing the second of those on the third told an operator
 the agent had just finished, under a segment that was red.
 
 The fourth is `nothing running`, and it is the one the run's own stream cannot
-name. *In flight between two points* and *stopped, by something that is not on
+name. *In flight between two steps* and *stopped, by something that is not on
 this stream* fold identically — no phase, no refusal — so **the lane settles
 which**, exactly as it settles the elapsed pill. A pass the merge lane refused
 is that card: `IntegrationRefused` goes to the integration lane's stream, the
-board never reads it, and the rail above the sentence is five passed points.
+board never reads it, and the rail above the sentence is a run that passed every
+step it reached.
 
 **A refusal being answered is not a refusal**, which is why the refused reading
 is only reached with nothing in flight *and* off the running lane: its hover
@@ -193,10 +240,10 @@ launched with.
 
 **`N passed` goes, and the segment carries what it said.** `prepared: [install]`
 is one action, so *1 passed* **was** *prepared went green*; `proposed` holds
-`build` and `review`, so there it was half a point and said so nowhere. The bar
+`build` and `review`, so there it was half a step and said so nowhere. The bar
 draws **one cell per planned action**, each with its own verdict, which is the
 granularity the counter had and the flattened row did not — so `proposed` with a
-running build and an unreached review is visibly half a point. All four counters
+running build and an unreached review is visibly half a step. All four counters
 go with it and not `passed` alone: *failed*, *waived* and *approved* are the
 same fact at the same two granularities, and keeping three of the four would
 have left a reader deciding which list to believe.
@@ -207,9 +254,10 @@ the rule in one sentence — *the counters are the fallback, not the reading* �
 and it is written where they are rendered.
 
 **The two money figures stay two.** `#84`'s reason is intact and the compression
-was not needed: the bar, its five labels and its sentence are **one** object,
-which is the whole of the design, so a running card carrying elapsed, turns,
-both figures and its round is six.
+was not needed: the bar, its labels and its sentence are **one** object, which
+is the whole of the design, so a running card carrying elapsed, turns, both
+figures and its round is six. Ten segments rather than five does not move that
+number, which is the property the counting rule was written to have.
 
 **The second sequence is one object and not yet a form.** `attempt 2` and
 `restart 1 of 1` read as `attempt 2 · restart 1 of 1` in a single pill. One
@@ -247,7 +295,11 @@ is the one this design already got wrong once.
 - [`task-detail-page.md`](task-detail-page.md) — the other place a run is
   described. Its ranks are `#132`'s and `#152`'s; `#189` put the rail inside
   rank 2 of a running item, above the log, and added no rank.
-- [0016 §4](../decisions/0016-the-settled-model.md) — a configured point that
+- [0016 §4](../decisions/0016-the-settled-model.md) — a configured step that
   silently does not run is Lingtai's bug.
+- [0058 §3](../decisions/0058-lingtai-is-a-development-pipeline.md) — the ten
+  steps, and why five could not draw the pass.
+- [0061 §5](../decisions/0061-the-recipe-is-the-pipeline.md) — the file may omit
+  a step; the resolved recipe may not, and the board draws all ten.
 - [0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) — rounds
   bound depth, restarts bound breadth. The second sequence.

@@ -12,13 +12,13 @@
  * nobody's approval.
  */
 import { directPostgresUrl } from "@lingtai/env";
-import { parsePayload } from "@lingtai/domain";
+import { STEPS, parsePayload } from "@lingtai/domain";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
 // Postgres by name, from its own module (#179).
 import { createPostgresLogQueries } from "@lingtai/event-store/queries";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { landedWithoutGatePoints } from "../src/gate-audit.ts";
+import { landedWithoutSteps } from "../src/gate-audit.ts";
 import { workItemStream } from "@lingtai/domain";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -45,12 +45,16 @@ afterAll(async () => {
   }
 });
 
-/** The five points, with actions only where a case asks for them. */
+/**
+ * All ten steps, with actions only where a case asks for them.
+ *
+ * From `STEPS` rather than a list here, exactly as the sibling fixture in
+ * `packages/event-store/test/queries-contract.ts` is: `GatesResolved` asserts
+ * `.length(10)`, so a fixture with its own copy of the names fails at
+ * `parsePayload` the day the set changes rather than moving with it.
+ */
 const plan = (points: Record<string, string[]>) =>
-  (["admit", "prepared", "proposed", "merge", "end"] as const).map((gate) => ({
-    gate,
-    actions: points[gate] ?? [],
-  }));
+  STEPS.map((gate) => ({ gate, actions: points[gate] ?? [] }));
 
 const SHA = "a".repeat(40);
 
@@ -107,9 +111,9 @@ async function landedItem(
 }
 
 const forProject = async () =>
-  (await landedWithoutGatePoints(createPostgresLogQueries({ url: directPostgresUrl() }))).filter((f) => f.project === PROJECT);
+  (await landedWithoutSteps(createPostgresLogQueries({ url: directPostgresUrl() }))).filter((f) => f.project === PROJECT);
 
-describe("landedWithoutGatePoints", () => {
+describe("landedWithoutSteps", () => {
   it("finds the change that merged past a point the recipe configured", async () => {
     // #58 in miniature: a person declared at `merge`, and the point never ran.
     const { workItemId } = await landedItem(

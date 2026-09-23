@@ -16,7 +16,7 @@
  * board all read this, which is what stops any two of them disagreeing about
  * whether a queue is empty or unreadable.
  */
-import { GATE_POINTS, type GatePoint, type ProjectState } from "@lingtai/domain";
+import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
@@ -40,14 +40,15 @@ export interface PlannedAction {
 }
 
 /**
- * Every one of the five points, in loop order, with what runs at each.
+ * Every one of the ten steps, in pass order, with what runs at each.
  *
- * All five are present even where nothing is configured, because an empty point
- * is `skipped` and the skip has to be visible (ADR 0016 §4) — a point that is
- * merely absent from this map is indistinguishable from one that was
- * configured and silently did not run.
+ * All ten are present even where nothing is configured, because an empty step
+ * is `skipped` and the skip has to be visible (ADR 0016 §4,
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5) — a
+ * step that is merely absent from this map is indistinguishable from one that
+ * was configured and silently did not run.
  */
-export type GatePlan = ReadonlyMap<GatePoint, readonly PlannedAction[]>;
+export type GatePlan = ReadonlyMap<Step, readonly PlannedAction[]>;
 
 /**
  * The recipe's gates, with every duration already a number.
@@ -59,7 +60,7 @@ export type GatePlan = ReadonlyMap<GatePoint, readonly PlannedAction[]>;
  */
 export function gatePlan(recipe: Recipe): GatePlan {
   return new Map(
-    GATE_POINTS.map((point) => [
+    STEPS.map((point) => [
       point,
       recipe.gates[point].map((action) => ({
         name: action.name,
@@ -131,7 +132,7 @@ export type ProjectFilter =
        */
       backoffMs: number;
       /**
-       * What runs at each of the five points, with the timeouts as numbers.
+       * What runs at each of the ten steps, with the timeouts as numbers.
        *
        * Lifted for the reason `backoffMs` is, and used for the same kind of
        * thing: a gate's timeout is the denominator a running card measures

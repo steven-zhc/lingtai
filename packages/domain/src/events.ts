@@ -51,37 +51,67 @@ export const Tier = z.enum(["open", "guarded", "sandboxed"]);
 export type Tier = z.infer<typeof Tier>;
 
 /**
- * The five points in the loop where the conductor waits for a verdict.
+ * The ten steps a pass goes through, in the order it reaches them.
  *
  * **Closed forever** ([ADR 0016](../../../doc/decisions/0016-the-settled-model.md)
- * §3). Four of them name a branch the loop already had — dispatch, preparation,
- * the gate pipeline, the merge hold — and `end` was added for the things that
- * must happen once an item is finished, which had nowhere to be declared before.
+ * §3, widened by [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+ * §3). It was five until 2026-09-23 and every one of those five is still here
+ * under its own name; what the five could not say is that a pass also *claims*,
+ * *designs*, *implements*, *builds* and *reviews* — five things the loop has
+ * always done and the model had no word for, so they appeared in no recipe, no
+ * event and no column. 0058's Context is that sentence: *the board cannot draw
+ * what the model does not name.*
  *
- * A gate is a *place*, not a kind of check. What runs there is open and comes
+ * A step is a *place*, not a kind of check. What runs there is open and comes
  * from the recipe; where it can run is not. That is what lets extension be
- * unbounded while the core stays finite.
+ * unbounded while the core stays finite, and it is why widening the set is a
+ * decision with an ADR rather than a convenience.
  *
- * `end` is the one that cannot refuse — nothing can be stopped once a merge has
- * landed. Recorded as an imprecision rather than smoothed over: a separate
- * concept for it would cost more than the imprecision does.
+ * **Four of them may refuse, and every refusal goes to `proposed`** — 0058 §3:
+ * `prepared`, `build`, `proposed`, `merge`. `end` is the one that cannot refuse
+ * — nothing can be stopped once a merge has landed. Recorded as an imprecision
+ * rather than smoothed over: a separate concept for it would cost more than the
+ * imprecision does.
+ *
+ * **Five of the ten have code behind them today and five do not.** `claim`,
+ * `design`, `implement`, `build` and `review` name work a pass already does and
+ * no pipeline is constructed at any of them — today's build and review run as
+ * actions at `proposed`. A recipe that names an action at one of the five is
+ * refused when it resolves, which is `KINDS_AT`'s rule and not an exception to
+ * it: the vocabulary is what the model may *say*, and the matrix is what the
+ * code will *run*. The two are allowed to differ only in the direction that is
+ * loud.
  *
  * `proposed` was called `diff` until
  * [ADR 0018](../../../doc/decisions/0018-the-proposed-point.md). Stored events
  * still carry the old value and are upcast on read; a reader who finds `diff`
- * in the log or in an old recipe is looking at history, not at a bug.
+ * in the log or in an old recipe is looking at history, not at a bug. 0061 §7
+ * spends that history rather than upcasting it to ten steps — by **resetting**
+ * the log (`the-pipeline.md`'s T5), which has not happened, so the step that
+ * walks it is still load-bearing.
  */
-export const GatePoint = z.enum(["admit", "prepared", "proposed", "merge", "end"]);
-export type GatePoint = z.infer<typeof GatePoint>;
+export const Step = z.enum([
+  "claim",
+  "admit",
+  "prepared",
+  "design",
+  "implement",
+  "build",
+  "review",
+  "proposed",
+  "merge",
+  "end",
+]);
+export type Step = z.infer<typeof Step>;
 
 /**
- * The five, in the order the loop reaches them.
+ * The ten, in the order the loop reaches them.
  *
- * Exported as a tuple because "every point, in order" is a thing several places
- * need to iterate — `GatesResolved`, the board, `lingtai add` — and each writing its
- * own list is how one of them ends up missing a point and nobody notices.
+ * Exported as a tuple because "every step, in order" is a thing several places
+ * need to iterate — `GatesResolved`, the board, `lingtai add` — and each writing
+ * its own list is how one of them ends up missing a step and nobody notices.
  */
-export const GATE_POINTS = GatePoint.options;
+export const STEPS = Step.options;
 
 export const RuntimeId = z.enum(["claude-code", "codex"]);
 export type RuntimeId = z.infer<typeof RuntimeId>;
@@ -476,28 +506,47 @@ export const RunFailed = z.object({
  * an approval instead of inheriting it, which a label could never do.
  */
 /**
- * `gate` is the point; `action` is what ran there.
+ * `gate` is the step; `action` is what ran there.
  *
  * Two fields rather than one because "the build failed" and "something at the
- * `proposed` point failed" are different questions, and a single name could not
+ * `proposed` step failed" are different questions, and a single name could not
  * answer both. `onSha` binds the verdict to a commit, which is what makes a force-push
  * invalidate it by arithmetic rather than by anybody noticing.
+ *
+ * **The field is still spelled `gate` for the four steps that gate and for the
+ * six that do not.** Renaming it would be a payload change on nine event types
+ * bought for nothing: what the field holds is a `Step`, the schema says so, and
+ * the only reader that could be misled is one who took the field's name for the
+ * model rather than its type.
  */
-const gateBase = { gate: GatePoint, action: z.string(), runId: z.string(), onSha: z.string() };
+const gateBase = { gate: Step, action: z.string(), runId: z.string(), onSha: z.string() };
 
 /**
- * The plan for a run: all five points, and what will run at each.
+ * The plan for a run: all ten steps, and what will run at each.
  *
  * One event, appended before anything is claimed. It exists because the log
  * could not otherwise say what was *supposed* to happen — `ProjectConfigured`
- * carries a `configHash`, not the configuration, so a point with nothing
- * configured was indistinguishable from a point that did not exist.
+ * carries a `configHash`, not the configuration, so a step with nothing
+ * configured was indistinguishable from a step that did not exist.
  *
  * That distinction is what the whole model rests on ([ADR 0016](../../../doc/decisions/0016-the-settled-model.md)
- * §4). A gate nobody configured is skipped, and that is the user's decision; a
- * gate that *was* configured and did not run is Lingtai's bug. Comparing this
+ * §4). A step nobody configured is skipped, and that is the user's decision; a
+ * step that *was* configured and did not run is Lingtai's bug. Comparing this
  * to the verdicts that follow is how the second is detectable, and rendering it
- * is how the board shows an empty point as `skipped` rather than omitting it.
+ * is how the board shows an empty step as `skipped` rather than omitting it.
+ *
+ * **Ten since 2026-09-23, and the count is asserted rather than described.**
+ * `.length(10)` is the whole of 0047's claim — *what a run was given is on the
+ * log* — made checkable: if the recipe configured `claim` by tag and the log
+ * recorded five steps, whether it picked by tag or by assignee would be
+ * nowhere ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §5).
+ * It grew **without an upcaster and without a version**, which is 0061 §7 and
+ * not a precedent: this log is reset instead, and `upcast.ts` stays for a log
+ * nobody may reset. So a stored five-point plan is refused by `.length(10)`
+ * until the reset runs, which is the one thing widening this field costs and
+ * is the cost the ticket named. **`schemaVer` is not where that is paid**: the
+ * nine steps below it are about the `diff` rename and still walk the rows the
+ * log holds, so lowering them buys nothing and hides the reason.
  *
  * Since v3 it also carries `recipe`, the canonical recipe `configHash` is the
  * hash of ([ADR 0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md)),
@@ -510,8 +559,8 @@ const gateBase = { gate: GatePoint, action: z.string(), runId: z.string(), onSha
 export const GatesResolved = z.object({
   runId: z.string(),
   configHash: z.string(),
-  /** Every point, in order, with the ordered action names resolved for it. */
-  points: z.array(z.object({ gate: GatePoint, actions: z.array(z.string()) })).length(5),
+  /** Every step, in order, with the ordered action names resolved for it. */
+  points: z.array(z.object({ gate: Step, actions: z.array(z.string()) })).length(10),
   /**
    * `canonical(recipe)` as an object: parsed, `undefined` dropped, keys sorted —
    * exactly what `hashRecipe` hashes, so `hashRecipe(recipe) === configHash` and
@@ -622,9 +671,15 @@ export const GateFailed = z.object({
  * `RunFailed.detail` is: it is the evidence the classification refused to read,
  * and 0031 §4 reads a reset time back out of it.
  *
- * Version 1, and it stays there. The nine types that carry a `GatePoint` are at
- * 2 because ADR 0018 renamed `diff` to `proposed`; nothing ever wrote one of
- * these with the old name, so there is nothing to upcast.
+ * Version 1, and it stays there. The **nine** types ADR 0018's rename moved —
+ * `GatesResolved`, the four `Gate*` verdicts, `GateWaived` and the three
+ * `Approval*` — are at 2 or above because each needed a step from 1; nothing
+ * ever wrote one of *these* with the old name, so there is nothing to upcast,
+ * and the same is true of `GateDidNotFinish`, which is younger still. 0061 §7
+ * will spend those nine steps along with the log they walk — **when the reset
+ * happens**, which is `the-pipeline.md`'s T5 and has not: a reader lowering
+ * those numbers before then makes every stored row of those nine unreadable
+ * and blames the writer for it.
  */
 export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
 
@@ -1768,10 +1823,19 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // 2: added `of` — the `rounds` ceiling the round is counted against, so a
   // fold can say *round 2 of 3* without reading a recipe (`#146`).
   FixRequested: 2,
-  // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carry a
-  // `GatePoint`, so nine of them move together — a payload whose `gate` is
-  // still `diff` would fail the enum rather than pass wrongly, which is why
-  // every one of them needs the step and none of them can be skipped.
+  // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carried
+  // a gate point when that landed, so nine of them move together — a payload
+  // whose `gate` is still `diff` would fail the enum rather than pass wrongly,
+  // which is why every one of them needs the step and none can be skipped.
+  //
+  // **These numbers may not come down while the log holds rows at them.**
+  // 0061 §7 spends this history rather than upcasting it to ten steps, and
+  // that is a thing the *reset* does — `the-pipeline.md`'s T5, with T5b's fold
+  // before it, neither of them landed. A version lowered ahead of the reset
+  // sends every stored row down `upcast`'s `schemaVer > supported` branch,
+  // where the message says the writer is newer than the reader and the cause
+  // is that the reader's number was lowered.
+  //
   // 3: added `recipe`, the canonical recipe the run was resolved against (0047).
   GatesResolved: 3,
   GateRequested: 2,

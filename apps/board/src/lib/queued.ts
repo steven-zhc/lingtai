@@ -29,13 +29,13 @@
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { GATE_POINTS, retiredRepairPending, type Envelope } from "@lingtai/domain";
+import { STEPS, retiredRepairPending, type Envelope } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 
-/** One of the five points, and what the recipe runs there. */
+/** One of the ten steps, and what the recipe runs there. */
 export interface PlannedPoint {
   point: string;
   /** The action names, in the order they run. Empty when nothing is configured. */
@@ -44,11 +44,11 @@ export interface PlannedPoint {
    * Nothing is configured here.
    *
    * A first-class state and not an absence, for the reason the attempt's own
-   * `PointState` `skipped` is (ADR 0016 §4): a point that is merely left out looks
-   * exactly like a point that was configured and silently did not run, and only
+   * `PointState` `skipped` is (ADR 0016 §4): a step that is merely left out looks
+   * exactly like a step that was configured and silently did not run, and only
    * the second is Lingtai's bug. It has to be said *before* a run as well as
    * after one — an operator deciding whether to press the button is deciding
-   * about the plan, and a plan with two of its five points missing from the
+   * about the plan, and a plan with two of its ten steps missing from the
    * page is one nobody can audit.
    */
   skipped: boolean;
@@ -61,7 +61,7 @@ export interface PlannedPoint {
  * of the recipe, and the limits beside it — and the page showed none of them.
  */
 export interface PlanView {
-  /** All five, in loop order, including the ones nothing is configured at. */
+  /** All ten, in pass order, including the ones nothing is configured at. */
   points: PlannedPoint[];
   /** `runtime.limits.turns`. */
   turns: number;
@@ -179,7 +179,7 @@ export function planOf(
   },
 ): PlanView {
   return {
-    points: GATE_POINTS.map((point) => {
+    points: STEPS.map((point) => {
       const actions = (plan.get(point) ?? []).map((a) => a.name);
       return { point, actions, skipped: actions.length === 0 };
     }),

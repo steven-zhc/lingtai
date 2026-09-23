@@ -1,6 +1,13 @@
 # 0018 — The gate point called `diff` is called `proposed`
 
-**Status** accepted · 2026-09-03
+**Status** accepted · 2026-09-03 · `GatePoint` is `Step` and holds ten names
+since 2026-09-23 ([0058](0058-lingtai-is-a-development-pipeline.md) §3,
+`#227`); the rename this file made is inside that set and unchanged. **Its nine
+upcasters are owed to [0061](0061-the-recipe-is-the-pipeline.md) §7 and not yet
+paid** — that ADR resets this log rather than upcasting it to ten steps, and
+the reset is [the-pipeline](../design/the-pipeline.md)'s T5, which has not run.
+Until it does the store holds rows at `schemaVer: 1` and the nine steps below
+are what reads them.
 
 The third of the five gate points was `diff`. It is `proposed` from this commit.
 The point itself is unchanged — same moment, same actions, same authority to
@@ -59,10 +66,22 @@ a word.
 
 ## What had to move with it
 
-**Nine event types** carry a `GatePoint`: `GatesResolved`, the four `Gate*`
+**Nine event types** carry a gate point: `GatesResolved`, the four `Gate*`
 verdict events, `GateWaived`, and the three `Approval*` events. All nine bump to
 `schemaVer` 2 with an upcaster, which is the first real use of the mechanism
 [0001](0001-event-sourcing.md) put in place.
+
+*The first half of that sentence was rewritten on 2026-09-23 and the second was
+not. `GatePoint` is `Step` and holds ten names
+([0058](0058-lingtai-is-a-development-pipeline.md) §3), so **nine event types
+carry a `Step`** is how it reads now — the same nine types, the same nine
+upcasters, at the same versions. [0061](0061-the-recipe-is-the-pipeline.md) §7
+will spend them, by **resetting** the log rather than carrying it forward; that
+is [the-pipeline](../design/the-pipeline.md)'s T5 and it has not run, so a
+stored `diff` still exists for the step to walk and the step still walks it.
+Deleting it ahead of the reset, or lowering the nine `SCHEMA_VER`s that depend
+on it, makes every row of those nine unreadable and reports the cause as a
+writer newer than the reader.*
 
 Keeping `diff` in the enum as a second accepted spelling would have avoided the
 upcasters. It was rejected: the enum is what a reader is shown, two spellings of
