@@ -17,7 +17,7 @@
  * under time pressure against real history, which is the worst moment to also be
  * designing the mechanism.
  */
-import { type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from "./events.ts";
+import { STEPS, type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from "./events.ts";
 
 /** Takes a payload at version *n* and returns it at version *n + 1*. */
 export type Upcaster = (data: unknown) => unknown;
@@ -56,11 +56,10 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * version that moved.
  *
  * The other half, which expires where that one does not: 0061 §7 spends this
- * history rather than upcasting it to ten steps, and the thing that spends it
- * is the *reset* — `the-pipeline.md`'s T5, with T5b's fold of the log before
- * it. Until those land the store holds `schemaVer: 1` rows this walks, and
- * deleting the step (or lowering the nine `SCHEMA_VER`s that depend on it)
- * makes every one of them throw.
+ * history by *resetting* the log — `the-pipeline.md`'s T5, with T5b's fold of
+ * it before that. Until those land the store holds `schemaVer: 1` rows this
+ * walks, and deleting the step (or lowering the nine `SCHEMA_VER`s that depend
+ * on it) makes every one of them throw.
  *
  * **So T5 is where this dies**, and it dies as one commit: a reset log holds no
  * row of any version, so the nine versions and every step beneath them come
@@ -201,11 +200,10 @@ export const UPCASTERS: UpcastRegistry = {
      * step as `skipped`, so a half-upcast would not throw; it would render a
      * run as having a step nobody has ever heard of.
      *
-     * The list's *length* is untouched, and deliberately: a stored plan names
-     * the five steps that existed when it was written, and `.length(10)`
-     * refuses it. That refusal is 0061 §7's cost, paid where the ticket put
-     * it — in the schema, loudly — and it is not a reason to move `schemaVer`,
-     * which is about this field and not that one.
+     * The list's *length* is untouched here, and deliberately: this step moves
+     * the one value that moved. Widening a five-step plan to ten is the
+     * `3 → 4` step below, which every stored row reaches whatever version it
+     * was written at.
      */
     1: (data) => ({
       ...(data as object),
@@ -225,6 +223,44 @@ export const UPCASTERS: UpcastRegistry = {
      * says which recipe it was; only the body was never recorded.
      */
     2: (data) => data,
+    /**
+     * 3 → 4: the plan names all ten steps, where it named the five the
+     * vocabulary had (0058 §3).
+     *
+     * **The step the widening could not be done without.** 0061 §7 spends this
+     * history by resetting the log, and that reset — `the-pipeline.md`'s T5 —
+     * has not run, so every `GatesResolved` the store holds names five steps
+     * and `.length(10)` refuses all of them. There is no quiet version of that
+     * refusal: `decodeRow` rethrows the `ZodError` bare, so a projector stops
+     * at the first such seq and never advances past it, and `reduceRun` dies
+     * on any run that has one. `parsePayload` is reached through this chain by
+     * every stored row whatever version it carries, which is why one step here
+     * covers v1, v2 and v3 alike.
+     *
+     * **`[]` is a reading and not a guess**, which is the line every other step
+     * in this file is drawn on. A run resolved before 2026-09-23 was given a
+     * vocabulary with no `claim`, `design`, `implement`, `build` or `review` in
+     * it — nothing could have been configured at one, so empty is what that
+     * recipe said and not a shrug about what it might have said. It is the same
+     * empty a run today gets at those five, so the board draws them `skipped`
+     * and `landedWithoutSteps` cannot accuse them: its guard is an `actions`
+     * list with something in it.
+     *
+     * Rebuilt from `STEPS` rather than appended to, so the order is the enum's
+     * however the stored row was written, and a stored `gate` that is not a
+     * step at all is dropped rather than carried into a payload the schema
+     * would refuse for a second reason. `diff` is already `proposed` by the
+     * time this runs — the `1 → 2` step above moved it, and this one is
+     * downstream of it.
+     */
+    3: (data) => {
+      const stored = (data as { points?: { gate?: string; actions?: string[] }[] }).points ?? [];
+      const byStep = new Map(stored.map((p) => [p.gate, p.actions ?? []]));
+      return {
+        ...(data as object),
+        points: STEPS.map((gate) => ({ gate, actions: byStep.get(gate) ?? [] })),
+      };
+    },
   },
   GateRequested: { 1: gatePointRenamed },
   GateStarted: { 1: gatePointRenamed },

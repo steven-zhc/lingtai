@@ -6,11 +6,12 @@
  * called (`#61`).
  *
  * **It was thirty until the vocabulary went from five names to ten** (0058 §3).
- * Six of the ten steps have no call site, so thirty-six of the sixty cells are
- * refusals, and that is the property this file is here to hold: naming a step
- * is not building it, and the five steps 0058 named and the pipeline has not
- * yet constructed must refuse every kind until it has. A `design:` block a
- * recipe could write and nothing would run is `#61` with a new spelling.
+ * Eleven of the sixty cells run and **forty-nine refuse**; thirty-six of those
+ * forty-nine are the six steps with no call site, and they are the property
+ * this file is here to hold: naming a step is not building it, and the five
+ * steps 0058 named and the pipeline has not yet constructed must refuse every
+ * kind until it has. A `design:` block a recipe could write and nothing would
+ * run is `#61` with a new spelling.
  *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
@@ -24,7 +25,7 @@
  * being written, which is why the last test here reads the document and
  * compares it to `KINDS_AT` rather than trusting it.
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { STEPS, type Step } from "@lingtai/domain";
 import {
@@ -75,9 +76,14 @@ const DEPS: Record<"prepared" | "proposed" | "merge", GateDeps> = {
 /**
  * The steps something actually constructs a pipeline for.
  *
- * Read off `run-once.ts` and `end-point.ts` by the last test in this describe,
- * so this is not a list somebody keeps: a fourth `gatesFromRecipe` call site is
- * a red test rather than a silently-widened matrix.
+ * **Compared against the conductor's whole `src/` tree** by *is read off the
+ * conductor's own source* below, which is what stops it being a list somebody
+ * keeps: a `gatesFromRecipe` call site anywhere under `packages/conductor/src`
+ * is a red test here rather than a matrix that goes on refusing a step the
+ * code has started running. That is `#61` inverted, and it is exactly what
+ * 0058's own plan will do — it builds `build` and `review`, and a pipeline
+ * constructed in a new module would not have moved a count pinned against
+ * `run-once.ts` alone.
  */
 const HAS_A_CALL_SITE = ["prepared", "proposed", "merge", "end"] as const;
 
@@ -186,9 +192,55 @@ describe("every step × kind cell runs or refuses", () => {
     expect(src).toMatch(/gatesFromRecipe\(\s*"prepared",\s*recipe\.gates\.prepared,\s*\{\s*env:/);
     expect(src).toMatch(/gatesFromRecipe\(\s*"proposed",\s*recipe\.gates\.proposed,\s*gateDeps\s*\)/);
     expect(src).toMatch(/gatesFromRecipe\(\s*"merge",\s*recipe\.gates\.merge,\s*gateDeps\s*\)/);
-    // And nowhere else: a fourth call site is a point this file does not know
-    // about, judging with deps it has not been told.
+    // And nowhere else *in this file*: a fourth call site here is a point this
+    // test does not know about, judging with deps it has not been told. The
+    // whole tree is the next test's.
     expect(src.match(/gatesFromRecipe\(/g)?.length).toBe(3);
+  });
+
+  /**
+   * **`HAS_A_CALL_SITE` is read, not kept**, and the reading is over every
+   * file under `packages/conductor/src` rather than the one module that
+   * happens to hold the call sites today.
+   *
+   * The matrix, `doc/reference.md` and `KINDS_AT` all refuse a `build:` action
+   * because nothing constructs a pipeline at `build`. When 0058's plan builds
+   * that step, it may well construct it somewhere other than `run-once.ts` —
+   * and a count pinned against `run-once.ts` alone would stay 3, every test
+   * here would stay green, and the recipe would go on refusing an action at a
+   * step the code had started running. That is `#61` with the sign flipped,
+   * and this file exists to make it a red test.
+   *
+   * `end` by its resolver and not by `gatesFromRecipe`: its actions are
+   * effects, so the thing that is proof the step is built is
+   * `resolveEndActions` existing, which is what `runsAt` calls for it.
+   */
+  it("is read off the conductor's own source, not kept by hand", async () => {
+    const src = new URL("../src/", import.meta.url);
+    // Recursive, because "the module the call sites are in today" is exactly
+    // the assumption this test exists to stop being made.
+    const files = (await readdir(src, { recursive: true })).filter((f) => f.endsWith(".ts"));
+    const built = new Set<string>();
+    let calls = 0;
+    let literals = 0;
+
+    for (const file of files) {
+      const text = await readFile(new URL(file, src), "utf8");
+      calls += text.match(/gatesFromRecipe\(/g)?.length ?? 0;
+      for (const m of text.matchAll(/gatesFromRecipe\(\s*"([a-z]+)"/g)) {
+        literals += 1;
+        built.add(m[1]!);
+      }
+      if (/export function resolveEndActions\b/.test(text)) built.add("end");
+    }
+
+    // A call site whose point is a variable would be invisible to the regex
+    // above, so the two counts have to agree before the set means anything.
+    expect(literals, "a gatesFromRecipe call site names its step with a variable").toBe(calls);
+    expect(
+      [...built].sort(),
+      "HAS_A_CALL_SITE is stale — the matrix, doc/reference.md and KINDS_AT move with it",
+    ).toEqual([...HAS_A_CALL_SITE].sort());
   });
 });
 
@@ -235,5 +287,19 @@ describe("doc/reference.md's matrix", () => {
         );
       });
     }
+
+    // **And the sentence above the table, which nothing checked.** It said
+    // *thirty-six of the sixty are refusals* — the contribution of the six
+    // steps with no call site, not the total — while the table below it drew
+    // forty-nine, so a reader auditing the closed set counted one number
+    // against another and concluded the code or the table had drifted.
+    const refusals = STEPS.flatMap((point) =>
+      KINDS.map((kind) => whyNoKindAt(point, kind)),
+    ).filter((why) => why !== null).length;
+    expect(refusals).toBe(49);
+    expect(
+      doc,
+      "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
+    ).toContain("**Forty-nine of the\nsixty are refusals**");
   });
 });

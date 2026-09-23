@@ -4,8 +4,8 @@
 since 2026-09-23 ([0058](0058-lingtai-is-a-development-pipeline.md) §3,
 `#227`); the rename this file made is inside that set and unchanged. **Its nine
 upcasters are owed to [0061](0061-the-recipe-is-the-pipeline.md) §7 and not yet
-paid** — that ADR resets this log rather than upcasting it to ten steps, and
-the reset is [the-pipeline](../design/the-pipeline.md)'s T5, which has not run.
+paid** — that ADR spends this history by resetting the log, and the reset is
+[the-pipeline](../design/the-pipeline.md)'s T5, which has not run.
 Until it does the store holds rows at `schemaVer: 1` and the nine steps below
 are what reads them.
 

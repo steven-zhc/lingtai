@@ -623,11 +623,21 @@ describe("a card stopped on a person", () => {
    * build was refused, the segment above the sentence is red, and a person is
    * being asked. The sentence is the action and what came of it, the same shape
    * the live line has.
+   *
+   * **Qualified `step:action`, which the live line is not and this one has to
+   * be.** `build` and `review` are two of this repository's action names at
+   * `proposed` and, since the vocabulary went to ten, two of the labels on the
+   * bar above — drawn grey and dashed, because no pipeline is constructed at
+   * them. A bare `build refused` sent an operator to the `build` label, which
+   * is empty and always will be. The live line keeps dropping the step because
+   * its own label is lit; nothing is lit under a refusal.
    */
   it("says what refused it, under the segment that says so", () => {
     const html = blocked();
 
-    expect(sentence(html)).toBe("build refused");
+    expect(sentence(html)).toBe("proposed:build refused");
+    // And not the bare action name, which is also a label on the same bar.
+    expect(labels(html).map(([, name]) => name)).toContain("build");
     expect(html).not.toContain("between points");
     expect(html).not.toContain("the agent has finished and no point has started yet");
   });
@@ -735,7 +745,7 @@ describe("a card answering a refusal", () => {
       fixSpent(),
     );
 
-    expect(sentence(html)).toBe("build refused");
+    expect(sentence(html)).toBe("proposed:build refused");
   });
 });
 
@@ -970,11 +980,27 @@ describe("what the column can give a card", () => {
       shown,
       "the clip width moved — update globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md, which name this number and the words it clips",
     ).toBe(5);
-    // And four is where the ten start colliding, so the margin is one
-    // character: a bar showing fewer would print the same word under two
-    // steps, which is the thing the clip may never cost.
+    // A bar showing fewer characters may never print the same word under two
+    // steps, which is the one thing the clip is not allowed to cost.
     const clipped = STEPS.map((p) => p.slice(0, shown));
     expect(new Set(clipped).size, `${clipped.join(" ")}`).toBe(STEPS.length);
+
+    // **And the margin is three characters, not one.** The ten are still
+    // distinct at four and at three; two is where they stop being, `pr`
+    // standing for both `prepared` and `proposed`. Derived rather than
+    // claimed, because `globals.css`'s `.slab` comment and `the-card.md` say
+    // it in prose — and a margin stated too small is a maintainer abandoning a
+    // narrower column or a larger face that was in fact safe, or reading the
+    // `.toBe(5)` above as sitting on a cliff it is nowhere near.
+    const collidesAt = [...Array(shown).keys()]
+      .map((n) => n + 1)
+      .filter((n) => new Set(STEPS.map((p) => p.slice(0, n))).size < STEPS.length)
+      .at(-1);
+    expect(
+      collidesAt,
+      "the margin moved — globals.css `.slab` and doc/design/the-card.md name it",
+    ).toBe(2);
+    expect(shown - collidesAt!).toBe(3);
 
     // And the bar is a grid of ten, not a flex row that could wrap instead.
     expect(CSS).toMatch(/\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(10,/);

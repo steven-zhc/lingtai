@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   MissingUpcasterError,
   SCHEMA_VER,
+  STEPS,
   UPCASTERS,
   type UpcastRegistry,
   parseStoredPayload,
@@ -254,10 +255,16 @@ describe("the gate point rename", () => {
    * read back unchanged — so a build whose number is *under* what the writer
    * stamped takes `upcast`'s `schemaVer > supported` branch and throws
    * `the writer is newer than the reader` about a reader that was lowered.
+   *
+   * `toEqual` and not `not.toThrow`, which is the half the name promises and
+   * the weaker assertion did not check: a step keyed at the current version —
+   * or a `parsePayload` that drops a field on the way out — returns a mutated
+   * payload without raising anything, and *unchanged* is the word this test
+   * is here for. Its neighbours in this describe all compare.
    */
   it.each(GATE_CARRYING)("reads a %s stamped by this build back unchanged", (type) => {
     const current = { ...base, ...extra[type], ...later[type], gate: "proposed" };
-    expect(() => parseStoredPayload(type, SCHEMA_VER[type], current)).not.toThrow();
+    expect(parseStoredPayload(type, SCHEMA_VER[type], current)).toEqual(current);
   });
 
   /**
@@ -265,10 +272,11 @@ describe("the gate point rename", () => {
    * unconfigured step as `skipped`, so a half-upcast here would not throw — it
    * would render a run as having a step nobody has ever heard of.
    *
-   * On `upcast` and not `parseStoredPayload`, because the two halves are
-   * separate facts now: the *step* moves the point, and the *schema* refuses a
-   * plan of five (the case below). Asserting them together would hide which
-   * one a regression broke.
+   * On the `1 → 2` step alone and not on `upcast`, because the chain's two
+   * halves are separate facts: this step moves the point and keeps the list
+   * the length it found it, and the `3 → 4` step below widens that list to
+   * ten (the case after next). Walking the whole chain here would assert both
+   * at once and hide which of them a regression broke.
    */
   it("moves the point inside a v1 GatesResolved and keeps every point, in order", () => {
     const v1 = {
@@ -283,7 +291,9 @@ describe("the gate point rename", () => {
       ],
     };
 
-    const up = upcast("GatesResolved", 1, v1) as { points: { gate: string; actions: string[] }[] };
+    const up = UPCASTERS.GatesResolved![1]!(v1) as {
+      points: { gate: string; actions: string[] }[];
+    };
     expect(up.points.map((p) => p.gate)).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
     expect(up.points[2]!.actions).toEqual(["build", "review"]);
   });
@@ -325,12 +335,53 @@ describe("the gate point rename", () => {
   });
 
   /**
+   * **The row this log is actually full of, at every version it holds one at.**
+   *
+   * Every `GatesResolved` appended before 2026-09-23 names the five steps the
+   * vocabulary had, and the schema asserts ten. Without the `3 → 4` step the
+   * `.length(10)` refuses all of them on read, and nothing catches it kindly:
+   * `decodeRow` rethrows the `ZodError` bare, so the `task_view` and
+   * `finding_backlog` projectors stop at the first such seq and never advance
+   * past it — a rebuild included — and `reduceRun` dies on any pre-existing
+   * run, which is `lingtai approve` and every task page.
+   *
+   * Parameterised over 1, 2 and 3 because a stored row is at any of them and
+   * they all reach `parsePayload` through this one chain.
+   */
+  it.each([1, 2, 3])("widens a v%i five-step plan to all ten, keeping what it named", (ver) => {
+    const stored = {
+      runId: "run-01JX",
+      configHash: "abc",
+      points: [
+        { gate: "admit", actions: [] },
+        { gate: "prepared", actions: ["install"] },
+        // The spelling that version actually wrote: `diff` until 0018.
+        { gate: ver === 1 ? "diff" : "proposed", actions: ["build", "review"] },
+        { gate: "merge", actions: [] },
+        { gate: "end", actions: ["close the ticket"] },
+      ],
+    };
+
+    const up = parseStoredPayload("GatesResolved", ver, stored);
+
+    expect(up.points.map((p) => p.gate)).toEqual([...STEPS]);
+    // What that run was given is untouched, and in the enum's order.
+    expect(up.points.find((p) => p.gate === "prepared")?.actions).toEqual(["install"]);
+    expect(up.points.find((p) => p.gate === "proposed")?.actions).toEqual(["build", "review"]);
+    expect(up.points.find((p) => p.gate === "end")?.actions).toEqual(["close the ticket"]);
+    // And the five the vocabulary did not have are empty, which is what that
+    // recipe said about them: there was nothing there to configure.
+    for (const step of ["claim", "design", "implement", "build", "review"] as const) {
+      expect(up.points.find((p) => p.gate === step)?.actions, step).toEqual([]);
+    }
+  });
+
+  /**
    * The count is the assertion 0047 rests on — *what a run was given is on the
-   * log* — so a payload that records five steps or eleven is refused rather
-   * than read as a run that was configured differently. **This is where 0061
-   * §7's cost is paid**: a plan written before the vocabulary widened is
-   * refused by the schema until the reset runs, and refusing it here is why
-   * nothing had to be paid in `schemaVer`.
+   * log* — so a payload **stamped by this build** that records five steps or
+   * eleven is refused rather than read as a run that was configured
+   * differently. A *stored* five is not that payload: it is the case above,
+   * and the step from 3 is what keeps the two apart.
    */
   it("refuses a plan that is not all ten steps", () => {
     const short = { runId: "run-01JX", configHash: "abc", points: points.slice(0, 5) };

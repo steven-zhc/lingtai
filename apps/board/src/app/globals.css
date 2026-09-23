@@ -442,18 +442,26 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 
 /* The ten names, which let the sentence below drop the step name: it read
    `proposed:build 42s / 20m` and now reads `build 42s / 20m`, because the
-   highlighted label already said `proposed`.
+   highlighted label already said `proposed`. The *refusal* reading keeps the
+   pair — `proposed:build refused` — because it lights no label and two of the
+   ten names are spelled like two of this repository's actions (`refusedAt` in
+   `rail.tsx`).
 
    **Clipped on purpose, and the clip is the concession the bar makes to ten.**
    Ten columns in 22rem leave five characters at 9px — `prepa`, `imple`,
-   `propo` — and every one of the ten is still unique at that length, with one
-   character to spare: at four they start colliding. `clip` rather than
+   `propo` — and every one of the ten is still unique at that length, with
+   **three** characters to spare: the ten stay distinct at four and at three,
+   and stop being distinct at two, where `prepared` and `proposed` are both
+   `pr`. So a narrower column or a larger face is a legibility question and not
+   a correctness one until it costs three characters — which is worth knowing
+   before somebody abandons a change that is in fact safe. `clip` rather than
    `ellipsis` because an ellipsis spends one of the five characters saying
    there are more; the `title` on the segment carries the whole name.
 
-   The number is not prose: `rail.test.tsx` computes it from the values below
-   and asserts it is five, so changing the size, the gap or the tracking fails
-   there rather than leaving this comment describing a card nobody renders. */
+   Neither number is prose: `rail.test.tsx` computes the five from the values
+   below and asserts it, and computes where the ten first collide and asserts
+   that is two — so changing the size, the gap or the tracking fails there
+   rather than leaving this comment describing a card nobody renders. */
 .slab {
   font-family: var(--mono); font-size: 9px; letter-spacing: -0.03em;
   color: var(--muted);

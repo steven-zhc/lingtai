@@ -139,7 +139,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 17 chains, 21 steps
+## upcaster — 17 chains, 22 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -158,6 +158,7 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `FixRequested` | 1 → 2 | `of` — the `rounds` ceiling the round is counted against (`#146`). Zero means *not recorded*, and the number is not guessable: the recipe is read from the base branch every pass |
 | `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `Step`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
 | `GatesResolved` | 2 → 3 | `recipe`, the canonical recipe the run resolved against ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)). The step adds **nothing** — absent, not null and not `{}`, so *not recorded* stays distinguishable from *recorded, and empty* |
+| `GatesResolved` | 3 → 4 | `points` names all **ten** steps where it named five ([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3). The five the vocabulary did not have get `[]`, which is not a guess but what that recipe said: there was nothing at `claim`, `design`, `implement`, `build` or `review` to configure. Without it `.length(10)` refuses every plan this log holds |
 | `GatePassed` | 2 → 3 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v2 pass gets `[]`, not a parse of that prose, which is untouched |
 
 **The counts in this heading are counted off the table, never computed.** Nine
@@ -168,14 +169,22 @@ rows — a heading that is arithmetic on a number nobody re-derived is how a
 reader comes to believe four rows are stale and deletable.
 
 **The nine `1 → 2` steps go when the log goes, and not before.**
-[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 spends this history
-rather than upcasting it to ten steps, and the thing that spends it is the
-**reset** — [the-pipeline](design/the-pipeline.md)'s T5, with T5b's fold of the
-log before it, neither landed. Until they are, the store holds `schemaVer: 1`
-rows of all nine, so the step stays and so do the nine `SCHEMA_VER`s that
-depend on it: lowering a version below what the writer stamped sends every
-stored row down `upcast`'s *the writer is newer than the reader* branch, which
-names the wrong party. **The mechanism is untouched either way**
+[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 spends this history by
+**resetting** it — [the-pipeline](design/the-pipeline.md)'s T5, with T5b's fold
+of the log before it, neither landed. Until they are, the store holds
+`schemaVer: 1` rows of all nine, so the step stays and so do the nine
+`SCHEMA_VER`s that depend on it: lowering a version below what the writer
+stamped sends every stored row down `upcast`'s *the writer is newer than the
+reader* branch, which names the wrong party.
+
+**`GatesResolved`'s `3 → 4` is there for the same reason and was nearly not
+written.** The plan going from five steps to ten was to be paid for by that
+same reset, so it landed with no step and no version — and the reset is the
+thing that has not run. A `.length(10)` reached with nothing in between refuses
+every row this log holds, and the refusal is not survivable: `decodeRow`
+rethrows the `ZodError` bare, so a projector stops at the first such seq and
+never advances past it, rebuild included. *The reset will pay for it* is not a
+property a reader can have today. **The mechanism is untouched either way**
 ([0001](decisions/0001-event-sourcing.md)): it was built before it was needed
 because the first upcaster is written under time pressure against real history,
 and a Lingtai whose log nobody may reset will want it.
@@ -522,11 +531,13 @@ called (`#61`). `merge` was a sixteenth until `#58` built its pipeline. **The
 set is two-valued now**: a cell runs, or the recipe does not resolve and the
 refusal names the action, its kind, the step and why.
 
-It was thirty cells until the vocabulary went to ten names. Thirty-six of the
-sixty are refusals, because six steps have no call site — which is the same
-two-valued rule and not an exception to it: **naming a step is not building
-it**, and a `design:` block a recipe could write and nothing would run is `#61`
-with a new spelling.
+It was thirty cells until the vocabulary went to ten names. **Forty-nine of the
+sixty are refusals** — count the ✋ in the table below, which is what
+`whyNoKindAt` answers for every cell but the eleven that run. Thirty-six of the
+forty-nine are the six steps with no call site, and they are the interesting
+ones: that is the same two-valued rule and not an exception to it, because
+**naming a step is not building it**, and a `design:` block a recipe could
+write and nothing would run is `#61` with a new spelling.
 
 Source: `KINDS_AT` and `whyNoKindAt` in `packages/recipe/src/recipe.ts`. This
 table is checked against that constant, cell for cell, by
@@ -650,14 +661,15 @@ ten steps and the ordered actions resolved for each — empty arrays included.
 **Ten is the schema's assertion and not a description of it**: `points` is
 `.length(10)` (`packages/domain/src/events.ts`), pinned by *refuses a plan that
 is not all ten steps* in `packages/domain/unit/upcast.test.ts`. It was five
-until 2026-09-23 and grew **without a version bump and without an upcaster**,
-which [0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 pays for by
-resetting the log rather than carrying it forward — [the-pipeline](design/the-pipeline.md)'s
-T5, which has not run. So a stored five-point plan is refused on read, and
-`Too small: expected array to have exactly 10 items` — raised from
-`parsePayload`, rethrown unwrapped by `decodeRow` with no type, stream or seq on
-it — is **the reader's schema having been widened ahead of the reset**, never a
-writer that emitted a malformed plan.
+until 2026-09-23, and it moved the way every field here moves — `schemaVer: 4`
+and a `3 → 4` step, which widens a stored five-step plan and gives the five the
+vocabulary did not have the `[]` those runs were in fact given. [0061](decisions/0061-the-recipe-is-the-pipeline.md)
+§7's reset ([the-pipeline](design/the-pipeline.md)'s T5) would have spent that
+history instead, and it has not run: a widening that waits for it refuses every
+plan in the store in the meantime, and `Too small: expected array to have
+exactly 10 items` — raised from `parsePayload`, rethrown unwrapped by
+`decodeRow` with no type, stream or seq on it — would be what a projector stops
+on for ever. The step dies at the reset with the other nine.
 
 Without it the log could not distinguish "nothing was configured here" from
 "this point does not exist", because `ProjectConfigured` carries a config *hash*

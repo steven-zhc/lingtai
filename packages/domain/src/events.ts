@@ -540,13 +540,20 @@ const gateBase = { gate: Step, action: z.string(), runId: z.string(), onSha: z.s
  * log* — made checkable: if the recipe configured `claim` by tag and the log
  * recorded five steps, whether it picked by tag or by assignee would be
  * nowhere ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §5).
- * It grew **without an upcaster and without a version**, which is 0061 §7 and
- * not a precedent: this log is reset instead, and `upcast.ts` stays for a log
- * nobody may reset. So a stored five-point plan is refused by `.length(10)`
- * until the reset runs, which is the one thing widening this field costs and
- * is the cost the ticket named. **`schemaVer` is not where that is paid**: the
- * nine steps below it are about the `diff` rename and still walk the rows the
- * log holds, so lowering them buys nothing and hides the reason.
+ *
+ * **It is `schemaVer: 4`, and the step from 3 is the whole of what widening
+ * this field cost.** 0061 §7 spends this history by *resetting* it, and that
+ * reset is [the-pipeline](../../../doc/design/the-pipeline.md)'s T5, which has
+ * not run — so every `GatesResolved` this log holds names five steps, and a
+ * `.length(10)` reached with no step in between refuses all of them. Not at
+ * the margin either: the refusal escapes `decodeRow` as a bare `ZodError`, so
+ * the projectors stop at the first such seq and never advance past it, and
+ * every reader of a run's stream dies with them. The step widens a stored plan
+ * to all ten and gives the five that did not exist `[]` — which is what those
+ * runs were given, because the vocabulary had no word for them and nothing
+ * could have been configured there. **`schemaVer` is where that is paid, and
+ * only there**: the nine `1 → 2` steps below are about the `diff` rename, they
+ * still walk the rows the log holds, and lowering *them* buys nothing.
  *
  * Since v3 it also carries `recipe`, the canonical recipe `configHash` is the
  * hash of ([ADR 0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md)),
@@ -1829,15 +1836,20 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // which is why every one of them needs the step and none can be skipped.
   //
   // **These numbers may not come down while the log holds rows at them.**
-  // 0061 §7 spends this history rather than upcasting it to ten steps, and
-  // that is a thing the *reset* does — `the-pipeline.md`'s T5, with T5b's fold
-  // before it, neither of them landed. A version lowered ahead of the reset
+  // 0061 §7 spends this history — the `diff` rename's — and the thing that
+  // spends it is the *reset*, `the-pipeline.md`'s T5, with T5b's fold before
+  // it, neither of them landed. A version lowered ahead of the reset
   // sends every stored row down `upcast`'s `schemaVer > supported` branch,
   // where the message says the writer is newer than the reader and the cause
   // is that the reader's number was lowered.
   //
   // 3: added `recipe`, the canonical recipe the run was resolved against (0047).
-  GatesResolved: 3,
+  // 4: `points` names all ten steps where it named five (0058 §3). The reset
+  // that was to have spent this history has not run, so the log is still full
+  // of five-step plans and `.length(10)` would refuse every one of them on
+  // read; the step from 3 widens them, giving the five steps that did not
+  // exist the `[]` those runs were in fact given.
+  GatesResolved: 4,
   GateRequested: 2,
   GateStarted: 2,
   // 3: added `findings`, the shape `GateFailed` carries, so a minor on a

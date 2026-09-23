@@ -148,11 +148,24 @@ export function Segs({
  * still `running`. `foldProgress` names that phase for exactly this reason — a
  * refusal being answered is not a refusal waiting for a person, and this
  * function cannot tell them apart on its own.
+ *
+ * **`step:action`, and the qualifier is not decoration.** This read `build
+ * refused` while the bar had five segments and none of them was called
+ * `build`. It has ten now, and `build` and `review` — the two action names this
+ * repository configures at `proposed` — are *also* two of the labels, drawn
+ * grey and dashed because no pipeline is constructed at them. An operator
+ * reading `build refused` looked for the `build` label, found it empty, and
+ * either disbelieved the sentence or went hunting a failure at a step that
+ * cannot have one. The live line above may still drop the step, because its
+ * own label is lit and eight columns of highlight say which; a refusal lights
+ * nothing, so it says the pair.
  */
 function refusedAt(points: readonly PointProgress[]): string | null {
   for (const p of points) {
     const bad = p.actions.find((a) => a.state === "failed");
-    if (bad) return bad.name;
+    if (bad) return `${p.point}:${bad.name}`;
+    // A step that failed with no action naming it is already a step name, and
+    // qualifying it with itself would read `proposed:proposed`.
     if (p.state === "failed") return p.point;
   }
   return null;
@@ -238,7 +251,11 @@ export function Rail({
            finished and nothing has started. On a card in the Waiting lane that
            is the opposite of true: the rail's own segment is red, a person is
            being asked, and a sentence saying *between points* under a red
-           segment contradicts the bar it is there to explain. */
+           segment contradicts the bar it is there to explain.
+
+           Qualified `step:action` where the live line is not, and `refusedAt`
+           says why: nothing is highlighted here, and two of the ten labels are
+           spelled the same as two of this repository's action names. */
         <p
           className="snow"
           title="the pipeline stops at the first refusal and waits for a person, so nothing is running (0041 §4)"

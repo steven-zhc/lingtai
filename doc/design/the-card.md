@@ -181,6 +181,12 @@ tracking out of `globals.css`, computes how many characters a column shows, and
 fails both if that number moves off five and if the ten stop being unique at it.
 The whole name is on each segment's `title`.
 
+**And the margin is three characters, not one.** The ten are still distinct at
+four and at three; two is where they stop being, `pr` standing for both
+`prepared` and `proposed`. That test derives it rather than taking it from
+here, because a margin stated too small is a maintainer abandoning a narrower
+column or a larger face that was in fact safe.
+
 **Five is computed and then pinned, because three files say it in prose.** This
 paragraph, `globals.css`'s `.slab` comment and `Segs`'s doc in `rail.tsx` each
 name the count and the three words, and for a day all three said six — a number
@@ -212,9 +218,17 @@ Four tones, and the third does work no colour alone can:
 
 **The sentence under the bar has four readings and not two.** `build 42s / 20m`
 while something is running, `between points` while the agent has finished and no
-step has started — and `build refused`, because a refusal clears the live phase
-and leaves neither. Drawing the second of those on the third told an operator
-the agent had just finished, under a segment that was red.
+step has started — and `proposed:build refused`, because a refusal clears the
+live phase and leaves neither. Drawing the second of those on the third told an
+operator the agent had just finished, under a segment that was red.
+
+**The refusal is the one reading that keeps the step name**, and ten is why.
+The live line drops it because its own label is lit and says which; a refusal
+lights nothing, and `build` and `review` — the two actions this repository
+configures at `proposed` — are now also two labels on the same bar, drawn grey
+and dashed because no pipeline is constructed at them. `build refused` under a
+`build` label that is empty and always will be is an operator hunting a failure
+at a step that cannot have one.
 
 The fourth is `nothing running`, and it is the one the run's own stream cannot
 name. *In flight between two steps* and *stopped, by something that is not on
@@ -231,7 +245,7 @@ than about the stream. A bought round
 appends `FixRequested`, runs an agent against the findings and appends
 `FixApplied` — and no `RunStarted`, because a round is a step inside a run. With
 `rounds: 3` that is the ordinary path here, so a fold that saw no phase in it
-put `build refused` under a hover saying a person was being waited on, on a card
+put `proposed:build refused` under a hover saying a person was being waited on, on a card
 that was spending money at the time. The round is a phase: `fixing round 2 of 3`,
 under the wall clock `RunStarted` recorded, which is the one the fixer is
 launched with.
