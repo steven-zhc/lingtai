@@ -92,8 +92,7 @@ from the ADR rather than bent towards it. **That is the largest saving here,
 and it is why the list below is shorter than the one a migration needs.**
 
 ```
-0   decide       T0   plugins that are only correct together     ← blocks T3
-                 T0b  the v2 recipe, written out                 ← the target
+0   decide       T0b  the v2 recipe, written out                 ← the target
 
 1   vocabulary   T1   Step replaces GatePoint
                  T2   the ten plugins, as one interface
@@ -106,7 +105,7 @@ and it is why the list below is shorter than the one a migration needs.**
                  T6   the rail draws ten
 
 3   configure    T7   init and add propose plugins for every step
-                 T8   doctor checks that plugins across steps agree
+                 T8   doctor names what every step will run
 
 4   the new one  T9   design — a document, before any code
 
@@ -126,12 +125,18 @@ last blocker closes, with no hold to remove.
 
 ### Phase 0 — decide
 
-| | |
-|---|---|
-| **T0** | Plugins that are only correct together |
-| kind | `documentation` — lands as an ADR |
-| what | `admit`'s `worktree:` and `merge`'s `merge:` must agree about one repository, branch and base; `prepared`'s install and `build`'s command must agree about one package manager. A model that lets either be swapped alone lets a person assemble a pipeline that is legal, passes `doctor`, and breaks on the first merge. The shape of the answer is probably `gatesFromRecipe(…, deps)`'s refusal-by-name, widened from within-a-step to across-steps. |
-| why first | [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) calls it *the largest open question here*. T3 needs it. |
+**T0 was here, and it is gone.** It asked for a model of plugins that are only
+correct together. Reading the code retired it: `base` is not two settings that
+must agree, it is **one value that flows** — `recipe.repo.base` is the only
+place it is written, and `worktree.ts:133` and `integrate.ts:73` both take it
+as a parameter. The disagreement the ticket existed to prevent cannot happen.
+What is left is `prepared`'s `pnpm install` against `build`'s `pnpm typecheck`:
+two free-text commands, where catching *npm in one and pnpm in the other* needs
+a system that understands commands. **A plugin offers a capability; a person who
+configures it wrongly gets an error.** What survives is one sentence, now in
+[0061](../decisions/0061-the-recipe-is-the-pipeline.md) §4: *a setting has
+exactly one home, and a step that needs another step's setting receives the
+value rather than declaring it again.*
 
 | | |
 |---|---|
@@ -162,7 +167,7 @@ last blocker closes, with no hold to remove.
 |---|---|
 | **T3** | The recipe is `steps:` |
 | kind | `tech-debt` |
-| blocked by | T0, T0b, T2 |
+| blocked by | T0b, T2 |
 | what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `rounds`/`restarts`/`turns`/`wall`/`base`/`kinds` move to the step that owns them; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. |
 | watch out | **A plugin's configuration must be hashed into `configHash`**, or [0047](../decisions/0047-the-recipe-a-run-got-is-on-the-log.md)'s *what a run was given is on the log* loses everything that moved out of `runtime:` — `route:`'s `rounds` is exactly as load-bearing as an action's command. |
 
@@ -220,10 +225,10 @@ last blocker closes, with no hold to remove.
 
 | | |
 |---|---|
-| **T8** | `doctor` checks that plugins across steps agree |
+| **T8** | `doctor` names every plugin a step will run, and the one it cannot |
 | kind | `feature` |
-| blocked by | T0, T3 |
-| what | T0's answer, enforced before a run rather than at the first merge. |
+| blocked by | T3 |
+| what | The step × plugin matrix as a row a person reads before a run: what each of the ten steps will do, and by name the plugin a step was given and cannot run. Not a dependency model — see the note where T0 used to be. |
 
 ### Phase 4 — the one genuinely new step
 

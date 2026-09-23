@@ -129,6 +129,26 @@ and it stays top-level until someone does.
 
 Top-level after the move: `version`, `env`, `steps`, `subscribers`.
 
+**A setting has exactly one home, and a step that needs another step's setting
+receives the value rather than declaring it again.** `base` is written once,
+under `admit`'s `worktree:`; the merge lane is handed it. That is already how
+the code works — `worktree.ts:133` and `integrate.ts:73` both take `base` as a
+parameter, and `recipe.repo.base` is the single place it is written — and it is
+worth stating because the shape below makes it easy to break: giving `merge:` a
+`base:` of its own would manufacture a disagreement that cannot happen today.
+
+**This is the whole of cross-step agreement, and it is deliberately not a
+dependency model.** An earlier draft of this ADR wanted plugins to declare what
+they must agree with, so that a pipeline which is legal but incoherent could be
+refused before it ran. Two things killed it. The one case that would have been
+load-bearing — `admit` and `merge` disagreeing about a base — **is prevented by
+the value flowing rather than by any check**. And the remaining case is
+`prepared`'s `pnpm install` against `build`'s `pnpm typecheck`: two free-text
+commands, where catching *you typed npm in one and pnpm in the other* requires
+a system that understands commands. A plugin offers a capability; a person who
+configures it wrongly gets an error. That is the Jenkins bargain, and it is the
+right one here.
+
 ### 5. The file may omit a step; the resolved recipe may not
 
 A step with no plugins need not be written. The **resolved** recipe has all ten,
@@ -209,11 +229,6 @@ action's command.
 
 ## What is not decided
 
-- **Whether plugins that must agree can be expressed in this file**, which is
-  [0058](0058-lingtai-is-a-development-pipeline.md)'s largest open question and
-  is unchanged by the shape: `admit`'s `worktree:` and `merge`'s `merge:` must
-  agree about one repository and base. The shape helps — both have names in the
-  file now — and does not answer it.
 - **Whether `queue:` and `assignee:` at `claim` compose or exclude each other.**
 - **What a plugin's own schema is**, and whether a `run:` action's `env:` list
   ([0037](0037-an-extension-is-a-command.md) §1) generalises to every plugin or
