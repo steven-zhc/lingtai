@@ -359,7 +359,7 @@ it.** That is the whole of the answer to *should an agent resolve the conflict*:
 
 | `reason` | share | where `proposed` sends it |
 |---|---|---|
-| `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round — **and the name is the misleading half**: nothing conflicted, a gate the lane re-ran after merging the base in went red |
+| `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round — **and the name is the misleading half**: nothing conflicted, and no gate the recipe declared is what failed — it is the lane's own verify after merging the base in. [#233](https://github.com/steven-zhc/lingtai/issues/233) renames it, while the reset still makes that free |
 | `conflict`, text | 6 / 32 | resolved, then **back through `build` and `review`** — see below |
 | `conflict`, intent | — | `waiting`, carrying what each side changed |
 | `needs-input` | from `admit`, `design` or `implement` | the judge's call: `waiting` with the question, or that step again with *state your assumption* |
