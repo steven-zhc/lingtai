@@ -34,14 +34,41 @@ and travels unchanged, so structure is the only honest comparison.
 
 `.lingtai/config.yaml` in this repository is read by nothing since
 [#180](https://github.com/steven-zhc/lingtai/issues/180); it survives as the
-record of why each value is what it is.
+record of why each value is what it is — **and it is a snapshot, not a mirror,
+which matters on exactly one key.** Its `source.kinds` is three
+(`.lingtai/config.yaml:25`); the live file's is four. `documentation` was added
+on 2026-09-22 and is deliberately last, so a doc ticket is work rather than
+tidying and is still never taken ahead of a bug. **The live file is what the
+queue reads and what §1 copies**, and this ticket is itself `documentation`, so
+four is not a proposal.
+
+[CLAUDE.md](../../CLAUDE.md) said three as well, and worse — it listed
+`documentation` among the labels *invisible* to the conductor. That is
+corrected in the same change as this document, because it is the sentence a
+person reads before labelling an issue, and believing it puts a doc ticket in
+the queue as `tech-debt`, ahead of every `feature`. The config file's own line
+is left as it stands: `wizard-page.test.ts:338` and `emit.test.ts:66` read that
+file as text and pin the three kinds, so correcting the record is a change with
+tests attached rather than a documentation edit — named here rather than done
+quietly in a file nothing reads.
 
 ## 1. The v2 file
 
-Every value below is the one in use today. The review prompt is verbatim. The
-long comments the v1 file carries travel unchanged and are marked `# ↑ v1's
-comment, unchanged` rather than reprinted, so that the two files can be
-compared on the thing that actually changed — **the structure**.
+Every value below is the one in use today, with one exception named where it
+is written — `merge`'s strategy, which no v1 key can hold. The review prompt is
+verbatim. The long comments the v1 file carries travel unchanged and are marked
+`# ↑ v1's comment, unchanged` rather than reprinted, so that the two files can
+be compared on the thing that actually changed — **the structure**.
+
+**The indentation carries one distinction and it is worth reading for.** A
+plugin's own fields are indented *inside* the plugin key; a universal key —
+`name`, `when`, `timeout`, `rounds`, `restarts` — is a sibling of it. That is
+0061 §2 and §9 and it is *not* cosmetic: `env:` beside a `run:` would be a key
+the workflow imposes on every plugin, and the refusal 0061 §9 asks for —
+*`queue:` has no `env:` in its schema, so a recipe that writes one is refused by
+name* — is only writable if the field is the plugin's. So `run:` takes a map
+where v1 wrote a scalar and an `env:` beside it, and `implement`'s four
+numbers sit under `agent:` while `rounds` sits beside it.
 
 ```yaml
 version: 2
@@ -62,7 +89,8 @@ steps:
   claim:
     - queue:
         kinds: [bug, tech-debt, feature, documentation]
-        # ↑ v1's comment, unchanged — priority order, earlier wins
+        # ↑ v1's comment, unchanged — priority order, earlier wins, and why
+        # `documentation` is last rather than absent (added 2026-09-22; §0)
         exclude:
           - blocked
           - in-progress
@@ -83,9 +111,8 @@ steps:
 
   prepared:
     - name: install
-      run: pnpm install --frozen-lockfile
+      run: { cmd: pnpm install --frozen-lockfile, env: [] }
       timeout: 10m
-      env: []
 
   # `design:` is omitted, and that is the one honest omission in this file
   # (0061 §5). Nothing writes a design today — T9 is the last ticket in the
@@ -96,21 +123,23 @@ steps:
   # `restarts` is written on `claim`. Three, and the number is a hypothesis
   # about what a refusal means (experiment 011) — ~31 turns and ~$3.40 each.
   implement:
-    - agent: claude-code
-      turns: 150
-      wall: 1h
-      evidence: 10200      # ↑ v1's `runtime.budget.evidence` comment, unchanged
-      attempts: 5
-      rounds: 3            # ↑ v1's `runtime.limits.rounds` comment, unchanged
+    - agent:
+        runtime: claude-code
+        turns: 150
+        wall: 1h
+        evidence: 10200    # ↑ v1's `runtime.budget.evidence` comment, unchanged
+        attempts: 5
+      rounds: 3            # ↑ v1's `runtime.limits.rounds` comment, unchanged —
+                           # a universal key, so it is the agent's sibling and
+                           # not its field: the workflow counts it (0061 §2)
 
   # Its own step, and a red one skips `review`: a diff that does not compile is
   # never paid to be reviewed. In v1 this ordering was a comment on the second
   # action in a list; here it is two steps and needs no comment.
   build:
     - name: build
-      run: pnpm typecheck && pnpm test
+      run: { cmd: pnpm typecheck && pnpm test, env: [] }
       timeout: 20m
-      env: []
       # ↑ v1's comment, unchanged — why `pnpm test:db` is suspended from this
       # gate, what stops being checked, and what brings it back
 
@@ -122,52 +151,53 @@ steps:
   # is only what *this* repository keeps getting wrong.
   review:
     - name: review
-      agent: claude-code
-      diff: 400000
-      findings: 5
-      prompt: |
-        This is an event-sourced scheduler that schedules its own development.
-        Six shapes have produced real defects here. Look for them as well as the
-        checklist above.
+      agent:
+        runtime: claude-code
+        diff: 400000
+        findings: 5
+        prompt: |
+          This is an event-sourced scheduler that schedules its own development.
+          Six shapes have produced real defects here. Look for them as well as the
+          checklist above.
 
-        1. **A comment that was true when it was written and is false now.**
-           This repository's signature defect: it appeared six times in a single
-           session. A lease duration that no longer exists; a `reconcile`
-           described as running only at startup; a justification resting on
-           "every merge already waits for a person" written after merges stopped
-           waiting. Ask of every comment, doc line and ADR sentence near a
-           behavioural change: does it still describe what the code now does?
-           A stale claim is a finding, and its failure scenario is the next
-           reader who believes it and acts on it.
+          1. **A comment that was true when it was written and is false now.**
+             This repository's signature defect: it appeared six times in a single
+             session. A lease duration that no longer exists; a `reconcile`
+             described as running only at startup; a justification resting on
+             "every merge already waits for a person" written after merges stopped
+             waiting. Ask of every comment, doc line and ADR sentence near a
+             behavioural change: does it still describe what the code now does?
+             A stale claim is a finding, and its failure scenario is the next
+             reader who believes it and acts on it.
 
-        2. **A check that is present, reported, and not looking at the thing you
-           think it is.** `#58`: the `merge` point renders as resolved and
-           executes nothing. `#89`: `runtime.limits.turns` was declared in the
-           recipe, carried through three layers, and handed to no runtime. Ask
-           of any check the diff adds or touches: what exact input does it read,
-           and is that input the thing its name claims? A check that cannot fail
-           is worse than no check, because it is believed.
+          2. **A check that is present, reported, and not looking at the thing you
+             think it is.** `#58`: the `merge` point renders as resolved and
+             executes nothing. `#89`: `runtime.limits.turns` was declared in the
+             recipe, carried through three layers, and handed to no runtime. Ask
+             of any check the diff adds or touches: what exact input does it read,
+             and is that input the thing its name claims? A check that cannot fail
+             is worse than no check, because it is believed.
 
-        3. **A guarantee that holds only because the single implementation is
-           careful.** `work-loop.ts` invokes a subscriber with no `.catch` and
-           depends on that subscriber never rethrowing. Ask whether the
-           invariant would survive a second implementation written by somebody
-           who had not read the first.
+          3. **A guarantee that holds only because the single implementation is
+             careful.** `work-loop.ts` invokes a subscriber with no `.catch` and
+             depends on that subscriber never rethrowing. Ask whether the
+             invariant would survive a second implementation written by somebody
+             who had not read the first.
 
-        4. **A projection that is not a pure fold.** A reducer may read the
-           event and nothing else — no clock, no network, no environment.
-           Anything time-dependent makes `lingtai projection rebuild` disagree
-           with the live fold, and the two disagreeing silently is the failure.
+          4. **A projection that is not a pure fold.** A reducer may read the
+             event and nothing else — no clock, no network, no environment.
+             Anything time-dependent makes `lingtai projection rebuild` disagree
+             with the live fold, and the two disagreeing silently is the failure.
 
-        5. **A required field added to a shared type, with a hand-written
-           literal missed.** `#89`'s first attempt added a field to
-           `RuntimeCapabilities` and missed a literal in a package the change
-           never opened. For every widened type: where else is this constructed
-           by hand?
+          5. **A required field added to a shared type, with a hand-written
+             literal missed.** `#89`'s first attempt added a field to
+             `RuntimeCapabilities` and missed a literal in a package the change
+             never opened. For every widened type: where else is this constructed
+             by hand?
 
-        6. **A name Lingtai reads for itself without the `LINGTAI_` prefix**
-           (`#63`) — or a project's own variable wrongly given one. A project's
-           file keeps its own names.
+          6. **A name Lingtai reads for itself without the `LINGTAI_` prefix**
+             (`#63`) — or a project's own variable wrongly given one. A project's
+             file keeps its own names.
 
   # The only step that routes. One judge per direction, and only one of the
   # five is a judgement worth an agent (0061 §3).
@@ -188,15 +218,24 @@ steps:
     - when: needs-input
       judge: ask-or-assume
 
-  # Written out as `[]` rather than omitted, though 0061 §5 permits omitting
-  # it. **Nothing holds here**, and that is the single most consequential fact
-  # about this repository's configuration — the same argument the v1 file makes
-  # for writing out `backoff` and `env: []`: this is the repository that has to
-  # be able to read its own policy without opening its own source.
+  # **Nothing holds here**, and that is the single most consequential fact
+  # about this repository's configuration. In v2 it is a fact about the *list*
+  # rather than about an empty one: what would hold a diff at this step is a
+  # `human:` or a `watch:` entry, and there is neither. The lane itself is
+  # written, because under 0061 the thing that moves `main` is a plugin like
+  # any other — `gates.merge: []` said nothing about the merge at all, since
+  # the merge was code, and a `merge` step that resolves and runs nothing is
+  # `#58`'s shape exactly.
+  #
+  # `strategy:` is the one value in this file not copied from a file: v1 has no
+  # key for it, and `integrate.ts:417` offers no choice — `git merge --no-edit`
+  # of the branch into the base, then a push, a fast-forward where it can be
+  # one. T3 decides what else is legal; this writes the one that exists.
   #
   # ↑ v1's comment, unchanged — what is between an agent and `main` is
   # `proposed`, and neither half of it is a person.
-  merge: []
+  merge:
+    - merge: { strategy: merge-commit }
 
   end:
     - name: close the ticket
@@ -216,12 +255,15 @@ steps:
 # nobody can read them. `turns: 40` reaches the binary as `--max-turns`;
 # `wall: 5m` is how long one turn may take before it is called hung.
 discuss:
-  - agent: claude-code
-    turns: 40
-    wall: 5m
+  - agent:
+      runtime: claude-code
+      turns: 40
+      wall: 5m
 
 # Off the log, and cannot change an outcome (0015's one real division, and the
-# only one 0061 does not flatten).
+# only one 0061 does not flatten). A subscriber is not a step and its entries
+# are not plugins, so `run:` and `env:` here are v1's subscriber shape
+# unchanged rather than the plugin map `prepared` and `build` now write.
 subscribers:
   - name: desktop
     on: [ApprovalRequested, IntegrationRefused, RunAwaitingInput, WorkItemBlocked]
@@ -268,7 +310,7 @@ finding** — §3 takes them one at a time.
 | `gates.proposed[0]` — the `run:` action | `steps.build` — its own step |
 | `gates.proposed[1]` — the `agent:` action | `steps.review` |
 | `gates.proposed` — the commented-out `watch:` block | **none named.** §3.2 |
-| `gates.merge` | `steps.merge` |
+| `gates.merge` | `steps.merge` — `[]` in v1, and it gains `merge:`, which the integrator was |
 | `gates.end` | `steps.end` |
 
 ### An action's keys
@@ -278,9 +320,9 @@ finding** — §3 takes them one at a time.
 | `name:` | universal key, unchanged (0061 §2) |
 | `timeout:` | universal key, unchanged |
 | `when:` on `close:`/`labels:` | universal key, and its legal values are the step's (0061 §3) |
-| `env:` on `run:` | **a field in the plugin's schema, not a universal key** (0061 §9) |
-| `run:` | the `run:` plugin, at `prepared` and `build` |
-| `agent:` — the string *is* the prompt | the `agent:` plugin, whose `prompt:` it becomes |
+| `env:` on `run:` | `run.env` — **a field in the plugin's schema, not a universal key** (0061 §9), so it moves *inside* the plugin rather than beside it |
+| `run:` — the string *is* the command | the `run:` plugin, at `prepared` and `build`, whose `cmd:` it becomes — a map now, because `env:` has to live in it |
+| `agent:` — the string *is* the prompt | the `agent:` plugin, whose `prompt:` it becomes; the runtime name is `agent.runtime` |
 | `watch:` + `then:` | the `watch:` plugin — **no step named.** §3.2 |
 | `human:` | the `human:` plugin — **no step named.** §3.2 |
 | `close:` | the `close:` plugin, at `end` |
@@ -290,7 +332,7 @@ finding** — §3 takes them one at a time.
 
 | v1 | v2 |
 |---|---|
-| `runtime.agent` | `implement:` → `agent:` — and `design`, `review`, `merge` and `discuss` each choose their own (0053, as a consequence of the shape) |
+| `runtime.agent` | `implement:` → `agent.runtime` — and `design`, `review`, `merge` and `discuss` each choose their own (0053, as a consequence of the shape) |
 | `runtime.tier` | **none named.** §3.3 |
 | `runtime.prompt` | **none, and it needs none.** §3.4 |
 | `runtime.limits.turns` | `implement:` → `agent.turns` |
@@ -310,7 +352,7 @@ finding** — §3 takes them one at a time.
 | `steps.design` | the one genuinely new step. Omitted here: nothing writes a design today |
 | `proposed` → `judge:` | `buyRound`'s decision (`run-once.ts:1761`), made sayable |
 | `proposed` → `backlog:` | `acceptFinding` ([#137](https://github.com/steven-zhc/lingtai/issues/137)) — a severity stops being an opinion and becomes an outcome |
-| `merge` → `merge:` | the merge lane, named |
+| `merge` → `merge:` | **the merge lane, named** — the one plugin in §1 whose value is not copied from a file, because no v1 key can hold it. `integrate.ts:417` is `git merge --no-edit` and offers no choice, so `strategy:` has one legal value until T3 names more. Writing it is what keeps `merge` from resolving to a step that runs nothing (`#58`) |
 | `discuss:` | `discuss.ts`'s two constants, made sayable |
 
 ## 3. The six rows that say *none*
@@ -334,28 +376,54 @@ instead of one `gates` is more surface, not less.
 rewritten as `steps:`, or presets go. Deciding it by not mentioning it is the
 one option that produces a silent drop.
 
-### 3.2 `watch:` and `human:` are plugins with no step
+### 3.2 `watch:` and `human:` are plugins with no step — and the plugin set is twelve, not eleven
 
-[the-pipeline.md](the-pipeline.md)'s T2 names eleven plugins — `run:` `agent:`
-`watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `backlog:`
-`merge:` — and 0061 §3's table places nine of them. `watch:` and `human:` have
-no row.
+Two lists of the plugins exist — [the-pipeline.md](the-pipeline.md)'s T2, and
+0061 §3's table — and **neither was the set, in both directions**:
 
-Both have a knowable home in this repository:
+- **`watch:` and `human:` are in T2's list and have no row in 0061 §3.**
+- **`assignee:` has a row in 0061 §3 — `claim`, *who* — and was missing from
+  T2's, which named eleven.** §2 above maps `runtime.assignee.login`/`.take`
+  onto it, so it is a plugin this file needs whether or not a list carries it.
+
+**The set is twelve and the matrix is 120 cells, not 110.** The omission is the
+more dangerous half: a plugin no list carries is a plugin no step refuses, so
+`assignee:` written under `end:` resolves silently instead of being refused by
+name — the cell nobody decided, which is the whole of what 0061 §8 exists to
+make impossible. **T2's list is corrected to twelve in the same change as this
+document.** 0061 §3's table keeps its ten and is not edited: an ADR that turns
+out incomplete gets a superseding file rather than a correction, and what it is
+missing is the two below.
+
+Where the two unplaced ones may go is already decided, by code rather than by
+this file. `KINDS_AT` (`recipe.ts:186-187`) gives **`proposed` and `merge` each
+all four of `run`, `agent`, `watch`, `human`** — so neither `watch:` nor
+`human:` has *a* home; each has two, and v2 inherits both unless something
+decides otherwise.
+
+What this repository *uses* is one apiece, which is a different fact:
 
 - **`human:` at `merge`.** [CLAUDE.md](../../CLAUDE.md) says it in as many
   words: *declare a `human:` action there and the point runs it*, and
   `conductor/integration/run-once.test.ts`'s *holds at a human action at the
-  merge point* is the test that pins it.
+  merge point* is the test that pins it. **`human:` at `proposed` is legal
+  today too**, and is the cheaper of the two — it holds a diff before the merge
+  lane starts rather than inside it.
 - **`watch:` at `proposed`, last.** That is where the commented-out block sits
   in the v1 file, and the reason it is last is written beside it: a watch placed
-  first would ask a person about a diff that does not compile.
+  first would ask a person about a diff that does not compile. **`watch:` at
+  `merge` is legal today too** — that is the pair `tamper` was built against.
+
+**Used-here and legal are not the same list, and the matrix takes the second.**
+Twenty of the 120 cells belong to these two plugins and four of the twenty are
+legal today; a v2 that filled them in from where this repository happens to
+write them would take a capability away with nothing recorded as deciding it.
 
 This matters for 0061 §8 rather than for this file. The rule is *a step refuses
 a plugin it cannot run, at resolve time, by name* — so the matrix has a cell
 for every step × plugin pair, and a pair nobody has placed is a cell nobody has
-decided. T2 grows `gate-matrix.test.ts` from thirty cells to a hundred and ten;
-these two plugins are twenty of them.
+decided. T2 grows `gate-matrix.test.ts` from thirty cells to a hundred and
+twenty, and the four above are the ones it must not narrow by accident.
 
 ### 3.3 `tier`, `evidence` and `attempts` have an obvious home the ADR does not name
 
@@ -445,11 +513,28 @@ values into the resolved recipe:
 raw["runtime"] = { ...own, agent: agent.agent, limits, ...(assignee ? { assignee } : {}) };
 ```
 
-Under v2 there is no `runtime` to write them into. They have to land in
-`steps.implement[0]` (`agent`, `turns`, `wall`, `rounds`), `steps.claim[0]`
-(`restarts`, `assignee`) and `steps.review[0]`/`steps.merge[0]`/`discuss[0]`
-(each one's `agent:`) — **which is one machine-wide value arriving in six
-places inside `steps:`, where it will then read as though the file said it.**
+Under v2 there is no `runtime` to write them into. They have to land in six
+places, and only five of the six are inside `steps:`:
+
+```
+steps.claim       `queue:`'s sibling `restarts`, and `assignee:`
+steps.implement   `agent.runtime` · `agent.turns` · `agent.wall`, and the
+                  sibling `rounds`
+steps.review      `agent.runtime`
+steps.merge       `agent.runtime` — the conflict agent 0061 §3 gives this step
+                  beside `merge:`. §1 writes no such entry, so this is a site
+                  with nowhere to land today rather than a site that is absent
+steps.design      `agent.runtime` — only once a file writes the step. §1 omits
+                  `design`, and a file that adds it acquires this site with it
+discuss           `agent.runtime` — beside `steps:`, and not inside it
+```
+
+**One machine-wide value arrives in all six, where it then reads as though the
+file had said it.** `merge`'s agent and `design`'s are the trap, because they
+are the two sites §1 does not write: a write-back built from the sites this
+repository's own file happens to write covers four, and an `agent:` a v2 recipe
+puts at `merge` or `design` is then applied where it should have been refused —
+0016 §4's silent drop, in the mechanism written to prevent it.
 
 0061 §4 does not mention 0046. Its five-line mapping table moves
 `runtime.limits.rounds` to `implement` as though the recipe file were where it
@@ -471,7 +556,7 @@ it is what happens by default if nobody chooses.
 Structure only — the prose is the same prose in both.
 
 ```
-v1 — 67 lines of structure, two files          v2 — 77 lines of structure, one file
+v1 — 67 lines of structure, two files          v2 — 79 lines of structure, one file
 
 version: 1                                     version: 2
 repo:                                          env:
@@ -489,28 +574,28 @@ gates:                                           admit:
   admit: []                                        - worktree: { base: main, submodules: false }
   prepared:                                      prepared:
     - name: install                                - name: install
-      run: pnpm install --frozen-lockfile            run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile            run: { cmd: pnpm install …, env: [] }
       timeout: 10m                                   timeout: 10m
-      env: []                                        env: []
-  proposed:                                      implement:
-    - name: build                                  - agent: claude-code
-      run: pnpm typecheck && pnpm test                turns: 150
-      timeout: 20m                                    wall: 1h
-      env: []                                         evidence: 10200
-    - name: review                                    attempts: 5
-      agent: |                                        rounds: 3
+      env: []                                    implement:
+  proposed:                                        - agent:
+    - name: build                                      runtime: claude-code
+      run: pnpm typecheck && pnpm test                 turns: 150
+      timeout: 20m                                     wall: 1h
+      env: []                                          evidence: 10200
+    - name: review                                     attempts: 5
+      agent: |                                       rounds: 3
         <36 lines>                               build:
   merge: []                                        - name: build
-  end:                                                 run: pnpm typecheck && pnpm test
-    - name: close the ticket                           timeout: 20m
-      when: landed                                     env: []
-      close: true                                  review:
-    - name: close the ticket a person ended          - name: review
-      when: closed                                       agent: claude-code
-      close: true                                        diff: 400000
-subscribers:                                             findings: 5
-  - name: desktop                                        prompt: |
-    on: [4]                                                <36 lines>
+  end:                                               run: { cmd: pnpm typecheck && …, env: [] }
+    - name: close the ticket                         timeout: 20m
+      when: landed                               review:
+      close: true                                  - name: review
+    - name: close the ticket a person ended          agent:
+      when: closed                                     runtime: claude-code
+      close: true                                      diff: 400000
+subscribers:                                           findings: 5
+  - name: desktop                                      prompt: |
+    on: [4]                                              <36 lines>
     run: node apps/cli/src/notify.ts             proposed:
     env: []                                        - when: findings
   - name: telegram                                   backlog: minor
@@ -522,24 +607,26 @@ runtime:                                             judge: claude-code
     evidence: 10200                                  judge: claude-code
     attempts: 5                                    - when: needs-input
     findings: 5                                      judge: ask-or-assume
-    diff: 400000                                 merge: []
-                                                 end:
-~/.lingtai/config.yml                              - name: close the ticket
-runtime:                                               when: landed
-  agent: claude-code                                   close: true
-projects:                                          - name: close the ticket a person ended
-  lingtai:                                             when: closed
-    runtime:                                           close: true
-      limits:                                    discuss:
-        turns: 150                                 - agent: claude-code
-        wall: 1h                                     turns: 40
-        rounds: 3                                    wall: 5m
-        restarts: 1                              subscribers:
-                                                   - name: desktop … (unchanged)
-                                                   - name: telegram … (unchanged)
+    diff: 400000                                 merge:
+                                                   - merge: { strategy: merge-commit }
+~/.lingtai/config.yml                            end:
+runtime:                                           - name: close the ticket
+  agent: claude-code                                 when: landed
+projects:                                            close: true
+  lingtai:                                         - name: close the ticket a person ended
+    runtime:                                         when: closed
+      limits:                                        close: true
+        turns: 150                             discuss:
+        wall: 1h                                 - agent:
+        rounds: 3                                    runtime: claude-code
+        restarts: 1                                  turns: 40
+                                                     wall: 5m
+                                               subscribers:
+                                                 - name: desktop … (unchanged)
+                                                 - name: telegram … (unchanged)
 
-                                                 ~/.lingtai/config.yml
-                                                 — §3.6: this is the open question
+                                               ~/.lingtai/config.yml
+                                               — §3.6: this is the open question
 ```
 
 `design:` is absent from the right-hand column on purpose and is not a
@@ -559,6 +646,7 @@ runtime.limits.turns/wall → implement: beside the agent that spends them
 runtime.limits.rounds   → implement:  the ~31 turns and ~$3.40 are beside the step
 runtime.limits.restarts → claim:      that buys them
 —                       → proposed:   `buyRound` stops being visible to nobody
+—                       → merge:      the lane stops being only `integrate.ts`
 —                       → discuss:    `discuss.ts`'s two constants become readable
 ```
 
@@ -580,25 +668,31 @@ Four things the v1 file cannot say and the v2 file says by existing:
 3. **`admit` and `build` stop being unnamed.** `repo.base` becomes *the branch
    `admit` cuts a worktree from*; the build stops being the first of two
    actions at a point named after neither of them.
-4. **Two step names that exist today only in code get a line in a file** —
-   `proposed`'s judge, which is `buyRound` at `run-once.ts:1761`, and
-   `discuss`, which is two constants at `discuss.ts:72` and `:80`.
+4. **Three things that exist today only in code get a line in a file** —
+   `proposed`'s judge, which is `buyRound` at `run-once.ts:1761`; `discuss`,
+   which is two constants at `discuss.ts:72` and `:80`; and the merge lane
+   itself, which is `integrate.ts` and no key at all, so that a `merge` step
+   that runs nothing is a thing you can see rather than `#58` again.
 
 **The cost, counted rather than asserted.** 67 structural lines across two
-files become 77 in one. Ten of those fifteen-odd extra lines are not overhead:
+files become 79 in one — **twelve more**. Seventeen of the 79 are things
+neither v1 file can say at all:
 
 ```
 proposed:          11 lines   `buyRound`'s five directions. v1 has no way to
                               write any of it — it is code at run-once.ts:1761
-discuss:            4 lines   discuss.ts:72 and :80. Neither file can say it
+discuss:            5 lines   discuss.ts:72 and :80. Neither file can say it
+merge:              1 line    the lane itself, which in v1 is integrate.ts and
+                              no key anywhere
                              ───
-                   15 lines   of new information
+                   17 lines   of new information
 ```
 
-Take those two blocks out and the v2 file says everything v1's two files said
-in **62 lines against 67**. `steps:` buys a level of indentation and ten names
-where v1 wrote five keys, and it still comes out shorter, because `repo:` and
-`source:` were section headers standing in for one plugin each.
+Take those three out and the v2 file says everything v1's two files said in
+**62 lines against 67** — five fewer, having spent a level of indentation and
+ten step names to get there, because `repo:` and `source:` were section headers
+standing in for one plugin each. The arithmetic is the whole of the claim:
+79 − 67 = 12 more lines on the page, 79 − 17 = 62 on the same content.
 
 **The one real regression** is that `prepared`, `build` and `review` are three
 steps in three places where v1 had them in one list, so *what does this
@@ -608,11 +702,11 @@ line in the comparison worth arguing about.
 
 **What does not pass, and it is not the shape.** The ADR's claim is *read it
 downward and you have read the pass.* Read the file in §1 downward and you have
-read the pass **only if you already know that `agent: claude-code`, `turns`,
-`wall`, `rounds` and `restarts` were not written there** — they are this
-machine's, merged in from `~/.lingtai/config.yml`, and a reader who edits them
-in the recipe gets, today, a refusal that names a `runtime:` block the v2 file
-does not have.
+read the pass **only if you already know that `agent:`'s `runtime`, its
+`turns` and `wall`, and `rounds` and `restarts` were not written there** — they
+are this machine's, merged in from `~/.lingtai/config.yml`, and a reader who
+edits them in the recipe gets, today, a refusal that names a `runtime:` block
+the v2 file does not have.
 
 So 0061 was not wrong, and it is not finished. **§4 is a mapping written as
 though the recipe file were the only file, and this repository has had two

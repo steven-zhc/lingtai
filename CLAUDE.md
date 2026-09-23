@@ -40,11 +40,16 @@ to them but the projection.
 ## Opening an issue
 
 An issue needs a **kind** label or the queue never sees it. The recipe's
-`source.kinds` decides which — currently `bug`, `tech-debt`, `feature`. That is
-the conducting machine's `~/.lingtai/lingtai/recipe.yml` since #180, and **not**
-`.lingtai/config.yaml`: nothing reads the repository's copy, so a label added
-there and merged stays invisible, and says nothing. The other labels in this
-repo (`enhancement`, `documentation`, …) are invisible to the conductor.
+`source.kinds` decides which — currently `bug`, `tech-debt`, `feature`,
+`documentation`, in that order, which is priority order: **`documentation` is a
+kind since 2026-09-22 and is last on purpose**, because the documents are the
+product's front page ([design/1.0.md](doc/design/1.0.md)) and so are work
+rather than tidying, but a doc ticket must never be taken ahead of a bug. That
+is the conducting machine's `~/.lingtai/lingtai/recipe.yml` since #180, and
+**not** `.lingtai/config.yaml`: nothing reads the repository's copy, so a label
+added there and merged stays invisible, and says nothing — and that copy still
+says three kinds for exactly that reason. The other labels in this repo
+(`enhancement`, `question`, …) are invisible to the conductor.
 
 Add **`agent:hold`** unless you mean an agent to take it now. Self-hosting runs
 one unheld ticket at a time, so an unheld ticket is one you are asking the next
