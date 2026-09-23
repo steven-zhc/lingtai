@@ -14,7 +14,7 @@
  * had anyone check.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -89,8 +89,76 @@ describe("logWhere", () => {
   it("names the file on a machine that wrote store: sqlite", () => {
     const home = mkdtempSync(join(tmpdir(), "lingtai-where-"));
     writeFileSync(join(home, "config.yml"), "database:\n  store: sqlite\n");
+    // Content nothing reads: whether the log is there is the whole question.
+    writeFileSync(join(home, "lingtai.db"), "");
 
-    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "file", path: join(home, "lingtai.db") });
+    expect(where({ LINGTAI_HOME: home })).toEqual({
+      kind: "file",
+      path: join(home, "lingtai.db"),
+      alsoElsewhere: false,
+    });
+  });
+
+  /**
+   * **A path is not a file** (#214). `lingtai init` writes `store: sqlite` and
+   * stops — the log is created on first open — so the machine it leaves behind
+   * has a chosen store and nothing at the path. `file` there had `uninstall`
+   * telling an operator who changed their mind that it was destroying every
+   * event this machine recorded, and that they could not be recovered, about a
+   * file that never existed.
+   */
+  it("says nothing of a chosen sqlite whose log has never been opened", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-unopened-"));
+    writeFileSync(join(home, "config.yml"), "database:\n  store: sqlite\n");
+
+    expect(existsSync(join(home, "lingtai.db"))).toBe(false);
+    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "none" });
+  });
+
+  /**
+   * **The blocker: a chosen Postgres with the old log still sitting there**
+   * (#214).
+   *
+   * 0056 §3's documented way to move a machine to Postgres is to *export*
+   * `LINGTAI_DATABASE_URL` — launchd, a container, a shell rc — rather than to
+   * edit `config.yml`, and `storeChoice` takes that variable before it ever
+   * opens the file. So this machine is `{store:"postgres", where:"environment"}`
+   * with `store: sqlite` still written and the whole of its old log in
+   * `lingtai.db`. Asked only under a refusal, the file was never looked for:
+   * `uninstall` deleted it and printed *the database LINGTAI_DATABASE_URL names
+   * is untouched*, and 0055 §3 says the Postgres log started empty rather than
+   * carrying anything over, so that file was the only copy.
+   *
+   * Both facts, because the command has two things to say and neither may be
+   * said in the other's words.
+   */
+  it("names the file a chosen Postgres left behind, and says the server is there too", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-switched-"));
+    writeFileSync(join(home, "config.yml"), "database:\n  store: sqlite\n");
+    writeFileSync(join(home, "lingtai.db"), "");
+
+    expect(where({ LINGTAI_HOME: home, LINGTAI_DATABASE_URL: URL_ })).toEqual({
+      kind: "file",
+      path: join(home, "lingtai.db"),
+      alsoElsewhere: true,
+    });
+  });
+
+  /**
+   * And the same machine whose `config.yml` was rewritten to `store: postgres`
+   * instead of the variable being exported, with the old file still in place.
+   * The written choice is not what decides whether a file is there.
+   */
+  it("names it for a written store: postgres as well", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-rewritten-"));
+    writeFileSync(join(home, "config.yml"), `database:\n  store: postgres\n  url: ${URL_}\n`);
+    writeFileSync(join(home, "lingtai.db"), "");
+
+    expect(where({ LINGTAI_HOME: home })).toEqual({
+      kind: "file",
+      path: join(home, "lingtai.db"),
+      alsoElsewhere: true,
+    });
   });
 
   /**
@@ -110,7 +178,15 @@ describe("logWhere", () => {
     // Content nothing reads: whether the log is there is the whole question.
     writeFileSync(join(home, "lingtai.db"), "");
 
-    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "file", path: join(home, "lingtai.db") });
+    // `alsoElsewhere` is `false` for the reason the probe at the end of this
+    // block gives, and not because the URL in that file is nothing: a
+    // handed-in environment never has the machine file read for a URL, so
+    // in-process the refusal's `logConfigured()` half cannot answer.
+    expect(where({ LINGTAI_HOME: home })).toEqual({
+      kind: "file",
+      path: join(home, "lingtai.db"),
+      alsoElsewhere: false,
+    });
   });
 
   /**
@@ -126,7 +202,11 @@ describe("logWhere", () => {
     // Content nothing reads: whether the log is there is the whole question.
     writeFileSync(join(home, "lingtai.db"), "");
 
-    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: "file", path: join(home, "lingtai.db") });
+    expect(where({ LINGTAI_HOME: home })).toEqual({
+      kind: "file",
+      path: join(home, "lingtai.db"),
+      alsoElsewhere: false,
+    });
   });
 
   /**
@@ -325,6 +405,27 @@ describe("the drain", () => {
   it("reaches the drain on a configured machine that nothing is conducting", async () => {
     const o = outside({ LINGTAI_DATABASE_URL: URL_ }, null);
 
+    await liveDrain("upgrading", false, o.live);
+
+    expect(o.asked).toEqual(["lock", "drain upgrading false"]);
+    expect(o.lines).toEqual([]);
+  });
+
+  /**
+   * **And a written store is what that turns on, not a file that exists**
+   * (#214). `logWhere` above answers `none` for a chosen SQLite whose log has
+   * never been opened, because there is nothing there for an uninstall to
+   * destroy — and this machine has still chosen a store, so its doctor gate and
+   * a drain somebody left standing are its own. Asking `logWhere` here would
+   * skip the drain on it and say *this machine has written no store*, which is
+   * a sentence its `config.yml` disproves.
+   */
+  it("reaches the drain on a machine that chose sqlite and has not opened the log", async () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-unopened-drain-"));
+    writeFileSync(join(home, "config.yml"), "database:\n  store: sqlite\n");
+    const o = outside({ LINGTAI_HOME: home }, null);
+
+    expect(existsSync(join(home, "lingtai.db"))).toBe(false);
     await liveDrain("upgrading", false, o.live);
 
     expect(o.asked).toEqual(["lock", "drain upgrading false"]);

@@ -106,9 +106,10 @@ describe("the two questions", () => {
  *
  * `lingtai upgrade` and `lingtai uninstall` are the two commands that repair a
  * broken install, and both begin by asking where this machine's log is —
- * `storeChoice()`, which is total; under a refusal the `lingtai.db` that may be
- * sitting there decides, and only where there is none does `logConfigured()`
- * answer (#214) — so a `config.yml` truncated mid-write must not be what
+ * `storeChoice()`, which is total, beside a look for the `lingtai.db` that may
+ * be sitting under `stateDir()` whatever that choice says, with
+ * `logConfigured()` answering the other half: is there also a log somewhere
+ * else (#214) — so a `config.yml` truncated mid-write must not be what
  * stops them. What it does stop is a connection: `postgresUrl()` still names
  * the file, which is the one remedy that works.
  *

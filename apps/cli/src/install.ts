@@ -157,9 +157,19 @@ export interface World {
 export type LogLocation =
   /** A server somewhere else. Removing `~/.lingtai` does not touch it. */
   | { kind: "elsewhere" }
-  /** A file under `~/.lingtai`. It goes with the directory, and there is no copy. */
-  | { kind: "file"; path: string }
-  /** Nothing is configured, so there is no log to say anything about either way. */
+  /**
+   * A file under `~/.lingtai` **that is there**. It goes with the directory,
+   * and there is no copy.
+   *
+   * `alsoElsewhere` is the machine that has both: one that recorded into this
+   * file and has since been pointed at Postgres, usually by exporting
+   * `LINGTAI_DATABASE_URL` (0056 §3). Both sentences are then true and neither
+   * may be said in the other's words — the file is destroyed *and* a database
+   * survives, and 0055 §3 is why the surviving one holds none of what the file
+   * held ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+   */
+  | { kind: "file"; path: string; alsoElsewhere: boolean }
+  /** No log is there to say anything about: nothing configured, or a store chosen and never opened. */
   | { kind: "none" };
 
 // ------------------------------------------------------------- versions --
@@ -578,11 +588,19 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   // **Before the question, and before `--yes` can answer it.** On a machine
   // whose store is a file the log is inside `what`, and "this cannot be undone"
   // is a sentence about a directory unless somebody says which file it is.
+  //
+  // A machine reading Postgres with that file still sitting there gets the
+  // warning too, and it is the one that most needs it: what the removal takes
+  // is every event recorded before the switch, which the database it reads now
+  // never held (#214).
   if (where.kind === "file") {
     world.log(
       paint.fail(
-        `The event log is ${where.path}, which is under ${paths.home}: removing it destroys every event this ` +
-          `machine recorded, and it cannot be recovered. ${SQLITE_MACHINE}`,
+        where.alsoElsewhere
+          ? `The event log ${where.path} is under ${paths.home} and the removal takes it: this machine reads a ` +
+            `Postgres database now, and every event in that file was recorded before it did. ${SQLITE_MACHINE}`
+          : `The event log is ${where.path}, which is under ${paths.home}: removing it destroys every event this ` +
+            `machine recorded, and it cannot be recovered. ${SQLITE_MACHINE}`,
       ),
     );
   }
@@ -638,7 +656,19 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   if (where.kind === "elsewhere") {
     world.log("The log is not under ~/.lingtai: the database LINGTAI_DATABASE_URL names is untouched, and its tables are yours to drop.");
   } else if (where.kind === "file") {
-    world.log(paint.fail(`The event log at ${where.path} went with it, and cannot be recovered.`));
+    world.log(
+      paint.fail(
+        where.alsoElsewhere
+          ? `The SQLite log at ${where.path} went with it, and cannot be recovered.`
+          : `The event log at ${where.path} went with it, and cannot be recovered.`,
+      ),
+    );
+    // Never *the log is not under ~/.lingtai*: one was, and it is gone. What
+    // survives is the database this machine reads now, and it is a different
+    // log rather than the same one somewhere else (0055 §3).
+    if (where.alsoElsewhere) {
+      world.log("The Postgres database this machine reads is untouched, and its tables are yours to drop.");
+    }
   }
   return 0;
 }

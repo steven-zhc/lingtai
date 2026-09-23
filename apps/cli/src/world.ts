@@ -100,30 +100,35 @@ export function liveWorld(self: string, outside: Live = live()): World {
 }
 
 /**
- * Where this machine's log is — the written choice, not a connection string
+ * Where this machine's log is — and, before anything else, **whether a
+ * `lingtai.db` is sitting in what the removal takes**
  * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
  *
- * **A written `sqlite` is where the answer is certain, and it is not where the
- * damage is.** A machine naming a Postgres URL has its log somewhere else and
- * an uninstall should go on saying so, exactly as `logConfigured()` said it.
+ * **The file is asked on every machine, and no written choice excuses not
+ * asking.** The first attempt at this asked it only where `storeChoice`
+ * *refused*, on the argument that a refusal is not a promise no file is there
+ * — which is true, and is equally true of a machine that chose Postgres. An
+ * operator who ran `lingtai init`, chose SQLite, recorded a log, and then moved
+ * to Postgres the way 0056 §3 documents — by *exporting*
+ * `LINGTAI_DATABASE_URL`, which `storeChoice` takes before it ever opens
+ * `config.yml` — is a chosen Postgres with the whole of the old log still in
+ * `~/.lingtai/lingtai.db`. Asked the old way, `uninstall` `rmSync`'d that file
+ * and then printed *the database LINGTAI_DATABASE_URL names is untouched*: the
+ * only copy of every event recorded before the switch, deleted under a sentence
+ * saying nothing under `~/.lingtai` held the log. 0055 §3 is why there is no
+ * other copy — the Postgres log started empty rather than carrying it over.
  *
- * **But a refusal is not a promise that no file is there**, and that is the
- * half `logConfigured()` could not see. `storeChoice` refuses two machines
- * that have a SQLite log sitting under `~/.lingtai` at that moment: `two keys`
- * — one that wrote `store: sqlite`, recorded its whole log into that file, and
- * later added a `database.url` to the same `config.yml` while moving to
- * Postgres — and `unreadable`, that same machine with the file truncated
- * mid-write. Asked there, `logConfigured()` answers `elsewhere` for the first
- * (it reads the `database.url` it just found) and `none` for the second, so
- * `uninstall` would `rmSync` the log and then print *the database
- * LINGTAI_DATABASE_URL names is untouched*, or say nothing at all
- * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+ * **And a path is not a file.** `lingtai init` writes `database.store: sqlite`
+ * and stops; the log is created on first open, so the ordinary state of a
+ * just-initialised machine is a chosen SQLite with nothing at the path. `file`
+ * there would have `uninstall` telling somebody it was destroying every event
+ * this machine recorded, and that they could not be recovered, about a file
+ * that never existed — in the one command whose standard is that a sentence
+ * about the log is true. So `file` means *a log is there*, `existsSync`
+ * decides it, and only the **log that exists** is reported.
  *
- * So under a refusal the **file decides**: `stateDir()/lingtai.db` is the only
- * place a SQLite log is, it is inside what the removal takes, and whether it is
- * there is a question no `config.yml` has to be parseable to answer. Only where
- * there is no such file is there nothing to lose, and the read `logConfigured`
- * always was answers the rest.
+ * `alsoElsewhere` carries the machine where both are true, because an uninstall
+ * has two things to say there and one of them must not be the other's sentence.
  *
  * Reads and never throws, for the reason `logConfigured` was a boolean: the two
  * commands that call it, `uninstall` and `upgrade`, are the ones that repair a
@@ -133,15 +138,17 @@ export function liveWorld(self: string, outside: Live = live()): World {
  */
 export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
   const choice = storeChoice(env);
-  if ("refused" in choice) {
-    const file = sqliteLogIn(env);
-    if (file !== null && existsSync(file)) return { kind: "file", path: file };
-    // `logConfigured` under the name it always meant: *is Postgres configured*.
-    // It is the right question for a refusal with no log in front of it, and
-    // the wrong one everywhere else, which is why it is here and nowhere above.
-    return logConfigured(env) ? { kind: "elsewhere" } : { kind: "none" };
-  }
-  return choice.store === "sqlite" ? { kind: "file", path: choice.path } : { kind: "elsewhere" };
+  // Under a refusal, `logConfigured` under the name it always meant: *is
+  // Postgres configured*. `two keys` and `no url` are machines that name a URL
+  // and chose nothing, and a log somewhere else is still a log this removal
+  // leaves standing.
+  const elsewhere = "refused" in choice ? logConfigured(env) : choice.store === "postgres";
+  // A chosen SQLite names its own file, so the two reads cannot drift apart;
+  // everywhere else it is where one would be, or null for an environment that
+  // names no machine.
+  const file = !("refused" in choice) && choice.store === "sqlite" ? choice.path : sqliteLogIn(env);
+  if (file !== null && existsSync(file)) return { kind: "file", path: file, alsoElsewhere: elsewhere };
+  return elsewhere ? { kind: "elsewhere" } : { kind: "none" };
 }
 
 /**
@@ -159,8 +166,21 @@ export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
  */
 function sqliteLogIn(env: NodeJS.ProcessEnv): string | null {
   const machine =
-    env === process.env ? !env["VITEST"] && !env["LINGTAI_TEST"] : env["LINGTAI_HOME"] !== undefined;
+    env === process.env ? !env["VITEST"] && !env["LINGTAI_TEST"] : Boolean(env["LINGTAI_HOME"]);
   return machine ? join(stateDir(env), SQLITE_LOG) : null;
+}
+
+/**
+ * Whether this machine has a store at all: one it wrote down, or — under a
+ * refusal, where nothing was written — a log evidently there anyway.
+ *
+ * The drain's half of the question `logLocation` answers for `uninstall`. It is
+ * deliberately *wider* than `logLocation(env).kind !== "none"`: a machine that
+ * wrote `store: sqlite` and has not opened the file yet is `none` there, having
+ * no events to lose, and is a configured system here.
+ */
+function storeWritten(env: NodeJS.ProcessEnv): boolean {
+  return !("refused" in storeChoice(env)) || logLocation(env).kind !== "none";
 }
 
 /**
@@ -192,10 +212,17 @@ function sqliteLogIn(env: NodeJS.ProcessEnv): string | null {
  * (`daemon/src/lock.ts`), and it throws out of here: a drain that quietly
  * decided *nothing conducts* because it could not read the file is the failure
  * this whole docstring is about.
+ *
+ * **The second half is `storeWritten` and not `logLocation`**, because the two
+ * commands want opposite things from the same machine. `uninstall` asks what it
+ * is about to destroy, and a chosen SQLite whose file has never been opened has
+ * nothing there to destroy. This asks whether there is a system here at all,
+ * and that machine has chosen a store: its doctor gate and a drain somebody
+ * left standing are still its own.
  */
 export async function liveDrain(reason: string, despiteDoctor: boolean, outside: Live = live()): Promise<Drained> {
   const holder = await outside.holder();
-  if (holder === null && logLocation(outside.env).kind === "none") {
+  if (holder === null && !storeWritten(outside.env)) {
     outside.log("nothing holds the conductor lock and this machine has written no store — nothing to drain");
     return { ok: true, after: async () => {} };
   }
