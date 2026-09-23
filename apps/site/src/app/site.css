@@ -169,8 +169,8 @@ p { max-width: var(--measure); }
 .no-snapshot code { font-family: var(--mono); font-size: 12.5px; }
 
 /* --- the loop ------------------------------------------------------------
-   Three ideas and no more (#116). The five gate points used to be listed here
-   and are not: naming all five is the mechanism, and a reader who wants it has
+   Three ideas and no more (#116). The steps used to be listed here and are
+   not: naming all of them is the mechanism, and a reader who wants the list has
    the reference. */
 .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin-top: 20px; }
 .grid > div { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 16px 18px; }

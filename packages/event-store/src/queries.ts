@@ -124,7 +124,7 @@ export interface LogQueries {
    * `ranTypes` is the caller's: which events are proof a pipeline reached a
    * point is the conductor's rule, not a store's.
    */
-  landedWithoutGatePoints(ranTypes: readonly string[]): Promise<PointNeverRan[]>;
+  landedWithoutSteps(ranTypes: readonly string[]): Promise<PointNeverRan[]>;
 
   /**
    * Every type in the log with its row count, in **byte order of the type** —
@@ -251,7 +251,7 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
       }));
     },
 
-    async landedWithoutGatePoints(ranTypes) {
+    async landedWithoutSteps(ranTypes) {
       const rows = await ask<{ work_item: string; run_id: string; gate: string }>(
         `with landed as (
            select distinct stream_id as work_item from events where type = 'WorkItemLanded'

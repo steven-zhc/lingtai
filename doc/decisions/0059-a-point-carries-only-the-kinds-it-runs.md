@@ -4,7 +4,10 @@
 [0016 §4](0016-the-settled-model.md)** — *a gate that was configured and did not
 run is Lingtai's bug* — for the ten cells where it was still true · narrows what
 a recipe may **say** at a point, and none of [0015](0015-five-gates-and-two-extensions.md)'s
-rules about what a point **is**
+rules about what a point **is** · **thirty cells are sixty** since 2026-09-23
+([0058](0058-lingtai-is-a-development-pipeline.md) §3, `#227`), on the same
+two-valued rule: the six steps nothing constructs a pipeline for refuse every
+kind by name, exactly as `admit` does below
 
 A gate action is a point and a kind. Five points × six kinds is thirty cells,
 and ten of them were accepted by the schema and executed by nothing. A kind a

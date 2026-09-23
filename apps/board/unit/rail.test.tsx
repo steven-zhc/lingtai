@@ -1,18 +1,23 @@
 /**
- * The five points, drawn as the sequence they are.
+ * The ten steps, drawn as the sequence they are.
  *
  * A running card carried thirteen objects and two of them were sequences
  * wearing the clothes of a counter (#170,
- * [the-card.md](../../../doc/design/the-card.md)). The points were a wrapped
+ * [the-card.md](../../../doc/design/the-card.md)). The steps were a wrapped
  * row of equal pills in the same `.meta` class as the money and the turns, so
- * `pill pass` green meant *a gate action passed* in one list and *this point
+ * `pill pass` green meant *a gate action passed* in one list and *this step
  * passed* in the other, and a reader had to know which list they were in before
  * the colour meant anything.
  *
- * What is asserted here is the part a screenshot cannot settle: that all five
- * points are drawn in every lane that folds, that the three states which look
- * empty are told apart by something other than lightness, that the point name
+ * What is asserted here is the part a screenshot cannot settle: that all ten
+ * steps are drawn in every lane that folds, that the three states which look
+ * empty are told apart by something other than lightness, that the step name
  * is said once, and that the row stayed the unit — six objects, not thirteen.
+ *
+ * It was five until 2026-09-23 (0058 §3, `#227`), and this file is what holds
+ * the ten — `doc/design/the-card.md` sends a reader here for exactly that. The
+ * count moved and the rule did not: the bar may not draw fewer than the
+ * vocabulary has, whatever the vocabulary has.
  *
  * The geometry is asserted against `globals.css` rather than against a browser,
  * because this suite has no DOM (the root `vitest.config.ts` sets no environment). A
@@ -23,7 +28,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
+import { STEPS, type Envelope, type Step } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 import type { TaskCard } from "@lingtai/projector/task-view";
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from "../src/lib/board.ts";
@@ -51,7 +56,7 @@ function at(time: string, type: string, data: unknown): Envelope {
   };
 }
 
-const gate = (point: GatePoint, action: string) => ({
+const gate = (point: Step, action: string) => ({
   gate: point,
   action,
   runId: "run-170",
@@ -82,7 +87,7 @@ const resolved = (plan: GatePlan) =>
   at("2026-09-15T17:12:30Z", "GatesResolved", {
     runId: "run-170",
     configHash: "abc",
-    points: GATE_POINTS.map((point) => ({
+    points: STEPS.map((point) => ({
       gate: point,
       actions: (plan.get(point) ?? []).map((a) => a.name),
     })),
@@ -249,7 +254,7 @@ function noPlanRecorded(): Envelope[] {
 /**
  * **`lingtai doctor`'s three items, as a fixture.**
  *
- * `landedWithoutGatePoints` finds an item that landed whose last run's
+ * `landedWithoutSteps` finds an item that landed whose last run's
  * `GatesResolved` named actions at a point and whose stream carries no gate
  * event there at all — no request, no verdict, no approval, no waiver. That is
  * #49, #53 and #55 at `merge`, and until #170 it reached the doctor as a FAIL
@@ -373,7 +378,7 @@ const asBoard = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN) => {
 
 // --- reading the markup ----------------------------------------------------
 
-/** The five segments, as the point state each carries. */
+/** The ten segments, as the step state each carries. */
 const segments = (html: string): string[] =>
   [...html.matchAll(/<li class="seg s-([a-z-]+)"/g)].map((m) => m[1] ?? "");
 
@@ -381,14 +386,14 @@ const segments = (html: string): string[] =>
 const cells = (html: string): string[] =>
   [...html.matchAll(/<span class="scell (t-[a-z]+)"/g)].map((m) => m[1] ?? "");
 
-/** The cells belonging to one point, by its position in `GATE_POINTS`. */
-function cellsAt(html: string, point: GatePoint): string[] {
+/** The cells belonging to one step, by its position in `STEPS`. */
+function cellsAt(html: string, point: Step): string[] {
   const parts = html.split(/<li class="seg s-[a-z-]+"/).slice(1);
-  const one = parts[GATE_POINTS.indexOf(point)] ?? "";
+  const one = parts[STEPS.indexOf(point)] ?? "";
   return [...one.matchAll(/<span class="scell (t-[a-z]+)"/g)].map((m) => m[1] ?? "");
 }
 
-/** The five names under the bar, each with the weight it carries. */
+/** The ten names under the bar, each with the weight it carries. */
 const labels = (html: string): [string, string][] =>
   [...html.matchAll(/<span class="slab (l-[a-z]+)">([^<]*)<\/span>/g)].map((m) => [
     m[1] ?? "",
@@ -404,8 +409,10 @@ function sentence(html: string): string {
 /**
  * What the card carries, counted the way #170 counts it: every pill, plus the
  * sequence, which is one object however many segments it draws. That is the
- * whole of the design — the bar, its five labels and its sentence are one thing
+ * whole of the design — the bar, its labels and its sentence are one thing
  * that answers *where has this got to*, and thirteen boxed facts were thirteen.
+ * The bar going from five segments to ten does not move this number, which is
+ * the property the counting rule was written for.
  */
 const objects = (html: string): number =>
   (html.match(/<li class="pill/g) ?? []).length + (html.match(/<div class="seq"/g) ?? []).length;
@@ -413,11 +420,24 @@ const objects = (html: string): number =>
 // --- what a running card says ---------------------------------------------
 
 describe("a running card", () => {
-  it("draws the bar, the five names and one sentence", () => {
+  it("draws the bar, the ten names and one sentence", () => {
     const html = render({}, running());
 
-    expect(segments(html)).toEqual(["skipped", "passed", "running", "skipped", "pending"]);
-    expect(labels(html).map(([, name]) => name)).toEqual([...GATE_POINTS]);
+    expect(segments(html)).toEqual([
+      // `claim` — nothing constructs a pipeline at it, so nothing is configured.
+      "skipped",
+      "skipped",
+      "passed",
+      // `design`, `implement`, `build`, `review` — the same.
+      "skipped",
+      "skipped",
+      "skipped",
+      "skipped",
+      "running",
+      "skipped",
+      "pending",
+    ]);
+    expect(labels(html).map(([, name]) => name)).toEqual([...STEPS]);
     expect((html.match(/<p class="snow/g) ?? []).length).toBe(1);
   });
 
@@ -426,7 +446,7 @@ describe("a running card", () => {
    * `proposed`, so the sentence is the action and its bound and nothing else —
    * one fact said once.
    */
-  it("says the point's name in the label and not again in the sentence", () => {
+  it("says the step's name in the label and not again in the sentence", () => {
     const html = render({}, running());
 
     expect(labels(html)).toContainEqual(["l-at", "proposed"]);
@@ -444,10 +464,15 @@ describe("a running card", () => {
    * configured* and *not reached yet* are both grey, so the difference has to
    * survive being grey. It is italic, in `globals.css`.
    */
-  it("gives each name the weight its point has earned", () => {
+  it("gives each name the weight its step has earned", () => {
     expect(labels(render({}, running()))).toEqual([
+      ["l-off", "claim"],
       ["l-off", "admit"],
       ["l-done", "prepared"],
+      ["l-off", "design"],
+      ["l-off", "implement"],
+      ["l-off", "build"],
+      ["l-off", "review"],
       ["l-at", "proposed"],
       ["l-off", "merge"],
       ["l-done", "end"],
@@ -455,7 +480,7 @@ describe("a running card", () => {
     expect(CSS).toMatch(/\.slab\.l-off\s*\{[^}]*font-style:\s*italic/);
   });
 
-  it("says so when the agent has finished and no point has started", () => {
+  it("says so when the agent has finished and no step has started", () => {
     const between = running().slice(0, 6);
     expect(sentence(render({}, between))).toBe("between points");
   });
@@ -519,37 +544,45 @@ describe("a running card", () => {
   });
 });
 
-// --- all five, in every lane that folds ------------------------------------
+// --- all ten, in every lane that folds -------------------------------------
 
-describe("all five points, in every lane", () => {
+describe("all ten steps, in every lane", () => {
   /**
-   * ADR 0016 §4. A point that is merely omitted is indistinguishable from one
+   * ADR 0016 §4. A step that is merely omitted is indistinguishable from one
    * that was configured and silently did not run, and only the second of those
    * is Lingtai's bug — so the bar cannot be *filled means done*, and cannot
-   * draw fewer than five.
+   * draw fewer than ten.
+   *
+   * **Ten and not "the ones that are configured", which is the trap this file
+   * exists to hold shut.** Six of the ten are `skipped` on every card today,
+   * and dropping them would be the width argument winning an argument it is
+   * not allowed to have: a bar that hides a `skipped` step cannot tell it from
+   * a step that was configured and silently did not run, which is exactly
+   * 0016 §4's failure and exactly what 0061 §5 forbids. What gives way for the
+   * width is the label, in `globals.css`.
    */
-  it("draws five segments on a running card", () => {
-    expect(segments(render({}, running()))).toHaveLength(5);
+  it("draws ten segments on a running card", () => {
+    expect(segments(render({}, running()))).toHaveLength(10);
   });
 
-  it("draws five segments on a blocked card", () => {
+  it("draws ten segments on a blocked card", () => {
     const html = render(
       { state: "waiting", blocked: true, gatesFailed: 1, awaitingSha: "b".repeat(40) },
       refused(),
     );
 
-    expect(segments(html)).toHaveLength(5);
-    expect(segments(html)[GATE_POINTS.indexOf("proposed")]).toBe("failed");
+    expect(segments(html)).toHaveLength(10);
+    expect(segments(html)[STEPS.indexOf("proposed")]).toBe("failed");
     expect(labels(html)).toContainEqual(["l-bad", "proposed"]);
   });
 
-  it("draws five segments on a landed row", () => {
+  it("draws ten segments on a landed row", () => {
     const landed = card({ state: "landed" }, landedPastMerge(), MERGE_PLAN, true);
     const html = renderToStaticMarkup(
       <LandedRow card={landed} showProject={false} issue={null} />,
     );
 
-    expect(segments(html)).toHaveLength(5);
+    expect(segments(html)).toHaveLength(10);
     // No names on a row that is one line by #81's decision; the marks are what
     // is scanned, and each segment's title says the rest.
     expect(labels(html)).toEqual([]);
@@ -590,11 +623,21 @@ describe("a card stopped on a person", () => {
    * build was refused, the segment above the sentence is red, and a person is
    * being asked. The sentence is the action and what came of it, the same shape
    * the live line has.
+   *
+   * **Qualified `step:action`, which the live line is not and this one has to
+   * be.** `build` and `review` are two of this repository's action names at
+   * `proposed` and, since the vocabulary went to ten, two of the labels on the
+   * bar above — drawn grey and dashed, because no pipeline is constructed at
+   * them. A bare `build refused` sent an operator to the `build` label, which
+   * is empty and always will be. The live line keeps dropping the step because
+   * its own label is lit; nothing is lit under a refusal.
    */
   it("says what refused it, under the segment that says so", () => {
     const html = blocked();
 
-    expect(sentence(html)).toBe("build refused");
+    expect(sentence(html)).toBe("proposed:build refused");
+    // And not the bare action name, which is also a label on the same bar.
+    expect(labels(html).map(([, name]) => name)).toContain("build");
     expect(html).not.toContain("between points");
     expect(html).not.toContain("the agent has finished and no point has started yet");
   });
@@ -702,7 +745,7 @@ describe("a card answering a refusal", () => {
       fixSpent(),
     );
 
-    expect(sentence(html)).toBe("build refused");
+    expect(sentence(html)).toBe("proposed:build refused");
   });
 });
 
@@ -767,7 +810,7 @@ describe("the seven states", () => {
 /**
  * `never-ran` is the one mark on the rail that accuses Lingtai rather than
  * reporting on a run, so the rule that draws it is held to exactly the
- * comparison `landedWithoutGatePoints` makes — *this item landed*, and *against
+ * comparison `landedWithoutSteps` makes — *this item landed*, and *against
  * the plan the log says this run was given*. Everything looser than that puts
  * the hatch on a pipeline that was working.
  */
@@ -790,7 +833,18 @@ describe("the hatch, and what may not draw it", () => {
       />,
     );
 
-    expect(segments(html)).toEqual(["skipped", "failed", "pending", "skipped", "pending"]);
+    expect(segments(html)).toEqual([
+      "skipped",
+      "skipped",
+      "failed",
+      "skipped",
+      "skipped",
+      "skipped",
+      "skipped",
+      "pending",
+      "skipped",
+      "pending",
+    ]);
     expect(cells(html)).not.toContain("t-never");
   });
 
@@ -807,14 +861,19 @@ describe("the hatch, and what may not draw it", () => {
    * The doctor's `planned` CTE selects from `GatesResolved` rows, so a stream
    * without one contributes nothing to it. Here such a stream falls back to the
    * recipe being read *now* — which may not be the one this run got — and a
-   * recipe the run never saw cannot accuse it of skipping a point.
+   * recipe the run never saw cannot accuse it of skipping a step.
    */
   it("never draws it from a plan the log did not record", () => {
     const over = foldProgress(noPlanRecorded(), PLAN, true);
 
     expect(over?.points.map((p) => p.state)).toEqual([
       "skipped",
+      "skipped",
       "pending",
+      "skipped",
+      "skipped",
+      "skipped",
+      "skipped",
       "pending",
       "skipped",
       "pending",
@@ -874,13 +933,24 @@ describe("which cards draw a rail", () => {
 describe("what the column can give a card", () => {
   /**
    * `22rem` is the width the column actually gives a card, so *does it fit* is
-   * settled rather than assumed — and the labels are the constraint, because
-   * `prepared` and `proposed` are the longest things in the bar.
+   * settled rather than assumed.
+   *
+   * **It stopped being *do the names fit* when the vocabulary went to ten.**
+   * Five labels fitted whole; ten do not, and the thing that gives way is the
+   * label rather than a segment — dropping a segment to make room would put
+   * the bar back in 0016 §4's failure, where *nothing configured* and
+   * *configured and silently did not run* are the same picture. So this asks
+   * the two questions that are left:
+   *
+   * 1. the bar is a **grid of ten**, not a flex row that wraps onto a second
+   *    line on somebody's screen; and
+   * 2. every one of the ten is **still unique** at the number of characters a
+   *    column actually shows, so a clipped word is shorter and not ambiguous.
    *
    * The numbers come out of the stylesheet, so raising the label's size fails
-   * here rather than wrapping the bar on somebody's screen.
+   * here rather than making two steps read the same on a card.
    */
-  it("fits the five names at 22rem without wrapping", () => {
+  it("keeps the ten names apart at the width 22rem gives them", () => {
     const fontSize = Number(/\.slab\s*\{[^}]*font-size:\s*([\d.]+)px/.exec(CSS)?.[1]);
     const gap = Number(/\.segs\s*\{[^}]*gap:\s*([\d.]+)px/.exec(CSS)?.[1]);
     const padding = Number(/^\.card\s*\{[^}]*padding:\s*[\d.]+px\s+([\d.]+)px/m.exec(CSS)?.[1]);
@@ -891,13 +961,79 @@ describe("what the column can give a card", () => {
     // 22rem at the app's 16px root, less the card's own padding and its two
     // borders — the stripe is 2px and the right edge is 1px.
     const inside = 22 * 16 - padding * 2 - 3;
-    const column = (inside - gap * 4) / 5;
-    // A monospace advance is 0.6em in every face this app names.
-    const longest = Math.max(...GATE_POINTS.map((p) => p.length)) * fontSize * 0.6;
+    const column = (inside - gap * (STEPS.length - 1)) / STEPS.length;
+    // A monospace advance is 0.6em in every face this app names, less the
+    // `letter-spacing` the label asks for.
+    const tracking = Number(/\.slab\s*\{[^}]*letter-spacing:\s*(-?[\d.]+)em/.exec(CSS)?.[1] ?? 0);
+    const shown = Math.floor(column / (fontSize * (0.6 + tracking)));
 
-    expect(longest).toBeLessThanOrEqual(column);
-    // And the bar is a grid of five, not a flex row that could wrap instead.
-    expect(CSS).toMatch(/\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(5,/);
+    // **Five, and three documents say five.** The stylesheet today gives
+    // `(352 − 20 − 3 − 27) / 10 = 30.2px` a column and `9 × 0.57 = 5.13px` a
+    // character, so the bar shows `claim admit prepa desig imple build revie
+    // propo merge end`. Pinned exactly rather than loosely, because the count
+    // and the clipped words are written out in `globals.css`'s `.slab`
+    // comment, in `rail.tsx`'s `Segs` doc and in `the-card.md`, and nothing
+    // else re-derives them — a `>=` here let the prose claim six while the
+    // card rendered five, which is a maintainer hunting a font regression
+    // that never happened.
+    expect(
+      shown,
+      "the clip width moved — update globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md, which name this number and the words it clips",
+    ).toBe(5);
+    const clipped = STEPS.map((p) => p.slice(0, shown));
+
+    // **And *which* words, which the count alone never said.** The same three
+    // files name the list as well as the number, and the list was wrong while
+    // the number was right: they said `prepa`, `imple`, `propo` — three — when
+    // `design` and `review` are six letters and are cut too. A maintainer who
+    // renders a card to check the note counts five clipped labels against a
+    // document promising three and concludes the tracking or the face
+    // regressed, which is exactly the hunt the `.toBe(5)` above exists to
+    // prevent. Derived from `STEPS` and the stylesheet, so a step renamed or
+    // added fails here rather than quietly making the prose wrong again.
+    expect(
+      STEPS.filter((p) => p.length > shown),
+      "the clipped words moved — globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md each write this list out",
+    ).toEqual(["prepared", "design", "implement", "review", "proposed"]);
+    // And the row those three documents print, as the card actually renders it.
+    expect(clipped.join(" ")).toBe("claim admit prepa desig imple build revie propo merge end");
+
+    // A bar showing fewer characters may never print the same word under two
+    // steps, which is the one thing the clip is not allowed to cost.
+    expect(new Set(clipped).size, `${clipped.join(" ")}`).toBe(STEPS.length);
+
+    // **And the margin is three characters, not one.** The ten are still
+    // distinct at four and at three; two is where they stop being, `pr`
+    // standing for both `prepared` and `proposed`. Derived rather than
+    // claimed, because `globals.css`'s `.slab` comment and `the-card.md` say
+    // it in prose — and a margin stated too small is a maintainer abandoning a
+    // narrower column or a larger face that was in fact safe, or reading the
+    // `.toBe(5)` above as sitting on a cliff it is nowhere near.
+    const collidesAt = [...Array(shown).keys()]
+      .map((n) => n + 1)
+      .filter((n) => new Set(STEPS.map((p) => p.slice(0, n))).size < STEPS.length)
+      .at(-1);
+    expect(
+      collidesAt,
+      "the margin moved — globals.css `.slab` and doc/design/the-card.md name it",
+    ).toBe(2);
+    expect(shown - collidesAt!).toBe(3);
+
+    // And the bar is a grid of ten, not a flex row that could wrap instead.
+    expect(CSS).toMatch(/\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(10,/);
+    // The label clips rather than wrapping or ellipsing: an ellipsis would
+    // spend one of the characters counted above saying there are more, and the
+    // whole name is on the segment's `title` either way.
+    expect(CSS).toMatch(/\.slab\s*\{[^}]*white-space:\s*nowrap/);
+    expect(CSS).toMatch(/\.slab\s*\{[^}]*text-overflow:\s*clip/);
+  });
+
+  /** The `title` the clip leans on, which is the rail's and not the card's. */
+  it("carries the whole name on every segment, clipped label or not", () => {
+    const html = render({}, running());
+    for (const step of STEPS) {
+      expect(html).toContain(`title="${step}:`);
+    }
   });
 });
 

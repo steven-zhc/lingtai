@@ -17,7 +17,7 @@
  * under time pressure against real history, which is the worst moment to also be
  * designing the mechanism.
  */
-import { type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from "./events.ts";
+import { STEPS, type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from "./events.ts";
 
 /** Takes a payload at version *n* and returns it at version *n + 1*. */
 export type Upcaster = (data: unknown) => unknown;
@@ -26,8 +26,10 @@ export type Upcaster = (data: unknown) => unknown;
 export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>>;
 
 /**
- * 1 → 2 for every type whose payload carries a `GatePoint`: the point called
- * `diff` is called `proposed` (ADR 0018).
+ * 1 → 2 for the nine types that carried a gate point when ADR 0018 renamed it:
+ * the point called `diff` is called `proposed`. (`GateNeverRan` and
+ * `GateDidNotFinish` carry a `Step` too and are younger than the rename, so
+ * nothing ever wrote one of those with the old name.)
  *
  * A pure rename, and the only one of these steps that could have been skipped
  * by leaving the old value in the enum. It was not, because the enum is what a
@@ -36,9 +38,32 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * would look like a different kind of run from the one that wrote `proposed`.
  *
  * It is written as a conditional rather than an unconditional overwrite so that
- * a v1 event from one of the other four points is returned untouched — the
+ * a v1 event from one of the other points is returned untouched — the
  * upcaster's job is to move the one value that moved, not to assert what the
  * rest were.
+ *
+ * **It goes when the log goes and not before, and `GatePassed` is why it
+ * cannot go alone.** `#227` asked for this constant deleted while leaving the
+ * mechanism, its tests and the other upcasters untouched. At eight of the nine
+ * types that is a deletion; at `GatePassed` it is not. That type is at
+ * `schemaVer: 3` — `1 → 2` is this rename, `2 → 3` adds `findings` (#135) —
+ * and the invariant this file opens by naming, pinned by *has an unbroken
+ * chain of steps for every type past version 1*, is that every version below
+ * the current one has a step. Removing `1 → 2` leaves a hole at 1, and the
+ * ways out are all worse than the constant: lowering the version deletes the
+ * `findings` step, editing the invariant removes the guard that makes the
+ * mechanism worth having, and a do-nothing step in its place is a lie about a
+ * version that moved.
+ *
+ * The other half, which expires where that one does not: 0061 §7 spends this
+ * history by *resetting* the log — `the-pipeline.md`'s T5, with T5b's fold of
+ * it before that. Until those land the store holds `schemaVer: 1` rows this
+ * walks, and deleting the step (or lowering the nine `SCHEMA_VER`s that depend
+ * on it) makes every one of them throw.
+ *
+ * **So T5 is where this dies**, and it dies as one commit: a reset log holds no
+ * row of any version, so the nine versions and every step beneath them come
+ * down together rather than one type at a time.
  */
 const gatePointRenamed: Upcaster = (data) => {
   const d = data as { gate?: string };
@@ -169,6 +194,17 @@ export const UPCASTERS: UpcastRegistry = {
     1: (data) => ({ ...(data as object), of: 0 }),
   },
   GatesResolved: {
+    /**
+     * 1 → 2: the point called `diff` is called `proposed` (ADR 0018), and here
+     * it is nested — this is the event the board reads to show an unconfigured
+     * step as `skipped`, so a half-upcast would not throw; it would render a
+     * run as having a step nobody has ever heard of.
+     *
+     * The list's *length* is untouched here, and deliberately: this step moves
+     * the one value that moved. Widening a five-step plan to ten is the
+     * `3 → 4` step below, which every stored row reaches whatever version it
+     * was written at.
+     */
     1: (data) => ({
       ...(data as object),
       points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>
@@ -187,6 +223,44 @@ export const UPCASTERS: UpcastRegistry = {
      * says which recipe it was; only the body was never recorded.
      */
     2: (data) => data,
+    /**
+     * 3 → 4: the plan names all ten steps, where it named the five the
+     * vocabulary had (0058 §3).
+     *
+     * **The step the widening could not be done without.** 0061 §7 spends this
+     * history by resetting the log, and that reset — `the-pipeline.md`'s T5 —
+     * has not run, so every `GatesResolved` the store holds names five steps
+     * and `.length(10)` refuses all of them. There is no quiet version of that
+     * refusal: `decodeRow` rethrows the `ZodError` bare, so a projector stops
+     * at the first such seq and never advances past it, and `reduceRun` dies
+     * on any run that has one. `parsePayload` is reached through this chain by
+     * every stored row whatever version it carries, which is why one step here
+     * covers v1, v2 and v3 alike.
+     *
+     * **`[]` is a reading and not a guess**, which is the line every other step
+     * in this file is drawn on. A run resolved before 2026-09-23 was given a
+     * vocabulary with no `claim`, `design`, `implement`, `build` or `review` in
+     * it — nothing could have been configured at one, so empty is what that
+     * recipe said and not a shrug about what it might have said. It is the same
+     * empty a run today gets at those five, so the board draws them `skipped`
+     * and `landedWithoutSteps` cannot accuse them: its guard is an `actions`
+     * list with something in it.
+     *
+     * Rebuilt from `STEPS` rather than appended to, so the order is the enum's
+     * however the stored row was written, and a stored `gate` that is not a
+     * step at all is dropped rather than carried into a payload the schema
+     * would refuse for a second reason. `diff` is already `proposed` by the
+     * time this runs — the `1 → 2` step above moved it, and this one is
+     * downstream of it.
+     */
+    3: (data) => {
+      const stored = (data as { points?: { gate?: string; actions?: string[] }[] }).points ?? [];
+      const byStep = new Map(stored.map((p) => [p.gate, p.actions ?? []]));
+      return {
+        ...(data as object),
+        points: STEPS.map((gate) => ({ gate, actions: byStep.get(gate) ?? [] })),
+      };
+    },
   },
   GateRequested: { 1: gatePointRenamed },
   GateStarted: { 1: gatePointRenamed },

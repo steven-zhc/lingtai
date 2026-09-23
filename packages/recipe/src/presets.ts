@@ -42,15 +42,19 @@ export const PRESETS: Record<string, Preset> = {
    */
   "pnpm-workspace": {
     repo: { submodules: true },
-    // Only `proposed` is filled. The other four points are empty and stay empty
-    // until a project says otherwise — which the board renders as `skipped`
-    // rather than omitting (ADR 0016 §4).
+    // Only `prepared` and `proposed` are filled. The other eight steps are
+    // empty and stay empty until a project says otherwise — which the board
+    // renders as `skipped` rather than omitting (ADR 0016 §4). Written out
+    // rather than left to the schema's default for the reason that default is
+    // written out: 0061 §5's *the resolved recipe may not omit a step* is a
+    // thing to be able to read here as well as infer.
     gates: {
+      claim: [],
       admit: [],
       // `git worktree add` copies no node_modules, so without this the agent is
       // handed a checkout where it cannot run this repository's own tests. It
-      // is an action at a gate point like anything else now — there is no
-      // separate `prepare` section for it to live in.
+      // is an action at a step like anything else now — there is no separate
+      // `prepare` section for it to live in.
       //
       // `env: []` is the preset saying what it means rather than the schema
       // defaulting it: an install and a build get `PATH`, `HOME` and the four
@@ -59,6 +63,13 @@ export const PRESETS: Record<string, Preset> = {
       prepared: [
         { name: "install", run: "pnpm install --frozen-lockfile", timeout: "10m", env: [] },
       ],
+      design: [],
+      implement: [],
+      // Empty, and today they must be: the build below runs as a `run:` action
+      // at `proposed`, which is where the pipeline actually constructs it
+      // (0058 §3 names these steps; the pass that runs them is its next ticket).
+      build: [],
+      review: [],
       proposed: [
         {
           name: "build",

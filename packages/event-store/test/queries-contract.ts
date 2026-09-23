@@ -20,7 +20,7 @@
  * so every case here seeds both an offender and a near-miss and checks that the
  * offender comes back and the near-miss does not.
  */
-import { parsePayload, workItemStream } from "@lingtai/domain";
+import { STEPS, parsePayload, workItemStream } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import type { EventStore } from "../src/event-store.ts";
 import type { LogQueries } from "../src/queries.ts";
@@ -44,12 +44,15 @@ export interface LogQueriesHarness {
 const SHA = "a".repeat(40);
 const MERGE = "b".repeat(40);
 
-/** The five points, with actions only where a case asks for them. */
+/**
+ * All ten steps, with actions only where a case asks for them.
+ *
+ * From `STEPS` rather than a list here: `GatesResolved` asserts `.length(10)`,
+ * so a fixture with its own copy of the names would be a schema failure the
+ * day the set changes rather than a test that moved with it.
+ */
 const plan = (points: Record<string, string[]>) =>
-  (["admit", "prepared", "proposed", "merge", "end"] as const).map((gate) => ({
-    gate,
-    actions: points[gate] ?? [],
-  }));
+  STEPS.map((gate) => ({ gate, actions: points[gate] ?? [] }));
 
 export function describeLogQueriesContract(
   name: string,
@@ -241,7 +244,7 @@ export function describeLogQueriesContract(
       expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item);
     });
 
-    // ----------------------------------------------- landedWithoutGatePoints ----
+    // ----------------------------------------------- landedWithoutSteps ----
 
     const RAN = ["GatePassed", "GateFailed", "GateWaived", "ApprovalGranted"];
 
@@ -254,7 +257,7 @@ export function describeLogQueriesContract(
       ]);
       await h.store.append(item, 0, [landed()]);
 
-      const found = (await h.queries.landedWithoutGatePoints(RAN)).filter(
+      const found = (await h.queries.landedWithoutSteps(RAN)).filter(
         (f) => f.workItemId === item,
       );
 
@@ -271,7 +274,7 @@ export function describeLogQueriesContract(
       ]);
       await h.store.append(item, 0, [landed()]);
 
-      expect((await h.queries.landedWithoutGatePoints(RAN)).map((f) => f.workItemId)).not.toContain(
+      expect((await h.queries.landedWithoutSteps(RAN)).map((f) => f.workItemId)).not.toContain(
         item,
       );
     });
@@ -283,7 +286,7 @@ export function describeLogQueriesContract(
       await run(h, item, { prepared: ["install"], proposed: ["build"], merge: ["approval"] });
       await h.store.append(item, 0, [landed()]);
 
-      const found = (await h.queries.landedWithoutGatePoints(RAN))
+      const found = (await h.queries.landedWithoutSteps(RAN))
         .filter((f) => f.workItemId === item)
         .map((f) => f.gate);
 
@@ -298,7 +301,7 @@ export function describeLogQueriesContract(
       await run(h, item, { end: ["close the ticket"] });
       await h.store.append(item, 0, [landed()]);
 
-      expect((await h.queries.landedWithoutGatePoints(RAN)).map((f) => f.workItemId)).not.toContain(
+      expect((await h.queries.landedWithoutSteps(RAN)).map((f) => f.workItemId)).not.toContain(
         item,
       );
     });
@@ -318,7 +321,7 @@ export function describeLogQueriesContract(
       ]);
       await h.store.append(item, 0, [landed()]);
 
-      const found = (await h.queries.landedWithoutGatePoints(RAN)).filter(
+      const found = (await h.queries.landedWithoutSteps(RAN)).filter(
         (f) => f.workItemId === item,
       );
 
@@ -332,7 +335,7 @@ export function describeLogQueriesContract(
       h.note?.(item);
       await run(h, item, { merge: ["approval"] });
 
-      expect((await h.queries.landedWithoutGatePoints(RAN)).map((f) => f.workItemId)).not.toContain(
+      expect((await h.queries.landedWithoutSteps(RAN)).map((f) => f.workItemId)).not.toContain(
         item,
       );
     });
@@ -348,10 +351,10 @@ export function describeLogQueriesContract(
       await run(h, item, { merge: ["approval"] }, [{ gate: "merge", action: "approval" }]);
       await h.store.append(item, 0, [landed()]);
 
-      const withGatePassed = (await h.queries.landedWithoutGatePoints(RAN)).filter(
+      const withGatePassed = (await h.queries.landedWithoutSteps(RAN)).filter(
         (f) => f.workItemId === item,
       );
-      const without = (await h.queries.landedWithoutGatePoints(["ApprovalGranted"])).filter(
+      const without = (await h.queries.landedWithoutSteps(["ApprovalGranted"])).filter(
         (f) => f.workItemId === item,
       );
 

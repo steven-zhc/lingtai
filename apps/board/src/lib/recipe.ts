@@ -12,7 +12,7 @@
  * still is.
  */
 import { homedir } from "node:os";
-import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
+import { STEPS, type ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
@@ -577,9 +577,9 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
  * printing it whole is honest and unreadable — the whole document is still one
  * disclosure below, for a reader who wants exactly that.
  *
- * All five points are counted, including the empty ones, for the reason the
- * rail draws them: a point that is merely absent looks like one that was
- * configured and silently did not run (0016 §4).
+ * All ten steps are counted, including the empty ones, for the reason the
+ * rail draws them: a step that is merely absent looks like one that was
+ * configured and silently did not run (0016 §4, 0061 §5).
  */
 export function readRecipe(recipe: Recipe): Reading[] {
   const limits = recipe.runtime.limits;
@@ -604,7 +604,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "the points",
-      says: GATE_POINTS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
+      says: STEPS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
       keys: ["gates"],
     },
     {

@@ -54,7 +54,7 @@ describe("resolveLocalRecipe", () => {
     expect(resolved.recipe.gates.proposed.map((a) => a.name)).toEqual(["build"]);
     expect(resolved.ref).toBe("main");
     expect(resolved.provenance?.["gates"]).toBe(
-      `admit 0, prepared 0, proposed 1, merge 0, end 0 ← ${HOME}/app/recipe.yml`,
+      `claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${HOME}/app/recipe.yml`,
     );
     expect(resolved.provenance?.["repo.base"]).toBe(`main ← ${HOME}/app/recipe.yml`);
   });
@@ -114,17 +114,17 @@ env: { plantAt: .env.local }
 
     const extended = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\n`));
     expect(extended.provenance?.["gates"]).toBe(
-      "admit 0, prepared 1, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
+      "claim 0, admit 0, prepared 1, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
     );
     // The preset has no `source` and no `env`, so these two are the schema's
     // in both recipes — naming a file for either sends a reader to open it.
     expect(extended.provenance?.["source.exclude"]).toBe("(none) ← default");
     expect(extended.provenance?.["env.required"]).toBe("(none) ← default");
 
-    // Without one, five empty points nobody wrote down — a default, and this
+    // Without one, ten empty steps nobody wrote down — a default, and this
     // file is the one place the answer is not.
     const alone = await resolveLocalRecipe("app", read(bare));
-    expect(alone.provenance?.["gates"]).toBe("admit 0, prepared 0, proposed 0, merge 0, end 0 ← default");
+    expect(alone.provenance?.["gates"]).toBe("claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 0, merge 0, end 0 ← default");
 
     // **And a `gates:` with its block commented out is this file saying
     // nothing**, which is what `applyPreset`'s `??` makes of it: `null ??
@@ -134,7 +134,7 @@ env: { plantAt: .env.local }
     const emptied = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\ngates:\n`));
     expect(emptied.recipe.gates.proposed).toHaveLength(1);
     expect(emptied.provenance?.["gates"]).toBe(
-      "admit 0, prepared 1, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
+      "claim 0, admit 0, prepared 1, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
     );
 
     // And a file that carries them says so, in all three.
@@ -154,7 +154,7 @@ gates:
     const file = `${HOME}/app/recipe.yml`;
     // The file's gates replace the preset's whole, which is `applyPreset`'s
     // rule — so the one line names the file and not both.
-    expect(own.provenance?.["gates"]).toBe(`admit 0, prepared 0, proposed 1, merge 0, end 0 ← ${file}`);
+    expect(own.provenance?.["gates"]).toBe(`claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${file}`);
     expect(own.provenance?.["source.exclude"]).toBe(`blocked ← ${file}`);
     expect(own.provenance?.["env.required"]).toBe(`DATABASE_URL ← ${file}`);
   });

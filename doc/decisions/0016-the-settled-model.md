@@ -2,7 +2,10 @@
 
 **Status** accepted · 2026-09-02 · supersedes [0014](0014-one-loop-one-log.md)
 and [0015](0015-five-gates-and-two-extensions.md), and supersedes the policy
-half of [0005](0005-config-in-target-repo.md)
+half of [0005](0005-config-in-target-repo.md) · **§3's five are ten** since
+2026-09-23 ([0058](0058-lingtai-is-a-development-pipeline.md) §3, `#227`); §4 —
+*a configured thing that silently does not run is Lingtai's bug* — is unchanged
+and is the rule that decided how the wider set is drawn
 
 0014 and 0015 are kept, not deleted: they are the record of how this was
 reached, and both contain arguments that were later withdrawn. This file is what

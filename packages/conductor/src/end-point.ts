@@ -202,11 +202,13 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * were always there.
  *
  * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
- * promised, computed from the log alone.** `GatesResolved` names all five
- * points and the actions planned for each, so "the recipe asked for something
- * at `end`" is a fact in the log rather than in a recipe that may have changed
- * since; `EndActionsResolved` on the item's own stream is the record that the
- * point ran. An item with the first and not the second is a gate that was
+ * promised, computed from the log alone.** `GatesResolved` names all ten steps
+ * and the actions planned for each — `.length(10)` in the schema since 0058 §3
+ * widened the vocabulary, and the same event `gate-audit.ts` reads for the
+ * other nine — so "the recipe asked for something at `end`" is a fact in the
+ * log rather than in a recipe that may have changed since;
+ * `EndActionsResolved` on the item's own stream is the record that the step
+ * ran. An item with the first and not the second is a gate that was
  * configured and did not run, which
  * [0016](../../../doc/decisions/0016-the-settled-model.md) §4 calls Lingtai's
  * bug rather than the operator's.

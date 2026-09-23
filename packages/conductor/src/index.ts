@@ -91,7 +91,7 @@ export {
   type PriorAttempt,
   type PromptBudget,
 } from "./attempts.ts";
-export { landedWithoutGatePoints, type UnrunGatePoint } from "./gate-audit.ts";
+export { landedWithoutSteps, type UnrunStep } from "./gate-audit.ts";
 export {
   appendEndActions,
   endedWithoutEndActions,

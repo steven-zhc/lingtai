@@ -235,8 +235,10 @@ describe("the recipe an attempt was given", () => {
     expect(html).toContain("<dt>excludes</dt><dd>blocked</dd>");
     // `describeAssignee`'s sentence, not a second wording of it.
     expect(html).toContain("any issue, whoever it is assigned to");
-    // All five, including the four nothing is configured at (0016 §4).
-    expect(html).toContain("admit 0 · prepared 0 · proposed 1 · merge 0 · end 0");
+    // All ten, including the nine nothing is configured at (0016 §4, 0061 §5).
+    expect(html).toContain(
+      "claim 0 · admit 0 · prepared 0 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0",
+    );
     // `passCeiling`'s sentence, which is what `lingtai status` prints.
     expect(html).toContain("10 turns");
     expect(html).toContain("<dt>budget</dt>");

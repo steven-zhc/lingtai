@@ -30,7 +30,7 @@ import {
   currentRecipe,
   endedWithoutEndActions,
   githubClientFor,
-  landedWithoutGatePoints,
+  landedWithoutSteps,
   loadProjects,
   passCeiling,
   projectFilters,
@@ -1172,9 +1172,9 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
  *
  * The comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, and the one that would have found #55 the day it happened.
- * `GatesResolved` names all five points and the actions resolved for each, so
+ * `GatesResolved` names all ten steps and the actions resolved for each, so
  * "the recipe asked for something at `end`" is in the log; `EndActionsResolved`
- * is the record that the point ran. An item that landed, whose run planned
+ * is the record that the step ran. An item that landed, whose run planned
  * actions at `end`, and whose stream holds no resolution, is a gate that was
  * configured and did not run — which [0016](../../../doc/decisions/0016-the-settled-model.md)
  * §4 calls Lingtai's bug rather than the operator's.
@@ -1219,27 +1219,27 @@ async function endPointRan(queries: LogQueries): Promise<CheckResult> {
  * `merge` was resolved into every plan, printed at onboarding and drawn on the
  * board without ever being built into a pipeline, so two of Lingtai's own
  * changes merged with nobody's approval (#58) and nothing anywhere noticed.
- * `end` had the same shape on the same day (#55). Two of five points were
- * quietly not executing; comparing the plan to the log is the only thing that
+ * `end` had the same shape on the same day (#55). Two of the five steps that
+ * were built then were quietly not executing; comparing the plan to the log is the only thing that
  * finds that, and the comparison is cheap.
  *
  * **A failure, not a note**, and one with no replay behind it: nothing can
  * un-merge a change that landed unapproved. What closes it is a person
  * deciding on the record — the board's waiver, which names who and why.
  */
-async function gatePointsRan(queries: LogQueries): Promise<CheckResult> {
-  const name = "gates: every point that was planned ran";
-  const found = await landedWithoutGatePoints(queries).catch(() => null);
+async function stepsRan(queries: LogQueries): Promise<CheckResult> {
+  const name = "gates: every step that was planned ran";
+  const found = await landedWithoutSteps(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
-    return { name, status: "ok", detail: "every landed item recorded the points its run planned" };
+    return { name, status: "ok", detail: "every landed item recorded the steps its run planned" };
   }
   return {
     name,
     status: "fail",
     detail:
-      `${found.length} item(s) landed past a point that was configured and did not run — ` +
+      `${found.length} item(s) landed past a step that was configured and did not run — ` +
       `${found.map((f) => `${f.project}#${f.issue} (${f.points.join(", ")})`).join(", ")}. ` +
       "The plan in GatesResolved names actions there and the run recorded no verdict, " +
       "no request and no waiver: those changes merged past a control the log says exists.",
@@ -1541,12 +1541,13 @@ export interface DeclaredExtension {
 /**
  * Every extension a recipe declares, and the names it asked for.
  *
- * A `run:` action at any of the five points, and every subscriber — which is
+ * A `run:` action at any of the ten steps, and every subscriber — which is
  * the whole of the extension mechanism
  * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §2: *"there
  * is no plugin system, an extension is a command"*). Reading the recipe's own
- * shape rather than a list of points here means a sixth point, if one is ever
- * added, is covered by arithmetic instead of by remembering.
+ * shape rather than a list of steps here meant that the five steps 0058 §3
+ * added were covered by arithmetic instead of by remembering — which is what
+ * that sentence was written for, and it has now been collected on.
  */
 export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
   const out: DeclaredExtension[] = [];
@@ -1735,7 +1736,7 @@ export async function declaredEnvironment(
  * so: the divergence is invisible until a run merges into `repo.base` under
  * gates it read from somewhere else, and every event that run writes is
  * internally consistent — `GatesResolved` carries the hash of the recipe it
- * obeyed, so `gates: every point that was planned ran` compares a plan against
+ * obeyed, so `gates: every step that was planned ran` compares a plan against
  * itself and finds nothing wrong. Comparing the plan's *origin* to the merge
  * target is the only thing that sees it, and this is where that happens without
  * waiting for a run to pay for it.
@@ -1882,7 +1883,7 @@ export async function runDoctor(
     results.push(await unconverged(queries));
     results.push(await subscribers(queries));
     results.push(await endPointRan(queries));
-    results.push(await gatePointsRan(queries));
+    results.push(await stepsRan(queries));
     // Named one at a time, each saying why it does not apply and naming the
     // store. See `postgresOnlyRows`.
     for (const row of postgresOnlyRows()) {
@@ -1919,7 +1920,7 @@ export async function runDoctor(
     results.push(await unconverged(audit));
     results.push(await subscribers(audit));
     results.push(await endPointRan(audit));
-    results.push(await gatePointsRan(audit));
+    results.push(await stepsRan(audit));
   } else {
     results.push({
       name: "postgres",

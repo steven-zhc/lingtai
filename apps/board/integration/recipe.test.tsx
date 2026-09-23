@@ -118,8 +118,11 @@ describe("what a project's recipe says today", () => {
     expect(html).toContain("blocked, agent:hold");
     // `describeAssignee`'s sentence, not a second wording of it.
     expect(html).toContain("any issue, whoever it is assigned to");
-    // All five points, including the four nothing is configured at (0016 §4).
-    expect(html).toContain("admit 0 · prepared 0 · proposed 1 · merge 0 · end 0");
+    // All ten steps, including the nine nothing is configured at (0016 §4,
+    // 0061 §5). The unit twin of this assertion is in `run-recipe.test.tsx`.
+    expect(html).toContain(
+      "claim 0 · admit 0 · prepared 0 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0",
+    );
     // `passCeiling`'s sentence, which is what `lingtai status` prints.
     expect(html).toContain("150 turns");
   });
@@ -196,11 +199,13 @@ describe("what a project's recipe says today", () => {
     // The page says it where a reader is looking — beside the row, and in the
     // exhaustive block under it, which carries `env.required` too.
     const html = render(view);
-    expect(html).toContain("admit 0 · prepared 1 · proposed 1 · merge 0 · end 0");
+    expect(html).toContain(
+      "claim 0 · admit 0 · prepared 1 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0",
+    );
     expect(html).toContain("← preset pnpm-workspace");
     expect(sourceIn(view, "excludes")).not.toContain(file);
 
-    // And with no preset either, five empty points are the schema's.
+    // And with no preset either, ten empty steps are the schema's.
     await writeFile(join(home, "app", "recipe.yml"), EXTENDS.replace("extends: pnpm-workspace\n", ""));
     expect(sourceIn(await projectRecipe(state), "the points")).toBe("default");
   });

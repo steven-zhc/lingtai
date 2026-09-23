@@ -2,7 +2,7 @@ import { inWords } from "@lingtai/conductor/queue";
 import { elapsed, pointOf, type PointProgress, type PointState, type RunProgress } from "@/lib/progress";
 
 /**
- * The five points as a sequence, on every surface that draws one.
+ * The ten steps as a sequence, on every surface that draws one.
  *
  * **Two surfaces, one file.** The board's running and waiting cards draw
  * `Rail`, its landed rows draw `Segs` bare, and the task page draws both: the
@@ -27,7 +27,7 @@ import { elapsed, pointOf, type PointProgress, type PointState, type RunProgress
  * Three of the seven look empty and mean different things, so shape carries
  * what colour cannot: `pending` is a flat rule, `skipped` is a dashed outline
  * with no fill, and `never-ran` is hatched in the fail colour. A bar that drew
- * all five points with only "filled means done" would render the second of
+ * all ten steps with only "filled means done" would render the second of
  * those as the first, which is precisely the failure 0016 §4 names.
  */
 const CELL_TONE: Record<PointState, string> = {
@@ -76,17 +76,36 @@ function segTitle(p: PointProgress): string {
 }
 
 /**
- * The five points, in point order, as a bar.
+ * The ten steps, in pass order, as a bar.
  *
- * **All five, always.** A point that is merely omitted is indistinguishable
+ * **All ten, always.** A step that is merely omitted is indistinguishable
  * from one that was configured and silently did not run, and only the second of
- * those is Lingtai's bug (0016 §4).
+ * those is Lingtai's bug (0016 §4). It was all *five*, always, until the
+ * vocabulary widened (0058 §3); the rule did not change and the number it
+ * ranges over did — which is what
+ * [0061](../../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5 says
+ * in as many words: *the resolved recipe may not omit a step, and the board
+ * draws all ten.*
+ *
+ * **The mark is the guarantee; the word beside it is a convenience.** Ten
+ * labels in the 22rem a card's column gives clip at five characters, so the
+ * row reads `claim admit prepa desig imple build revie propo merge end` —
+ * **five** of the ten are cut, `prepared`, `design`, `implement`, `review` and
+ * `proposed`, and the segment they sit under is not, nor is the `title` on it.
+ * (`rail.test.tsx` derives that list from `STEPS` and the stylesheet rather
+ * than trusting this sentence, which named three of the five for a day.)
+ * That trade is the right way round: omitting a segment
+ * loses the distinction 0016 §4 exists for, and clipping a word loses the
+ * characters a reader can get back by hovering. Six of the ten are `skipped`
+ * on every card today, because no pipeline is constructed at them — which is
+ * exactly the thing a dashed outline is for, and exactly what a rail that drew
+ * only the built ones would hide.
  *
  * **One cell per action.** `prepared: [install]` draws one; `proposed` holds
- * `build` and `review` and draws two, each with its own verdict, so a point
+ * `build` and `review` and draws two, each with its own verdict, so a step
  * that is half done looks half done. That is what let `N passed` go from the
  * counters above: a count of actions and a position in a sequence were the same
- * fact at two granularities, and only one of them has a shape. A point the
+ * fact at two granularities, and only one of them has a shape. A step the
  * recipe left empty draws a single dashed cell — it keeps its place in the
  * sequence without claiming anything happened in it.
  */
@@ -99,8 +118,8 @@ export function Segs({
   at: string | null;
   /**
    * Off on a landed row, which is one line by #81's decision and has no room
-   * for five names. The row's rail is scanned for the one mark that is wrong —
-   * the hatch — and the title on each segment says the rest.
+   * for ten names — it had none for five. The row's rail is scanned for the one
+   * mark that is wrong — the hatch — and the title on each segment says the rest.
    */
   labels: boolean;
 }) {
@@ -133,11 +152,24 @@ export function Segs({
  * still `running`. `foldProgress` names that phase for exactly this reason — a
  * refusal being answered is not a refusal waiting for a person, and this
  * function cannot tell them apart on its own.
+ *
+ * **`step:action`, and the qualifier is not decoration.** This read `build
+ * refused` while the bar had five segments and none of them was called
+ * `build`. It has ten now, and `build` and `review` — the two action names this
+ * repository configures at `proposed` — are *also* two of the labels, drawn
+ * grey and dashed because no pipeline is constructed at them. An operator
+ * reading `build refused` looked for the `build` label, found it empty, and
+ * either disbelieved the sentence or went hunting a failure at a step that
+ * cannot have one. The live line above may still drop the step, because its
+ * own label is lit and eight columns of highlight say which; a refusal lights
+ * nothing, so it says the pair.
  */
 function refusedAt(points: readonly PointProgress[]): string | null {
   for (const p of points) {
     const bad = p.actions.find((a) => a.state === "failed");
-    if (bad) return bad.name;
+    if (bad) return `${p.point}:${bad.name}`;
+    // A step that failed with no action naming it is already a step name, and
+    // qualifying it with itself would read `proposed:proposed`.
     if (p.state === "failed") return p.point;
   }
   return null;
@@ -146,7 +178,7 @@ function refusedAt(points: readonly PointProgress[]): string | null {
 /**
  * Where the run has got to, and what it is doing this second.
  *
- * **A sequence drawn as one, which it was not.** The five points were a wrapped
+ * **A sequence drawn as one, which it was not.** The steps were a wrapped
  * row of equal pills — a set — and a set loses the one thing a sequence has:
  * that it runs one way, and one of its members is *here*
  * ([the-card.md](../../../../doc/design/the-card.md), #170). Anything added to
@@ -223,7 +255,11 @@ export function Rail({
            finished and nothing has started. On a card in the Waiting lane that
            is the opposite of true: the rail's own segment is red, a person is
            being asked, and a sentence saying *between points* under a red
-           segment contradicts the bar it is there to explain. */
+           segment contradicts the bar it is there to explain.
+
+           Qualified `step:action` where the live line is not, and `refusedAt`
+           says why: nothing is highlighted here, and two of the ten labels are
+           spelled the same as two of this repository's action names. */
         <p
           className="snow"
           title="the pipeline stops at the first refusal and waits for a person, so nothing is running (0041 §4)"
@@ -231,6 +267,15 @@ export function Rail({
           {refused} refused
         </p>
       ) : live ? (
+        /* **`point` and not `step`, and the whole of the operator's copy says
+           it.** The type is `Step` and the enum has ten names, which is what
+           `#227` renamed; this sentence, its title and the task page's empty
+           state are what a person reads, and renaming half of them is how the
+           card and the task page come to describe one run in two vocabularies.
+           They move together or not at all, and what that costs is this
+           string, its title, the task page's, the assertions in
+           `rail.test.tsx` that quote them, and `the-card.md`'s copy of the
+           same sentence. */
         <p className="snow quiet" title="the agent has finished and no point has started yet">
           between points
         </p>
@@ -240,9 +285,10 @@ export function Rail({
            is stopped anyway — so what stopped it happened somewhere this fold
            does not read. `IntegrationRefused` is the ordinary one: it goes to
            the merge lane's stream, `task_view` turns it into the note below,
-           and the rail above it is five passed points. Saying *between points*
-           here told an operator the agent had just finished and something was
-           coming, about a card that had been still for hours. */
+           and the rail above it is a run that passed every step it reached.
+           Saying *between points* here told an operator the agent had just
+           finished and something was coming, about a card that had been still
+           for hours. */
         <p
           className="snow quiet"
           title="nothing on this run's stream is running and nothing on it refused — what the pass is stopped on is not on it, and the note says what"

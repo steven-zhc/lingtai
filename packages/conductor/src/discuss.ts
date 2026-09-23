@@ -3,8 +3,8 @@
  *
  * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md). Lingtai
  * dispatches two shapes today and both are containers — a run agent with a
- * disposable worktree, a filtered environment, a fail-closed hook and five gate
- * points; and a gate agent given a diff and asked for a verdict. There was no
+ * disposable worktree, a filtered environment, a fail-closed hook and the
+ * pass's gates; and a gate agent given a diff and asked for a verdict. There was no
  * shape for *asking a question about what happened*, so when an item blocked
  * the only move was to read the log yourself. Diagnosing `#89` on 2026-09-08
  * took an hour — the events, then `claude-code.ts`, then one test fixture — and

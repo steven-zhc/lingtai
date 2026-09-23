@@ -8,7 +8,7 @@
  * and none of it reached the card.
  */
 import { describe, expect, it } from "vitest";
-import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
+import { STEPS, type Envelope, type Step } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 import { AGENT, elapsed, foldProgress, type PointState } from "../src/lib/progress.ts";
 
@@ -29,7 +29,7 @@ function at(time: string, type: string, data: unknown): Envelope {
   };
 }
 
-const gate = (point: GatePoint, action: string) => ({
+const gate = (point: Step, action: string) => ({
   gate: point,
   action,
   runId: "run-59",
@@ -64,7 +64,7 @@ function timeline(): Envelope[] {
     at("2026-09-04T17:12:30Z", "GatesResolved", {
       runId: "run-59",
       configHash: "abc",
-      points: GATE_POINTS.map((point) => ({
+      points: STEPS.map((point) => ({
         gate: point,
         actions: (PLAN.get(point) ?? []).map((a) => a.name),
       })),
@@ -126,10 +126,10 @@ describe("where a run has got to", () => {
    * so that a point which *was* configured and did not run — Lingtai's bug — is
    * the only other way a point can be silent.
    */
-  it("shows all five points, and which are done", () => {
+  it("shows all ten steps, and which are done", () => {
     const points = foldProgress(timeline(), PLAN)?.points ?? [];
 
-    expect(points.map((p) => p.point)).toEqual([...GATE_POINTS]);
+    expect(points.map((p) => p.point)).toEqual([...STEPS]);
     expect(stateOf(points, "admit")).toBe("skipped");
     expect(stateOf(points, "prepared")).toBe("passed");
     expect(stateOf(points, "proposed")).toBe("running");

@@ -69,9 +69,9 @@ import { Rail, Segs } from "./rail.tsx";
  * end of the bar below, where the next chip would be added.
  *
  * **And so did the card, and two of its thirteen objects were sequences.** Same
- * story, one surface along, with one thing the bar did not have: the five gate
- * points run *one way*, and a wrapped row of equal pills is a set. They are a
- * bar of five segments now, named underneath, and the rule the card keeps is in
+ * story, one surface along, with one thing the bar did not have: the steps of a
+ * pass run *one way*, and a wrapped row of equal pills is a set. They are a
+ * bar of ten segments now, named underneath, and the rule the card keeps is in
  * `Rail` (`rail.tsx`) — *a sequence is not a set, and a pill cannot say which*
  * (#170, [the-card.md](../../../../doc/design/the-card.md)). Six objects, and
  * the ones that went were the counters the bar says better.
@@ -516,11 +516,11 @@ export function LandedRow({
 
   return (
     <li className="lrow">
-      {/* **The five points, on the row that says it landed** (#170).
+      {/* **The ten steps, on the row that says it landed** (#170).
 
           The counts never carried the one state that matters here. `lingtai
           doctor` fails on three of this repository's own items for having
-          landed past a point that was configured and did not run — #49, #53,
+          landed past a step that was configured and did not run — #49, #53,
           #55 at `merge` — and the board said nothing at all about them, because
           the row lists what a run accumulated and *nothing happened here* is
           not a number. The hatch is that mark, and it is the only thing on this

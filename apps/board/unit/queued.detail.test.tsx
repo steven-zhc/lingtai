@@ -248,20 +248,40 @@ const PLAN: PlanView = planOf(GATES, {
 
 describe("what will happen", () => {
   /**
-   * ADR 0016 §4 before a run as well as after one: a point that is merely left
+   * ADR 0016 §4 before a run as well as after one: a step that is merely left
    * out looks exactly like one that was configured and silently did not run,
-   * and only the second is Lingtai's bug.
+   * and only the second is Lingtai's bug. 0061 §5 is the same rule with the
+   * count this ticket gave it — *the resolved recipe may not omit a step*.
    */
-  it("names all five points, including the ones nothing is configured at", () => {
+  it("names all ten steps, including the ones nothing is configured at", () => {
     expect(PLAN.points.map((p) => p.point)).toEqual([
+      "claim",
       "admit",
       "prepared",
+      "design",
+      "implement",
+      "build",
+      "review",
       "proposed",
       "merge",
       "end",
     ]);
-    expect(PLAN.points.filter((p) => p.skipped).map((p) => p.point)).toEqual(["admit", "merge"]);
-    expect(PLAN.points[2]?.actions).toEqual(["build", "review"]);
+    // Seven of the ten, from two lists that do not overlap: `admit` and
+    // `merge`, which this recipe leaves empty, and the five 0058 §3 names that
+    // nothing constructs a pipeline for — `claim`, `design`, `implement`,
+    // `build`, `review`. Two plus five, with nothing counted twice, so
+    // building one of the five takes this list and the count down by one. The
+    // sibling assertion below counts the same seven in rendered HTML.
+    expect(PLAN.points.filter((p) => p.skipped).map((p) => p.point)).toEqual([
+      "claim",
+      "admit",
+      "design",
+      "implement",
+      "build",
+      "review",
+      "merge",
+    ]);
+    expect(PLAN.points[7]?.actions).toEqual(["build", "review"]);
   });
 
   it("carries the recipe's limits, in the recipe's own words", () => {
@@ -282,8 +302,12 @@ describe("what will happen", () => {
     expect(html).toContain("prepared");
     expect(html).toContain("install");
     expect(html).toContain("close the ticket");
-    // Twice: `admit` and `merge`, each stated rather than omitted.
-    expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(2);
+    // Seven times: `admit` and `merge`, which this recipe leaves empty, and
+    // the five 0058 §3 names that nothing constructs a pipeline for. Each
+    // stated rather than omitted — which is the whole of 0016 §4, and is why
+    // the number here goes up with the vocabulary rather than the bar losing
+    // rows to keep it at two.
+    expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(7);
     expect(html).toContain("150 turns · 1h · guarded · 2 round(s) back · then straight to you");
   });
 

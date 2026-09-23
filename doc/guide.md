@@ -141,12 +141,15 @@ scoped too large — a megabyte produces a worse review, not a better one."*
 
 ## Gate what has failed here, and delete the gate that never fails
 
-Five points, closed forever — `admit`, `prepared`, `proposed`, `merge`, `end`
-([reference](reference.md#gate-point--5-closed-forever)). Six action kinds, of
+Ten steps, closed forever — `claim`, `admit`, `prepared`, `design`,
+`implement`, `build`, `review`, `proposed`, `merge`, `end`
+([reference](reference.md#step--10-closed-forever)). Six action kinds, of
 which four produce a verdict
 ([reference](reference.md#gate-action--6-keys-of-which-4-produce-a-verdict)).
-The design question a repository actually faces is not which points exist; it is
-what to hang on them.
+The design question a repository actually faces is not which steps exist; it is
+what to hang on them — and today that is four of the ten, because nothing
+constructs a pipeline at the other six. The rest of this section is about those
+four.
 
 **A gate runs once per attempt, not once per item.** This is the arithmetic
 nobody does. `wi-lingtai-87` was claimed three times and `wi-lingtai-89` twice
@@ -218,7 +221,7 @@ time"* — exists because this repository's own `merge` point **does not execute
 that never refuses and a point that never runs look identical from outside, and
 this project has been on the wrong side of that for long enough to write the
 workaround into its own instructions. `lingtai doctor` now
-carries `gates: every point that was planned ran`, and `GatesResolved` is an
+carries `gates: every step that was planned ran`, and `GatesResolved` is an
 event rather than a convention so that an unconfigured point renders as
 `skipped` on the board and in `lingtai status` — **never omitted**. A check you
 cannot see is a check you will forget you never had.
