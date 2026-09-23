@@ -207,35 +207,31 @@ green is not evidence that the tree is green.
 ### 3b. The pipeline, drawn
 
 ```mermaid
-flowchart TB
-  CL["<b>claim</b><br/>pick the ticket"]
-  AD["<b>admit</b><br/>the requirement · the worktree"]
-  PR{{"<b>prepared</b><br/>install · is the base green?"}}
+flowchart LR
+  CL["<b>claim</b>"]
+  AD["<b>admit</b><br/>the worktree"]
+  PR{{"<b>prepared</b><br/>install"}}
   DS["<b>design</b><br/>a document, or none"]
-  IM["<b>implement</b><br/>one agent, in that worktree"]
+  IM["<b>implement</b><br/>one agent"]
   BU{{"<b>build</b>"}}
-  RV["<b>review</b><br/>findings, and no verdict"]
-  PO{{"<b>proposed</b><br/>the only step that routes"}}
+  RV["<b>review</b><br/>findings, no verdict"]
+  PO{{"<b>proposed</b><br/>the only step<br/>that routes"}}
   MG{{"<b>merge</b>"}}
-  EN["<b>end</b><br/>runs on every outcome"]
+  EN["<b>end</b><br/>every outcome"]
   WA(["waiting on you"])
 
-  %% the way through
   CL --> AD --> PR --> DS --> IM --> BU
   BU -->|green| RV --> PO
-  PO -->|pass| MG
-  MG -->|merged| EN
+  PO -->|pass| MG -->|merged| EN
 
-  %% everything that did not simply pass
   AD -.->|needs-input| PO
   PR -.->|"install failed"| PO
   DS -.->|needs-input| PO
   IM -.->|needs-input| PO
   BU -.->|red| PO
-  MG -.->|"the base moved · a conflict nobody resolved"| PO
+  MG -.->|"base moved · conflict"| PO
+  MG -->|"conflict resolved"| BU
 
-  %% and what proposed does with it
-  MG -->|"a conflict an agent resolved"| BU
   PO -.->|"the lines · × rounds"| IM
   PO -.->|"the approach · × restarts"| CL
   PO -.->|"every ceiling spent"| WA
