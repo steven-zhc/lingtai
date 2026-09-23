@@ -12,9 +12,16 @@
  * and 0059 §5's *the document cannot drift from the code without a red test* a
  * third time. There is one home for the words, one home for the exemptions and
  * one home for the allowlist, and it is that document. **The single exception is
- * `MEASURED` below, and it is a ratchet rather than a second home**: a frozen
- * copy of the debt as it was measured, which a document that an author edits in
- * the same motion cannot be.
+ * `MEASURED` below, and it is a ratchet rather than a second home**: a copy of
+ * the debt as it was measured, which a document that an author edits in the same
+ * motion cannot be.
+ *
+ * **Reading a list from the document is not the same as letting the document
+ * decide it.** The four words are pinned here and so are the two exemptions,
+ * because either one is a way to make a retired name green by writing a row: a
+ * word taken off the list stops being matched, and an exemption skips the match
+ * outright, everywhere, without moving a count. What the document decides on its
+ * own is the allowlist — the one table whose growth `MEASURED` already refuses.
  *
  * **This ticket renames nothing.** It records what is still wrong and bounds it:
  * every violation has a row, a row with nothing behind it is as red as a
@@ -31,9 +38,14 @@
  * anybody reaches for first — destroys all four. *does not reach inside a word*
  * below is the test that says so, and it is the reason the document holds a list
  * of words rather than a regex. Three of the four are also names the **rule**
- * reads; `pointer` is not, because all 17 of its occurrences are comments, and
- * that test says which is which — a guard that asserts a live subject over text
- * the rule never sees asserts nothing.
+ * reads, and that test says so, because a guard that asserts a live subject over
+ * text the rule never sees asserts nothing. `pointer` is not one of them today —
+ * all 17 of its occurrences are comments — and **that is a fact about `src/` and
+ * not a rule, so nothing asserts it either way**: `cursor: "pointer"` in a
+ * component makes it live, and a guard reading *the rule sees no `pointer`* is a
+ * red `build` gate on a diff that introduces no retired name. What holds for all
+ * four, live or not, is that the rule does not flag them, and that is what is
+ * asserted over everything `src/` hands over.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -62,8 +74,21 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
  * `doc/reference.md` any more, it is an edit here, where the word *measured* and
  * the date say what it costs.
  *
- * Pruning this table as rows go is housekeeping and nothing depends on it; the
- * one thing it may never do is grow.
+ * **Pruning it as rows go is the other half of that rule and not housekeeping.**
+ * A baseline only ever compared upward stops being a baseline the first time the
+ * table shrinks: delete `point` from `filter.ts` and from its row today, leave
+ * the pair here, and the day a `point` goes back into that file the row goes
+ * back with it and nothing is red — the debt grew through a door a previous
+ * ticket left open. At `#233`, whose acceptance is an empty allowlist, an
+ * unpruned table is 340 of those doors. So *may only shrink* reads both ways:
+ * the allowlist may hold no pair this table does not, and this table may hold no
+ * pair the allowlist has dropped. Deleting a row is two deletions.
+ *
+ * **A file that moved is neither**, and is free: a path that leaves this table
+ * and a path that arrives in the allowlist carrying the same file name and the
+ * same tokens is the move it looks like, and is read as one. Editing a path here
+ * by hand would be indistinguishable from editing a token here by hand, which is
+ * the edit this table exists to make expensive.
  */
 const MEASURED: Readonly<Record<string, string>> = {
   "apps/board/src/app/backlog/page.tsx": "gate",
@@ -265,8 +290,12 @@ async function glossary() {
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
     /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
     named: glossaryRows.filter((r) => !/^[a-z]+$/.test(r[0]!)).map((r) => [r[0]!, r[1]!] as const),
-    /** Tokens that carry one of the words and are not the retired concept. */
-    exempt: rows("not the retired name").map((r) => r[0]!),
+    /**
+     * Tokens that carry one of the words and are not the retired concept, each
+     * with **the one file it is excused in**. A bare token would excuse the
+     * same spelling in all 216 of them.
+     */
+    exempt: rows("not the retired name").map((r) => [r[0]!, r[1]!] as const),
     /** file → every retired token still in it. */
     allowlist: new Map(rows("the allowlist").map((r) => [r[0]!, r[1]!.split("·").map((t) => t.trim().replace(/`/g, ""))])),
   };
@@ -275,12 +304,12 @@ async function glossary() {
 /** What `src/` actually says today: file → the retired tokens in it, sorted. */
 async function violations(g: Awaited<ReturnType<typeof glossary>>) {
   const retired = new Set(g.retired);
-  const exempt = new Set(g.exempt);
+  const exempt = new Set(g.exempt.map(([token, file]) => `${file} · ${token}`));
   const found = new Map<string, string[]>();
   for (const file of await sources()) {
     const hit = new Set<string>();
     for (const token of tokens(await readFile(`${root}${file}`, "utf8"), file)) {
-      if (exempt.has(token)) continue;
+      if (exempt.has(`${file} · ${token}`)) continue;
       if (words(token).some((w) => retired.has(w))) hit.add(token);
     }
     if (hit.size > 0) found.set(file, [...hit].sort());
@@ -295,6 +324,42 @@ describe("the retired names in doc/reference.md", () => {
     expect(g.retired).toEqual(["gate", "gates", "point", "points"]);
     expect(g.named.map(([old]) => old)).toEqual(["GatePoint", "GateAction"]);
     expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "Plugin" });
+  });
+
+  /**
+   * **The other door, bolted the same way.** An exemption is not a row in a
+   * ledger, it is a `continue` before the match — so one row added here excuses
+   * its token and moves no count: the allowlist does not grow, `MEASURED` is not
+   * touched, the headline is unchanged, and a brand-new retired name is green
+   * in every file at once. That is the outcome the ratchet exists to refuse,
+   * reached by a different door, and the door is small enough to nail shut: two
+   * pairs, reviewed once, pinned here exactly as the four words are. A row
+   * added, deleted or repointed is this test going red, and the same
+   * `doc/reference.md` still holds the rows a person reads.
+   */
+  it("excuses two tokens, each in one named file, and the pair is pinned here", async () => {
+    const g = await glossary();
+
+    expect(g.exempt.map(([token, file]) => `${file} · ${token}`)).toEqual([
+      "apps/cli/src/install.ts · pointShim",
+      "apps/release/src/build.ts · entryPoints",
+    ]);
+  });
+
+  /**
+   * And the file column is the rule and not a note: `pointShim` is the English
+   * verb **in `install.ts`**, and a `pointShim` somewhere else is a token
+   * nobody reviewed.
+   */
+  it("excuses a token only in the file the document names", async () => {
+    const g = await glossary();
+    const elsewhere = { ...g, exempt: g.exempt.filter(([, file]) => file !== "apps/cli/src/install.ts") };
+
+    expect((await violations(g)).get("apps/cli/src/install.ts"), "pointShim is excused in install.ts").toEqual(["points"]);
+    expect(
+      (await violations(elsewhere)).get("apps/cli/src/install.ts"),
+      "the same token, read in a file the document does not excuse it in",
+    ).toEqual(["pointShim", "points"]);
   });
 
   /**
@@ -323,7 +388,6 @@ describe("the retired names in doc/reference.md", () => {
   it("does not reach inside a word — checkpoint, checkpoints, pointer and pointed are not ours", async () => {
     const g = await glossary();
     const retired = new Set(g.retired);
-    const exempt = new Set(g.exempt);
     const innocent = ["checkpoint", "checkpoints", "pointer", "pointed"];
 
     for (const token of innocent) {
@@ -332,17 +396,16 @@ describe("the retired names in doc/reference.md", () => {
       // And not by being excused, which would be a weaker guarantee: an
       // exemption is a judgement somebody has to keep making, and the shape of
       // the match is not.
-      expect(exempt.has(token), `${token} needs no exemption — whole-word matching already leaves it alone`).toBe(false);
+      expect(
+        g.exempt.some(([excused]) => excused === token),
+        `${token} needs no exemption — whole-word matching already leaves it alone`,
+      ).toBe(false);
     }
 
-    // And live **to the rule**, not to a grep. Asserting this against the raw
-    // file text is the mistake to make here: all 17 of `pointer`'s occurrences
-    // are comments — `standing.tsx:63`, `latch.tsx:89`,
-    // `task/[id]/page.tsx:139` — and the rule reads no comment, so a text guard
-    // reports a subject the matcher can never be handed and stays green with
-    // every `pointer` identifier in the repository renamed away. `pointer` is
-    // therefore a shape case, asserted above and nowhere else; the other three
-    // are names `src/` really hands over, and this is what says so.
+    // And live **to the rule**, not to a grep. Asserting a live subject against
+    // the raw file text is the mistake to make here: the rule reads no comment,
+    // so a text guard reports a subject the matcher can never be handed and
+    // stays green with every one of these identifiers renamed away.
     const read = new Set(
       (await Promise.all((await sources()).map(async (f) => tokens(await readFile(`${root}${f}`, "utf8"), f)))).flat(),
     );
@@ -350,7 +413,23 @@ describe("the retired names in doc/reference.md", () => {
     for (const token of ["checkpoint", "checkpoints", "pointed"]) {
       expect(read.has(token), `the rule reads no ${token} in src/ — this case has gone stale`).toBe(true);
     }
-    expect(read.has("pointer"), "`pointer` is a token the rule reads now — it has a live subject and belongs above").toBe(false);
+
+    // `pointer` is the fourth, and it is **not** in that loop: all 17 of its
+    // occurrences are comments today — `standing.tsx:63`, `latch.tsx:89`,
+    // `task/[id]/page.tsx:139` — and the rule reads none of them. Which way
+    // round that goes is a fact about `src/` and not a rule, so neither
+    // direction is asserted: written the other way, as *the rule reads no
+    // `pointer`*, a `style={{ cursor: "pointer" }}` added to a component is a
+    // red `build` gate on a diff that introduces no retired name, with no action
+    // in the failure a reader could take. What is true of all four whether they
+    // are live or not is that nothing flags them, and that is asserted here over
+    // every file, through the rule a violation really goes through — exemptions
+    // and all.
+    const flagged = [...(await violations(g))].flatMap(([file, found]) =>
+      found.filter((t) => innocent.includes(t)).map((t) => `${file} · ${t}`),
+    );
+
+    expect(flagged, "a word that was never ours was flagged as a retired name").toEqual([]);
   });
 
   it("reads the list from doc/reference.md and enforces it nowhere in doc/", async () => {
@@ -454,6 +533,111 @@ describe("the scanner", () => {
   });
 });
 
+/**
+ * **`MEASURED` keyed by path, read against an allowlist whose paths may have
+ * moved.** A refactor that carries `packages/conductor/src/gate-audit.ts` into
+ * `packages/conductor/src/audit/` renames no identifier and adds no debt, and
+ * without this it is ten pairs arriving at a path the measurement never had and
+ * ten pairs abandoned at one it did — reported as a widening that did not
+ * happen, and answered by hand-editing the one table whose edits are supposed to
+ * be expensive. That is the lesson to teach last.
+ *
+ * So a path that has left the measurement and a path that has arrived in the
+ * allowlist are the same file when they carry **the same file name and exactly
+ * the same tokens**, and the measurement is read at the new path. Both halves
+ * are load-bearing: the tokens alone would pair a deleted one-`gate` file with
+ * any new one-`gate` file, which is debt moving rather than a file moving.
+ */
+function moved(measured: Map<string, string[]>, allowlist: Map<string, string[]>): Map<string, string[]> {
+  const shape = (file: string, ts: string[]) => `${file.slice(file.lastIndexOf("/") + 1)} · ${[...ts].sort().join(" ")}`;
+  const arrived = [...allowlist].filter(([file]) => !measured.has(file));
+  const out = new Map(measured);
+
+  for (const [from, ts] of measured) {
+    if (allowlist.has(from)) continue;
+    const at = arrived.findIndex(([file, theirs]) => shape(file, theirs) === shape(from, ts));
+    if (at === -1) continue;
+    const [to] = arrived.splice(at, 1)[0]!;
+    out.delete(from);
+    out.set(to, ts);
+  }
+  return out;
+}
+
+/**
+ * **The two ways the measurement and the allowlist may disagree**, and the whole
+ * of the ratchet. `added` is a pair the debt did not hold and is a widening;
+ * `slack` is a pair the allowlist has dropped and the table still carries, which
+ * is a widening the next ticket is free to make. A move is neither.
+ */
+function drift(measured: Map<string, string[]>, allowlist: Map<string, string[]>) {
+  const pairs = (table: Map<string, string[]>) => new Set([...table].flatMap(([f, ts]) => ts.map((t) => `${f} · ${t}`)));
+  const was = pairs(moved(measured, allowlist));
+  const now = pairs(allowlist);
+
+  return {
+    added: [...now].filter((pair) => !was.has(pair)).sort(),
+    slack: [...was].filter((pair) => !now.has(pair)).sort(),
+  };
+}
+
+/**
+ * **What the ratchet does, as cases rather than as today's two tables agreeing.**
+ * Both tables are correct as this lands, so *may only shrink* below is green
+ * whatever `drift` says; these are what say it is green for a reason.
+ */
+describe("the ratchet", () => {
+  const measured = () => new Map([["packages/conductor/src/filter.ts", ["GatePlan", "gatePlan", "gates", "point"]]]);
+
+  /**
+   * A swap: one retired name out, a brand-new one in, and the total unmoved.
+   * The `point` that went is `slack` here rather than nothing, because the pair
+   * it left in the table is what the next ticket would walk back in through.
+   */
+  it("refuses a pair the measurement did not hold, though the count is where it was", () => {
+    const after = new Map([["packages/conductor/src/filter.ts", ["GatePlan", "gatePlan", "gateStep", "gates"]]]);
+
+    expect(drift(measured(), after)).toEqual({
+      added: ["packages/conductor/src/filter.ts · gateStep"],
+      slack: ["packages/conductor/src/filter.ts · point"],
+    });
+  });
+
+  /**
+   * And the deletion this ticket's own ratchet used to wave through: a rename
+   * lands, the row goes, the pair stays here — and that pair is the permission
+   * the name needs to come back to that file. It is named so it can be deleted.
+   */
+  it("names a pair the allowlist has dropped and the table still holds", () => {
+    const after = new Map([["packages/conductor/src/filter.ts", ["GatePlan", "gatePlan", "gates"]]]);
+
+    expect(drift(measured(), after)).toEqual({ added: [], slack: ["packages/conductor/src/filter.ts · point"] });
+  });
+
+  /** A file that moved renames no identifier and asks for no edit here. */
+  it("reads a moved file as the move it is", () => {
+    const after = new Map([["packages/conductor/src/audit/filter.ts", ["GatePlan", "gatePlan", "gates", "point"]]]);
+
+    expect(drift(measured(), after)).toEqual({ added: [], slack: [] });
+  });
+
+  /**
+   * But **debt moving is not a file moving**, and the file name is what tells
+   * them apart: without it a one-`gate` file deleted in the same diff as a
+   * one-`gate` file appearing would pair off, and a retired name would have
+   * arrived in a file nobody measured.
+   */
+  it("does not read two different files with the same tokens as one", () => {
+    const before = new Map([["packages/conductor/src/labels.ts", ["gates"]]]);
+    const after = new Map([["packages/conductor/src/queue.ts", ["gates"]]]);
+
+    expect(drift(before, after)).toEqual({
+      added: ["packages/conductor/src/queue.ts · gates"],
+      slack: ["packages/conductor/src/labels.ts · gates"],
+    });
+  });
+});
+
 describe("the allowlist", () => {
   /**
    * The whole ticket, in one assertion, and it is an equality rather than a
@@ -472,24 +656,34 @@ describe("the allowlist", () => {
   });
 
   /**
-   * And it may only shrink, **pair by pair rather than in total**. A retired name
-   * arriving in `src/` is red on the equality above until somebody edits the
-   * allowlist to match it, and red here afterwards: `MEASURED` is what the debt
-   * *was*, so a pair that is not in it is a pair being added — whether it arrived
-   * as a new file, as a new token in an old file, or as a swap that left the
-   * count where it found it. Removing entries is free, which is the whole point.
+   * And it may only shrink, **pair by pair rather than in total, and in both
+   * directions**. A retired name arriving in `src/` is red on the equality above
+   * until somebody edits the allowlist to match it, and red here afterwards:
+   * `MEASURED` is what the debt *was*, so a pair that is not in it is a pair
+   * being added — whether it arrived as a new file, as a new token in an old
+   * file, or as a swap that left the count where it found it.
+   *
+   * **And a pair the allowlist has dropped may not be left behind in
+   * `MEASURED`**, which is the same rule read from the other end. A baseline
+   * that is only compared upward decays into permission: the pair a rename
+   * ticket deleted is still in the table, so the retired name may walk back into
+   * that same file a ticket later with both tests green — and at `#233`, whose
+   * acceptance is an empty allowlist, every one of the 340 could. Deleting a row
+   * is therefore two deletions, in the document and here, and the failure below
+   * names the pairs to delete.
    */
   it("may only shrink", async () => {
     const g = await glossary();
-
-    const added = [...g.allowlist]
-      .flatMap(([file, tokens]) => {
-        const measured = new Set((MEASURED[file] ?? "").split(" ").filter((t) => t.length > 0));
-        return tokens.filter((t) => !measured.has(t)).map((t) => `${file} · ${t}`);
-      })
-      .sort();
+    const { added, slack } = drift(
+      new Map(Object.entries(MEASURED).map(([file, t]) => [file, t.split(" ").filter((w) => w.length > 0)])),
+      g.allowlist,
+    );
 
     expect(added, "the allowlist has grown — a retired name may not be added to the debt").toEqual([]);
+    expect(
+      slack,
+      "MEASURED still holds pairs the allowlist has dropped — delete them there too, or each one is a door that name comes back through",
+    ).toEqual([]);
     expect(g.allowlist.size).toBeGreaterThan(0);
   });
 

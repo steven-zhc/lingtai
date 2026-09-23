@@ -539,13 +539,22 @@ the new name** — that rule is a reviewer's, not a test's.
 ### not the retired name
 
 Two tokens contain one of the four words and mean something else. Each is
-exempt by name, reviewed once, rather than by a pattern that would exempt more
-than it was shown:
+exempt **by name and in one file**, reviewed once, rather than by a pattern —
+or by a bare token — that would exempt more than it was shown:
 
-| token | what it is |
-|---|---|
-| `pointShim` | *point the shim at a version* — the English verb, in `apps/cli/src/install.ts`. Nothing to do with a step |
-| `entryPoints` | esbuild's own option in `apps/release/src/build.ts`. Not ours to rename |
+| token | where | what it is |
+|---|---|---|
+| `pointShim` | `apps/cli/src/install.ts` | *point the shim at a version* — the English verb. Nothing to do with a step |
+| `entryPoints` | `apps/release/src/build.ts` | esbuild's own option. Not ours to rename |
+
+**This table is a second door into the debt, and it is bolted the same way the
+allowlist is.** An exemption skips the match itself, so one row added here
+excuses its token everywhere at once and no count moves — the allowlist would
+not grow, `MEASURED` would not be touched, and a brand-new retired name would
+be green. So the pair in each row is pinned in
+`packages/domain/unit/retired-names.test.ts` as the four words are, and the file
+column is enforced: a row added, dropped or widened to a second file is a red
+test, and `pointShim` in any file but `install.ts` is a violation like any other.
 
 `checkpoint`, `checkpoints`, `pointer` and `pointed` are **not on this list and
 do not need to be** — whole-word matching never reaches inside them. They are
@@ -559,17 +568,31 @@ other three and the shape of the match for that one.
 **340 entries in 76 files, counted 2026-09-23** — and that sentence is counted
 by the test rather than remembered, so it is the size of the table below and not
 a number somebody forgot to lower when the table shrank. The rest of the epic
-empties the table: a ticket that renames its area deletes its rows, and needs no
-ceremony beyond correcting that count.
+empties the table: a ticket that renames its area deletes its rows, corrects
+that count, and deletes the same pairs from the ratchet below.
 
 A ticket that *adds* a row is widening the debt and gets a red test instead. The
 ratchet is `MEASURED` in `packages/domain/unit/retired-names.test.ts` — one
-frozen `file → tokens` copy of the debt as it was measured — and the rule is per
-`(file, token)` pair: **the allowlist may hold nothing that table does not.**
-Deleting rows stays free, and touches this file only. **A ceiling on the total
-would not do it**: a rename that swaps one retired name for another leaves the
-total where it found it, and after any shrink a hand-written total is slack for
-new names to arrive in.
+`file → tokens` copy of the debt as it was measured — and the rule is per
+`(file, token)` pair: **the allowlist and that table hold the same pairs, and
+the only edit to it a review should ever pass is a deletion.** **A ceiling on
+the total would not do it**: a rename that swaps one retired name for another
+leaves the total where it found it, and after any shrink a hand-written total is
+slack for new names to arrive in.
+
+**Deleting a row is two deletions, and that is what keeps the ratchet true
+rather than ceremony.** A baseline that is only ever compared upward stops being
+a baseline the first time the table shrinks: drop `point` from a file's row
+today and the pair stays in `MEASURED`, so the day somebody puts a `point` back
+in that file the row goes back too and nothing is red — the debt grew, through a
+door a previous ticket left open. By `#233`, whose acceptance is an empty
+allowlist, an unpruned table would be 340 such doors. So the test says both
+things: a pair the table does not have may not be in the allowlist, and a pair
+the allowlist has dropped may not be left in the table.
+
+**Moving a file is neither**, and costs nothing: a path that leaves the table
+and a path that arrives in the allowlist with the same file name and the same
+tokens is read as the move it is, and no edit to the ratchet is asked for.
 
 Each row is one file and every retired token still in it. The test computes the
 same set from `src/` and asserts it is exactly this — so a row that has been
