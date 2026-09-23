@@ -306,6 +306,53 @@ anything runs.
 The ten silent cells `#61` measured cannot exist in this shape: a cell is
 either a plugin a step runs, or a name the resolve refuses.
 
+### 9. A plugin owns its schema and its validation; the core calls it, once, before anything runs
+
+**The plugin declares what it accepts and checks it itself.** No central
+registry of every plugin's fields — the plugin is the one thing that knows what
+it needs, and a second copy of that knowledge is a second thing to keep true.
+This is Ansible's `argument_spec`, and the parts worth taking are its parts:
+type, required, default, choices, aliases, cross-field constraints inside one
+plugin (`mutually_exclusive`, `required_if`), and **`no_log`**.
+
+**`no_log` earns its place here specifically.** This repository already has the
+rule — *names only, never values* — written into `extensionRow`, the agent's
+row, and `lingtai env set`'s unechoed stdin. Today it is a rule people
+remember. A field marked secret in a plugin's schema makes it mechanical: the
+log, the evidence, the board and a refusal's text all learn it from one
+declaration.
+
+**What is not taken is Ansible's second source of truth.** A module carries
+`argument_spec` for the machine and a `DOCUMENTATION` block for the reader, and
+a sanity test (`validate-modules`) keeps them aligned. Two descriptions of one
+thing, kept true by a test, is the shape this repository writes ADRs against.
+**The schema is the documentation.**
+
+**And the timing is changed, because we can afford what Ansible cannot.**
+Ansible validates inside the module, at execution, on the target host — it has
+no choice, since a task's arguments may be Jinja that only resolves per host.
+A recipe has no templating and is resolved in full before a work item is
+claimed. So:
+
+> **Every plugin in the recipe is validated at resolve time, before a claim —
+> before a worktree, before an agent, before any money.**
+
+That is the same bargain (*configure it wrong and you get an error*) collected
+early instead of late, and the machinery exists: `whyNoKindAt(point, kind)`
+(`recipe.ts:201`) and `gatesFromRecipe(…, deps)` already refuse by name at
+resolve. §8's rule grows one clause:
+
+```
+a step refuses a plugin it cannot run
+                     …and a plugin refuses a field it does not understand
+```
+
+**All of them, in one answer.** A resolve that stops at the first bad field
+makes a person fix one thing per attempt, and that is
+[#222](https://github.com/steven-zhc/lingtai/issues/222)'s lesson about the
+build gate applied to configuration: **say every problem once.** The refusal
+names the step, the plugin and the field, for all of them together.
+
 ## Consequences
 
 **The file becomes the explanation.** *What will this do to my repository* is
@@ -333,9 +380,12 @@ holds without a line of work.
 
 ## What is not decided
 
-- **What a plugin's own schema is**, and whether a `run:` action's `env:` list
-  ([0037](0037-an-extension-is-a-command.md) §1) generalises to every plugin or
-  stays the property of the ones that spawn a process.
+- **Whether a `run:` action's `env:` list
+  ([0037](0037-an-extension-is-a-command.md) §1) is a universal key or belongs
+  only to plugins that spawn a process.** §9 makes this the plugin's own
+  schema to answer for itself, which may be the whole answer; it is left open
+  because the two plugins that spawn nothing — `queue:` and `judge:`'s
+  built-in — have not been written yet.
 
 ## Related
 

@@ -161,7 +161,7 @@ value rather than declaring it again.*
 | kind | `tech-debt` |
 | blocked by | T1 |
 | what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `merge:` behind one contract, with the universal keys the workflow enforces on any of them (`timeout`, and `rounds`/`restarts` at `proposed`), with the step × plugin matrix and its refusal ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
-| watch out | Four of the ten are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim`, `judge:` is `buyRound`'s decision, with `passCeiling`'s counting left to the workflow, `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. |
+| watch out | **Each plugin owns its own schema and its own validation, and the core calls it at resolve time** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9) — one source of truth, no second documentation block, `no_log` on any secret field, and **every problem reported in one answer** rather than the first one found. Four of the ten are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim`, `judge:` is `buyRound`'s decision, with `passCeiling`'s counting left to the workflow, `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. |
 
 | | |
 |---|---|
