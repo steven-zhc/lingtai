@@ -68,7 +68,29 @@ describe("logWhere", () => {
 
   it("is nothing with nothing configured, and elsewhere with a Postgres URL", () => {
     expect(where({})).toEqual({ kind: "none" });
-    expect(where({ LINGTAI_DATABASE_URL: URL_ })).toEqual({ kind: "elsewhere" });
+    expect(where({ LINGTAI_DATABASE_URL: URL_ })).toEqual({
+      kind: "elsewhere",
+      named: "LINGTAI_DATABASE_URL names",
+    });
+  });
+
+  /**
+   * **And the sentence is only true on one of the two machines with a log
+   * elsewhere** (#214). An operator who typed a URL into `lingtai init` has it
+   * in `~/.lingtai/config.yml` and nothing exported, so *the database
+   * LINGTAI_DATABASE_URL names* is a line pointing at an unset variable —
+   * printed after the `rmSync` that took the file which held the answer. The
+   * URL itself is what still names that database afterwards, redacted because
+   * `redactUrl` is the one rule about printing one.
+   */
+  it("names a config.yml's database by its URL, because that file is what the removal takes", () => {
+    const home = mkdtempSync(join(tmpdir(), "lingtai-typed-"));
+    writeFileSync(join(home, "config.yml"), `database:\n  store: postgres\n  url: ${URL_}\n`);
+
+    expect(where({ LINGTAI_HOME: home })).toEqual({
+      kind: "elsewhere",
+      named: "at postgresql://u:***@db.example.com:5432/postgres",
+    });
   });
 
   /**
@@ -256,7 +278,12 @@ describe("logWhere", () => {
 
     expect(ran.stderr).toBe("");
     expect(ran.status).toBe(0);
-    expect(JSON.parse(ran.stdout.trim())).toEqual({ kind: "elsewhere" });
+    // And named by that URL and not by the empty variable: the file it was read
+    // from is inside what the removal takes.
+    expect(JSON.parse(ran.stdout.trim())).toEqual({
+      kind: "elsewhere",
+      named: "at postgresql://u:***@db.example.com:5432/postgres",
+    });
   }, 30_000);
 });
 

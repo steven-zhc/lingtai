@@ -155,8 +155,19 @@ export interface World {
  * **inside what is about to be removed**.
  */
 export type LogLocation =
-  /** A server somewhere else. Removing `~/.lingtai` does not touch it. */
-  | { kind: "elsewhere" }
+  /**
+   * A server somewhere else. Removing `~/.lingtai` does not touch it.
+   *
+   * `named` is how that database can still be named **once the removal has
+   * happened**, and it is carried rather than written into the sentence
+   * because the two machines answer differently: a URL that was exported is
+   * still exported afterwards, and a URL that was in the `config.yml` this
+   * command deletes is not named by anything afterwards unless this line
+   * quotes it ([#214](https://github.com/steven-zhc/lingtai/issues/214)). It
+   * is a noun phrase — *LINGTAI_DATABASE_URL names*, *at postgresql://…* —
+   * because the sentence around it is one sentence either way.
+   */
+  | { kind: "elsewhere"; named: string }
   /**
    * A file under `~/.lingtai` **that is there**. It goes with the directory,
    * and there is no copy.
@@ -654,7 +665,11 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     );
   }
   if (where.kind === "elsewhere") {
-    world.log("The log is not under ~/.lingtai: the database LINGTAI_DATABASE_URL names is untouched, and its tables are yours to drop.");
+    // `where.named` and not `LINGTAI_DATABASE_URL`: on a machine whose URL was
+    // only in the `config.yml` the `rmSync` above just took, that variable was
+    // never set, and a line naming it would point at nothing after destroying
+    // the one local record of the real answer (#214).
+    world.log(`The log is not under ~/.lingtai: the database ${where.named} is untouched, and its tables are yours to drop.`);
   } else if (where.kind === "file") {
     world.log(
       paint.fail(

@@ -29,7 +29,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 // Only the loader, which reads `.env.local` and connects to nothing.
-import { logConfigured, SQLITE_LOG, stateDir, storeChoice } from "@lingtai/env";
+import {
+  dbVar,
+  logConfigured,
+  optional,
+  postgresUrlIfSet,
+  redactUrl,
+  SQLITE_LOG,
+  stateDir,
+  storeChoice,
+  type StoreChoice,
+} from "@lingtai/env";
 import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from "./install.ts";
 
 /** Everything the live world reaches that a test must not: the log, and what is behind it. */
@@ -129,6 +139,9 @@ export function liveWorld(self: string, outside: Live = live()): World {
  *
  * `alsoElsewhere` carries the machine where both are true, because an uninstall
  * has two things to say there and one of them must not be the other's sentence.
+ * `named` carries *which* database survives, for the reason `namedDatabase`
+ * below gives: on one of the two machines with a log elsewhere, the removal
+ * takes the file that named it.
  *
  * Reads and never throws, for the reason `logConfigured` was a boolean: the two
  * commands that call it, `uninstall` and `upgrade`, are the ones that repair a
@@ -148,7 +161,36 @@ export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
   // names no machine.
   const file = !("refused" in choice) && choice.store === "sqlite" ? choice.path : sqliteLogIn(env);
   if (file !== null && existsSync(file)) return { kind: "file", path: file, alsoElsewhere: elsewhere };
-  return elsewhere ? { kind: "elsewhere" } : { kind: "none" };
+  return elsewhere ? { kind: "elsewhere", named: namedDatabase(env, choice) } : { kind: "none" };
+}
+
+/**
+ * How the surviving database can still be named **after `~/.lingtai` is gone**.
+ *
+ * `lingtai uninstall`'s last line used to say *the database
+ * `LINGTAI_DATABASE_URL` names is untouched* on every machine with a log
+ * somewhere else, and there are two of those. An operator who ran `lingtai
+ * init` and typed a URL has it written in `~/.lingtai/config.yml` and nothing
+ * exported — so the `rmSync` takes the only local record of which database
+ * survived, and the one line meant to say which it was points at a variable
+ * that was never set ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
+ *
+ * So: the variable where the variable is really what names it, and where it is
+ * not, the URL itself — **redacted**, because `redactUrl` is the one copy of
+ * the rule that a printed URL never carries a password.
+ *
+ * The variable read is `optional(dbVar(…))` rather than `choice.where`: a
+ * `config.yml` that `storeChoice` *refused* over can still have that variable
+ * set beside it, and there the variable does name it.
+ */
+function namedDatabase(env: NodeJS.ProcessEnv, choice: StoreChoice): string {
+  const name = dbVar("DATABASE_URL", env);
+  if (optional(name, env) !== undefined) return `${name} names`;
+  const url = "refused" in choice ? postgresUrlIfSet(env) : choice.store === "postgres" ? choice.url : undefined;
+  // Not a third case: with no URL found anywhere, `elsewhere` above is false
+  // and this is never asked. It is the sentence's old words, so that the
+  // expression is total rather than `?`-ing a string into the line.
+  return url === undefined ? `${name} names` : `at ${redactUrl(url)}`;
 }
 
 /**

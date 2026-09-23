@@ -333,7 +333,7 @@ describe("lingtai uninstall", () => {
       conducting: async () => {
         throw new Error(`EACCES: permission denied, open '${join(locks, "lingtai:daemon")}'`);
       },
-      logWhere: () => ({ kind: "elsewhere" }) as const,
+      logWhere: () => ({ kind: "elsewhere", named: "LINGTAI_DATABASE_URL names" }) as const,
     });
     expect(await installCommand(["uninstall", "--yes"], w)).toBe(1);
     const said = lines.join("\n");
@@ -409,7 +409,7 @@ describe("lingtai uninstall", () => {
         appAsked = existsSync(join(home, ".lingtai"));
         return { slug: "lingtai-steven", owner: "steven", organisation: false, installations: 1, repositories: 2, key: { path: join(home, ".lingtai", "lingtai", "app.pem") } };
       },
-      logWhere: () => ({ kind: "elsewhere" }) as const,
+      logWhere: () => ({ kind: "elsewhere", named: "LINGTAI_DATABASE_URL names" }) as const,
     });
     expect(await installCommand(["uninstall"], w)).toBe(0);
 
@@ -421,6 +421,29 @@ describe("lingtai uninstall", () => {
     expect(said).toContain("Its private key is gone and cannot be recovered");
     expect(said).toContain("https://github.com/settings/apps/lingtai-steven");
     expect(said).toContain("the database LINGTAI_DATABASE_URL names is untouched");
+  });
+
+  /**
+   * **And the other machine with a log somewhere else** (#214): one whose URL
+   * was typed into `lingtai init` and so lives in the `~/.lingtai/config.yml`
+   * this command has just deleted, with nothing exported.
+   * `LINGTAI_DATABASE_URL` names nothing there, so the one line saying which
+   * database survived would have pointed at an unset variable *after*
+   * destroying the only local record of the answer. It quotes the URL instead,
+   * and `logLocation` redacts it.
+   */
+  it("names the surviving database by its URL where no variable names it", async () => {
+    await installOld();
+    const w = world({
+      logWhere: () => ({ kind: "elsewhere", named: "at postgresql://u:***@db.example.com:5432/postgres" }) as const,
+    });
+    expect(await installCommand(["uninstall", "--yes"], w)).toBe(0);
+
+    const said = lines.join("\n");
+    expect(said).toContain(
+      "the database at postgresql://u:***@db.example.com:5432/postgres is untouched, and its tables are yours to drop",
+    );
+    expect(said).not.toContain("LINGTAI_DATABASE_URL");
   });
 
   /**
