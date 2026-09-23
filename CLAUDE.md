@@ -252,8 +252,8 @@ There is **one root `vitest.config.ts`** with a `unit` project and an
 `integration/` or both, plus a `test/` for the shared contract suites and
 fixtures that are not themselves tests.
 
-    pnpm test               # `vitest run --project unit` — 93 files, ~1250 tests
-    pnpm test:integration   # the other 73, and `pnpm test:db` is the old name
+    pnpm test               # `vitest run --project unit` — 90 files, ~1200 tests
+    pnpm test:integration   # the other 76, and `pnpm test:db` is the old name
     pnpm test:all           # both projects in one run
 
 `pnpm test` is what the `build` gate runs, so **a red there is a claim about the

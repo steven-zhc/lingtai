@@ -12,7 +12,7 @@ import { configDefaults, defineConfig } from "vitest/config";
  *
  * `unit` is what the `build` gate runs, so a red there is a claim about the
  * diff. `integration` is everything else — including the whole of what used to
- * be `pnpm test:db`, and the 18 files that start a process.
+ * be `pnpm test:db`, and the 21 files that start a process.
  *
  * **The split is by directory, not by tag**, and that was measured rather than
  * assumed ([0060](doc/decisions/0060-the-gate-runs-unit-tests.md)'s last open

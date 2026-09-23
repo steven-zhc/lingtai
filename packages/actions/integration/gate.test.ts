@@ -5,6 +5,22 @@
  * the command is testing nothing. The properties that matter are `onSha` on
  * every verdict, a timeout that is distinguishable from a refusal, evidence a
  * person could act on, and a pipeline that stops the moment something says no.
+ *
+ * **In `integration/`, because *against real processes* is the literal claim.**
+ * `createProcessGate` reaches `spawn(run, {shell: true})` through
+ * `src/process-gate.ts` and `src/command.ts`, and an OS process is outside the
+ * system ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).
+ * Nothing in this file names `node:child_process`, which is how it was read as
+ * unit at first: the spawn is three modules down the barrel, and #225's own
+ * note that the split was decided *by running each one, not by reading
+ * imports* is the sentence that was lost with the config it stood in.
+ *
+ * What it would have cost is measurable rather than theoretical: *distinguishes
+ * a timeout from a refusal* asks a forked shell to be scheduled and to flush
+ * `starting` to a pipe inside 300ms of wall clock. On a loaded machine — the
+ * ~0.5s spawn 0060 measured at 66s beside `apps/release`'s builds — the shell
+ * is killed before it writes, and `build` goes red on a diff that never came
+ * near `packages/actions`.
  */
 import { describe, expect, it } from "vitest";
 import {

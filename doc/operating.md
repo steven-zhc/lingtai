@@ -1201,7 +1201,7 @@ installing user's, so `install` refuses one that user does not own — `pnpm
 --dir /home/admin/lingtai` from `lingtai`'s session is turned away rather than
 written into a unit that runs someone else's code. `node` is whichever the
 shell finds on `PATH`, so install from that user's own shell.
-`apps/cli/test/service.test.ts` pins the refusal through the command's own
+`apps/cli/integration/service.test.ts` pins the refusal through the command's own
 `repoRoot()`, and that `HOME`, `USER` and `LINGTAI_HOME` in the unit are the
 environment it was given.
 

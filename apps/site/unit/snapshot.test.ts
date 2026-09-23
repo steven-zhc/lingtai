@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { TaskCard } from "@lingtai/projector/task-view";
-import { LANE_CARDS, elapsed, money, readSnapshot, stamp, takeBoard } from "@/lib/snapshot";
+import { LANE_CARDS, SNAPSHOT_FILE, elapsed, money, readSnapshot, stamp, takeBoard } from "@/lib/snapshot";
 
 /**
  * The board on the front page is the one thing on this site that is not read
@@ -64,6 +64,23 @@ function take(tasks: TaskCard[], open: string[] = [OPEN]) {
 }
 
 describe("a build with no log", () => {
+  /**
+   * The assertion below is about a particular file, and it is only worth
+   * anything if that is the file the build writes and the page reads.
+   *
+   * It was not, for the length of #225: `SNAPSHOT_FILE` resolved against
+   * `process.cwd()`, the writer and `next build` ran in `apps/site` and this
+   * run in the repository root, so the test asserted there was no snapshot at a
+   * path nothing had ever written one to — and passed with a rendered board
+   * sitting in `apps/site/snapshot.json` beside it. Naming the directory rather
+   * than the cwd is what makes the next assertion able to fail at all, and this
+   * one fails wherever `vitest` is started from.
+   */
+  it("names the file the build writes, wherever this run was started from", () => {
+    expect(SNAPSHOT_FILE.endsWith(path.join("apps", "site", "snapshot.json"))).toBe(true);
+    expect(path.isAbsolute(SNAPSHOT_FILE)).toBe(true);
+  });
+
   it("has no snapshot rather than a plausible one", async () => {
     // The repository commits no `snapshot.json` — it is generated, and
     // `.gitignore` keeps it out — so this is what a fresh clone builds with.

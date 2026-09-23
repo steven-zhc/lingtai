@@ -136,7 +136,7 @@ gates:
       # ([0060](../doc/decisions/0060-the-gate-runs-unit-tests.md)). The line is
       # *does this exercise a dependency outside the system*, not *does this
       # need Postgres* — so a temporary directory and a spawned `node` are on
-      # the other side of it too, and 73 of the 166 files are.
+      # the other side of it too, and 76 of the 166 files are.
       #
       # **What the paragraph below says about `test:db` now applies to all of
       # `pnpm test:integration`**, and the reason has widened with it: the

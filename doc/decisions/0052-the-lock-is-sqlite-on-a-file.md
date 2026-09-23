@@ -62,7 +62,8 @@ busy handler order nothing. So a waiter holds a read transaction on
 `<key>.queue`, and polls for the lock; **a `tryLock` that wins the lock checks
 the queue and gives it back if anybody is in it.** Between the release and the
 waiter's next poll every try finds the lock free, takes it, sees the queue, and
-is refused. `pure/lock.test.ts` races a copy trying every millisecond from
+is refused. `packages/daemon/integration/file-lock.test.ts` races a copy trying
+every millisecond from
 another process against a place queued before the holder was killed; with the
 queue check removed, that test fails.
 

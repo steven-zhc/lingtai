@@ -4,6 +4,14 @@
  * The thing worth testing hardest is that `needs-approval` is not a synonym for
  * `failed`. A migration in the diff is not a broken build, and a card that says
  * so sends a person looking for a problem that does not exist.
+ *
+ * **In `integration/`.** The `watch` and `human` actions decide nothing outside
+ * the system, but the pipelines below run them beside real `createProcessGate`
+ * gates, and a spawned shell is outside it
+ * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). The two
+ * hand-written 30s bounds that used to sit on those cases are gone with the
+ * move: they were chosen against vitest's 5000ms default, and the project this
+ * file now runs in already allows a spawn the time one takes (#225).
  */
 import { BadWatchPatternError, MIGRATION_WATCH, TAMPER_WATCH } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
@@ -113,7 +121,7 @@ describe("the pipeline, when a gate wants a person", () => {
     // And it stops, for the same reason a failure stops: the gates after it are
     // about a diff that is not going anywhere yet.
     expect(result.skipped).toEqual(["after"]);
-  }, 30_000);
+  });
 
   it("keeps failure and hold distinguishable all the way out", async () => {
     const { result, types } = await collect([
@@ -125,5 +133,5 @@ describe("the pipeline, when a gate wants a person", () => {
     expect(result.heldAt).toBeNull();
     expect(types).toContain("GateFailed");
     expect(types).not.toContain("ApprovalRequested");
-  }, 30_000);
+  });
 });

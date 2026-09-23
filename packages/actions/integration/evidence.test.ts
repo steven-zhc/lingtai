@@ -6,6 +6,14 @@
  * why it arrives coloured at all (`pnpm` sets `FORCE_COLOR`). Only the absolute
  * path of the worktree it ran in was replaced. A synthetic string with one
  * escape in it would pass a regex that misses the ones vitest actually writes.
+ *
+ * **In `integration/`**: the last assertion drives the fixture through a real
+ * `createProcessGate`, so the stripping is pinned at the `GateFailed` event and
+ * not at `tail` — which is the whole of what 0043 claims. That spawns a shell,
+ * and an OS process is outside the system
+ * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). Nothing
+ * here names `node:child_process`; the spawn is three modules down the barrel,
+ * which is how the file was read as unit at first (#225).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

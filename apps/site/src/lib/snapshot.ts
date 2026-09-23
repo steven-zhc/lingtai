@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { TaskCard, TaskState } from "@lingtai/projector/task-view";
+import { repoRoot } from "./docs.ts";
 
 /**
  * The board on the front page, as a file.
@@ -101,7 +102,25 @@ export interface Snapshot {
   withheld: number;
 }
 
-export const SNAPSHOT_FILE = path.resolve(process.cwd(), "snapshot.json");
+/**
+ * **The file this package writes, named from the package and not from `cwd`.**
+ *
+ * `path.resolve(process.cwd(), "snapshot.json")` was right while every reader
+ * ran with `apps/site` as the working directory — `next build`, `node
+ * scripts/snapshot.ts`, and `vitest` under a per-package config all did. #225
+ * moved the tests to one run rooted at the repository, and the constant then
+ * named two different files depending on who asked: `scripts/snapshot.ts` still
+ * wrote `apps/site/snapshot.json` (the path `.gitignore` excludes) and the page
+ * still read it, while `unit/snapshot.test.ts` read `<root>/snapshot.json`,
+ * which nothing writes. *A build with no log has no snapshot* could not fail
+ * after that, whatever the file it is about contained.
+ *
+ * So it is anchored to the repository root `docs.ts` already finds by searching
+ * upward — the same repair, for the same cwd change — which makes one path of
+ * it under all three. `import.meta.url` is not the anchor for the reason
+ * `docs.ts` gives: Next compiles this module into a chunk under `.next/`.
+ */
+export const SNAPSHOT_FILE = path.join(repoRoot, "apps", "site", "snapshot.json");
 
 /**
  * How many cards a lane publishes.

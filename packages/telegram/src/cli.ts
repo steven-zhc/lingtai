@@ -11,7 +11,8 @@
  *
  * **It imports nothing a third party's could not.** `node:` and
  * `packages/extension`, which itself depends on nothing — asserted by
- * `test/imports.test.ts`, not kept by care. No `@lingtai/domain` for a type, no
+ * `packages/extension/unit/imports.test.ts`, not kept by care. No `@lingtai/domain`
+ * for a type, no
  * `@lingtai/event-store`, no way to append: the only thing it can say about
  * itself is its exit code, which the daemon turns into `PluginFailed` (0037 §7).
  *

@@ -51,6 +51,6 @@ the text that follows it.
 - Stripping only removes escape sequences. Carriage-return progress redraws and
   other control characters are untouched, and are a separate ticket if they
   show up.
-- Pinned by `packages/actions/unit/evidence.test.ts`, against a real vitest
+- Pinned by `packages/actions/integration/evidence.test.ts`, against a real vitest
   failure captured through `pnpm`, at the `GateFailed` event rather than at
   `tail`.
