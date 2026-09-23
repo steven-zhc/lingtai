@@ -206,44 +206,46 @@ green is not evidence that the tree is green.
 
 ### 3b. The pipeline, drawn
 
+**The way through.** Ten steps, one after another, and nothing else:
+
+```mermaid
+flowchart TB
+  CL["<b>claim</b>"] --> AD["<b>admit</b><br/>the worktree"]
+  AD --> PR{{"<b>prepared</b><br/>install"}}
+  PR --> DS["<b>design</b><br/>a document, or none"]
+  DS --> IM["<b>implement</b><br/>one agent, in that worktree"]
+  IM --> BU{{"<b>build</b>"}}
+  BU -->|green| RV["<b>review</b><br/>findings, and no verdict"]
+  RV --> PO{{"<b>proposed</b><br/>the only step that routes"}}
+  PO -->|pass| MG{{"<b>merge</b>"}}
+  MG -->|merged| EN["<b>end</b><br/>runs on every outcome"]
+
+  classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
+  classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
+  class PR,BU,PO,MG gate;
+  class CL,AD,DS,IM,RV,EN core;
+```
+
+**And what happens when a step does not pass.** Every one of them arrives at the
+same place, carrying its `reason`, and `proposed` has four answers:
+
 ```mermaid
 flowchart LR
-  CL["<b>claim</b>"]
-  AD["<b>admit</b><br/>the worktree"]
-  PR{{"<b>prepared</b><br/>install"}}
-  DS["<b>design</b><br/>a document, or none"]
-  IM["<b>implement</b><br/>one agent"]
-  BU{{"<b>build</b>"}}
-  RV["<b>review</b><br/>findings, no verdict"]
-  PO{{"<b>proposed</b><br/>the only step<br/>that routes"}}
-  MG{{"<b>merge</b>"}}
-  EN["<b>end</b><br/>every outcome"]
-  WA(["waiting on you"])
-
-  CL --> AD --> PR --> DS --> IM --> BU
-  BU -->|green| RV --> PO
-  PO -->|pass| MG -->|merged| EN
-
-  AD -.->|needs-input| PO
-  PR -.->|"install failed"| PO
-  DS -.->|needs-input| PO
-  IM -.->|needs-input| PO
-  BU -.->|red| PO
-  MG -.->|"base moved · conflict"| PO
-  MG -->|"conflict resolved"| BU
-
-  PO -.->|"the lines · × rounds"| IM
-  PO -.->|"the approach · × restarts"| CL
-  PO -.->|"every ceiling spent"| WA
-  WA -.-> CL
-  WA -.-> EN
+  X(["<b>a step that did not pass</b><br/>admit · prepared · design<br/>implement · build · review · merge"])
+  X -->|"carrying its reason"| PO{{"<b>proposed</b>"}}
+  PO -->|"the lines · the build · the base<br/>× rounds"| IM["<b>implement</b><br/>the same worktree"]
+  PO -->|"the approach<br/>× restarts — requeued"| CL["<b>claim</b>"]
+  PO -->|"a conflict an agent resolved"| BU["<b>build</b>"]
+  PO -->|"every ceiling spent · a question<br/>only you can answer"| WA(["<b>waiting on you</b>"])
+  WA -.->|"after you clarify"| CL
+  WA -.->|"you close it"| EN["<b>end</b>"]
 
   classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
   classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
   classDef back fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
-  class PR,BU,PO,MG gate;
-  class CL,AD,DS,IM,RV,EN core;
-  class WA back;
+  class PO gate;
+  class IM,CL,BU,EN core;
+  class X,WA back;
 ```
 
 **`merge` has three ways out and they are not degrees of the same thing.** The
@@ -273,11 +275,10 @@ invariant the drawing exists to make checkable, and the edge from `merge` back
 to `build` is what buys it: a conflict the agent resolved is code written after
 the review passed, so it goes round again.
 
-**A solid line is the way through; a dotted one is a step that did not simply
-pass.** Every dotted line but two ends at `proposed`, and the two that do not
-are `proposed`'s own: what it sends back. The labels are short because the
-reason is underneath — the shapes here, the merge's three exits below that, and
-§3c's table for what each `reason` buys.
+**It is two drawings because it is two facts**, and one picture of both was a
+picture of neither: six long edges converging on `proposed` from every rank of
+the spine bent the spine into a zigzag and left the order — the thing the first
+drawing exists to show — unreadable.
 
 **Three shapes, and the one they turn on is what a step costs when it does not
 simply pass:**
