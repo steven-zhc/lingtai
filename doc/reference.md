@@ -557,17 +557,33 @@ so the test reads neither. **A comment describing what the code does now takes
 the new name** — that rule is a reviewer's, not a test's.
 
 **The third is a boundary and not an oversight**, and the tests are the part of
-it worth arguing. They are a real residue rather than an empty set:
-`GATE_CARRYING` in `packages/domain/unit/upcast.test.ts` and `GateCheckPassed`
-in `apps/board/unit/run-recipe.test.tsx` are locals a rename of `src/` does not
-reach. They are out because a name that survives only in a test is one no
+it worth arguing — because what stands there is **larger than the table below**,
+and describing it as a straggler or two is how somebody ticks the epic's last
+box over work nobody did. The same rule run over
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1424 occurrences in
+78 files**, counted 2026-09-23, across 51 distinct tokens, of which the six
+largest are `gate` ×428, `gates` ×268, `point` ×168, `points` ×95, `GatePassed`
+×49 and `GateFailed` ×48. `GATE_CARRYING` in
+`packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
+`apps/board/unit/run-recipe.test.tsx` are two of those 1424 — locals a rename of
+`src/` does not reach, and the two a reader meets first, which is exactly why
+naming them and stopping reads as the whole of it. They are
+out because a name that survives only in a test is one no
 operator reads and no shipped code calls, and because a test names the thing it
 tests: `gate-matrix.test.ts` is the test of a matrix that is still called that,
 and it is renamed by the ticket that renames the matrix rather than ahead of it.
-**So `#233`'s acceptance is about `src/`**, and the test halves are one grep on
-the day the last row here goes. The scope is checked rather than described: the
-test asserts that what it reads is exactly `{apps,packages}/*/src/`, so it
-cannot widen or narrow without going red.
+**So `#233`'s acceptance is about `src/`**, and sweeping the halves is a ticket
+of its own — not a grep on the day the last row here goes.
+
+**`at most`, and the test holds that number to the halves.** They are outside
+the ledger on purpose, so pinning them exactly would red the `build` gate on
+every diff that adds a test to anything this epic renames. What may not happen
+is this sentence saying **less** than the halves carry, because it is what a
+reader sizes the sweep from — the understatement is the failure, and it is the
+direction that is checked, along with *larger than the table below*. The scope
+is checked rather than described too: the test asserts that what it reads for
+violations is exactly `{apps,packages}/*/src/`, so it cannot widen or narrow
+without going red.
 
 **The fourth is inside `src/`, and it was a hole before it was a boundary.**
 `apps/board/src/app/globals.css` sits in the region named above and says

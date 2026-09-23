@@ -172,8 +172,8 @@ function tokens(src: string, name: string): string[] {
  */
 const READS = /\.(tsx?|css)$/;
 
-/** Every file under `{apps,packages}/*<!---->/src/`, whatever the rule makes of it. */
-async function everything(): Promise<string[]> {
+/** Every file under `{apps,packages}/*<!---->/<dir>/`, whatever the rule makes of it. */
+async function under(dirs: readonly string[]): Promise<string[]> {
   const found: string[] = [];
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -185,15 +185,33 @@ async function everything(): Promise<string[]> {
   };
   for (const parent of ["apps", "packages"]) {
     for (const name of (await readdir(`${root}${parent}`)).sort()) {
-      await walk(`${root}${parent}/${name}/src`).catch(() => {});
+      for (const dir of dirs) await walk(`${root}${parent}/${name}/${dir}`).catch(() => {});
     }
   }
   return found.sort();
 }
 
+/** Every file under `{apps,packages}/*<!---->/src/`, whatever the rule makes of it. */
+async function everything(): Promise<string[]> {
+  return under(["src"]);
+}
+
 /** Those of them the rule reads, and nothing under `doc/`. */
 async function sources(): Promise<string[]> {
   return (await everything()).filter((file) => READS.test(file));
+}
+
+/**
+ * **The two test halves, which the rule stays out of and the document still has
+ * to size.** 0060 §1 divides the suite into `unit/` and `integration/`, with a
+ * `test/` beside them for the shared contract suites; none of the three is a
+ * place `#233` renames, and all three are full of the words it retires. They
+ * are read here only to count them, never to raise a violation — *reads
+ * doc/reference.md for the tables and {apps,packages}/<!---->*<!---->/src/ for
+ * the violations* is the case that keeps them out of the ledger.
+ */
+async function halves(): Promise<string[]> {
+  return (await under(["unit", "integration", "test"])).filter((file) => READS.test(file));
 }
 
 /** file → token → how many times the rule reads it there. */
@@ -255,6 +273,14 @@ function parse(doc: string) {
   // time: a number in prose, over a table that is going to shrink under it.
   const inEnglish = /\*\*(\d+) of those (\d+) occurrences are the English word/.exec(section);
   expect(inEnglish, "doc/reference.md does not say how much of the allowlist is ordinary English").not.toBeNull();
+  // And the size of what the rule is **not** reading, which is the sentence a
+  // reader sizes `#233`'s hand sweep from. `**at most …**` rather than the
+  // allowlist headline's bare `**<n> occurrences`, so the two never read each
+  // other's number — and `\s+` rather than a space, because this one is prose
+  // wrapped at 80 columns and the line break moves when a word either side of
+  // it does.
+  const outside = /\*\*at most (\d+)\s+occurrences\s+in\s+(\d+)\s+files\*\*,\s+counted /.exec(section);
+  expect(outside, "doc/reference.md does not say how much the two test halves still carry").not.toBeNull();
   return {
     /** What the section's own sentence claims the table below it comes to. */
     headline: { occurrences: Number(headline![1]), files: Number(headline![2]) },
@@ -266,6 +292,14 @@ function parse(doc: string) {
      * file the section says holds no copy of the debt.
      */
     englishHeadline: { english: Number(inEnglish![1]), of: Number(inEnglish![2]) },
+    /**
+     * *at most `1424` occurrences in `78` files* — what the two test halves
+     * still carry, which the rule never reads and the document therefore has to
+     * state. A **ceiling**, and the reason is in `understated` below: the
+     * halves are out of the ledger on purpose, and the failure this catches is
+     * the section calling them a straggler or two.
+     */
+    outside: { occurrences: Number(outside![1]), files: Number(outside![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
     /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
@@ -347,13 +381,13 @@ function size(allowlist: Counted) {
   };
 }
 
-/** What `src/` actually says today: file → token → how many times the rule reads it. */
-async function violations(g: ReturnType<typeof parse>): Promise<Counted> {
+/** What a list of files says: file → token → how many times the rule reads it. */
+async function count(files: readonly string[], g: ReturnType<typeof parse>): Promise<Counted> {
   const retired = new Set(g.retired);
   const glued = new Set(g.glued);
   const exempt = new Set(g.exempt.map(([token, file]) => `${file} · ${token}`));
   const found = new Map<string, Map<string, number>>();
-  for (const file of await sources()) {
+  for (const file of files) {
     const hit = new Map<string, number>();
     for (const token of tokens(await readFile(`${root}${file}`, "utf8"), file)) {
       if (exempt.has(`${file} · ${token}`)) continue;
@@ -362,6 +396,34 @@ async function violations(g: ReturnType<typeof parse>): Promise<Counted> {
     if (hit.size > 0) found.set(file, new Map([...hit].sort(([a], [b]) => (a < b ? -1 : 1))));
   }
   return found;
+}
+
+/** What `src/` actually says today, which is the only region a violation comes from. */
+async function violations(g: ReturnType<typeof parse>): Promise<Counted> {
+  return count(await sources(), g);
+}
+
+/**
+ * **The one direction the halves' number may not drift**, and it is not the
+ * allowlist's. The two test halves are outside the ledger on purpose, so an
+ * equality there would red the `build` gate on every diff that adds a test to
+ * anything this epic is renaming — a tax on tickets that did nothing wrong.
+ * What is checked instead is that the document does not say **less** than the
+ * halves carry: an understatement is what `#233` sizes its sweep from, and a
+ * section calling 1424 occurrences *two locals and a grep* is the whole of how
+ * the epic's last box gets ticked over work nobody did. Saying more than there
+ * is only over-warns, and is what a rename ticket leaves behind on its way to
+ * zero.
+ */
+function understated(said: { occurrences: number; files: number }, real: { occurrences: number; files: number }): string[] {
+  return [
+    ...(real.occurrences > said.occurrences
+      ? [`the section says the test halves carry at most ${said.occurrences} occurrences; they carry ${real.occurrences}`]
+      : []),
+    ...(real.files > said.files
+      ? [`the section says the test halves carry them in at most ${said.files} files; it is ${real.files}`]
+      : []),
+  ];
 }
 
 describe("the retired names in doc/reference.md", () => {
@@ -814,6 +876,11 @@ describe("the ledger", () => {
         "| `gate` | `step` | 0058 |",
         "| `point` | `step` | 0058 |",
         "",
+        // The size of what the rule does not read, which every section must
+        // state — a document that says nothing about the two test halves is a
+        // document `#233` sizes its sweep at nothing from.
+        "The two test halves carry **at most 1424 occurrences in 78 files**, counted 2026-09-23.",
+        "",
         "### the glued tokens",
         "",
         "| token | current | what it is |",
@@ -1041,6 +1108,27 @@ describe("the ledger", () => {
     expect(english(said("3 of those 10"))).toEqual(["the section says 3 of them are English, its own table comes to 2"]);
     expect(english(said("2 of those 9"))).toEqual(['the section says "of those 9", the allowlist comes to 10']);
   });
+
+  /**
+   * **And the number for what the rule does not read, which is a ceiling and
+   * only a ceiling.** The section under-sized the two test halves once already
+   * — *two locals and one grep*, over 1424 occurrences in 78 files — and that
+   * sentence is what `#233` costs its sweep from, so an understatement is the
+   * refusal. Saying more than there is passes: a rename ticket that empties a
+   * test half leaves this number high on its way down, and that only
+   * over-warns. The direction is the whole design, so it is a case rather than
+   * a comment.
+   */
+  it("reds a section that says the test halves carry less than they do, and not one that says more", () => {
+    const real = { occurrences: 1424, files: 78 };
+
+    expect(understated(written("10 occurrences in 1 files", [row(filter, four)]).outside, real)).toEqual([]);
+    expect(understated({ occurrences: 2000, files: 90 }, real), "a stale-high ceiling only over-warns").toEqual([]);
+    expect(understated({ occurrences: 2, files: 2 }, real), "two locals and a grep, which is what it said").toEqual([
+      "the section says the test halves carry at most 2 occurrences; they carry 1424",
+      "the section says the test halves carry them in at most 2 files; it is 78",
+    ]);
+  });
 });
 
 /**
@@ -1101,6 +1189,37 @@ describe("the allowlist", () => {
     const g = await glossary();
 
     expect(size(g.allowlist), "doc/reference.md's headline count is not the table underneath it").toEqual(g.headline);
+  });
+
+  /**
+   * **And the other number that sizes `#233` is the one for what this rule does
+   * not read.** The section said the test halves were `GATE_CARRYING` and
+   * `GateCheckPassed` and *one grep on the day the last row here goes*; the same
+   * rule run over `{apps,packages}/*<!---->/{unit,integration,test}/` reads 1424
+   * occurrences in 78 files, more than the ledger carries for `src/`. That
+   * understatement is how the epic's last box is ticked with a suite still full
+   * of the word: an empty allowlist, two identifiers deleted, and ~1400 left —
+   * `#58` again, rendered as resolved over work nobody did. So the halves are
+   * counted, and the sentence about them may not be smaller than they are.
+   *
+   * **A ceiling and not an equality**, which is the one place this differs from
+   * the table above: the halves are outside the ledger on purpose, so an
+   * equality would red the `build` gate on any ticket that adds a test to what
+   * it is renaming. `understated` is where that argument lives, and the
+   * direction is a case of its own.
+   */
+  it("says what the two test halves still carry, and may not say it is less", async () => {
+    const g = await glossary();
+    const found = size(await count(await halves(), g));
+
+    expect(understated(g.outside, found), "doc/reference.md under-sizes what a rename of src/ leaves standing").toEqual([]);
+    // And *larger than the table below*, which is the sentence's other claim —
+    // and the reason the box in `the-pipeline.md` cannot be ticked on a green
+    // allowlist. Both sides are counted here, neither is read off the prose.
+    expect(
+      found.occurrences,
+      "doc/reference.md says the test halves carry more than the allowlist does, and they no longer do",
+    ).toBeGreaterThan(size(g.allowlist).occurrences);
   });
 
   /**
