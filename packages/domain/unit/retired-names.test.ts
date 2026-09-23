@@ -18,10 +18,11 @@
  * hand-edit the one table whose edits are supposed to be expensive.
  *
  * **Reading a list from the document is not the same as letting the document
- * decide it.** The four words are pinned here and so are the two exemptions,
- * because either one makes a retired name green by writing a row and moves no
- * count while doing it: a word taken off the list stops being matched, and an
- * exemption skips the match outright, everywhere. What the document decides on
+ * decide it.** The four words are pinned here, and so are the two exemptions and
+ * the two glued tokens, because each of those rows makes a retired name green or
+ * red without moving a count while it does it: a word taken off the list stops
+ * being matched, an exemption skips the match outright, everywhere, and a glued
+ * row taken out takes its counts with it. What the document decides on
  * its own is the allowlist — the one table whose every row is checked against
  * `src/`, and whose size is checked against the sentence above it.
  *
@@ -52,6 +53,13 @@
  * anybody reaches for first — destroys all four. *does not reach inside a word*
  * below is the test that says so, and it is the reason the document holds a list
  * of words rather than a regex.
+ *
+ * **And two tokens are listed because that rule cannot see them.** `sgate` and
+ * `actpoint` are the retired concept behind a prefix — the board's class
+ * vocabulary, in its JSX and in its stylesheet — and `words("sgate")` is
+ * `["sgate"]`, on no list. They are matched by token, which is a door that only
+ * ever adds violations: *matches two tokens the words are glued into* pins the
+ * pair, and *does not reach inside a word* is what keeps `checkpoint` off it.
  *
  * Two of the four are also names the **rule** reads in quantity — on 2026-09-23,
  * `checkpoint` 9 times in 7 files and `checkpoints` 22 in 5 — and a case asserts
@@ -133,20 +141,46 @@ function scannable(src: string, name: string): string {
   return read.join("\n");
 }
 
+/**
+ * **A stylesheet's class selectors, and nothing under them.** A `.tsx` writing
+ * `className="point"` and a `globals.css` writing `.point` are one word in two
+ * files, and a rule that read only the first would let `#233` empty the ledger
+ * over a stylesheet that still says it — with the class now matching nothing,
+ * which is the two-vocabularies defect and a dead rule at once.
+ *
+ * A declaration is not read, for the reason a comment is not: `cursor: pointer`
+ * and `1080px` are a language nobody here renames, and what the board shares
+ * with its components is the selector. And a comment goes the way it goes in a
+ * `.ts`: 21 of `globals.css`'s 176 comment blocks say `gate` or `point` while
+ * explaining why a rule is there, and every one keeps the word it happened
+ * under.
+ */
+function classes(src: string): string[] {
+  return (src.replace(/\/\*[\s\S]*?\*\//g, " ").match(/\.[A-Za-z_-][A-Za-z0-9_-]*/g) ?? []).map((c) => c.slice(1));
+}
+
 /** Every identifier-shaped token the rule reads out of one file, in order. */
 function tokens(src: string, name: string): string[] {
+  if (name.endsWith(".css")) return classes(src);
   return scannable(src, name).match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? [];
 }
 
-/** Everything under `{apps,packages}/*<!---->/src/`, and nothing under `doc/`. */
-async function sources(): Promise<string[]> {
+/**
+ * The extensions the rule reads, which is **the boundary inside `src/`** and is
+ * stated in the document beside the other three. `.prisma` and the `.json` beside
+ * it are generated from a schema and renamed with it; nothing else is here.
+ */
+const READS = /\.(tsx?|css)$/;
+
+/** Every file under `{apps,packages}/*<!---->/src/`, whatever the rule makes of it. */
+async function everything(): Promise<string[]> {
   const found: string[] = [];
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (entry.name === "node_modules" || entry.name === ".next") continue;
       const path = `${dir}/${entry.name}`;
       if (entry.isDirectory()) await walk(path);
-      else if (/\.tsx?$/.test(entry.name)) found.push(path.slice(root.length));
+      else found.push(path.slice(root.length));
     }
   };
   for (const parent of ["apps", "packages"]) {
@@ -155,6 +189,11 @@ async function sources(): Promise<string[]> {
     }
   }
   return found.sort();
+}
+
+/** Those of them the rule reads, and nothing under `doc/`. */
+async function sources(): Promise<string[]> {
+  return (await everything()).filter((file) => READS.test(file));
 }
 
 /** file → token → how many times the rule reads it there. */
@@ -212,13 +251,33 @@ function parse(doc: string) {
   // the one number in the section that could once say anything at all.
   const headline = /\*\*(\d+) occurrences in (\d+) files, counted /.exec(section);
   expect(headline, "doc/reference.md's allowlist does not say how big it is").not.toBeNull();
+  // And the English table's own sentence, which is the same shape a second
+  // time: a number in prose, over a table that is going to shrink under it.
+  const inEnglish = /\*\*(\d+) of those (\d+) occurrences are the English word/.exec(section);
+  expect(inEnglish, "doc/reference.md does not say how much of the allowlist is ordinary English").not.toBeNull();
   return {
     /** What the section's own sentence claims the table below it comes to. */
     headline: { occurrences: Number(headline![1]), files: Number(headline![2]) },
+    /**
+     * *`9` of those `1079`* — the English table's headline, held to that table
+     * and to the allowlist's size. **It is the only place that nine is written
+     * down**: a test that kept its own copy would red the `build` gate on the
+     * diff that rewords one of those sentences, and send its author to edit a
+     * file the section says holds no copy of the debt.
+     */
+    englishHeadline: { english: Number(inEnglish![1]), of: Number(inEnglish![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
     /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
     named: glossaryRows.filter((r) => !/^[a-z]+$/.test(r[0]!)).map((r) => [r[0]!, r[1]!] as const),
+    /**
+     * Tokens that carry a retired word glued to a letter, where the whole-word
+     * match cannot see it — `words("sgate")` is `["sgate"]`, which is on no
+     * list. Matched **by token and everywhere**, which is the opposite door to
+     * the exemptions: a row here only ever adds violations, and every one of
+     * them costs a count in the allowlist.
+     */
+    glued: rows("the glued tokens").map((r) => r[0]!),
     /**
      * Tokens that carry one of the words and are not the retired concept, each
      * with **the one file it is excused in**. A bare token would excuse the
@@ -291,13 +350,14 @@ function size(allowlist: Counted) {
 /** What `src/` actually says today: file → token → how many times the rule reads it. */
 async function violations(g: ReturnType<typeof parse>): Promise<Counted> {
   const retired = new Set(g.retired);
+  const glued = new Set(g.glued);
   const exempt = new Set(g.exempt.map(([token, file]) => `${file} · ${token}`));
   const found = new Map<string, Map<string, number>>();
   for (const file of await sources()) {
     const hit = new Map<string, number>();
     for (const token of tokens(await readFile(`${root}${file}`, "utf8"), file)) {
       if (exempt.has(`${file} · ${token}`)) continue;
-      if (words(token).some((w) => retired.has(w))) hit.set(token, (hit.get(token) ?? 0) + 1);
+      if (glued.has(token) || words(token).some((w) => retired.has(w))) hit.set(token, (hit.get(token) ?? 0) + 1);
     }
     if (hit.size > 0) found.set(file, new Map([...hit].sort(([a], [b]) => (a < b ? -1 : 1))));
   }
@@ -311,6 +371,58 @@ describe("the retired names in doc/reference.md", () => {
     expect(g.retired).toEqual(["gate", "gates", "point", "points"]);
     expect(g.named.map(([old]) => old)).toEqual(["GatePoint", "GateAction"]);
     expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "Plugin" });
+  });
+
+  /**
+   * **The half a rule of whole words cannot see.** `words("sgate")` is
+   * `["sgate"]` — one word, and on no list — so the same match that saves
+   * `checkpoint` passes `className="sgate"` over with it, three times in the
+   * standing block and once more as `actpoint` on the task page, every one of
+   * them a string the board renders. The way out is not a substring ban, which
+   * takes `checkpoint`, `pointer` and `pointed` down with it; it is a short list
+   * of the tokens somebody actually looked at.
+   *
+   * **This door only opens inwards**, which is what makes it unlike the
+   * exemptions below: a row here can add a violation and can excuse none, so it
+   * costs its counts in the allowlist and raises the headline in the same diff.
+   * It is pinned here all the same, because taking a row *out* is the other
+   * direction — the counts it was holding up leave with it.
+   */
+  it("matches two tokens the words are glued into, and the pair is pinned here", async () => {
+    const g = await glossary();
+    const retired = new Set(g.retired);
+
+    expect(g.glued).toEqual(["sgate", "actpoint"]);
+    // A row is for what the words cannot reach and for nothing else: a token
+    // they already split needs none, and one carrying no retired word at all is
+    // a rename this glossary never decided.
+    for (const token of g.glued) {
+      expect(words(token), `${token} splits — the words above already reach inside it`).toEqual([token]);
+      expect(words(token).some((w) => retired.has(w)), `${token} is matched already, without a row`).toBe(false);
+      expect(g.retired.some((w) => token.includes(w)), `${token} carries none of the four words`).toBe(true);
+    }
+  });
+
+  /**
+   * **And the row is the whole of what counts them.** Emptying the list leaves
+   * the rule reading the same strings and walking past them — the state this
+   * ledger shipped in, where `sgate` sat in three JSX strings under a row that
+   * said `gate ×4` and in a stylesheet nothing read at all. Taken against the
+   * allowlist rather than against a number here, so the day one of these is
+   * renamed away its row goes and this asks for nothing.
+   */
+  it("counts a glued token where the words alone walk past it", async () => {
+    const g = await glossary();
+    const held = [...g.allowlist]
+      .flatMap(([file, ours]) =>
+        [...ours].filter(([token]) => g.glued.includes(token)).map(([token, n]) => `${file} · ${token} — src/ reads 0, the ledger says ${n}`),
+      )
+      .sort();
+
+    expect(
+      disagreement(await violations({ ...g, glued: [] }), g.allowlist),
+      "with the glued list emptied, the ledger loses exactly what those rows were holding up — and gains nothing",
+    ).toEqual({ unrecorded: [], stale: held });
   });
 
   /**
@@ -353,19 +465,25 @@ describe("the retired names in doc/reference.md", () => {
    * And the file column is the rule and not a note: `pointShim` is the English
    * verb **in `install.ts`**, and a `pointShim` somewhere else is a token
    * nobody reviewed.
+   *
+   * **Taken as the difference the row makes, not as the file's contents.**
+   * Pinning what `install.ts` comes to would be a copy of the ledger here, in
+   * the file that keeps none — and `install.ts` is the file the *ordinary
+   * English* table sends `#233` to reword, so it would red the `build` gate on
+   * the very diff that section describes, over a row three subsections away
+   * that nothing had asked anybody to look at.
    */
   it("excuses a token only in the file the document names", async () => {
     const g = await glossary();
-    const elsewhere = { ...g, exempt: g.exempt.filter(([, file]) => file !== "apps/cli/src/install.ts") };
+    const file = "apps/cli/src/install.ts";
+    const elsewhere = { ...g, exempt: g.exempt.filter(([, where]) => where !== file) };
+    const excused = (await violations(g)).get(file) ?? new Map<string, number>();
+    const read = (await violations(elsewhere)).get(file) ?? new Map<string, number>();
 
     expect(
-      Object.fromEntries((await violations(g)).get("apps/cli/src/install.ts")!),
-      "pointShim is excused in install.ts",
-    ).toEqual({ points: 3 });
-    expect(
-      Object.fromEntries((await violations(elsewhere)).get("apps/cli/src/install.ts")!),
-      "the same token, read in a file the document does not excuse it in",
-    ).toEqual({ pointShim: 3, points: 3 });
+      [...read.keys()].filter((token) => !excused.has(token)),
+      "lifting install.ts's exemption changed what is read of some token it does not name",
+    ).toEqual(["pointShim"]);
   });
 
   /**
@@ -405,6 +523,13 @@ describe("the retired names in doc/reference.md", () => {
         g.exempt.some(([excused]) => excused === token),
         `${token} needs no exemption — whole-word matching already leaves it alone`,
       ).toBe(false);
+      // And not on the glued list either, which is the door that *widens* the
+      // match: `sgate` belongs there because it is the gate; `checkpoint` is
+      // the same shape and is not ours, and one row would flag all 9 of it.
+      expect(
+        g.glued.includes(token),
+        `${token} is on the glued list — the widening door, opened on a word that was never ours`,
+      ).toBe(false);
     }
 
     // And live **to the rule**, not to a grep. Asserting a live subject against
@@ -443,16 +568,27 @@ describe("the retired names in doc/reference.md", () => {
   });
 
   /**
-   * **The scope, which the document states in three clauses and this checks in
-   * two.** Comments are the third and are handled by the scanner above, where
+   * **The scope, which the document states in four clauses and this checks in
+   * three.** Comments are the fourth and are handled by the scanner above, where
    * *reads no comment* is the case for them. `doc/` is read for the tables and
    * never for violations, which is the ticket's own line: a document describing
    * history keeps the name it happened under. And everything outside
    * `{apps,packages}/*<!---->/src/` is out — mostly **the two test halves**,
-   * which really do carry retired names a rename of `src/` will not reach. That
-   * last one is a boundary rather than an oversight, and what makes it one is
-   * that it is stated in the document, checked here, and cannot widen or narrow
-   * without this going red.
+   * which really do carry retired names a rename of `src/` will not reach.
+   *
+   * The third is **the extensions**, and it is the clause a stylesheet slipped
+   * through: `globals.css` sits inside the region the document calls enforced
+   * and says `.point`, `.points`, `.sgate` and `.actpoint` — the same words the
+   * `className`s beside it do. A rule that read the strings and not the
+   * selectors would let `#233` report `0 occurrences in 0 files` over a
+   * stylesheet still naming the retired concept, with the class now matching
+   * nothing in the TSX: two vocabularies and a dead rule, under a green gate. So
+   * `.css` is read, and `.prisma` and the `.json` beside it — generated, and
+   * renamed with the schema they come from — are named as being out.
+   *
+   * Every one of those is a boundary rather than an oversight, and what makes it
+   * one is that it is stated in the document, checked here, and cannot widen or
+   * narrow without this going red.
    */
   it("reads doc/reference.md for the tables and {apps,packages}/*/src/ for the violations, and nothing else", async () => {
     const files = await sources();
@@ -468,6 +604,17 @@ describe("the retired names in doc/reference.md", () => {
     // `integration/` and `test/` are the halves `#233` sweeps with a grep on
     // the day the last row goes, and they are out of this rule until then.
     expect(files.filter((f) => /\/(unit|integration|test)\//.test(f)), "a test was read").toEqual([]);
+    // And the extensions, both ways at once: a `.css` inside that region is
+    // read, because the board's class vocabulary is the same words its JSX is,
+    // and nothing else there is — `contract.prisma` and the `contract.json`
+    // beside it are generated from a schema and renamed with it. It is the
+    // extensions of what was really read, so widening `READS` over a file
+    // `src/` already holds is this line going red rather than rows appearing
+    // unannounced, and dropping one is the same line from the other side.
+    expect(
+      [...new Set(files.map((f) => f.slice(f.lastIndexOf("."))))].sort(),
+      "the rule read an extension the document does not name, or stopped reading one it does",
+    ).toEqual([".css", ".ts", ".tsx"]);
   });
 });
 
@@ -529,6 +676,30 @@ describe("the scanner", () => {
 
     expect(read).toContain("kept");
     expect(read.filter((t) => words(t).some((w) => ["gate", "gates", "point", "points"].includes(w)))).toEqual([]);
+  });
+
+  /**
+   * **And the other half of a class name.** `className="point"` is read from the
+   * `.tsx` as a string; `.point` is read from the stylesheet as a selector, and
+   * the two are renamed together or the rule is left matching nothing. A
+   * declaration is not read — `cursor: pointer` is a language nobody here
+   * renames — and neither is a length, which is where a naive `.` would find
+   * `.55rem` and a class called `55rem`.
+   */
+  it("reads a stylesheet's class selectors and nothing under them", () => {
+    const read = tokens(
+      [".point { padding: 0.3rem 0.55rem; cursor: pointer; grid-template-columns: 5.5rem 1fr; }", ".plan .points > .sgate { color: var(--ink-2); }", ""].join("\n"),
+      "globals.css",
+    );
+
+    expect(read).toEqual(["point", "plan", "points", "sgate"]);
+  });
+
+  /** And a stylesheet's comments go the way a `.ts`'s do, for the same reason. */
+  it("reads no comment in a stylesheet", () => {
+    const read = tokens(["/* A person's word standing in for a gate. Never `.points`. */", ".kept { color: var(--ink-2); }", ""].join("\n"), "globals.css");
+
+    expect(read).toEqual(["kept"]);
   });
 
   /** A regex literal's body is neither code a person renames nor copy one reads. */
@@ -597,8 +768,18 @@ describe("the scanner", () => {
  * described.
  */
 describe("the ledger", () => {
+  /**
+   * What the English sentence says when nothing has drifted: the table under it,
+   * and the allowlist it is a subset of. A case that wants drift states it.
+   */
+  const consistent = (rows: string[], english: string[]): string => {
+    const sum = (lines: string[], re: RegExp) =>
+      lines.flatMap((line) => [...line.matchAll(re)]).reduce((n, said) => n + Number(said[1]), 0);
+    return `${sum(english, /\|\s*(\d+) of \d+\s*\|/g)} of those ${sum(rows, /×\s*(\d+)/g)}`;
+  };
+
   /** A section with the headline and the rows a case wants, and nothing else. */
-  const written = (headline: string, rows: string[], english: string[] = []) =>
+  const written = (headline: string, rows: string[], english: string[] = [], says = consistent(rows, english)) =>
     parse(
       [
         "# Reference",
@@ -611,6 +792,11 @@ describe("the ledger", () => {
         "|---|---|---|",
         "| `gate` | `step` | 0058 |",
         "| `point` | `step` | 0058 |",
+        "",
+        "### the glued tokens",
+        "",
+        "| token | current | what it is |",
+        "|---|---|---|",
         "",
         "### not the retired name",
         "",
@@ -625,6 +811,8 @@ describe("the ledger", () => {
         ...rows,
         "",
         "### ordinary English",
+        "",
+        `**${says} occurrences are the English word and not the retired term**, and nothing tells them apart.`,
         "",
         ...(english.length > 0 ? ["| file | token | of which English | the sentence |", "|---|---|---|---|"] : []),
         ...english,
@@ -810,17 +998,53 @@ describe("the ledger", () => {
       "packages/conductor/src/close.ts · gates — the allowlist does not carry it",
     ]);
   });
+
+  /**
+   * **And that table has a headline too, which is the one number this test file
+   * must not keep a copy of.** *9 of those 1079* sits over a table `#233`
+   * shrinks: rewording the installer's three `points at` sentences deletes an
+   * English row, an allowlist row and lowers both sentences — four edits, every
+   * one of them in `doc/reference.md`. A `toBe(9)` here would be a fifth, in the
+   * file the section says holds no copy of the debt, and it would red the
+   * `build` gate on the diff that did the documented work correctly. So the nine
+   * is read from the document and held to the table under it, both ways.
+   */
+  it("reds an English sentence that is not the table under it, or not the ledger beside it", () => {
+    const table = [`| \`${filter}\` | \`point\` | 2 of 4 | *would point at* |`];
+    const said = (says?: string) => written("10 occurrences in 1 files", [row(filter, four)], table, says);
+
+    expect(said().englishHeadline, "the sentence, as a document that has not drifted says it").toEqual({
+      english: 2,
+      of: 10,
+    });
+    expect(english(said("3 of those 10"))).toEqual(["the section says 3 of them are English, its own table comes to 2"]);
+    expect(english(said("2 of those 9"))).toEqual(['the section says "of those 9", the allowlist comes to 10']);
+  });
 });
 
-/** Where the English table and the allowlist disagree, which must be nowhere. */
+/**
+ * Where the English table and the allowlist disagree, which must be nowhere —
+ * **and the sentence above that table is one of the rows**. *9 of those 1079*
+ * is a number over a table that shrinks, exactly as the allowlist's headline is,
+ * and it is counted here for the same reason: the day somebody rewords the three
+ * `points at` sentences in the installer, the row goes, the sentence is wrong,
+ * and the only edits either of them costs are in the document.
+ */
 function english(g: ReturnType<typeof parse>): string[] {
-  return g.english.flatMap((row) => {
-    const carried = g.allowlist.get(row.file)?.get(row.token);
-    if (carried === undefined) return [`${row.file} · ${row.token} — the allowlist does not carry it`];
-    if (row.of !== carried) return [`${row.file} · ${row.token} — says "of ${row.of}", the allowlist says ${carried}`];
-    if (row.english > carried) return [`${row.file} · ${row.token} — ${row.english} English of a count the ledger puts at ${carried}`];
-    return [];
-  });
+  const said = g.englishHeadline;
+  const table = g.english.reduce((n, row) => n + row.english, 0);
+  const ledger = size(g.allowlist).occurrences;
+  return [
+    ...g.english.flatMap((row) => {
+      const carried = g.allowlist.get(row.file)?.get(row.token);
+      if (carried === undefined) return [`${row.file} · ${row.token} — the allowlist does not carry it`];
+      if (row.of !== carried) return [`${row.file} · ${row.token} — says "of ${row.of}", the allowlist says ${carried}`];
+      if (row.english > carried) return [`${row.file} · ${row.token} — ${row.english} English of a count the ledger puts at ${carried}`];
+      return [];
+    }),
+    ...(said.english === table ? [] : [`the section says ${said.english} of them are English, its own table comes to ${table}`]),
+    ...(said.of === ledger ? [] : [`the section says "of those ${said.of}", the allowlist comes to ${ledger}`]),
+  ];
 }
 
 describe("the allowlist", () => {
@@ -844,7 +1068,7 @@ describe("the allowlist", () => {
 
   /**
    * **And the section's own headline is the other thing that may not drift.**
-   * `1064 occurrences in 76 files` is what `#233` sizes the remaining debt from,
+   * `1079 occurrences in 77 files` is what `#233` sizes the remaining debt from,
    * and it is what a rename ticket makes wrong by deleting rows: take the
    * `projector` and `event-store` rows away — eight of them — and nothing parsed
    * that sentence, so the equality above stayed green while the headline said
@@ -866,14 +1090,17 @@ describe("the allowlist", () => {
    * `0 occurrences in 0 files` costs nine reworded sentences on top of the
    * renames, and what this case does is stop the table saying it about a row the
    * ledger does not carry.
+   *
+   * **And the nine is the document's own word, not a copy kept here.** The
+   * section's *9 of those …* is held to the table under it and to the allowlist
+   * beside it, so rewording one of those sentences is the rows and the two
+   * numbers, all four edits in `doc/reference.md` — which is what that section
+   * says the ceremony is, and what a `toBe(9)` in this file would have made a
+   * lie of on the first ticket that did it.
    */
   it("names the English occurrences against rows the allowlist really carries", async () => {
     const g = await glossary();
 
     expect(english(g), "doc/reference.md's English table and its allowlist disagree").toEqual([]);
-    expect(
-      g.english.reduce((n, row) => n + row.english, 0),
-      "the English residue #233 inherits",
-    ).toBe(9);
   });
 });

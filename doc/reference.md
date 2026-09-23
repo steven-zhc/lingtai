@@ -522,9 +522,10 @@ reading the four rows above would get them wrong. Both are already caught by
 | `GatePoint` | `Step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3, landed as `#227` |
 | `GateAction` | `Plugin` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §2 — a step is a list of plugins, and the plugin is the key |
 
-**Where it is enforced:** every `.ts` and `.tsx` under `{apps,packages}/*/src/`
-— identifiers, types, event types, recipe keys, and the strings and JSX a person
-reads: the board's copy, a refusal's text, `lingtai`'s output. **A module
+**Where it is enforced:** every `.ts`, `.tsx` and `.css` under
+`{apps,packages}/*/src/` — identifiers, types, event types, recipe keys, a
+stylesheet's class selectors, and the strings and JSX a person reads: the
+board's copy, a refusal's text, `lingtai`'s output. **A module
 specifier is one of those strings**, and deliberately: eight files under `src/`
 carry a retired word in their own name — `gate.ts`, `agent-gate.ts`,
 `gate-audit.ts`, `gates-resolved.ts`, `end-point.ts` among them — each renamed
@@ -540,9 +541,10 @@ is lost by that — nothing reads it either ([0046](decisions/0046-lingtai-is-pe
 and a key the schema does not declare is refused by name before it reaches
 anything.
 
-**Where it is not**, and there are three of them: comments; everything under
-`doc/`; and everything outside `{apps,packages}/*/src/`, which is the two test
-halves, `scripts/`, `prompts/` and every config file.
+**Where it is not**, and there are four of them: comments; everything under
+`doc/`; everything outside `{apps,packages}/*/src/`, which is the two test
+halves, `scripts/`, `prompts/` and every config file; and, inside `src/`, every
+other extension and everything in a stylesheet that is not a selector.
 
 **The first two are the ticket's.** A comment or a document describing *history*
 keeps the name that history happened under —
@@ -566,6 +568,47 @@ and it is renamed by the ticket that renames the matrix rather than ahead of it.
 the day the last row here goes. The scope is checked rather than described: the
 test asserts that what it reads is exactly `{apps,packages}/*/src/`, so it
 cannot widen or narrow without going red.
+
+**The fourth is inside `src/`, and it was a hole before it was a boundary.**
+`apps/board/src/app/globals.css` sits in the region named above and says
+`.point`, `.points`, `.sgate` and `.actpoint` — the same words the `className`s
+beside it say — so a rule reading only `.ts` and `.tsx` would have let `#233`
+report `0 occurrences in 0 files` over a stylesheet still naming the retired
+concept, with every one of those classes by then matching nothing in the TSX.
+Two vocabularies and a rule matching nothing, under a green gate: 0058
+§Context's own defect, arriving through the door this ledger exists to shut. So
+a stylesheet's **class selectors** are read and counted like any other token.
+Its declarations are not — `cursor: pointer` and `1080px` are a language nobody
+here renames — and out with them goes every other extension under `src/`, which
+today is `packages/event-store/src/prisma/contract.prisma` and the
+`contract.json` beside it: generated from a schema, renamed with it, and saying
+`checkpoints` and nothing else of ours. The extensions the rule reads are
+asserted to be exactly those three, so widening or narrowing that is a red test
+too.
+
+### the glued tokens
+
+**A retired word glued to a letter is not a word, and the rule above cannot see
+it.** `words("sgate")` is `["sgate"]`, which is on no list, so the same
+whole-word match that leaves `checkpoint` alone leaves `className="sgate"` alone
+with it — three times in the board's standing block, once more as `actpoint` on
+the task page, and once each in the stylesheet that styles them. Both are the
+retired concept behind a prefix, and both are on a page an operator reads.
+
+| token | current | what it is |
+|---|---|---|
+| `sgate` | `sstep` | the standing block's line for what decided, and for what it refused verbatim |
+| `actpoint` | `actstep` | the point column of an action's row on the task page |
+
+**This door only opens inwards**, which is what makes it unlike the one below.
+A row here can add a violation and can excuse none: every occurrence it catches
+costs a count in the allowlist and raises the number above it, in the same diff.
+What a row may not do is name a token the four words already reach — that would
+be a second spelling of a rule that exists — or name one of `checkpoint`,
+`checkpoints`, `pointer` and `pointed`, which is the substring ban coming back
+in through the side. Both are cases in
+`packages/domain/unit/retired-names.test.ts`, and the pair is pinned there as
+the four words are.
 
 ### not the retired name
 
@@ -613,7 +656,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1064 occurrences in 76 files, counted 2026-09-23** — and that sentence is
+**1079 occurrences in 77 files, counted 2026-09-23** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -669,14 +712,15 @@ the equality above, and when none is left an empty table is the truth.
 |---|---|
 | `apps/board/src/app/backlog/page.tsx` | `gate` ×1 |
 | `apps/board/src/app/evidence.tsx` | `GateEvidence` ×3 · `gate` ×4 · `gates` ×3 |
+| `apps/board/src/app/globals.css` | `actpoint` ×1 · `point` ×7 · `points` ×2 · `sgate` ×1 |
 | `apps/board/src/app/page.tsx` | `gate` ×2 · `gatesApproved` ×2 · `gatesFailed` ×4 · `gatesPassed` ×2 · `gatesWaived` ×2 · `points` ×2 |
 | `apps/board/src/app/plan.tsx` | `point` ×4 · `points` ×2 |
 | `apps/board/src/app/rail.tsx` | `PointProgress` ×5 · `PointState` ×2 · `point` ×11 · `pointOf` ×2 · `points` ×9 |
 | `apps/board/src/app/recipe/[project]/page.tsx` | `point` ×1 |
 | `apps/board/src/app/setup/wizard/finish.ts` | `wholeGates` ×2 |
 | `apps/board/src/app/setup/wizard/wizard.tsx` | `gates` ×4 |
-| `apps/board/src/app/standing.tsx` | `gate` ×4 |
-| `apps/board/src/app/task/[id]/page.tsx` | `gate` ×2 · `gates` ×6 · `point` ×4 · `points` ×3 |
+| `apps/board/src/app/standing.tsx` | `gate` ×4 · `sgate` ×3 |
+| `apps/board/src/app/task/[id]/page.tsx` | `actpoint` ×1 · `gate` ×2 · `gates` ×6 · `point` ×4 · `points` ×3 |
 | `apps/board/src/lib/board.ts` | `GatePlan` ×4 · `gates` ×1 · `gatesApproved` ×4 · `gatesFailed` ×4 · `gatesPassed` ×4 · `gatesWaived` ×4 |
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `gateAt` ×12 · `points` ×6 |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `PointProgress` ×2 · `PointState` ×7 · `gate` ×4 · `point` ×12 · `pointOf` ×1 · `points` ×6 |
@@ -746,7 +790,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**Nine of those 1064 occurrences are the English word and not the retired
+**9 of those 1079 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
