@@ -19,7 +19,8 @@
 import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { applyPreset } from "./presets.ts";
-import { Recipe } from "./recipe.ts";
+import type { Plugin } from "./plugin.ts";
+import { PLUGINS, Recipe, discloseSteps } from "./recipe.ts";
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = ".lingtai/config.yaml";
@@ -134,8 +135,13 @@ const NOT_YET_IN_THE_HASH = ["claim", "design", "implement", "build", "review"] 
  * than empty — a missing one is *also* nothing configured there, and must be
  * left alone rather than read for a length it does not have.
  */
-function forHash(recipe: Recipe): Record<string, unknown> {
-  const gates: Record<string, unknown> = { ...recipe.gates };
+function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unknown> {
+  // **Every `no_log` field comes out here**, so the body on the event and the
+  // digest beside it are both of a document with no secret in it
+  // ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
+  // Above the strip below rather than under it, because the two answer
+  // different questions and only this one is about what may be written down.
+  const gates: Record<string, unknown> = { ...discloseSteps(recipe.gates, plugins) };
   for (const step of NOT_YET_IN_THE_HASH) {
     if ((gates[step] as readonly unknown[] | undefined)?.length === 0) delete gates[step];
   }
@@ -148,12 +154,20 @@ function forHash(recipe: Recipe): Record<string, unknown> {
  * one event is what lets a reader verify the body without trusting the writer —
  * `hashRecipe` of this is the `configHash` of the recipe it came from.
  */
-export function canonicalRecipe(recipe: Recipe): Record<string, unknown> {
-  return JSON.parse(canonical(forHash(recipe))) as Record<string, unknown>;
+export function canonicalRecipe(
+  recipe: Recipe,
+  plugins: readonly Plugin[] = PLUGINS,
+): Record<string, unknown> {
+  return JSON.parse(canonical(forHash(recipe, plugins))) as Record<string, unknown>;
 }
 
-export function hashRecipe(recipe: Recipe): string {
-  return createHash("sha256").update(canonical(forHash(recipe))).digest("hex");
+/**
+ * `plugins` is the closed set and a caller has no reason to pass another — it
+ * is there so `unit/plugin.test.ts` can prove the `no_log` strip over a plugin
+ * that declares a secret field, which none of the six does today.
+ */
+export function hashRecipe(recipe: Recipe, plugins: readonly Plugin[] = PLUGINS): string {
+  return createHash("sha256").update(canonical(forHash(recipe, plugins))).digest("hex");
 }
 
 /**

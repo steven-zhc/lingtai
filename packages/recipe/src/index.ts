@@ -1,3 +1,4 @@
+export * from "./plugin.ts";
 export * from "./recipe.ts";
 export * from "./emit.ts";
 export * from "./presets.ts";

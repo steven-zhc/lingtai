@@ -32,6 +32,7 @@ import {
   type ActionKind,
   type GateAction,
   GateMap,
+  PLUGINS,
   whyNoKindAt,
 } from "@lingtai/recipe";
 import {
@@ -51,7 +52,17 @@ const ACTION: Record<ActionKind, GateAction> = {
   close: { name: "close the ticket", close: true, when: "landed" },
   labels: { name: "label it", labels: ["shipped"], when: "any" },
 };
-const KINDS = Object.keys(ACTION) as ActionKind[];
+/**
+ * **The columns are the closed set's, in the closed set's order** (`#228`).
+ *
+ * Read off `PLUGINS` rather than off the object above, so the matrix, this
+ * file's every case and `doc/reference.md`'s table all widen together the day a
+ * seventh plugin lands — 0059 §5's *the document cannot drift from the code
+ * without a red test*, now that the code has one list of plugins to drift from.
+ * A plugin added with no row here has no `ACTION` either, and the case below
+ * says so by name rather than the matrix quietly walking six of seven.
+ */
+const KINDS = PLUGINS.map((plugin) => plugin.key);
 
 /**
  * What each gating point hands `gatesFromRecipe`, which is the other half of
@@ -120,6 +131,21 @@ function accepted(point: Step, kind: ActionKind): string | null {
 
 describe("every step × kind cell runs or refuses", () => {
   const cells = STEPS.flatMap((point) => KINDS.map((kind) => [point, kind] as const));
+
+  /**
+   * **The size of the matrix is the closed set's, and it is read rather than
+   * remembered.** A plugin added to `PLUGINS` with no action above walks in as
+   * a column with nothing to try, and every cell of it would pass by being
+   * `undefined` — which is the silent half `#61` is about, arriving through the
+   * test rather than through the schema.
+   */
+  it("has one column per plugin and one action for each", () => {
+    expect(Object.keys(ACTION)).toEqual([...KINDS]);
+    expect(cells).toHaveLength(STEPS.length * PLUGINS.length);
+    for (const kind of KINDS) {
+      expect(ACTION[kind], `no action for the "${kind}" plugin`).toBeDefined();
+    }
+  });
 
   it.each(cells)("%s × %s", (point, kind) => {
     const refusal = accepted(point, kind);

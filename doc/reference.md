@@ -561,12 +561,12 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 1424 occurrences in
-78 files**, counted 2026-09-23, across 51 distinct tokens, of which the six
-largest are `gate` ×428, `gates` ×268, `point` ×168, `points` ×95, `GatePassed`
-×49 and `GateFailed` ×48. `GATE_CARRYING` in
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1436 occurrences in
+79 files**, counted 2026-09-23, across 51 distinct tokens, of which the six
+largest are `gate` ×426, `gates` ×272, `point` ×167, `points` ×95, `GatePassed`
+×48 and `GateFailed` ×46. `GATE_CARRYING` in
 `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-`apps/board/unit/run-recipe.test.tsx` are two of those 1424 — locals a rename of
+`apps/board/unit/run-recipe.test.tsx` are two of those 1436 — locals a rename of
 `src/` does not reach, and the two a reader meets first, which is exactly why
 naming them and stopping reads as the whole of it. They are
 out because a name that survives only in a test is one no
@@ -677,7 +677,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1079 occurrences in 77 files, counted 2026-09-23** — and that sentence is
+**1080 occurrences in 77 files, counted 2026-09-23** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -746,7 +746,7 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `gateAt` ×12 · `points` ×6 |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `PointProgress` ×2 · `PointState` ×7 · `gate` ×4 · `point` ×12 · `pointOf` ×1 · `points` ×6 |
 | `apps/board/src/lib/queued.ts` | `GatePlan` ×2 · `PlannedPoint` ×2 · `point` ×4 · `points` ×2 |
-| `apps/board/src/lib/recipe.ts` | `GateAction` ×8 · `GatesResolved` ×1 · `gates` ×2 · `point` ×3 · `points` ×1 |
+| `apps/board/src/lib/recipe.ts` | `GateAction` ×8 · `GatesResolved` ×1 · `gates` ×4 · `point` ×3 · `points` ×1 |
 | `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateVerdict` ×4 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×12 · `gates` ×11 |
 | `apps/cli/src/backlog.ts` | `gate` ×1 |
 | `apps/cli/src/conduct.ts` | `gate` ×1 |
@@ -804,14 +804,14 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/recipe/src/local.ts` | `gates` ×8 · `gatesRefusal` ×3 · `point` ×2 |
 | `packages/recipe/src/presets.ts` | `gates` ×6 |
 | `packages/recipe/src/propose.ts` | `gates` ×1 |
-| `packages/recipe/src/recipe.ts` | `GateAction` ×5 · `GateMap` ×4 · `GatesResolved` ×1 · `gates` ×1 · `point` ×18 |
+| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GateMap` ×4 · `GatesResolved` ×1 · `gates` ×1 · `point` ×15 |
 | `packages/recipe/src/resolve.ts` | `gates` ×5 |
 | `packages/recipe/src/watch.ts` | `gate` ×9 |
 | `packages/repo/src/integrate.ts` | `gate` ×3 · `gateDetail` ×2 · `gatesPassed` ×2 |
 
 ### ordinary English
 
-**9 of those 1079 occurrences are the English word and not the retired
+**9 of those 1080 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
@@ -841,8 +841,32 @@ count no larger than the allowlist's.
 
 ## gate action — 6 keys, of which 4 produce a verdict
 
-What runs at a point. Source: `GateAction` and `kindOfAction` in
-`packages/recipe/src/recipe.ts`.
+What runs at a point. Source: `PLUGINS` and `kindOfAction` in
+`packages/recipe/src/recipe.ts`, each of the six declared with `definePlugin`
+from `plugin.ts`.
+
+**Each one owns its schema and validates its own fields**
+([0061](decisions/0061-the-recipe-is-the-pipeline.md) §9). There is no registry
+of fields anywhere: what `agent:` accepts is a question only `agent:` answers,
+and the answer is the declaration. So §8's rule has two halves now, and they
+share a sentence — *a step refuses a plugin it cannot run, and a plugin refuses
+a field it does not understand* — both when the recipe resolves, before a
+worktree, before an agent, before any money. `env:` is the case that makes it
+worth having: it is a field of `run:` because `run:` is the one that spawns a
+process (0037 §1), and a recipe that writes one under `agent:` is told which
+plugin, which field and what that plugin does declare, rather than having it
+accepted and dropped. **Every problem comes back in one answer** — a resolve
+that stopped at the first bad field would make a person fix one thing per
+attempt, which is [#222](https://github.com/steven-zhc/lingtai/issues/222)'s
+lesson about the build step applied to configuration.
+
+A field may be marked `no_log`, and **none of the six is today**: every field
+they have is a name, a command, a prompt or a glob, and 0021 keeps values out of
+the file in the first place. The mechanism is there so the first plugin that
+needs one gets it from its declaration rather than from a convention — `disclose`
+strips it before an action reaches the log's body, the hash over it, or the
+board's reading. What it cannot reach is the recipe file's own bytes, which the
+task page renders verbatim, and the plugin's own output.
 
 | Key | Verdict comes from | Needs |
 |---|---|---|
@@ -896,6 +920,12 @@ table is checked against that constant, cell for cell, by
 `packages/conductor/unit/gate-matrix.test.ts` — the copy in `#61`'s own body
 was wrong about `merge` within three weeks of being written, so a copy nothing
 checks is not worth having.
+
+**And the columns are `PLUGINS`, read rather than kept** (`#228`). The test
+walks the closed set rather than a list of its own, so the day a seventh plugin
+lands it has no action to try, no row here and no cell in `KINDS_AT` — and all
+three say so at once. That is 0059 §5's rule surviving the growth 0061 §3
+describes: the set is twelve and this table carries the six that exist.
 
 ✅ runs · ✋ refused when the recipe resolves, by name
 
@@ -967,8 +997,9 @@ that builds actions in code rather than reading a recipe.
 `run:` is the single extension point
 ([0037](decisions/0037-an-extension-is-a-command.md) §2), its code is not
 trusted (§1), and `env:` beside it is **every credential its process gets**.
-Source: `ExtensionEnv` in `packages/recipe/src/recipe.ts` and `extensionEnv` in
-`packages/agent-env/src/index.ts`.
+Source: `ExtensionEnvNames` in `packages/recipe/src/recipe.ts` — a field of the
+`run:` plugin's schema and of `Subscriber`'s, and of nothing else — and
+`extensionEnv` in `packages/agent-env/src/index.ts`.
 
 ```yaml
 subscribers:
@@ -978,7 +1009,7 @@ subscribers:
     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 ```
 
-Four rules, and the first is the one that matters:
+Five rules, and the first is the one that matters:
 
 - **Absent means nothing, not everything.** An extension that declares nothing
   gets `runnableEnv`'s six — `PATH` · `HOME` · `TMPDIR` · `LANG` · `USER` ·
@@ -989,6 +1020,10 @@ Four rules, and the first is the one that matters:
   `~/.lingtai/env/<project>.env` over the machine's own file, merged before the
   recipe's `allow`/`deny` — those decide what reaches *the agent*, which is a
   different consumer.
+- **A plugin that spawns nothing has no `env:` at all**, and a recipe that
+  writes one under `agent:`, `watch:`, `human:`, `close:` or `labels:` is
+  refused by name (0061 §9). The field belongs to the plugin, which is what
+  makes that refusal possible rather than a silent drop.
 - **`LINGTAI_*` cannot be declared**, and the refusal names the variable and the
   field. A prefix rather than a list, for `#63`'s reason and 0021's: `RESERVED`
   was deleted because a denylist is a thing to keep up to date. It costs a

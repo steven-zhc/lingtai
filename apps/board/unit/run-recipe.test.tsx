@@ -12,9 +12,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { resolveRecipe } from "@lingtai/recipe";
+import { Recipe, resolveRecipe, type PluginSecrets } from "@lingtai/recipe";
 import { foldRun, type Claim, type RunView } from "../src/lib/task.ts";
-import { forgetRunRecipes, recipeOfRun } from "../src/lib/recipe.ts";
+import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from "../src/lib/recipe.ts";
 import { Attempt, RECORD_ROWS } from "../src/app/task/[id]/page.tsx";
 
 const RECIPE = `
@@ -411,5 +411,66 @@ describe("the recipe an attempt was given", () => {
     expect(html).toContain("not a value this page can name");
     expect(html).not.toContain("0 value");
     expect(html).not.toContain('<ul class="rchanges"></ul>');
+  });
+});
+
+/**
+ * **A `no_log` field never reaches the page** (`#228`,
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
+ *
+ * The walk below is the one reading on this page that renders an action's field
+ * values whatever they are — everything else asks for a field by name — so it
+ * is where a secret would arrive if the strip were a convention rather than a
+ * declaration. Nothing in the closed set declares one today, which is why the
+ * plugin here is the test's own: a guard asserted over an empty set asserts
+ * nothing.
+ *
+ * What it cannot cover is the disclosure below the reading, which is the recipe
+ * file's own bytes: a value *written in the file* is on the screen whatever a
+ * schema says, and the rule that keeps it out is 0021's — the file holds names
+ * and the values resolve from somewhere the agent cannot see.
+ */
+describe("what the page may render of an action", () => {
+  /**
+   * `PluginSecrets` and not a whole plugin: the strip reads a key and a list of
+   * `no_log` fields, so that is what it asks for, and this file needs no schema
+   * — nor zod, which the board does not depend on — to drive it.
+   * `packages/recipe/unit/plugin.test.ts` is where those two are proved to come
+   * off a schema's own declaration rather than off a list somebody keeps.
+   */
+  const spendPlugin: PluginSecrets = { key: "spend", secrets: ["spend"] };
+  const base = Recipe.parse({
+    version: 1,
+    repo: { base: "main" },
+    source: { kinds: ["bug"] },
+    env: { plantAt: ".env.local" },
+    runtime: {},
+  });
+  const paying = (key: string) =>
+    ({
+      ...base,
+      gates: { ...base.gates, proposed: [{ name: "pay", spend: key }] },
+    }) as unknown as Recipe;
+
+  it("walks the two recipes with every secret field already gone", () => {
+    const changed = changesFromHead(paying("sk-live-0000"), paying("sk-live-1111"), [spendPlugin]);
+
+    expect(JSON.stringify(changed)).not.toContain("sk-live");
+  });
+
+  it("says what an action does with its secret field gone", () => {
+    const said = describeAction({ name: "pay", spend: "sk-live-0000" } as never, [spendPlugin]);
+
+    expect(JSON.stringify(said)).not.toContain("sk-live");
+  });
+
+  /** And a recipe with nothing to strip reads exactly as it read before. */
+  it("names what differs in a recipe no plugin marks", () => {
+    const mine = base;
+    const head = { ...base, source: { ...base.source, backoff: "2h" } };
+
+    expect(changesFromHead(mine, head)).toEqual([
+      { path: "source.backoff", run: "1h", head: "2h" },
+    ]);
   });
 });

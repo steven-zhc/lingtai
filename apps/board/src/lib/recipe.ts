@@ -24,13 +24,17 @@ import {
   PROVENANCE_ARROW,
   RecipeInvalidError,
   RecipeMissingError,
+  disclose,
+  discloseSteps,
   kindOfAction,
   machinePath,
   parseDuration,
   provenanceSource,
   recipePath,
   resolveRecipe,
+  PLUGINS,
   type GateAction,
+  type PluginSecrets,
   type Recipe,
 } from "@lingtai/recipe";
 
@@ -176,12 +180,25 @@ function flatten(value: unknown, at: string, into: Map<string, string>): void {
   into.set(at, say(value));
 }
 
-/** Every path the two recipes disagree on, in the recipe's own order of keys. */
-export function changesFromHead(mine: Recipe, head: Recipe): Change[] {
+/**
+ * Every path the two recipes disagree on, in the recipe's own order of keys.
+ *
+ * **The one place an action's field values are rendered whatever they are**,
+ * which is why the walk is over `discloseSteps` and not over the recipe: every
+ * other reading on this page asks for a field by name. A field a plugin marked
+ * `no_log` is gone before `flatten` sees it (0061 §9), and a recipe with none —
+ * which is every recipe today — walks exactly what it walked before.
+ */
+export function changesFromHead(
+  mine: Recipe,
+  head: Recipe,
+  plugins?: readonly PluginSecrets[],
+): Change[] {
   const a = new Map<string, string>();
   const b = new Map<string, string>();
-  flatten(mine, "", a);
-  flatten(head, "", b);
+  const shown = (recipe: Recipe) => ({ ...recipe, gates: discloseSteps(recipe.gates, plugins) });
+  flatten(shown(mine), "", a);
+  flatten(shown(head), "", b);
   return [...new Set([...a.keys(), ...b.keys()])]
     .sort()
     .filter((path) => a.get(path) !== b.get(path))
@@ -453,7 +470,14 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
  * Only a command carries a clock of its own (`gatePlan` reads the same
  * `timeout`), so every other kind says what holds it instead of inventing one.
  */
-export function describeAction(action: GateAction): { does: string; bound: string } {
+export function describeAction(
+  action: GateAction,
+  plugins: readonly PluginSecrets[] = PLUGINS,
+): { does: string; bound: string } {
+  // Every `no_log` field gone before a word of this is written (0061 §9). It
+  // reads named fields, so today it could not print one by accident — the point
+  // is that it does not have to be relied on not to.
+  action = disclose(action, plugins);
   switch (kindOfAction(action)) {
     case "run": {
       const a = action as Extract<GateAction, { run: string }>;

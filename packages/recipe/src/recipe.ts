@@ -18,6 +18,15 @@
 import { z } from "zod";
 import { Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
+import {
+  type Plugin,
+  type PluginSecrets,
+  definePlugin,
+  disclose,
+  pluginNaming,
+  pluginsNamed,
+  readFields,
+} from "./plugin.ts";
 import { parseDuration } from "./duration.ts";
 
 /**
@@ -74,87 +83,141 @@ export const ExtensionEnvNames = z
     }
   });
 
+/** The outcomes `end` fires on, which is what the two effects filter by. */
+const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
+
 /**
- * One thing that runs at a gate.
+ * A command. Its exit code is the verdict, and `env` is every credential it
+ * gets — see `ExtensionEnvNames`. This is the extension point (0037 §2), which
+ * is why it is the only one of the six declaring an `env` field at all:
+ * `agent`, `watch` and `human` are the core's own and run in the core's own
+ * process, so a recipe writing `env:` under one of them is refused by name
+ * (0061 §9) rather than having it accepted and ignored.
+ */
+export const runPlugin = definePlugin("run", {
+  run: z.string(),
+  timeout: z.string().default("15m"),
+  env: ExtensionEnvNames,
+});
+
+/** A cold reviewer, given the diff and this prompt. */
+export const agentPlugin = definePlugin("agent", { agent: z.string() });
+
+/** Globs against the diff's file list; a match holds or fails. */
+export const watchPlugin = definePlugin("watch", {
+  watch: z.array(z.string()).min(1),
+  then: z.enum(["request-approval", "fail"]).default("request-approval"),
+});
+
+/** Waits for a person. The string is the question they are asked. */
+export const humanPlugin = definePlugin("human", { human: z.string() });
+
+/**
+ * Closes the issue. Only meaningful at `end`, which is the one point that
+ * cannot refuse — these run for effect.
  *
- * The shape is GitHub Actions' — an optional `name`, exactly one key saying
- * *what kind of thing this is*, and that kind's parameters beside it. Copied
- * rather than invented because [ADR 0005](../../../doc/decisions/0005-config-in-target-repo.md)
+ * `when` filters on the outcome, because `end` fires on *every* terminal
+ * state. "Close it when it lands, label it when it is blocked" is then one
+ * configuration rather than two mechanisms.
+ *
+ * `closed` is the fourth, and `any` includes it (0044): a ticket a person
+ * ended is a ticket whose issue this action is the right way to close. It is
+ * also the pairing that removes a manual step — `lingtai close` used to
+ * append a terminal and leave the GitHub issue open, so somebody still had
+ * to run `gh issue close` by hand afterwards.
+ */
+export const closePlugin = definePlugin("close", {
+  close: z.literal(true),
+  when: WHEN.default("landed"),
+});
+
+/** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
+export const labelsPlugin = definePlugin("labels", {
+  labels: z.array(z.string()),
+  when: WHEN.default("any"),
+});
+
+/**
+ * **The closed set**, and the only list of plugins anywhere.
+ *
+ * It lists the plugins and not their fields: each of the six above declares
+ * what it accepts, and this array is what the resolve walks to find out *which*
+ * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
+ * settled that there is no plugin system and an extension is a command — so a
+ * key is a bare word and a word that is not one of these is refused.
+ *
+ * `as const`, so `ActionKind` and `GateAction` are read off it rather than
+ * written down a second time.
+ */
+export const PLUGINS = [
+  runPlugin,
+  agentPlugin,
+  watchPlugin,
+  humanPlugin,
+  closePlugin,
+  labelsPlugin,
+] as const;
+
+/**
+ * One thing that runs at a step.
+ *
+ * The shape is GitHub Actions' — a `name`, exactly one key saying *which plugin
+ * this is*, and that plugin's fields beside it. Copied rather than invented
+ * because [ADR 0005](../../../doc/decisions/0005-config-in-target-repo.md)
  * already frames a recipe as a workflow file, and a second dialect for the same
  * idea is a second thing to learn for no gain.
  *
  * A union rather than a discriminated union: the discriminator is *which key is
- * present*, which zod cannot switch on. The cost is a worse error message on a
- * malformed action; the alternative was a `uses:` field on every entry,
- * including the ones where it says nothing.
+ * present*, which zod cannot switch on. **What that used to cost is gone**: a
+ * malformed action gave the union's own unreadable error, because zod had tried
+ * six schemas and could not say which one the writer meant. `actionsAt` asks
+ * which key is present first and the plugin that owns it second, so the refusal
+ * is that plugin's and names the field. This union is now only what gives the
+ * six a single type.
  */
 export const GateAction = z.union([
-  /**
-   * A command. Its exit code is the verdict, and `env` is every credential it
-   * gets — see `ExtensionEnvNames`. This is the extension point (0037 §2),
-   * which is why it is the only kind carrying one: `agent`, `watch` and `human`
-   * are the core's own and run in the core's own process.
-   */
-  z.object({
-    name: z.string(),
-    run: z.string(),
-    timeout: z.string().default("15m"),
-    env: ExtensionEnvNames,
-  }),
-  /** A cold reviewer, given the diff and this prompt. */
-  z.object({
-    name: z.string(),
-    agent: z.string(),
-  }),
-  /** Globs against the diff's file list; a match holds or fails. */
-  z.object({
-    name: z.string(),
-    watch: z.array(z.string()).min(1),
-    then: z.enum(["request-approval", "fail"]).default("request-approval"),
-  }),
-  /** Waits for a person. The string is the question they are asked. */
-  z.object({
-    name: z.string(),
-    human: z.string(),
-  }),
-  /**
-   * Closes the issue. Only meaningful at `end`, which is the one point that
-   * cannot refuse — these run for effect.
-   *
-   * `when` filters on the outcome, because `end` fires on *every* terminal
-   * state. "Close it when it lands, label it when it is blocked" is then one
-   * configuration rather than two mechanisms.
-   *
-   * `closed` is the fourth, and `any` includes it (0044): a ticket a person
-   * ended is a ticket whose issue this action is the right way to close. It is
-   * also the pairing that removes a manual step — `lingtai close` used to
-   * append a terminal and leave the GitHub issue open, so somebody still had
-   * to run `gh issue close` by hand afterwards.
-   */
-  z.object({
-    name: z.string(),
-    close: z.literal(true),
-    when: z.enum(["landed", "blocked", "failed", "closed", "any"]).default("landed"),
-  }),
-  /** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
-  z.object({
-    name: z.string(),
-    labels: z.array(z.string()),
-    when: z.enum(["landed", "blocked", "failed", "closed", "any"]).default("any"),
-  }),
+  runPlugin.schema,
+  agentPlugin.schema,
+  watchPlugin.schema,
+  humanPlugin.schema,
+  closePlugin.schema,
+  labelsPlugin.schema,
 ]);
 export type GateAction = z.infer<typeof GateAction>;
 
 /** The action's kind, for an event and for dispatch. Exactly one key decides it. */
-export type ActionKind = "run" | "agent" | "watch" | "human" | "close" | "labels";
+export type ActionKind = (typeof PLUGINS)[number]["key"];
+
+/** The plugin an action names, against the closed set. */
+export function pluginOf(action: unknown, plugins: readonly Plugin[] = PLUGINS): Plugin | null {
+  return pluginNaming(action, plugins);
+}
 
 export function kindOfAction(action: GateAction): ActionKind {
-  if ("run" in action) return "run";
-  if ("agent" in action) return "agent";
-  if ("watch" in action) return "watch";
-  if ("close" in action) return "close";
-  if ("labels" in action) return "labels";
+  // The loop rather than `pluginOf`, which answers `null` for an action naming
+  // two plugins: a resolved recipe can hold no such thing, and this is read on
+  // the board's path where the first key is a better answer than none.
+  for (const plugin of PLUGINS) if (plugin.key in action) return plugin.key;
   return "human";
+}
+
+/**
+ * The resolved steps as anything outside a plugin may see them — every field a
+ * plugin marked `noLog` gone (0061 §9).
+ *
+ * One function for the log, the board and a refusal, so all three learn a
+ * secret field from the one declaration. It answers the object it was given
+ * where there is nothing to strip, which is every recipe today.
+ */
+export function discloseSteps<Steps extends Readonly<Record<string, readonly GateAction[]>>>(
+  steps: Steps,
+  plugins: readonly PluginSecrets[] = PLUGINS,
+): Steps {
+  const shown: Record<string, unknown> = {};
+  for (const [step, actions] of Object.entries(steps)) {
+    shown[step] = actions.map((action) => disclose(action, plugins));
+  }
+  return shown as Steps;
 }
 
 /**
@@ -277,42 +340,102 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
   );
 }
 
-/** The refusal, in the one wording the schema and `gatesFromRecipe` both use. */
+/**
+ * The refusal, in the one wording the schema and `gatesFromRecipe` both use.
+ *
+ * **`tail` is the rest of the sentence, and it has a default rather than a
+ * second function** (0061 §9). §8's rule grew one clause — *a step refuses a
+ * plugin it cannot run, and a plugin refuses a field it does not understand* —
+ * and the two halves of it have to read as one rule: the same opening names the
+ * action, its kind and the step either way, and only what follows differs.
+ */
 export function kindRefusedAt(
   point: Step,
   kind: ActionKind,
   action: string,
   why: string,
+  tail = "Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start.",
 ): string {
-  return (
-    `the "${action}" action is a "${kind}" at the "${point}" point, and ${why}. ` +
-    "Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start."
-  );
+  return `the "${action}" action is a "${kind}" at the "${point}" point, and ${why}. ${tail}`;
+}
+
+/** What a plugin's own refusal of a field says after the sentence above. */
+const REFUSED_WHEN_IT_RESOLVED =
+  "Refused when the recipe resolves, before a worktree, before an agent, before any money.";
+
+/** What an action naming no plugin, or two, is told — and what the legal names are. */
+function pluginRefusedAt(step: Step, action: unknown, named: readonly Plugin[]): string {
+  const called = nameOf(action);
+  const legal = PLUGINS.map((plugin) => `"${plugin.key}"`).join(", ");
+  return named.length === 0
+    ? `the "${called}" action at the "${step}" step names no plugin — an action carries exactly one of ` +
+        `${legal}, and that key is what it is. Refusing rather than accepting it: an action that is ` +
+        "silently absent is worse than a run that will not start."
+    : `the "${called}" action at the "${step}" step names ${named.length} plugins — ` +
+        `${named.map((plugin) => `"${plugin.key}"`).join(" and ")} — and an action carries exactly one. ` +
+        "Which of them was meant is not Lingtai's to guess.";
+}
+
+/** What a refusal calls an action whose `name` may itself be what is wrong. */
+function nameOf(action: unknown): string {
+  const written = (action as { name?: unknown } | null)?.name;
+  return typeof written === "string" ? written : "(unnamed)";
 }
 
 /**
- * One step's actions, refusing any kind that step does not run.
+ * One step's actions: the plugin each one names, checked by that plugin, and
+ * **every** problem in one answer.
  *
  * The refusal is here rather than in the conductor because this is the file a
  * recipe is read by, and a step that cannot run the action should say so when
  * the recipe resolves — before a ticket is claimed, a worktree cut, or an
  * install paid for. `lingtai doctor`, `lingtai add` and every pass resolve the
  * recipe, so all three name it.
+ *
+ * **Three questions in order, and each one is somebody's.** *Which plugin is
+ * this* is the shape's, *may this step run it* is the step's (`whyNoKindAt`),
+ * and *are these its fields* is the plugin's (`readFields`). They stop at the
+ * first that answers, because a field's wording is moot under an action the
+ * step will not run at all — but an action that stops does not stop the ones
+ * after it, and a step that stops does not stop the other nine. A resolve that
+ * halted at the first bad field would make a person fix one thing per attempt,
+ * which is `#222`'s lesson about the build step applied to configuration.
+ *
+ * `z.unknown()` rather than the union, so the dispatch is the key's and not
+ * zod's: a union tries six schemas and reports six failures about one action.
  */
-function actionsAt(point: Step) {
+function actionsAt(step: Step) {
   return z
-    .array(GateAction)
-    .superRefine((actions, ctx) => {
-      actions.forEach((action, i) => {
-        const kind = kindOfAction(action);
-        const why = whyNoKindAt(point, kind);
-        if (why === null) return;
-        ctx.addIssue({
-          code: "custom",
-          path: [i],
-          message: kindRefusedAt(point, kind, action.name, why),
-        });
+    .array(z.unknown())
+    .transform((written, ctx) => {
+      const resolved: GateAction[] = [];
+      written.forEach((action, i) => {
+        const named = pluginsNamed(action, PLUGINS);
+        const plugin = pluginNaming(action, PLUGINS);
+        if (plugin === null) {
+          ctx.addIssue({ code: "custom", path: [i], message: pluginRefusedAt(step, action, named) });
+          return;
+        }
+        const kind = plugin.key as ActionKind;
+        const why = whyNoKindAt(step, kind);
+        if (why !== null) {
+          ctx.addIssue({ code: "custom", path: [i], message: kindRefusedAt(step, kind, nameOf(action), why) });
+          return;
+        }
+        const read = readFields(plugin, action);
+        if (read.problems !== undefined) {
+          for (const problem of read.problems) {
+            ctx.addIssue({
+              code: "custom",
+              path: [i, ...problem.at],
+              message: kindRefusedAt(step, kind, nameOf(action), problem.why, REFUSED_WHEN_IT_RESOLVED),
+            });
+          }
+          return;
+        }
+        resolved.push(read.value as GateAction);
       });
+      return resolved;
     })
     .default([]);
 }
