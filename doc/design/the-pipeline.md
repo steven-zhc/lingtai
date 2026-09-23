@@ -112,6 +112,10 @@ and it is why the list below is shorter than the one a migration needs.**
 
 4   the new one  T9   design — a document, before any code
 
+—   the vocabulary, alongside:
+                 #232 the glossary, and an allowlist that may only shrink
+                 #233 the allowlist is empty — the epic's last acceptance
+
 —   the gate's contents (0060), independent of all of the above:
                  T10  a root vitest config, unit and integration
                  T11  the full suite runs after the merge
@@ -288,6 +292,13 @@ bail has nothing left to bail from.
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`
 - [ ] A plugin a step cannot run is refused when the recipe resolves, by name
+- [ ] **No retired name survives** — not in an identifier, a type, an event
+      type, a recipe key, or a string a person reads. `gate` is gone entirely
+      rather than kept as a descriptive word, because a token that is sometimes
+      a retired name and sometimes a live concept is the one thing the next
+      reader cannot tell apart. Prose describing *history* keeps the name that
+      history happened under. Held to it by a table in `doc/reference.md` and a
+      test that reads it (#232), and emptied by #233
 - [ ] Everything 012 measured is in a file before the log that carried it is reset
 
 ## 6. Related
