@@ -167,6 +167,16 @@ makes the loops bounded: each one passes through the workflow check, which is
 where the ceilings live. Today those ceilings are `buyRound` and `passCeiling`
 inside `run-once.ts`, visible to nobody.
 
+**And a step that did not finish goes to `proposed` too, which is not the same
+thing.** `implement` can stop and ask — `RunAwaitingInput` (`events.ts:409`) —
+and that is no judgement about the change, so it is not a refusal. It is
+[0057](0057-a-gate-that-did-not-finish.md)'s class one level up: the step ends
+carrying `reason: needs-input`, and **`proposed` decides whether a person is
+worth interrupting**, or whether the agent should go round again stating its
+assumption. Some projects would rather be asked; some would rather read the
+assumption in the diff. That is a judgement, so it belongs to the step that
+judges.
+
 **`review` judging nothing is the change with the most evidence behind it.**
 Today a review's verdict *is* the decision — which is why a reviewer that
 crashed still bought a fix round: **10% of `review` refusals in 14 days carried
@@ -206,6 +216,7 @@ flowchart TB
   WA(["waiting on you"])
 
   CL --> AD --> PR --> DS --> IM --> BU
+  IM -->|"the agent stopped to ask<br/>reason: needs-input"| PO
   BU -->|"green"| RV
   BU -->|"red — review is never paid for a diff that will not compile"| PO
   RV --> PO
@@ -216,7 +227,7 @@ flowchart TB
 
   PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
   PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
-  PO -->|"every ceiling spent · a conflict<br/>the agent could not resolve"| WA
+  PO -->|"every ceiling spent · a conflict the agent<br/>could not resolve · a question only you can answer"| WA
   AD -->|"the requirement is not clear"| WA
   DS -->|"the design needs you"| WA
   WA -->|"after you clarify"| CL
@@ -246,12 +257,22 @@ through has a recorded decision saying it did.
 judgements about the change and go where judgements go; only the step that
 counts the ceilings may decide that a person is next.
 
-### 3c. A refusal carries its reason, and the reason survives the routing
+### 3c. Every step that does not simply pass reports a reason, and the reason survives the routing
 
-`merge` refuses, `proposed` decides, `waiting` shows a person — and **what
-failed has to arrive intact at the end of that**. A route that forgets is a
-person reading *waiting on you* with no way to learn why without opening a run
-log.
+A step ends one of three ways: it passed, it refused, or it did not finish. The
+last two both arrive at `proposed`, and **what happened has to arrive intact**.
+A route that forgets is a person reading *waiting on you* with no way to learn
+why without opening a run log.
+
+```
+build      red                          a refusal
+review     findings                     a refusal
+merge      gate-failed | conflict       a refusal
+implement  needs-input                  did not finish — 0057's class, not a refusal
+```
+
+One shape for all four: a machine-readable `reason` beside human-readable
+detail.
 
 The log already carries both halves, which is the shape to keep:
 
@@ -289,6 +310,7 @@ it.** That is the whole of the answer to *should an agent resolve the conflict*:
 | `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round |
 | `conflict`, text | 6 / 32 | resolved, then **back through `build` and `review`** — see below |
 | `conflict`, intent | — | `waiting`, carrying what each side changed |
+| `needs-input` | from `implement` | the judge's call: `waiting` with the question, or `implement` again with *state your assumption* |
 
 **The third row is the one an agent must not take.** Two changes that edited the
 same decision differently — one setting `rounds: 2` where the other set `5` —
