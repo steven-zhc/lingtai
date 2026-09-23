@@ -89,8 +89,13 @@ yields a work item wins, and a person reorders them by reordering the list. At
 `prepared` the same list means every one must pass. The ordering is universal;
 the reduction is the step's.
 
-`name`, `when`, `timeout` and `env` are universal today and
-`rounds`/`restarts` join them (§3). The distinction is not cosmetic and
+`name`, `when` and `timeout` are universal, and
+`rounds`/`restarts` join them (§3). **`env:` is not one of them** — it is a
+field in the plugin's own schema (§9), because *which credentials do I need* is
+the one question only the plugin can answer, and a universal key is by
+definition something the workflow imposes without asking. It looks universal
+today only because the six kinds that can want an environment are all the kinds
+there are. The distinction is not cosmetic and
 `timeout:` already shows why: a `run:` plugin cannot ignore its timeout, because
 the runner enforces it rather than the plugin honouring it. Every universal key
 works that way — **the plugin is told, it does not decide.**
@@ -315,6 +320,14 @@ This is Ansible's `argument_spec`, and the parts worth taking are its parts:
 type, required, default, choices, aliases, cross-field constraints inside one
 plugin (`mutually_exclusive`, `required_if`), and **`no_log`**.
 
+**`env:` is one of those fields, not a universal key.** A plugin that spawns a
+process declares the names it is handed
+([0037](0037-an-extension-is-a-command.md) §1: *an extension's declaration is
+the whole of what its process gets*); a plugin that spawns nothing — `queue:`,
+`judge:`'s built-in — has no `env:` in its schema and a recipe that writes one
+is refused by name, rather than the field being silently accepted and ignored.
+That refusal is only possible because the field belongs to the plugin.
+
 **`no_log` earns its place here specifically.** This repository already has the
 rule — *names only, never values* — written into `extensionRow`, the agent's
 row, and `lingtai env set`'s unechoed stdin. Today it is a rule people
@@ -380,12 +393,15 @@ holds without a line of work.
 
 ## What is not decided
 
-- **Whether a `run:` action's `env:` list
-  ([0037](0037-an-extension-is-a-command.md) §1) is a universal key or belongs
-  only to plugins that spawn a process.** §9 makes this the plugin's own
-  schema to answer for itself, which may be the whole answer; it is left open
-  because the two plugins that spawn nothing — `queue:` and `judge:`'s
-  built-in — have not been written yet.
+- **Whether `when:` is one key with a vocabulary per step, or two keys sharing
+  a name.** `end` reads `landed | blocked | failed | closed | any`
+  (`recipe.ts:137`) — the *outcome of the work item*. `proposed` reads
+  `red | findings | conflict | gate-failed | needs-input` (§3) — the *reason the
+  last step gave*. Both are "when does this entry apply" and neither value
+  means anything at the other step. Left open because the honest answer is
+  probably *one key whose legal values are the step's*, which is
+  [0059](0059-a-point-carries-only-the-kinds-it-runs.md)'s matrix again in a
+  third place, and worth settling once rather than guessing twice.
 
 ## Related
 
