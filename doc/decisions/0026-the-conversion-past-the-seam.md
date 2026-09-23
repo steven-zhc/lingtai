@@ -93,7 +93,7 @@ property a refactor can quietly remove.
 ## What is stated as a test rather than as a comment
 
 Two of the sentences this file argues for are now assertions in
-`packages/conductor/pure/run-once.test.ts`, which runs against fakes with no
+`packages/conductor/integration/run-once-against-fakes.test.ts`, which runs against fakes with no
 database, no git and no socket:
 
 - **"It refuses before it acquires anything."** A run that stops at an

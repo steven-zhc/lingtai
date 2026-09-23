@@ -42,7 +42,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: build, run and serve a page — the bundle and the binary
-        run: pnpm --filter @lingtai/release test
+        run: pnpm exec vitest run --project integration apps/release/integration/build.test.ts
 
       - name: build the artifact
         run: pnpm build && pnpm binary

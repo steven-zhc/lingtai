@@ -83,7 +83,7 @@ than no approval at all. Either make the ask before the claim, or make it at
 
 **§5. The matrix is a constant, and the document is checked against it.**
 `doc/reference.md` carries the table and
-`packages/conductor/pure/gate-matrix.test.ts` walks all thirty cells: each one
+`packages/conductor/unit/gate-matrix.test.ts` walks all thirty cells: each one
 runs — the point's own consumer builds or resolves it, with the dependencies
 that point's call site supplies — or refuses by name. The same test compares the
 document's ticks to `KINDS_AT` cell for cell, and reads `run-once.ts` to pin the

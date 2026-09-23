@@ -13,9 +13,7 @@
     "./lock": "./src/lock.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run -c vitest.pure.config.ts",
-    "test:db": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@lingtai/conductor": "workspace:*",

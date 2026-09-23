@@ -8,9 +8,9 @@
  * interface with two answers, and the only thing that makes the second one
  * trustworthy is that both are asked the same things here and must agree.
  *
- * - `test/queries.test.ts` runs it against `createPostgresLogQueries`, where a
+ * - `integration/queries.test.ts` runs it against `createPostgresLogQueries`, where a
  *   database is available. That run is what says the SQL is really the SQL.
- * - `pure/sqlite.test.ts` runs it against `createSqliteLogQueries`, with
+ * - `integration/sqlite.test.ts` runs it against `createSqliteLogQueries`, with
  *   nothing installed — the machine
  *   [#179](https://github.com/steven-zhc/lingtai/issues/179) exists for.
  *

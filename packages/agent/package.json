@@ -9,9 +9,7 @@
     "./auth": "./src/auth.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run -c vitest.pure.config.ts",
-    "test:db": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@lingtai/domain": "workspace:*",

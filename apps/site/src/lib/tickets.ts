@@ -8,7 +8,7 @@
  * allowed to be prose. What it is not allowed to be is unsourced.
  *
  * So a case carries its `source`: the file in `doc/` that records the figure.
- * `test/tickets.test.ts` opens each one and fails if the document does not
+ * `unit/tickets.test.ts` opens each one and fails if the document does not
  * contain both the reference and the amount. A number that somebody rounded up
  * on the way to the page therefore breaks the build rather than sitting there
  * reading as true, which is the whole reason this page is allowed to print a

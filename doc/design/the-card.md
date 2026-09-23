@@ -4,7 +4,7 @@
 `claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d`
 
 What is in `apps/board/src/app/rail.tsx` is `Segs` and `Rail`; what holds the
-line is `apps/board/test/rail.test.tsx`, which counts the objects on a running
+line is `apps/board/unit/rail.test.tsx`, which counts the objects on a running
 card and reads the geometry out of `globals.css` rather than out of itself.
 
 Thirteen objects, all of them boxed, wrapping to five rows at `22rem` — which is

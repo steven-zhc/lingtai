@@ -60,7 +60,7 @@ at the thing you think it is.
 should not.** The two are separate actions rather than one `when: any`, because
 `any` also fires on `blocked` and `failed` — and closing an issue because a run
 could not finish is the opposite of what those mean. This repository's own
-recipe now declares both, and `packages/conductor/pure/close.test.ts` asserts
+recipe now declares both, and `packages/conductor/unit/close.test.ts` asserts
 against that file rather than a fixture, so the distinction is pinned where it
 is configured.
 

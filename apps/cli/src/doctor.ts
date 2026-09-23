@@ -270,7 +270,7 @@ export async function logReachable(where: string, queries: LogQueries): Promise<
  * on this machine and did not run is a machine nobody checked, and there is
  * none of those: the questions that can fail — reachability, the projections,
  * the readable types, the two gate audits — are asked of whatever store is
- * open. `apps/cli/test/doctor.test.ts` pins that, by name.
+ * open. `apps/cli/integration/doctor.test.ts` pins that, by name.
  */
 export function postgresOnlyRows(): { name: string; because: string }[] {
   return [
@@ -1821,7 +1821,7 @@ export async function runDoctor(
    * is no pair. Pushed unconditionally, it failed a machine `lingtai init` had
    * just set up correctly — one that appends, folds `task_view`, renders the
    * cards and beats the beacon
-   * (`packages/daemon/pure/the-written-choice.test.ts`) — by the name of a
+   * (`packages/daemon/integration/the-written-choice.test.ts`) — by the name of a
    * variable it is right not to have, and named giving a Postgres URL as the
    * remedy. And a failure carrying no `restartAnswers` gates `lingtai restart`
    * (`gatingFailures`, 0042), so the working machine could not start a daemon

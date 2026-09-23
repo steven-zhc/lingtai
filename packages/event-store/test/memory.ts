@@ -24,9 +24,10 @@
  * **Because a real test proves the real store behaves the same way.** A fake is
  * worth exactly the contract it is held to, so this is not held to a
  * hand-written list of behaviours: `test/contract.ts` states the contract once
- * and both stores are run against it — the real one in `test/` where a database
- * is available, this one in `pure/` where none is. A behaviour that only this
- * store has is a failing test, not a silent divergence.
+ * and both stores are run against it — the real one in `integration/`, where a
+ * database is available, this one in `unit/`, where nothing outside the system
+ * is. A behaviour that only this store has is a failing test, not a silent
+ * divergence.
  *
  * The properties that matter are the ones the callers rely on and would
  * otherwise only find out about in production:

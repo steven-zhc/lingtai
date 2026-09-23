@@ -6,10 +6,10 @@
  * codebases that agree until the day they do not. So the behaviours are written
  * down here, once, and both stores are run against them:
  *
- * - `test/daemon-store.test.ts` runs it against Postgres, where a database is
+ * - `integration/daemon-store.test.ts` runs it against Postgres, where a database is
  *   available. That run is what says the beacon `lingtai doctor` and the board
  *   read answers this way.
- * - `pure/sqlite.test.ts` runs it against `createSqliteDaemonStore`, where none
+ * - `integration/sqlite.test.ts` runs it against `createSqliteDaemonStore`, where none
  *   is. That run is what says a laptop with nothing installed can be asked
  *   whether a daemon is up.
  *

@@ -7,8 +7,7 @@
     "dev": "node scripts/doc-assets.ts && next dev --turbopack -p 3300",
     "build": "node scripts/doc-assets.ts && node scripts/snapshot.ts && next build",
     "snapshot": "node scripts/snapshot.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@lingtai/projector": "workspace:*",

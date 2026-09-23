@@ -32,7 +32,7 @@ export {
 // Postgres one is at `@lingtai/daemon/postgres` and the SQLite one at
 // `@lingtai/daemon/sqlite`, which is how a barrel import still never loads
 // `node:sqlite` on a Postgres install. `choose.ts` is the one file that names
-// both, and `pure/one-store.test.ts` is what keeps it the only one (#179).
+// both, and `unit/one-store.test.ts` is what keeps it the only one (#179).
 export {
   processDaemonStore,
   withDaemonStore,

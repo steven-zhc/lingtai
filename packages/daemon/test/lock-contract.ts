@@ -16,7 +16,7 @@
  *   later conductor out until somebody cleans up by hand. So the holder here is
  *   another process, and it is killed.
  *
- * `pure/lock.test.ts` runs it against `createFileLocker`. What is not every
+ * `integration/file-lock.test.ts` runs it against `createFileLocker`. What is not every
  * locker's — who holds it without taking it, and the queue
  * `queueForDaemonLock` waits in — stays in that file below the contract.
  */

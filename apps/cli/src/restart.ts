@@ -520,7 +520,7 @@ export interface Guard {
  * **Every refusal the terminal path makes, the supervised path makes too** (#167).
  *
  * The invariant, as a table, because twice it was kept as an intention and
- * twice a reviewer found the supervised column empty. `pure/restart.test.ts`
+ * twice a reviewer found the supervised column empty. `integration/restart.test.ts`
  * holds one scenario per row per side, runs both, and fails on a row whose
  * either side is missing — so a refusal added to one path and not the other is
  * a failing test and not a finding.

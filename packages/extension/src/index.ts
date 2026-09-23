@@ -12,7 +12,7 @@
  *
  * So it **moved** here, unchanged in what it says, into a package that depends
  * on nothing — no `@lingtai/*` name, no third-party module, only `node:`. That
- * is asserted by `test/imports.test.ts` rather than kept by good manners: the
+ * is asserted by `unit/imports.test.ts` rather than kept by good manners: the
  * day this imports `@lingtai/domain` for a type, a third party's extension
  * would need the whole monorepo to render one message, and the desktop
  * notifier and Telegram would both be on a path nobody else could take.

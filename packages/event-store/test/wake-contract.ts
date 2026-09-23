@@ -6,10 +6,10 @@
  * so that the SQLite store arrived to a list it had to pass rather than one
  * drawn around whatever it happens to do.
  *
- * - `test/subscribe.test.ts` runs it against `createPostgresWaker`, where a
+ * - `integration/subscribe.test.ts` runs it against `createPostgresWaker`, where a
  *   database is available.
- * - `pure/sqlite.test.ts` runs it against `createPollingWaker` (#178).
- * - `pure/wake.test.ts` runs it against a waker rung by hand beside the
+ * - `integration/sqlite.test.ts` runs it against `createPollingWaker` (#178).
+ * - `unit/wake.test.ts` runs it against a waker rung by hand beside the
  *   in-memory store — which proves the contract asks nothing of Postgres, not
  *   that any real store wakes.
  *

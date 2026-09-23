@@ -487,7 +487,7 @@ refusal names the action, its kind, the point and why.
 
 Source: `KINDS_AT` and `whyNoKindAt` in `packages/recipe/src/recipe.ts`. This
 table is checked against that constant, cell for cell, by
-`packages/conductor/pure/gate-matrix.test.ts` — the copy in `#61`'s own body
+`packages/conductor/unit/gate-matrix.test.ts` — the copy in `#61`'s own body
 was wrong about `merge` within three weeks of being written, so a copy nothing
 checks is not worth having.
 

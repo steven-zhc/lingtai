@@ -22,11 +22,24 @@ import path from "node:path";
  *
  * `process.cwd()` and not `import.meta.url`: Next compiles this module into a
  * chunk under `.next/`, and a path relative to *that* points somewhere that has
- * no `doc/` in it. pnpm runs a package script with the package as the working
- * directory, so this is `apps/site` under `next build`, under `vitest`, and
- * under `node scripts/*.ts`.
+ * no `doc/` in it.
+ *
+ * **The nearest ancestor with a `doc/` in it, rather than `../..`.** pnpm runs a
+ * package script with the package as the working directory, which is where that
+ * arithmetic came from — and #225 moved the tests to one vitest run over the
+ * whole workspace, where the working directory is the repository root and
+ * `../..` climbed two levels out of the checkout. Searching upward is right
+ * under `next build`, under `vitest` from either place, and under `node
+ * scripts/*.ts`.
  */
-export const repoRoot = path.resolve(process.cwd(), "../..");
+function nearestRepoRoot(from: string): string {
+  for (let dir = path.resolve(from); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    if (existsSync(path.join(dir, "doc", "README.md"))) return dir;
+  }
+  return path.resolve(from, "../..");
+}
+
+export const repoRoot = nearestRepoRoot(process.cwd());
 export const docRoot = path.join(repoRoot, "doc");
 
 /** Where a file that is not projected is read instead. */
@@ -103,7 +116,7 @@ export const HTML_DOCS = [
  * The index at `/docs` is generated and lists everything in `doc/`; six is a
  * choice about where a stranger should start, so it is written down rather than
  * derived. What it must not become is a list that outlives what it points at —
- * `test/page.test.ts` checks that each `source` is still in `doc/` and that
+ * `unit/page.test.ts` checks that each `source` is still in `doc/` and that
  * each `href` is a page this site publishes, which is the same failure the
  * generated index exists to avoid, one level up.
  */

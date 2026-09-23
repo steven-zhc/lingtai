@@ -10,8 +10,9 @@
 # without a flag and the constructor's `timeout` does not exist yet, and a
 # current one. The lock written against the second threw on the first.
 #
-# No database: the lock needs none, and `pure/` is the half of the suite that
-# never connects (#158).
+# No database: the lock needs none. It is an `integration` test all the same —
+# it spawns holders and writes lock files, and both are outside the system
+# (0060 §1) — so the project named here is `integration` and not `unit` (#225).
 name: lock
 
 on:
@@ -40,4 +41,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: the lock contract, a killed holder, and the queue's order
-        run: pnpm --filter @lingtai/daemon exec vitest run -c vitest.pure.config.ts pure/lock.test.ts
+        run: pnpm exec vitest run --project integration packages/daemon/integration/file-lock.test.ts

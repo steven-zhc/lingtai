@@ -105,7 +105,7 @@ exit 0 that confirms nothing about the lock.
 ### 5. Every refusal is on both paths, and the table is the test
 
 `RESTART_GUARDS` in `apps/cli/src/restart.ts` lists every refusal with the place
-each path makes it. `apps/cli/pure/restart.test.ts` holds one scene per row and
+each path makes it. `apps/cli/integration/restart.test.ts` holds one scene per row and
 plays it through both commands — `prepareRestart` and `restartSupervised`, the
 second over the real `serviceCommand` — and fails on a row with a missing side
 or a missing scene.

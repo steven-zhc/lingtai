@@ -950,7 +950,7 @@ would be the one the documented fallback ignored.
 
 `17821` is **reserved and bound by nothing** — the daemon listens on nothing at
 all, and a second listener, if one is ever needed, has an obvious home instead
-of being scattered. `packages/env/test/board-port.test.ts` reads every
+of being scattered. `packages/env/integration/board-port.test.ts` reads every
 package's `src` and fails if any mention of the number, or of the
 `RESERVED_PORT` that holds it, is anything but prose.
 
@@ -1201,7 +1201,7 @@ installing user's, so `install` refuses one that user does not own — `pnpm
 --dir /home/admin/lingtai` from `lingtai`'s session is turned away rather than
 written into a unit that runs someone else's code. `node` is whichever the
 shell finds on `PATH`, so install from that user's own shell.
-`apps/cli/test/service.test.ts` pins the refusal through the command's own
+`apps/cli/integration/service.test.ts` pins the refusal through the command's own
 `repoRoot()`, and that `HOME`, `USER` and `LINGTAI_HOME` in the unit are the
 environment it was given.
 

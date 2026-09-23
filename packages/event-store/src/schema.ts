@@ -45,7 +45,7 @@ interface Operation {
 }
 
 /**
- * Every migration under `migrations/app`, oldest first. `pure/schema.test.ts`
+ * Every migration under `migrations/app`, oldest first. `unit/schema.test.ts`
  * lists the directory and fails on one missing from here — a migration planned
  * and not in this list would be a table nothing creates.
  */
@@ -112,7 +112,7 @@ DROP RULE IF EXISTS escapement_events_no_delete ON events;
 
 /**
  * The columns the migrations make, as `information_schema.columns` names their
- * types. `pure/schema.test.ts` reads them back out of `ops.json`, so a
+ * types. `unit/schema.test.ts` reads them back out of `ops.json`, so a
  * migration that changes a column and not this is a failing test.
  */
 export const SHAPE: Readonly<Record<string, Readonly<Record<string, string>>>> = {

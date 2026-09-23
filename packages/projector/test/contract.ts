@@ -6,9 +6,9 @@
  * codebases that agree until the day they do not. So the behaviours are written
  * down here, once, and both stores are run against them:
  *
- * - `test/projection.test.ts` runs it against Postgres, where a database is
+ * - `integration/projection.test.ts` runs it against Postgres, where a database is
  *   available. That run is what says the real `task_view` answers this way.
- * - `pure/sqlite.test.ts` runs it against `createSqliteProjectionStore`, where
+ * - `integration/sqlite.test.ts` runs it against `createSqliteProjectionStore`, where
  *   none is. That run is what says a laptop with nothing installed gets the
  *   same board.
  *

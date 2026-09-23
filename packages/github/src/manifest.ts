@@ -27,7 +27,7 @@
  * *visible* becomes one it makes *impossible*. The table is
  * `REQUIRED_PERMISSIONS` — the same list `permissionGaps` checks an
  * installation against, so what is asked for and what is verified cannot
- * disagree — and `test/manifest.test.ts` reads it back out of
+ * disagree — and `unit/manifest.test.ts` reads it back out of
  * `doc/decisions/0006-github-app.md` rather than from a second copy here.
  *
  * This module knows nothing about where the credentials are kept. It builds the
@@ -47,7 +47,7 @@ export const LINGTAI_URL = "https://github.com/steven-zhc/lingtai";
  * (`webhook.ts:100` — a force-push already invalidates a gate verdict by
  * arithmetic, and acting on one would mean re-asking GitHub on every commit
  * anybody makes), so subscribing to it asks GitHub to send what this system
- * throws away. `test/manifest.test.ts` reads this list against `webhook.ts`'s
+ * throws away. `unit/manifest.test.ts` reads this list against `webhook.ts`'s
  * own `ACTED_ON` rather than against a second copy.
  *
  * Declared even when the hook is inactive: the events an App subscribes to are

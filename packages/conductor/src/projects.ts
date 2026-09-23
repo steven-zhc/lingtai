@@ -84,7 +84,7 @@ export async function loadAllProjects(log?: Log): Promise<ProjectState[]> {
  * **`isRegistered` is the guard, and it predates anything it guards against.**
  * A repository that has been recorded and not yet registered — waiting for
  * `Recheck` (`ProjectOnboardingStarted`, #163, #182) — has no `configHash`, so it does not come
- * back from here — the daemon needs no new check, and `test/projects.test.ts`
+ * back from here — the daemon needs no new check, and `integration/projects.test.ts`
  * pins that rather than adding one.
  */
 export async function loadProjects(log?: Log): Promise<ProjectState[]> {
@@ -148,7 +148,7 @@ export const signedInHere: SignedIn = signedInProbe([createClaudeCodeRuntime(), 
  * is verified by — a record, like `baseSha`, and nothing resolves from it. What
  * this refuses is *deciding* from a copy; reading the log's copy here, or
  * anywhere in `conductor`, `recipe` or `actions`, would be exactly that, and
- * `pure/recorded-recipe.test.ts` fails if anything does.
+ * `unit/recorded-recipe.test.ts` fails if anything does.
  */
 export async function currentRecipe(
   state: ProjectState,

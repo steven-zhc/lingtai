@@ -114,8 +114,8 @@ Then, under a rule, the evidence — house style as in #52, #55, #58:
 **This repository merges its own work unattended, and that is configuration
 rather than a gap.** `gates.merge` is `[]` — nothing is declared there, so
 nothing holds. Declare a `human:` action there and the point runs it: #58 was
-fixed, and the test that pins it is `conductor/test/run-once.test.ts`'s *holds
-at a human action at the merge point, with no --no-merge anywhere*, which
+fixed, and the test that pins it is `conductor/integration/run-once.test.ts`'s
+*holds at a human action at the merge point, with no --no-merge anywhere*, which
 asserts the base branch does not move. `--no-merge` remains the way to hold a
 run whose recipe asks for nothing.
 
@@ -141,7 +141,7 @@ choosing machine time over review time while it learns what the loop does
 unattended.
 
 The block is [doc/tamper-watch.md](doc/tamper-watch.md), and
-`packages/actions/test/tamper-watch.test.ts` reads the list *from that file* —
+`packages/actions/unit/tamper-watch.test.ts` reads the list *from that file* —
 because the recipe does not carry it — so the capability and its list stay
 correct though what they guarded has moved out of reach. **A managed repository that is not Lingtai should almost certainly have it
 on**: there a watched path is rare, and a hold means something.
@@ -239,15 +239,36 @@ and never a record: what happened is `lingtai status` and the board, off
 The board's Queued column asks GitHub on render; every other column is the
 fold.
 
-The suite is in two halves since #158. `pnpm test` is the tests that need no
-database — 89 files, under 30s, not one connection, plus `apps/release`'s two
-board builds, a binary and `install.sh` run over it (#183, #185, #184, about 35s
-more) — and `pnpm test:db` is the ones that do. The recipe's `build` runs both. What is left in the second half
-asserts Postgres itself: the projections, `LISTEN`/`NOTIFY`,
-two clients racing. A test that only *records* events gets
-`createMemoryEventStore()` from `@lingtai/event-store/memory`, which is held to
-the same contract as the real store — `packages/event-store/test/contract.ts`
-runs against both, so a divergence is a failing test rather than a surprise.
+**The suite is in two halves and the line is 0060 §1, not Postgres** (#225).
+*A test is integration when it exercises a dependency outside the system* —
+Postgres, the GitHub API, the `git` binary, any OS process, the filesystem, the
+network, the real `$HOME`, the wall clock. Everything else is unit. **A
+temporary directory is still the filesystem and a spawned `node` is still a
+process**, however carefully the test cleans up after itself; that is where the
+old `pure/` went wrong, and it is why `pure/` is now `unit/`.
+
+There is **one root `vitest.config.ts`** with a `unit` project and an
+`integration` project, and no per-package config. Each package holds `unit/`,
+`integration/` or both, plus a `test/` for the shared contract suites and
+fixtures that are not themselves tests.
+
+    pnpm test               # `vitest run --project unit` — 90 files, ~1200 tests
+    pnpm test:integration   # the other 76, and `pnpm test:db` is the old name
+    pnpm test:all           # both projects in one run
+
+`pnpm test` is what the `build` gate runs, so **a red there is a claim about the
+diff** ([0060](doc/decisions/0060-the-gate-runs-unit-tests.md)). It is one
+vitest run rather than `pnpm -r`, which stopped at the first failing package and
+hid every package after it (#222). `HOME=/nonexistent pnpm test` is green, and
+that is the claim rather than a habit — run it that way when you have touched
+what a test reaches for.
+
+What the integration half asserts is Postgres itself — the projections,
+`LISTEN`/`NOTIFY`, two clients racing — and everything that spawns, writes or
+fetches. A test that only *records* events gets `createMemoryEventStore()` from
+`@lingtai/event-store/memory`, which is held to the same contract as the real
+store — `packages/event-store/test/contract.ts` runs against both, so a
+divergence is a failing test rather than a surprise.
 
 **Neither test connection string may go through a pooler** (#157). Both pointed
 at `aws-0-us-east-1.pooler.supabase.com` for months and the suite failed often

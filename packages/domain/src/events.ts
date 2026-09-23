@@ -505,7 +505,7 @@ const gateBase = { gate: GatePoint, action: z.string(), runId: z.string(), onSha
  * no commits to read it at. **It is a record, never a source**: nothing in
  * `conductor`, `recipe` or `actions` reads it back to decide anything — the next
  * run's recipe is read from the base branch, as ever (0005) — and
- * `conductor/pure/recorded-recipe.test.ts` holds that line.
+ * `conductor/unit/recorded-recipe.test.ts` holds that line.
  */
 export const GatesResolved = z.object({
   runId: z.string(),

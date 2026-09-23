@@ -18,7 +18,7 @@
  *
  * Two surfaces that colour the same fact differently is worse than one surface
  * with no colour at all, because then an operator has to learn two vocabularies
- * for one system. `test/colour.test.ts` reads that stylesheet and fails if the
+ * for one system. `unit/colour.test.ts` reads that stylesheet and fails if the
  * sentence moves or if a custom property named below stops existing — which is
  * what makes "the two cannot drift apart" a check rather than a hope.
  *

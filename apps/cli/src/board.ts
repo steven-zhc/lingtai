@@ -18,7 +18,7 @@ import { BOARD_JOB, BOARD_WAIT_MS, UNLOAD_WAIT_MS, type Exec, type Keeper } from
  * **`import()`, never `require()`.** The board's `server.js` is ESM (its
  * package is `"type": "module"`) and the bundle is CJS, because a SEA's main is.
  * A dynamic `import()` is the one way across that Node promises, and it is what
- * `apps/release/test/build.test.ts` runs rather than asserts.
+ * `apps/release/integration/build.test.ts` runs rather than asserts.
  */
 export function boardEntry(dir: string): string {
   return join(dir, "apps", "board", "server.js");
@@ -199,7 +199,7 @@ const VERBS: readonly BoardVerb[] = ["start", "stop", "restart", "status"];
  *
  * The port and not the word `board`, because the port is what a second board
  * would collide over: two on different ports share nothing and are refused by
- * nothing, and `apps/release/test/build.test.ts` starts exactly that pair.
+ * nothing, and `apps/release/integration/build.test.ts` starts exactly that pair.
  * `stop` and `status` take a port too, so all three name the same lock.
  */
 export function boardLock(port: number): string {

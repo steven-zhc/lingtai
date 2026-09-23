@@ -8,8 +8,7 @@
     "./duration": "./src/duration.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@lingtai/domain": "workspace:*",

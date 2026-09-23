@@ -2,7 +2,7 @@
  * `lingtai pause <why>` — the append, and what it says about both conductors.
  *
  * Its own module so the suite can run it: the sentence about `lingtai run` is
- * the one `#159` got wrong, and `pure/run-pause.test.ts` holds what this prints
+ * the one `#159` got wrong, and `unit/run-pause.test.ts` holds what this prints
  * against what a paused `run` does.
  */
 import { pauseConductor } from "@lingtai/daemon/control";
