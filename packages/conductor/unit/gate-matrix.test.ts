@@ -5,7 +5,13 @@
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
  * called (`#61`).
  *
- * This walks every point × kind pair and asserts one of exactly two things:
+ * **`GATE_STEPS` and not `STEPS`**: the cells are the recipe's `gates:` map
+ * against the six action kinds, and the other five steps have no key there to
+ * write an action under. They get rows when `gates:` becomes `steps:`
+ * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §1, §8) —
+ * ten steps against ten plugins, with the rule unchanged.
+ *
+ * This walks every step × kind pair and asserts one of exactly two things:
  *
  * - **runs** — the thing that consumes that point builds a gate for it, with
  *   the dependencies that point's own call site supplies; or
@@ -19,7 +25,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { GATE_POINTS, type GatePoint } from "@lingtai/domain";
+import { GATE_STEPS, type GateStep } from "@lingtai/domain";
 import {
   type ActionKind,
   type GateAction,
@@ -66,7 +72,7 @@ const DEPS: Record<"prepared" | "proposed" | "merge", GateDeps> = {
 };
 
 /** Does the code that consumes this point actually dispatch this action? */
-function runsAt(point: GatePoint, kind: ActionKind): boolean {
+function runsAt(point: GateStep, kind: ActionKind): boolean {
   if (point === "admit") {
     // Nothing constructs a pipeline at `admit`: no call site, nothing to ask.
     return false;
@@ -88,13 +94,13 @@ function runsAt(point: GatePoint, kind: ActionKind): boolean {
 }
 
 /** Does a recipe naming this action at this point resolve? */
-function accepted(point: GatePoint, kind: ActionKind): string | null {
+function accepted(point: GateStep, kind: ActionKind): string | null {
   const parsed = GateMap.safeParse({ [point]: [ACTION[kind]] });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
 
 describe("every point × kind cell runs or refuses", () => {
-  const cells = GATE_POINTS.flatMap((point) => KINDS.map((kind) => [point, kind] as const));
+  const cells = GATE_STEPS.flatMap((point) => KINDS.map((kind) => [point, kind] as const));
 
   it.each(cells)("%s × %s", (point, kind) => {
     const refusal = accepted(point, kind);
@@ -200,14 +206,14 @@ describe("doc/reference.md's matrix", () => {
       }
       if (header === null) continue;
       const point = cells[0]?.replace(/[`*]/g, "");
-      if (cells.length === 7 && GATE_POINTS.includes(point as GatePoint)) {
+      if (cells.length === 7 && (GATE_STEPS as readonly string[]).includes(point as GateStep)) {
         rows.set(point!, cells.slice(1));
       }
     }
 
     expect(header, "no point × kind table in doc/reference.md").not.toBeNull();
-    expect([...rows.keys()]).toEqual([...GATE_POINTS]);
-    for (const point of GATE_POINTS) {
+    expect([...rows.keys()]).toEqual([...GATE_STEPS]);
+    for (const point of GATE_STEPS) {
       const drawn = rows.get(point)!;
       KINDS.forEach((kind, i) => {
         const runs = whyNoKindAt(point, kind) === null;

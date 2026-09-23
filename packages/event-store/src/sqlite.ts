@@ -477,7 +477,7 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
       });
     },
 
-    async landedWithoutGatePoints(ranTypes) {
+    async landedWithoutSteps(ranTypes) {
       // Prepared per call rather than once: SQLite has no array parameter, so
       // the number of placeholders is the caller's list's length. This is
       // `lingtai doctor`'s path and runs once per command.

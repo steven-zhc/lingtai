@@ -18,7 +18,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { Envelope } from "@lingtai/domain";
+import { STEPS, type Envelope } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 import { exists, type StandingView, type TicketView } from "../src/lib/task.ts";
 import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from "../src/lib/queued.ts";
@@ -248,20 +248,26 @@ const PLAN: PlanView = planOf(GATES, {
 
 describe("what will happen", () => {
   /**
-   * ADR 0016 §4 before a run as well as after one: a point that is merely left
+   * ADR 0016 §4 before a run as well as after one: a step that is merely left
    * out looks exactly like one that was configured and silently did not run,
    * and only the second is Lingtai's bug.
+   *
+   * All ten since #227 — 0061 §5's *the board and `lingtai doctor` draw all
+   * ten* — and the five `gates:` does not name are `skipped` beside `admit` and
+   * `merge`, which is the same sentence about the same absence.
    */
-  it("names all five points, including the ones nothing is configured at", () => {
-    expect(PLAN.points.map((p) => p.point)).toEqual([
+  it("names all ten steps, including the ones nothing is configured at", () => {
+    expect(PLAN.points.map((p) => p.point)).toEqual([...STEPS]);
+    expect(PLAN.points.filter((p) => p.skipped).map((p) => p.point)).toEqual([
+      "claim",
       "admit",
-      "prepared",
-      "proposed",
+      "design",
+      "implement",
+      "build",
+      "review",
       "merge",
-      "end",
     ]);
-    expect(PLAN.points.filter((p) => p.skipped).map((p) => p.point)).toEqual(["admit", "merge"]);
-    expect(PLAN.points[2]?.actions).toEqual(["build", "review"]);
+    expect(PLAN.points.find((p) => p.point === "proposed")?.actions).toEqual(["build", "review"]);
   });
 
   it("carries the recipe's limits, in the recipe's own words", () => {
@@ -282,8 +288,9 @@ describe("what will happen", () => {
     expect(html).toContain("prepared");
     expect(html).toContain("install");
     expect(html).toContain("close the ticket");
-    // Twice: `admit` and `merge`, each stated rather than omitted.
-    expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(2);
+    // Seven: `admit` and `merge`, and the five `gates:` does not name — each
+    // stated rather than omitted.
+    expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(7);
     expect(html).toContain("150 turns · 1h · guarded · 2 round(s) back · then straight to you");
   });
 

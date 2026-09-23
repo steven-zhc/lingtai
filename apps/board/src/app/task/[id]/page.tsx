@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { gateActionsAt } from "@lingtai/recipe";
 import { inWords } from "@lingtai/conductor/queue";
 import { describeHold } from "@lingtai/projector/task-view";
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from "@/lib/task";
@@ -288,9 +289,14 @@ export function Attempt({
  * and why this run's could not be had, or nothing and why.
  *
  * The names are the log's (`GatesResolved`, through `progress`), and only the
- * text is the recipe's. A point the log planned nothing at stays `skipped` and
+ * text is the recipe's. A step the log planned nothing at stays `skipped` and
  * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
  * rather than borrowing a command from a different action.
+ *
+ * All ten since #227, which is 0061 §5's rule — *the board and `lingtai doctor`
+ * draw all ten* — and needs no new sentence here: the five that `gates:` does
+ * not name planned nothing, so they read `skipped` exactly as `admit` already
+ * did.
  */
 export function RecipeGiven({ run }: { run: RunView }) {
   const recipe = run.recipe;
@@ -363,7 +369,11 @@ export function RecipeGiven({ run }: { run: RunView }) {
               ) : (
                 <span className="actlist">
                   {p.planned.map((name) => {
-                    const action = recipe.recipe.gates[p.point].find((a) => a.name === name);
+                    // The five steps `gates:` does not name have nothing
+                    // planned, so this arm is never reached for them (#227).
+                    const action = gateActionsAt(recipe.recipe.gates, p.point).find(
+                      (a) => a.name === name,
+                    );
                     if (!action) {
                       return (
                         <span key={name} className="act">

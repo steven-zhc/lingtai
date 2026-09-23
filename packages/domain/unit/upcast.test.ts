@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   MissingUpcasterError,
   SCHEMA_VER,
+  STEPS,
   UPCASTERS,
   type UpcastRegistry,
   parseStoredPayload,
@@ -187,74 +188,48 @@ describe("parseStoredPayload", () => {
 });
 
 /**
- * The rename that made this file earn its keep: the `diff` point became
- * `proposed` (ADR 0018).
+ * The rename that made this file earn its keep, and the one place it survives:
+ * the `diff` point became `proposed` (ADR 0018).
  *
- * Nine types carry a `GatePoint`, and the enum no longer contains the old
- * value — so a stored row is not merely stale, it is unparseable without the
- * step. That is the good version of this failure and the reason the rename was
- * affordable: it cannot pass wrongly.
+ * **The eight gate and approval types no longer have it.** `gatePointRenamed`
+ * was one upcaster shared by all of them, and #227 deleted it along with the
+ * five-name enum it moved a value inside of: `GatesResolved.points` went from
+ * five entries to ten with no upcaster, because
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 resets
+ * this log rather than carrying it — so there is no stored row spelling a step
+ * `diff` for that step to walk up. The eight went back to schemaVer 1 with it,
+ * and the chain invariant at the top of this file is what forced that.
+ *
+ * `GatesResolved` keeps its own, because it never shared one: the value it
+ * moves is nested inside `points` rather than on a `gate` field. It is
+ * exercised through `upcast` rather than `parseStoredPayload` below, which is
+ * the whole of what the log being spent looks like from here — the steps still
+ * run, and what they produce is a five-entry payload this build's schema no
+ * longer accepts.
  */
 describe("the gate point rename", () => {
-  const GATE_CARRYING = [
-    "GateRequested",
-    "GateStarted",
-    "GatePassed",
-    "GateFailed",
-    "GateWaived",
-    "ApprovalRequested",
-    "ApprovalGranted",
-    "ApprovalRevoked",
-  ] as const;
-
-  const base = { action: "build", runId: "run-01JX", onSha: "sha-a" };
-  const extra: Record<(typeof GATE_CARRYING)[number], object> = {
-    GateRequested: {},
-    GateStarted: {},
-    GatePassed: { evidence: "exit 0" },
-    GateFailed: { evidence: "exit 1", findings: [] },
-    GateWaived: { by: "human:steven", reason: "known flake" },
-    ApprovalRequested: { question: "Merge?", artifacts: ["diff"] },
-    ApprovalGranted: { by: "human:steven", note: "" },
-    ApprovalRevoked: { by: "human:steven", reason: "force-push" },
+  const v1 = {
+    runId: "run-01JX",
+    configHash: "abc",
+    points: [
+      { gate: "admit", actions: [] },
+      { gate: "prepared", actions: ["install"] },
+      { gate: "diff", actions: ["build", "review"] },
+      { gate: "merge", actions: [] },
+      { gate: "end", actions: ["close the ticket"] },
+    ],
   };
 
-  /** What a later step adds on the way up; the rename touches nothing else. */
-  const later: Partial<Record<(typeof GATE_CARRYING)[number], object>> = {
-    GatePassed: { findings: [] },
-  };
+  /** The chain, driven as `parseStoredPayload` drives it but without the parse. */
+  function walk(stored: number, data: unknown): { gate: string; actions: string[] }[] {
+    return (upcast("GatesResolved", stored, data) as { points: { gate: string; actions: string[] }[] })
+      .points;
+  }
 
-  it.each(GATE_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
-    const v1 = { ...base, ...extra[type], gate: "diff" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type], gate: "proposed" });
-  });
-
-  it.each(GATE_CARRYING)("leaves a v1 %s at another point alone", (type) => {
-    const v1 = { ...base, ...extra[type], gate: "merge", action: "human" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type] });
-  });
-
-  /**
-   * The nested one. `GatesResolved` is the event the board reads to show an
-   * unconfigured point as `skipped`, so a half-upcast here would not throw —
-   * it would render a run as having a point nobody has ever heard of.
-   */
   it("moves the point inside a v1 GatesResolved and keeps all five, in order", () => {
-    const v1 = {
-      runId: "run-01JX",
-      configHash: "abc",
-      points: [
-        { gate: "admit", actions: [] },
-        { gate: "prepared", actions: ["install"] },
-        { gate: "diff", actions: ["build", "review"] },
-        { gate: "merge", actions: [] },
-        { gate: "end", actions: ["close the ticket"] },
-      ],
-    };
-
-    const up = parseStoredPayload("GatesResolved", 1, v1);
-    expect(up.points.map((p) => p.gate)).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
-    expect(up.points[2]!.actions).toEqual(["build", "review"]);
+    const points = walk(1, v1);
+    expect(points.map((p) => p.gate)).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
+    expect(points[2]!.actions).toEqual(["build", "review"]);
   });
 
   /**
@@ -263,23 +238,30 @@ describe("the gate point rename", () => {
    * can tell *not recorded* from *recorded, and empty*.
    */
   it("adds no recipe to a v1 or v2 GatesResolved, and absent is not empty", () => {
-    const points = ["admit", "prepared", "proposed", "merge", "end"].map((gate) => ({ gate, actions: [] }));
-    const v2 = { runId: "run-01JX", configHash: "abc", points };
-
     for (const ver of [1, 2]) {
-      const up = parseStoredPayload("GatesResolved", ver, v2);
+      const up = upcast("GatesResolved", ver, v1) as Record<string, unknown>;
       expect("recipe" in up, `v${ver}`).toBe(false);
-      expect(up.recipe).toBeUndefined();
+      expect(up["recipe"]).toBeUndefined();
     }
 
-    const empty = parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, { ...v2, recipe: {} });
+    const ten = STEPS.map((gate) => ({ gate, actions: [] }));
+    const current = { runId: "run-01JX", configHash: "abc", points: ten, recipe: {} };
+    const empty = parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, current);
     expect("recipe" in empty).toBe(true);
     expect(empty.recipe).toEqual({});
   });
 
-  it("moved all nine past v1, and none of them is still there", () => {
-    for (const type of [...GATE_CARRYING, "GatesResolved"] as const) {
-      expect(SCHEMA_VER[type], `${type} carries a GatePoint and must be past v1`).toBeGreaterThanOrEqual(2);
+  /**
+   * **The log is spent, and this is where that is said in code** (0061 §7).
+   *
+   * `points` asserts ten (0058 §5) and no upcaster pads a stored five to it, so
+   * an event written before #227 is not stale — it does not parse. That is the
+   * good version of this failure, and the same one ADR 0018's rename had: it
+   * cannot pass wrongly.
+   */
+  it("refuses a GatesResolved that names five steps, at any version", () => {
+    for (const ver of [1, 2, SCHEMA_VER.GatesResolved]) {
+      expect(() => parseStoredPayload("GatesResolved", ver, v1), `v${ver}`).toThrow();
     }
   });
 });
@@ -301,12 +283,12 @@ describe("a pass with findings", () => {
     evidence: "minor packages/actions/src/command.ts:313 — readResult treats every readFile failure as empty",
   };
 
-  it("walks a v2 GatePassed up with an empty findings array and its prose intact", () => {
-    expect(parseStoredPayload("GatePassed", 2, v2)).toEqual({ ...v2, findings: [] });
+  it("walks a v1 GatePassed up with an empty findings array and its prose intact", () => {
+    expect(parseStoredPayload("GatePassed", 1, v2)).toEqual({ ...v2, findings: [] });
   });
 
-  it("leaves a v3 GatePassed and its findings alone", () => {
-    const v3 = {
+  it("leaves a current GatePassed and its findings alone", () => {
+    const current = {
       ...v2,
       findings: [
         {
@@ -318,11 +300,13 @@ describe("a pass with findings", () => {
         },
       ],
     };
-    expect(parseStoredPayload("GatePassed", 3, v3)).toEqual(v3);
+    expect(parseStoredPayload("GatePassed", SCHEMA_VER.GatePassed, current)).toEqual(current);
   });
 
-  it("is at v3", () => {
-    expect(SCHEMA_VER.GatePassed).toBe(3);
+  // 2 and not 3: the step below it was 0018's rename, which #227 deleted along
+  // with the log it read. This one is the only step `GatePassed` has left.
+  it("is at v2", () => {
+    expect(SCHEMA_VER.GatePassed).toBe(2);
   });
 });
 

@@ -8,7 +8,7 @@
  * burning money.
  *
  * **Nothing new is written down for this.** `RunStarted` opens the agent phase
- * and `RunFinished` closes it, `GatesResolved` names all five points, and the
+ * and `RunFinished` closes it, `GatesResolved` names all ten steps, and the
  * last `GateStarted` with no matching verdict is the point the run is at. The
  * recipe's timeout is the denominator, and it arrives already parsed as
  * `GatePlan` so that the board has no opinion about what `20m` is.
@@ -21,6 +21,16 @@
  * folding a detail on demand. A phase that fails to be read costs its own card
  * its detail and not the board.
  *
+ * **Ten steps since #227, and the fold claims no more about them than it did
+ * about five.** It walks `STEPS` and folds each one out of the same events: a
+ * step the log planned actions at and recorded verdicts for reads exactly as it
+ * did, and the five that carry no gate actions today have nothing planned and
+ * nothing recorded, so they come out `skipped` — which is this file's word for
+ * *nothing is configured here*, and is what `GatesResolved` now records for them
+ * ([0061](../../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5:
+ * *the board and `lingtai doctor` draw all ten*). Nothing here says a step ran,
+ * or failed, or was reached, on evidence it did not have before.
+ *
  * **What keeps it cheap is a bound, and the bound is not in this file.** Three
  * lanes fold since #170 — Running, Waiting and the Landed rows the lane draws
  * open — and only the first of them is small by nature, at a card per
@@ -30,15 +40,15 @@
  * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
-import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
+import { STEPS, type Envelope, type Step } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 
 /**
- * What a point has come to on *this* run.
+ * What a step has come to on *this* run.
  *
- * `skipped` is a state and not an absence (ADR 0016 §4): a point nobody
- * configured does not run, which is the user's decision, and a point that was
- * configured and did not run is Lingtai's bug. Only showing all five keeps them
+ * `skipped` is a state and not an absence (ADR 0016 §4): a step nobody
+ * configured does not run, which is the user's decision, and a step that was
+ * configured and did not run is Lingtai's bug. Only showing all ten keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  */
 export type PointState =
@@ -57,7 +67,7 @@ export type PointState =
    * `GateNeverRan`, and the evidence is on that event (#133). Or the plan the
    * log recorded named actions here, the run recorded *none* of them, and the
    * item landed — `stateOf`'s rule since #170, which is `lingtai doctor`'s
-   * `landedWithoutGatePoints` comparison. There is no gate event at this point
+   * `landedWithoutSteps` comparison. There is no gate event at this point
    * at all in the second, so there is nothing to read evidence off: anything
    * reaching for one must find the `GateNeverRan` and cope with its absence,
    * the way `task.ts`'s `never` line does.
@@ -97,8 +107,8 @@ export interface ActionProgress {
 }
 
 export interface PointProgress {
-  point: GatePoint;
-  /** What the recipe put here. Empty is what makes the point `skipped`. */
+  point: Step;
+  /** What the recipe put here. Empty is what makes the step `skipped`. */
   planned: readonly string[];
   state: PointState;
   /**
@@ -143,7 +153,7 @@ export interface RunProgress {
   since: string;
   /** Null between phases: the agent has finished and no gate has started yet. */
   now: Phase | null;
-  /** All five, in loop order. */
+  /** All ten, in pass order. */
   points: readonly PointProgress[];
 }
 
@@ -165,9 +175,9 @@ const FIXING = "fixing";
  * splits on the colon and trusts the head highlights nothing and prints
  * `2 of 3`, which is how a fixing agent came to be described as a point.
  */
-export function pointOf(label: string): GatePoint | null {
+export function pointOf(label: string): Step | null {
   const head = label.split(":")[0] ?? "";
-  return (GATE_POINTS as readonly string[]).includes(head) ? (head as GatePoint) : null;
+  return (STEPS as readonly string[]).includes(head) ? (head as Step) : null;
 }
 
 /**
@@ -193,7 +203,7 @@ function keyOf(data: Record<string, unknown>): string {
 }
 
 function budgetOf(plan: GatePlan, data: Record<string, unknown>): number | null {
-  const point = plan.get(String(data["gate"]) as GatePoint);
+  const point = plan.get(String(data["gate"]) as Step);
   return point?.find((a) => a.name === String(data["action"]))?.budgetMs ?? null;
 }
 
@@ -205,13 +215,13 @@ function budgetOf(plan: GatePlan, data: Record<string, unknown>): number | null 
  * ones that have already passed.
  */
 function stateOf(
-  point: GatePoint,
+  point: Step,
   planned: readonly string[],
   seen: readonly PointState[],
   /**
    * The item landed, **and** `GatesResolved` is what named `planned`.
    *
-   * Both halves, because both are `landedWithoutGatePoints`'s, and the check
+   * Both halves, because both are `landedWithoutSteps`'s, and the check
    * below is meant to be its comparison and not a looser one. Its `planned` CTE
    * selects from `GatesResolved` rows, so a run whose stream has none
    * contributes nothing to it — and here such a run is folded against the
@@ -233,7 +243,7 @@ function stateOf(
   // **`lingtai doctor`'s comparison, made where a person is already looking.**
   // The log's own plan named actions here, the run recorded nothing at all — no
   // request, no verdict, no approval, no waiver — and the item landed, so there
-  // was no later moment for it to run in. `landedWithoutGatePoints` asks exactly
+  // was no later moment for it to run in. `landedWithoutSteps` asks exactly
   // this and fails the doctor for it; until now it reached the board as
   // `pending`, which is the word for *configured, not reached yet* and is the
   // one thing this is not (0016 §4).
@@ -244,12 +254,18 @@ function stateOf(
   // landed, against the plan this run was given* puts the fail colour on a
   // pipeline that was working.
   //
-  // **Four points and not five**, which is the same exclusion
-  // `landedWithoutGatePoints` makes in as many words: `end`'s record is
-  // `EndActionsResolved` on the *work item's* stream (`end-point.ts`), and this
-  // fold reads the run's. A silent `end` here is a question this stream cannot
-  // answer, not a point that did not run — `lingtai doctor` has its own check
-  // for that one, against the stream that holds it.
+  // **Not `end`**, which is the same exclusion `landedWithoutSteps` makes in as
+  // many words: `end`'s record is `EndActionsResolved` on the *work item's*
+  // stream (`end-point.ts`), and this fold reads the run's. A silent `end` here
+  // is a question this stream cannot answer, not a step that did not run —
+  // `lingtai doctor` has its own check for that one, against the stream that
+  // holds it.
+  //
+  // **The other nine and not four** since #227, and the widening costs nothing:
+  // the `skipped` return above fires first for any step with no plan and no
+  // events, which is every one of the five that carry no gate actions today. A
+  // step reaches here only by having been planned, which is what this check has
+  // always meant.
   if (onRecord && point !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";
@@ -282,7 +298,7 @@ export function foldProgress(
    *
    * A **closed** item is not this, however finished it is: the pipeline stops
    * at the first refusal (0041 §4), so its later points recorded nothing
-   * because nothing should have run in them. `landedWithoutGatePoints` is
+   * because nothing should have run in them. `landedWithoutSteps` is
    * anchored on `WorkItemLanded` for that reason and so is this — see
    * `RailCandidate.over`, which is the caller holding the same line.
    */
@@ -432,7 +448,7 @@ export function foldProgress(
     }
   }
 
-  const points = GATE_POINTS.map((point) => {
+  const points = STEPS.map((point) => {
     // The log first, the recipe second. `GatesResolved` is appended after the
     // `prepared` gates have already run, so for the first seconds of a run it
     // is the only thing that can say a point exists — and once it lands it is

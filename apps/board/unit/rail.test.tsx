@@ -23,7 +23,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
+import { GATE_STEPS, STEPS, type Envelope, type Step } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 import type { TaskCard } from "@lingtai/projector/task-view";
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from "../src/lib/board.ts";
@@ -51,7 +51,7 @@ function at(time: string, type: string, data: unknown): Envelope {
   };
 }
 
-const gate = (point: GatePoint, action: string) => ({
+const gate = (point: Step, action: string) => ({
   gate: point,
   action,
   runId: "run-170",
@@ -64,8 +64,13 @@ const gate = (point: GatePoint, action: string) => ({
  * worst — one action of two, reported as a whole point going green.
  */
 const PLAN: GatePlan = new Map([
+  ["claim", []],
   ["admit", []],
   ["prepared", [{ name: "install", budgetMs: 10 * 60_000 }]],
+  ["design", []],
+  ["implement", []],
+  ["build", []],
+  ["review", []],
   [
     "proposed",
     [
@@ -82,7 +87,7 @@ const resolved = (plan: GatePlan) =>
   at("2026-09-15T17:12:30Z", "GatesResolved", {
     runId: "run-170",
     configHash: "abc",
-    points: GATE_POINTS.map((point) => ({
+    points: STEPS.map((point) => ({
       gate: point,
       actions: (plan.get(point) ?? []).map((a) => a.name),
     })),
@@ -249,7 +254,7 @@ function noPlanRecorded(): Envelope[] {
 /**
  * **`lingtai doctor`'s three items, as a fixture.**
  *
- * `landedWithoutGatePoints` finds an item that landed whose last run's
+ * `landedWithoutSteps` finds an item that landed whose last run's
  * `GatesResolved` named actions at a point and whose stream carries no gate
  * event there at all — no request, no verdict, no approval, no waiver. That is
  * #49, #53 and #55 at `merge`, and until #170 it reached the doctor as a FAIL
@@ -381,10 +386,10 @@ const segments = (html: string): string[] =>
 const cells = (html: string): string[] =>
   [...html.matchAll(/<span class="scell (t-[a-z]+)"/g)].map((m) => m[1] ?? "");
 
-/** The cells belonging to one point, by its position in `GATE_POINTS`. */
-function cellsAt(html: string, point: GatePoint): string[] {
+/** The cells belonging to one step, by its position in `GATE_STEPS`. */
+function cellsAt(html: string, point: (typeof GATE_STEPS)[number]): string[] {
   const parts = html.split(/<li class="seg s-[a-z-]+"/).slice(1);
-  const one = parts[GATE_POINTS.indexOf(point)] ?? "";
+  const one = parts[GATE_STEPS.indexOf(point)] ?? "";
   return [...one.matchAll(/<span class="scell (t-[a-z]+)"/g)].map((m) => m[1] ?? "");
 }
 
@@ -417,7 +422,7 @@ describe("a running card", () => {
     const html = render({}, running());
 
     expect(segments(html)).toEqual(["skipped", "passed", "running", "skipped", "pending"]);
-    expect(labels(html).map(([, name]) => name)).toEqual([...GATE_POINTS]);
+    expect(labels(html).map(([, name]) => name)).toEqual([...GATE_STEPS]);
     expect((html.match(/<p class="snow/g) ?? []).length).toBe(1);
   });
 
@@ -539,7 +544,7 @@ describe("all five points, in every lane", () => {
     );
 
     expect(segments(html)).toHaveLength(5);
-    expect(segments(html)[GATE_POINTS.indexOf("proposed")]).toBe("failed");
+    expect(segments(html)[GATE_STEPS.indexOf("proposed")]).toBe("failed");
     expect(labels(html)).toContainEqual(["l-bad", "proposed"]);
   });
 
@@ -767,7 +772,7 @@ describe("the seven states", () => {
 /**
  * `never-ran` is the one mark on the rail that accuses Lingtai rather than
  * reporting on a run, so the rule that draws it is held to exactly the
- * comparison `landedWithoutGatePoints` makes — *this item landed*, and *against
+ * comparison `landedWithoutSteps` makes — *this item landed*, and *against
  * the plan the log says this run was given*. Everything looser than that puts
  * the hatch on a pipeline that was working.
  */
@@ -813,8 +818,15 @@ describe("the hatch, and what may not draw it", () => {
     const over = foldProgress(noPlanRecorded(), PLAN, true);
 
     expect(over?.points.map((p) => p.state)).toEqual([
+      // claim, design, implement, build, review — nothing planned and nothing
+      // recorded, which is `skipped` and not an accusation (#227).
+      "skipped",
       "skipped",
       "pending",
+      "skipped",
+      "skipped",
+      "skipped",
+      "skipped",
       "pending",
       "skipped",
       "pending",
@@ -893,7 +905,7 @@ describe("what the column can give a card", () => {
     const inside = 22 * 16 - padding * 2 - 3;
     const column = (inside - gap * 4) / 5;
     // A monospace advance is 0.6em in every face this app names.
-    const longest = Math.max(...GATE_POINTS.map((p) => p.length)) * fontSize * 0.6;
+    const longest = Math.max(...GATE_STEPS.map((p) => p.length)) * fontSize * 0.6;
 
     expect(longest).toBeLessThanOrEqual(column);
     // And the bar is a grid of five, not a flex row that could wrap instead.

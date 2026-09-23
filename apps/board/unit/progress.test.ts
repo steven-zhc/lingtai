@@ -8,7 +8,7 @@
  * and none of it reached the card.
  */
 import { describe, expect, it } from "vitest";
-import { GATE_POINTS, type Envelope, type GatePoint } from "@lingtai/domain";
+import { STEPS, type Envelope, type Step } from "@lingtai/domain";
 import type { GatePlan } from "@lingtai/conductor/filter";
 import { AGENT, elapsed, foldProgress, type PointState } from "../src/lib/progress.ts";
 
@@ -29,7 +29,7 @@ function at(time: string, type: string, data: unknown): Envelope {
   };
 }
 
-const gate = (point: GatePoint, action: string) => ({
+const gate = (point: Step, action: string) => ({
   gate: point,
   action,
   runId: "run-59",
@@ -37,14 +37,20 @@ const gate = (point: GatePoint, action: string) => ({
 });
 
 /**
- * This repository's own recipe, as `gatePlan` reduces it — every point present
- * and every duration already a number. That reduction has its own test in
- * `packages/conductor/unit/filter.test.ts`; this one is about what the fold
+ * This repository's own recipe, as `gatePlan` reduces it — every step present
+ * and every duration already a number. The five that `gates:` does not name
+ * are empty, exactly as `gatePlan` leaves them. That reduction has its own test
+ * in `packages/conductor/unit/filter.test.ts`; this one is about what the fold
  * does with the answer.
  */
 const PLAN: GatePlan = new Map([
+  ["claim", []],
   ["admit", []],
   ["prepared", [{ name: "install", budgetMs: 10 * 60_000 }]],
+  ["design", []],
+  ["implement", []],
+  ["build", []],
+  ["review", []],
   ["proposed", [{ name: "build", budgetMs: 20 * 60_000 }]],
   ["merge", []],
   ["end", [{ name: "close the ticket", budgetMs: null }]],
@@ -64,7 +70,7 @@ function timeline(): Envelope[] {
     at("2026-09-04T17:12:30Z", "GatesResolved", {
       runId: "run-59",
       configHash: "abc",
-      points: GATE_POINTS.map((point) => ({
+      points: STEPS.map((point) => ({
         gate: point,
         actions: (PLAN.get(point) ?? []).map((a) => a.name),
       })),
@@ -122,28 +128,35 @@ describe("where a run has got to", () => {
   });
 
   /**
-   * ADR 0016 §4: a point nobody configured is `skipped` and the skip is shown,
-   * so that a point which *was* configured and did not run — Lingtai's bug — is
-   * the only other way a point can be silent.
+   * ADR 0016 §4: a step nobody configured is `skipped` and the skip is shown,
+   * so that a step which *was* configured and did not run — Lingtai's bug — is
+   * the only other way a step can be silent.
+   *
+   * All ten since #227, and the five that carry no gate actions today are
+   * `skipped` for the same reason `admit` and `merge` are here: nothing is
+   * configured at them.
    */
-  it("shows all five points, and which are done", () => {
+  it("shows all ten steps, and which are done", () => {
     const points = foldProgress(timeline(), PLAN)?.points ?? [];
 
-    expect(points.map((p) => p.point)).toEqual([...GATE_POINTS]);
+    expect(points.map((p) => p.point)).toEqual([...STEPS]);
     expect(stateOf(points, "admit")).toBe("skipped");
     expect(stateOf(points, "prepared")).toBe("passed");
     expect(stateOf(points, "proposed")).toBe("running");
     expect(stateOf(points, "merge")).toBe("skipped");
     // Configured, not reached. Not the same fact as nothing being there.
     expect(stateOf(points, "end")).toBe("pending");
+    for (const step of ["claim", "design", "implement", "build", "review"] as const) {
+      expect(stateOf(points, step), step).toBe("skipped");
+    }
   });
 
   /**
    * `GatesResolved` is appended after `RunStarted`, which is after the prepare
    * gates — so for the first seconds of a run the log has no plan, and the
-   * recipe is the only thing that can say a point exists.
+   * recipe is the only thing that can say a step exists.
    */
-  it("names a configured point before GatesResolved has landed", () => {
+  it("names a configured step before GatesResolved has landed", () => {
     const first = timeline().slice(0, 3);
     const points = foldProgress(first, PLAN)?.points ?? [];
 

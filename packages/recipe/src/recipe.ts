@@ -16,7 +16,15 @@
  * read from*.
  */
 import { z } from "zod";
-import { Tier, RuntimeId, type GatePoint, isEventType, isRetiredEventType } from "@lingtai/domain";
+import {
+  GATE_STEPS,
+  Tier,
+  RuntimeId,
+  type GateStep,
+  type Step,
+  isEventType,
+  isRetiredEventType,
+} from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import { parseDuration } from "./duration.ts";
 
@@ -158,7 +166,7 @@ export function kindOfAction(action: GateAction): ActionKind {
 }
 
 /**
- * **Which of the six kinds each of the five points actually runs.**
+ * **Which of the six kinds each of the five gate steps actually runs.**
  *
  * Thirty cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
@@ -173,10 +181,15 @@ export function kindOfAction(action: GateAction): ActionKind {
  * than kept by hand — the copy in `#61`'s own body was wrong about `merge`
  * within three weeks of being written.
  *
- * **It does not narrow the closed set of points** ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)).
- * All five are still points and the set may still never grow; what is narrowed
- * is what a recipe may *say* today, to exactly what today's code does. The day
- * something runs a pipeline at `admit`, its row grows and nothing else moves.
+ * **It does not narrow the closed set** ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md),
+ * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §5).
+ * The set is `Step` and it has ten members; these five are `GATE_STEPS`, the
+ * ones the recipe's `gates:` map names, and what is narrowed is what a recipe
+ * may *say* today to exactly what today's code does. The day something runs a
+ * pipeline at `admit`, its row grows and nothing else moves; the day `gates:`
+ * becomes `steps:` ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §1)
+ * this table has ten rows and the rule is unchanged — **a step refuses a plugin
+ * it cannot run**.
  */
 export const KINDS_AT = {
   /** Nothing yet: no pipeline is constructed at `admit` anywhere. */
@@ -187,7 +200,7 @@ export const KINDS_AT = {
   merge: ["run", "agent", "watch", "human"],
   /** The two effects — the two kinds that carry `when:`. */
   end: ["close", "labels"],
-} as const satisfies Record<GatePoint, readonly ActionKind[]>;
+} as const satisfies Record<GateStep, readonly ActionKind[]>;
 
 /**
  * Why a point does not run a kind, in the words the refusal carries — or `null`
@@ -198,7 +211,7 @@ export const KINDS_AT = {
  * refused at `prepared` should not have to read `run-once.ts` to discover that
  * the reason is that nothing has been committed yet.
  */
-export function whyNoKindAt(point: GatePoint, kind: ActionKind): string | null {
+export function whyNoKindAt(point: GateStep, kind: ActionKind): string | null {
   if ((KINDS_AT[point] as readonly ActionKind[]).includes(kind)) return null;
   if (point === "admit") {
     return (
@@ -231,7 +244,7 @@ export function whyNoKindAt(point: GatePoint, kind: ActionKind): string | null {
 
 /** The refusal, in the one wording the schema and `gatesFromRecipe` both use. */
 export function kindRefusedAt(
-  point: GatePoint,
+  point: GateStep,
   kind: ActionKind,
   action: string,
   why: string,
@@ -251,7 +264,7 @@ export function kindRefusedAt(
  * install paid for. `lingtai doctor`, `lingtai add` and every pass resolve the
  * recipe, so all three name it.
  */
-function actionsAt(point: GatePoint) {
+function actionsAt(point: GateStep) {
   return z
     .array(GateAction)
     .superRefine((actions, ctx) => {
@@ -305,6 +318,23 @@ export const GateMap = z.strictObject({
   end: actionsAt("end"),
 });
 export type GateMap = z.infer<typeof GateMap>;
+
+/**
+ * What a step's gate actions are — and `[]` for the five `gates:` does not name.
+ *
+ * **One rule, in one place.** Everything that walks the pipeline walks all ten
+ * `STEPS` and then has to index a map with five keys: `gatePlan`,
+ * `gatesResolved` and the task page each had a copy of *is this step a gate
+ * step*, and three copies is how one of them ends up answering differently and
+ * a step reads as configured when it is not.
+ *
+ * It goes when `gates:` becomes `steps:`
+ * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §1): the
+ * map has all ten keys then, and there is nothing left to ask.
+ */
+export function gateActionsAt(gates: GateMap, step: Step): readonly GateAction[] {
+  return (GATE_STEPS as readonly Step[]).includes(step) ? gates[step as GateStep] : [];
+}
 
 /**
  * An event type the log actually has, as a subscription's `on:` entry.

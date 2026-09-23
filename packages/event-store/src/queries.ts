@@ -118,13 +118,17 @@ export interface LogQueries {
   endedWithoutEndActions(): Promise<EndedWithoutEnd[]>;
 
   /**
-   * The same comparison for the four points that produce verdicts, whose record
-   * lives on the run's stream — one row per point, anchored on what landed.
+   * The same comparison for the steps that produce verdicts, whose record lives
+   * on the run's stream — one row per step, anchored on what landed.
    *
    * `ranTypes` is the caller's: which events are proof a pipeline reached a
-   * point is the conductor's rule, not a store's.
+   * step is the conductor's rule, not a store's.
+   *
+   * **A step with nothing planned contributes nothing**, which is what keeps
+   * this the same question it was when `GatesResolved` named five entries and
+   * not ten: the `planned` CTE requires `jsonb_array_length(actions) > 0`.
    */
-  landedWithoutGatePoints(ranTypes: readonly string[]): Promise<PointNeverRan[]>;
+  landedWithoutSteps(ranTypes: readonly string[]): Promise<PointNeverRan[]>;
 
   /**
    * Every type in the log with its row count, in **byte order of the type** —
@@ -251,7 +255,7 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
       }));
     },
 
-    async landedWithoutGatePoints(ranTypes) {
+    async landedWithoutSteps(ranTypes) {
       const rows = await ask<{ work_item: string; run_id: string; gate: string }>(
         `with landed as (
            select distinct stream_id as work_item from events where type = 'WorkItemLanded'

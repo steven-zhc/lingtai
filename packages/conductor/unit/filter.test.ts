@@ -15,6 +15,7 @@ import type { ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { describe, expect, it } from "vitest";
 import { type RecipeFor, describeAssignee, describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
+import { STEPS } from "@lingtai/domain";
 import { resolveRecipe } from "@lingtai/recipe";
 
 const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
@@ -81,17 +82,19 @@ describe("projectFilter", () => {
    * for the reason `backoffMs` is, so the board never gets its own idea of what
    * `20m` is.
    *
-   * All five points, including the ones nothing is configured at: an empty
-   * point is `skipped` and the skip has to be visible, or a point that *was*
+   * All ten steps, including the ones nothing is configured at: an empty step
+   * is `skipped` and the skip has to be visible, or a step that *was*
    * configured and silently did not run is indistinguishable from it
-   * (ADR 0016 §4).
+   * (ADR 0016 §4). The five `gates:` does not name are `[]` for the same
+   * reason `admit` is (#227, 0061 §5).
    */
-  it("carries every point's actions with the timeouts already numbers", async () => {
+  it("carries every step's actions with the timeouts already numbers", async () => {
     const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
 
     expect(filter.ok).toBe(true);
     if (!filter.ok) return;
-    expect([...filter.plan.keys()]).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
+    expect([...filter.plan.keys()]).toEqual([...STEPS]);
+    expect(filter.plan.get("implement")).toEqual([]);
     expect(filter.plan.get("prepared")).toEqual([{ name: "install", budgetMs: 10 * 60_000 }]);
     // A reviewer has no clock on it, and null is not zero: a card that showed a
     // budget of 0 would say it was already out of time.

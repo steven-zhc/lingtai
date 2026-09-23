@@ -29,13 +29,13 @@
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { GATE_POINTS, retiredRepairPending, type Envelope } from "@lingtai/domain";
+import { STEPS, retiredRepairPending, type Envelope } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 
-/** One of the five points, and what the recipe runs there. */
+/** One of the ten steps, and what the recipe runs there. */
 export interface PlannedPoint {
   point: string;
   /** The action names, in the order they run. Empty when nothing is configured. */
@@ -179,7 +179,7 @@ export function planOf(
   },
 ): PlanView {
   return {
-    points: GATE_POINTS.map((point) => {
+    points: STEPS.map((point) => {
       const actions = (plan.get(point) ?? []).map((a) => a.name);
       return { point, actions, skipped: actions.length === 0 };
     }),

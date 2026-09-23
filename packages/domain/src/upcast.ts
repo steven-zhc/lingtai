@@ -26,24 +26,24 @@ export type Upcaster = (data: unknown) => unknown;
 export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>>;
 
 /**
- * 1 → 2 for every type whose payload carries a `GatePoint`: the point called
- * `diff` is called `proposed` (ADR 0018).
+ * **The step that is not here any more, and why its absence is not a hole.**
  *
- * A pure rename, and the only one of these steps that could have been skipped
- * by leaving the old value in the enum. It was not, because the enum is what a
- * reader is shown: two spellings of one point would mean the board, `status`
- * and every recipe had to know both forever, and the run that wrote `diff`
- * would look like a different kind of run from the one that wrote `proposed`.
+ * `gatePointRenamed` moved ADR 0018's `diff` to `proposed` on the eight gate
+ * and approval types, and it is deleted (#227). Its subject is gone: the
+ * vocabulary those events name is `Step`, and
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 spends
+ * this log rather than carrying it across the five-to-ten change — so there is
+ * no stored row spelling a step `diff` for it to walk up. The eight types went
+ * back to schemaVer 1 with it, because a version that counts a step this build
+ * does not have is a version nothing can be read at.
  *
- * It is written as a conditional rather than an unconditional overwrite so that
- * a v1 event from one of the other four points is returned untouched — the
- * upcaster's job is to move the one value that moved, not to assert what the
- * rest were.
+ * **Deleting one upcaster is not deleting the mechanism.** Everything below
+ * stays, and it stays for the reason it was built before it was needed
+ * ([0001](../../../doc/decisions/0001-event-sourcing.md)): the first upcaster
+ * is written under time pressure against real history, which is the worst
+ * moment to also be designing the machinery. A Lingtai whose log nobody may
+ * reset will want this file exactly as it is.
  */
-const gatePointRenamed: Upcaster = (data) => {
-  const d = data as { gate?: string };
-  return d.gate === "diff" ? { ...d, gate: "proposed" } : data;
-};
 
 /**
  * Add a step here in the same commit that bumps that type's `SCHEMA_VER`, never
@@ -169,6 +169,12 @@ export const UPCASTERS: UpcastRegistry = {
     1: (data) => ({ ...(data as object), of: 0 }),
   },
   GatesResolved: {
+    /**
+     * 1 → 2: the nested one. The point called `diff` is called `proposed` (ADR
+     * 0018), inside the `points` array rather than on a `gate` field, so it has
+     * always been its own step rather than the shared one the other eight
+     * carried.
+     */
     1: (data) => ({
       ...(data as object),
       points: ((data as { points?: { gate: string }[] }).points ?? []).map((p) =>
@@ -188,24 +194,20 @@ export const UPCASTERS: UpcastRegistry = {
      */
     2: (data) => data,
   },
-  GateRequested: { 1: gatePointRenamed },
-  GateStarted: { 1: gatePointRenamed },
   GatePassed: {
-    1: gatePointRenamed,
     /**
-     * 2 → 3: `findings` was added (#135). An empty array, and unlike the nulls
-     * above it is not a guess: a v2 pass's findings exist only as prose inside
-     * `evidence`, which is untouched, and parsing that string back into
+     * 1 → 2: `findings` was added (#135). An empty array, and unlike the nulls
+     * above it is not a guess: an earlier pass's findings exist only as prose
+     * inside `evidence`, which is untouched, and parsing that string back into
      * structure would be the log claiming a severity and a line nobody recorded
      * as such. Empty says *none recorded here*; the prose still says the rest.
+     *
+     * It was keyed `2` while the rename above it was `1`. The rename is gone
+     * and this is the only step left, so it is the first one — the key is the
+     * version it walks *from*, and a gap there is what the chain test catches.
      */
-    2: (data) => ({ ...(data as object), findings: [] }),
+    1: (data) => ({ ...(data as object), findings: [] }),
   },
-  GateFailed: { 1: gatePointRenamed },
-  GateWaived: { 1: gatePointRenamed },
-  ApprovalRequested: { 1: gatePointRenamed },
-  ApprovalGranted: { 1: gatePointRenamed },
-  ApprovalRevoked: { 1: gatePointRenamed },
 };
 
 export class MissingUpcasterError extends Error {

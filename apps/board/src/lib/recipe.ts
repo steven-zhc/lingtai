@@ -12,7 +12,7 @@
  * still is.
  */
 import { homedir } from "node:os";
-import { GATE_POINTS, type ProjectState } from "@lingtai/domain";
+import { GATE_STEPS, type ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
@@ -604,7 +604,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "the points",
-      says: GATE_POINTS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
+      says: GATE_STEPS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
       keys: ["gates"],
     },
     {

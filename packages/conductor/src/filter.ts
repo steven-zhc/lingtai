@@ -16,10 +16,10 @@
  * board all read this, which is what stops any two of them disagreeing about
  * whether a queue is empty or unreadable.
  */
-import { GATE_POINTS, type GatePoint, type ProjectState } from "@lingtai/domain";
+import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
+import { gateActionsAt, parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
 import { passCeiling } from "./ceiling.ts";
 import { currentRecipe } from "./projects.ts";
 
@@ -40,14 +40,16 @@ export interface PlannedAction {
 }
 
 /**
- * Every one of the five points, in loop order, with what runs at each.
+ * Every one of the ten steps, in pass order, with what runs at each.
  *
- * All five are present even where nothing is configured, because an empty point
- * is `skipped` and the skip has to be visible (ADR 0016 §4) — a point that is
- * merely absent from this map is indistinguishable from one that was
- * configured and silently did not run.
+ * All ten are present even where nothing is configured, because an empty step
+ * is `skipped` and the skip has to be visible (ADR 0016 §4,
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5 — *the
+ * resolved recipe has all ten, each at least `[]`, and the board and `lingtai
+ * doctor` draw all ten*) — a step that is merely absent from this map is
+ * indistinguishable from one that was configured and silently did not run.
  */
-export type GatePlan = ReadonlyMap<GatePoint, readonly PlannedAction[]>;
+export type GatePlan = ReadonlyMap<Step, readonly PlannedAction[]>;
 
 /**
  * The recipe's gates, with every duration already a number.
@@ -56,12 +58,15 @@ export type GatePlan = ReadonlyMap<GatePoint, readonly PlannedAction[]>;
  * duration string, so nothing downstream gets its own idea of what `20m` is.
  * The board needs it to say how far into its timeout a running gate has got,
  * which is the difference between *slow* and *about to be killed* (#79).
+ *
+ * The five steps `gates:` does not name are `[]` rather than absent, which is
+ * the same sentence the empty gates say: nothing is configured here.
  */
 export function gatePlan(recipe: Recipe): GatePlan {
   return new Map(
-    GATE_POINTS.map((point) => [
-      point,
-      recipe.gates[point].map((action) => ({
+    STEPS.map((step) => [
+      step,
+      gateActionsAt(recipe.gates, step).map((action) => ({
         name: action.name,
         // Only a command has a clock. `parseDuration` throws on nonsense, and a
         // recipe that resolved has already been through the schema's check.

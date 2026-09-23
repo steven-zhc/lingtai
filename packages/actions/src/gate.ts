@@ -24,7 +24,7 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from "@lingtai/agent/run-log";
-import type { GatePoint, PayloadOf } from "@lingtai/domain";
+import type { GateStep, PayloadOf } from "@lingtai/domain";
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -201,8 +201,8 @@ export interface PipelineResult {
 }
 
 export interface PipelineOptions {
-  /** Which of the five points this pipeline is. Stamped on every verdict. */
-  point: GatePoint;
+  /** Which of the five gate steps this pipeline is. Stamped on every verdict. */
+  point: GateStep;
   gates: readonly Gate[];
   context: GateContext;
   /**

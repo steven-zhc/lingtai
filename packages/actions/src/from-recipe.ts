@@ -6,7 +6,7 @@
  * supplied it would produce a green board for a change nobody approved — which
  * is worse than a run that will not start.
  */
-import type { GatePoint } from "@lingtai/domain";
+import type { GateStep } from "@lingtai/domain";
 import { type ActionKind, type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type AgentGateDeps, createAgentGate } from "./agent-gate.ts";
 import type { Gate } from "./gate.ts";
@@ -42,9 +42,9 @@ export class GateActionUnavailableError extends Error {
   readonly kind: string;
   readonly action: string;
   /** The point it was declared at, when it was a point that decided. */
-  readonly point: GatePoint | null;
+  readonly point: GateStep | null;
 
-  constructor(action: string, kind: string, missing: string, point: GatePoint | null = null) {
+  constructor(action: string, kind: string, missing: string, point: GateStep | null = null) {
     super(
       point === null
         ? `the "${action}" action is a "${kind}", and ${missing}. ` +
@@ -67,7 +67,7 @@ export class GateActionUnavailableError extends Error {
  * gets the same sentence rather than a gate that silently does nothing.
  */
 export function gatesFromRecipe(
-  point: GatePoint,
+  point: GateStep,
   actions: readonly GateAction[],
   deps: GateDeps = {},
 ): Gate[] {

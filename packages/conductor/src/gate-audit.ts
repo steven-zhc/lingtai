@@ -18,13 +18,21 @@
  *
  * ## The two halves
  *
- * **Planned** is `GatesResolved` on the run: it names all five points and the
+ * **Planned** is `GatesResolved` on the run: it names all ten steps and the
  * actions resolved for each, so "the recipe asked for something at `merge`" is
  * a fact in the log rather than in a recipe that may have changed since.
  *
- * **Ran** is any gate event on that same run carrying the point — a request, a
+ * **Ran** is any gate event on that same run carrying the step — a request, a
  * verdict, an approval asked for or given, a waiver. Any one of them is proof
- * the pipeline reached the point; none of them is proof it did not.
+ * the pipeline reached the step; none of them is proof it did not.
+ *
+ * **Ten steps and the same comparison** (#227,
+ * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3).
+ * The store's `planned` CTE selects only entries whose `actions` array is
+ * non-empty, so the five steps nothing configures contribute nothing: this
+ * check still reports exactly *planned, and no event* and has not widened to
+ * *a step with no events*. What it gained is that the day a plugin is written
+ * at `implement`, the same rule covers it with no second query.
  *
  * ## Why it is anchored on what landed
  *
@@ -40,19 +48,19 @@
  * check exists to surface rather than an exception to it: a recipe that names
  * actions there is being told they had no effect on what merged.
  */
-import { GATE_POINTS } from "@lingtai/domain";
+import { STEPS } from "@lingtai/domain";
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
 import type { LogQueries } from "@lingtai/event-store/log";
 import { splitWorkItem } from "./end-point.ts";
 
 /** A landed item whose run planned actions at a point and recorded none. */
-export interface UnrunGatePoint {
+export interface UnrunStep {
   workItemId: string;
   project: string;
   issue: number;
   runId: string;
-  /** The points, in recipe order: `admit`, `prepared`, `proposed`, `merge`. */
+  /** The steps, in pass order — of the five `gates:` names, all but `end`. */
   points: string[];
 }
 
@@ -87,17 +95,17 @@ const RAN = [
  * waiver on the run, which names who and why and satisfies this check because
  * `GateWaived` is a gate event like any other.
  */
-export async function landedWithoutGatePoints(queries?: LogQueries): Promise<UnrunGatePoint[]> {
+export async function landedWithoutSteps(queries?: LogQueries): Promise<UnrunStep[]> {
   // `RAN` goes to the store rather than the store knowing it: which events are
   // proof a pipeline reached a point is this file's rule, and the anti-join
   // that uses it is the store's — one row per offending point and nothing else
   // crosses the wire (#221).
   const ask = queries ?? (await import("@lingtai/event-store")).log.queries;
-  const rows = await ask.landedWithoutGatePoints(RAN);
+  const rows = await ask.landedWithoutSteps(RAN);
 
   // One row per point; one finding per item, because "this landed with two
   // points that never ran" is one thing to look at and not two.
-  const byItem = new Map<string, UnrunGatePoint>();
+  const byItem = new Map<string, UnrunStep>();
   for (const row of rows) {
     const split = splitWorkItem(row.workItemId);
     if (split === null) continue;
@@ -112,10 +120,12 @@ export async function landedWithoutGatePoints(queries?: LogQueries): Promise<Unr
       });
     }
   }
-  // Recipe order — `admit` before `merge` — rather than the alphabet, so the
-  // list reads the way the points run.
+  // Pass order — `admit` before `merge` — rather than the alphabet, so the
+  // list reads the way the steps run. Over all ten since #227, which is the
+  // same order for the five that can appear here and the right one for any
+  // sixth that later does.
   for (const found of byItem.values()) {
-    found.points.sort((a, b) => GATE_POINTS.indexOf(a as never) - GATE_POINTS.indexOf(b as never));
+    found.points.sort((a, b) => STEPS.indexOf(a as never) - STEPS.indexOf(b as never));
   }
   return [...byItem.values()];
 }

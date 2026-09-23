@@ -30,7 +30,7 @@ import {
   currentRecipe,
   endedWithoutEndActions,
   githubClientFor,
-  landedWithoutGatePoints,
+  landedWithoutSteps,
   loadProjects,
   passCeiling,
   projectFilters,
@@ -1172,7 +1172,7 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
  *
  * The comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, and the one that would have found #55 the day it happened.
- * `GatesResolved` names all five points and the actions resolved for each, so
+ * `GatesResolved` names all ten steps and the actions resolved for each, so
  * "the recipe asked for something at `end`" is in the log; `EndActionsResolved`
  * is the record that the point ran. An item that landed, whose run planned
  * actions at `end`, and whose stream holds no resolution, is a gate that was
@@ -1229,7 +1229,7 @@ async function endPointRan(queries: LogQueries): Promise<CheckResult> {
  */
 async function gatePointsRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: every point that was planned ran";
-  const found = await landedWithoutGatePoints(queries).catch(() => null);
+  const found = await landedWithoutSteps(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
   if (found.length === 0) {
