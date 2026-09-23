@@ -33,9 +33,16 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * vocabulary those events name is `Step`, and
  * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 spends
  * this log rather than carrying it across the five-to-ten change — so there is
- * no stored row spelling a step `diff` for it to walk up. The eight types went
- * back to schemaVer 1 with it, because a version that counts a step this build
- * does not have is a version nothing can be read at.
+ * no stored row spelling a step `diff` for it to walk up. **Seven of those
+ * eight went back to schemaVer 1 with it**, because a version that counts a
+ * step this build does not have is a version nothing can be read at.
+ *
+ * `GatePassed` is the eighth and did **not**: its other step, `findings`
+ * (`#135`), outlived the rename and moved down to key `1`, so that type keeps
+ * one step and is at 2. A field added to it is `SCHEMA_VER` 3 and an upcaster
+ * keyed `2` — keying a new one `1` would replace the `findings` fill rather
+ * than follow it, and the chain would stay unbroken while every stored
+ * `GatePassed` lost its `findings: []`.
  *
  * **Deleting one upcaster is not deleting the mechanism.** Everything below
  * stays, and it stays for the reason it was built before it was needed

@@ -197,8 +197,10 @@ describe("parseStoredPayload", () => {
  * five entries to ten with no upcaster, because
  * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 resets
  * this log rather than carrying it — so there is no stored row spelling a step
- * `diff` for that step to walk up. The eight went back to schemaVer 1 with it,
- * and the chain invariant at the top of this file is what forced that.
+ * `diff` for that step to walk up. Seven of the eight went back to schemaVer 1
+ * with it, and the chain invariant at the top of this file is what forced that;
+ * `GatePassed` is the eighth and stayed at 2, because `findings` is a step of
+ * its own that outlived the rename and took key `1` when the rename left.
  *
  * `GatesResolved` keeps its own, because it never shared one: the value it
  * moves is nested inside `points` rather than on a `gate` field. It is

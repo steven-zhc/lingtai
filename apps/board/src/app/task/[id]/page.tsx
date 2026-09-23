@@ -245,10 +245,15 @@ export function Attempt({
         <RunLog runId={run.runId} live={running} />
       )}
 
-      {/* All five, always — including the ones nothing was configured at. A
-          point that is merely omitted looks exactly like a point that was
-          configured and silently did not run, and only one of those is our bug
-          (ADR 0016 §4). Under the attempt, because a gate runs once per
+      {/* Everything that has anything to say, and `skipped` is the only state
+          that may be left out (ADR 0016 §4): a step that is merely omitted
+          looks exactly like a step that was configured and silently did not
+          run, and only the second is our bug. The fold hands this all ten
+          steps (#227) and `Segs` draws the five `GATE_STEPS` always plus every
+          other step that is not `skipped` — the block on `Segs` in `rail.tsx`
+          is where that condition is argued, and it is what to read before
+          changing what `stateOf` returns or adding a step that starts
+          `skipped`. Under the attempt, because a gate runs once per
           attempt: attempt 1's failing `proposed` and attempt 2's have nothing
           to do with each other and used to sit in one list.
 

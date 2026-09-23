@@ -1835,10 +1835,14 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // 2: added `findings`, the shape `GateFailed` carries, so a minor on a
   // passing review is structured rather than prose inside `evidence` (#135).
   //
-  // **The eight other gate types have left this table.** Their only bump was
+  // **The seven other gate and approval types have left this table**, and
+  // `GatePassed` is not one of them — it is here, at 2, because `findings` is
+  // its own step and outlived the rename. For those seven the only bump was
   // 0018's `diff` → `proposed`, `gatePointRenamed` is gone with the log it
   // read, and a version that counts a step this build no longer has is a
   // version that cannot be walked — `upcast.test.ts`'s chain invariant says so.
+  // A field added to `GatePassed` is 3 here and an upcaster keyed `2`; keying
+  // one `1` replaces the `findings` fill rather than following it.
   GatePassed: 2,
 };
 

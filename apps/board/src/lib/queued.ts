@@ -61,7 +61,10 @@ export interface PlannedPoint {
  * of the recipe, and the limits beside it — and the page showed none of them.
  */
 export interface PlanView {
-  /** All five, in loop order, including the ones nothing is configured at. */
+  /**
+   * All ten `STEPS`, in pass order, including the ones nothing is configured
+   * at (#227) — so index it by name and never by position.
+   */
   points: PlannedPoint[];
   /** `runtime.limits.turns`. */
   turns: number;
