@@ -1,9 +1,10 @@
 # 0058 — Lingtai is a development pipeline, and a pass is ten steps
 
-**Status** **proposed** · 2026-09-22 · **the first ADR here that is not
-`accepted`**, deliberately: §2 went through three drafts with the
-person it is for, and §What-is-not-decided still holds the question that
-decides whether the rest is buildable. · **revises
+**Status** accepted · 2026-09-22, accepted 2026-09-23 · it was `proposed` while
+§2's division was still being argued — three drafts — and while
+§What-is-not-decided held *plugins that are only correct together*, which
+[0061](0061-the-recipe-is-the-pipeline.md) §4 retired by reading the code:
+`base` is one value that flows, not two settings that must agree. · **revises
 [0015](0015-five-gates-and-two-extensions.md)'s framing and none of its rules**
 
 Lingtai is not a general workflow engine with five extension points. It is a
@@ -120,20 +121,11 @@ outcome, not kinds of node.**
 
 ### 2b. The core is the sequence and the outcome rules. Everything that acts is a plugin
 
-List what each step does and you have listed everything Lingtai does:
-
-| step | plugins |
-|---|---|
-| `claim` | tag filter · assignee · kind |
-| `admit` | analysis of the requirement · git worktree |
-| `prepared` | `pnpm install` · `pnpm test` |
-| `design` | document generation |
-| `implement` | the agent call |
-| `build` | `pnpm build` · `pnpm test` |
-| `review` | the cold reviewer |
-| `proposed` | the workflow check · line-mistake-or-approach-mistake |
-| `merge` | `git merge` · an agent that resolves a conflict |
-| `end` | the GitHub update |
+List what each step does and you have listed everything Lingtai does.
+**The list lives in [0061](0061-the-recipe-is-the-pipeline.md) §3** — this
+section had a copy of it and the copy went stale within a day, saying that
+`proposed`'s ceilings were a plugin after 0061 had made them the workflow's.
+One table, in the ADR that decides the file it is written in.
 
 **Lingtai ships that whole set, and the set is exactly today's behaviour.** A
 recipe that says nothing gets it. A project changes a step by naming a
@@ -151,7 +143,7 @@ one rule rather than two: **a step refuses a plugin it cannot run.**
 ```
 1   claim        ─ pick the ticket
 2   admit        ─ start work on it; the worktree is cut here
-3   prepared     ─ the tree is ready to be worked in
+3   prepared     ─ REFUSES · the tree is ready to be worked in
 4   design       ─ a document, before any code
 5   implement    ─ one agent, in that worktree
 6   build        ─ REFUSES
@@ -162,7 +154,10 @@ one rule rather than two: **a step refuses a plugin it cannot run.**
     waiting      ─ not a step: where a pass rests until a person moves it
 ```
 
-**Three steps may refuse, and every refusal goes to `proposed`.** That is what
+**Four steps may refuse, and every refusal goes to `proposed`.** `prepared` is
+one of them and an earlier draft of this list left it out — it refuses when the
+install fails or the base is not green, which is `README.md`'s *refuse before
+money is spent* and the cheapest refusal in the pass. That is what
 makes the loops bounded: each one passes through the workflow check, which is
 where the ceilings live. Today those ceilings are `buyRound` and `passCeiling`
 inside `run-once.ts`, visible to nobody.
@@ -205,7 +200,7 @@ green is not evidence that the tree is green.
 flowchart TB
   CL["<b>claim</b><br/>tag filter · assignee · kind"]
   AD["<b>admit</b><br/>the requirement · the worktree"]
-  PR["<b>prepared</b><br/>install · is the base green?"]
+  PR{{"<b>prepared</b><br/>install · is the base green?"}}
   DS["<b>design</b><br/>a document, before any code"]
   IM["<b>implement</b><br/>one agent, in that worktree"]
   BU{{"<b>build</b>"}}
@@ -216,6 +211,9 @@ flowchart TB
   WA(["waiting on you"])
 
   CL --> AD --> PR --> DS --> IM --> BU
+  AD -->|"the requirement is not clear<br/>reason: needs-input"| PO
+  PR -->|"install failed · the base is not green"| PO
+  DS -->|"the design needs a decision<br/>reason: needs-input"| PO
   IM -->|"the agent stopped to ask<br/>reason: needs-input"| PO
   BU -->|"green"| RV
   BU -->|"red — review is never paid for a diff that will not compile"| PO
@@ -228,16 +226,14 @@ flowchart TB
   PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
   PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
   PO -->|"every ceiling spent · a conflict the agent<br/>could not resolve · a question only you can answer"| WA
-  AD -->|"the requirement is not clear"| WA
-  DS -->|"the design needs you"| WA
   WA -->|"after you clarify"| CL
   WA -->|"you close it"| EN
 
   classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
   classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
   classDef back fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
-  class BU,PO,MG gate;
-  class CL,AD,PR,DS,IM,RV,EN core;
+  class PR,BU,PO,MG gate;
+  class CL,AD,DS,IM,RV,EN core;
   class WA back;
 ```
 
@@ -253,9 +249,22 @@ that routes, so every loop in the drawing passes through the workflow check, and
 runs on the way through as well as on the way back, so a pass that sailed
 through has a recorded decision saying it did.
 
-**Nothing refuses into `waiting` directly.** A conflict and a red build are
-judgements about the change and go where judgements go; only the step that
-counts the ceilings may decide that a person is next.
+**`waiting` has exactly one way in, and that is the property to keep.** Only
+`proposed` may decide that a person is next, so *is this worth interrupting
+somebody over* is asked in one place, by something a recipe can configure.
+
+Two edges used to go round it — `admit` when the requirement was not clear, and
+`design` when the design needed a decision — and the argument that removed them
+is the one that already covers `implement`: **both of those steps run an agent,
+so both have already spent.** *We paid once; do we pay again, or is this a
+question only a person can close?* is the same question in all three places,
+and it is a judgement. A step that reaches `waiting` on its own is a step
+deciding how to spend your attention with no ceiling and no plugin.
+
+**And a destination the judge may choose needs a bound on the step it goes
+to** (§the-bound-sits-on-the-step-it-bounds, [0061](0061-the-recipe-is-the-pipeline.md) §2).
+If `proposed` may send a pass back to `design`, then `design` carries its own
+`rounds`, exactly as `implement` does.
 
 ### 3c. Every step that does not simply pass reports a reason, and the reason survives the routing
 
@@ -268,7 +277,10 @@ why without opening a run log.
 build      red                          a refusal
 review     findings                     a refusal
 merge      gate-failed | conflict       a refusal
-implement  needs-input                  did not finish — 0057's class, not a refusal
+prepared   install failed               a refusal
+admit      needs-input                  did not finish — 0057's class, not a refusal
+design     needs-input                  the same
+implement  needs-input                  the same
 ```
 
 One shape for all four: a machine-readable `reason` beside human-readable
@@ -310,7 +322,7 @@ it.** That is the whole of the answer to *should an agent resolve the conflict*:
 | `gate-failed` | 26 / 32 | `implement`, carrying the failure and the new base. An ordinary round |
 | `conflict`, text | 6 / 32 | resolved, then **back through `build` and `review`** — see below |
 | `conflict`, intent | — | `waiting`, carrying what each side changed |
-| `needs-input` | from `implement` | the judge's call: `waiting` with the question, or `implement` again with *state your assumption* |
+| `needs-input` | from `admit`, `design` or `implement` | the judge's call: `waiting` with the question, or that step again with *state your assumption* |
 
 **The third row is the one an agent must not take.** Two changes that edited the
 same decision differently — one setting `rounds: 2` where the other set `5` —
@@ -387,6 +399,12 @@ what the run was actually configured to do** — whether `claim` picked by tag o
 by assignee would be nowhere. That `.length(5)` is a hard assertion and has to
 move with this ADR, or 0047 quietly becomes false.
 
+**It moves without an upcaster.**
+[0061](0061-the-recipe-is-the-pipeline.md) §7 spends this log instead: the
+shape changes, the log is reset for the third time, and the measurements are
+folded into a file first. Nobody should read this section and go and write an
+upcaster — the mechanism stays for a Lingtai whose log nobody may reset.
+
 Left alone:
 
 - **A configured thing that silently does not run is Lingtai's bug**
@@ -431,6 +449,15 @@ anyway one agent run later. Keeping it is a choice; it should be a stated one.
 gate points and are correct. The ones to check use "point" to mean "stage".
 
 ## What is not decided
+
+- **Whether the router is a step at all.** Every step that does not simply pass
+  now hands its outcome to `proposed` — six of them. A thing that runs after
+  every step is a rule, not a station, and on that reading `proposed` is two
+  things this ADR merged: **the step where a proposed change is inspected**
+  (`human:` approval, `watch:`, the tamper check) and **the router**. Splitting
+  them would leave every rule here true and redraw §3b. It is not done now
+  because the drawing is worth more settled than symmetrical, and because
+  nothing in the plan is blocked by it.
 
 - **Some plugins are only correct together.** `admit`'s worktree and `merge`'s
   `git merge` must agree about one repository, branch and base; `prepared`'s
