@@ -584,7 +584,13 @@ describe("the retired names in doc/reference.md", () => {
    * stylesheet still naming the retired concept, with the class now matching
    * nothing in the TSX: two vocabularies and a dead rule, under a green gate. So
    * `.css` is read, and `.prisma` and the `.json` beside it — generated, and
-   * renamed with the schema they come from — are named as being out.
+   * renamed with the schema they come from — are named as being out. **Both
+   * halves of that are checked, and they are not one assertion.** The
+   * extensions of what was read hold `READS` itself; the files `src/` holds
+   * and `READS` walks past hold the sentence the document makes about them,
+   * which is the half the first cannot reach — a new extension under `src/` is
+   * filtered out before anything looks at it, which is how a stylesheet sat
+   * inside the enforced region unread.
    *
    * Every one of those is a boundary rather than an oversight, and what makes it
    * one is that it is stated in the document, checked here, and cannot widen or
@@ -615,6 +621,21 @@ describe("the retired names in doc/reference.md", () => {
       [...new Set(files.map((f) => f.slice(f.lastIndexOf("."))))].sort(),
       "the rule read an extension the document does not name, or stopped reading one it does",
     ).toEqual([".css", ".ts", ".tsx"]);
+    // **And the complement, which the line above cannot see.** It maps over
+    // what `READS` already admitted, so it reds on the filter widening or
+    // narrowing and never on a file the filter walks past — and a file the
+    // filter walks past is exactly what `globals.css` was. An
+    // `apps/board/src/app/plan.module.scss` carrying `.point` and `.sgate`
+    // lands inside the enforced region, is dropped by `sources()`, appears in
+    // no row, and leaves every line above green: the stylesheet hole again,
+    // one extension out. So what `src/` holds and the rule does not read is
+    // named here, as the document names it — two generated files, renamed with
+    // the schema they come from — and a third arrival is this going red until
+    // somebody reads it or writes it down.
+    expect(
+      (await everything()).filter((file) => !READS.test(file)),
+      "src/ holds a file the rule does not read and doc/reference.md does not name — read it, or name it there",
+    ).toEqual(["packages/event-store/src/prisma/contract.json", "packages/event-store/src/prisma/contract.prisma"]);
   });
 });
 

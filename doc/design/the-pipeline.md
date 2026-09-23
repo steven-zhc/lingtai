@@ -305,7 +305,18 @@ bail has nothing left to bail from.
       a retired name and sometimes a live concept is the one thing the next
       reader cannot tell apart. Prose describing *history* keeps the name that
       history happened under. Held to it by a table in `doc/reference.md` and a
-      test that reads it (#232), and emptied by #233
+      test that reads it (#232), and emptied by #233 — **and that table reads
+      `{apps,packages}/*/src/` and nothing else**, so an empty allowlist is not
+      this line ticked. What it leaves standing is named under *Where it is
+      not* in that same section, and is swept by hand on the same day: both
+      test halves (`GATE_CARRYING` in `packages/domain/unit/upcast.test.ts`,
+      `GateCheckPassed` in `apps/board/unit/run-recipe.test.tsx`), `prompts/`
+      — `ticket.md:25`'s *Lingtai runs the gates and the merge lane* is in
+      every ticket an agent is given — `scripts/`, and every config file,
+      `.lingtai/config.yaml:108`'s `gates:` among them, which nothing reads
+      (0046 §3) and still says the word. **A green `#232` is evidence for the
+      first clause and a claim about the rest**, and this box ticked on the
+      test alone is `#58` again: rendered as resolved, executing nothing
 - [ ] **The two drawings say ten.** `#227` left them at five on purpose, and it
       is a redraw rather than a rename: `doc/architecture.html`'s prose moved
       because its figure draws a *pass* and never enumerated the vocabulary,
