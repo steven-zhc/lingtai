@@ -554,7 +554,7 @@ occurrences of the projector's own vocabulary.
 
 ### the allowlist
 
-**345 entries in 77 files, counted 2026-09-23.** That count is a ceiling the
+**340 entries in 76 files, counted 2026-09-23.** That count is a ceiling the
 test refuses to let grow, and the rest of the epic empties the table: a ticket
 that renames its area deletes its rows, and needs no ceremony to do it. A
 ticket that *adds* a row is widening the debt and gets a red test instead.
@@ -567,14 +567,14 @@ renamed away is as red as a name that has appeared.
 |---|---|
 | `apps/board/src/app/backlog/page.tsx` | `gate` |
 | `apps/board/src/app/evidence.tsx` | `GateEvidence` · `gate` · `gates` |
-| `apps/board/src/app/page.tsx` | `Gates` · `gate` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` · `point` · `points` |
+| `apps/board/src/app/page.tsx` | `gate` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` · `points` |
+| `apps/board/src/app/plan.tsx` | `point` · `points` |
 | `apps/board/src/app/rail.tsx` | `PointProgress` · `PointState` · `point` · `pointOf` · `points` |
-| `apps/board/src/app/recipe/[project]/page.tsx` | `gates` |
+| `apps/board/src/app/recipe/[project]/page.tsx` | `point` |
 | `apps/board/src/app/setup/wizard/finish.ts` | `wholeGates` |
 | `apps/board/src/app/setup/wizard/wizard.tsx` | `gates` |
-| `apps/board/src/app/spend/page.tsx` | `gate` · `point` |
 | `apps/board/src/app/standing.tsx` | `gate` |
-| `apps/board/src/app/task/[id]/page.tsx` | `GatesResolved` · `gate` · `gates` · `point` · `points` |
+| `apps/board/src/app/task/[id]/page.tsx` | `gate` · `gates` · `point` · `points` |
 | `apps/board/src/lib/board.ts` | `GatePlan` · `gates` · `gatesApproved` · `gatesFailed` · `gatesPassed` · `gatesWaived` |
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `gate` · `gateAt` · `points` |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` · `GateFailed` · `GateNeverRan` · `GatePassed` · `GatePlan` · `GateRequested` · `GateStarted` · `GateWaived` · `GatesResolved` · `PointProgress` · `PointState` · `gate` · `point` · `pointOf` · `points` |
@@ -590,7 +590,6 @@ renamed away is as red as a name that has appeared.
 | `apps/cli/src/restart.ts` | `gates` |
 | `apps/cli/src/service.ts` | `gates` · `point` |
 | `apps/cli/src/status.ts` | `gates` |
-| `apps/site/src/app/snapshot-board.tsx` | `gates` |
 | `apps/site/src/lib/snapshot.ts` | `gates` |
 | `packages/actions/src/agent-gate.ts` | `AgentGateDeps` · `AgentGateSpec` · `Gate` · `GateContext` · `GateFinding` · `GateResult` · `createAgentGate` · `gate` · `point` |
 | `packages/actions/src/from-recipe.ts` | `AgentGateDeps` · `Gate` · `GateAction` · `GateActionUnavailableError` · `GateDeps` · `WatchGateDeps` · `createAgentGate` · `createHumanGate` · `createProcessGate` · `createWatchGate` · `gate` · `gates` · `gatesFromRecipe` · `point` · `wrongPoint` |

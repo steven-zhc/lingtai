@@ -29,6 +29,7 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -39,7 +40,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
  * a rename ticket earns, raising it is the sentence *align the terms* becoming
  * untrue one row at a time.
  */
-const MAY_NOT_EXCEED = 345;
+const MAY_NOT_EXCEED = 340;
 
 /** `GatesResolved` → `gates` · `resolved`; `checkpoint` → `checkpoint`, one word and safe. */
 function words(token: string): string[] {
@@ -47,86 +48,61 @@ function words(token: string): string[] {
 }
 
 /**
- * A source file split into what the rule reads and what it does not.
+ * What the rule reads: every identifier, and the text of every string, template
+ * chunk and piece of JSX copy — **parsed by `typescript`, not scanned by hand.**
+ *
+ * The first version of this was a hand-written lexer and it got `.tsx` wrong in
+ * both directions at once. The `/` of a `</p>` read as the opening of a regex
+ * literal, so everything up to the next `/` anywhere in the file was discarded:
+ * `apps/board/src/app/plan.tsx` came back as 889 characters of its 4144 and so
+ * carried no row here, though `point` and `points` are all over it, and a new
+ * retired name dropped into a swallowed span was green. And a span swallowed
+ * that way took the `//` or `/*` that opens a comment with it, so the prose
+ * after one was counted as code — five files carried rows that only their
+ * comments say. A `.tsx` lexer is not a thing to keep guessing at against a
+ * board somebody else is writing, and the compiler this repository is built
+ * with already has one.
  *
  * Comments come out, because **nothing mechanical can tell a comment about the
  * past from a comment about the present** — 0018's *the point called `diff`* is
- * correct and must keep its word. What is left is the code (identifiers, types,
- * event types, recipe keys, and JSX text, which is copy a person reads) and the
- * contents of every string literal, which is the board's copy, a refusal's text
- * and `lingtai`'s output.
+ * correct and must keep its word. `forEachChild` does not descend into a
+ * comment or a JSDoc block, and *reads no comment* below is the case for it.
  *
- * A template hole is code rather than text, and both sides get a space around
- * it so that `` `review${n}gates` `` never reads as one token.
+ * What is left is the code (identifiers, types, event types, recipe keys) and
+ * the strings and JSX a person reads: the board's copy, a refusal's text,
+ * `lingtai`'s output. A regex literal's body is none of those and is not read.
  */
-function scannable(src: string): string {
-  let code = "";
-  let text = "";
-  let i = 0;
-  // The last significant code character, which is how a regex literal is told
-  // from a division.
-  let prev = "";
-  while (i < src.length) {
-    const c = src[i];
-    const d = src[i + 1];
-    if (c === "/" && d === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
-      continue;
-    }
-    if (c === "/" && d === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      const quote = c;
-      i++;
-      text += " ";
-      while (i < src.length && src[i] !== quote) {
-        if (src[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (quote === "`" && src[i] === "$" && src[i + 1] === "{") {
-          let depth = 1;
-          i += 2;
-          const start = i;
-          while (i < src.length && depth > 0) {
-            if (src[i] === "{") depth++;
-            else if (src[i] === "}") depth--;
-            if (depth > 0) i++;
-          }
-          code += ` ${src.slice(start, i)} `;
-          text += " ";
-          i++;
-          continue;
-        }
-        text += src[i];
-        i++;
-      }
-      i++;
-      text += " ";
-      prev = "x";
-      continue;
-    }
-    if (c === "/" && !/[A-Za-z0-9_$)\]]/.test(prev)) {
-      i++;
-      while (i < src.length && src[i] !== "/") {
-        if (src[i] === "\\") i++;
-        else if (src[i] === "[") while (i < src.length && src[i] !== "]") i += src[i] === "\\" ? 2 : 1;
-        i++;
-      }
-      i++;
-      while (i < src.length && /[a-z]/.test(src[i]!)) i++;
-      prev = "x";
-      continue;
-    }
-    code += c;
-    if (!/\s/.test(c!)) prev = c!;
-    i++;
-  }
-  return `${code}\n${text}`;
+const READ_AS_TEXT: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.StringLiteral,
+  ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+  ts.SyntaxKind.TemplateHead,
+  ts.SyntaxKind.TemplateMiddle,
+  ts.SyntaxKind.TemplateTail,
+  ts.SyntaxKind.JsxText,
+]);
+
+function scannable(src: string, name: string): string {
+  // **The script kind follows the extension, and it is not a formality.** Under
+  // `TSX` a `<T>(x: T) => x` in a `.ts` file is read as an element and the code
+  // after it as JSX children, which turns the comments below it into text the
+  // rule reads: parsing `packages/recipe/src/propose.ts` that way invented a
+  // `gate` that only its JSDoc says.
+  const kind = name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const parsed = ts.createSourceFile(name, src, ts.ScriptTarget.Latest, false, kind);
+  const read: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) read.push(node.text);
+    else if (READ_AS_TEXT.has(node.kind)) read.push((node as ts.LiteralLikeNode).text);
+    node.forEachChild(visit);
+  };
+  parsed.forEachChild(visit);
+  // One token per line, so that `` `review${n}gates` `` never reads as one.
+  return read.join("\n");
+}
+
+/** Every identifier-shaped token the rule reads out of one file, in order. */
+function tokens(src: string, name: string): string[] {
+  return scannable(src, name).match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? [];
 }
 
 /** Everything under `{apps,packages}/*<!---->/src/`, and nothing under `doc/`. */
@@ -195,7 +171,7 @@ async function violations(g: Awaited<ReturnType<typeof glossary>>) {
   const found = new Map<string, string[]>();
   for (const file of await sources()) {
     const hit = new Set<string>();
-    for (const token of scannable(await readFile(`${root}${file}`, "utf8")).match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? []) {
+    for (const token of tokens(await readFile(`${root}${file}`, "utf8"), file)) {
       if (exempt.has(token)) continue;
       if (words(token).some((w) => retired.has(w))) hit.add(token);
     }
@@ -266,6 +242,98 @@ describe("the retired names in doc/reference.md", () => {
   });
 });
 
+/**
+ * **The ledger is only as honest as what reads `src/`.** Every case here is a
+ * shape the first version of the reader got wrong, and each one was silent: a
+ * scanner that returns less of a file than it was given makes *is exactly what
+ * src/ says today* green over names it never looked at.
+ */
+describe("the scanner", () => {
+  /**
+   * The defect `#232` shipped with, and the reason the allowlist below has a
+   * `plan.tsx` row now: `</p>`'s `/` was read as the opening of a regex literal
+   * and the 3255 characters to the next `/` were discarded.
+   */
+  it("keeps the code after a JSX closing tag", () => {
+    const read = tokens(
+      ["const F = ({ plan }: { plan: PlanView }) => (", "  <div>", "    <p>not read</p>", "    <ol>{plan.points.map((p) => p.point)}</ol>", "  </div>", ");", ""].join("\n"),
+      "f.tsx",
+    );
+
+    expect(read).toContain("points");
+    expect(read).toContain("point");
+  });
+
+  /** `{p.points} />` closes a tag; `}` is not the end of something divisible. */
+  it("keeps the code after a self-closing JSX tag", () => {
+    const read = tokens(["const F = () => (", "  <>", "    <Segs points={p.points} />", "    <b>{p.point}</b>", "  </>", ");", ""].join("\n"), "f.tsx");
+
+    expect(read).toContain("points");
+    expect(read).toContain("point");
+  });
+
+  /**
+   * JSX copy is text and not a string literal, so the apostrophe in *a person's
+   * word* opens nothing. A scanner that thinks it does swallows the code under
+   * it as far as the next quote, which is the same defect as the one above
+   * reached from the other side.
+   */
+  it("keeps the code after an apostrophe in JSX copy", () => {
+    const read = tokens(["const F = () => (", "  <p>a person's word, standing in for a gate {count}</p>", ");", "const later = run.points;", ""].join("\n"), "f.tsx");
+
+    expect(read).toContain("gate");
+    expect(read).toContain("points");
+  });
+
+  /**
+   * **And it reads no comment**, which is the other half and is what the
+   * document promises: a comment about the past keeps the name the past happened
+   * under. `{/* … *\/}` is in here because the mis-parse above swallowed the
+   * `/*` that opens one and handed its prose over as code — that is where five
+   * of the rows this ticket first shipped came from.
+   */
+  it("reads no comment, in any of the four ways this repository writes one", () => {
+    const read = tokens(
+      ["/** A gate at a point. */", "// gates and points", "/* GateAction */", "export const F = () => <p>{/* the gate plan */}kept</p>;", ""].join("\n"),
+      "f.tsx",
+    );
+
+    expect(read).toContain("kept");
+    expect(read.filter((t) => words(t).some((w) => ["gate", "gates", "point", "points"].includes(w)))).toEqual([]);
+  });
+
+  /** A regex literal's body is neither code a person renames nor copy one reads. */
+  it("reads a string but not a regex literal's body", () => {
+    const read = tokens('const re = /gates/;\nconst s = "gate";\n', "f.ts");
+
+    expect(read).toContain("gate");
+    expect(read).not.toContain("gates");
+  });
+
+  /** A template hole is code, and the chunks either side of it never fuse. */
+  it("keeps a template's holes and its text apart", () => {
+    const read = tokens("const s = `review${n}gates`;\n", "f.ts");
+
+    expect(read).toContain("review");
+    expect(read).toContain("gates");
+    expect(read).not.toContain("reviewngates");
+  });
+
+  /**
+   * **A `.ts` file is parsed as `.ts`.** Under `TSX` the generic arrow below is
+   * an element — `propose.ts:132`'s `const get = <T>(path: string) =>` is the
+   * real one — and the lines after it are its children, which handed that
+   * file's comments over as text and invented a `gate` no line of its code says.
+   * A `<T,>` would be safe in either; the repository writes `<T>`.
+   */
+  it("parses a .ts generic arrow as a generic arrow", () => {
+    const src = ["const id = <T>(x: T): T => x;", "// the gate at a point", "export const y = id(1);", ""].join("\n");
+
+    expect(tokens(src, "f.ts")).not.toContain("gate");
+    expect(tokens(src, "f.tsx")).toContain("gate");
+  });
+});
+
 describe("the allowlist", () => {
   /**
    * The whole ticket, in one assertion, and it is an equality rather than a
@@ -285,7 +353,7 @@ describe("the allowlist", () => {
 
   /**
    * And it may only shrink. `MAY_NOT_EXCEED` is the count measured on
-   * 2026-09-23; a 346th entry is red whether it arrived as a new name in `src/`
+   * 2026-09-23; a 341st entry is red whether it arrived as a new name in `src/`
    * or as a row somebody added to make one green. Removing entries is free.
    */
   it("may only shrink", async () => {
