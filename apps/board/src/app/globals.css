@@ -448,8 +448,10 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    `rail.tsx`).
 
    **Clipped on purpose, and the clip is the concession the bar makes to ten.**
-   Ten columns in 22rem leave five characters at 9px — `prepa`, `imple`,
-   `propo` — and every one of the ten is still unique at that length, with
+   Ten columns in 22rem leave five characters at 9px, so a card reads
+   `claim admit prepa desig imple build revie propo merge end` — **five** of
+   the ten are cut, not three: `prepared`, `design`, `implement`, `review` and
+   `proposed`. Every one of the ten is still unique at that length, with
    **three** characters to spare: the ten stay distinct at four and at three,
    and stop being distinct at two, where `prepared` and `proposed` are both
    `pr`. So a narrower column or a larger face is a legibility question and not
@@ -458,10 +460,15 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    `ellipsis` because an ellipsis spends one of the five characters saying
    there are more; the `title` on the segment carries the whole name.
 
-   Neither number is prose: `rail.test.tsx` computes the five from the values
-   below and asserts it, and computes where the ten first collide and asserts
-   that is two — so changing the size, the gap or the tracking fails there
-   rather than leaving this comment describing a card nobody renders. */
+   Nothing here is prose: `rail.test.tsx` computes the five from the values
+   below and asserts it, computes **which words** the clip cuts and asserts
+   those five names, and computes where the ten first collide and asserts that
+   is two — so changing the size, the gap or the tracking fails there rather
+   than leaving this comment describing a card nobody renders. The word list
+   is checked because it was wrong for a day while the count beside it was
+   right, which is the worse half to get wrong: a maintainer counts five
+   clipped labels against a note promising three and goes looking for a font
+   regression that never happened. */
 .slab {
   font-family: var(--mono); font-size: 9px; letter-spacing: -0.03em;
   color: var(--muted);

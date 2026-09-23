@@ -309,7 +309,12 @@ bail has nothing left to bail from.
       without moving the geometry would leave a page describing something it
       does not draw. The HTML is generated; the edit is to the script
       (`doc/the-pass.html` and `doc/the-pass.zh.html` are its output, and the
-      Chinese page moves in the same commit)
+      Chinese page moves in the same commit). **`architecture.zh.html` is not
+      on this list and was not deferred**: `427d734` moved its English twin's
+      two prose lines and left it saying 五个闸口点是固定且封闭的, so for one
+      commit the two pages gave a reader opposite answers about the size of a
+      closed set. A prose line has no geometry to redraw, so a translated page
+      moves with its original or the divergence is a bug rather than a plan
 - [ ] Everything 012 measured is in a file before the log that carried it is reset
 
 ## 6. Related

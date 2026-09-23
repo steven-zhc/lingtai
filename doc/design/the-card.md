@@ -173,13 +173,20 @@ did not run. `rail.test.tsx` asserts ten segments in all three lanes for that
 reason, and says so where it does.
 
 **A label's tail, yes.** Ten columns in the 22rem a card's column gives leave
-**five** characters at 9px, so `prepared`, `implement` and `proposed` render as
-`prepa`, `imple` and `propo`. That trade is the right way round — characters a
+**five** characters at 9px, so a card reads
+
+```
+claim admit prepa desig imple build revie propo merge end
+```
+
+— **five** of the ten are cut, not three: `prepared`, `design`, `implement`,
+`review` and `proposed`. That trade is the right way round — characters a
 hover gives back, against a distinction nothing gives back — and it is checked
 rather than asserted: `rail.test.tsx` reads the font size, the gap and the
 tracking out of `globals.css`, computes how many characters a column shows, and
-fails both if that number moves off five and if the ten stop being unique at it.
-The whole name is on each segment's `title`.
+fails if that number moves off five, if the words it cuts stop being those five,
+or if the ten stop being unique at it. The whole name is on each segment's
+`title`.
 
 **And the margin is three characters, not one.** The ten are still distinct at
 four and at three; two is where they stop being, `pr` standing for both
@@ -187,15 +194,18 @@ four and at three; two is where they stop being, `pr` standing for both
 here, because a margin stated too small is a maintainer abandoning a narrower
 column or a larger face that was in fact safe.
 
-**Five is computed and then pinned, because three files say it in prose.** This
-paragraph, `globals.css`'s `.slab` comment and `Segs`'s doc in `rail.tsx` each
-name the count and the three words, and for a day all three said six — a number
-nobody derived from the values the stylesheet actually carries, which give five.
-A card rendering
-`prepa` against a stylesheet promising `prepar` sends a maintainer looking for a
-`letter-spacing` or font regression that never happened, so the test asserts the
-exact number rather than a floor, and names those three files in its failure
-message.
+**Both the count and the words are computed and then pinned, because three
+files say them in prose.** This paragraph, `globals.css`'s `.slab` comment and
+`Segs`'s doc in `rail.tsx` each name the count **and the five words**, and each
+has been wrong once: for a day all three said the clip was six characters — a
+number nobody derived from the values the stylesheet actually carries, which
+give five — and then all three named three clipped words where the same values
+give five, because `design` and `review` are six letters and nobody counted
+them. A card rendering `prepa` against a stylesheet promising `prepar`, or
+rendering five clipped labels against a note promising three, sends a maintainer
+looking for a `letter-spacing` or font regression that never happened. So the
+test asserts the exact number rather than a floor, asserts the exact list rather
+than the number alone, and names those three files in both failure messages.
 
 The test that used to ask *do the five names fit whole* is that test. It was the
 right question at five and the wrong one at ten, and replacing it with *are they

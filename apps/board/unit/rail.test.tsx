@@ -971,7 +971,7 @@ describe("what the column can give a card", () => {
     // `(352 − 20 − 3 − 27) / 10 = 30.2px` a column and `9 × 0.57 = 5.13px` a
     // character, so the bar shows `claim admit prepa desig imple build revie
     // propo merge end`. Pinned exactly rather than loosely, because the count
-    // and those three clipped words are written out in `globals.css`'s `.slab`
+    // and the clipped words are written out in `globals.css`'s `.slab`
     // comment, in `rail.tsx`'s `Segs` doc and in `the-card.md`, and nothing
     // else re-derives them — a `>=` here let the prose claim six while the
     // card rendered five, which is a maintainer hunting a font regression
@@ -980,9 +980,26 @@ describe("what the column can give a card", () => {
       shown,
       "the clip width moved — update globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md, which name this number and the words it clips",
     ).toBe(5);
+    const clipped = STEPS.map((p) => p.slice(0, shown));
+
+    // **And *which* words, which the count alone never said.** The same three
+    // files name the list as well as the number, and the list was wrong while
+    // the number was right: they said `prepa`, `imple`, `propo` — three — when
+    // `design` and `review` are six letters and are cut too. A maintainer who
+    // renders a card to check the note counts five clipped labels against a
+    // document promising three and concludes the tracking or the face
+    // regressed, which is exactly the hunt the `.toBe(5)` above exists to
+    // prevent. Derived from `STEPS` and the stylesheet, so a step renamed or
+    // added fails here rather than quietly making the prose wrong again.
+    expect(
+      STEPS.filter((p) => p.length > shown),
+      "the clipped words moved — globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md each write this list out",
+    ).toEqual(["prepared", "design", "implement", "review", "proposed"]);
+    // And the row those three documents print, as the card actually renders it.
+    expect(clipped.join(" ")).toBe("claim admit prepa desig imple build revie propo merge end");
+
     // A bar showing fewer characters may never print the same word under two
     // steps, which is the one thing the clip is not allowed to cost.
-    const clipped = STEPS.map((p) => p.slice(0, shown));
     expect(new Set(clipped).size, `${clipped.join(" ")}`).toBe(STEPS.length);
 
     // **And the margin is three characters, not one.** The ten are still

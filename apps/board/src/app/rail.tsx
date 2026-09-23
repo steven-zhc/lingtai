@@ -88,9 +88,13 @@ function segTitle(p: PointProgress): string {
  * draws all ten.*
  *
  * **The mark is the guarantee; the word beside it is a convenience.** Ten
- * labels in the 22rem a card's column gives clip at five characters —
- * `prepa`, `imple`, `propo` — and the segment they sit under does not, nor
- * does the `title` on it. That trade is the right way round: omitting a segment
+ * labels in the 22rem a card's column gives clip at five characters, so the
+ * row reads `claim admit prepa desig imple build revie propo merge end` —
+ * **five** of the ten are cut, `prepared`, `design`, `implement`, `review` and
+ * `proposed`, and the segment they sit under is not, nor is the `title` on it.
+ * (`rail.test.tsx` derives that list from `STEPS` and the stylesheet rather
+ * than trusting this sentence, which named three of the five for a day.)
+ * That trade is the right way round: omitting a segment
  * loses the distinction 0016 §4 exists for, and clipping a word loses the
  * characters a reader can get back by hovering. Six of the ten are `skipped`
  * on every card today, because no pipeline is constructed at them — which is

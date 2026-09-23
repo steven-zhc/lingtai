@@ -76,8 +76,22 @@ above it will still be there claiming otherwise.
 ## 2. Canonical, not the file
 
 What is recorded is `canonical(recipe)` — the same normalisation `hashRecipe`
-already hashes (`recipe/src/resolve.ts:74`): parsed, `undefined` dropped, keys
-sorted.
+already hashes (`recipe/src/resolve.ts`): parsed, `undefined` dropped, keys
+sorted, **and, since 2026-09-23, the five steps [0058](0058-lingtai-is-a-development-pipeline.md)
+§3 added left out while they are empty** (`forHash`).
+
+That last clause is a debt to this section's own first reason rather than an
+exception to it. A hash is the identity of a document, and **a hash cannot be
+upcast**: the log is full of digests taken when `gates` had five keys, and five
+more always-empty keys inside `canonical` gave the identical `recipe.yml` a new
+one — so the task page, which proves an attempt's recipe by comparing the
+recorded hash to the file at the run's base commit, refused every attempt in
+the record and blamed a document difference that did not exist. `KINDS_AT`
+refuses every kind at all five, so the list there is always `[]` and nothing is
+lost by dropping it; the day one is built and configured it is non-empty, it is
+in the hash, and the hash moves because the configuration did. It comes down at
+[0061](0061-the-recipe-is-the-pipeline.md) §7's reset, with the nine upcasters
+and for the same reason: a reset log holds no digest to keep faith with.
 
 ```
 .lingtai/config.yaml, as written   29,588 bytes

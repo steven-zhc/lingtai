@@ -90,17 +90,70 @@ function canonical(value: unknown): string {
 }
 
 /**
+ * The five steps [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+ * §3 added on 2026-09-23, left out of the canonical form while they are empty.
+ *
+ * **A hash cannot be upcast, which is the whole of why this is here.** A
+ * `configHash` is the identity of a document
+ * ([0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md) §2:
+ * *two documents with one hash are one document*), and the log is full of
+ * hashes taken when `gates` had five keys. Widening `GateMap` to ten put five
+ * more always-empty keys inside `canonical`, so the identical `recipe.yml`
+ * hashed to something new — and there is no step from an old digest to a new
+ * one the way `GatesResolved`'s `3 → 4` has one for a stored plan. The task
+ * page proves an attempt's recipe by comparing its recorded hash to the file
+ * at the run's base commit (`apps/board/src/lib/recipe.ts`), so every attempt
+ * already in the record would fail that comparison and be told, in a refusal,
+ * that the recipe at its base differs — about bytes that never changed.
+ *
+ * **Nothing is lost by leaving them out.** `KINDS_AT` refuses every kind at all
+ * five, so a resolving recipe's list at one of them is *always* `[]` — the
+ * canonical form is dropping a field that carries no information. The day
+ * 0058's plan builds one and a recipe configures it, the list is non-empty, it
+ * is in the hash, and the hash changes because the configuration did.
+ *
+ * It dies where the nine upcasters die: [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md)
+ * §7's reset ([the-pipeline](../../../doc/design/the-pipeline.md)'s T5) leaves
+ * no stored hash to keep faith with, and this list comes down with them.
+ */
+const NOT_YET_IN_THE_HASH = ["claim", "design", "implement", "build", "review"] as const;
+
+/**
+ * The recipe as it is hashed: the five steps above dropped where they are
+ * empty, which today is always.
+ *
+ * Both `canonicalRecipe` and `hashRecipe` go through it, because the body on
+ * the event and the digest beside it have to be the same document — 0047 §2's
+ * *a reader can verify the body without trusting the writer* is `hashRecipe`
+ * of the recorded body equalling the recorded hash, and a strip on one side
+ * only would break it.
+ *
+ * **Idempotent, and that is what makes the verification work.** The reader in
+ * `conductor/unit/recorded-recipe.test.ts` hands `hashRecipe` the body off the
+ * event, which has already been through here, so the five keys are gone rather
+ * than empty — a missing one is *also* nothing configured there, and must be
+ * left alone rather than read for a length it does not have.
+ */
+function forHash(recipe: Recipe): Record<string, unknown> {
+  const gates: Record<string, unknown> = { ...recipe.gates };
+  for (const step of NOT_YET_IN_THE_HASH) {
+    if ((gates[step] as readonly unknown[] | undefined)?.length === 0) delete gates[step];
+  }
+  return { ...recipe, gates };
+}
+
+/**
  * The recipe as `hashRecipe` sees it, as an object rather than a string: what
  * `GatesResolved` records beside the hash (0047 §2). The body and its hash on
  * one event is what lets a reader verify the body without trusting the writer —
  * `hashRecipe` of this is the `configHash` of the recipe it came from.
  */
 export function canonicalRecipe(recipe: Recipe): Record<string, unknown> {
-  return JSON.parse(canonical(recipe)) as Record<string, unknown>;
+  return JSON.parse(canonical(forHash(recipe))) as Record<string, unknown>;
 }
 
 export function hashRecipe(recipe: Recipe): string {
-  return createHash("sha256").update(canonical(recipe)).digest("hex");
+  return createHash("sha256").update(canonical(forHash(recipe))).digest("hex");
 }
 
 /**

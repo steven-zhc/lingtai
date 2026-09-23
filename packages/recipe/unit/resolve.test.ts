@@ -8,6 +8,7 @@ import {
   RECIPE_PATH,
   RecipeInvalidError,
   RecipeMissingError,
+  canonicalRecipe,
   formatDuration,
   hashRecipe,
   parseDuration,
@@ -344,6 +345,64 @@ env:
 
     expect(b.configHash).not.toBe(a.configHash);
     expect(hashRecipe(a.recipe)).toBe(a.configHash);
+  });
+
+  /**
+   * **The digest this recipe had before the vocabulary went to ten, pinned as a
+   * literal.** It is not computed from anything here on purpose: a hash is the
+   * identity of a document (0047 §2), the log is full of hashes taken when
+   * `gates` had five keys, and **there is no step from an old digest to a new
+   * one** the way `GatesResolved`'s `3 → 4` has one for a stored plan.
+   *
+   * What it stops: `GateMap` gaining `claim`, `design`, `implement`, `build`
+   * and `review` put five always-empty keys inside `canonical`, so this exact
+   * text hashed to `abefb64e…` instead. The task page proves an attempt's
+   * recipe by comparing the hash `GatesResolved` recorded against the file at
+   * the run's base commit (`apps/board/src/lib/recipe.ts:285`) — so every
+   * attempt in the record failed that comparison and rendered *Not this run's
+   * recipe … the recipe at base abc1234 hashes to X and this run was given Y*,
+   * about bytes that never changed. `d64081da…` is what `617d686` computed for
+   * the text above.
+   *
+   * It comes down at 0061 §7's reset (`the-pipeline.md`'s T5), with the nine
+   * upcasters and for the same reason: a reset log has no stored hash to keep
+   * faith with.
+   */
+  it("gives a five-step recipe the digest it had before the vocabulary went to ten", async () => {
+    const a = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
+
+    expect(a.configHash).toBe("d64081da2bbbe9671da41c4f247ef39b513060a9e8d4e0732ca16b9fe68f1aec");
+    // And the body on the event is the document that digest is of (0047 §2),
+    // so the five are out of both or neither — a strip on one side only makes
+    // `hashRecipe(GatesResolved.recipe) === configHash` false.
+    expect(Object.keys(canonicalRecipe(a.recipe)["gates"] as object).sort()).toEqual([
+      "admit",
+      "end",
+      "merge",
+      "prepared",
+      "proposed",
+    ]);
+  });
+
+  /**
+   * The other half, and the half that expires first: the five are out of the
+   * hash **because they are empty**, not because of their names. `KINDS_AT`
+   * refuses every kind at all five today, so the list is always `[]` and the
+   * canonical form is dropping a field that carries nothing. The day 0058's
+   * plan builds one and a recipe configures it, it is in the hash and the hash
+   * moves — because the configuration did.
+   */
+  it("puts a step back in the hash the moment something is configured at it", async () => {
+    const { recipe } = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
+    const empty = hashRecipe(recipe);
+
+    // Past the schema, which refuses the pair until the step has a call site
+    // (`whyNoKindAt`) — this is the shape a resolved recipe takes once it does
+    // not, and the hash has to move with it.
+    recipe.gates.build.push({ name: "build", run: "pnpm test", timeout: "20m", env: [] });
+
+    expect(hashRecipe(recipe)).not.toBe(empty);
+    expect(Object.keys(canonicalRecipe(recipe)["gates"] as object)).toContain("build");
   });
 });
 
