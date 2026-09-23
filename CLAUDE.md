@@ -8,10 +8,15 @@ in* — four diagrams: the processes that exist, who appends to the log, who is
 told when it changes, and where each piece of state lives. Read it before
 changing anything that crosses a process boundary.
 **[doc/the-pass.html](doc/the-pass.html)** answers the other question —
-*where does a refusal go* — one pass from `claim` to `end` with the five points
-on it. It draws 0039 — built on 2026-09-11, so it is the code and not a
-proposal — and marks what it replaced. Both drawings come from
-`scripts/the-pass.py`; the HTML is generated.
+*how does one ticket get built* — the ten steps, what each word on them means,
+what a person writes in the recipe, and where a ticket goes when a step will
+not let it past. **It is written for somebody about to point Lingtai at a
+repository**, so it carries no ADR history and no before-and-after; it
+describes [0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) and
+[0061](doc/decisions/0061-the-recipe-is-the-pipeline.md), which are accepted
+and are being built — **the code still runs five gate points, and that gap is
+[the plan](doc/design/the-pipeline.md), not something the page pretends
+away.** Both drawings come from `scripts/the-pass.py`; the HTML is generated.
 
 [doc/README.md](doc/README.md) indexes the ADRs, which are append-only in
 spirit: a decision that turns out wrong gets a superseding file, not an edit.
