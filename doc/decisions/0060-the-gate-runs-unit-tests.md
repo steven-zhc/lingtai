@@ -47,11 +47,18 @@ then refused [#196](https://github.com/steven-zhc/lingtai/issues/196) at 5686ms
 bound was pushed. Neither diff went near that import graph.
 
 **`packages/conductor/pure/create-app.test.ts`** is red on `main` today, on
-this machine, for a reason no diff can fix: `create-app.ts:456` falls back to
-`process.env`, the test does not override it, and this machine has a real
-GitHub App configured — so the call takes the *already configured* branch
-instead of reaching the refusal the test is about. A `pure/` test reading the
-developer's own machine.
+this machine, for a reason no diff can fix — and it is the better example of
+the two, because **the test tried**. It passes `env: {}` (`:191`), closing the
+`process.env` door by hand. It does not pass `envFile`, so
+`create-app.ts:457` falls back to `join(repoRoot(), ".env.local")`, and this
+repository's own `.env.local` carries `LINGTAI_GITHUB_APP_ID`. The call takes
+the *already configured* branch and never reaches the refusal the test is
+about.
+
+**Closing one door by hand is not the same as being unit.** There were two, the
+author saw one, and nothing in the arrangement was going to mention the other.
+That is the argument for a boundary a tool can check rather than a habit each
+test keeps for itself.
 
 Both cost the same way. A refusal at `build` is evidence about the change to
 every mechanism downstream: it buys a fix round — 31 turns, ~$3.40 measured
