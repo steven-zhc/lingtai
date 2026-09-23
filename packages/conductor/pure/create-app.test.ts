@@ -48,7 +48,15 @@ const asText = (events: readonly unknown[]): string =>
 const conversion = (body: unknown = CONVERSION, status = 200): typeof fetch =>
   (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
 
-/** A temporary home for the two files this writes, never the real ones. */
+/**
+ * A temporary home for the two files this writes, never the real ones.
+ *
+ * **Every call that reaches `configuration()` passes this `envFile`, including
+ * the ones that write nothing.** The parameter is optional and its default is
+ * this repository's `.env.local`, so a `finish` or an `offerCreation` that
+ * leaves it out is not reading *no* App — it is reading whatever App the
+ * machine running the suite happens to be configured with (#224).
+ */
 async function workspace() {
   const dir = await mkdtemp(join(tmpdir(), "lingtai-app-"));
   return { dir, keyPath: join(dir, "agent.private-key.pem"), envFile: join(dir, ".env.local") };
@@ -177,7 +185,19 @@ describe("only a code this process asked for", () => {
     expect(outcome.ok === false && outcome.refusal).toContain("hour lapsed");
   });
 
-  /** The code expires: `422` from the conversion, and one sentence about it. */
+  /**
+   * The code expires: `422` from the conversion, and one sentence about it.
+   *
+   * **Three dependencies, and the env file is the one with no line of its
+   * own.** `store` and `env` were both passed here from the start; `envFile`
+   * was not, so `create-app.ts:457` fell back to `join(repoRoot(),
+   * ".env.local")` — this repository's own file, which on the machine that
+   * develops Lingtai names an App. `configuration()` reads the file and not
+   * only the environment, deliberately, so the *already configured* refusal
+   * fired and this case never reached the conversion it is about: red on that
+   * one machine, green on every other, for a reason no diff could touch
+   * (0060, #224).
+   */
   it("says the hour lapsed when GitHub will not exchange the code", async () => {
     const session = createCreationSession();
     const begun = session.begin({ name: "x", redirectUrl: "http://127.0.0.1:3200/created" });
@@ -189,6 +209,7 @@ describe("only a code this process asked for", () => {
       fetch: conversion({ message: "Not Found" }, 422),
       store: createMemoryEventStore(),
       env: {},
+      envFile: (await workspace()).envFile,
     });
 
     expect(outcome.ok === false && outcome.refusal).toContain("one exchange");
