@@ -3,11 +3,18 @@
 **Status** accepted · 2026-09-21 · **extends
 [0041](0041-a-gate-that-never-ran.md)** with the neighbouring case it did not
 cover · governed by [0031 §1](0031-a-run-that-never-started.md), whose rule
-about where a classification lives is what shapes §4
+about where a classification lives is what shapes §4 · **§4's one retry is
+withdrawn** (`#234`) — it recomputed the crashed attempt's session id, so every
+retry was refused in zero seconds having run nothing, and the log then said the
+action did not finish *twice* about one attempt. §1–3 stand and are what this
+ADR is worth; whether a step that did not finish buys another agent is
+[0058](0058-lingtai-is-a-development-pipeline.md) §3c's judge
 
 An `agent:` action that started, crashed and produced no receipt judged nothing.
 It is not a refusal of the diff, it buys no fix round, and it does not stand the
-conductor down. It is retried once, on the log, and then it is a person's.
+conductor down. It is retried once, on the log, and then it is a person's — and
+**that retry is withdrawn** (§4, `#234`): it is run once, and then it is a
+person's.
 
 ## Context
 
@@ -82,7 +89,22 @@ session id (`#195`), a CLI that died after twenty turns and three dollars.
 Stopping the machine for the rest of the queue would be the same category error
 0041 fixed, pointed the other way.
 
-### 4. One retry, recorded, and it belongs to the pipeline
+### 4. One retry, recorded, and it belongs to the pipeline — **withdrawn**
+
+**Withdrawn 2026-09-23 (`#234`); the rest of this section is kept as the
+record.** The retry never once ran. The review's session id is a hash of
+`<runId>:review:<action>:<sha>` — the string `agent-gate.ts:356` builds and
+`sessionIdFor` (`claude-code.ts:93`) digests — and a second attempt moves none
+of the four, so the retry recomputed the id attempt 1 had already opened a
+session with and `claude` refused it in zero seconds — twice on this machine's
+run logs, neither reaching a reviewer. What the two fields it wrote bought a
+reader was *did not finish, twice* about a pass in which the action was tried
+once. A retry could only have helped an attempt that died *before* opening a
+session, and this ADR's own subject is an agent that started, which opened one.
+So the pipeline runs the action once, `GateDidNotFinish` carries no attempt
+number from `schemaVer: 2` on, and §1–3 above are unaffected: this is still not
+a refusal, it still buys no round, and it still stands the pass down rather than
+the conductor.
 
 The same action runs again, once. If it comes back with a verdict, the pass
 continues exactly as though the first attempt had not happened — a refusal then

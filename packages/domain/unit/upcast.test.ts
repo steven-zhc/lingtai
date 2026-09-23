@@ -7,6 +7,7 @@
  * upcaster is the failure worth guarding: it makes every historical row of that
  * type unreadable, and it does so at the moment someone replays a year of them.
  */
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
   MissingUpcasterError,
@@ -442,13 +443,14 @@ describe("a pass with findings", () => {
 });
 
 /**
- * The step that removes a field ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)).
+ * The first step that removes a field ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)).
  *
- * Every other chain adds one and says `null` where history is silent. This one
- * goes the other way, and the reason it is a step rather than nothing at all is
- * that the log holds thousands of `leaseUntilMs` timestamps and **no event is
- * rewritten**. The reader is what stops believing them, and the tests here are
- * the ones a replay of that history depends on.
+ * Most chains add one and say `null` where history is silent. Two go the other
+ * way — this one and `GateDidNotFinish` 1 → 2 below (`#234`) — and the reason
+ * this is a step rather than nothing at all is that the log holds thousands of
+ * `leaseUntilMs` timestamps and **no event is rewritten**. The reader is what
+ * stops believing them, and the tests here are the ones a replay of that
+ * history depends on.
  */
 describe("the lease, dropped on read", () => {
   const v1 = { runId: "run-1978cb64", worker: "local:71410" };
@@ -573,5 +575,58 @@ describe("a block, widened past the question", () => {
       },
     };
     expect(parseStoredPayload("WorkItemBlocked", 2, v2)).toEqual(v2);
+  });
+});
+
+/**
+ * **The heading over `doc/reference.md`'s upcaster table is arithmetic, and
+ * nothing re-derived it** (`#234`).
+ *
+ * The heading and the sentence under the table both carry the chain count, and
+ * adding `GateDidNotFinish` moved the heading to *18 chains, 23 steps* and left
+ * the prose reading *seventeen* — which is the exact failure the sentence
+ * itself warns about, *a heading that is arithmetic on a number nobody
+ * re-derived*, with a green suite under it. A reader who cannot tell which
+ * number is current counts the table by hand, and four rows look deletable.
+ *
+ * So both numbers are read out of the document and checked against
+ * `UPCASTERS`: a chain is a type with a step, a step is a function. The table
+ * writes 0018's nine types as one row and the heading counts them as nine,
+ * which is what the registry counts too.
+ */
+describe("doc/reference.md's upcaster counts", () => {
+  const chains = Object.keys(UPCASTERS).length;
+  const steps = Object.values(UPCASTERS).reduce((n, c) => n + Object.keys(c ?? {}).length, 0);
+
+  /** The document spells its counts, so the test has to read them that way. */
+  const SPELLED: Record<string, number> = {
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+  };
+
+  const reference = async () =>
+    await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
+
+  it("counts the heading off the registry", async () => {
+    const heading = /^## upcaster — (\d+) chains, (\d+) steps$/m.exec(await reference());
+    expect(heading, "no `## upcaster — N chains, M steps` heading in doc/reference.md").not.toBeNull();
+    expect(Number(heading![1]), "doc/reference.md's chain count is not UPCASTERS'").toBe(chains);
+    expect(Number(heading![2]), "doc/reference.md's step count is not UPCASTERS'").toBe(steps);
+  });
+
+  it("keeps the prose under the table on the heading's number", async () => {
+    const prose = /of the ([a-z-]+) chains are one row above/.exec(
+      (await reference()).replace(/\n/g, " "),
+    );
+    expect(prose, "doc/reference.md no longer says how many of the chains 0018 moved").not.toBeNull();
+    expect(
+      SPELLED[prose![1]!],
+      `doc/reference.md spells "${prose![1]}" and the table has ${chains} chains` +
+        " — if the count has left the list, add the word to SPELLED",
+    ).toBe(chains);
   });
 });
