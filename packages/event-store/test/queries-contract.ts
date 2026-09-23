@@ -361,11 +361,41 @@ export function describeLogQueriesContract(
 
     // ---------------------------------------------------------- typeCounts ----
 
-    it("counts the rows of each type it holds, in type order", async () => {
+    /**
+     * **The pair the two collations disagree about is seeded, not waited for.**
+     *
+     * `IssueUpdated` and `IssueUpdateFailed` are the near-miss for *in type
+     * order*: under the `en_US.UTF-8` a Supabase database is created with,
+     * Postgres weighs `IssueUpdated` first — the primary weights run
+     * `…update`, then `d` before `f` — while byte order, which is SQLite's
+     * BINARY and `.sort()`'s, puts `IssueUpdateFailed` first (`F` 0x46 < `d`
+     * 0x64). Without both rows in the log the assertion was true of either
+     * store by accident, and red on the Postgres run whenever some other test
+     * had left the pair in the shared database.
+     */
+    it("counts the rows of each type it holds, in byte order of the type", async () => {
       const h = await make();
       const item = workItemStream(h.project, 501);
       h.note?.(item);
-      await h.store.append(item, 0, [landed(), resolved("landed"), resolved("closed")]);
+      // Failed then updated, on one change: converged, so `unconvergedUpdates`
+      // below goes on saying nothing about this item.
+      const update = (type: "IssueUpdated" | "IssueUpdateFailed") => ({
+        type,
+        actor: "conductor",
+        data: parsePayload(
+          type,
+          type === "IssueUpdated"
+            ? { project: h.project, issue: "501", change: "labels", detail: "set" }
+            : { project: h.project, issue: "501", change: "labels", error: "403" },
+        ),
+      });
+      await h.store.append(item, 0, [
+        landed(),
+        resolved("landed"),
+        resolved("closed"),
+        update("IssueUpdateFailed"),
+        update("IssueUpdated"),
+      ]);
 
       const counts = await h.queries.typeCounts();
       const byType = new Map(counts.map((c) => [c.type, c.rows]));
@@ -376,6 +406,11 @@ export function describeLogQueriesContract(
       expect(byType.get("WorkItemLanded") ?? 0).toBeGreaterThanOrEqual(1);
       expect(byType.get("EndActionsResolved") ?? 0).toBeGreaterThanOrEqual(2);
       expect(counts.map((c) => c.type)).toEqual([...counts.map((c) => c.type)].sort());
+      // And the pair, named: one order for both stores, or this contract means
+      // two different things by the same word.
+      const names = counts.map((c) => c.type);
+      expect(names.indexOf("IssueUpdateFailed")).toBeGreaterThanOrEqual(0);
+      expect(names.indexOf("IssueUpdateFailed")).toBeLessThan(names.indexOf("IssueUpdated"));
       for (const c of counts) expect(Number.isInteger(c.rows)).toBe(true);
     });
 

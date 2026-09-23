@@ -127,7 +127,15 @@ export interface LogQueries {
   landedWithoutGatePoints(ranTypes: readonly string[]): Promise<PointNeverRan[]>;
 
   /**
-   * Every type in the log with its row count, in type order.
+   * Every type in the log with its row count, in **byte order of the type** —
+   * which is `.sort()`'s order for these names, because a type is ASCII.
+   *
+   * Said as bytes and not as *type order* because the two stores would not
+   * otherwise mean the same thing by it: Postgres sorts under the database's
+   * collation and SQLite under BINARY, and on `en_US.UTF-8` those disagree
+   * about `IssueUpdated` and `IssueUpdateFailed`. A contract both implementations
+   * are held to has to name the order it means, so the Postgres side collates
+   * `"C"` and this line says so.
    *
    * Whether any of them is a type this build cannot decode is the caller's —
    * `isEventType` is the domain's catalogue and a store has no business
@@ -279,8 +287,16 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
     },
 
     async typeCounts() {
+      // **`collate "C"`, so *type order* is one order and not two.** A bare
+      // `order by type` sorts under the database's collation, and on the
+      // `en_US.UTF-8` a Supabase database is created with that is not byte
+      // order: it weighs `IssueUpdated` before `IssueUpdateFailed`, while
+      // SQLite's `ORDER BY type` is BINARY and puts `IssueUpdateFailed` first
+      // (`F` 0x46 < `d` 0x64). Two stores held to one contract cannot each
+      // have their own answer to *in type order*, and `"C"` is the one both
+      // can give: it is built into every Postgres and it is what BINARY means.
       const rows = await ask<{ type: string; n: number }>(
-        "select type, count(*)::int as n from events group by type order by type",
+        `select type, count(*)::int as n from events group by type order by type collate "C"`,
       );
       return rows.map((r) => ({ type: r.type, rows: r.n }));
     },
