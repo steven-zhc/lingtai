@@ -146,18 +146,35 @@ A subscriber is not a step. 0015's one real division is that it **runs off the
 log and cannot change an outcome**, and that is the only division this ADR does
 not flatten. Filing subscribers under a step would erase it.
 
-### 7. No migration, and no version 1
+### 7. No migration — not for the file, and not for the log
 
 `version: 2`, and a version 1 file is refused by name. There is one recipe in
 existence and its owner rewrites it.
 
-**But the log is not the file, and the log is append-only.** `GatesResolved`
-records what a run was given
-([0047](0047-the-recipe-a-run-got-is-on-the-log.md)); events already written
-carry the five-point shape and must stay readable, so the upcast that
-[0058](0058-lingtai-is-a-development-pipeline.md) §5 calls for is still owed.
-*No compatibility* is a statement about the file a person edits, never about
-the log.
+**And no upcaster is owed for `GatesResolved` growing to ten.** This log gets
+reset instead. That is affordable here for a reason that is written down rather
+than assumed: **a `seq` was never a durable citation** — the durable one is a
+GitHub issue number ([1.0](../design/1.0.md)) — and this log has been reset
+twice already
+([007](../experiments/007-the-log-before-the-reset.md),
+[010](../experiments/010-the-log-before-the-second-reset.md)), with
+[0055](0055-two-implementations-chosen-at-init.md) §3 making the choice of the
+other store start an empty log rather than carry this one over.
+
+**What a reset spends is the measurements, and they are paid for in advance.**
+[012](../experiments/012-where-the-turns-go.md) is a fold over this log; after
+a reset none of its numbers can be recomputed. That is why 007 and 010 exist as
+documents and why the practice is already the rule: **fold the log into a file
+before resetting it, and the reset costs nothing that was worth keeping.**
+
+**Two things this is not.** It is not a licence to delete
+[`upcast.ts`](../../packages/domain/src/upcast.ts): the mechanism was built
+before it was needed on purpose ([0001](0001-event-sourcing.md)) — *the first
+upcaster is written under time pressure against real history, which is the
+worst moment to also be designing the mechanism* — and a Lingtai somebody else
+runs will need it for a log nobody may reset. And it is not a property of event
+sourcing; it is a property of **this** repository, pre-1.0, whose log is its
+own workshop floor.
 
 ### 8. 0059 becomes a matrix and stays one rule
 
@@ -211,4 +228,7 @@ action's command.
 - [0046](0046-lingtai-is-personal.md) §3 — the recipe is the machine's, at
   `~/.lingtai/<project>/recipe.yml`. Nothing here moves it.
 - [0047](0047-the-recipe-a-run-got-is-on-the-log.md) — what a run was given is
-  on the log. §7 is the half of it this ADR does not get to skip.
+  on the log. §7 does not weaken that: a reset log still records all ten steps
+  from its first row.
+- [0001](0001-event-sourcing.md) — why `schemaVer` is on every row from the
+  first one. §7 spends this log's history and keeps that.

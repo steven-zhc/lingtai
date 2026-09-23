@@ -74,7 +74,8 @@ order; everything after phase 2 is a chain.
     (0060)          T4   root vitest config, unit/integration, closes #222
                     T5   the post-merge full suite
 
-3   split           T6   GatesResolved grows to ten
+3   split           T6b  013 — the log before the third reset   ← a reset spends the numbers
+                    T6   GatesResolved grows to ten            ← the log is reset, not upcast
                     T7   build is its own step
                     T8   review returns findings, not a verdict
 
@@ -181,8 +182,9 @@ with the API, not written in the body.
 | **T6** | `GatesResolved` grows from five to ten |
 | kind | `tech-debt` |
 | blocked by | T1 |
-| what | `points: …length(5)` (`events.ts:514`) is a hard assertion and the one concrete break in [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §5. New event version plus an upcast. |
-| watch out | **The log is append-only and events already written carry the five-point shape** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §7). *No migration* is about the recipe file, never about the log. If the log records five of ten steps, [0047](../decisions/0047-the-recipe-a-run-got-is-on-the-log.md)'s *what a run was given is on the log* quietly becomes false — whether `claim` picked by tag or by assignee would be nowhere. |
+| what | `points: …length(5)` (`events.ts:514`) is a hard assertion and the one concrete break in [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §5. The shape changes; **no upcaster is written** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §7) — this log is reset instead, for the third time. |
+| watch out | **Do not delete `upcast.ts`.** Not owing an upcaster here is not the same as not needing the mechanism: 0001 built it before it was needed because *the first upcaster is written under time pressure against real history*, and a Lingtai somebody else runs has a log nobody may reset. |
+| before it | **T6b — fold the log into a file first.** A reset spends every measurement: [012](../experiments/012-where-the-turns-go.md) is a fold over this log and none of its numbers can be recomputed afterwards. [007](../experiments/007-the-log-before-the-reset.md) and [010](../experiments/010-the-log-before-the-second-reset.md) are the two precedents and the format. |
 
 | | |
 |---|---|
@@ -271,6 +273,7 @@ with the API, not written in the body.
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`
 - [ ] `GatesResolved` records all ten steps, so what a run was given is still on the log
+- [ ] Everything 012 measured is in a file before the log that carried it is reset
 - [ ] A plugin a step cannot run is refused when the recipe resolves, by name
 
 ## 6. Related
