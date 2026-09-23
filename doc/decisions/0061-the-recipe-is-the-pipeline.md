@@ -126,7 +126,17 @@ step**, and the file follows the second, because that is where a reader looks.
 | | `agent:` | the conflict prompt |
 | `end` | `close:` `labels:` | `when` |
 
-Ten plugins. Two things fall out rather than being added:
+**The table above is short by three, and the correction is not here.**
+[`the-v2-recipe.md`](../design/the-v2-recipe.md) §3.2 found it by writing the
+file this ADR describes: `watch:` and `human:` have no row above and are live
+at both `proposed` and `merge` (`recipe.ts:186-187`), and `assignee:` has a row
+but appeared in no other list. **The set is twelve and the matrix is 120
+cells.** The rows stay as they were written — an ADR that turns out incomplete
+is corrected by the document that found it, not edited to look as though it
+never was — and §8 is why the omission mattered: **a plugin no list carries is
+a plugin no step refuses.**
+
+Ten plugins as first written. Two things fall out rather than being added:
 
 **`agent:` appears at four steps** — `design`, `implement`, `review`, `merge` —
 one plugin with four configurations. That is
