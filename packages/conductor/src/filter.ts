@@ -136,7 +136,11 @@ export type ProjectFilter =
        */
       backoffMs: number;
       /**
-       * What runs at each of the five points, with the timeouts as numbers.
+       * What runs at each of the ten steps, with the timeouts as numbers.
+       *
+       * `GatePlan` above says what that means: all ten keys are present, and
+       * the five `gates:` cannot name are `[]` rather than absent (#227). A
+       * caller sizing a render or an exhaustive `switch` off this counts ten.
        *
        * Lifted for the reason `backoffMs` is, and used for the same kind of
        * thing: a gate's timeout is the denominator a running card measures

@@ -44,12 +44,12 @@ export interface PlannedPoint {
    * Nothing is configured here.
    *
    * A first-class state and not an absence, for the reason the attempt's own
-   * `PointState` `skipped` is (ADR 0016 §4): a point that is merely left out looks
-   * exactly like a point that was configured and silently did not run, and only
+   * `PointState` `skipped` is (ADR 0016 §4): a step that is merely left out looks
+   * exactly like a step that was configured and silently did not run, and only
    * the second is Lingtai's bug. It has to be said *before* a run as well as
    * after one — an operator deciding whether to press the button is deciding
-   * about the plan, and a plan with two of its five points missing from the
-   * page is one nobody can audit.
+   * about the plan, and a plan with any of its ten steps missing from the page
+   * is one nobody can audit.
    */
   skipped: boolean;
 }

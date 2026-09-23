@@ -196,7 +196,9 @@ export interface BoardCard {
    */
   runnableAt: string | null;
   /**
-   * Where the run got to: the phase, its elapsed, and all five points.
+   * Where the run got to: the phase, its elapsed, and all ten steps (#227) —
+   * `STEPS` in order, of which the rail draws the five `GATE_STEPS` and any
+   * other step that is not `skipped`.
    *
    * Null on a card no run has touched, and on the Landed rows the lane keeps
    * collapsed — `laneProgress` decides, and says why it stops where it does.

@@ -160,16 +160,29 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `GatesResolved` | 2 → 3 | `recipe`, the canonical recipe `configHash` is the hash of ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)). The step adds **nothing** — absent, not null and not `{}`, which is what a reader already handles for a run with no `GatesResolved` at all |
 | `GatePassed` | 1 → 2 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. An earlier pass gets `[]`, not a parse of that prose, which is untouched |
 
-**Eight gate and approval types left this table with `#227`.**
-`GateRequested`, `GateStarted`, `GateFailed`, `GateWaived`, `ApprovalRequested`,
-`ApprovalGranted` and `ApprovalRevoked` — and `GatePassed`'s first step — were at
+**Eight `gatePointRenamed` steps left this table with `#227`, and seven types
+with them.** `GateRequested`, `GateStarted`, `GateFailed`, `GateWaived`,
+`ApprovalRequested`, `ApprovalGranted` and `ApprovalRevoked` — and
+`GatePassed`'s first step, which is why that type has a row above still — were at
 2 for 0018's rename, sharing one `gatePointRenamed` upcaster. That upcaster's
 subject is gone: those payloads name `Step`, and
 [0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 spends this log rather
 than carrying it across the five-to-ten change, so no stored row spells a step
-`diff` for it to walk. The eight went back to version 1 with it — a version that
-counts a step this build does not have is a version nothing can be read at, and
-`upcast.test.ts`'s chain invariant is what says so.
+`diff` for it to walk. **Those seven types went back to version 1** with it — a
+version that counts a step this build does not have is a version nothing can be
+read at, and `upcast.test.ts`'s chain invariant is what says so.
+
+`GatePassed` is the eighth step's type and is **at 2, not 1**: its own step,
+`findings` (`#135`), outlived the rename and moved down to key `1`, so the type
+keeps one step and the version that walks it. A field added to it is `SCHEMA_VER`
+3 and an upcaster keyed `2`; keying a new one `1` would replace the `findings` fill
+rather than follow it, and the chain would stay unbroken while every stored
+`GatePassed` lost its `findings: []`. The row above is what says which version
+each chain starts at, and `SCHEMA_VER` in `packages/domain/src/events.ts` is
+what says where it ends.
+
+At version 1 again: `GateRequested` · `GateStarted` · `GateFailed` ·
+`GateWaived` · `ApprovalRequested` · `ApprovalGranted` · `ApprovalRevoked`.
 
 Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
 `packages/domain/src/events.ts`; everything absent from it is 1.
@@ -627,10 +640,15 @@ beside it.
 ## what the log says was *supposed* to happen
 
 `GatesResolved`, one per run, appended before anything is claimed. It names all
-five points and the ordered actions resolved for each — empty arrays included.
+ten steps and the ordered actions resolved for each — empty arrays included, and
+the count is asserted rather than assumed: `points` is `.length(10)` in
+`packages/domain/src/events.ts`, so a payload naming five is refused rather than
+folded short. The five steps a recipe's `gates:` map has no key for resolve to
+`[]`, which is the same sentence an empty gate says — *nothing is configured
+here* (`#227`, [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §5).
 
 Without it the log could not distinguish "nothing was configured here" from
-"this point does not exist", because `ProjectConfigured` carries a config *hash*
+"this step does not exist", because `ProjectConfigured` carries a config *hash*
 and not the configuration. That distinction is what [ADR 0016](decisions/0016-the-settled-model.md)
 §4 rests on: an unconfigured gate is skipped and that is the user's call; a gate
 that *was* configured and did not run is Lingtai's bug, and comparing this
@@ -740,16 +758,26 @@ says an issue should look like against what GitHub says it does.
 
 ### where `skipped` is rendered
 
-The board and the task page draw **all five points**, always, marking an empty
-one `skipped` rather than leaving it out — `Segs` in `apps/board/src/app/rail.tsx`,
-over `foldProgress` in `apps/board/src/lib/progress.ts`, which folds
-`GatesResolved` against the verdicts that followed. A point not reached yet is
+`foldProgress` in `apps/board/src/lib/progress.ts` folds **all ten steps** out of
+`GatesResolved` and the verdicts that followed, marking an empty one `skipped`
+rather than leaving it out, and every surface draws from that one fold. The task
+page draws all ten rows (`RecipeGiven` in `apps/board/src/app/task/[id]/page.tsx`);
+the board's bar draws the **five `GATE_STEPS` always, plus any other step that is
+not `skipped`** — `Segs` in `apps/board/src/app/rail.tsx`, where drawing ten
+names is a card redesign rather than a rename. A step not reached yet is
 `pending`; one configured, recorded nothing, on an item that landed is
 `never-ran`, hatched in the fail colour — that is where "configured but did not
 run" becomes visible. It used to be a `pending` count off a second fold,
 `PointView`, which could not tell the two apart (#189).
 
-`lingtai add` prints the same five at onboarding. Neither surface omits a point.
+**`skipped` is the only state a surface may leave out**, and that is 0016 §4
+rather than a saving. It is the fold's word for *the plan named nothing here and
+the log recorded nothing*, so a step missing from the bar is provably one nobody
+configured — and a step that *was* configured keeps its place and its hatch
+whether or not it is one of the five, which a filter on the name would have
+dropped in silence (#227). `lingtai add` prints the five `gates:` names at
+onboarding, because that is what is in the person's file until `gates:` becomes
+`steps:` ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §1).
 
 ## the `end` plan, continued
 

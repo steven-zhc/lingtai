@@ -245,9 +245,14 @@ export interface RunView {
   awaitingSha: string | null;
   gates: GateVerdict[];
   /**
-   * Where this attempt got to, as the board's rail reads it — all five points,
+   * Where this attempt got to, as the board's rail reads it — **all ten steps**,
    * one verdict per action, and the phase in flight with its bound. Null for a
    * claim whose stream is empty: there is no start to measure from.
+   *
+   * Ten since #227, and the list is `STEPS` in order, so index it by name and
+   * never by position: the rail draws fewer than it is given — the five
+   * `GATE_STEPS` and anything else not `skipped` — and a consumer that reads
+   * this as five reports `merge`'s state under `proposed`'s name.
    *
    * **`progress.ts`'s fold, and not one of this file's.** This used to be
    * `points: PointView[]`, a second fold over the same events that had

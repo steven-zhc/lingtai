@@ -8,11 +8,17 @@
  * the recipe, and the limits beside it — and none of them was on any page
  * (#113).
  *
- * **All five points, including the ones nothing is configured at.** ADR 0016
- * §4's rule holds before a run exactly as it holds after one: a point that is
- * merely left out looks identical to a point that was configured and silently
+ * **All ten steps, including the ones nothing is configured at** (#227). ADR
+ * 0016 §4's rule holds before a run exactly as it holds after one: a step that
+ * is merely left out looks identical to a step that was configured and silently
  * did not run, and only the second is Lingtai's bug. The attempt's own ledger
  * says `skipped` for the same reason and in the same word.
+ *
+ * So this column is **ten rows**, and the five steps `gates:` has no key for
+ * read `skipped` beside every gate the recipe left empty — seven of the ten on
+ * this repository's own. Unlike the board's bar, nothing is dropped here: `planOf`
+ * walks `STEPS` and this component renders what it is given, which is what a
+ * page with room for the whole plan is for.
  *
  * A box, because it sits beside `WILL BE SENT` and the layout notes allow the
  * decision column two of them. Neutral, like that one: the amber on this page
@@ -67,8 +73,8 @@ export function Plan({ plan }: { plan: PlanView | null }) {
         // will not parse and a GitHub that would not answer all look like "no
         // plan", and the reason is one line up — the block that could not ask
         // says why. What must not happen is a guessed plan: a page that
-        // invented five points would be inviting somebody to press a button on
-        // a description of something else.
+        // invented one would be inviting somebody to press a button on a
+        // description of something else.
         <p className="empty">
           The recipe could not be read, so what a run would do here is not known.
         </p>

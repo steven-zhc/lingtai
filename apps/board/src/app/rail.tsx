@@ -3,7 +3,13 @@ import { inWords } from "@lingtai/conductor/queue";
 import { elapsed, pointOf, type PointProgress, type PointState, type RunProgress } from "@/lib/progress";
 
 /**
- * The five points as a sequence, on every surface that draws one.
+ * The steps of a pass as a sequence, on every surface that draws one.
+ *
+ * **Ten are folded and this file does not draw ten** (#227). `foldProgress`
+ * returns every step `GatesResolved` records; `Segs` below draws the five
+ * `GATE_STEPS` always and any other step that is not `skipped`, and the block
+ * on it is where that condition is argued — read it before changing what this
+ * file is given or adding a surface that filters again.
  *
  * **Two surfaces, one file.** The board's running and waiting cards draw
  * `Rail`, its landed rows draw `Segs` bare, and the task page draws both: the
@@ -28,8 +34,8 @@ import { elapsed, pointOf, type PointProgress, type PointState, type RunProgress
  * Three of the seven look empty and mean different things, so shape carries
  * what colour cannot: `pending` is a flat rule, `skipped` is a dashed outline
  * with no fill, and `never-ran` is hatched in the fail colour. A bar that drew
- * all five points with only "filled means done" would render the second of
- * those as the first, which is precisely the failure 0016 §4 names.
+ * every step it was given with only "filled means done" would render the second
+ * of those as the first, which is precisely the failure 0016 §4 names.
  */
 const CELL_TONE: Record<PointState, string> = {
   passed: "t-pass",
@@ -264,7 +270,7 @@ export function Rail({
            is stopped anyway — so what stopped it happened somewhere this fold
            does not read. `IntegrationRefused` is the ordinary one: it goes to
            the merge lane's stream, `task_view` turns it into the note below,
-           and the rail above it is five passed points. Saying *between points*
+           and every step the rail above it drew has passed. Saying *between points*
            here told an operator the agent had just finished and something was
            coming, about a card that had been still for hours. */
         <p
