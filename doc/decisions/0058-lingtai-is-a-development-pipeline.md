@@ -517,28 +517,47 @@ gate points and are correct. The ones to check use "point" to mean "stage".
 ## What is not decided
 
 - **Whether the router is a step at all.** Every step that does not simply pass
-  now hands its outcome to `proposed` — six of them. A thing that runs after
-  every step is a rule, not a station, and on that reading `proposed` is two
-  things this ADR merged: **the step where a proposed change is inspected**
-  (`human:` approval, `watch:`, the tamper check) and **the router**. Splitting
-  them would leave every rule here true and redraw §3b. It is not done now
-  because the drawing is worth more settled than symmetrical, and because
-  nothing in the plan is blocked by it.
+  hands its outcome to `proposed` — seven of them. A thing that runs after every
+  step is a rule, not a station, and on that reading `proposed` is two things
+  this ADR merged: **the step where a proposed change is inspected** (`human:`
+  approval, `watch:`, the tamper check) and **the router**. Splitting them would
+  leave every rule here true and redraw §3b. Not done now because the drawing is
+  worth more settled than symmetrical, and because nothing in the plan is
+  blocked by it.
+- **Whether `prepared` should test the base at all.** It runs the suite against
+  the base and `build` runs it against the change — median 313s each. Over the
+  263 claims in the 14 days measured, the first is about **23 hours of wall
+  clock** to catch a base that was already broken, which `build` catches anyway
+  one agent run later. Keeping it is a choice; it should be a stated one.
+- **What `end` does for a ticket a person closed from `waiting`.** It runs — the
+  recipe already carries a `when: closed` action — but `labels:` was written for
+  a ticket that landed, and what a label should say about one that did not is
+  unanswered.
 
-- **Some plugins are only correct together.** `admit`'s worktree and `merge`'s
-  `git merge` must agree about one repository, branch and base; `prepared`'s
-  install and `build`'s test must agree about one package manager. A model that
-  lets either be swapped alone lets a person assemble a pipeline that is legal,
-  passes `doctor`, and breaks on the first merge. The shape of the answer is
-  probably the one the code already has — `gatesFromRecipe(…, deps)` refuses by
-  name when a dependency is missing — widened from within-a-step to across
-  steps. **This is the largest open question here.**
-- **Where plugins live in the recipe**, and whether their configuration is
-  hashed into `configHash` the way gates are. It follows §5's `GatesResolved`
-  point and should be settled with it.
-- **Whether `prepared` should test the base at all**, given the number in
-  Consequences.
-- **What `end` does for a ticket that a person closed from `waiting`** — it runs,
-  but `close:` and `labels:` were written for a ticket that landed.
-- **Whether a plugin may replace a step wholesale** rather than configure it.
-  0015 allows two powers; this would be a third.
+### What used to be here and is decided now
+
+**Plugins that are only correct together** was called *the largest open question
+here*, and it was what held this ADR at `proposed`.
+[0061](0061-the-recipe-is-the-pipeline.md) §4 retired it by reading the code
+rather than by deciding anything: `base` is **one value that flows** —
+`recipe.repo.base` is the only place it is written, and `worktree.ts:133` and
+`integrate.ts:73` both take it as a parameter — so the disagreement a model
+would have prevented cannot happen. What was left was `pnpm install` against
+`pnpm typecheck`: two free-text commands, where catching *npm in one and pnpm
+in the other* needs a system that understands commands. **A plugin offers a
+capability, and a person who configures it wrongly gets an error.** The rule is
+one sentence: *a setting has exactly one home, and a step that needs another
+step's receives the value rather than declaring it again.*
+
+**Where plugins live in the recipe, and whether their configuration is hashed**
+is [0061](0061-the-recipe-is-the-pipeline.md) §§1–2 and its Consequences.
+`hashRecipe` is `sha256(canonical(recipe))` over the **whole resolved recipe**
+(`resolve.ts:102`) and always was, so everything that moves is inside the hash
+by construction and [0047](0047-the-recipe-a-run-got-is-on-the-log.md) holds
+without a line of work.
+
+**Whether a plugin may replace a step wholesale** dissolved rather than being
+answered. Under §2b a step's behaviour *is* its plugins, so replacing every
+plugin at a step is replacing what the step does — ordinary, not a third power.
+What stays fixed is §1's sequence: **a step's contents are yours and its
+existence is not.**
