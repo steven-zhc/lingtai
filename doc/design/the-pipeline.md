@@ -1,8 +1,9 @@
 # The pipeline — the design, the roadmap and the tickets
 
 **Status** design settled, implementation started · 2026-09-22, revised 09-23 ·
-**#224 and #225 have landed** — the suite is split and the `build` gate runs
-`unit` ·
+**#224, #225 and #226 have landed** — the suite is split, the `build` gate runs
+`unit`, and the v2 recipe is drawn in
+[`the-v2-recipe.md`](the-v2-recipe.md) ·
 **Decisions** [0058](../decisions/0058-lingtai-is-a-development-pipeline.md)
 (ten steps, everything that acts is a plugin) ·
 [0060](../decisions/0060-the-gate-runs-unit-tests.md) (the gate runs unit
@@ -94,7 +95,7 @@ from the ADR rather than bent towards it. **That is the largest saving here,
 and it is why the list below is shorter than the one a migration needs.**
 
 ```
-0   decide       T0b  the v2 recipe, written out                 ← the target
+0   decide       T0b  the v2 recipe, written out          ✓ #226  ← the target
 
 1   vocabulary   T1   Step replaces GatePoint
                  T2   the eleven plugins, as one interface
@@ -142,10 +143,12 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T0b** | The v2 recipe, written out |
+| **T0b** | The v2 recipe, written out · **landed 2026-09-23 as [#226](https://github.com/steven-zhc/lingtai/issues/226)** → [`the-v2-recipe.md`](the-v2-recipe.md) |
 | kind | `documentation` |
 | what | The complete v2 file for this repository, every setting under its step per [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §4. Not an implementation — the target T3 is checked against. |
 | watch out | It is 0061's own test: **if the v2 file is not plainly easier to read than the v1 it replaces, the ADR was wrong** and this is where that shows, before any code is written. |
+| result | **It passes on shape** — 67 structural lines across two files become 77 in one, of which 15 are things neither v1 file can say at all (`proposed`'s five judges, `discuss`'s three numbers); take those out and it says the same in 62. **And it produced six v1 keys with no home named in 0061**, five of them small — `extends:`, `watch:`, `human:`, `tier`, `budget.evidence`/`attempts`, and `runtime.prompt`, which nothing reads and should be deleted rather than moved. |
+| **the finding T3 needs** | **`runtime:` is the block the recipe/machine split is enforced on, and a v2 file does not have one.** `local.ts:394` refuses `agent`, `limits` and `assignee` by reading `raw["runtime"]`; under `steps:` that loop matches nothing and the split is silently gone, which is exactly 0016 §4's rule. `local.ts:403` writes the machine's values *into* `raw["runtime"]`, and under v2 they have to land in six places inside `steps:` where they will read as though the file said them. 0061 §4 does not mention [0046](../decisions/0046-lingtai-is-personal.md) §3. [`the-v2-recipe.md`](the-v2-recipe.md) §3.6 sets out the three ways out and which one happens if nobody chooses. |
 
 ### Phase 1 — the vocabulary
 
@@ -170,8 +173,9 @@ value rather than declaring it again.*
 |---|---|
 | **T3** | The recipe is `steps:` |
 | kind | `tech-debt` |
-| blocked by | T0b, T2 |
-| what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `discuss:` and `subscribers:` beside it; `turns`/`wall`/`base`/`kinds` move to the step that owns them and `rounds`/`restarts` to the step each one bounds; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. |
+| blocked by | T0b *(landed)*, T2 |
+| what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `discuss:` and `subscribers:` beside it; `turns`/`wall`/`base`/`kinds` move to the step that owns them and `rounds`/`restarts` to the step each one bounds; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. **The file to write is [`the-v2-recipe.md`](the-v2-recipe.md) §1**, and §2 is the key-by-key mapping it has to satisfy. |
+| watch out | **Six v1 keys have no home in 0061 and this ticket cannot inherit that silence** ([`the-v2-recipe.md`](the-v2-recipe.md) §3). One of them decides the shape: `runtime:` is where the recipe/machine split is enforced (`local.ts:394`) and where the machine's values are written back in (`local.ts:403`), and **v2 has no `runtime:` block**, so both stop working without erroring. §3.6 names the three ways out; the third — keeping `runtime:` beside `steps:` — is what happens by default and is the one that kills 0061 §1. |
 | watch out | **`configHash` needs nothing** — `hashRecipe` is already `sha256(canonical(recipe))` over the whole resolved recipe (`resolve.ts:102`), so everything that moves is inside the hash by construction. Checked rather than assumed; do not add a second hashing path. |
 
 ### Phase 2 — the pass
