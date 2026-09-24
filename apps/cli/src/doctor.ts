@@ -24,6 +24,7 @@
  */
 import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
 import {
+  type AgentRefusal,
   type ClientFor,
   type ProjectFilter,
   agentRefusal,
@@ -46,7 +47,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
-import { baseDivergence, baseOf, limitsFor, machinePath, type Recipe } from "@lingtai/recipe";
+import { baseDivergence, baseOf, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1410,13 +1411,34 @@ async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
 }
 
 /**
+ * The line an operator has to change, for the `agent:` that was refused.
+ *
+ * **Two refusals, two files, and one instruction for both is a wrong one**
+ * (`#245`). `runtime.agent` is this machine's, in `machinePath()`; a step's
+ * `agent:` is the project's, in `recipePath()`. A row that named the machine
+ * file for a step's refusal sent the operator to a line that is *already* the
+ * dispatched runtime — it is what `dispatched` was compared against and
+ * matched — so re-writing the same value there changes nothing and the project
+ * goes on taking no work, with the line that must change never mentioned.
+ *
+ * Both halves end in why there is no other way out: per-step dispatch is not
+ * built, so the answer is never "configure the other runtime".
+ */
+function agentRemedy(at: AgentRefusal["at"], project: string, dispatched: string): string {
+  return at === "runtime.agent"
+    ? `Name runtime.agent: ${dispatched} in ${machinePath()}; no other runtime is dispatched yet`
+    : `Name agent: ${dispatched} on that action in ${recipePath(project)}, or drop the action; ` +
+      `per-step dispatch is not built, so a step's agent: has to be the runtime this conductor runs`;
+}
+
+/**
  * One project's `recipe:` row.
  *
- * **A recipe that resolves is not yet one that runs.** `runtime.agent` may name
- * a runtime this conductor does not dispatch, and `runOnce` refuses every pass
- * of such a project before its claim (#180) — so that is a `fail` here, in
- * `runOnce`'s own sentence, and not an `ok` that prints the agent and says
- * nothing of it.
+ * **A recipe that resolves is not yet one that runs.** An `agent:` may name a
+ * runtime this conductor does not dispatch — `runtime.agent`, or a step's own
+ * since `#245` — and `runOnce` refuses every pass of such a project before its
+ * claim (#180) — so that is a `fail` here, in `runOnce`'s own sentence, and not
+ * an `ok` that prints the agent and says nothing of it.
  */
 export function recipeRow(
   f: ProjectFilter,
@@ -1428,9 +1450,8 @@ export function recipeRow(
       name: `recipe: ${f.project}`,
       status: "fail",
       detail:
-        `${wrongAgent} — every run of this project is refused before its claim, and nothing will be taken. ` +
-        `Name runtime.agent: ${dispatched} in ${machinePath()}; ` +
-        `no other runtime is dispatched yet\n` +
+        `${wrongAgent.sentence} — every run of this project is refused before its claim, and nothing will be taken. ` +
+        `${agentRemedy(wrongAgent.at, f.project, dispatched)}\n` +
         provenanceLines(f.provenance),
     };
   }

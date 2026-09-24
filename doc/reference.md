@@ -945,7 +945,12 @@ refused rather than ignored. One conductor dispatches one runtime and the gates
 are handed it, so `agentRefusal` (`conductor/src/run-once.ts`) now reads every
 `agent:` in the file and not only `runtime.agent`: a step naming the other one
 stops the pass before the claim, naming the point and the action, and
-`lingtai doctor`'s recipe row says the same. The alternative was the silent pick
+`lingtai doctor`'s recipe row says the same refusal. **The remedy is the one
+thing the two refusals do not share**: `runtime.agent` is written in
+`~/.lingtai/config.yml` and a step's `agent:` in `~/.lingtai/<project>/recipe.yml`,
+so the refusal carries which of the two it is and the row names that file — a
+row that offered the machine file for a step's refusal sent an operator to a
+line that already said the dispatched runtime. The alternative was the silent pick
 0046 §3 exists to refuse — a cold review running on the dispatched runtime with
 nothing anywhere recording that the named one was not used.
 

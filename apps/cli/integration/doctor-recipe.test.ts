@@ -72,6 +72,40 @@ describe("the recipe row, with no App configured", () => {
   });
 
   /**
+   * **And the remedy names the line that can change** (`#245`).
+   *
+   * A step's `agent:` is a runtime too since that ticket, so `runtime.agent:
+   * claude-code` in the machine file and `review` naming `codex` in the recipe
+   * is refused — and the row used to answer it with *name runtime.agent:
+   * claude-code in ~/.lingtai/config.yml*, which is what that file already
+   * says: it is the value `dispatched` was compared against and matched. An
+   * operator following it re-writes the same line, re-runs doctor, reads the
+   * identical fail, and the project takes no work the whole time, with the
+   * action that is wrong never mentioned.
+   */
+  it("names the recipe's own action, not the machine file, when a step's agent: is refused", async () => {
+    await writeFile(
+      join(home, "app", "recipe.yml"),
+      `${RECIPE}    - { name: review, agent: codex, prompt: "look at it coldly" }\n`,
+    );
+    const state = { project: "app", owner: "me", base: "main" } as ProjectState;
+
+    const row = recipeRow(await projectFilter(state, recipeClientFor({})), "claude-code");
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain('steps.proposed\'s "review" action names agent codex');
+    // The remedy: this action, in the file it is written in.
+    expect(row.detail).toContain("Name agent: claude-code on that action");
+    expect(row.detail).toContain(join(home, "app", "recipe.yml"));
+    // And never the machine file's `runtime.agent`, which is already
+    // `claude-code` here — editing it is the one thing that cannot help.
+    expect(row.detail).not.toContain("Name runtime.agent:");
+
+    const fixed = `${RECIPE}    - { name: review, agent: claude-code, prompt: "look at it coldly" }\n`;
+    await writeFile(join(home, "app", "recipe.yml"), fixed);
+    expect(recipeRow(await projectFilter(state, recipeClientFor({})), "claude-code").status).toBe("ok");
+  });
+
+  /**
    * The rows under it read the same file, so they run on the same machine
    * rather than skipping for an App nothing in them asks.
    */

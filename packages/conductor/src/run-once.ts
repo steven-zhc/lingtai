@@ -186,6 +186,25 @@ export const changedFilesArgs = (baseSha: string): string[] => [
 ];
 
 /**
+ * A refused `agent:`: the sentence both callers print, and **which** `agent:`
+ * it was.
+ *
+ * The sentence is one for both places (#180). `at` is here because the remedy
+ * is not: `runtime.agent` is written on this machine, in `machinePath()`, and a
+ * step's `agent:` is written in the project's own recipe — so a caller that
+ * offers one instruction for both refusals sends the operator to a line that is
+ * already correct, and its project goes on taking nothing (`#245`). Which
+ * `agent:` and which file to open are one fact, so they travel together rather
+ * than being re-derived by reading the sentence.
+ */
+export interface AgentRefusal {
+  /** Which `agent:` is wrong and what this conductor runs. */
+  sentence: string;
+  /** Where that `agent:` is written, which is the file whose line must change. */
+  at: "runtime.agent" | "step";
+}
+
+/**
  * Why a resolved recipe will not run on the runtime a conductor dispatches, or
  * null when it will (#180).
  *
@@ -206,19 +225,24 @@ export const changedFilesArgs = (baseSha: string): string[] => [
 export function agentRefusal(
   resolved: Pick<ResolvedRecipe, "recipe" | "provenance">,
   dispatched: string,
-): string | null {
+): AgentRefusal | null {
   const named = resolved.recipe.runtime.agent;
   if (named !== dispatched) {
     const from = resolved.provenance?.["runtime.agent"];
-    return `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`;
+    return {
+      at: "runtime.agent",
+      sentence: `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`,
+    };
   }
   for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
     for (const action of actions) {
       if ("agent" in action && action.agent !== dispatched) {
-        return (
-          `steps.${step}'s "${action.name}" action names agent ${action.agent}, ` +
-          `and this conductor runs ${dispatched}`
-        );
+        return {
+          at: "step",
+          sentence:
+            `steps.${step}'s "${action.name}" action names agent ${action.agent}, ` +
+            `and this conductor runs ${dispatched}`,
+        };
       }
     }
   }
@@ -415,7 +439,10 @@ export function runOnce(
         workItemId: null,
         runId: null,
         stage: "recipe",
-        detail: `${wrongAgent} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; no other runtime is dispatched yet`,
+        // `there` is the field the sentence just named — `runtime.agent`, or
+        // the action — which is why this one wording serves both refusals and
+        // the doctor's row, which prints a path, needs `at`.
+        detail: `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; no other runtime is dispatched yet`,
       };
     }
     // Safe now, and only now: past the refusal these two are the same branch.
