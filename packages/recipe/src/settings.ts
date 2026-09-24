@@ -32,6 +32,11 @@
  * the accessors* while three of the six settings have nothing to reach past.
  * `#231` is what found it: the move is a change to this file only if every
  * setting it moves has a home here first.
+ *
+ * **It is seven now, because 0063 §3 added one to that list rather than to
+ * this file.** `assignee` is a field of `queue:` and not a plugin beside it, so
+ * it is a setting that moves onto a step exactly as the other six are, and
+ * `assigneeOf` is here for the same reason `kindsOf` is.
  */
 import type { Step } from "@lingtai/domain";
 import type { Recipe } from "./recipe.ts";
@@ -90,4 +95,26 @@ export function excludeOf(recipe: Recipe): Recipe["source"]["exclude"] {
  */
 export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
   return recipe.source.backoff;
+}
+
+/**
+ * Whose tickets this machine takes — **`queue:`'s fourth field**, and the one
+ * whose v1 name is not `source:`'s
+ * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3).
+ *
+ * The other three are written under `source:` and this is written under
+ * `runtime:`, by the machine file rather than by the recipe (0046 §3), and
+ * that difference is exactly what an accessor is for: 0063 §4 moves where a
+ * person writes it and this is the file that move edits. Until it lands,
+ * `#244` is the ticket that found the readers — `assigneeSkip`'s caller in
+ * `discover.ts`, `describeFilter` and the board's reading — each reaching in
+ * by hand.
+ *
+ * Absent is `both`, and it is returned absent rather than filled in: what an
+ * absent rule means belongs to `assigneeSkip` and to `describeAssignee`, which
+ * say it in their own words, and 0046 §2's *a wrong login shows itself* wants
+ * the reading to be able to say *nothing was written* rather than *both*.
+ */
+export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
+  return recipe.runtime.assignee;
 }

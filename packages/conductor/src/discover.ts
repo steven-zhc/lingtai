@@ -28,7 +28,7 @@
  */
 import type { AssigneeRule, Recipe } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
-import { excludeOf, kindsOf } from "@lingtai/recipe/settings";
+import { assigneeOf, excludeOf, kindsOf } from "@lingtai/recipe/settings";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
@@ -176,7 +176,7 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
 
   // Last: whose work it is (#181). An issue both blocked and somebody else's
   // reports `blocked-by`, the reason that clears on its own.
-  const assignee = assigneeSkip(issue, recipe.runtime.assignee);
+  const assignee = assigneeSkip(issue, assigneeOf(recipe));
   if (assignee) return { issue, skip: assignee };
 
   return { issue, skip: null };

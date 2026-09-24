@@ -32,7 +32,6 @@ import {
   PLUGINS,
   Recipe,
   agentPlugin,
-  assigneePlugin,
   canonicalRecipe,
   definePlugin,
   disclose,
@@ -495,44 +494,67 @@ describe("the two the pass calls itself", () => {
 
 /**
  * **Which ticket is taken, and whether this machine may take it** (`#236`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §2 and §3).
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §2 and §3;
+ * `#244`, [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3).
  *
- * Like `worktree:` and `merge:` above, both are names for code that already
+ * **It was two plugins and it is one.** 0063 §3 makes `assignee` a *field* of
+ * `queue:` rather than a plugin beside it, because the two answer one question
+ * and `discover.ts` applies them in one pass over one GitHub response: two
+ * plugins that must both be present and must agree is 0053's *one decision
+ * across two sources*, one level down.
+ *
+ * Like `worktree:` and `merge:` above, it is a name for code that already
  * runs — `runnableNow`, `considerIssue` and `assigneeSkip` in
  * `packages/conductor/src/discover.ts`, and `claimWorkItem` in
- * `packages/conductor/src/claim.ts` — and neither is read from the recipe yet.
- * So what these cases hold is what makes declaring them now worth anything:
+ * `packages/conductor/src/claim.ts` — and it is not read from the recipe yet.
+ * So what these cases hold is what makes declaring it now worth anything:
  *
- * - **They wrap rather than reimplement.** `queue:`'s three fields *are*
- *   `source:`'s three fields — one declaration, `QUEUE_FIELDS` — and
- *   `assignee:`'s field *is* `AssigneeRule`, refinement and all. A second copy
- *   of either would be two answers to one question while both shapes exist.
+ * - **It wraps rather than reimplements.** Three of `queue:`'s four fields
+ *   *are* `source:`'s three — one declaration, `SOURCE_FIELDS` — and the
+ *   fourth *is* `AssigneeRule`, refinement and all. A second copy of either
+ *   would be two answers to one question while both shapes exist.
  * - **Refused at all ten steps, by a sentence that says where the code is** and
  *   how `claim` will reduce the list when it reads it. The first half is the
- *   same property `worktree:` and `merge:` have; the second is this pair's own,
- *   and `packages/conductor/unit/gate-matrix.test.ts` is where it is pinned.
+ *   same property `worktree:` and `merge:` have; the second is this plugin's
+ *   own, and `packages/conductor/unit/gate-matrix.test.ts` is where it is
+ *   pinned.
  */
-describe("the two `claim` will hold", () => {
+describe("the one `claim` will hold", () => {
   it("is refused at every one of the ten steps, and names the file instead", () => {
     for (const step of STEPS) {
-      for (const kind of ["queue", "assignee"] as const) {
-        expect(whyNoKindAt(step, kind), `${step} × ${kind} is accepted`).not.toBeNull();
-      }
+      expect(whyNoKindAt(step, "queue"), `${step} × queue is accepted`).not.toBeNull();
     }
 
     expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/discover.ts");
     expect(whyNoKindAt("claim", "queue")).toContain("source.kinds");
-    expect(whyNoKindAt("claim", "assignee")).toContain("runtime.assignee");
-    expect(whyNoKindAt("claim", "assignee")).toContain("packages/conductor/src/claim.ts");
+    // The fourth field's own half of the sentence, which used to be
+    // `assignee:`'s own refusal and is now carried by this one.
+    expect(whyNoKindAt("claim", "queue")).toContain("runtime.assignee");
+    expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/claim.ts");
+  });
+
+  /**
+   * **`assignee:` is not a plugin, and the closed set is what says so.** A name
+   * the schema no longer knows must be refused as *an action naming no plugin*
+   * rather than accepted into a cell nothing walks — which is the same rule,
+   * read the other way, that put it in `PLUGINS` in the first place.
+   */
+  it("has no `assignee:` plugin left in the closed set", () => {
+    expect(PLUGINS.map((plugin) => plugin.key)).not.toContain("assignee");
+    expect(PLUGINS).toHaveLength(11);
+    expect(pluginOf({ name: "whose", assignee: { take: "both" } })).toBeNull();
   });
 
   /**
    * **One declaration, read by two shapes.** `source:` is the v1 spelling of
-   * these three fields and `queue:` is the v2 one; while both exist, a `kinds`
-   * the plugin required and `source:` did not would be two answers to *what is
-   * a kind* — and the one list doing three jobs is the reason that must not
-   * happen twice. Asserted by parsing the same input through both and getting
-   * the same defaults, rather than by comparing schema objects.
+   * three of these fields and `queue:` is the v2 one; while both exist, a
+   * `kinds` the plugin required and `source:` did not would be two answers to
+   * *what is a kind* — and the one list doing three jobs is the reason that
+   * must not happen twice. Asserted by parsing the same input through both and
+   * getting the same defaults, rather than by comparing schema objects.
+   *
+   * **And the fourth is absent from both when nothing writes it**, which is
+   * what keeps `source:` from growing a `source.assignee` nothing reads.
    */
   it("gives `queue:` the same three fields `source:` has, defaults and all", () => {
     expect(queuePlugin.declares).toEqual(["name", "queue"]);
@@ -542,6 +564,7 @@ describe("the two `claim` will hold", () => {
       name: "what to work on",
       queue: Recipe.shape.source.parse(written),
     });
+    expect(Object.keys(Recipe.shape.source.shape)).not.toContain("assignee");
 
     // And the same refusals: `backoff: 0` is the absence of the guard rather
     // than a shorter one, and `kinds: []` is a recipe that takes nothing.
@@ -555,38 +578,52 @@ describe("the two `claim` will hold", () => {
    * Nothing here spawns a process — the queue runs in the conductor's own — so
    * `env:` is refused by name, which is the case 0061 §9 is written about.
    */
-  it("declares no `env:` under either, and says what it does declare", () => {
-    for (const plugin of [queuePlugin, assigneePlugin]) {
-      const problems = readFields(plugin, {
-        name: "take work",
-        [plugin.key]: plugin.key === "queue" ? { kinds: ["bug"] } : { take: "both" },
-        env: ["GITHUB_TOKEN"],
-      }).problems!;
-      expect(problems).toHaveLength(1);
-      expect(problems[0]!.field).toBe("env");
-      expect(problems[0]!.why).toContain(`"${plugin.key}" declares no "env" field`);
-      expect(problems[0]!.why).toContain(`"${plugin.key}"`);
-    }
+  it("declares no `env:`, and says what it does declare", () => {
+    const problems = readFields(queuePlugin, {
+      name: "take work",
+      queue: { kinds: ["bug"] },
+      env: ["GITHUB_TOKEN"],
+    }).problems!;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]!.field).toBe("env");
+    expect(problems[0]!.why).toContain(`"queue" declares no "env" field`);
   });
 
   /**
    * **`AssigneeRule` itself, so its one refinement is not a second refusal.**
    * `take: mine` with nobody named matches no issue at all, and an empty queue
    * reads exactly like a repository with nothing to do (0046 §2) — so the
-   * schema refuses it, and it must go on refusing it under the plugin's key.
+   * schema refuses it, and it must go on refusing it from inside `queue:`
+   * (0063 §3). By name, and on the field that has to change: the message names
+   * `login`, so a person reading it is told what to add rather than what to
+   * remove.
    */
-  it("keeps `assignee:`'s rule that `mine` needs a login", () => {
-    expect(assigneePlugin.declares).toEqual(["name", "assignee"]);
-    expect(assigneePlugin.schema.parse({ name: "whose", assignee: {} })).toEqual({
-      name: "whose",
-      assignee: { take: "both" },
-    });
-    expect(assigneePlugin.schema.safeParse({ name: "whose", assignee: { take: "mine" } }).success).toBe(
-      false,
-    );
+  it("keeps the rule that `assignee: { take: mine }` needs a login", () => {
+    const q = { kinds: ["bug"] };
     expect(
-      assigneePlugin.schema.parse({ name: "whose", assignee: { take: "mine", login: "steven-zhc" } }),
-    ).toEqual({ name: "whose", assignee: { take: "mine", login: "steven-zhc" } });
+      queuePlugin.schema.parse({ name: "q", queue: { ...q, assignee: {} } }),
+    ).toMatchObject({ queue: { assignee: { take: "both" } } });
+
+    const refused = queuePlugin.schema.safeParse({
+      name: "q",
+      queue: { ...q, assignee: { take: "mine" } },
+    });
+    expect(refused.success).toBe(false);
+    expect(refused.error!.issues[0]!.message).toContain("take: mine needs a login");
+    expect(refused.error!.issues[0]!.path).toEqual(["queue", "assignee", "login"]);
+
+    expect(
+      queuePlugin.schema.parse({
+        name: "q",
+        queue: { ...q, assignee: { take: "mine", login: "steven-zhc" } },
+      }),
+    ).toMatchObject({ queue: { assignee: { take: "mine", login: "steven-zhc" } } });
+
+    // And the enum: a fourth `take` is refused rather than dropped.
+    expect(
+      queuePlugin.schema.safeParse({ name: "q", queue: { ...q, assignee: { take: "everyone" } } })
+        .success,
+    ).toBe(false);
   });
 });
 

@@ -339,7 +339,7 @@ finding** — §3 takes them one at a time.
 | `runtime.limits.wall` | `implement:` → `agent.wall` |
 | `runtime.limits.rounds` | `implement:` → universal `rounds:` |
 | `runtime.limits.restarts` | `claim:` → universal `restarts:` |
-| `runtime.assignee.login` · `.take` | `claim:` → `assignee:` |
+| `runtime.assignee.login` · `.take` | `claim:` → `queue.assignee` — §3.2, and [0063](../decisions/0063-every-setting-is-the-recipes.md) §3 |
 | `runtime.budget.evidence` | **none named.** §3.3 — it belongs on `implement`'s `agent:`, and this file puts it there |
 | `runtime.budget.attempts` | **none named.** §3.3 — the same |
 | `runtime.budget.findings` | `review:` → `agent.findings`, and §3.5 is the disagreement about that |
@@ -391,7 +391,19 @@ more dangerous half: a plugin no list carries is a plugin no step refuses, so
 `assignee:` written under `end:` resolves silently instead of being refused by
 name — the cell nobody decided, which is the whole of what 0061 §8 exists to
 make impossible. **T2's list is corrected to twelve in the same change as this
-document.** 0061 §3's table keeps its ten and is not edited: an ADR that turns
+document.**
+
+> **Superseded 2026-09-24, and the finding is why**
+> ([0063](../decisions/0063-every-setting-is-the-recipes.md) §3, `#244`). Being
+> made to decide the cell is what showed there was no plugin there to decide
+> about: `kinds` orders the listing, `exclude` filters it and `assignee`
+> filters it, all in one pass over one GitHub response, so **`assignee` is a
+> *field* of `queue:`** and two plugins that must both be present and must
+> agree is 0053's *one decision across two sources* one level down. The set is
+> **eleven** and the matrix is **110 cells**. Nothing above is withdrawn — the
+> rule that a plugin no list carries is a plugin no step refuses is what
+> produced this, and the cell `assignee:` would have had no longer exists
+> rather than being left undecided. 0061 §3's table keeps its ten and is not edited: an ADR that turns
 out incomplete gets a superseding file rather than a correction, and what it is
 missing is the two below.
 

@@ -19,8 +19,8 @@
 import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
-import { backoffOf, excludeOf, kindsOf, limitsFor } from "@lingtai/recipe/settings";
+import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
+import { assigneeOf, backoffOf, excludeOf, kindsOf, limitsFor } from "@lingtai/recipe/settings";
 import { passCeiling } from "./ceiling.ts";
 import { currentRecipe } from "./projects.ts";
 
@@ -270,7 +270,7 @@ export function describeFilter(filter: ProjectFilter): string[] {
     // With the login in it, because a wrong login is the mistake this setting
     // can have, and it should be readable before it hands over somebody else's
     // tickets rather than only after (0046 §2, #181).
-    `  assignee     ${describeAssignee(filter.recipe.runtime.assignee)}`,
+    `  assignee     ${describeAssignee(assigneeOf(filter.recipe))}`,
     // Printed whether it buys anything or not, like a `skipped` gate point: a
     // default that only appears when it is doing something is a default nobody
     // can audit, and this one spends money (0025 §2).
@@ -286,8 +286,8 @@ export function describeFilter(filter: ProjectFilter): string[] {
   ];
 }
 
-/** `runtime.assignee` as a person reads it. Absent is `both`, and says so. */
-export function describeAssignee(rule: Recipe["runtime"]["assignee"]): string {
+/** `queue:`'s `assignee` as a person reads it. Absent is `both`, and says so. */
+export function describeAssignee(rule: AssigneeRule | undefined): string {
   const as = rule?.login ? ` (this machine is ${rule.login})` : "";
   switch (rule?.take ?? "both") {
     case "mine":

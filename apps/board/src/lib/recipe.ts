@@ -17,7 +17,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
-import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type GateAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
+import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type GateAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
 /** The limits `a pass` is made of, from the recipe rather than listed again here. */
 const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
@@ -505,29 +505,30 @@ export function describeAction(
         bound: "no clock — the base moving under it is a recomputation, not a refusal",
       };
     }
-    // And the two `claim` will hold, on the same footing and for the same
-    // reason: the queue calls them itself today, so no step can hold one and
+    // And the one `claim` will hold, on the same footing and for the same
+    // reason: the queue calls it itself today, so no step can hold one and
     // this reading is here so that the day one can, the page already says what
     // it does rather than returning `undefined`.
+    //
+    // **Its `assignee` field is read here and not in a case of its own** (0063
+    // §3, `#244`): it used to be a plugin beside this one, and the two rows the
+    // page drew for it were two rows about one decision.
     case "queue": {
-      const a = action as Extract<GateAction, { queue: { kinds: string[]; exclude: string[]; backoff: string } }>;
+      const a = action as Extract<
+        GateAction,
+        { queue: { kinds: string[]; exclude: string[]; backoff: string; assignee?: { login?: string; take: string } } }
+      >;
       const exclude = a.queue.exclude.length === 0 ? "" : `, never ${a.queue.exclude.join(", ")}`;
+      const me = a.queue.assignee?.login ?? "this machine's login";
+      const whose =
+        a.queue.assignee?.take === "mine"
+          ? `, only where assigned to ${me}`
+          : a.queue.assignee?.take === "unassigned"
+            ? ", only where assigned to nobody"
+            : "";
       return {
-        does: `takes ${a.queue.kinds.join(" before ")}${exclude}`,
+        does: `takes ${a.queue.kinds.join(" before ")}${exclude}${whose}`,
         bound: `a failed attempt waits ${a.queue.backoff} before its own ticket is offered again`,
-      };
-    }
-    case "assignee": {
-      const a = action as Extract<GateAction, { assignee: { login?: string; take: string } }>;
-      const me = a.assignee.login ?? "this machine's login";
-      return {
-        does:
-          a.assignee.take === "mine"
-            ? `takes only issues assigned to ${me}`
-            : a.assignee.take === "unassigned"
-              ? "takes only issues assigned to nobody"
-              : "takes every issue, whoever it is assigned to",
-        bound: "no clock — a person wrote the assignee, so it never goes stale (0027)",
       };
     }
     // And the one `proposed` will hold, whose `bound` is the whole of why it is
@@ -675,7 +676,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "assignee",
-      says: describeAssignee(recipe.runtime.assignee),
+      says: describeAssignee(assigneeOf(recipe)),
       keys: ["runtime.assignee.take", "runtime.assignee.login"],
     },
     {

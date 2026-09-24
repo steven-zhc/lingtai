@@ -193,9 +193,9 @@ export const mergePlugin = definePlugin("merge", {
 });
 
 /**
- * **The three settings that decide which ticket is taken** — written here
- * once, and read by two shapes: `source:` in the v1 file, and the `queue:`
- * plugin below.
+ * **The three of `queue:`'s four fields whose v1 spelling is `source:`** —
+ * written here once, and read by two shapes: `source:` in the v1 file, and
+ * `QUEUE_FIELDS` below, which adds the fourth.
  *
  * A plain record of schemas rather than a `z.object`, because the two shapes
  * differ in one way that matters and in no other: `source:` is a `z.object`,
@@ -210,8 +210,15 @@ export const mergePlugin = definePlugin("merge", {
  * that would otherwise exist: a `kinds` the plugin required and `source:` did
  * not would be two answers to *what is a kind*, and the one list doing three
  * jobs below is the reason that must not happen twice.
+ *
+ * **`assignee` is not here, and that is the same rule kept rather than broken**
+ * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3). It
+ * is a field of `queue:`, and its v1 spelling is `runtime.assignee` on the
+ * machine's own file — not `source.assignee`, which no file has ever held.
+ * Putting it in `source:` too would invent a third spelling that nothing reads,
+ * which is the silently-dropped key 0016 §4 is about.
  */
-const QUEUE_FIELDS = {
+const SOURCE_FIELDS = {
   /**
    * Labels of yours that mark an issue as work, **most wanted first**.
    *
@@ -277,36 +284,6 @@ const QUEUE_FIELDS = {
 } satisfies PluginFields;
 
 /**
- * **Which ticket is taken** — a name for `runnableNow` and `considerIssue` in
- * `packages/conductor/src/discover.ts`, which is what has always decided this
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
- *
- * A map, by §2's rule — three settings and no principal one — and the map is
- * `source:`'s own three fields, shared rather than copied: `QUEUE_FIELDS`
- * above is the single declaration both read.
- *
- * **What it does *not* declare is the more useful half.**
- *
- * - **No `blocked-by` field, because it is not a setting.** The queue passes
- *   over an issue GitHub still reports an open blocker for, always, and there
- *   is no recipe that turns that off (`discover.ts:174`). Two facts about it
- *   are load-bearing and neither is configuration: `blockedBy` counts the
- *   blockers still **open**, not the total, so a chain whose groundwork has
- *   landed reads `total_blocked_by: 2, blocked_by: 0` and runs; and **null is
- *   not zero** — a GitHub that says nothing about dependencies degrades to the
- *   behaviour from before this existed rather than passing everything over,
- *   which is what `Offered.dependenciesUnread` says out loud.
- * - **No `restarts`.** It is a universal key sitting beside this plugin rather
- *   than a field of it (0061 §2 and §3): *this item may be claimed twice* is
- *   the workflow's bound on the step, and `runtime.limits.restarts` is where a
- *   person writes it today.
- * - **No `env:`.** Nothing here spawns a process — the queue runs in the
- *   conductor's own process — so a recipe writing one is refused by name
- *   (0061 §9) rather than having it accepted and ignored.
- */
-export const queuePlugin = definePlugin("queue", { queue: z.strictObject(QUEUE_FIELDS) });
-
-/**
  * `mine`: only issues assigned to `login`. `unassigned`: only issues assigned
  * to nobody. `both`: every issue, whoever it is assigned to — today's queue.
  */
@@ -334,28 +311,64 @@ export const AssigneeRule = z
 export type AssigneeRule = z.infer<typeof AssigneeRule>;
 
 /**
- * **Whether this machine may take it** — a name for `assigneeSkip` in
- * `packages/conductor/src/discover.ts`, the last of the four reasons an issue
- * is passed over, and for what `claimWorkItem` in
- * `packages/conductor/src/claim.ts` then does with the one that survives
- * (0061 §3: `claim`, *who*).
+ * **`queue:`'s four fields**: `source:`'s three, and `assignee` beside them
+ * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3).
  *
- * **`AssigneeRule` itself, and not a copy of it.** `runtime.assignee` is where
- * a person writes this today — on the machine's own file, which is the one
- * place 0046 §3 allows — and the rule that `take: mine` needs a `login` is a
- * `.refine` on that schema. Declaring the shape a second time here would make
- * the refusal two refusals that could come to disagree, and this plugin is a
- * name for the code rather than a second implementation of it.
+ * `assignee` used to be a plugin of its own, and 0061 §§2–3 used the pair as
+ * the worked example of *a step's plugins run in the order written*. 0063 §3
+ * revises that: **they answer one question.** `kinds` orders the listing,
+ * `exclude` filters it, `assignee` filters it, and all four are applied in one
+ * pass over one GitHub response in `discover.ts`. Two plugins that must both
+ * be present and must agree is 0053's *one decision across two sources*, one
+ * level down.
  *
- * **It sits beside `queue:` at `claim`, and the step's reduction is not
- * `prepared`'s.** 0061 §2: a step's plugins run in the order written, and what
- * the step does with their results is the step's — so at `claim` **the first
- * plugin that yields a work item wins**, rather than every one having to pass,
- * which is what the same list means at `prepared`. Reordering the list is how
- * a person changes priority. Nothing reads that yet; `whyNoKindAt` says it in
- * the refusal, which is where somebody about to wire it will meet it.
+ * **`AssigneeRule` itself, and not a copy of it**, so its one refinement stays
+ * one refusal: `take: mine` without a `login` matches no issue at all, and an
+ * empty queue reads exactly like a repository with nothing to do. That is why
+ * the rule is a `strictObject` with a `.refine` rather than two loose fields,
+ * and it goes on firing from in here.
+ *
+ * Optional, like the `runtime.assignee` it is the v2 spelling of: absent is
+ * `both`, which is how the queue behaved before it read an assignee at all.
  */
-export const assigneePlugin = definePlugin("assignee", { assignee: AssigneeRule });
+const QUEUE_FIELDS = {
+  ...SOURCE_FIELDS,
+  assignee: AssigneeRule.optional(),
+} satisfies PluginFields;
+
+/**
+ * **Which ticket is taken, and whether this machine may take it** — a name for
+ * `runnableNow`, `considerIssue` and `assigneeSkip` in
+ * `packages/conductor/src/discover.ts`, which is what has always decided this
+ * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3,
+ * [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3), and
+ * for what `claimWorkItem` in `packages/conductor/src/claim.ts` then does with
+ * the one that survives.
+ *
+ * A map, by §2's rule — four settings and no principal one — and three of them
+ * are `source:`'s own fields, shared rather than copied: `SOURCE_FIELDS` above
+ * is the single declaration both read.
+ *
+ * **What it does *not* declare is the more useful half.**
+ *
+ * - **No `blocked-by` field, because it is not a setting.** The queue passes
+ *   over an issue GitHub still reports an open blocker for, always, and there
+ *   is no recipe that turns that off (`discover.ts:174`). Two facts about it
+ *   are load-bearing and neither is configuration: `blockedBy` counts the
+ *   blockers still **open**, not the total, so a chain whose groundwork has
+ *   landed reads `total_blocked_by: 2, blocked_by: 0` and runs; and **null is
+ *   not zero** — a GitHub that says nothing about dependencies degrades to the
+ *   behaviour from before this existed rather than passing everything over,
+ *   which is what `Offered.dependenciesUnread` says out loud.
+ * - **No `restarts`.** It is a universal key sitting beside this plugin rather
+ *   than a field of it (0061 §2 and §3): *this item may be claimed twice* is
+ *   the workflow's bound on the step, and `runtime.limits.restarts` is where a
+ *   person writes it today.
+ * - **No `env:`.** Nothing here spawns a process — the queue runs in the
+ *   conductor's own process — so a recipe writing one is refused by name
+ *   (0061 §9) rather than having it accepted and ignored.
+ */
+export const queuePlugin = definePlugin("queue", { queue: z.strictObject(QUEUE_FIELDS) });
 
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
@@ -520,18 +533,22 @@ export const backlogPlugin = definePlugin("backlog", {
 /**
  * **The closed set**, and the only list of plugins anywhere.
  *
- * It lists the plugins and not their fields: each of the twelve above declares
+ * It lists the plugins and not their fields: each of the eleven above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
  * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
  * settled that there is no plugin system and an extension is a command — so a
  * key is a bare word and a word that is not one of these is refused.
  *
- * **All twelve of 0061 §3's names, and the last six are in no step's row.**
- * `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and `backlog:` are
+ * **Eleven of 0061 §3's twelve names, and the last five are in no step's row.**
+ * `worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` are
  * names for code the pass calls directly today, so every cell of theirs
  * refuses, by a sentence that says where that code is called instead. That is the same
  * two-valued rule the six steps with no call site are held to — **naming a
  * thing is not wiring it** — read down the other axis.
+ *
+ * The twelfth was `assignee:`, and it is not missing: 0063 §3 makes it a field
+ * of `queue:` rather than a plugin beside it, because the two answer one
+ * question and `discover.ts` applies them in one pass over one GitHub response.
  *
  * `as const`, so `ActionKind` and `GateAction` are read off it rather than
  * written down a second time.
@@ -546,7 +563,6 @@ export const PLUGINS = [
   worktreePlugin,
   mergePlugin,
   queuePlugin,
-  assigneePlugin,
   judgePlugin,
   backlogPlugin,
 ] as const;
@@ -578,7 +594,6 @@ export const GateAction = z.union([
   worktreePlugin.schema,
   mergePlugin.schema,
   queuePlugin.schema,
-  assigneePlugin.schema,
   judgePlugin.schema,
   backlogPlugin.schema,
 ]);
@@ -623,9 +638,9 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
 }
 
 /**
- * **Which of the twelve kinds each of the ten steps actually runs.**
+ * **Which of the eleven kinds each of the ten steps actually runs.**
  *
- * A hundred and twenty cells, and ten of them used to be accepted here, resolved into
+ * A hundred and ten cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
  * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
  * the weeks it spent declared-but-unbuilt are the argument for writing the
@@ -651,10 +666,10 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
  * at one of them is the exact `#61` failure one level up — resolved, recorded,
  * drawn, never called — so it is refused by name when the recipe resolves.
  *
- * **And six empty columns, for the same reason read the other way.**
- * `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and `backlog:` name
+ * **And five empty columns, for the same reason read the other way.**
+ * `worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` name
  * code the pass calls itself, so no row carries them and `CALLED_DIRECTLY` is
- * what their sixty cells refuse with.
+ * what their fifty cells refuse with.
  */
 export const KINDS_AT = {
   /** Nothing yet: the queue picks the item and no pipeline is constructed here. */
@@ -701,17 +716,22 @@ const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review
 };
 
 /**
- * **What `claim` will do with the two plugins it is given** — the one clause
- * in either refusal below that is not a fact about today's code.
+ * **What `claim` will do with the plugins it is given** — the one clause in
+ * the refusal below that is not a fact about today's code.
  *
  * 0061 §2: a step's plugins run in the order written, and *what the step does
  * with their results is the step's*. At `claim` that reduction is **the first
  * plugin that yields a work item wins** — not every one must pass, which is
  * what the same list means at `prepared`, and a reader who has just read that
- * step's row will carry the wrong one across. So it is said where `queue:` and
- * `assignee:` are met today, which is their refusal, and it is said in the two
+ * step's row will carry the wrong one across. So it is said where `queue:` is
+ * met today, which is its refusal, and it is said in the two
  * sentences somebody about to wire it needs: the order is the priority, and
  * the list is where a person changes it.
+ *
+ * **0061 §§2–3 used `queue:` and `assignee:` as the worked example of this,
+ * and 0063 §3 took the example away without taking the rule** — `assignee` is
+ * one of `queue:`'s four fields now, so the several entries a `claim` list
+ * reduces over are several `queue:` entries.
  *
  * **In the refusal rather than in a `REDUCES_AT` of its own**, deliberately. A
  * per-step reduction table nothing reads would be `#61` one level up —
@@ -785,15 +805,20 @@ const FILES_AND_ROUTES_NOTHING =
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
  *
- * Why these six are declared at all before anything reads them: a plugin no
+ * Why these five are declared at all before anything reads them: a plugin no
  * list carries is a plugin no step refuses
- * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2), and
- * `assignee:` is the one that document found missing from every list but 0061
- * §3's — so it is the case the rule was written about. Outside the closed set,
- * `assignee:` written under `end:` is *an action naming no plugin* — a true
- * refusal with the wrong subject, and the cell nobody decided. Inside it, the
- * refusal is the sentence below, and the day the file becomes `steps:` this
- * entry goes and a `KINDS_AT` row arrives in the same diff.
+ * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2). Outside
+ * the closed set, `queue:` written under `end:` is *an action naming no
+ * plugin* — a true refusal with the wrong subject, and the cell nobody
+ * decided. Inside it, the refusal is the sentence below, and the day the file
+ * becomes `steps:` this entry goes and a `KINDS_AT` row arrives in the same
+ * diff.
+ *
+ * `assignee:` was the sixth and the case that document wrote the rule about —
+ * it had a row in 0061 §3 and appeared in no other list. It is gone from here
+ * because 0063 §3 made it a field of `queue:` rather than a plugin, so the cell
+ * it would have had does not exist; what was true of it is now carried by
+ * `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
   worktree:
@@ -805,11 +830,11 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
   queue:
     "the queue asks GitHub itself, before a pass exists to have steps — `runnableNow` and " +
     "`considerIssue` in `packages/conductor/src/discover.ts`, from `source.kinds`, `source.exclude` and " +
-    `\`source.backoff\`, which are this plugin's own three fields under their v1 name. ${FIRST_YIELDS}`,
-  assignee:
-    "the queue decides it itself, last of the four reasons an issue is passed over — `assigneeSkip` in " +
-    "`packages/conductor/src/discover.ts`, from `runtime.assignee` on the machine's own file (0046 §3), " +
-    `and \`claimWorkItem\` in \`packages/conductor/src/claim.ts\` is what then takes the one that survives. ${FIRST_YIELDS}`,
+    "`source.backoff`, which are three of this plugin's four fields under their v1 name. Its fourth, " +
+    "`assignee`, is the last of the four reasons an issue is passed over — `assigneeSkip` in the same " +
+    "file, from `runtime.assignee` on the machine's own file (0046 §3), which is that field's v1 name " +
+    "until 0063 §4 inverts the refusal — and `claimWorkItem` in " +
+    `\`packages/conductor/src/claim.ts\` is what then takes the one that survives. ${FIRST_YIELDS}`,
   judge:
     "`run-once.ts` decides it itself, in `buyRound` — `decideFix` in `packages/conductor/src/fix.ts` " +
     "buys another round in the same worktree and `decideRestart` in `packages/conductor/src/restart.ts` " +
@@ -839,14 +864,14 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
  * refused at `prepared` should not have to read `run-once.ts` to discover that
  * the reason is that nothing has been committed yet.
  *
- * **Six of them are facts about the plugin instead, and they are asked
- * first.** `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and
+ * **Five of them are facts about the plugin instead, and they are asked
+ * first.** `worktree:`, `merge:`, `queue:`, `judge:` and
  * `backlog:` are
  * refused everywhere and each for one reason, so a sentence about the step would be
  * the less useful half of the truth at all ten: *nothing runs a pipeline at
  * `admit`* is right and leaves a reader looking for the code that cuts their
  * worktree, which `CALLED_DIRECTLY` names. It is sharpest at `claim`, where
- * the step's own sentence and the plugin's are about the same two plugins —
+ * the step's own sentence and the plugin's are about the same plugin —
  * and only the plugin's says where `discover.ts` is.
  */
 export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
@@ -1196,12 +1221,17 @@ export const Recipe = z.object({
    * invalidates it by arithmetic. A prepare step runs before the agent has
    * written anything and holds no verdict about anything.
    */
-  // **The same three fields `queue:` declares, and the same schema objects.**
-  // `QUEUE_FIELDS` is where they and their comments are written; this key is
-  // the v1 spelling of them, and the plugin is the v2 one. One declaration,
-  // because two would be two things to keep true — and the day `claim` reads
-  // the plugin, this line goes and nothing about the three fields moves.
-  source: z.object(QUEUE_FIELDS),
+  // **Three of the four fields `queue:` declares, and the same schema
+  // objects.** `SOURCE_FIELDS` is where they and their comments are written;
+  // this key is the v1 spelling of them, and the plugin is the v2 one. One
+  // declaration, because two would be two things to keep true — and the day
+  // `claim` reads the plugin, this line goes and nothing about the three
+  // fields moves.
+  //
+  // The fourth is `assignee`, and it is deliberately not here: its v1 spelling
+  // is `runtime.assignee` below, on the machine's own file (0046 §3), and a
+  // `source.assignee` nothing reads would be a key accepted and dropped.
+  source: z.object(SOURCE_FIELDS),
 
   /**
    * What the run cannot proceed without.
@@ -1438,10 +1468,16 @@ export const Recipe = z.object({
      * Which issues this machine takes, by their assignee
      * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §2, #181).
      *
-     * **The machine's, never the recipe file's**: `resolveLocalRecipe` puts it
-     * here from `~/.lingtai/config.yml` and refuses it written in the recipe,
-     * as it does `agent` and `limits`. Whether one person's Lingtai leaves a
-     * colleague's tickets alone is that person's setting, not the repository's.
+     * **This is `queue:`'s `assignee` field under its v1 name**
+     * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3),
+     * and `assigneeOf` in `settings.ts` is what every reader asks. 0063 §3
+     * settles that it is one of the four settings that decide which ticket is
+     * taken rather than a plugin beside them; §4 is what moves where a person
+     * writes it, and that has not happened.
+     *
+     * **The machine's, never the recipe file's** until it does:
+     * `resolveLocalRecipe` puts it here from `~/.lingtai/config.yml` and
+     * refuses it written in the recipe, as it does `agent` and `limits`.
      *
      * **Optional, and absent is `both`** — every ticket, assigned or not, which
      * is how the queue behaved before an assignee was read and what somebody

@@ -1,5 +1,5 @@
 /**
- * **A hundred and twenty cells, and each one runs or refuses by name.** There
+ * **A hundred and ten cells, and each one runs or refuses by name.** There
  * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
@@ -8,16 +8,20 @@
  * **It was thirty until the vocabulary went from five names to ten** (0058 §3),
  * sixty until the closed set grew `worktree:` and `merge:` (`#235`), eighty
  * until it grew `queue:` and `assignee:` (`#236`), a hundred until it grew
- * `judge:` (`#238`) and a hundred and ten until it grew `backlog:` (`#237`).
- * Eleven of the hundred and twenty cells run and **a hundred and nine
- * refuse**; seventy-two of those are the six steps with no call site, and
- * sixty are the six plugins no step reads — overlapping each other by
- * thirty-six, because a `worktree:` action at `design` is both at once.
+ * `judge:` (`#238`) and a hundred and twenty until it grew `backlog:` (`#237`)
+ * — and a hundred and ten again when 0063 §3 made `assignee` a field of
+ * `queue:` rather than a plugin beside it (`#244`). **A column that goes is
+ * the same event as a column that arrives**: the cells it had have to stop
+ * existing rather than stop being walked.
+ * Eleven of the hundred and ten cells run and **ninety-nine
+ * refuse**; sixty-six of those are the six steps with no call site, and
+ * fifty are the five plugins no step reads — overlapping each other by
+ * thirty, because a `worktree:` action at `design` is both at once.
  *
  * That is the property this file is here to hold, and it holds it down both
  * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
  * pipeline has not yet constructed must refuse every kind until it has, and the
- * six plugins that are names for code the conductor calls itself must be
+ * five plugins that are names for code the conductor calls itself must be
  * refused at every step until the recipe is what tells it to. A `design:` block
  * a recipe could write and nothing would run is `#61` with a new spelling; so
  * is a `worktree:` one, and so is a `backlog:` one.
@@ -58,8 +62,8 @@ import { decideBacklog } from "../src/backlog.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
- * hold them — **and the last six are actions no resolved recipe can hold**,
- * because `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and
+ * hold them — **and the last five are actions no resolved recipe can hold**,
+ * because `worktree:`, `merge:`, `queue:`, `judge:` and
  * `backlog:` are refused at all ten steps. That is the point of writing them: the cell has to be
  * *refused by name* rather than *unrepresentable*, and an action the schema
  * never sees is a column this file would walk with nothing in it.
@@ -75,9 +79,16 @@ const ACTION: Record<ActionKind, GateAction> = {
   merge: { name: "land the branch", merge: { strategy: "merge-commit" } },
   queue: {
     name: "what this machine works on",
-    queue: { kinds: ["bug", "feature"], exclude: ["agent:hold"], backoff: "1h" },
+    queue: {
+      kinds: ["bug", "feature"],
+      exclude: ["agent:hold"],
+      backoff: "1h",
+      // `assignee:` was a twelfth column until 0063 §3 made it this plugin's
+      // fourth field (`#244`), so the cell it had is gone and what it decides
+      // is walked here instead.
+      assignee: { login: "steven-zhc", take: "mine" },
+    },
   },
-  assignee: { name: "whose work it is", assignee: { login: "steven-zhc", take: "mine" } },
   judge: { name: "the lines or the approach", judge: "claude-code", when: "findings" },
   backlog: { name: "the minors", backlog: "minor" },
 };
@@ -291,35 +302,42 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
-   * **`claim`'s two plugins reduce the other way, and the refusal is the only
+   * **`claim`'s plugin reduces the other way, and the refusal is the only
    * place that says so today** (`#236`).
    *
    * 0061 §2 gives the ordering to the workflow and the *reduction* to the step:
    * at `prepared` a list means every action must pass, and at `claim` it means
-   * the first plugin that yields a work item wins. Nothing reads `queue:` or
-   * `assignee:` yet — `whyNoKindAt` refuses both at all ten steps — so the one
-   * moment a person meets them is the refusal, and a reader who has just read
+   * the first plugin that yields a work item wins. Nothing reads `queue:`
+   * yet — `whyNoKindAt` refuses it at all ten steps — so the one
+   * moment a person meets it is the refusal, and a reader who has just read
    * `prepared`'s row will otherwise carry that step's reduction across and
    * write the list in an order that means the opposite of what they meant.
    *
-   * Pinned here rather than left as prose because it is the half of the pair
-   * that is *not* a fact about today's code: the two file references below
+   * **0061 §§2–3 used `queue:` and `assignee:` as the worked example, and 0063
+   * §3 took the example rather than the rule** (`#244`): `assignee` is one of
+   * `queue:`'s four fields now, so what a `claim` list reduces over is several
+   * `queue:` entries, and the one refusal names both halves of what the queue
+   * does today.
+   *
+   * Pinned here rather than left as prose because it is the half that is *not*
+   * a fact about today's code: the two file references below
    * would go red the day `discover.ts` moved, and this sentence would not.
    */
-  it("says how `claim` reduces its two plugins, and where they run today", () => {
-    for (const kind of ["queue", "assignee"] as const) {
-      const why = whyNoKindAt("claim", kind);
-      expect(why, `"${kind}" is no longer refused at claim`).not.toBeNull();
-      expect(why).toContain("the first plugin that yields a work item");
-      expect(why).toContain("rather than requiring every one to pass");
-      expect(why).toContain("`prepared`");
-      expect(why).toContain("reordering the list is how a person changes priority");
-      // And the same sentence at every other step, because the refusal is a
-      // fact about the plugin and not about the step it was written at.
-      for (const step of STEPS) expect(whyNoKindAt(step, kind)).toBe(why);
-    }
-    expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/discover.ts");
-    expect(whyNoKindAt("claim", "assignee")).toContain("packages/conductor/src/claim.ts");
+  it("says how `claim` reduces its plugin, and where it runs today", () => {
+    const why = whyNoKindAt("claim", "queue");
+    expect(why, "`queue:` is no longer refused at claim").not.toBeNull();
+    expect(why).toContain("the first plugin that yields a work item");
+    expect(why).toContain("rather than requiring every one to pass");
+    expect(why).toContain("`prepared`");
+    expect(why).toContain("reordering the list is how a person changes priority");
+    // And the same sentence at every other step, because the refusal is a
+    // fact about the plugin and not about the step it was written at.
+    for (const step of STEPS) expect(whyNoKindAt(step, "queue")).toBe(why);
+
+    expect(why).toContain("packages/conductor/src/discover.ts");
+    // `assignee`'s half, which used to be a refusal of its own.
+    expect(why).toContain("assigneeSkip");
+    expect(why).toContain("packages/conductor/src/claim.ts");
   });
 
   /**
@@ -528,7 +546,8 @@ describe("doc/reference.md's matrix", () => {
     const rows = new Map<string, string[]>();
     // The row's own label plus one cell per plugin, read off `PLUGINS` like
     // everything else here: a seventh and eighth column arrived with `#235`,
-    // a ninth and tenth with `#236` and an eleventh with `#238`, and a width
+    // a ninth and tenth with `#236` and an eleventh with `#238`, one of the
+    // tenth's two went again with `#244`, and a width
     // written as `7` would have gone on matching the six-wide table it was no
     // longer about and reported *no table at all*.
     const width = KINDS.length + 1;
@@ -569,11 +588,11 @@ describe("doc/reference.md's matrix", () => {
     const refusals = STEPS.flatMap((point) =>
       KINDS.map((kind) => whyNoKindAt(point, kind)),
     ).filter((why) => why !== null).length;
-    expect(refusals).toBe(109);
+    expect(refusals).toBe(99);
     expect(
       doc,
       "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
-    ).toContain("**A hundred and nine of the\nhundred and twenty are refusals**");
+    ).toContain("**Ninety-nine of the\nhundred and ten are refusals**");
   });
 
   /**

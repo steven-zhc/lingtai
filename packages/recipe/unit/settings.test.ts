@@ -3,8 +3,9 @@
  *
  * The first half is ordinary — they return what the recipe holds. **The second
  * half is the one that earns the file**: it walks every `src/` in the workspace
- * and fails on a reader that still reaches into one of the six settings
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4 moves.
+ * and fails on a reader that still reaches into one of the seven settings
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4 and
+ * [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3 move.
  *
  * **It was three, and three is what `#231` found wrong with it.** The guard
  * named `runtime.limits`, `repo.base` and `source.kinds`, which are the three
@@ -43,15 +44,16 @@
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { Recipe } from "../src/recipe.ts";
-import { backoffOf, baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "../src/settings.ts";
+import { assigneeOf, backoffOf, baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "../src/settings.ts";
 
-const RECIPE: Recipe = Recipe.parse({
+const WRITTEN = {
   version: 2,
   repo: { base: "develop", submodules: true },
   source: { kinds: ["bug", "tech-debt"], exclude: ["agent:hold"], backoff: "45m" },
   env: { plantAt: ".env.local" },
   runtime: {},
-});
+};
+const RECIPE: Recipe = Recipe.parse(WRITTEN);
 
 describe("the accessors", () => {
   it("read what the recipe holds today", () => {
@@ -68,6 +70,24 @@ describe("the accessors", () => {
     expect(submodulesOf(RECIPE)).toBe(true);
     expect(excludeOf(RECIPE)).toEqual(["agent:hold"]);
     expect(backoffOf(RECIPE)).toBe("45m");
+  });
+
+  /**
+   * **The seventh, and the one whose v1 name is not `source:`'s** (`#244`,
+   * 0063 §3). `assignee` is `queue:`'s fourth field and a person writes it in
+   * the machine file under `runtime:`, so where it is read from and where it
+   * is going are two different keys — which is exactly what the accessor is
+   * for. Absent is returned absent: *nothing was written* and *both* are the
+   * same behaviour and not the same reading.
+   */
+  it("reads the `assignee` 0063 §3 adds to that list", () => {
+    expect(assigneeOf(RECIPE)).toBeUndefined();
+
+    const mine = Recipe.parse({
+      ...WRITTEN,
+      runtime: { assignee: { login: "steven-zhc", take: "mine" } },
+    });
+    expect(assigneeOf(mine)).toEqual({ login: "steven-zhc", take: "mine" });
   });
 
   /**
@@ -98,18 +118,29 @@ async function sources(dir: URL): Promise<URL[]> {
 }
 
 /**
- * The six settings 0061 §4 moves, as the dotted path a reader of one writes.
+ * The seven settings 0061 §4 moves, as the dotted path a reader of one writes.
  *
  * Read off the ADR's own five-line table and not off `settings.ts`: the point
  * of the guard is to fail while an accessor is *missing*, which it cannot do if
  * the list it walks is the list of accessors that exist.
+ *
+ * **`runtime.assignee` is the seventh, and it arrived from a different ADR**
+ * (`#244`, [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md)
+ * §3): `assignee` is a field of `queue:` rather than a plugin beside it, which
+ * makes it a setting that moves onto a step exactly as the other six do. It
+ * was read by hand in three files — `discover.ts`, the filter's reading and the
+ * board's — and none of them was visible to this list, which is `1a7267f`'s
+ * lesson arriving a second time: **the list is the ADRs' and not
+ * `settings.ts`'s**, so a setting one ADR moves and another names is on it
+ * either way.
  *
  * The leading `\w\.` is what makes it a *read*: `recipe.source.kinds` and
  * `parsed.data.repo.base` match, and the same words after a backtick, a quote
  * or a space — which is every mention of them in prose and in a refusal — do
  * not.
  */
-const MOVING = /\w\.(runtime\.limits|repo\.(base|submodules)|source\.(kinds|exclude|backoff))\b/;
+const MOVING =
+  /\w\.(runtime\.(limits|assignee)|repo\.(base|submodules)|source\.(kinds|exclude|backoff))\b/;
 
 describe("nothing reaches past them", () => {
   it("has no reader of a moving setting outside settings.ts", async () => {
@@ -134,7 +165,7 @@ describe("nothing reaches past them", () => {
 
     expect(
       reaching,
-      "use the accessors in recipe/src/settings.ts — 0061 §4 moves all six of these onto their " +
+      "use the accessors in recipe/src/settings.ts — 0061 §4 and 0063 §3 move all seven of these onto their " +
         "steps, " +
         "and a reader that reaches past the accessor is a file that ticket has to edit",
     ).toEqual([]);
