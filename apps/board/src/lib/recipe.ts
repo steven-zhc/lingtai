@@ -186,8 +186,10 @@ function flatten(value: unknown, at: string, into: Map<string, string>): void {
  * **The one place an action's field values are rendered whatever they are**,
  * which is why the walk is over `discloseSteps` and not over the recipe: every
  * other reading on this page asks for a field by name. A field a plugin marked
- * `no_log` is gone before `flatten` sees it (0061 §9), and a recipe with none —
- * which is every recipe today — walks exactly what it walked before.
+ * `no_log` carries `withheld`'s digest of its value before `flatten` sees it
+ * (0061 §9) — so a rotated credential is a row saying that field changed, and
+ * no row says what it changed to. A recipe with none — which is every recipe
+ * today — walks exactly what it walked before.
  */
 export function changesFromHead(
   mine: Recipe,
@@ -474,7 +476,7 @@ export function describeAction(
   action: GateAction,
   plugins: readonly PluginSecrets[] = PLUGINS,
 ): { does: string; bound: string } {
-  // Every `no_log` field gone before a word of this is written (0061 §9). It
+  // Every `no_log` value gone before a word of this is written (0061 §9). It
   // reads named fields, so today it could not print one by accident — the point
   // is that it does not have to be relied on not to.
   action = disclose(action, plugins);

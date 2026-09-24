@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { Recipe, resolveRecipe, type PluginSecrets } from "@lingtai/recipe";
+import { Recipe, resolveRecipe, withheld, type PluginSecrets } from "@lingtai/recipe";
 import { foldRun, type Claim, type RunView } from "../src/lib/task.ts";
 import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from "../src/lib/recipe.ts";
 import { Attempt, RECORD_ROWS } from "../src/app/task/[id]/page.tsx";
@@ -460,19 +460,35 @@ describe("what the page may render of an action", () => {
       gates: { ...base.gates, proposed: [{ name: "pay", run: "pay-the-bill", timeout, token }] },
     }) as unknown as Recipe;
 
-  it("walks the two recipes with every secret field already gone", () => {
+  it("walks the two recipes with every secret value already withheld", () => {
     const changed = changesFromHead(paying("sk-live-0000"), paying("sk-live-1111", "30m"), [payingRun]);
 
-    // **One row, and it is the field that is not withheld.** Asserting only the
-    // absence of the secret would be green on a walk that had stopped naming
-    // anything at all.
-    expect(changed).toHaveLength(1);
+    // **Two rows: the field that is not withheld, and the fact that the one
+    // that is has changed.** Asserting only the absence of the secret would be
+    // green on a walk that had stopped naming anything at all — and dropping
+    // the second row would have the page tell an operator that a run whose
+    // credential was rotated under it differs from head in its timeout alone.
+    expect(changed).toHaveLength(2);
     expect(changed[0]!.path).toContain("proposed.pay.timeout");
     expect(changed[0]).toMatchObject({ run: "15m", head: "30m" });
+    expect(changed[1]!.path).toContain("proposed.pay.token");
+    expect(changed[1]).toMatchObject({
+      run: withheld("sk-live-0000"),
+      head: withheld("sk-live-1111"),
+    });
     expect(JSON.stringify(changed)).not.toContain("sk-live");
   });
 
-  it("says what an action does with its secret field gone", () => {
+  /** And a rotation on its own is a row, rather than a page saying nothing. */
+  it("names the withheld field when it is the only thing that differs", () => {
+    const changed = changesFromHead(paying("sk-live-0000"), paying("sk-live-1111"), [payingRun]);
+
+    expect(changed).toHaveLength(1);
+    expect(changed[0]!.path).toContain("proposed.pay.token");
+    expect(JSON.stringify(changed)).not.toContain("sk-live");
+  });
+
+  it("says what an action does with its secret value withheld", () => {
     const said = describeAction(
       { name: "pay", run: "pay-the-bill", timeout: "15m", token: "sk-live-0000" } as never,
       [payingRun],

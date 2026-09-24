@@ -561,12 +561,12 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 1436 occurrences in
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1438 occurrences in
 79 files**, counted 2026-09-23, across 51 distinct tokens, of which the six
 largest are `gate` ×426, `gates` ×272, `point` ×167, `points` ×95, `GatePassed`
 ×48 and `GateFailed` ×46. `GATE_CARRYING` in
 `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-`apps/board/unit/run-recipe.test.tsx` are two of those 1436 — locals a rename of
+`apps/board/unit/run-recipe.test.tsx` are two of those 1438 — locals a rename of
 `src/` does not reach, and the two a reader meets first, which is exactly why
 naming them and stopping reads as the whole of it. They are
 out because a name that survives only in a test is one no
@@ -863,15 +863,25 @@ lesson about the build step applied to configuration.
 A field may be marked `no_log`, and **none of the six is today**: every field
 they have is a name, a command, a prompt or a glob, and 0021 keeps values out of
 the file in the first place. The mechanism is there so the first plugin that
-needs one gets it from its declaration rather than from a convention — `disclose`
-strips it before an action reaches the log's body, the hash over it, or the
-board's reading. **The mark goes on a field beside the key, and `definePlugin`
-throws on one that would strip nothing**: a mark below the field it is written on
-(zod keeps it on the schema `noLog` was called on) is read by nothing, and a mark
-on the key, or on `name`, would delete what says which plugin an action is and
-what every verdict addresses it by. What the strip cannot reach is the recipe
-file's own bytes, which the task page renders verbatim, and the plugin's own
-output.
+needs one gets it from its declaration rather than from a convention —
+`disclose` replaces the **value** with a digest of itself before an action
+reaches the log's body, the hash over it, or the board's reading.
+
+**A stand-in and not a deletion**, because a `configHash` is the identity of a
+document ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md) §2) and
+the task page settles *is this the recipe at head* by that hash alone: a field
+dropped before the digest would make a recipe and the same recipe with the
+credential rotated one document, and the page would say so. So the body records
+that the action carried a token, a rotation is a hash that changed and a row on
+the page saying which field, and neither says what the token is.
+
+**The mark goes on a field beside the key, and `definePlugin` throws on one that
+would withhold nothing**: a mark below the field it is written on (zod keeps it
+on the schema `noLog` was called on) is read by nothing, and a mark on the key,
+or on `name`, would withhold what an action *does* and what every verdict
+addresses it by. What it cannot reach is the recipe file's own bytes, which the
+task page renders verbatim, the plugin's own output, and a value that is itself
+written as a stand-in.
 
 | Key | Verdict comes from | Needs |
 |---|---|---|

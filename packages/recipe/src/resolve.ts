@@ -136,11 +136,15 @@ const NOT_YET_IN_THE_HASH = ["claim", "design", "implement", "build", "review"] 
  * left alone rather than read for a length it does not have.
  */
 function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unknown> {
-  // **Every `no_log` field comes out here**, so the body on the event and the
+  // **Every `no_log` value comes out here**, so the body on the event and the
   // digest beside it are both of a document with no secret in it
   // ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
-  // Above the strip below rather than under it, because the two answer
-  // different questions and only this one is about what may be written down.
+  // The *field* stays, carrying `withheld`'s digest of what was there, because
+  // the digest beside the body is the document's identity (0047 §2) and a
+  // deleted field would make a recipe and the same recipe with the credential
+  // rotated one document. Above the drop below rather than under it, because
+  // the two answer different questions and only this one is about what may be
+  // written down.
   const gates: Record<string, unknown> = { ...discloseSteps(recipe.gates, plugins) };
   for (const step of NOT_YET_IN_THE_HASH) {
     if ((gates[step] as readonly unknown[] | undefined)?.length === 0) delete gates[step];
@@ -163,8 +167,13 @@ export function canonicalRecipe(
 
 /**
  * `plugins` is the closed set and a caller has no reason to pass another — it
- * is there so `unit/plugin.test.ts` can prove the `no_log` strip over a plugin
- * that declares a secret field, which none of the six does today.
+ * is there so `unit/plugin.test.ts` can prove the `no_log` substitution over a
+ * plugin that declares a secret field, which none of the six does today.
+ *
+ * **A withheld value is still in the hash, as a digest of itself.** Two recipes
+ * that differ only in a credential are two documents and hash as two, which is
+ * what the task page's *same document as head* reading rests on (0047 §2); what
+ * they are not is two documents a reader of either can tell the credential of.
  */
 export function hashRecipe(recipe: Recipe, plugins: readonly Plugin[] = PLUGINS): string {
   return createHash("sha256").update(canonical(forHash(recipe, plugins))).digest("hex");

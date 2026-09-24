@@ -11,9 +11,12 @@
  * - **Every problem in one answer.** A resolve that stopped at the first bad
  *   field would make a person fix one thing per attempt, which is `#222`'s
  *   lesson about the build step applied to configuration.
- * - **A field marked `no_log` is stripped mechanically**, not by everybody
- *   remembering to — and a mark that could not be honoured is refused where it
- *   is written rather than read as a declaration that strips nothing.
+ * - **A field marked `no_log` is withheld mechanically**, not by everybody
+ *   remembering to — its value replaced by a digest of itself, so that two
+ *   recipes differing in a credential stay two documents (0047 §2) while
+ *   neither says what the credential is. A mark that could not be honoured is
+ *   refused where it is written rather than read as a declaration that
+ *   withholds nothing.
  *   **Nothing in the closed set declares one today**, which is why the cases
  *   below define a plugin of their own and drive the real `canonicalRecipe`,
  *   `hashRecipe` and `changesFromHead` with it: a guard asserted over an empty
@@ -35,6 +38,7 @@ import {
   pluginOf,
   readFields,
   runPlugin,
+  withheld,
   type GateAction,
 } from "../src/index.ts";
 
@@ -53,9 +57,8 @@ const BASE: Recipe = Recipe.parse({
  * closed set has no such plugin and this ticket adds none.
  *
  * **The secret sits beside `spend:` rather than on it**, which is the only place
- * a mark is honoured: marking the key would have `disclose` delete the one word
- * saying which plugin this action is, and `definePlugin` refuses that — the case
- * for it is below.
+ * a mark is honoured: marking the key would have `disclose` withhold what this
+ * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
 const spendPlugin = definePlugin("spend", { spend: z.string(), token: noLog(z.string()) });
 const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as GateAction;
@@ -206,14 +209,31 @@ describe("every problem in one answer", () => {
 });
 
 describe("a `no_log` field never leaves its plugin", () => {
-  it("is stripped from an action by `disclose`", () => {
+  it("is replaced by a digest of itself, and the field stays", () => {
     // The value is gone and everything that says what this is stays: the key,
-    // the name, and the field that is not marked.
-    expect(disclose(PAY, [spendPlugin])).toEqual({ name: "pay", spend: "50 USD" });
-    // And an action with nothing to strip is the object it was given, so the
+    // the name, the field that is not marked — **and that the marked field was
+    // written at all**, which is what a deletion would take with it.
+    const shown = disclose(PAY, [spendPlugin]) as Record<string, unknown>;
+    expect(shown).toEqual({ name: "pay", spend: "50 USD", token: withheld("sk-live-0000-9999") });
+    expect(shown["token"]).not.toContain("sk-live");
+
+    // **Two values are two stand-ins**, which is the whole point of a stand-in
+    // rather than nothing: the identity of the document follows the credential.
+    expect(withheld("KEY_A")).not.toBe(withheld("KEY_B"));
+    // And a stand-in stands in for itself, so a body read back off the log and
+    // put through this again is the same body.
+    expect(withheld(withheld("KEY_A"))).toBe(withheld("KEY_A"));
+
+    // An action with nothing to withhold is the object it was given, so the
     // six plugins in use today are untouched by any of this.
     const build: GateAction = { name: "build", run: "x", timeout: "15m", env: [] };
     expect(disclose(build, PLUGINS)).toBe(build);
+    // An optional secret nobody wrote is not invented, so a recipe without one
+    // is not made into a recipe with one.
+    expect(disclose({ name: "pay", spend: "50 USD" }, [spendPlugin])).toEqual({
+      name: "pay",
+      spend: "50 USD",
+    });
   });
 
   it("never reaches the log's body, nor the hash taken over it", () => {
@@ -222,19 +242,59 @@ describe("a `no_log` field never leaves its plugin", () => {
 
     expect(body).not.toContain("sk-live-0000-9999");
     // **The action on the log still names its plugin**, whole and in the
-    // canonical form's own order. A strip that took the key with it would write
-    // an action the log cannot say the kind of, and `kindOfAction` of it would
-    // answer the one it falls back to.
-    expect(body).toContain('{"name":"pay","spend":"50 USD"}');
-    // And the digest is of the same document the body is, which is what lets a
-    // reader verify one against the other (0047 §2).
-    expect(hashRecipe(recipe, [spendPlugin])).toBe(
-      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as GateAction), [spendPlugin]),
-    );
+    // canonical form's own order, **and still says it carried a token**. A
+    // strip that took the key with it would write an action the log cannot say
+    // the kind of; one that took the field would write an action the log cannot
+    // say was ever given a credential at all.
+    expect(body).toContain(`{"name":"pay","spend":"50 USD","token":"${withheld("sk-live-0000-9999")}"}`);
     // Two actions that differ in what is *not* withheld are still two.
     expect(hashRecipe(recipe, [spendPlugin])).not.toBe(
       hashRecipe(withAction({ ...PAY, spend: "80 USD" } as unknown as typeof PAY), [spendPlugin]),
     );
+  });
+
+  /**
+   * **A rotated credential is a new document, and the board rests on that.**
+   *
+   * `fromHead` (`apps/board/src/lib/recipe.ts`) settles *is this run's recipe
+   * the one at head* by comparing two `configHash`es and nothing else — 0047
+   * §2's *two documents with one hash are one document*. So a withheld value
+   * that left the hash would have the task page tell an operator the run ran
+   * under the recipe head has, when the run spent money against the key before
+   * the rotation and head holds the key after it. It is the one property a
+   * deletion cannot have, and the reason the value is replaced rather than
+   * dropped.
+   */
+  it("keeps two recipes that differ only in a secret two documents", () => {
+    const a = withAction({ name: "pay", spend: "50 USD", token: "KEY_A" } as unknown as GateAction);
+    const b = withAction({ name: "pay", spend: "50 USD", token: "KEY_B" } as unknown as GateAction);
+
+    expect(hashRecipe(a, [spendPlugin])).not.toBe(hashRecipe(b, [spendPlugin]));
+    // And an action that carries a credential is not the same document as the
+    // same action carrying none.
+    expect(hashRecipe(a, [spendPlugin])).not.toBe(
+      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as GateAction), [spendPlugin]),
+    );
+    // Neither body says which key, and both say there was one.
+    for (const recipe of [a, b]) {
+      const body = JSON.stringify(canonicalRecipe(recipe, [spendPlugin]));
+      expect(body).not.toContain("KEY_");
+      expect(body).toContain('"token":"no_log:sha256:');
+    }
+  });
+
+  /**
+   * **The body verifies against the hash beside it**, which is what a reader
+   * without trust in the writer does with `GatesResolved` (0047 §2) — and is
+   * `conductor/unit/recorded-recipe.test.ts`'s own move. It works only because
+   * a stand-in stands in for itself: the body has been through `disclose`
+   * already by the time anybody re-hashes it.
+   */
+  it("hashes the recorded body back to the hash recorded beside it", () => {
+    const recipe = withAction(PAY);
+    const recorded = canonicalRecipe(recipe, [spendPlugin]) as unknown as Recipe;
+
+    expect(hashRecipe(recorded, [spendPlugin])).toBe(hashRecipe(recipe, [spendPlugin]));
   });
 
   /** The board's half of this is `apps/board/unit/run-recipe.test.tsx`. */
@@ -270,12 +330,12 @@ describe("a `no_log` field never leaves its plugin", () => {
   });
 
   /**
-   * **And a mark on what names the action is refused too.** `disclose` deletes
-   * whole fields, so marking the key would delete the one word saying which
-   * plugin an action is: the log would record that something ran without saying
-   * what, `kindOfAction` would answer the kind it falls back to, and the board
-   * would read a spend as an unanswerable human hold. `name` is the address a
-   * verdict, a waiver and every reading use, and goes the same way.
+   * **And a mark on what names the action is refused too.** `disclose` withholds
+   * whole fields, so marking the key would withhold the one thing saying what an
+   * action does: the log would record that something ran without saying what,
+   * and `close: true` would read as a string its own schema refuses. `name` is
+   * the address a verdict, a waiver and every reading use, and goes the same
+   * way.
    */
   it("refuses a mark on the key, and on `name`", () => {
     expect(() => definePlugin("spend", { spend: noLog(z.string()) })).toThrow(

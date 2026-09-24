@@ -203,11 +203,14 @@ export function kindOfAction(action: GateAction): ActionKind {
 
 /**
  * The resolved steps as anything outside a plugin may see them — every field a
- * plugin marked `noLog` gone (0061 §9).
+ * plugin marked `noLog` standing in for itself (0061 §9).
  *
  * One function for the log, the board and a refusal, so all three learn a
  * secret field from the one declaration. It answers the object it was given
- * where there is nothing to strip, which is every recipe today.
+ * where there is nothing to withhold, which is every recipe today. What a
+ * withheld field becomes, and why it is not simply dropped, is `withheld` in
+ * `plugin.ts`: a value taken out of the hash would make two recipes that differ
+ * in a credential one document (0047 §2).
  */
 export function discloseSteps<Steps extends Readonly<Record<string, readonly GateAction[]>>>(
   steps: Steps,
