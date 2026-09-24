@@ -3,8 +3,31 @@
  *
  * The first half is ordinary — they return what the recipe holds. **The second
  * half is the one that earns the file**: it walks every `src/` in the workspace
- * and fails on a reader that still reaches into `recipe.runtime.limits`,
- * `recipe.repo.base` or `recipe.source.kinds` by hand.
+ * and fails on a reader that still reaches into one of the six settings
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4 moves.
+ *
+ * **It was three, and three is what `#231` found wrong with it.** The guard
+ * named `runtime.limits`, `repo.base` and `source.kinds`, which are the three
+ * that had an accessor — so it read as *nothing reaches past the accessors*
+ * while `repo.submodules`, `source.exclude` and `source.backoff` were read by
+ * hand in nine files and the same ADR moves all six. A guard sized to the
+ * accessors that exist rather than to the settings that move is a guard that
+ * goes green as the diff it exists to prevent is being written.
+ *
+ * **And `recipe.` was the required receiver**, so `parsed.data.repo.base` in
+ * `wizard.ts` walked past it — a reader of the same setting off a recipe that
+ * had not been given that name yet. The rule below asks only that the path be
+ * *read off something*: an identifier character, a dot, then the setting. That
+ * is what tells a reader from the many places these six are named as text — a
+ * provenance key, a wizard field id, a refusal naming the key to fix — without
+ * having to decide what is a string, which the multi-line templates in
+ * `fix.ts`, `lingtai.ts` and `wall-limit.ts` make a losing game.
+ *
+ * **What it still cannot see is a destructured read**, and `planOf` in
+ * `queued.ts` is the shape: `runtime.limits.turns` off a parameter. That one is
+ * not a reader of the recipe — it is a pure function over a shape, and its
+ * caller is the reader — but a genuine `const { source } = recipe` would slip
+ * past, so this is a guard against the mistake rather than a proof.
  *
  * Without it the accessors are a suggestion. With it,
  * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4's move —
@@ -20,12 +43,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { Recipe } from "../src/recipe.ts";
-import { baseOf, kindsOf, limitsFor } from "../src/settings.ts";
+import { backoffOf, baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "../src/settings.ts";
 
 const RECIPE: Recipe = Recipe.parse({
   version: 2,
-  repo: { base: "develop" },
-  source: { kinds: ["bug", "tech-debt"] },
+  repo: { base: "develop", submodules: true },
+  source: { kinds: ["bug", "tech-debt"], exclude: ["agent:hold"], backoff: "45m" },
   env: { plantAt: ".env.local" },
   runtime: {},
 });
@@ -35,6 +58,16 @@ describe("the accessors", () => {
     expect(baseOf(RECIPE)).toBe("develop");
     expect(kindsOf(RECIPE)).toEqual(["bug", "tech-debt"]);
     expect(limitsFor(RECIPE, "implement")).toBe(RECIPE.runtime.limits);
+  });
+
+  /**
+   * The three the guard below used to have no accessor for. One per setting
+   * 0061 §4 moves, so that the move stays a change to `settings.ts`.
+   */
+  it("read the other three the same ADR moves", () => {
+    expect(submodulesOf(RECIPE)).toBe(true);
+    expect(excludeOf(RECIPE)).toEqual(["agent:hold"]);
+    expect(backoffOf(RECIPE)).toBe("45m");
   });
 
   /**
@@ -64,6 +97,20 @@ async function sources(dir: URL): Promise<URL[]> {
   return out;
 }
 
+/**
+ * The six settings 0061 §4 moves, as the dotted path a reader of one writes.
+ *
+ * Read off the ADR's own five-line table and not off `settings.ts`: the point
+ * of the guard is to fail while an accessor is *missing*, which it cannot do if
+ * the list it walks is the list of accessors that exist.
+ *
+ * The leading `\w\.` is what makes it a *read*: `recipe.source.kinds` and
+ * `parsed.data.repo.base` match, and the same words after a backtick, a quote
+ * or a space — which is every mention of them in prose and in a refusal — do
+ * not.
+ */
+const MOVING = /\w\.(runtime\.limits|repo\.(base|submodules)|source\.(kinds|exclude|backoff))\b/;
+
 describe("nothing reaches past them", () => {
   it("has no reader of a moving setting outside settings.ts", async () => {
     const root = new URL("../../../", import.meta.url);
@@ -80,16 +127,15 @@ describe("nothing reaches past them", () => {
         for (const line of text.split("\n")) {
           // A doc comment naming the old shape is prose, not a reader.
           if (line.trimStart().startsWith("*") || line.trimStart().startsWith("//")) continue;
-          if (/\brecipe\.(runtime\.limits|repo\.base|source\.kinds)\b/.test(line)) {
-            reaching.push(`${path}: ${line.trim()}`);
-          }
+          if (MOVING.test(line)) reaching.push(`${path}: ${line.trim()}`);
         }
       }
     }
 
     expect(
       reaching,
-      "use limitsFor / baseOf / kindsOf — 0061 §4 moves these onto their steps, " +
+      "use the accessors in recipe/src/settings.ts — 0061 §4 moves all six of these onto their " +
+        "steps, " +
         "and a reader that reaches past the accessor is a file that ticket has to edit",
     ).toEqual([]);
   });

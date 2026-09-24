@@ -17,7 +17,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
-import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, disclose, discloseSteps, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type GateAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
+import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type GateAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
 /** The limits `a pass` is made of, from the recipe rather than listed again here. */
 const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
@@ -670,7 +670,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "excludes",
-      says: recipe.source.exclude.length > 0 ? recipe.source.exclude.join(", ") : "nothing",
+      says: excludeOf(recipe).length > 0 ? excludeOf(recipe).join(", ") : "nothing",
       keys: ["source.exclude"],
     },
     {
@@ -695,7 +695,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     { name: "agent", says: recipe.runtime.agent, keys: ["runtime.agent"] },
     {
       name: "retries",
-      says: `after ${recipe.source.backoff}, unless a repair is pending`,
+      says: `after ${backoffOf(recipe)}, unless a repair is pending`,
       keys: ["source.backoff"],
     },
     {

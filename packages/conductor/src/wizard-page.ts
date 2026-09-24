@@ -36,7 +36,7 @@
 import type { GateAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
-import { baseOf, kindsOf, limitsFor } from "@lingtai/recipe/settings";
+import { baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "@lingtai/recipe/settings";
 
 /** A new repository read back from a scan, or a recipe that is already there. */
 export type WizardMode = "onboard" | "update";
@@ -247,7 +247,7 @@ export function onboardState(input: {
     slug: input.slug,
     draft: { ...fromRecipe(recipe, checks), personApproves: noChecksFound },
     kindOptions: union(kindsOf(recipe), input.labels),
-    excludeOptions: union(recipe.source.exclude, input.labels),
+    excludeOptions: union(excludeOf(recipe), input.labels),
     editing: null,
     settled: [],
     reopened: null,
@@ -285,7 +285,7 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
     slug: input.slug,
     draft: unread ? { ...fromRecipe(recipe, checks), personApproves: true } : fromRecipe(recipe, checks),
     kindOptions: [...kindsOf(recipe)],
-    excludeOptions: [...recipe.source.exclude],
+    excludeOptions: [...excludeOf(recipe)],
     editing: null,
     settled: DECISIONS.map((d) => d.id).filter((id) => !(unread && id === "steps.merge")),
     reopened: null,
@@ -298,9 +298,9 @@ function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
   const { turns, wall, rounds, restarts } = limitsFor(recipe, "implement");
   return {
     base: baseOf(recipe),
-    submodules: recipe.repo.submodules,
+    submodules: submodulesOf(recipe),
     kinds: [...kindsOf(recipe)],
-    exclude: [...recipe.source.exclude],
+    exclude: [...excludeOf(recipe)],
     checks,
     envRequired: [...recipe.env.required],
     agent: recipe.runtime.agent === "codex" ? "codex" : "claude-code",

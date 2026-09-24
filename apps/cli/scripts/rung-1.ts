@@ -24,7 +24,7 @@
  *
  *   node --experimental-strip-types apps/cli/scripts/rung-1.ts <owner>/<repo>
  */
-import { resolveRecipe } from "@lingtai/recipe";
+import { baseOf, resolveRecipe, submodulesOf } from "@lingtai/recipe";
 import type { Envelope, ToAppend } from "@lingtai/domain";
 import { prepareWorktree, provisionWorktree, removeWorktree, resolveAgentEnv, runnableEnv } from "@lingtai/conductor";
 import { productionPatterns } from "@lingtai/agent-env";
@@ -93,8 +93,8 @@ const resolved = await resolveRecipe((p, r) => client.fileAt(p, r), base);
 const recipe = resolved.recipe;
 done(`${resolved.configHash.slice(0, 16)} from ${base}, ${recipe.prepare.length} prepare step(s)`);
 
-if (recipe.repo.base !== base) {
-  console.log(`  !!  the recipe says its base is ${recipe.repo.base}, read from ${base}`);
+if (baseOf(recipe) !== base) {
+  console.log(`  !!  the recipe says its base is ${baseOf(recipe)}, read from ${base}`);
 }
 
 // ---- seams 2 and 3: clone and submodules, over https, with the token -------
@@ -116,10 +116,10 @@ const worktree = await provisionWorktree({
   project: repo,
   owner,
   repo,
-  base: recipe.repo.base,
+  base: baseOf(recipe),
   branch: `rung1/${runId}`,
   runId,
-  submodules: recipe.repo.submodules,
+  submodules: submodulesOf(recipe),
   plantAt: recipe.env.plantAt,
   env: env.values,
   // The function, not a snapshot. Same as a real run.

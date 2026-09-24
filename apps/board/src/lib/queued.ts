@@ -34,6 +34,7 @@ import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
+import { limitsFor } from "@lingtai/recipe/settings";
 
 /** One of the ten steps, and what the recipe runs there. */
 export interface PlannedPoint {
@@ -260,7 +261,10 @@ export async function queuedFor(input: {
   // The plan survives a GitHub that will not answer. Losing *what will happen*
   // to a rate limit would be the same thing #76 removed from the Queued
   // column: one failure costing an answer it had nothing to do with.
-  const plan = planOf(filter.plan, filter.recipe.runtime);
+  const plan = planOf(filter.plan, {
+    limits: limitsFor(filter.recipe, "implement"),
+    tier: filter.recipe.runtime.tier,
+  });
   const until = backoffOf(input.own, filter.backoffMs);
 
   try {

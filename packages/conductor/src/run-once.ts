@@ -104,7 +104,7 @@
  * recorded about where a scope *starts*, kept here as a test rather than as an
  * intention.
  */
-import { baseDivergence, baseOf, limitsFor, parseDuration, type ResolvedRecipe } from "@lingtai/recipe";
+import { backoffOf, baseDivergence, baseOf, limitsFor, parseDuration, submodulesOf, type ResolvedRecipe } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
@@ -729,7 +729,7 @@ export function runOnce(
         const { until, reason } = standDown({
           detail,
           what,
-          backoffMs: parseDuration(recipe.source.backoff),
+          backoffMs: parseDuration(backoffOf(recipe)),
         });
         await store.append(CONTROL_STREAM, events.length, [
           {
@@ -863,7 +863,7 @@ export function runOnce(
             base,
             branch,
             runId,
-            submodules: recipe.repo.submodules,
+            submodules: submodulesOf(recipe),
             plantAt: recipe.env.plantAt,
             env: env.values,
             token: options.token,

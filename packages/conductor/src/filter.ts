@@ -20,7 +20,7 @@ import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
-import { kindsOf, limitsFor } from "@lingtai/recipe/settings";
+import { backoffOf, excludeOf, kindsOf, limitsFor } from "@lingtai/recipe/settings";
 import { passCeiling } from "./ceiling.ts";
 import { currentRecipe } from "./projects.ts";
 
@@ -204,7 +204,7 @@ export async function projectFilter(
       ref: resolved.ref,
       provenance: resolved.provenance ?? {},
       kinds: kindsOf(resolved.recipe),
-      exclude: resolved.recipe.source.exclude,
+      exclude: excludeOf(resolved.recipe),
       limits: {
         rounds: limitsFor(resolved.recipe, "implement").rounds,
         restarts: limitsFor(resolved.recipe, "implement").restarts,
@@ -212,7 +212,7 @@ export async function projectFilter(
         wall: limitsFor(resolved.recipe, "implement").wall,
         wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
       },
-      backoffMs: parseDuration(resolved.recipe.source.backoff),
+      backoffMs: parseDuration(backoffOf(resolved.recipe)),
       plan: gatePlan(resolved.recipe),
       recipe: resolved.recipe,
       client,
@@ -282,7 +282,7 @@ export function describeFilter(filter: ProjectFilter): string[] {
     // this project spends money again and it was in none of the four places
     // that describe a project (#95) — a rule nobody can read is one nobody can
     // change on purpose.
-    `  retries      after ${filter.recipe.source.backoff}, unless a repair is pending`,
+    `  retries      after ${backoffOf(filter.recipe)}, unless a repair is pending`,
   ];
 }
 

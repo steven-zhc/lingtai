@@ -33,7 +33,7 @@ import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { baseOf, kindsOf, limitsFor } from "./settings.ts";
+import { backoffOf, baseOf, excludeOf, kindsOf, limitsFor } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -424,10 +424,10 @@ export async function resolveLocalRecipe(
   const recipeValues: Record<string, string> = {
     "repo.base": baseOf(recipe),
     "source.kinds": kindsOf(recipe).join(" > "),
-    "source.exclude": list(recipe.source.exclude),
+    "source.exclude": list(excludeOf(recipe)),
     // Said out loud by a reading, and not carried here until now — so that
     // every row of one has a source beside it (#218).
-    "source.backoff": recipe.source.backoff,
+    "source.backoff": backoffOf(recipe),
     "env.required": list(recipe.env.required),
     steps: Object.entries(recipe.steps)
       .map(([step, actions]) => `${step} ${actions.length}`)

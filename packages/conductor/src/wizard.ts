@@ -45,7 +45,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { stateDir } from "@lingtai/env";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Recipe, baseOf, emitRecipe, kindsOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
+import { Recipe, backoffOf, baseOf, emitRecipe, excludeOf, kindsOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
 import { type Runnable, selectRunnable } from "./queue.ts";
 import { nothingChecks } from "./wizard-page.ts";
@@ -94,7 +94,7 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
     // The recipe's, not a constant here (0028). Nothing has been attempted, so
     // it holds nothing — a window read off the wrong recipe would still be the
     // wrong window the first time this screen is shown for a re-onboarding.
-    backoffMs: parseDuration(recipe.source.backoff),
+    backoffMs: parseDuration(backoffOf(recipe)),
     ...(options.now === undefined ? {} : { now: options.now }),
   });
   const passed = passedOver(offered.skipped);
@@ -144,7 +144,7 @@ export function nothingReadsIt(recipe: Recipe): string | null {
 export const HOLD_LABEL = "agent:hold";
 
 export function holdLabel(recipe: Recipe): string | null {
-  return recipe.source.exclude.includes(HOLD_LABEL) ? HOLD_LABEL : null;
+  return excludeOf(recipe).includes(HOLD_LABEL) ? HOLD_LABEL : null;
 }
 
 export interface HoldAllOptions {
@@ -241,7 +241,7 @@ export async function validateProposal(recipe: Recipe, said: Said = {}): Promise
     // A reader that answers from the string in hand. `resolveRecipe` is async
     // because the real one fetches; nothing is fetched here, and the ref is
     // only what a refusal will name — the branch it would land on.
-    await resolveRecipe(async () => file, parsed.data.repo.base);
+    await resolveRecipe(async () => file, baseOf(parsed.data));
   } catch (err) {
     return { ok: false, refusal: (err as Error).message };
   }

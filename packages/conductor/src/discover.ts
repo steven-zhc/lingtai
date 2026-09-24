@@ -28,7 +28,7 @@
  */
 import type { AssigneeRule, Recipe } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
-import { kindsOf } from "@lingtai/recipe/settings";
+import { excludeOf, kindsOf } from "@lingtai/recipe/settings";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
@@ -155,7 +155,7 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   // of it in `nextloom-ai-admin` — and it was skipped alongside `agent:hold`,
   // which means the opposite. A repository knows which of its labels are holds;
   // this file cannot.
-  const excluded = new Set(recipe.source.exclude.map((l) => l.toLowerCase()));
+  const excluded = new Set(excludeOf(recipe).map((l) => l.toLowerCase()));
   if (labels.some((l) => excluded.has(l))) return { issue, skip: "excluded-label" };
 
   if (kindOf(issue, kindsOf(recipe)) === null) return { issue, skip: "no-kind" };
