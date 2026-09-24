@@ -22,10 +22,12 @@
  *   `hashRecipe` and `changesFromHead` with it: a guard asserted over an empty
  *   set asserts nothing.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { STEPS } from "@lingtai/domain";
+import { RuntimeId, STEPS } from "@lingtai/domain";
 import {
+  BUILT_IN_JUDGES,
   GateMap,
   PLUGINS,
   Recipe,
@@ -36,6 +38,7 @@ import {
   disclose,
   discloseSteps,
   hashRecipe,
+  judgePlugin,
   mergePlugin,
   noLog,
   pluginOf,
@@ -584,5 +587,173 @@ describe("the two `claim` will hold", () => {
     expect(
       assigneePlugin.schema.parse({ name: "whose", assignee: { take: "mine", login: "steven-zhc" } }),
     ).toEqual({ name: "whose", assignee: { take: "mine", login: "steven-zhc" } });
+  });
+});
+
+/**
+ * **The one `proposed` will hold, and the only one of the five with design
+ * content** (`#238`, [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ *
+ * `judge:` is a name for `buyRound`'s decision at `run-once.ts:1761`, and like
+ * the four above it is read by no step yet. What is different is that two
+ * rules have to hold before it can ever be read, and both are in the schema
+ * rather than in prose — the other half of each, the set a judge is handed and
+ * the refusal of an answer outside it, is
+ * `packages/conductor/unit/judge.test.ts`.
+ */
+describe("the one `proposed` will hold", () => {
+  /**
+   * **And the one `proposed` will hold** (`#238`,
+   * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+   *
+   * `judge:` is a name for `buyRound`'s decision at `run-once.ts:1761` and is
+   * read by no step either, but it is the one of the five with design content:
+   * two rules make a replaceable judge safe, and both are in the schema rather
+   * than in prose.
+   *
+   * **One entry per `when:`** — required and undefaulted, so no entry can
+   * answer for all five directions. One judge for all of them pays an agent
+   * sixty times to reach a mechanical conclusion, and makes anyone replacing it
+   * reimplement the mechanical branches correctly or the loop never terminates.
+   *
+   * **And it carries no ceiling**, which is the half that costs money if it is
+   * got wrong: a judge that could carry its own `rounds` could answer *back to
+   * `implement`* for ever at ~$3.40 a round with nothing reporting a fault. The
+   * bounds stay the workflow's — `packages/conductor/unit/judge.test.ts` is
+   * where the other side of that is held.
+   */
+  it("makes `judge:` one entry per `when:`, with no ceiling of its own", () => {
+    expect(judgePlugin.declares).toEqual(["name", "judge", "when"]);
+
+    expect(
+      judgePlugin.schema.parse({ name: "the approach", judge: "claude-code", when: "findings" }),
+    ).toEqual({ name: "the approach", judge: "claude-code", when: "findings" });
+
+    // No default: a judge that said nothing about which direction it answers
+    // would be the one judge for all five this split exists to prevent.
+    expect(judgePlugin.schema.safeParse({ name: "any", judge: "claude-code" }).success).toBe(false);
+    // And `when:`'s vocabulary is this step's, not `end`'s: a `landed` judge is
+    // an outcome where a reason belongs (0061 §3).
+    expect(judgePlugin.schema.safeParse({ name: "any", judge: "claude-code", when: "landed" }).success).toBe(
+      false,
+    );
+
+    for (const ceiling of ["rounds", "restarts"] as const) {
+      const problems = readFields(judgePlugin, {
+        name: "the approach",
+        judge: "claude-code",
+        when: "findings",
+        [ceiling]: 9,
+      }).problems!;
+      expect(problems).toHaveLength(1);
+      expect(problems[0]!.field).toBe(ceiling);
+      expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`);
+      expect(problems[0]!.why).toContain('"name", "judge", "when"');
+    }
+  });
+
+  /**
+   * **A judge the schema accepts is a judge something answers.** The built-ins
+   * are `BUILT_IN` in `packages/conductor/src/judge.ts`, a total record over
+   * this list, so the two lists cannot come apart; an agent judge is a runtime
+   * and nothing else. 0061 §3's example yaml also names `ask-or-assume`, and it
+   * is in neither list because nothing implements it — a name the schema takes
+   * and no code answers is `#61` arriving through the door a replaceable plugin
+   * opens.
+   */
+  it("accepts the built-ins that exist and the runtimes, and no invented name", () => {
+    expect(BUILT_IN_JUDGES).toEqual(["same-worktree"]);
+    for (const name of [...BUILT_IN_JUDGES, ...RuntimeId.options]) {
+      expect(
+        judgePlugin.schema.safeParse({ name: "j", judge: name, when: "red" }).success,
+        name,
+      ).toBe(true);
+    }
+    expect(judgePlugin.schema.safeParse({ name: "j", judge: "ask-or-assume", when: "needs-input" }).success).toBe(
+      false,
+    );
+  });
+});
+
+/**
+ * **This file's own header, counted rather than remembered** (`#238`).
+ *
+ * The decision *not* to hoist `when:` and `timeout:` as 0061 §2's universal
+ * keys is sized in prose from how many plugins carry one today — and `judge:`
+ * made that number false the day it declared a `when:`, with nothing going
+ * red. A ticket reading that sentence budgets the hoist from a set one plugin
+ * short, writes `when: WHEN.default("any")` onto every plugin, and silently
+ * replaces `judge:`'s vocabulary — `JudgeWhen` is the reason the last step
+ * gave, and `WHEN` is the work item's outcome — which is the one mistake the
+ * sentence exists to stop somebody making.
+ *
+ * So the numerals come off `PLUGINS`, and the whitespace is normalised first
+ * so that re-wrapping the comment is not a failure.
+ */
+describe("plugin.ts's own count of who carries a universal key", () => {
+  const NUMERAL = [
+    "no",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+  ] as const;
+  const carrying = (field: string) =>
+    PLUGINS.filter((plugin) => plugin.declares.includes(field)).length;
+
+  it("says how many plugins carry `when:` and `timeout:`, and how many a hoist would reach", () => {
+    const prose = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8")
+      .replace(/\n\s*\*/g, " ")
+      .replace(/\s+/g, " ");
+    expect(
+      prose,
+      "plugin.ts's header disagrees with PLUGINS about who carries `when:` or `timeout:`",
+    ).toContain(
+      `\`when:\` is legal on ${NUMERAL[carrying("when")]} plugins and \`timeout:\` on ` +
+        `${NUMERAL[carrying("timeout")]}`,
+    );
+    expect(
+      prose,
+      "plugin.ts's header disagrees with PLUGINS about how many plugins a hoist would reach",
+    ).toContain(`hoisting either would make it legal on all ${NUMERAL[PLUGINS.length]}`);
+  });
+
+  /**
+   * **And the two numerals that size the `no_log` claim**, which is the one
+   * that goes quietly wrong: *every field the N plugins have is a name, a
+   * command …* is an audit a reader can perform, and performing it over six of
+   * eleven answers a question nobody asked. The plugins arrived four and five
+   * at a time (`#235`, `#236`, `#238`) and not one of those tickets was about
+   * `no_log`, so nothing in the diff that made the sentence false was anywhere
+   * near it.
+   *
+   * The claim's other half is `secrets`, and that one is asserted rather than
+   * counted — a plugin that declared a `noLog` field would make *nothing
+   * declares one today* false whatever the numeral says.
+   */
+  it("says how many plugins the closed set and the `no_log` claim are about", () => {
+    const prose = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8")
+      .replace(/\n\s*\*/g, " ")
+      .replace(/\s+/g, " ");
+    for (const sentence of [
+      `beside the ${NUMERAL[PLUGINS.length]} declarations`,
+      `every field the ${NUMERAL[PLUGINS.length]} plugins have`,
+    ]) {
+      expect(prose, "plugin.ts's header disagrees with PLUGINS about the size of the set").toContain(
+        sentence,
+      );
+    }
+    expect(
+      PLUGINS.filter((plugin) => plugin.secrets.length > 0),
+      "a plugin declares a no_log field, and plugin.ts's header says nothing does",
+    ).toEqual([]);
   });
 });

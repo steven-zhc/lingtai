@@ -106,13 +106,22 @@ export function resolveEndActions(
   type Resolved = { name: string; close: true } | { name: string; labels: string[] };
   const resolved: Resolved[] = [];
   for (const a of actions) {
-    // `when` is only on the two kinds that run for effect, and the other four
-    // are refused when the recipe resolves (`whyNoKindAt`) — so this is
+    // **The kind, and not the shape.** Every kind but the two that run for
+    // effect is refused when the recipe resolves (`whyNoKindAt`), so this is
     // unreachable from a recipe and is left in for the case it is not: an
     // action list built in code. It used to `continue`, which is the one thing
     // this point must never do (`#61`): four of `end`'s six cells were
     // declarable, drawn, and dropped by that line.
-    if (!("when" in a)) {
+    //
+    // It asks for the two keys `KINDS_AT.end` names rather than for `when`,
+    // because **`when:` stopped being the effects' own key** the day `judge:`
+    // declared one (`#238`) — and a `"when" in a` test let a judge action
+    // straight past this throw into the `continue` below, where a `findings`
+    // matches no outcome. That is `#61` restored for one kind and restored
+    // silently: `end` resolves, records an empty list, and the log says
+    // nothing was declared. A plugin's fields are its own and any of them may
+    // spell a word twice; what this point runs is a kind.
+    if (!("close" in a) && !("labels" in a)) {
       const kind = kindOfAction(a);
       throw new Error(kindRefusedAt("end", kind, a.name, whyNoKindAt("end", kind) ?? "it produces no effect"));
     }

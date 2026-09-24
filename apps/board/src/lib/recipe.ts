@@ -549,6 +549,20 @@ export function describeAction(
         bound: "no clock — a person wrote the assignee, so it never goes stale (0027)",
       };
     }
+    // And the one `proposed` will hold, whose `bound` is the whole of why it is
+    // worth naming: the ceilings are the workflow's and a judge never sees
+    // them, so what this row says about money is true of any judge a project
+    // writes, including one that is somebody else's code (0061 §3).
+    case "judge": {
+      const a = action as Extract<GateAction, { judge: string; when: string }>;
+      return {
+        does:
+          a.judge === "same-worktree"
+            ? `decides a ${a.when} refusal with a built-in: back to implement, spending nothing`
+            : `asks ${a.judge} which step is next, for a ${a.when} refusal`,
+        bound: "the workflow counts the rounds and restarts, and offers only the steps still left",
+      };
+    }
   }
 }
 

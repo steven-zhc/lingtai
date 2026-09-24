@@ -4,7 +4,7 @@
  * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
  *
  * This file knows *what a plugin is*. It does not know which plugins exist:
- * the closed set is `PLUGINS` in `recipe.ts`, beside the six declarations, and
+ * the closed set is `PLUGINS` in `recipe.ts`, beside the eleven declarations, and
  * every function here takes the set it is to work against. That is the whole of
  * the separation — **a plugin owns its schema, and a second copy of that
  * knowledge would be a second thing to keep true**, so there is no registry of
@@ -37,9 +37,14 @@
  * workflow's: every action is addressed by it — `task_view` keys a verdict
  * `step:action`, the board draws it, `lingtai waive` names it — and no plugin
  * decides that. 0061 §2 makes `when:` and `timeout:` universal too, and they
- * are **not** hoisted here: today `when:` is legal on two plugins and
- * `timeout:` on one, and hoisting either would make it legal on all six. That
- * is a behavioural change, and this is not the ticket for it.
+ * are **not** hoisted here: today `when:` is legal on three plugins and
+ * `timeout:` on one, and hoisting either would make it legal on all eleven.
+ * That is a behavioural change, and this is not the ticket for it — and the
+ * three are not one key wearing one spelling: `close:` and `labels:` read the
+ * work item's *outcome* (`WHEN`) and `judge:` reads the *reason the last step
+ * gave* (`JudgeWhen`, `#238`), so a hoist has two vocabularies to reconcile
+ * before it has one universal key. The counts here are counted off `PLUGINS`
+ * by `packages/recipe/unit/plugin.test.ts` rather than remembered.
  *
  * ## `no_log`
  *
@@ -93,7 +98,15 @@
  * nothing it already was.
  *
  * **Nothing declares one today**, and that is a fact rather than an oversight:
- * every field the six plugins have is a name, a command, a prompt or a glob.
+ * every field the eleven plugins have is a name, a command, a prompt, a glob, a
+ * branch, a strategy, a label, a direction or a GitHub login — and a login is
+ * not a credential, which is the distinction worth reading (0046 §2: a wrong
+ * one hands this machine somebody else's tickets, and that is a mistake that
+ * shows itself). Both numerals in this file are counted off `PLUGINS` by
+ * `packages/recipe/unit/plugin.test.ts` rather than remembered, because a claim
+ * about *every field of the set* that is sized from a set less than half its
+ * size is the one way this sentence goes quietly wrong: the plugins have
+ * arrived four and five at a time, and none of those tickets was about `no_log`.
  * The mechanism is here so that the first plugin that needs one gets it from a
  * declaration instead of from a convention, and `unit/plugin.test.ts` drives it
  * over a plugin of its own rather than over an empty set.

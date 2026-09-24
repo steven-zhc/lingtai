@@ -358,20 +358,121 @@ export type AssigneeRule = z.infer<typeof AssigneeRule>;
 export const assigneePlugin = definePlugin("assignee", { assignee: AssigneeRule });
 
 /**
+ * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
+ * entry's `when:` names — and there is **one entry per reason**
+ * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ *
+ * **`when:` is one key and its legal values are the step's**, which is
+ * [0059](../../../doc/decisions/0059-a-point-carries-only-the-kinds-it-runs.md)'s
+ * rule a third time: `close:` and `labels:` read the work item's *outcome* at
+ * `end` (`WHEN` above — `landed`, `blocked`, `failed`, `closed`, `any`), and a
+ * judge reads **the reason the last step gave**. Two steps, two vocabularies,
+ * and a value one of them does not know is refused by name when the recipe
+ * resolves.
+ *
+ * Two of the five are the merge lane's own words and mean there what they mean
+ * here: `conflict` and `gate-failed` are `RefusalReason` in
+ * `packages/domain/src/events.ts`. The other three are the reasons the steps
+ * 0058 §3 named will report when they are built (0061 §5) — `red` is `build`'s,
+ * `findings` is `review`'s, and `needs-input` is an implementing agent that
+ * stopped to ask, which is 0057's class rather than a refusal.
+ *
+ * **Not `RefusalReason` itself**, though it holds two of the five. That enum is
+ * the *integration*'s list — `dirty-base`, `unpushed-base`, `push-rejected` —
+ * and a judge is never asked about those: they stop the lane before the diff is
+ * what is in doubt, and offering a judge a direction nothing can arrive by is
+ * the same mistake as offering it a step nothing can run.
+ */
+export const JudgeWhen = z.enum(["red", "gate-failed", "conflict", "needs-input", "findings"]);
+export type JudgeWhen = z.infer<typeof JudgeWhen>;
+
+/**
+ * **The judges that spend nothing**, and the list is shorter than 0061 §3's
+ * example on purpose.
+ *
+ * `same-worktree` is the mechanical answer — *back to `implement` with the
+ * error* — and it is a function in `packages/conductor/src/judge.ts`. A
+ * **synchronous** one, which is what makes *spends no agent* a fact about its
+ * type rather than a promise in prose: nothing that dispatches an agent can
+ * answer without awaiting.
+ *
+ * 0061 §3's yaml also names `ask-or-assume` for `needs-input`, and it is **not
+ * here, because nothing implements it**. A name the schema accepts and no code
+ * answers is `#61` arriving through the one door this repository has decided it
+ * will not leave open — the same rule that gives `merge:` one `strategy`: the
+ * enum says what the code does, and grows when the code does.
+ */
+export const BUILT_IN_JUDGES = ["same-worktree"] as const;
+export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
+
+/**
+ * Who decides a direction: a built-in above, or a runtime — an agent, paid for
+ * a judgement.
+ *
+ * One enum rather than a union of two, so the refusal lists every legal name in
+ * one sentence, and read off the two lists rather than written a third time.
+ * Which of the five directions is worth an agent is the whole of 0061 §3's
+ * measurement: `red` and `gate-failed` were seen sixty times between them and
+ * are mechanical, `findings` was seen 231 times and is the judgement.
+ */
+export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options]);
+export type JudgeName = z.infer<typeof JudgeName>;
+
+/**
+ * **Which step is next when something refuses** — a name for the decision
+ * `buyRound` makes at `run-once.ts:1761`, which no recipe can see, name or
+ * replace today (0061 §3).
+ *
+ * **One entry per `when:`, and that is the schema rather than a convention.**
+ * `when:` is required and has no default, so no entry can answer for all five
+ * directions. One judge for all of them pays an agent sixty times to reach a
+ * mechanical conclusion — and worse, anyone replacing it has to reimplement the
+ * mechanical branches correctly or the loop never terminates.
+ *
+ * **It declares no `rounds:` and no `restarts:`, and that is the safety
+ * property rather than an omission** (0061 §3):
+ *
+ *     a misconfiguration that fails    is cheap — it errors, you fix it
+ *     a misconfiguration that loops    is not — it never errors, it only spends
+ *
+ * A judge that could carry its own ceilings could answer *back to `implement`*
+ * for ever, at ~31 turns and ~$3.40 a round
+ * ([012 §3](../../../doc/experiments/012-where-the-turns-go.md)), and nothing
+ * anywhere would report a fault. So the two bounds are universal keys on the
+ * steps they bound — `rounds` on `implement`, `restarts` on `claim`, written
+ * today as `runtime.limits` — and a recipe writing either under a judge is
+ * refused by name, listing what this plugin does declare (0061 §9).
+ *
+ * > **`judge:` decides which step is next. The workflow decides which steps it
+ * > may choose from.**
+ *
+ * The workflow's half is `stepsOnOffer` in
+ * `packages/conductor/src/judge.ts`: it counts what is spent, works out the set
+ * of steps on offer, and hands the judge that set as a fact. A judge answers
+ * *which of these*, never *what is legal*.
+ */
+export const judgePlugin = definePlugin("judge", {
+  /** A built-in, which spends nothing, or a runtime, which is an agent and a prompt. */
+  judge: JudgeName,
+  /** The direction it answers. Required, undefaulted: one entry per `when:`. */
+  when: JudgeWhen,
+});
+
+/**
  * **The closed set**, and the only list of plugins anywhere.
  *
- * It lists the plugins and not their fields: each of the ten above declares
+ * It lists the plugins and not their fields: each of the eleven above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
  * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
  * settled that there is no plugin system and an extension is a command — so a
  * key is a bare word and a word that is not one of these is refused.
  *
- * **Ten of the twelve 0061 §3 names.** `worktree:`, `merge:`, `queue:` and
- * `assignee:` are in the set and in no step's row: they are names for code the
- * pass calls directly today, so every cell of theirs refuses, by a sentence
- * that says where that code is called instead. That is the same two-valued
- * rule the six steps with no call site are held to — **naming a thing is not
- * wiring it** — read down the other axis.
+ * **Eleven of the twelve 0061 §3 names.** `worktree:`, `merge:`, `queue:`,
+ * `assignee:` and `judge:` are in the set and in no step's row: they are names
+ * for code the pass calls directly today, so every cell of theirs refuses, by a
+ * sentence that says where that code is called instead. That is the same
+ * two-valued rule the six steps with no call site are held to — **naming a
+ * thing is not wiring it** — read down the other axis.
  *
  * `as const`, so `ActionKind` and `GateAction` are read off it rather than
  * written down a second time.
@@ -387,6 +488,7 @@ export const PLUGINS = [
   mergePlugin,
   queuePlugin,
   assigneePlugin,
+  judgePlugin,
 ] as const;
 
 /**
@@ -417,6 +519,7 @@ export const GateAction = z.union([
   mergePlugin.schema,
   queuePlugin.schema,
   assigneePlugin.schema,
+  judgePlugin.schema,
 ]);
 export type GateAction = z.infer<typeof GateAction>;
 
@@ -459,9 +562,9 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
 }
 
 /**
- * **Which of the ten kinds each of the ten steps actually runs.**
+ * **Which of the eleven kinds each of the ten steps actually runs.**
  *
- * A hundred cells, and ten of them used to be accepted here, resolved into
+ * A hundred and ten cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
  * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
  * the weeks it spent declared-but-unbuilt are the argument for writing the
@@ -487,10 +590,10 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
  * at one of them is the exact `#61` failure one level up — resolved, recorded,
  * drawn, never called — so it is refused by name when the recipe resolves.
  *
- * **And four empty columns, for the same reason read the other way.**
- * `worktree:`, `merge:`, `queue:` and `assignee:` name code the pass calls
- * itself, so no row carries them and `CALLED_DIRECTLY` is what their forty
- * cells refuse with.
+ * **And five empty columns, for the same reason read the other way.**
+ * `worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` name code the pass
+ * calls itself, so no row carries them and `CALLED_DIRECTLY` is what their
+ * fifty cells refuse with.
  */
 export const KINDS_AT = {
   /** Nothing yet: the queue picks the item and no pipeline is constructed here. */
@@ -509,7 +612,13 @@ export const KINDS_AT = {
   review: [],
   proposed: ["run", "agent", "watch", "human"],
   merge: ["run", "agent", "watch", "human"],
-  /** The two effects — the two kinds that carry `when:`. */
+  /**
+   * The two effects — and **`when:` is not what picks them out**. `judge:`
+   * carries one too (`#238`), so a `"when" in a` test at the point let a
+   * judge action built in code straight past the throw and into a match on
+   * the outcome it could not satisfy: `#61` for one kind, silently.
+   * `end-point.ts`'s guard asks for these two keys instead.
+   */
   end: ["close", "labels"],
 } as const satisfies Record<Step, readonly ActionKind[]>;
 
@@ -554,6 +663,31 @@ const FIRST_YIELDS =
   "reordering the list is how a person changes priority";
 
 /**
+ * **What `proposed` will do with the judges it is given**, and the half of it
+ * that costs money if it is got wrong.
+ *
+ * `FIRST_YIELDS`'s sibling, and written for the same reason: the reduction is
+ * the step's and the step does not do it yet, so the one moment somebody about
+ * to wire it meets the rule is this refusal. A `REDUCES_AT` table nothing read
+ * would be `#61` one level up.
+ *
+ * The clause that is not a reduction is the one worth the sentence. **The
+ * workflow counts and the judge chooses** (0061 §3) — a judge is handed the set
+ * of steps on offer and answers *which of these*, so no replaced judge can
+ * widen a ceiling, and a judge that answers outside the set is refused by name
+ * rather than obeyed. That is §8's rule once more: *a step refuses a plugin it
+ * cannot run* becomes *a step refuses a destination it did not offer*.
+ */
+const WORKFLOW_COUNTS =
+  "When a step does read it, `proposed` takes the one entry whose `when:` matches the reason the " +
+  "last step gave — one judge per direction, and only the `findings` one is a judgement worth an " +
+  "agent — and **the workflow counts, the judge chooses** (0061 §3): the workflow reads `rounds` " +
+  "and `restarts`, works out which steps are on offer, and hands the judge that set. The set " +
+  "depends on how far the pass got and not only on what is left to spend, so a judge answers " +
+  "which of these and never what is legal, and one that returns a step it was not offered is " +
+  "refused by name";
+
+/**
  * **The same table read down the other axis**: a plugin the pass calls itself,
  * and where it calls it.
  *
@@ -563,7 +697,7 @@ const FIRST_YIELDS =
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
  *
- * Why these four are declared at all before anything reads them: a plugin no
+ * Why these five are declared at all before anything reads them: a plugin no
  * list carries is a plugin no step refuses
  * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2), and
  * `assignee:` is the one that document found missing from every list but 0061
@@ -588,6 +722,12 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     "the queue decides it itself, last of the four reasons an issue is passed over — `assigneeSkip` in " +
     "`packages/conductor/src/discover.ts`, from `runtime.assignee` on the machine's own file (0046 §3), " +
     `and \`claimWorkItem\` in \`packages/conductor/src/claim.ts\` is what then takes the one that survives. ${FIRST_YIELDS}`,
+  judge:
+    "`run-once.ts` decides it itself, in `buyRound` — `decideFix` in `packages/conductor/src/fix.ts` " +
+    "buys another round in the same worktree and `decideRestart` in `packages/conductor/src/restart.ts` " +
+    "buys a fresh approach, both from `runtime.limits.rounds` and `runtime.limits.restarts`, and no " +
+    "recipe can see that decision, name it or replace it. What a step will hand a judge is already a " +
+    `module of its own: \`stepsOnOffer\` in \`packages/conductor/src/judge.ts\`. ${WORKFLOW_COUNTS}`,
 };
 
 /**
@@ -599,9 +739,9 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
  * refused at `prepared` should not have to read `run-once.ts` to discover that
  * the reason is that nothing has been committed yet.
  *
- * **Four of them are facts about the plugin instead, and they are asked
- * first.** `worktree:`, `merge:`, `queue:` and `assignee:` are refused
- * everywhere and each for one reason, so a sentence about the step would be
+ * **Five of them are facts about the plugin instead, and they are asked
+ * first.** `worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` are
+ * refused everywhere and each for one reason, so a sentence about the step would be
  * the less useful half of the truth at all ten: *nothing runs a pipeline at
  * `admit`* is right and leaves a reader looking for the code that cuts their
  * worktree, which `CALLED_DIRECTLY` names. It is sharpest at `claim`, where
@@ -643,7 +783,10 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
   if (point === "end") {
     return (
       "`end` fires on every terminal outcome and produces no verdict, so the only actions it can " +
-      "carry are the two that run for effect — `close:` and `labels:`, the two that take `when:`"
+      "carry are the two that run for effect — `close:` and `labels:`, whose `when:` is which of " +
+      "those outcomes it was. It is not that they are the two plugins with a `when:` field: " +
+      "`judge:` declares one too and reads the reason the last step gave (`#238`), so what picks " +
+      "these two out is the kind and never the shape"
     );
   }
   if (kind === "close" || kind === "labels") {
