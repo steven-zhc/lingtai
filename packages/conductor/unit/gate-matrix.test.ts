@@ -1,25 +1,25 @@
 /**
- * **A hundred cells, and each one runs or refuses by name.** There is no third
- * answer, and for a year ten of them gave it: an action at `admit`, or anything
- * but an effect at `end`, was accepted by the schema, resolved into
+ * **A hundred and ten cells, and each one runs or refuses by name.** There is
+ * no third answer, and for a year ten of them gave it: an action at `admit`, or
+ * anything but an effect at `end`, was accepted by the schema, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
  * called (`#61`).
  *
  * **It was thirty until the vocabulary went from five names to ten** (0058 §3),
- * sixty until the closed set grew `worktree:` and `merge:` (`#235`), and eighty
- * until it grew `queue:` and `assignee:` (`#236`). Eleven of the hundred cells
- * run and **eighty-nine refuse**; sixty of those eighty-nine are the six steps
- * with no call site, and forty are the four plugins no step reads — overlapping
- * each other by twenty-four, because a `worktree:` action at `design` is both
- * at once.
+ * sixty until the closed set grew `worktree:` and `merge:` (`#235`), eighty
+ * until it grew `queue:` and `assignee:` (`#236`), and a hundred until it grew
+ * `judge:` (`#238`). Eleven of the hundred and ten cells run and **ninety-nine
+ * refuse**; sixty-six of those ninety-nine are the six steps with no call site,
+ * and fifty are the five plugins no step reads — overlapping each other by
+ * thirty, because a `worktree:` action at `design` is both at once.
  *
  * That is the property this file is here to hold, and it holds it down both
  * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
  * pipeline has not yet constructed must refuse every kind until it has, and the
- * four plugins that are names for code the conductor calls itself must be
+ * five plugins that are names for code the conductor calls itself must be
  * refused at every step until the recipe is what tells it to. A `design:` block
  * a recipe could write and nothing would run is `#61` with a new spelling; so
- * is a `worktree:` one, and so is a `queue:` one.
+ * is a `worktree:` one, and so is a `judge:` one.
  *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
@@ -53,11 +53,11 @@ import { resolveEndActions } from "../src/end-point.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
- * hold them — **and the last four are actions no resolved recipe can hold**,
- * because `worktree:`, `merge:`, `queue:` and `assignee:` are refused at all
- * ten steps. That is the point of writing them: the cell has to be *refused by
- * name* rather than *unrepresentable*, and an action the schema never sees is a
- * column this file would walk with nothing in it.
+ * hold them — **and the last five are actions no resolved recipe can hold**,
+ * because `worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` are refused
+ * at all ten steps. That is the point of writing them: the cell has to be
+ * *refused by name* rather than *unrepresentable*, and an action the schema
+ * never sees is a column this file would walk with nothing in it.
  */
 const ACTION: Record<ActionKind, GateAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
@@ -73,6 +73,7 @@ const ACTION: Record<ActionKind, GateAction> = {
     queue: { kinds: ["bug", "feature"], exclude: ["agent:hold"], backoff: "1h" },
   },
   assignee: { name: "whose work it is", assignee: { login: "steven-zhc", take: "mine" } },
+  judge: { name: "the lines or the approach", judge: "claude-code", when: "findings" },
 };
 /**
  * **The columns are the closed set's, in the closed set's order** (`#228`).
@@ -261,6 +262,34 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
+   * **`proposed`'s judges reduce by `when:`, and the refusal carries the rule
+   * that costs money if it is got wrong** (`#238`).
+   *
+   * The reduction is the same kind of sentence `claim`'s is — one entry per
+   * direction, matched against the reason the last step gave, rather than every
+   * entry having to pass — but the clause worth pinning is the other one: **the
+   * workflow counts and the judge chooses** (0061 §3). A judge that could carry
+   * its own `rounds` could answer *back to `implement`* for ever and nothing
+   * would report a fault, so the refusal a person meets says which side of the
+   * line the ceilings are on, and names the module that computes the set.
+   */
+  it("says how `proposed` will reduce its judges, and who counts", () => {
+    const why = whyNoKindAt("proposed", "judge");
+    expect(why, "`judge:` is no longer refused at proposed").not.toBeNull();
+    expect(why).toContain("the workflow counts, the judge chooses");
+    expect(why).toContain("one judge per direction");
+    expect(why).toContain("refused by name");
+    expect(why).toContain("not only on what is left to spend");
+    // Where the decision is made today, and where the set it will be handed
+    // already is — both file references, so they go red if either moves.
+    expect(why).toContain("packages/conductor/src/fix.ts");
+    expect(why).toContain("packages/conductor/src/restart.ts");
+    expect(why).toContain("packages/conductor/src/judge.ts");
+    // A fact about the plugin, so it is the same sentence at all ten steps.
+    for (const step of STEPS) expect(whyNoKindAt(step, "judge")).toBe(why);
+  });
+
+  /**
    * The deps in this file are a copy of what `run-once.ts` passes, and a copy
    * is a thing to keep correct. Read rather than reasoned about: narrowing
    * `proposed`'s deps would leave the schema accepting an `agent:` action that
@@ -340,10 +369,10 @@ describe("doc/reference.md's matrix", () => {
     const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
     const rows = new Map<string, string[]>();
     // The row's own label plus one cell per plugin, read off `PLUGINS` like
-    // everything else here: a seventh and eighth column arrived with `#235`
-    // and a ninth and tenth with `#236`, and a width written as `7` would have
-    // gone on matching the six-wide table it was no longer about and reported
-    // *no table at all*.
+    // everything else here: a seventh and eighth column arrived with `#235`,
+    // a ninth and tenth with `#236` and an eleventh with `#238`, and a width
+    // written as `7` would have gone on matching the six-wide table it was no
+    // longer about and reported *no table at all*.
     const width = KINDS.length + 1;
     let header: string[] | null = null;
     for (const line of doc.split("\n")) {
@@ -382,10 +411,10 @@ describe("doc/reference.md's matrix", () => {
     const refusals = STEPS.flatMap((point) =>
       KINDS.map((kind) => whyNoKindAt(point, kind)),
     ).filter((why) => why !== null).length;
-    expect(refusals).toBe(89);
+    expect(refusals).toBe(99);
     expect(
       doc,
       "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
-    ).toContain("**Eighty-nine of the\nhundred are refusals**");
+    ).toContain("**Ninety-nine of the\nhundred and ten are refusals**");
   });
 });

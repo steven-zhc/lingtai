@@ -561,12 +561,12 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 1438 occurrences in
-79 files**, counted 2026-09-23, across 51 distinct tokens, of which the six
-largest are `gate` ×426, `gates` ×272, `point` ×167, `points` ×95, `GatePassed`
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1443 occurrences in
+80 files**, counted 2026-09-24, across 51 distinct tokens, of which the six
+largest are `gate` ×429, `gates` ×272, `point` ×167, `points` ×95, `GatePassed`
 ×48 and `GateFailed` ×46. `GATE_CARRYING` in
 `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-`apps/board/unit/run-recipe.test.tsx` are two of those 1438 — locals a rename of
+`apps/board/unit/run-recipe.test.tsx` are two of those 1443 — locals a rename of
 `src/` does not reach, and the two a reader meets first, which is exactly why
 naming them and stopping reads as the whole of it. They are
 out because a name that survives only in a test is one no
@@ -677,21 +677,33 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1084 occurrences in 77 files, counted 2026-09-24** — and that sentence is
+**1089 occurrences in 78 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
 corrects that number, and that is the whole of the ceremony.
 
-**It went up by two and then by two again, and the line saying what they are is
-this one.** `#235` added `worktree:` and `merge:` to the closed set and `#236`
-added `queue:` and `assignee:`, and `describeAction` in
-`apps/board/src/lib/recipe.ts` reads that set exhaustively — so each pair is two
-more `Extract<GateAction, …>`, in a file already listed, under a name already
-recorded. A `switch` with no case for a plugin in the set returns `undefined` on
-a page nobody would think to re-test, which is the alternative this debt was
-bought to avoid. All twelve go when `GateAction` becomes `Plugin`, in one
-rename.
+**It went up by two, then by two again, then by five, and the line saying what
+they are is this one.** `#235` added `worktree:` and `merge:` to the closed set,
+`#236` added `queue:` and `assignee:` and `#238` added `judge:`, and
+`describeAction` in `apps/board/src/lib/recipe.ts` reads that set exhaustively —
+so each new plugin is one more `Extract<GateAction, …>`, in a file already
+listed, under a name already recorded. A `switch` with no case for a plugin in
+the set returns `undefined` on a page nobody would think to re-test, which is
+the alternative this debt was bought to avoid. All thirteen go when `GateAction`
+becomes `Plugin`, in one rename.
+
+**The other four of `#238`'s five are `gate-failed`, and it is the merge lane's
+own word rather than a new one.** `RefusalReason` in
+`packages/domain/src/events.ts` has said it since the lane was built, and
+`judge:`'s `when:` reads the reason the last step gave — so the token arrives in
+`JudgeWhen`'s enum in `packages/recipe/src/recipe.ts`, in `BUILT_IN_FOR` in
+`packages/conductor/src/judge.ts`, and beside two `GateFinding`s that are the
+reviewer's findings under the type's present name. A value on the log is renamed
+by the ticket that renames the log's own vocabulary, never ahead of it: the
+alternative was inventing a second word for a reason the events already carry,
+which is two vocabularies for one fact — 0058 §Context's defect, and the thing
+this ledger exists to make visible rather than to make impossible.
 
 Each row is one file, every retired token still in it, and **how many times the
 rule reads that token there**. The count is the entry and not decoration: a
@@ -756,7 +768,7 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `gateAt` ×12 · `points` ×6 |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `PointProgress` ×2 · `PointState` ×7 · `gate` ×4 · `point` ×12 · `pointOf` ×1 · `points` ×6 |
 | `apps/board/src/lib/queued.ts` | `GatePlan` ×2 · `PlannedPoint` ×2 · `point` ×4 · `points` ×2 |
-| `apps/board/src/lib/recipe.ts` | `GateAction` ×12 · `GatesResolved` ×1 · `gates` ×4 · `point` ×3 · `points` ×1 |
+| `apps/board/src/lib/recipe.ts` | `GateAction` ×13 · `GatesResolved` ×1 · `gates` ×4 · `point` ×3 · `points` ×1 |
 | `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateVerdict` ×4 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×12 · `gates` ×11 |
 | `apps/cli/src/backlog.ts` | `gate` ×1 |
 | `apps/cli/src/conduct.ts` | `gate` ×1 |
@@ -787,6 +799,7 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/conductor/src/gate-audit.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `gate` ×2 · `point` ×1 · `points` ×4 |
 | `packages/conductor/src/gates-resolved.ts` | `gate` ×3 · `gates` ×1 · `gatesResolved` ×1 · `points` ×1 |
 | `packages/conductor/src/index.ts` | `GatePlan` ×1 · `gate` ×1 · `gatePlan` ×1 · `point` ×1 |
+| `packages/conductor/src/judge.ts` | `GateFinding` ×2 · `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
 | `packages/conductor/src/never-started.ts` | `gate` ×6 |
 | `packages/conductor/src/onboard.ts` | `gates` ×3 · `point` ×3 |
@@ -814,14 +827,14 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/recipe/src/local.ts` | `gates` ×8 · `gatesRefusal` ×3 · `point` ×2 |
 | `packages/recipe/src/presets.ts` | `gates` ×6 |
 | `packages/recipe/src/propose.ts` | `gates` ×1 |
-| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GateMap` ×4 · `GatesResolved` ×1 · `gates` ×1 · `point` ×15 |
+| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GateMap` ×4 · `GatesResolved` ×1 · `gate` ×1 · `gates` ×1 · `point` ×15 |
 | `packages/recipe/src/resolve.ts` | `gates` ×5 |
 | `packages/recipe/src/watch.ts` | `gate` ×9 |
 | `packages/repo/src/integrate.ts` | `gate` ×3 · `gateDetail` ×2 · `gatesPassed` ×2 |
 
 ### ordinary English
 
-**9 of those 1084 occurrences are the English word and not the retired
+**9 of those 1089 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
@@ -849,11 +862,11 @@ count no larger than the allowlist's.
 | `packages/conductor/src/create-app.ts` | `point` | 2 of 2 | *would point .env.local at an id no repository has installed*, and one more |
 
 
-## gate action — 10 keys, of which 4 produce a verdict
+## gate action — 11 keys, of which 4 produce a verdict
 
 What runs at a point. Source: `PLUGINS` and `kindOfAction` in
-`packages/recipe/src/recipe.ts`, each of the ten declared with `definePlugin`
-from `plugin.ts`.
+`packages/recipe/src/recipe.ts`, each of the eleven declared with
+`definePlugin` from `plugin.ts`.
 
 **Each one owns its schema and validates its own fields**
 ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §9). There is no registry
@@ -870,7 +883,7 @@ that stopped at the first bad field would make a person fix one thing per
 attempt, which is [#222](https://github.com/steven-zhc/lingtai/issues/222)'s
 lesson about the build step applied to configuration.
 
-A field may be marked `no_log`, and **none of the ten is today**: every field
+A field may be marked `no_log`, and **none of the eleven is today**: every field
 they have is a name, a command, a prompt, a glob, a branch, a strategy, a label
 or a GitHub login — and a login is not a credential, which is the distinction
 worth reading (0046 §2: a wrong one hands this machine somebody else's tickets,
@@ -909,17 +922,21 @@ written as a stand-in.
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken. No step reads it yet | a GitHub client, and the labels its `kinds` names |
 | `assignee:` | — it says whether this machine may take it. No step reads it yet | a GitHub client, and this machine's login |
+| `judge:` | — it says which step is next when something refuses. No step reads it yet | the set of steps the workflow offers it, and for four of the five directions an agent |
 
-**The last four are names for code that already runs, and no step accepts one**
-(`#235`, `#236`). `worktree:` is `provisionWorktree` in
+**The last five are names for code that already runs, and no step accepts one**
+(`#235`, `#236`, `#238`). `worktree:` is `provisionWorktree` in
 `packages/repo/src/worktree.ts` and `merge:` is the integrator,
 `packages/repo/src/integrate.ts`; `run-once.ts` calls both itself, from
 `repo.base`. `queue:` is `runnableNow` and `considerIssue` in
 `packages/conductor/src/discover.ts`, and `assignee:` is `assigneeSkip` beside
 them together with `claimWorkItem` in `packages/conductor/src/claim.ts`, which
 takes the one that survives; the queue pass calls those itself, before a pass
-exists to have steps at all. So a recipe cannot yet say any of the four and
-every one of their forty cells in the matrix below is a ✋. They are declared
+exists to have steps at all. `judge:` is the decision `buyRound` makes at
+`run-once.ts:1761`, from `decideFix` in `packages/conductor/src/fix.ts` and
+`decideRestart` in `packages/conductor/src/restart.ts`. So a recipe cannot yet
+say any of the five and every one of their fifty cells in the matrix below is a
+✋. They are declared
 anyway because **a plugin no list carries is a plugin no step refuses**
 ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3,
 [`the-v2-recipe.md`](design/the-v2-recipe.md) §3.2): outside the closed set,
@@ -969,6 +986,53 @@ it lands, which cannot happen today. `merge:`'s one field is `strategy`, and it
 has one legal value because `integrate.ts:417` offers one: `git merge
 --no-edit`, then a push that is a fast-forward where it can be one.
 
+**`judge:` is one entry per `when:`, and the two rules that make it safe are in
+the schema rather than in prose** (0061 §3). Five things arrive at `proposed`
+and only one of them is a judgement worth an agent:
+
+```
+reason              seen      what deciding actually is
+build   red           34      back to implement with the error — mechanical
+merge   gate-failed   26      back to implement with the new base — mechanical
+merge   conflict       6      text: resolve · intent: a person
+implement needs-input   —     interrupt, or go round stating the assumption
+review  findings      231     the lines or the approach   ← the judgement
+```
+
+So `when:` is required and has no default — no entry can answer for all five —
+and `red` and `gate-failed` are answered by `same-worktree`, a **built-in**
+which is a synchronous function in `packages/conductor/src/judge.ts`. Being
+synchronous is the declaration that it spends nothing: nothing that dispatches
+an agent can answer without awaiting. The set of legal names is the built-ins
+that exist plus the runtimes, so a recipe cannot name a judge no code answers —
+0061 §3's example also writes `ask-or-assume`, and it is in neither list
+because nothing implements it.
+
+The second rule is the expensive one:
+
+```
+a misconfiguration that fails    is cheap — it errors, you fix it
+a misconfiguration that loops    is not — it never errors, it only spends
+```
+
+> **`judge:` decides which step is next. The workflow decides which steps it
+> may choose from.**
+
+A judge that could carry its own `rounds` could answer *back to `implement`*
+for ever, at ~31 turns and ~$3.40 a round
+([012 §3](experiments/012-where-the-turns-go.md)), and nothing anywhere would
+report a fault. So the plugin declares **no `rounds:` and no `restarts:`** —
+they are universal keys on the steps they bound, written today as
+`runtime.limits` — and a recipe writing either under a judge is refused by
+name. The workflow counts what is spent, works out the set of steps on offer
+(`stepsOnOffer` in `packages/conductor/src/judge.ts`) and hands the judge that
+set; **the set depends on how far the pass got, not only on what is left to
+spend**, so `prepared`'s refusal offers no `implement` with every round unspent,
+because no agent has run and there is no diff to fix. A judge answers *which of
+these*, never *what is legal*, and one that returns a step it was not offered
+is refused by name and the pass is held for a person — 0061 §8's rule once
+more, and the reason a wrong answer costs one pass rather than running for ever.
+
 The two effects carry `when:` (`landed` / `blocked` / `failed` / `closed` / `any`), because
 `end` fires on *every* terminal outcome. "Close it when it lands, label it when
 it is blocked" is one configuration rather than two mechanisms. Putting either
@@ -990,7 +1054,7 @@ second silently overwrite the first.
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
 it by arithmetic rather than by anybody noticing.
 
-## step × kind — the 100 cells, and which of them run
+## step × kind — the 110 cells, and which of them run
 
 Not every kind runs at every step, and for a year ten of the cells said
 neither yes nor no: an action there was accepted by the schema, resolved into
@@ -1000,12 +1064,13 @@ set is two-valued now**: a cell runs, or the recipe does not resolve and the
 refusal names the action, its kind, the step and why.
 
 It was thirty cells until the vocabulary went to ten names, sixty until the
-closed set grew `worktree:` and `merge:` (`#235`), and eighty until it grew
-`queue:` and `assignee:` (`#236`). **Eighty-nine of the
-hundred are refusals** — count the ✋ in the table below, which is what
-`whyNoKindAt` answers for every cell but the eleven that run. Sixty of
-the eighty-nine are the six steps with no call site and forty are the four
-plugins no step reads, overlapping each other by twenty-four; they are the
+closed set grew `worktree:` and `merge:` (`#235`), eighty until it grew
+`queue:` and `assignee:` (`#236`), and a hundred until it grew `judge:`
+(`#238`). **Ninety-nine of the
+hundred and ten are refusals** — count the ✋ in the table below, which is what
+`whyNoKindAt` answers for every cell but the eleven that run. Sixty-six of
+the ninety-nine are the six steps with no call site and fifty are the five
+plugins no step reads, overlapping each other by thirty; they are the
 interesting
 ones: that is the same two-valued rule and not an exception to it, because
 **naming a thing is not wiring it**, and a `design:` block a recipe could
@@ -1023,25 +1088,25 @@ checks is not worth having.
 walks the closed set rather than a list of its own, so the day a ninth plugin
 lands it has no action to try, no row here and no cell in `KINDS_AT` — and all
 three say so at once. That is 0059 §5's rule surviving the growth 0061 §3
-describes: the set is twelve and this table carries the ten that exist. It is
-also what made `#235` and `#236` cheap — each pair of new columns arrived in
-`PLUGINS`, and the test asked for them here rather than walking six of ten in
+describes: the set is twelve and this table carries the eleven that exist. It
+is also what made `#235`, `#236` and `#238` cheap — each new column arrived in
+`PLUGINS`, and the test asked for it here rather than walking ten of eleven in
 silence.
 
 ✅ runs · ✋ refused when the recipe resolves, by name
 
-| | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` | `worktree:` | `merge:` | `queue:` | `assignee:` |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `claim` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `design` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `implement` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `build` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `review` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ |
+| | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` | `worktree:` | `merge:` | `queue:` | `assignee:` | `judge:` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `claim` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `design` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `implement` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `build` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `review` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
 
 Where each row comes from:
 
@@ -1058,17 +1123,18 @@ build       —             no pipeline is constructed anywhere        ← today
 review      —             no pipeline is constructed anywhere        ← today an `agent:` action at `proposed`
 ```
 
-And the four columns, which are a fact about the plugin rather than the step:
+And the five columns, which are a fact about the plugin rather than the step:
 
 ```
 worktree    —             no step reads it from the recipe        ← run-once.ts cuts it itself, from `repo.base`
 merge       —             no step reads it from the recipe        ← the merge lane runs it itself, handed that same base
 queue       —             no step reads it from the recipe        ← discover.ts asks GitHub itself, from `source.*`
 assignee    —             no step reads it from the recipe        ← discover.ts decides it itself, from `runtime.assignee`
+judge       —             no step reads it from the recipe        ← run-once.ts decides it in buyRound, from `runtime.limits`
 ```
 
 **Every ✋ is a fact about the step or about the plugin, never about the
-caller** — and the four columns above are why that sentence has two halves:
+caller** — and the five columns above are why that sentence has two halves:
 their refusal is the same at all ten steps, so saying *nothing runs a pipeline
 at `admit`* would be true and would leave a reader hunting for the code that
 cuts their worktree. `CALLED_DIRECTLY` names it instead. It is sharpest at
@@ -1102,16 +1168,20 @@ plugins and only the plugin's says which file to open.
   verdicts, and only `end` carries out effects. This is the direction the
   codebase already got right, and its wording is the argument for the rest:
   *an action that is silently absent is worse than a run that will not start.*
-- **`worktree:`, `merge:`, `queue:` and `assignee:` at any step at all.** All
-  four are names 0061 §3 gives code the pass already runs, and the recipe is not
-  yet the thing that tells it to — that is the ticket that makes the file
-  `steps:`. Until then the plugin and its schema exist, every cell refuses, and
-  the refusal says which file the code is in. The last two carry one more clause
-  than the first two, and it is the only part of either refusal that is not a
-  fact about today's code: **at `claim` the first plugin that yields a work item
-  wins**, rather than every one having to pass as at `prepared` (0061 §2). The
-  day a step reads one, its entry in `CALLED_DIRECTLY` goes and a `KINDS_AT` row
-  arrives in the same diff.
+- **`worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` at any step at
+  all.** All five are names 0061 §3 gives code the pass already runs, and the
+  recipe is not yet the thing that tells it to — that is the ticket that makes
+  the file `steps:`. Until then the plugin and its schema exist, every cell
+  refuses, and the refusal says which file the code is in. The last three carry
+  one more clause than the first two, and it is the only part of those refusals
+  that is not a fact about today's code — what the step will do with the list
+  when it reads it: **at `claim` the first plugin that yields a work item
+  wins**, rather than every one having to pass as at `prepared` (0061 §2), and
+  at `proposed` **the one entry whose `when:` matches the reason the last step
+  gave**, with the workflow counting the rounds and restarts and the judge only
+  choosing from what it is offered (0061 §3). The day a step reads one, its
+  entry in `CALLED_DIRECTLY` goes and a `KINDS_AT` row arrives in the same
+  diff.
 
 The refusal arrives when the recipe resolves — so `lingtai doctor`, `lingtai
 add` and the first moment of a pass all name it, before a ticket is claimed or
