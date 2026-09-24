@@ -379,6 +379,39 @@ describe("the gate", () => {
   });
 
   /**
+   * **`model:` reaches the spawn, or it is a price nobody is charged** (`#245`,
+   * [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §1's
+   * *written, believed, and connected to nothing*).
+   *
+   * An operator writes `model: claude-haiku-4-5` on `review` to make cold
+   * review cheap. The recipe resolves, `configHash` changes and the board draws
+   * the new value — and if the key stopped at the schema every review would go
+   * on running on the default model at the default price, with no refusal, no
+   * warning and no log line saying it was dropped. The seam is this one, and
+   * the assertion is on `RunRequest`: the adapter turns it into `--model`.
+   */
+  it("hands the recipe's model to the runtime, and omits the key when there is none", async () => {
+    const deps = (runtime: Runtime) => ({
+      runtime,
+      issue: async () => ISSUE,
+      diff: async () => "a diff",
+      settingsPath: "/tmp/s.json",
+      limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+    });
+
+    const named = reviewer(outcome({ text: '{"findings":[]}' }));
+    await createAgentGate({ name: "review", prompt: "", model: "claude-haiku-4-5" }, deps(named)).run(context);
+    expect(named.seen[0]?.model).toBe("claude-haiku-4-5");
+
+    // Absent stays absent, rather than becoming a name chosen here: what a
+    // runtime defaults to is the runtime's to know, and `in` rather than
+    // `toBeUndefined` because the claim is that no key was sent at all.
+    const bare = reviewer(outcome({ text: '{"findings":[]}' }));
+    await createAgentGate({ name: "review", prompt: "" }, deps(bare)).run(context);
+    expect("model" in (bare.seen[0] ?? {})).toBe(false);
+  });
+
+  /**
    * The reviewer is eighteen minutes a person used to wait on in the dark
    * (#153). It writes into the run's own log, under its gate, with its tool
    * calls — which no hook reports for it — between the pipeline's start and end.

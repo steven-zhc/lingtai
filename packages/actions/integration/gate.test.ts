@@ -23,6 +23,7 @@
  * near `packages/actions`.
  */
 import { describe, expect, it } from "vitest";
+import type { RunRequest, Runtime } from "@lingtai/agent";
 import {
   GateActionUnavailableError,
   type GateEvent,
@@ -450,6 +451,75 @@ describe("gatesFromRecipe", () => {
         watch: { changedFiles: async () => [] },
       }),
     ).toHaveLength(1);
+  });
+
+  /**
+   * **All three of the `agent:` plugin's fields cross this seam** (`#245`).
+   *
+   * `prompt:` is what the reviewer is told and `model:` is what it costs, and
+   * both of them being on the action is not the same as either of them reaching
+   * the spawn — a factory that built the gate from `{name}` alone would resolve,
+   * hash and render exactly as this one does, and review at the default price
+   * with a prompt the recipe never wrote. So this asserts on `RunRequest`, past
+   * every layer that could have dropped one: the action, the spec, the request.
+   *
+   * `agent:` itself does not travel, and that is the third fact rather than a
+   * gap: one conductor dispatches one runtime, `deps.agent.runtime` is it, and
+   * a step naming the other is refused before the claim by `agentRefusal`.
+   */
+  it("carries an agent action's prompt and model as far as the reviewer's spawn", async () => {
+    const seen: RunRequest[] = [];
+    const runtime: Runtime = {
+      capabilities: {
+        id: "claude-code",
+        hooks: [],
+        canFailClosed: true,
+        canRewriteToolCall: false,
+        providesTier: "guarded",
+        enforces: ["turns", "wall"],
+      },
+      async run(request) {
+        seen.push(request);
+        return {
+          exitCode: 0,
+          turns: 1,
+          durationMs: 1,
+          costUsd: 0,
+          text: '{"findings":[]}',
+          failure: null,
+          sessionId: "s",
+        };
+      },
+    };
+    const agent = {
+      runtime,
+      issue: async () => ({ ref: "245", title: "t", body: "b" }),
+      diff: async () => "diff --git a/x b/x\n+1",
+      settingsPath: "/tmp/s.json",
+      limits: { turns: 40, wallMs: 1000, diffBytes: 400_000 },
+    };
+
+    const [gate] = gatesFromRecipe(
+      "proposed",
+      [{ name: "review", agent: "claude-code", model: "claude-haiku-4-5", prompt: "look for races" }],
+      { agent },
+    );
+    await gate?.run(context);
+
+    expect(seen[0]?.model).toBe("claude-haiku-4-5");
+    expect(seen[0]?.prompt).toContain("look for races");
+    // And never the runtime's name where the prose belongs.
+    expect(seen[0]?.prompt).not.toContain("## Also for this project\n\nclaude-code");
+
+    // No `model:` on the action sends no `model` key, so the runtime's own
+    // default is what runs — the one thing this seam must not invent.
+    const [bare] = gatesFromRecipe(
+      "proposed",
+      [{ name: "review", agent: "claude-code", prompt: "look for races" }],
+      { agent },
+    );
+    await bare?.run(context);
+    expect("model" in (seen[1] ?? {})).toBe(false);
   });
 
   it("refuses a gate whose dependencies are missing, rather than skipping it", () => {

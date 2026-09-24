@@ -512,3 +512,48 @@ describe("what the page may render of an action", () => {
     ]);
   });
 });
+
+/**
+ * **What the recipe row says a reviewer is told** (`#245`).
+ *
+ * `agent:` carried the prompt until that ticket and carries the runtime now, so
+ * the reading that used to print `a cold reviewer: <the whole prompt>` went on
+ * compiling — `agent` is still a string — and started printing the name of a
+ * runtime. Two review actions differing only in what they tell the reviewer, or
+ * in what they cost, drew the same line, and the row an operator reads to
+ * decide *is this the review I configured* answered a different question.
+ */
+describe("describeAction, on a cold reviewer", () => {
+  it("reads the prompt and the model, not the runtime alone", () => {
+    const said = describeAction({
+      name: "review",
+      agent: "claude-code",
+      model: "claude-haiku-4-5",
+      prompt: "look for races",
+    } as never);
+
+    expect(said.does).toContain("look for races");
+    expect(said.does).toContain("claude-haiku-4-5");
+    expect(said.does).toContain("claude-code");
+    expect(said.bound).toBe("no timeout in the recipe");
+  });
+
+  /** Two actions that differ only in the prose do not read identically. */
+  it("tells two reviewers apart by what each is told", () => {
+    const one = describeAction({ name: "review", agent: "claude-code", prompt: "look for races" } as never);
+    const two = describeAction({ name: "review", agent: "claude-code", prompt: "look for swallowed errors" } as never);
+
+    expect(one.does).not.toEqual(two.does);
+  });
+
+  /**
+   * And absent `model:` is the runtime's own default said out loud, rather than
+   * a blank — the row is a reading, and a reading with a hole in it is where an
+   * operator supplies a guess.
+   */
+  it("says the runtime's own default when no model is named", () => {
+    const said = describeAction({ name: "review", agent: "claude-code", prompt: "look for races" } as never);
+
+    expect(said.does).toContain("its default model");
+  });
+});

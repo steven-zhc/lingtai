@@ -1501,4 +1501,44 @@ describe("runOnce runs the agent the recipe names, or nothing", () => {
     expect(did).toEqual([]);
     expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
   });
+
+  /**
+   * **And a step's `agent:` is a runtime too since `#245`** — the same rule one
+   * level down, where nothing enforced it.
+   *
+   * `runtime.agent: claude-code` with `steps.proposed`'s `review` naming
+   * `codex` resolved cleanly: the gates are handed `options.runtime`, so the
+   * cold review ran on claude-code, no refusal was raised, and nothing on the
+   * log recorded that the runtime the recipe named was not the one used. That
+   * is 0046 §3's silent pick with a different name on it. Per-step dispatch is
+   * not built; the honest answer is the one `runtime.agent` already gets, and
+   * it names the point and the action so a reader knows which line is wrong.
+   */
+  it("refuses before the claim when a step's agent: is not the runtime it was handed", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const codexReview = REVIEWED.replace("agent: claude-code\n      prompt:", "agent: codex\n      prompt:");
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], codexReview),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "recipe", workItemId: null });
+    expect((result as { detail: string }).detail).toContain('steps.proposed\'s "review" action names agent codex');
+    expect((result as { detail: string }).detail).toContain("this conductor runs claude-code");
+    // Nothing was claimed, so nothing was spent and no verdict was recorded
+    // against a review that ran on a runtime nobody named.
+    expect(did).toEqual([]);
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
+  });
 });

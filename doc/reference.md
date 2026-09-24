@@ -912,7 +912,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | a cold reviewer reading the diff. Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the runtime `agent:` names |
+| `agent:` | a cold reviewer reading the diff. Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail` | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
@@ -935,7 +935,19 @@ failing at spawn, in a worktree, after the claim. `z.enum` refuses it at resolve
 and names the field (0016 §4). `model:` is optional and **absent means the
 runtime's own default**, which is a thing to render rather than a blank: Lingtai
 keeps no table of what each runtime defaults to, because the runtime knows and a
-copy here would be a second place for it to be wrong.
+copy here would be a second place for it to be wrong. Present, it reaches the
+reviewer's spawn — `from-recipe.ts` carries it onto the gate and `agent-gate.ts`
+onto `RunRequest.model`, which is `--model` for `claude-code` — so writing a
+cheap model on `review` actually buys a cheap review.
+
+**What `agent:` does not yet buy is a second runtime in one pass**, and that is
+refused rather than ignored. One conductor dispatches one runtime and the gates
+are handed it, so `agentRefusal` (`conductor/src/run-once.ts`) now reads every
+`agent:` in the file and not only `runtime.agent`: a step naming the other one
+stops the pass before the claim, naming the point and the action, and
+`lingtai doctor`'s recipe row says the same. The alternative was the silent pick
+0046 §3 exists to refuse — a cold review running on the dispatched runtime with
+nothing anywhere recording that the named one was not used.
 
 **The last five are names for code that already runs, and no step accepts one**
 (`#235`, `#236`, `#237`, `#238`). `worktree:` is `provisionWorktree` in

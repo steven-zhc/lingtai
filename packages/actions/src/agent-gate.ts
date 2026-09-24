@@ -60,6 +60,17 @@ export interface AgentGateSpec {
   name: string;
   /** Appended to the fixed brief. Adds concerns; cannot remove them. */
   prompt: string;
+  /**
+   * The recipe's `model:`, handed to the runtime as-is — and **absent means the
+   * runtime's own default**, so it is passed through absent rather than
+   * resolved to a name here (`#245`, 0063 §2).
+   *
+   * Lingtai keeps no table of what each runtime defaults to: the runtime knows,
+   * and a copy at this seam would be a second place for it to be wrong. Which
+   * is also why it is not validated — the legal model names are the runtime's
+   * to know, and a stale allowlist here would refuse a model that works.
+   */
+  model?: string;
 }
 
 export interface AgentGateDeps {
@@ -386,6 +397,10 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
         runId: reviewId,
         cwd: context.cwd,
         prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck),
+        // The recipe's, or the key is not sent at all — `RunRequest.model` is
+        // optional and the adapter omits `--model` without it, which is what
+        // "the runtime's own default" means in the one place it has to be true.
+        ...(spec.model === undefined ? {} : { model: spec.model }),
         settingsPath: deps.settingsPath,
         // Already tagged `<point>:<action>` by the pipeline (#153). The reviewer
         // runs without the hook, so its tool calls are the stream's to write.

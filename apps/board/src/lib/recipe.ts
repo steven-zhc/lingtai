@@ -466,9 +466,20 @@ export function describeAction(
       const a = action as Extract<GateAction, { run: string }>;
       return { does: a.run, bound: `timeout ${a.timeout}` };
     }
+    // **Three fields since `#245`, and the prose is `prompt:`** (0063 §2).
+    // `agent:` used to carry it, so reading `a.agent` still compiled and drew
+    // a reviewer whose `does` was the name of a runtime — two review actions
+    // differing only in what they tell the reviewer read identically. What an
+    // operator is deciding from here is what this reviewer is told and what it
+    // costs, so all three are on the line and the prompt is last: it is the
+    // long one, and the two short facts would be lost after it.
     case "agent": {
       const a = action as Extract<GateAction, { agent: string }>;
-      return { does: `a cold reviewer: ${a.agent}`, bound: "no timeout in the recipe" };
+      // Absent `model:` is the runtime's own default, which is a thing to say
+      // rather than a blank — and not a name invented here, because the
+      // runtime is the one that knows it.
+      const on = `${a.agent}, ${a.model ?? "its default model"}`;
+      return { does: `a cold reviewer on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
     }
     case "watch": {
       const a = action as Extract<GateAction, { watch: string[] }>;

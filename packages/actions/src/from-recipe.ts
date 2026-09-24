@@ -109,7 +109,18 @@ export function gatesFromRecipe(
       // `action.agent` is the *runtime* since `#245`; the prose is `prompt:`.
       // Reading the old field here would compile and send a runtime's name
       // where a reviewer's instructions belong (0063 §2).
-      return createAgentGate({ name: action.name, prompt: action.prompt }, deps.agent);
+      //
+      // `agent` itself is **not** passed on, and that is not it being dropped:
+      // one conductor dispatches one runtime, `deps.agent.runtime` is it, and a
+      // step naming the other is refused by `agentRefusal` before the claim —
+      // so by the time a gate is built the two agree. `model` is spread rather
+      // than assigned, because absent has to reach `RunRequest` as absent (an
+      // explicit `undefined` and no key are the same to the adapter, but not to
+      // a reader deciding whether this seam invents a default).
+      return createAgentGate(
+        { name: action.name, prompt: action.prompt, ...(action.model === undefined ? {} : { model: action.model }) },
+        deps.agent,
+      );
     }
 
     if ("watch" in action) {

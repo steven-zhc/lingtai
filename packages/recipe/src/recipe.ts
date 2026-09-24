@@ -126,7 +126,17 @@ export const runPlugin = definePlugin("run", {
  * `model` is optional, and **absent means the runtime's own default** — which
  * is a thing a reader can be shown rather than a blank. Lingtai does not carry
  * a table of each runtime's default here: naming one would be a second place
- * for it to be wrong, and the runtime already knows.
+ * for it to be wrong, and the runtime already knows. Present, it is carried by
+ * `gatesFromRecipe` onto `AgentGateSpec` and by `createAgentGate` onto
+ * `RunRequest.model`, so the key changes what is spawned rather than only what
+ * is hashed.
+ *
+ * **This schema says which runtime, and no step dispatches a second one yet.**
+ * One conductor runs one runtime and hands it to every gate, so a value here
+ * that is not the dispatched one cannot be honoured — and is refused before the
+ * claim by `agentRefusal` (`conductor/src/run-once.ts`), which reads every
+ * `agent:` in the file rather than `runtime.agent` alone. The enum is what a
+ * *name* has to be in; the refusal is what makes the name true of the run.
  */
 export const agentPlugin = definePlugin("agent", {
   agent: RuntimeId,

@@ -192,15 +192,37 @@ export const changedFilesArgs = (baseSha: string): string[] => [
  * One sentence for both places that ask: `runOnce`, which refuses before its
  * claim, and `lingtai doctor`'s recipe row, which must not be `ok` for a
  * recipe every pass of which that refusal stops.
+ *
+ * **Every `agent:` in the file, not only `runtime.agent`** (`#245`). A step's
+ * `agent:` is a runtime too since that ticket, and one conductor dispatches one
+ * runtime — the gates are handed `options.runtime`, so a `review` action naming
+ * the other one would have run its cold review on the dispatched one with
+ * nothing anywhere saying the named runtime was not used. That is the silent
+ * pick 0046 §3 refuses, one level down from where `runtime.agent` refuses it,
+ * and it is answered the same way and in the same place: before the claim, by
+ * name. Per-step dispatch is not built; until it is, the only honest answer to
+ * a second runtime named at a step is to say so.
  */
 export function agentRefusal(
   resolved: Pick<ResolvedRecipe, "recipe" | "provenance">,
   dispatched: string,
 ): string | null {
   const named = resolved.recipe.runtime.agent;
-  if (named === dispatched) return null;
-  const from = resolved.provenance?.["runtime.agent"];
-  return `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`;
+  if (named !== dispatched) {
+    const from = resolved.provenance?.["runtime.agent"];
+    return `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`;
+  }
+  for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
+    for (const action of actions) {
+      if ("agent" in action && action.agent !== dispatched) {
+        return (
+          `steps.${step}'s "${action.name}" action names agent ${action.agent}, ` +
+          `and this conductor runs ${dispatched}`
+        );
+      }
+    }
+  }
+  return null;
 }
 
 export interface RunOnceOptions {
