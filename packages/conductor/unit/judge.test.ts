@@ -194,7 +194,12 @@ describe("the judge chooses, and cannot widen anything", () => {
   /** An answer from the set is passed straight through, and says nothing was overruled. */
   it("takes an answer that is on offer", async () => {
     const offer = stepsOnOffer({ ...EVERYTHING, when: "findings" });
-    const thoughtful: Judge = async () => "claim";
+    // Annotated rather than inferred: `Judge` returns `Destination |
+    // Promise<Destination>`, and an `async` body takes no contextual return
+    // type from a union, so a bare `async () => "claim"` widens to
+    // `Promise<string>` and stops type-checking. Writing the awaited type here
+    // keeps this the async half — the shape an agent judge has.
+    const thoughtful: Judge = async (): Promise<Destination> => "claim";
     expect(await askJudge("claude-code", thoughtful, brief("findings", offer))).toEqual({
       next: "claim",
       refused: null,
