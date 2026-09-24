@@ -20,7 +20,7 @@ import { resolveRecipe } from "@lingtai/recipe";
 const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
 
 const RECIPE = `
-version: 1
+version: 2
 repo:
   base: main
 source:
@@ -29,7 +29,7 @@ source:
 env:
   required: []
   plantAt: .env.local
-gates:
+steps:
   admit: []
   prepared:
     - name: install
@@ -151,7 +151,7 @@ describe("projectFilter", () => {
    * returned queue saw a project with no work.
    */
   it("answers with the reason rather than throwing, when the recipe will not parse", async () => {
-    const filter = await projectFilter(project, async () => client("version: 1\nrepo: {}\n"), fromFile);
+    const filter = await projectFilter(project, async () => client("version: 2\nrepo: {}\n"), fromFile);
 
     expect(filter.ok).toBe(false);
     if (filter.ok) return;

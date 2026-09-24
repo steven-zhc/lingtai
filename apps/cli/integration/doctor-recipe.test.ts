@@ -14,11 +14,11 @@ import { projectFilter } from "@lingtai/conductor";
 import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase, recipeRow } from "../src/doctor.ts";
 
 const RECIPE = `
-version: 1
+version: 2
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
-gates:
+steps:
   proposed:
     - { name: build, run: "true" }
 `;
@@ -49,7 +49,7 @@ describe("the recipe row, with no App configured", () => {
     if (!filter.ok) throw new Error(filter.problem);
     expect(filter.kinds).toEqual(["bug"]);
     expect(filter.provenance["runtime.agent"]).toBe(`claude-code ← ${join(home, "config.yml")}`);
-    expect(filter.provenance["gates"]).toContain(join(home, "app", "recipe.yml"));
+    expect(filter.provenance["steps"]).toContain(join(home, "app", "recipe.yml"));
   });
 
   /**

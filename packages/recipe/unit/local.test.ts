@@ -18,14 +18,14 @@ import {
 const HOME = "/home/me/.lingtai";
 
 const RECIPE = `
-version: 1
+version: 2
 repo:
   base: main
 source:
   kinds: [bug]
 env:
   plantAt: .env.local
-gates:
+steps:
   proposed:
     - name: build
       run: pnpm test
@@ -51,9 +51,9 @@ describe("resolveLocalRecipe", () => {
   it("reads ~/.lingtai/<project>/recipe.yml, with no request", async () => {
     const resolved = await resolveLocalRecipe("app", withMachine(undefined));
     expect(recipePath("app", HOME)).toBe(`${HOME}/app/recipe.yml`);
-    expect(resolved.recipe.gates.proposed.map((a) => a.name)).toEqual(["build"]);
+    expect(resolved.recipe.steps.proposed.map((a) => a.name)).toEqual(["build"]);
     expect(resolved.ref).toBe("main");
-    expect(resolved.provenance?.["gates"]).toBe(
+    expect(resolved.provenance?.["steps"]).toBe(
       `claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${HOME}/app/recipe.yml`,
     );
     expect(resolved.provenance?.["repo.base"]).toBe(`main ← ${HOME}/app/recipe.yml`);
@@ -101,7 +101,7 @@ runtime:
    */
   it("names the preset for what the preset decided, and never this file", async () => {
     const bare = `
-version: 1
+version: 2
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
@@ -113,7 +113,7 @@ env: { plantAt: .env.local }
     });
 
     const extended = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\n`));
-    expect(extended.provenance?.["gates"]).toBe(
+    expect(extended.provenance?.["steps"]).toBe(
       "claim 0, admit 0, prepared 1, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
     );
     // The preset has no `source` and no `env`, so these two are the schema's
@@ -124,16 +124,16 @@ env: { plantAt: .env.local }
     // Without one, ten empty steps nobody wrote down — a default, and this
     // file is the one place the answer is not.
     const alone = await resolveLocalRecipe("app", read(bare));
-    expect(alone.provenance?.["gates"]).toBe("claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 0, merge 0, end 0 ← default");
+    expect(alone.provenance?.["steps"]).toBe("claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 0, merge 0, end 0 ← default");
 
     // **And a `gates:` with its block commented out is this file saying
     // nothing**, which is what `applyPreset`'s `??` makes of it: `null ??
     // preset.gates` is the preset's, so the run gets `proposed: build` and a
     // reader who commented the block out and is asking why must be sent to the
     // preset. A key present and empty used to read as a key this file carried.
-    const emptied = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\ngates:\n`));
-    expect(emptied.recipe.gates.proposed).toHaveLength(1);
-    expect(emptied.provenance?.["gates"]).toBe(
+    const emptied = await resolveLocalRecipe("app", read(`${bare}extends: pnpm-workspace\nsteps:\n`));
+    expect(emptied.recipe.steps.proposed).toHaveLength(1);
+    expect(emptied.provenance?.["steps"]).toBe(
       "claim 0, admit 0, prepared 1, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← preset pnpm-workspace",
     );
 
@@ -141,12 +141,12 @@ env: { plantAt: .env.local }
     const own = await resolveLocalRecipe(
       "app",
       read(`
-version: 1
+version: 2
 extends: pnpm-workspace
 repo: { base: main }
 source: { kinds: [bug], exclude: [blocked] }
 env: { plantAt: .env.local, required: [DATABASE_URL] }
-gates:
+steps:
   proposed:
     - { name: build, run: pnpm test }
 `),
@@ -154,7 +154,7 @@ gates:
     const file = `${HOME}/app/recipe.yml`;
     // The file's gates replace the preset's whole, which is `applyPreset`'s
     // rule — so the one line names the file and not both.
-    expect(own.provenance?.["gates"]).toBe(`claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${file}`);
+    expect(own.provenance?.["steps"]).toBe(`claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${file}`);
     expect(own.provenance?.["source.exclude"]).toBe(`blocked ← ${file}`);
     expect(own.provenance?.["env.required"]).toBe(`DATABASE_URL ← ${file}`);
   });
@@ -350,21 +350,29 @@ gates:
   });
 
   describe("what belongs in the other file is refused, not dropped", () => {
-    it("a gates key in the machine file is a parse error that says where gates live", async () => {
-      const resolving = resolveLocalRecipe(
-        "app",
-        withMachine("gates:\n  proposed: []\n"),
-      );
+    it("a steps key in the machine file is a parse error that says where a pass is configured", async () => {
+      const resolving = resolveLocalRecipe("app", withMachine("steps:\n  proposed: []\n"));
       await expect(resolving).rejects.toThrow(MachineConfigInvalidError);
-      await expect(resolveLocalRecipe("app", withMachine("gates:\n  merge: []\n"))).rejects.toThrow(
-        `they live in the recipe, ${HOME}/app/recipe.yml`,
+      await expect(resolveLocalRecipe("app", withMachine("steps:\n  merge: []\n"))).rejects.toThrow(
+        `it is configured in the recipe, ${HOME}/app/recipe.yml`,
       );
     });
 
-    it("so is one under a project's section", async () => {
+    // The name before 0061, and the one somebody with an older file in front of
+    // them types. Refusing only the live name would drop this one in silence.
+    it("and so is the retired `gates:`, which is told it is retired", async () => {
+      await expect(resolveLocalRecipe("app", withMachine("gates:\n  merge: []\n"))).rejects.toThrow(
+        "`gates:` is what `steps:` was called before 0061",
+      );
+    });
+
+    it("so is one under a project's section, under either name", async () => {
+      await expect(
+        resolveLocalRecipe("app", withMachine("projects:\n  app:\n    steps:\n      merge: []\n")),
+      ).rejects.toThrow(/projects\.app\.steps: a pass is not configured in the machine file/);
       await expect(
         resolveLocalRecipe("app", withMachine("projects:\n  app:\n    gates:\n      merge: []\n")),
-      ).rejects.toThrow(/projects\.app\.gates: gates do not live in the machine file/);
+      ).rejects.toThrow(/projects\.app\.gates: a pass is not configured in the machine file/);
     });
 
     it("and anything else the machine's runtime does not own", async () => {

@@ -35,11 +35,11 @@ import { projectRecipe, sourceOf, type ProjectRecipe } from "../src/lib/recipe.t
 import { Recipe } from "../src/app/recipe/[project]/page.tsx";
 
 const RECIPE = `
-version: 1
+version: 2
 repo: { base: main }
 source: { kinds: [bug, tech-debt], exclude: ["blocked", "agent:hold"] }
 env: { plantAt: .env.local }
-gates:
+steps:
   proposed:
     - { name: build, run: "pnpm test", timeout: 20m }
 `;
@@ -50,11 +50,11 @@ gates:
  * resolve to the same shape; only provenance can tell them apart.
  */
 const SPEAKS = `
-version: 1
+version: 2
 repo: { base: main }
 source: { kinds: [bug], exclude: ["blocked"], backoff: 30m }
 env: { plantAt: .env.local }
-gates:
+steps:
   proposed:
     - { name: build, run: "pnpm test", timeout: 20m }
 runtime:
@@ -67,7 +67,7 @@ runtime:
  * default are all silent, and `gates` has the preset underneath it besides.
  */
 const EXTENDS = `
-version: 1
+version: 2
 extends: pnpm-workspace
 repo: { base: main }
 source: { kinds: [bug] }
@@ -230,7 +230,7 @@ describe("what a project's recipe says today", () => {
 
 describe("a recipe that cannot be read", () => {
   it("names the file and the fault, rather than rendering an empty page", async () => {
-    await writeFile(join(home, "app", "recipe.yml"), "version: 1\nsource: { kinds: 42 }\n");
+    await writeFile(join(home, "app", "recipe.yml"), "version: 2\nsource: { kinds: 42 }\n");
     const view = await projectRecipe(state);
     const html = render(view);
 
@@ -268,7 +268,7 @@ describe("a recipe that cannot be read", () => {
     if (view.ok) return;
     expect(view.fault).toBe("machine");
     expect(view.at).toBe(join(home, "config.yml"));
-    expect(html).toContain("gates do not live in the machine file");
+    expect(html).toContain("a pass is not configured in the machine file");
     expect(html).not.toContain("could not be read");
     // The note is rendered in every state, and it is the line that says what to
     // edit — so it is the line that must not name the wrong file.

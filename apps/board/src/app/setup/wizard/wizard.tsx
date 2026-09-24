@@ -138,7 +138,7 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
             </li>
           ) : state.settled.includes(d.id) ? (
             <li key={d.id} className="wz-row wz-settled">
-              <span className="wz-key">{d.id === "gates.merge" ? "merge" : "limits"}</span>
+              <span className="wz-key">{d.id === "steps.merge" ? "merge" : "limits"}</span>
               <span className="wz-val">{settledLine(state.draft, d.id)}</span>
               <button type="button" className="wz-change" onClick={() => act({ type: "reopen", decision: d.id })}>
                 change
@@ -246,7 +246,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
           <AddLabel add={(label) => act({ type: "exclude", label, add: true })} placeholder="another label" />
         </>
       );
-    case "gates.proposed":
+    case "steps.proposed":
       return (
         <>
           {draft.checks.length === 0 ? <small>No scripts were found.</small> : null}
@@ -280,7 +280,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
           {agent}
         </label>
       ));
-    case "gates.end":
+    case "steps.end":
       return (
         <Tick
           label="close the issue when it lands"
@@ -293,7 +293,7 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
 
 function decisionEditor(state: WizardState, decision: DecisionId, act: (m: WizardMove) => void): ReactNode {
   const { draft } = state;
-  if (decision === "gates.merge") {
+  if (decision === "steps.merge") {
     const argument = mergeArgument(state);
     return (
       <>

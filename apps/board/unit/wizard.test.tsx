@@ -17,11 +17,11 @@ import { WizardScreen } from "../src/app/setup/wizard/wizard.tsx";
 
 const recipe = (proposed: object[]) =>
   Recipe.parse({
-    version: 1,
+    version: 2,
     repo: { base: "develop" },
     source: { kinds: ["bug"], exclude: ["agent:hold"] },
     env: { required: ["STRIPE_KEY"], plantAt: ".env.local" },
-    gates: { proposed, end: [{ name: "close the ticket", when: "landed", close: true }] },
+    steps: { proposed, end: [{ name: "close the ticket", when: "landed", close: true }] },
     runtime: { agent: "claude-code" },
   });
 
@@ -32,7 +32,7 @@ const start = (r: Recipe) =>
   onboardState({
     slug: "acme/shop",
     recipe: r,
-    scripts: r.gates.proposed.length === 0 ? [] : [{ dir: "", name: "test", run: "pnpm test", guessed: true }],
+    scripts: r.steps.proposed.length === 0 ? [] : [{ dir: "", name: "test", run: "pnpm test", guessed: true }],
     labels: ["bug", "question"],
   });
 
@@ -55,7 +55,7 @@ describe("two speeds", () => {
   });
 
   it("collapses an answered decision to one line that still says change, and opens the next", () => {
-    const state = wizardReducer(start(CHECKED), { type: "settle", decision: "gates.merge" });
+    const state = wizardReducer(start(CHECKED), { type: "settle", decision: "steps.merge" });
     const out = html(state, CHECKED);
 
     expect(out).toContain('class="wz-row wz-settled"');
@@ -70,9 +70,9 @@ describe("two speeds", () => {
     let state = start(CHECKED);
     for (const move of [
       { type: "set", draft: { personApproves: true } },
-      { type: "settle", decision: "gates.merge" },
+      { type: "settle", decision: "steps.merge" },
       { type: "settle", decision: "runtime.limits" },
-      { type: "reopen", decision: "gates.merge" },
+      { type: "reopen", decision: "steps.merge" },
     ] as const) {
       state = wizardReducer(state, move);
     }
@@ -86,7 +86,7 @@ describe("two speeds", () => {
 
 describe("limits", () => {
   it("shows passCeiling's own sentence under the four dials", () => {
-    const state = wizardReducer(start(CHECKED), { type: "settle", decision: "gates.merge" });
+    const state = wizardReducer(start(CHECKED), { type: "settle", decision: "steps.merge" });
     const out = html(state, CHECKED);
 
     for (const dial of ["turns", "wall", "rounds", "restarts"]) expect(out).toContain(`<span>${dial}</span>`);
@@ -117,7 +117,7 @@ describe("the one default that flips", () => {
   });
 
   it("opens a merge answer already given when the checks are unticked afterwards, and offers no recipe", () => {
-    let state = wizardReducer(start(CHECKED), { type: "settle", decision: "gates.merge" });
+    let state = wizardReducer(start(CHECKED), { type: "settle", decision: "steps.merge" });
     state = wizardReducer(state, { type: "settle", decision: "runtime.limits" });
     state = wizardReducer(state, { type: "check", id: "pnpm test" });
     const out = html(state, CHECKED);
@@ -132,8 +132,8 @@ describe("a recipe on the base branch that checks nothing and has nobody approvi
   it("opens the merge question with the argument and its default chosen, and offers no change", async () => {
     const { recipe: r } = await resolveRecipe(
       async () =>
-        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\n" +
-        "gates:\n  proposed: []\n  merge: []\nruntime:\n  agent: claude-code\n",
+        "version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\n" +
+        "steps:\n  proposed: []\n  merge: []\nruntime:\n  agent: claude-code\n",
       "main",
     );
     const out = renderToStaticMarkup(
@@ -149,7 +149,7 @@ describe("a recipe on the base branch that checks nothing and has nobody approvi
 
 describe("the checks row", () => {
   it("takes a command when the scan found none", () => {
-    const out = html({ ...start(UNCHECKED), editing: "gates.proposed" }, UNCHECKED);
+    const out = html({ ...start(UNCHECKED), editing: "steps.proposed" }, UNCHECKED);
     expect(out).toContain("No scripts were found.");
     expect(out).toContain('placeholder="another command, e.g. make test"');
   });
@@ -178,13 +178,13 @@ describe("a recipe on the base branch that does not parse", () => {
 describe("an edit to a recipe that extends a preset", () => {
   // The machine's recipe, which carries no `runtime.agent` or `runtime.limits` (#180).
   const FILE =
-    "version: 1\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n";
+    "version: 2\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n";
   const HOME = "/home/me/.lingtai";
   const on = (current: Recipe, machine: string | null = null) => ({ project: "shop", current, machine, home: HOME });
 
   it("keeps every gate the preset supplied when one gate point changes", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
-    expect(recipe.gates.end).toEqual([]);
+    expect(recipe.steps.end).toEqual([]);
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), {
       type: "set",
       draft: { closeOnLand: true },
@@ -192,11 +192,11 @@ describe("an edit to a recipe that extends a preset", () => {
 
     const finished = await editExisting(FILE, state, on(recipe));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
-    expect(finished.changed).toEqual(["gates"]);
+    expect(finished.changed).toEqual(["steps"]);
     expect(finished.machine).toBeNull();
 
-    const edited = (await resolveRecipe(async () => finished.file, "main")).recipe.gates;
-    const preset = PRESETS["pnpm-workspace"]!.gates!;
+    const edited = (await resolveRecipe(async () => finished.file, "main")).recipe.steps;
+    const preset = PRESETS["pnpm-workspace"]!.steps!;
     expect(edited.prepared).toEqual(preset.prepared);
     expect(edited.proposed).toEqual(preset.proposed);
     expect(edited.end).toEqual([{ name: "close the ticket", when: "landed", close: true }]);
@@ -209,7 +209,7 @@ describe("an edit to a recipe that extends a preset", () => {
     const finished = await editExisting(FILE, state, on(recipe));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
     expect(finished.changed).toEqual(["runtime.limits.turns"]);
-    expect((await resolveRecipe(async () => finished.file, "main")).recipe.gates).toEqual(recipe.gates);
+    expect((await resolveRecipe(async () => finished.file, "main")).recipe.steps).toEqual(recipe.steps);
   });
 
   /**
@@ -237,7 +237,7 @@ describe("an edit to a recipe that extends a preset", () => {
         path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? finished.machine : null,
     });
     expect(resolved.recipe.runtime.limits.turns).toBe(7);
-    expect(resolved.recipe.gates).toEqual(recipe.gates);
+    expect(resolved.recipe.steps).toEqual(recipe.steps);
   });
 });
 
@@ -250,7 +250,7 @@ describe("the end", () => {
 
   it("offers the button once every decision is settled", () => {
     let state = start(CHECKED);
-    state = wizardReducer(state, { type: "settle", decision: "gates.merge" });
+    state = wizardReducer(state, { type: "settle", decision: "steps.merge" });
     state = wizardReducer(state, { type: "settle", decision: "runtime.limits" });
     expect(html(state, CHECKED)).toContain("Write the recipe on this machine");
   });
@@ -260,10 +260,10 @@ describe("money", () => {
   it("appears nowhere on the page, in any state", () => {
     let state = start(UNCHECKED);
     const pages = [html(state, UNCHECKED)];
-    state = wizardReducer(state, { type: "settle", decision: "gates.merge" });
+    state = wizardReducer(state, { type: "settle", decision: "steps.merge" });
     pages.push(html(state, UNCHECKED));
     state = wizardReducer(state, { type: "settle", decision: "runtime.limits" });
-    pages.push(html({ ...state, editing: "gates.proposed" }, UNCHECKED));
+    pages.push(html({ ...state, editing: "steps.proposed" }, UNCHECKED));
 
     for (const out of pages) expect(out).not.toMatch(/\$\s?\d|USD|dollar/i);
   });

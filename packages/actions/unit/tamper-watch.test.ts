@@ -46,7 +46,7 @@ async function documented(): Promise<GateAction[]> {
     async (path, ref) => (path === RECIPE_PATH && ref === "main" ? spliced : null),
     "main",
   );
-  return recipe.gates.proposed.filter((gate) => "watch" in gate);
+  return recipe.steps.proposed.filter((gate) => "watch" in gate);
 }
 
 /** The documented watches, judging a diff of exactly these files. */
@@ -157,7 +157,7 @@ describe("this repository's tamper watch", () => {
       "main",
     );
 
-    expect(recipe.gates.proposed.map((action) => action.name)).not.toContain("tamper");
+    expect(recipe.steps.proposed.map((action) => action.name)).not.toContain("tamper");
     expect((await documented()).map((action) => action.name)).toEqual(["tamper"]);
   });
 });

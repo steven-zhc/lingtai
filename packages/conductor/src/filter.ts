@@ -20,6 +20,7 @@ import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
+import { kindsOf, limitsFor } from "@lingtai/recipe/settings";
 import { passCeiling } from "./ceiling.ts";
 import { currentRecipe } from "./projects.ts";
 
@@ -62,7 +63,7 @@ export function gatePlan(recipe: Recipe): GatePlan {
   return new Map(
     STEPS.map((point) => [
       point,
-      recipe.gates[point].map((action) => ({
+      recipe.steps[point].map((action) => ({
         name: action.name,
         // Only a command has a clock. `parseDuration` throws on nonsense, and a
         // recipe that resolved has already been through the schema's check.
@@ -202,14 +203,14 @@ export async function projectFilter(
       configHash: resolved.configHash,
       ref: resolved.ref,
       provenance: resolved.provenance ?? {},
-      kinds: resolved.recipe.source.kinds,
+      kinds: kindsOf(resolved.recipe),
       exclude: resolved.recipe.source.exclude,
       limits: {
-        rounds: resolved.recipe.runtime.limits.rounds,
-        restarts: resolved.recipe.runtime.limits.restarts,
-        turns: resolved.recipe.runtime.limits.turns,
-        wall: resolved.recipe.runtime.limits.wall,
-        wallMs: parseDuration(resolved.recipe.runtime.limits.wall),
+        rounds: limitsFor(resolved.recipe, "implement").rounds,
+        restarts: limitsFor(resolved.recipe, "implement").restarts,
+        turns: limitsFor(resolved.recipe, "implement").turns,
+        wall: limitsFor(resolved.recipe, "implement").wall,
+        wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
       },
       backoffMs: parseDuration(resolved.recipe.source.backoff),
       plan: gatePlan(resolved.recipe),

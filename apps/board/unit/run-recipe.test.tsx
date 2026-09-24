@@ -18,11 +18,11 @@ import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from "
 import { Attempt, RECORD_ROWS } from "../src/app/task/[id]/page.tsx";
 
 const RECIPE = `
-version: 1
+version: 2
 repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [blocked] }
 env: { required: [], plantAt: .env.local }
-gates:
+steps:
   proposed:
     - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
@@ -52,7 +52,7 @@ function e(type: string, data: unknown): Envelope {
   return {
     seq,
     streamId: RUN,
-    version: 1,
+    version: 2,
     type,
     schemaVer: 1,
     data,
@@ -267,7 +267,7 @@ describe("the recipe an attempt was given", () => {
       ref: "main",
       changes: [
         {
-          path: "gates.proposed.build.run",
+          path: "steps.proposed.build.run",
           run: "pnpm typecheck && pnpm test",
           head: "pnpm typecheck",
         },
@@ -277,7 +277,7 @@ describe("the recipe an attempt was given", () => {
     const html = render({ ...run, recipe });
     expect(html).toContain("This is not the recipe at the head of main");
     expect(html).toContain("1 value");
-    expect(html).toContain("gates.proposed.build.run");
+    expect(html).toContain("steps.proposed.build.run");
   });
 
   it("says nothing differs rather than saying nothing", async () => {
@@ -341,13 +341,13 @@ describe("the recipe an attempt was given", () => {
     // point says what now runs in what order, which is the other thing the
     // insertion did.
     expect(changes.map((c) => c.path)).toEqual([
-      "gates.proposed",
-      "gates.proposed.lint.env",
-      "gates.proposed.lint.name",
-      "gates.proposed.lint.run",
-      "gates.proposed.lint.timeout",
+      "steps.proposed",
+      "steps.proposed.lint.env",
+      "steps.proposed.lint.name",
+      "steps.proposed.lint.run",
+      "steps.proposed.lint.timeout",
     ]);
-    expect(changes[0]).toEqual({ path: "gates.proposed", run: "lint > build", head: "build" });
+    expect(changes[0]).toEqual({ path: "steps.proposed", run: "lint > build", head: "build" });
     // Everything the walk names under a name is new; nothing of `build`'s is.
     expect(changes.slice(1).every((c) => c.head === null)).toBe(true);
   });
@@ -370,7 +370,7 @@ describe("the recipe an attempt was given", () => {
     expect(recipe.of === "run" && recipe.from).toEqual({
       of: "changed",
       ref: "main",
-      changes: [{ path: "gates.proposed", run: "build > lint", head: "lint > build" }],
+      changes: [{ path: "steps.proposed", run: "build > lint", head: "lint > build" }],
     });
 
     const html = render({ ...run, recipe });
@@ -388,7 +388,7 @@ describe("the recipe an attempt was given", () => {
 
     const recipe = await recipeOfRun(run, client, atHead);
     const changes = recipe.of === "run" && recipe.from.of === "changed" ? recipe.from.changes : [];
-    expect(changes.map((c) => c.path)).toEqual(["gates.proposed", "gates.proposed.lint.run"]);
+    expect(changes.map((c) => c.path)).toEqual(["steps.proposed", "steps.proposed.lint.run"]);
     expect(render({ ...run, recipe })).toContain("2 values");
   });
 
@@ -448,7 +448,7 @@ describe("what the page may render of an action", () => {
    */
   const payingRun: PluginSecrets = { key: "run", secrets: ["token"] };
   const base = Recipe.parse({
-    version: 1,
+    version: 2,
     repo: { base: "main" },
     source: { kinds: ["bug"] },
     env: { plantAt: ".env.local" },
@@ -457,7 +457,7 @@ describe("what the page may render of an action", () => {
   const paying = (token: string, timeout = "15m") =>
     ({
       ...base,
-      gates: { ...base.gates, proposed: [{ name: "pay", run: "pay-the-bill", timeout, token }] },
+      steps: { ...base.steps, proposed: [{ name: "pay", run: "pay-the-bill", timeout, token }] },
     }) as unknown as Recipe;
 
   it("walks the two recipes with every secret value already withheld", () => {

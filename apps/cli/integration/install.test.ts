@@ -309,7 +309,7 @@ describe("lingtai uninstall", () => {
     const worktree = join(home, ".lingtai", "worktrees", "lingtai", "run-1");
     mkdirSync(worktree, { recursive: true });
     mkdirSync(join(home, ".lingtai", "lingtai"), { recursive: true });
-    writeFileSync(recipe, "gates: {}\n");
+    writeFileSync(recipe, "steps: {}\n");
     const asked: string[] = [];
     const w = world({ conducting: async () => (asked.push("lock"), null) });
 

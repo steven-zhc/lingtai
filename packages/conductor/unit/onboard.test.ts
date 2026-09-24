@@ -18,7 +18,7 @@ import { type Installation, NotInstalledError } from "@lingtai/github";
 import { type AddOptions, governing, recheck, registrationLine, resumeOnboarding } from "../src/onboard.ts";
 
 const recipe = (base: string) => `
-version: 1
+version: 2
 repo:
   base: ${base}
 source:

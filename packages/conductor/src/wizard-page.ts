@@ -36,6 +36,7 @@
 import type { GateAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
+import { baseOf, kindsOf, limitsFor } from "@lingtai/recipe/settings";
 
 /** A new repository read back from a scan, or a recipe that is already there. */
 export type WizardMode = "onboard" | "update";
@@ -45,12 +46,12 @@ export type FastRowId =
   | "repo.submodules"
   | "source.kinds"
   | "source.exclude"
-  | "gates.proposed"
+  | "steps.proposed"
   | "env.required"
   | "runtime.agent"
-  | "gates.end";
+  | "steps.end";
 
-export type DecisionId = "gates.merge" | "runtime.limits";
+export type DecisionId = "steps.merge" | "runtime.limits";
 
 /**
  * The fast lane, in the design's order, each with what it is and why a mistake
@@ -78,7 +79,7 @@ export const FAST_ROWS: readonly { id: FastRowId; label: string; why: string }[]
     why: "labels only; a wrong one is visible on the queue screen and one tick away",
   },
   {
-    id: "gates.proposed",
+    id: "steps.proposed",
     label: "checks",
     why: "every script is listed with the guess ticked, so a dropped half is an unticked box you can see",
   },
@@ -93,7 +94,7 @@ export const FAST_ROWS: readonly { id: FastRowId; label: string; why: string }[]
     why: "`lingtai doctor` says which is signed in, and a wrong one fails the first run before it spends",
   },
   {
-    id: "gates.end",
+    id: "steps.end",
     label: "when it lands",
     why: "closing an issue is undone by reopening it",
   },
@@ -108,7 +109,7 @@ export const FAST_ROWS: readonly { id: FastRowId; label: string; why: string }[]
  */
 export const DECISIONS: readonly { id: DecisionId; question: string; why: string }[] = [
   {
-    id: "gates.merge",
+    id: "steps.merge",
     question: "Does a person approve the merge?",
     why: "with nobody approving, a wrong answer is found out after the diffs have landed on the base branch",
   },
@@ -234,18 +235,18 @@ export function onboardState(input: {
   doubts?: readonly string[];
 }): WizardState {
   const { recipe } = input;
-  const picked = recipe.gates.proposed.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
+  const picked = recipe.steps.proposed.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
   const ordered = [
     ...picked.flatMap((run) => input.scripts.filter((s) => s.guessed && s.run === run)),
     ...input.scripts.filter((s) => !(s.guessed && picked.includes(s.run))),
   ];
   const checks = ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run) }));
-  const noChecksFound = recipe.gates.proposed.length === 0;
+  const noChecksFound = recipe.steps.proposed.length === 0;
   return {
     mode: "onboard",
     slug: input.slug,
     draft: { ...fromRecipe(recipe, checks), personApproves: noChecksFound },
-    kindOptions: union(recipe.source.kinds, input.labels),
+    kindOptions: union(kindsOf(recipe), input.labels),
     excludeOptions: union(recipe.source.exclude, input.labels),
     editing: null,
     settled: [],
@@ -271,9 +272,9 @@ export function onboardState(input: {
  */
 export function updateState(input: { slug: string; recipe: Recipe }): WizardState {
   const { recipe } = input;
-  const noChecksFound = recipe.gates.proposed.length === 0;
-  const unread = noChecksFound && !recipe.gates.merge.some((a) => "human" in a);
-  const checks = recipe.gates.proposed.map((action, i) => ({
+  const noChecksFound = recipe.steps.proposed.length === 0;
+  const unread = noChecksFound && !recipe.steps.merge.some((a) => "human" in a);
+  const checks = recipe.steps.proposed.map((action, i) => ({
     id: `${i}:${action.name}`,
     label: "run" in action ? `${action.name} — ${action.run}` : action.name,
     ticked: true,
@@ -283,10 +284,10 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
     mode: "update",
     slug: input.slug,
     draft: unread ? { ...fromRecipe(recipe, checks), personApproves: true } : fromRecipe(recipe, checks),
-    kindOptions: [...recipe.source.kinds],
+    kindOptions: [...kindsOf(recipe)],
     excludeOptions: [...recipe.source.exclude],
     editing: null,
-    settled: DECISIONS.map((d) => d.id).filter((id) => !(unread && id === "gates.merge")),
+    settled: DECISIONS.map((d) => d.id).filter((id) => !(unread && id === "steps.merge")),
     reopened: null,
     noChecksFound,
     doubts: [],
@@ -294,17 +295,17 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
 }
 
 function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
-  const { turns, wall, rounds, restarts } = recipe.runtime.limits;
+  const { turns, wall, rounds, restarts } = limitsFor(recipe, "implement");
   return {
-    base: recipe.repo.base,
+    base: baseOf(recipe),
     submodules: recipe.repo.submodules,
-    kinds: [...recipe.source.kinds],
+    kinds: [...kindsOf(recipe)],
     exclude: [...recipe.source.exclude],
     checks,
     envRequired: [...recipe.env.required],
     agent: recipe.runtime.agent === "codex" ? "codex" : "claude-code",
-    closeOnLand: recipe.gates.end.some(closesOnLand),
-    personApproves: recipe.gates.merge.some((a) => "human" in a),
+    closeOnLand: recipe.steps.end.some(closesOnLand),
+    personApproves: recipe.steps.merge.some((a) => "human" in a),
     limits: { turns, wall, rounds, restarts },
   };
 }
@@ -417,8 +418,8 @@ function withChecks(state: WizardState, checks: Check[]): WizardState {
   return {
     ...next,
     draft: { ...next.draft, personApproves: true },
-    settled: state.settled.filter((id) => id !== "gates.merge"),
-    reopened: state.reopened === "gates.merge" ? null : state.reopened,
+    settled: state.settled.filter((id) => id !== "steps.merge"),
+    reopened: state.reopened === "steps.merge" ? null : state.reopened,
   };
 }
 
@@ -458,7 +459,7 @@ export function limitsSentence(limits: Limits): { ok: true; sentence: string } |
   return { ok: true, sentence: passCeiling({ ...limits, wallMs }) };
 }
 
-/** Whether any check is ticked — what `gates.proposed` will run. */
+/** Whether any check is ticked — what `steps.proposed` will run. */
 function anyCheck(draft: Draft): boolean {
   return draft.checks.some((c) => c.ticked);
 }
@@ -494,7 +495,7 @@ export function fastLine(draft: Draft, row: FastRowId): string {
       return `${draft.kinds.join(" > ")}   (in priority order)`;
     case "source.exclude":
       return draft.exclude.length === 0 ? "nothing" : draft.exclude.join(", ");
-    case "gates.proposed": {
+    case "steps.proposed": {
       const ticked = draft.checks.filter((c) => c.ticked);
       const unticked = draft.checks.length - ticked.length;
       const runs = ticked.length === 0 ? "nothing checks a diff" : ticked.map((c) => c.label).join(" && ");
@@ -504,14 +505,14 @@ export function fastLine(draft: Draft, row: FastRowId): string {
       return draft.envRequired.length === 0 ? "nothing" : draft.envRequired.join(", ");
     case "runtime.agent":
       return draft.agent;
-    case "gates.end":
+    case "steps.end":
       return draft.closeOnLand ? "close the issue" : "leave the issue open";
   }
 }
 
 /** One line for a settled decision. */
 export function settledLine(draft: Draft, decision: DecisionId): string {
-  if (decision === "gates.merge") return draft.personApproves ? "a person approves" : "nobody approves";
+  if (decision === "steps.merge") return draft.personApproves ? "a person approves" : "nobody approves";
   const { turns, wall, rounds, restarts } = draft.limits;
   return `${turns} turns · ${wall} · ${rounds} rounds · ${restarts} restarts`;
 }
@@ -551,29 +552,29 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
         ? []
         : [{ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] }];
 
-  const humans = recipe.gates.merge.filter((a) => "human" in a);
+  const humans = recipe.steps.merge.filter((a) => "human" in a);
   const merge = draft.personApproves
     ? humans.length > 0
-      ? recipe.gates.merge
-      : [...recipe.gates.merge, APPROVE_ACTION]
-    : recipe.gates.merge.filter((a) => !("human" in a));
+      ? recipe.steps.merge
+      : [...recipe.steps.merge, APPROVE_ACTION]
+    : recipe.steps.merge.filter((a) => !("human" in a));
 
   const end = draft.closeOnLand
-    ? recipe.gates.end.some(closesOnLand)
-      ? recipe.gates.end
-      : [...recipe.gates.end, CLOSE_ACTION]
-    : recipe.gates.end.filter((a) => !closesOnLand(a));
+    ? recipe.steps.end.some(closesOnLand)
+      ? recipe.steps.end
+      : [...recipe.steps.end, CLOSE_ACTION]
+    : recipe.steps.end.filter((a) => !closesOnLand(a));
 
   return {
     ...recipe,
     repo: { ...recipe.repo, base: draft.base.trim(), submodules: draft.submodules },
     source: { ...recipe.source, kinds: [...draft.kinds], exclude: [...draft.exclude] },
     env: { ...recipe.env, required: [...draft.envRequired] },
-    gates: { ...recipe.gates, proposed, merge, end },
+    steps: { ...recipe.steps, proposed, merge, end },
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
-      limits: { ...recipe.runtime.limits, ...draft.limits },
+      limits: { ...limitsFor(recipe, "implement"), ...draft.limits },
     },
   };
 }
@@ -584,11 +585,11 @@ const PATHS: readonly (readonly string[])[] = [
   ["repo", "submodules"],
   ["source", "kinds"],
   ["source", "exclude"],
-  ["gates", "proposed"],
+  ["steps", "proposed"],
   ["env", "required"],
   ["runtime", "agent"],
-  ["gates", "end"],
-  ["gates", "merge"],
+  ["steps", "end"],
+  ["steps", "merge"],
   ["runtime", "limits", "turns"],
   ["runtime", "limits", "wall"],
   ["runtime", "limits", "rounds"],
@@ -619,7 +620,7 @@ export function changesFrom(before: Recipe, after: Recipe): RecipeChange[] {
 export function saidFor(state: WizardState): Record<string, string> {
   const said: Record<string, string> = {
     "source.kinds": "The labels that make an issue work, in priority order.",
-    "gates.merge": `${DECISIONS[0]!.question} ${mergeConsequence(state.draft)}`,
+    "steps.merge": `${DECISIONS[0]!.question} ${mergeConsequence(state.draft)}`,
   };
   const limits = limitsSentence(state.draft.limits);
   if (limits.ok) said["runtime.limits"] = `A pass: ${limits.sentence}.`;
@@ -631,13 +632,13 @@ export function saidFor(state: WizardState): Record<string, string> {
  *
  * **A preset's gates come whole or not at all.** `applyPreset` takes a file's
  * own `gates` in place of the preset's entire block (`presets.ts`), so on a file
- * that says `extends:` and has no `gates:`, setting `gates.end` alone writes a
+ * that says `extends:` and has no `gates:`, setting `steps.end` alone writes a
  * `gates` of one point and every gate the preset supplied is gone. Writing the
  * block the page describes keeps them, spelled out in the file.
  */
 export function wholeGates(changes: readonly RecipeChange[], after: Recipe): RecipeChange[] {
-  const rest = changes.filter((c) => c.path[0] !== "gates");
-  return rest.length === changes.length ? [...changes] : [...rest, { path: ["gates"], value: after.gates }];
+  const rest = changes.filter((c) => c.path[0] !== "steps");
+  return rest.length === changes.length ? [...changes] : [...rest, { path: ["steps"], value: after.steps }];
 }
 
 function at(value: unknown, path: readonly string[]): unknown {

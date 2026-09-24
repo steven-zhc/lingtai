@@ -32,6 +32,7 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { kindsOf } from "@lingtai/recipe/settings";
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot();
@@ -167,7 +168,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
           await selectRunnable({
             project: name,
             offered: offered.runnable,
-            kinds: resolved.recipe.source.kinds,
+            kinds: kindsOf(resolved.recipe),
             backoffMs: 0,
           })
         ).map((t) => t.issue),

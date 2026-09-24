@@ -46,7 +46,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
-import { type Recipe, baseDivergence, machinePath } from "@lingtai/recipe";
+import { baseDivergence, baseOf, limitsFor, machinePath, type Recipe } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1484,8 +1484,8 @@ export function limitsRow(
 ): CheckResult {
   const name = `runtime: ${project} limits`;
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
-    turns: String(recipe.runtime.limits.turns),
-    wall: recipe.runtime.limits.wall,
+    turns: String(limitsFor(recipe, "implement").turns),
+    wall: limitsFor(recipe, "implement").wall,
   };
   const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
   const detail = RUN_LIMITS.map(
@@ -1551,7 +1551,7 @@ export interface DeclaredExtension {
  */
 export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
   const out: DeclaredExtension[] = [];
-  for (const point of Object.values(recipe.gates)) {
+  for (const point of Object.values(recipe.steps)) {
     for (const action of point) {
       if ("run" in action) out.push({ name: action.name, env: action.env, where: "gate" });
     }
@@ -1773,7 +1773,7 @@ export async function recipeGovernsItsBase(
           : {
               name: label,
               status: "ok",
-              detail: `read from ${resolved.ref}, and repo.base says ${resolved.recipe.repo.base}`,
+              detail: `read from ${resolved.ref}, and repo.base says ${baseOf(resolved.recipe)}`,
             },
       );
     } catch (err) {

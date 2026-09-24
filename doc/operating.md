@@ -361,7 +361,7 @@ labels, its default branch.
 Write this file:
 
 ```yaml
-version: 1
+version: 2
 
 repo:
   base: develop
@@ -396,7 +396,7 @@ env:
 # Five keyed points, not an array. This example predated
 # [0016](decisions/0016-the-settled-model.md) and said `- kind: process`, which
 # the schema now rejects.
-gates:
+steps:
   admit: []
   prepared: []
   proposed:
@@ -430,7 +430,7 @@ projects:
 
 Left in the recipe, each is named back at you —
 `runtime.agent: moved to this machine (0046 §3) — write it in
-~/.lingtai/config.yml … Nothing here was applied` — and `gates:` written in the
+~/.lingtai/config.yml … Nothing here was applied` — and `steps:` written in the
 machine file is refused the same way. **Both files refuse what belongs in the
 other**, because a key silently dropped and a key that does not exist are
 different facts to whoever wrote it ([0016](decisions/0016-the-settled-model.md)
@@ -445,7 +445,7 @@ a gate quietly.
 A shorter form, if the project is an ordinary pnpm workspace:
 
 ```yaml
-version: 1
+version: 2
 extends: pnpm-workspace
 repo:
   base: develop
@@ -1421,7 +1421,7 @@ Every refusal names itself. The common ones:
 | `the GitHub App is not installed on …` | Step 3 above — install it on that repository. |
 | `the installation is missing permissions:` | Step 1's table; each gap is listed with what it has, what it needs and what it is for. |
 | `no recipe at ~/.lingtai/<project>/recipe.yml` | The recipe is yours and lives on this machine (0046 §3) — nothing is read from the repository, and nothing needs committing to it. The board's wizard writes a first one by reading the repository. |
-| `runtime.agent: moved to this machine (0046 §3)` | A key that belongs in `~/.lingtai/config.yml` was left in the recipe. **Nothing in that recipe was applied** — the file is refused whole, rather than the key being dropped. Same for `runtime.limits`, `runtime.assignee`, and for `gates:` written in the machine file. |
+| `runtime.agent: moved to this machine (0046 §3)` | A key that belongs in `~/.lingtai/config.yml` was left in the recipe. **Nothing in that recipe was applied** — the file is refused whole, rather than the key being dropped. Same for `runtime.limits`, `runtime.assignee`, and for `steps:` written in the machine file — and for the retired `gates:` there, which is told it is retired. |
 | `runtime: signed in — claude-code reports not signed in` | `lingtai doctor` asks in the environment a *run* gets, not yours. If you are signed in and this fails, that environment is missing something the credential store needs. `/login` will not help. |
 | `no lingtai-hook binary at …` | `pnpm --filter @lingtai/hook build`. A run without the guard must not start. |
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |

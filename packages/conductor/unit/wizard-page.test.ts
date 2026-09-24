@@ -6,6 +6,7 @@
  * a client to reach it would be testing something the page does not do.
  */
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { Recipe, editRecipe, resolveRecipe } from "@lingtai/recipe";
 import { passCeiling } from "../src/filter.ts";
@@ -30,11 +31,11 @@ import {
 // What `proposeRecipe` makes of a repository with `typecheck` and `test` at its root.
 const scanned = (proposed: object[] = [{ name: "build", run: "pnpm typecheck && pnpm test", timeout: "20m", env: [] }]) =>
   Recipe.parse({
-    version: 1,
+    version: 2,
     repo: { base: "develop" },
     source: { kinds: ["bug", "feature"], exclude: ["agent:hold", "epic"] },
     env: { required: [], plantAt: ".env.local" },
-    gates: { proposed, end: [{ name: "close the ticket", when: "landed", close: true }] },
+    steps: { proposed, end: [{ name: "close the ticket", when: "landed", close: true }] },
     runtime: { agent: "claude-code" },
   });
 
@@ -52,33 +53,33 @@ const play = (state: WizardState, ...moves: Parameters<typeof wizardReducer>[1][
 describe("the collapse", () => {
   it("shows one open question at a time, and an answered one collapses to a settled line", () => {
     const start = fresh();
-    expect(openDecision(start)).toBe("gates.merge");
+    expect(openDecision(start)).toBe("steps.merge");
     expect(settledDecisions(start)).toEqual([]);
 
-    const merged = play(start, { type: "settle", decision: "gates.merge" });
+    const merged = play(start, { type: "settle", decision: "steps.merge" });
     expect(openDecision(merged)).toBe("runtime.limits");
-    expect(settledDecisions(merged)).toEqual(["gates.merge"]);
+    expect(settledDecisions(merged)).toEqual(["steps.merge"]);
 
     const done = play(merged, { type: "settle", decision: "runtime.limits" });
     expect(openDecision(done)).toBeNull();
-    expect(settledDecisions(done)).toEqual(["gates.merge", "runtime.limits"]);
+    expect(settledDecisions(done)).toEqual(["steps.merge", "runtime.limits"]);
   });
 
   it("re-opening a settled decision keeps its answer, and settling it again collapses it", () => {
     const answered = play(
       fresh(),
       { type: "set", draft: { personApproves: true } },
-      { type: "settle", decision: "gates.merge" },
+      { type: "settle", decision: "steps.merge" },
       { type: "settle", decision: "runtime.limits" },
     );
-    const reopened = play(answered, { type: "reopen", decision: "gates.merge" });
+    const reopened = play(answered, { type: "reopen", decision: "steps.merge" });
 
-    expect(openDecision(reopened)).toBe("gates.merge");
+    expect(openDecision(reopened)).toBe("steps.merge");
     expect(settledDecisions(reopened)).toEqual(["runtime.limits"]);
     expect(reopened.draft.personApproves).toBe(true);
-    expect(finishRefusals(reopened)).toContain("gates.merge is open — settle it first.");
+    expect(finishRefusals(reopened)).toContain("steps.merge is open — settle it first.");
 
-    const again = play(reopened, { type: "settle", decision: "gates.merge" });
+    const again = play(reopened, { type: "settle", decision: "steps.merge" });
     expect(openDecision(again)).toBeNull();
     expect(again.draft.personApproves).toBe(true);
   });
@@ -99,7 +100,7 @@ describe("source.kinds", () => {
   it("widens by a kind the recipe does not list, in update and in onboarding", async () => {
     const { recipe } = await resolveRecipe(
       async () =>
-        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
+        "version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
       "main",
     );
     // The file checks nothing, so the merge question is asked; answered as the file has it.
@@ -130,7 +131,7 @@ describe("source.kinds", () => {
   it("cannot reach the end empty, however the state arrived", () => {
     const empty = fresh();
     empty.draft.kinds = [];
-    const settled = play(empty, { type: "settle", decision: "gates.merge" }, { type: "settle", decision: "runtime.limits" });
+    const settled = play(empty, { type: "settle", decision: "steps.merge" }, { type: "settle", decision: "runtime.limits" });
     expect(finishRefusals(settled)).toEqual([
       "source.kinds is empty — no issue would ever be work. Tick at least one kind.",
     ]);
@@ -152,7 +153,7 @@ describe("the one default that flips", () => {
       "Nothing checks a diff before it merges. Every ticket goes from an agent straight into `develop`. " +
         "So the default here is that a person approves.",
     );
-    expect(applyDraft(scanned([]), state).gates.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+    expect(applyDraft(scanned([]), state).steps.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
   });
 
   it("argues from what is ticked, not from what the scan found", () => {
@@ -168,26 +169,26 @@ describe("the one default that flips", () => {
   it("flips the default to a person approving when the last tick goes, while the question is open", () => {
     const none = play(fresh(), { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
     expect(none.draft.personApproves).toBe(true);
-    expect(openDecision(none)).toBe("gates.merge");
+    expect(openDecision(none)).toBe("steps.merge");
   });
 
   it("opens a settled merge answer again when the last tick goes, and will not finish until it is answered", () => {
-    const settled = play(fresh(), { type: "settle", decision: "gates.merge" }, { type: "settle", decision: "runtime.limits" });
+    const settled = play(fresh(), { type: "settle", decision: "steps.merge" }, { type: "settle", decision: "runtime.limits" });
     expect(settled.draft.personApproves).toBe(false);
 
     const none = play(settled, { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
-    expect(openDecision(none)).toBe("gates.merge");
+    expect(openDecision(none)).toBe("steps.merge");
     expect(none.draft.personApproves).toBe(true);
     expect(mergeArgument(none)).toContain("So the default here is that a person approves.");
     expect(finishRefusals(none)).toContain("Does a person approve the merge? is not answered yet.");
 
-    const answered = play(none, { type: "settle", decision: "gates.merge" });
+    const answered = play(none, { type: "settle", decision: "steps.merge" });
     expect(finishRefusals(answered)).toEqual([]);
-    expect(applyDraft(scanned(), answered).gates.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+    expect(applyDraft(scanned(), answered).steps.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
   });
 
   it("leaves a limits question a person opened open when the last tick goes, and asks the merge question after it", () => {
-    const settled = play(fresh(), { type: "settle", decision: "gates.merge" }, { type: "settle", decision: "runtime.limits" });
+    const settled = play(fresh(), { type: "settle", decision: "steps.merge" }, { type: "settle", decision: "runtime.limits" });
     const limits = play(settled, { type: "reopen", decision: "runtime.limits" });
 
     const none = play(limits, { type: "check", id: "pnpm typecheck" }, { type: "check", id: "pnpm test" });
@@ -196,7 +197,7 @@ describe("the one default that flips", () => {
     expect(finishRefusals(none)).toContain("Does a person approve the merge? is not answered yet.");
 
     const next = play(none, { type: "settle", decision: "runtime.limits" });
-    expect(openDecision(next)).toBe("gates.merge");
+    expect(openDecision(next)).toBe("steps.merge");
     expect(mergeArgument(next)).toContain("So the default here is that a person approves.");
     expect(next.draft.personApproves).toBe(true);
   });
@@ -204,18 +205,18 @@ describe("the one default that flips", () => {
   it("asks the merge question of a recipe on the base branch that checks nothing and has nobody approving", async () => {
     const { recipe } = await resolveRecipe(
       async () =>
-        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\n" +
-        "gates:\n  proposed: []\n  merge: []\nruntime:\n  agent: claude-code\n",
+        "version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\n" +
+        "steps:\n  proposed: []\n  merge: []\nruntime:\n  agent: claude-code\n",
       "main",
     );
     const state = updateState({ slug: "acme/shop", recipe });
 
-    expect(openDecision(state)).toBe("gates.merge");
+    expect(openDecision(state)).toBe("steps.merge");
     expect(state.draft.personApproves).toBe(true);
     expect(mergeArgument(state)).toContain("So the default here is that a person approves.");
     expect(finishRefusals(state)).toEqual(["Does a person approve the merge? is not answered yet."]);
 
-    const kept = play(state, { type: "set", draft: { personApproves: false } }, { type: "settle", decision: "gates.merge" });
+    const kept = play(state, { type: "set", draft: { personApproves: false } }, { type: "settle", decision: "steps.merge" });
     expect(finishRefusals(kept)).toEqual([]);
     expect(changesFrom(recipe, applyDraft(recipe, kept))).toEqual([]);
   });
@@ -244,7 +245,7 @@ describe("limits", () => {
     const state = play(
       fresh(),
       { type: "limit", key: "wall", value: "two hours" },
-      { type: "settle", decision: "gates.merge" },
+      { type: "settle", decision: "steps.merge" },
       { type: "settle", decision: "runtime.limits" },
     );
     expect(limitsSentence(state.draft.limits).ok).toBe(false);
@@ -265,11 +266,11 @@ describe("the fast lane", () => {
       ["pnpm test", true],
       ["pnpm dev", false],
     ]);
-    expect(fastLine(state.draft, "gates.proposed")).toBe("pnpm typecheck && pnpm test   (1 more found, not ticked)");
-    expect(applyDraft(scanned(), state).gates.proposed).toEqual(scanned().gates.proposed);
+    expect(fastLine(state.draft, "steps.proposed")).toBe("pnpm typecheck && pnpm test   (1 more found, not ticked)");
+    expect(applyDraft(scanned(), state).steps.proposed).toEqual(scanned().steps.proposed);
 
     const unticked = play(state, { type: "check", id: "pnpm test" });
-    expect(applyDraft(scanned(), unticked).gates.proposed).toEqual([
+    expect(applyDraft(scanned(), unticked).steps.proposed).toEqual([
       { name: "build", run: "pnpm typecheck", timeout: "20m", env: [] },
     ]);
   });
@@ -278,7 +279,7 @@ describe("the fast lane", () => {
     const state = play(fresh(), { type: "exclude", label: "question" }, { type: "set", draft: { closeOnLand: false } });
     const recipe = Recipe.parse(applyDraft(scanned(), state));
     expect(recipe.source.exclude).toEqual(["agent:hold", "epic", "question"]);
-    expect(recipe.gates.end).toEqual([]);
+    expect(recipe.steps.end).toEqual([]);
   });
 });
 
@@ -289,16 +290,16 @@ describe("a check the scan did not find", () => {
 
     expect(added.draft.checks).toEqual([{ id: "cargo test", label: "cargo test", ticked: true }]);
     expect(mergeArgument(added)).toBeNull();
-    expect(applyDraft(scanned([]), added).gates.proposed).toEqual([
+    expect(applyDraft(scanned([]), added).steps.proposed).toEqual([
       { name: "build", run: "cargo test", timeout: "20m", env: [] },
     ]);
     expect(play(added, { type: "add-check", run: "cargo test" }).draft.checks).toHaveLength(1);
   });
 
-  it("is added to a recipe that already has its gates, and changes only gates.proposed", async () => {
+  it("is added to a recipe that already has its gates, and changes only steps.proposed", async () => {
     const { recipe } = await resolveRecipe(
       async () =>
-        "version: 1\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
+        "version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env\nruntime:\n  agent: claude-code\n",
       "main",
     );
     const state = play(
@@ -308,8 +309,8 @@ describe("a check the scan did not find", () => {
     );
     const after = Recipe.parse(applyDraft(recipe, state));
 
-    expect(after.gates.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
-    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["gates.proposed"]);
+    expect(after.steps.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.proposed"]);
   });
 });
 
@@ -317,12 +318,12 @@ describe("wholeGates", () => {
   it("makes every change under gates one change to the block, and leaves the rest", () => {
     const after = scanned();
     const changes = [
-      { path: ["gates", "end"], value: [] },
+      { path: ["steps", "end"], value: [] },
       { path: ["runtime", "limits", "turns"], value: 200 },
     ];
     expect(wholeGates(changes, after)).toEqual([
       { path: ["runtime", "limits", "turns"], value: 200 },
-      { path: ["gates"], value: after.gates },
+      { path: ["steps"], value: after.steps },
     ]);
     expect(wholeGates([changes[1]!], after)).toEqual([changes[1]]);
   });
@@ -363,8 +364,8 @@ describe("an existing recipe", () => {
     const first = state.draft.checks[0]!;
     const after = applyDraft(recipe, play(state, { type: "check", id: first.id }));
 
-    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["gates.proposed"]);
-    expect(after.gates.proposed).toEqual(recipe.gates.proposed.slice(1));
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.proposed"]);
+    expect(after.steps.proposed).toEqual(recipe.steps.proposed.slice(1));
   });
 });
 
@@ -390,5 +391,35 @@ describe("the last screen, written", () => {
     expect(said).toContain("press Recheck");
     expect(said).toContain("permissions on acme/shop");
     expect(said).not.toMatch(/install|pull request|merge/i);
+  });
+});
+
+/**
+ * **This module is reached from a `"use client"` component, so a value import
+ * of `@lingtai/recipe` puts `node:fs` in a browser chunk.**
+ *
+ * `apps/board/src/app/setup/wizard/wizard.tsx` imports `DECISIONS`, `play` and
+ * the rest from here. The package's barrel re-exports `local.ts`, which reads
+ * files; Turbopack then fails the whole page with *the chunking context does
+ * not support external modules (request: node:fs)* — a build error, invisible
+ * to `tsc` and to every test in this project, and the one that took
+ * `/setup/wizard/page` down once already.
+ *
+ * `import type` is fine: it is erased. The narrow subpaths —
+ * `@lingtai/recipe/duration`, `@lingtai/recipe/settings` — are the way in, and
+ * a new accessor that needs one gets a subpath rather than a barrel import.
+ */
+describe("what this module may import", () => {
+  it("takes no value import from the recipe barrel, because a client component reaches it", async () => {
+    const src = await readFile(new URL("../src/wizard-page.ts", import.meta.url), "utf8");
+    const barrel = src
+      .split("\n")
+      .filter((line) => /from "@lingtai\/recipe";\s*$/.test(line) && !line.startsWith("import type"));
+
+    expect(
+      barrel,
+      "use @lingtai/recipe/<subpath> — the barrel re-exports local.ts, and node:fs " +
+        "in this graph fails the wizard page's build",
+    ).toEqual([]);
   });
 });

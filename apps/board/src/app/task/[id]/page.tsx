@@ -363,7 +363,7 @@ export function RecipeGiven({ run }: { run: RunView }) {
               ) : (
                 <span className="actlist">
                   {p.planned.map((name) => {
-                    const action = recipe.recipe.gates[p.point].find((a) => a.name === name);
+                    const action = recipe.recipe.steps[p.point].find((a) => a.name === name);
                     if (!action) {
                       return (
                         <span key={name} className="act">

@@ -1038,7 +1038,7 @@ function actionsAt(step: Step) {
  * not yet built from becoming five silent cells: their keys parse, and any
  * action in them is refused with the step's own sentence.
  */
-export const GateMap = z.strictObject({
+export const StepMap = z.strictObject({
   claim: actionsAt("claim"),
   admit: actionsAt("admit"),
   prepared: actionsAt("prepared"),
@@ -1051,7 +1051,7 @@ export const GateMap = z.strictObject({
   merge: actionsAt("merge"),
   end: actionsAt("end"),
 });
-export type GateMap = z.infer<typeof GateMap>;
+export type StepMap = z.infer<typeof StepMap>;
 
 /**
  * An event type the log actually has, as a subscription's `on:` entry.
@@ -1104,7 +1104,7 @@ const SubscribedEvent = z.string().superRefine((name, ctx) => {
  * wants before it spends a process finding out. That is what VS Code's
  * activation events buy, and it is the half of their design worth copying.
  *
- * **Strict, for the reason `GateMap` and `env` are.** A key that is not one of
+ * **Strict, for the reason `StepMap` and `env` are.** A key that is not one of
  * the four is a typo or a name from a draft of 0037 — `events:`, `uses:` — and
  * zod's default is to drop it silently, which here would mean a subscriber
  * subscribed to nothing while the recipe reads as though it were configured.
@@ -1129,9 +1129,51 @@ export const Subscriber = z.strictObject({
 });
 export type Subscriber = z.infer<typeof Subscriber>;
 
+/**
+ * The version this schema is, named in a refusal rather than written twice.
+ *
+ * **There is no migration, and that is the decision rather than the backlog**
+ * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7). A
+ * recipe is one file on one machine, written by the person who owns it, so the
+ * cost of rewriting it is minutes — and a migration would have to keep the v1
+ * shape readable for ever to save them.
+ */
+export const RECIPE_VERSION = 2;
+
+/**
+ * The version, and **a v1 file refused by name rather than by shape.**
+ *
+ * `z.literal(2)` alone would say *expected 2, received 1*, which tells somebody
+ * holding a working v1 file nothing about what happened to it. 0016 §4 is the
+ * rule: a key that silently changed meaning and a key that never existed are
+ * different facts to whoever wrote it, and only a named refusal can say which.
+ */
+const Version = z.number().int().superRefine((written, ctx) => {
+  if (written === RECIPE_VERSION) return;
+  ctx.addIssue({
+    code: "custom",
+    message:
+      written === 1
+        ? "version: 1 is the recipe as it was before `steps:` replaced `gates:` — " +
+          "five of the ten steps could be configured and the other five could not " +
+          "(0061). There is no migration: rewrite this file as `version: 2`, with " +
+          "`steps:` naming the ten steps in pass order, each a list of plugins. " +
+          "A step the file leaves out runs nothing."
+        : `version: ${written} is not a recipe this Lingtai knows — it reads \`version: ${RECIPE_VERSION}\``,
+  });
+});
+
 export const Recipe = z.object({
-  version: z.literal(1),
-  /** Pulls install/build/test defaults from a preset shipped with Lingtai. */
+  version: Version,
+  /**
+   * Pulls install/build/test defaults from a preset shipped with Lingtai.
+   *
+   * **Kept at the top level in v2, and the preset table is `steps:`.** This
+   * repository does not use it, so removing it would break nothing here — which
+   * is exactly why removing it is not this ticket's call to make: a project that
+   * does use one would have no way to write a v2 file at all, and that is a
+   * product decision rather than a consequence of renaming a key.
+   */
   extends: z.string().optional(),
 
   repo: z.object({
@@ -1164,7 +1206,7 @@ export const Recipe = z.object({
   /**
    * What the run cannot proceed without.
    *
-   * **Strict, for the reason `GateMap` is.** This was `allow` — an allowlist,
+   * **Strict, for the reason `StepMap` is.** This was `allow` — an allowlist,
    * meaning "plant these if they happen to exist" — and that meaning cost $0.97
    * and ten turns against a database the agent could not reach, with one log
    * line as the only sign. A repository naming a variable is a repository saying
@@ -1243,7 +1285,7 @@ export const Recipe = z.object({
   // Spelled out rather than `.default({})`: all ten steps exist whether or
   // not a recipe mentions them, and writing that here says so once. 0061 §5 is
   // this line — the file may omit a step, the resolved recipe may not.
-  gates: GateMap.default({
+  steps: StepMap.default({
     claim: [],
     admit: [],
     prepared: [],
@@ -1275,7 +1317,7 @@ export const Recipe = z.object({
    * `node packages/telegram/src/cli.ts` beside it (`#125`). There is no list in the daemon to fall back to, which
    * is what makes the paragraph below true rather than decorative.
    *
-   * Defaulted to empty rather than optional, like `gates`: a project that
+   * Defaulted to empty rather than optional, like `steps`: a project that
    * declares no subscriber has *declared none*, which is a thing that can be
    * rendered, rather than an absence.
    */

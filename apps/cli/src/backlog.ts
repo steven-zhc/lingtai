@@ -29,6 +29,7 @@ import {
 } from "@lingtai/projector";
 import { userInfo } from "node:os";
 import { withProjector } from "./projector.ts";
+import { kindsOf } from "@lingtai/recipe/settings";
 
 const USAGE = `lingtai backlog [project] [--all]
 lingtai backlog accept <project> <key> --kind <kind> [--unheld]
@@ -182,7 +183,7 @@ export async function backlogCommand(args: string[], log = console.log): Promise
         key,
         by,
         kind,
-        kinds: recipe.source.kinds,
+        kinds: kindsOf(recipe),
         labels: "unheld" in flags ? [] : [HOLD],
         tickets: githubTicketStore(client),
       });

@@ -26,11 +26,11 @@ function probe(capabilities: typeof CLAUDE_CODE_CAPABILITIES, loggedIn: () => bo
 
 const HOME = "/home/me/.lingtai";
 const RECIPE = `
-version: 1
+version: 2
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
-gates: {}
+steps: {}
 `;
 
 describe("signedInProbe", () => {

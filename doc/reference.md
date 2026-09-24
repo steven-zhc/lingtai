@@ -677,7 +677,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1092 occurrences in 78 files, counted 2026-09-24** — and that sentence is
+**1005 occurrences in 73 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -762,19 +762,17 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/app/rail.tsx` | `PointProgress` ×5 · `PointState` ×2 · `point` ×11 · `pointOf` ×2 · `points` ×9 |
 | `apps/board/src/app/recipe/[project]/page.tsx` | `point` ×1 |
 | `apps/board/src/app/setup/wizard/finish.ts` | `wholeGates` ×2 |
-| `apps/board/src/app/setup/wizard/wizard.tsx` | `gates` ×4 |
 | `apps/board/src/app/standing.tsx` | `gate` ×4 · `sgate` ×3 |
-| `apps/board/src/app/task/[id]/page.tsx` | `actpoint` ×1 · `gate` ×2 · `gates` ×6 · `point` ×4 · `points` ×3 |
+| `apps/board/src/app/task/[id]/page.tsx` | `actpoint` ×1 · `gate` ×2 · `gates` ×5 · `point` ×4 · `points` ×3 |
 | `apps/board/src/lib/board.ts` | `GatePlan` ×4 · `gates` ×1 · `gatesApproved` ×4 · `gatesFailed` ×4 · `gatesPassed` ×4 · `gatesWaived` ×4 |
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `gateAt` ×12 · `points` ×6 |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `PointProgress` ×2 · `PointState` ×7 · `gate` ×4 · `point` ×12 · `pointOf` ×1 · `points` ×6 |
 | `apps/board/src/lib/queued.ts` | `GatePlan` ×2 · `PlannedPoint` ×2 · `point` ×4 · `points` ×2 |
-| `apps/board/src/lib/recipe.ts` | `GateAction` ×14 · `GatesResolved` ×1 · `gates` ×4 · `point` ×3 · `points` ×1 |
+| `apps/board/src/lib/recipe.ts` | `GateAction` ×14 · `GatesResolved` ×1 · `point` ×3 · `points` ×1 |
 | `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateVerdict` ×4 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×12 · `gates` ×11 |
 | `apps/cli/src/backlog.ts` | `gate` ×1 |
 | `apps/cli/src/conduct.ts` | `gate` ×1 |
-| `apps/cli/src/doctor.ts` | `GatesResolved` ×1 · `endPointRan` ×3 · `gate` ×6 · `gates` ×3 · `point` ×3 · `points` ×1 |
-| `apps/cli/src/end.ts` | `gates` ×1 |
+| `apps/cli/src/doctor.ts` | `GatesResolved` ×1 · `endPointRan` ×3 · `gate` ×6 · `gates` ×2 · `point` ×3 · `points` ×1 |
 | `apps/cli/src/install.ts` | `points` ×3 |
 | `apps/cli/src/lingtai.ts` | `gate` ×2 · `gates` ×4 · `point` ×2 |
 | `apps/cli/src/restart.ts` | `gates` ×1 |
@@ -788,26 +786,25 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/actions/src/index.ts` | `AgentGateDeps` ×1 · `AgentGateSpec` ×1 · `Gate` ×1 · `GateActionUnavailableError` ×1 · `GateContext` ×1 · `GateDeps` ×1 · `GateEvent` ×1 · `GateFinding` ×1 · `GateResult` ×1 · `GateVerdict` ×1 · `HumanGateSpec` ×1 · `ProcessGateSpec` ×1 · `WatchGateDeps` ×1 · `WatchGateSpec` ×1 · `createAgentGate` ×1 · `createHumanGate` ×1 · `createProcessGate` ×1 · `createWatchGate` ×1 · `gate` ×5 · `gatesFromRecipe` ×1 · `runGatePipeline` ×1 |
 | `packages/actions/src/process-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `ProcessGateSpec` ×2 · `createProcessGate` ×1 · `gate` ×1 |
 | `packages/actions/src/watch-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `WatchGateDeps` ×2 · `WatchGateSpec` ×2 · `createWatchGate` ×1 · `gate` ×1 · `gates` ×1 |
-| `packages/conductor/src/approve.ts` | `GateAction` ×2 · `GateWaived` ×4 · `GatesResolved` ×2 · `gate` ×15 · `gates` ×3 · `gatesPassed` ×1 · `point` ×1 · `points` ×1 · `splitGate` ×4 |
+| `packages/conductor/src/approve.ts` | `GateAction` ×2 · `GateWaived` ×4 · `GatesResolved` ×2 · `gate` ×15 · `gates` ×2 · `gatesPassed` ×1 · `point` ×1 · `points` ×1 · `splitGate` ×4 |
 | `packages/conductor/src/attempts.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×1 · `GateStarted` ×3 · `GateWaived` ×1 · `gate` ×5 |
 | `packages/conductor/src/attribution.ts` | `gate` ×3 |
 | `packages/conductor/src/backlog.ts` | `gate` ×3 |
-| `packages/conductor/src/close.ts` | `GateAction` ×2 · `gates` ×1 · `point` ×1 |
+| `packages/conductor/src/close.ts` | `GateAction` ×2 · `point` ×1 |
 | `packages/conductor/src/create-app.ts` | `point` ×2 |
 | `packages/conductor/src/end-point.ts` | `GateAction` ×3 |
-| `packages/conductor/src/filter.ts` | `GatePlan` ×3 · `gatePlan` ×2 · `gates` ×1 · `point` ×3 |
+| `packages/conductor/src/filter.ts` | `GatePlan` ×3 · `gatePlan` ×2 · `point` ×3 |
 | `packages/conductor/src/fix.ts` | `GateFinding` ×10 · `gates` ×1 · `point` ×4 |
 | `packages/conductor/src/gate-audit.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `gate` ×2 · `point` ×1 · `points` ×4 |
-| `packages/conductor/src/gates-resolved.ts` | `gate` ×3 · `gates` ×1 · `gatesResolved` ×1 · `points` ×1 |
+| `packages/conductor/src/gates-resolved.ts` | `gate` ×3 · `gatesResolved` ×1 · `points` ×1 |
 | `packages/conductor/src/index.ts` | `GatePlan` ×1 · `gate` ×1 · `gatePlan` ×1 · `point` ×1 |
 | `packages/conductor/src/judge.ts` | `GateFinding` ×3 · `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
 | `packages/conductor/src/never-started.ts` | `gate` ×6 |
-| `packages/conductor/src/onboard.ts` | `gates` ×3 · `point` ×3 |
-| `packages/conductor/src/run-once.ts` | `GateFinding` ×5 · `GatesResolved` ×2 · `gate` ×42 · `gateDeps` ×4 · `gateDetail` ×1 · `gateDidNotFinish` ×3 · `gates` ×16 · `gatesFromRecipe` ×4 · `gatesPassed` ×1 · `gatesResolved` ×2 · `gitForGates` ×3 · `point` ×8 · `runGatePipeline` ×4 |
+| `packages/conductor/src/onboard.ts` | `gates` ×1 · `point` ×3 |
+| `packages/conductor/src/run-once.ts` | `GateFinding` ×5 · `GatesResolved` ×2 · `gate` ×42 · `gateDeps` ×4 · `gateDetail` ×1 · `gateDidNotFinish` ×3 · `gates` ×6 · `gatesFromRecipe` ×4 · `gatesPassed` ×1 · `gatesResolved` ×2 · `gitForGates` ×3 · `point` ×8 · `runGatePipeline` ×4 |
 | `packages/conductor/src/schedule.ts` | `gate` ×1 |
-| `packages/conductor/src/wizard-page.ts` | `GateAction` ×6 · `gates` ×36 · `wholeGates` ×1 |
-| `packages/conductor/src/wizard.ts` | `gates` ×2 |
+| `packages/conductor/src/wizard-page.ts` | `GateAction` ×6 · `wholeGates` ×1 |
 | `packages/daemon/src/control.ts` | `gates` ×1 |
 | `packages/daemon/src/converge.ts` | `point` ×1 |
 | `packages/domain/src/backlog.ts` | `gate` ×2 |
@@ -825,17 +822,15 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/projector/src/postgres.ts` | `gate` ×2 · `gates` ×3 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 |
 | `packages/projector/src/sqlite.ts` | `gate` ×2 · `gates` ×3 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 |
 | `packages/projector/src/task-view.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateWaived` ×2 · `gate` ×4 · `gates` ×5 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 · `point` ×2 · `setGate` ×2 |
-| `packages/recipe/src/local.ts` | `gates` ×8 · `gatesRefusal` ×3 · `point` ×2 |
-| `packages/recipe/src/presets.ts` | `gates` ×6 |
-| `packages/recipe/src/propose.ts` | `gates` ×1 |
-| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GateMap` ×4 · `GatesResolved` ×1 · `gate` ×2 · `gates` ×1 · `point` ×15 |
-| `packages/recipe/src/resolve.ts` | `gates` ×5 |
+| `packages/recipe/src/local.ts` | `gates` ×4 |
+| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GatesResolved` ×1 · `gate` ×2 · `gates` ×1 · `point` ×15 |
+| `packages/recipe/src/resolve.ts` | `gates` ×3 |
 | `packages/recipe/src/watch.ts` | `gate` ×9 |
 | `packages/repo/src/integrate.ts` | `gate` ×3 · `gateDetail` ×2 · `gatesPassed` ×2 |
 
 ### ordinary English
 
-**9 of those 1092 occurrences are the English word and not the retired
+**9 of those 1005 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for

@@ -19,7 +19,7 @@ const BUILD: GateAction = { name: "build", run: "true", timeout: "2m", env: [] }
 const event = (type: string, data: unknown): Envelope => ({
   seq: 1n,
   streamId: "wi-p-1",
-  version: 1,
+  version: 2,
   type,
   schemaVer: 1,
   data,

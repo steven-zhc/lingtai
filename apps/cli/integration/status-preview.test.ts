@@ -26,7 +26,7 @@ const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const OWNER = "steven-zhc";
 
 const YAML = `
-version: 1
+version: 2
 repo:
   base: develop
 source:

@@ -3,7 +3,7 @@
 # **Nothing reads this file to run anything any more.** The recipe is this
 # machine's (0046 §3): `~/.lingtai/lingtai/recipe.yml`, and `runtime.agent` and
 # `runtime.limits` are `~/.lingtai/config.yml`'s. A recipe that still carries
-# either is refused by name, and a `gates:` key in the machine file is refused
+# either is refused by name, and a `steps:` key in the machine file is refused
 # by name, so moving this means one `cp` and cutting the two runtime blocks
 # below into the machine file:
 #
@@ -15,7 +15,7 @@
 # It stays in the repository as the record of *why* each value is what it is,
 # and because tests read it as this repository's own recipe. An agent that
 # edits it changes nothing about any run.
-version: 1
+version: 2
 
 repo:
   base: main
@@ -105,7 +105,7 @@ env:
   # a worktree's copy has to land.
   plantAt: .env.local
 
-gates:
+steps:
   admit: []
 
   # `git worktree add` copies no node_modules, and this repository's own tests

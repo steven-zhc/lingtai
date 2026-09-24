@@ -33,6 +33,7 @@ import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
+import { baseOf, kindsOf, limitsFor } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -115,10 +116,19 @@ export class AgentUnresolvedError extends Error {
   override readonly name = "AgentUnresolvedError";
 }
 
-function gatesRefusal(at: string, project: string, home: string): string {
+/**
+ * **Both names, because the machine file is typed by hand.**
+ *
+ * `steps:` is where a pass is configured today; `gates:` is what it was called
+ * before 0061 and is exactly what somebody with an older file in front of them
+ * will write. Refusing only the live name would leave the retired one silently
+ * dropped — 0016 §4's rule, and the one this whole file exists to keep.
+ */
+function stepsRefusal(at: string, key: string, project: string, home: string): string {
+  const retired = key === "gates" ? " — and `gates:` is what `steps:` was called before 0061" : "";
   return (
-    `${at}: gates do not live in the machine file — they live in the recipe, ` +
-    `${recipePath(project, home)}, under \`gates:\`. Nothing here was applied; ` +
+    `${at}: a pass is not configured in the machine file — it is configured in the recipe, ` +
+    `${recipePath(project, home)}, under \`steps:\`${retired}. Nothing here was applied; ` +
     "move the block there if it is meant to run"
   );
 }
@@ -147,12 +157,15 @@ export function parseMachineConfig(
 
   const problems: string[] = [];
   const top = raw as Record<string, unknown>;
-  if ("gates" in top) problems.push(gatesRefusal("gates", project, home));
+  for (const key of ["steps", "gates"]) {
+    if (key in top) problems.push(stepsRefusal(key, key, project, home));
+  }
   const projects = top["projects"];
   if (projects !== null && typeof projects === "object" && !Array.isArray(projects)) {
     for (const [name, scope] of Object.entries(projects as Record<string, unknown>)) {
-      if (scope !== null && typeof scope === "object" && "gates" in scope) {
-        problems.push(gatesRefusal(`projects.${name}.gates`, name, home));
+      if (scope === null || typeof scope !== "object") continue;
+      for (const key of ["steps", "gates"]) {
+        if (key in scope) problems.push(stepsRefusal(`projects.${name}.${key}`, key, name, home));
       }
     }
   }
@@ -375,7 +388,7 @@ export async function resolveLocalRecipe(
 
   // What the *file itself* carries, kept before anything is merged into it.
   // This is the only place the difference survives: `recipe.source.exclude`
-  // reads `[]` and `recipe.gates.proposed` reads the preset's action whether
+  // reads `[]` and `recipe.steps.proposed` reads the preset's action whether
   // this file mentions either or not, so nothing downstream can tell a value
   // this file decided from one it was silent about (#218).
   //
@@ -409,15 +422,15 @@ export async function resolveLocalRecipe(
   const { recipe } = resolved;
   const list = (items: readonly string[]) => (items.length > 0 ? items.join(", ") : "(none)");
   const recipeValues: Record<string, string> = {
-    "repo.base": recipe.repo.base,
-    "source.kinds": recipe.source.kinds.join(" > "),
+    "repo.base": baseOf(recipe),
+    "source.kinds": kindsOf(recipe).join(" > "),
     "source.exclude": list(recipe.source.exclude),
     // Said out loud by a reading, and not carried here until now — so that
     // every row of one has a source beside it (#218).
     "source.backoff": recipe.source.backoff,
     "env.required": list(recipe.env.required),
-    gates: Object.entries(recipe.gates)
-      .map(([point, actions]) => `${point} ${actions.length}`)
+    steps: Object.entries(recipe.steps)
+      .map(([step, actions]) => `${step} ${actions.length}`)
       .join(", "),
   };
   // Per field, as `runtime.limits` is: a recipe that sets `attempts` and
@@ -429,7 +442,7 @@ export async function resolveLocalRecipe(
   const from = originIn(wrote, resolved.preset, path);
   for (const [key, value] of Object.entries(recipeValues))
     provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;
-  return { ...resolved, ref: options.base ?? resolved.recipe.repo.base, provenance };
+  return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance };
 }
 
 /** The two files a recipe built elsewhere becomes on this machine, or why it cannot. */
@@ -490,7 +503,7 @@ export function machineFiles(input: {
   const path = machinePath(home);
   const choose = (kept: unknown) => ({
     agent: input.recipe.runtime.agent,
-    limits: { ...input.recipe.runtime.limits },
+    limits: { ...limitsFor(input.recipe, "implement") },
     ...(written !== undefined ? { assignee: written } : kept !== undefined ? { assignee: kept } : {}),
   });
 

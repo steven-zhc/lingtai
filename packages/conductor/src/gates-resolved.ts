@@ -14,7 +14,7 @@ export function gatesResolved(runId: string, resolved: ResolvedRecipe) {
     configHash: resolved.configHash,
     points: STEPS.map((gate) => ({
       gate,
-      actions: resolved.recipe.gates[gate].map((a) => a.name),
+      actions: resolved.recipe.steps[gate].map((a) => a.name),
     })),
     // A record of what this run was decided by, and never read back to decide
     // the next one (0047 §1) — that is still `currentRecipe`, off the base branch.

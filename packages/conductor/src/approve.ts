@@ -253,7 +253,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
       options.recipe ??
       (() => resolveLocalRecipe(options.project, { base: options.base, signedIn: signedInHere }))
     )();
-    end = recipe.recipe.gates.end;
+    end = recipe.recipe.steps.end;
   } catch (err) {
     return {
       ok: false,

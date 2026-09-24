@@ -34,17 +34,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from "@lingtai/domain";
-import {
-  RECIPE_PATH,
-  type ReadAtRef,
-  RecipeMissingError,
-  type ResolvedRecipe,
-  baseDivergence,
-  parseDuration,
-  recipePath,
-  resolveLocalRecipe,
-  resolveRecipe,
-} from "@lingtai/recipe";
+import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type ResolvedRecipe } from "@lingtai/recipe";
 import { signedInHere } from "./projects.ts";
 import { STEPS, type Tier, parsePayload } from "@lingtai/domain";
 import {
@@ -188,7 +178,7 @@ export type Governing =
  * Find the recipe from a branch; take the base from the recipe.
  *
  * `from.ref` is only where to look. What comes back is resolved at
- * `recipe.repo.base` and nowhere else, so the base recorded by `lingtai add` is
+ * `baseOf(recipe)` and nowhere else, so the base recorded by `lingtai add` is
  * a copy of the file's and never a second decision beside it (#75). Three
  * outcomes, one per row of the ticket's table:
  *
@@ -211,7 +201,7 @@ export async function governing(
   slug: string,
 ): Promise<Governing> {
   const resolved = await resolveRecipe(read, from.ref);
-  const declared = resolved.recipe.repo.base;
+  const declared = baseOf(resolved.recipe);
   if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null };
 
   if (from.named) {
@@ -288,16 +278,16 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
     log((err as Error).message);
     return 1;
   }
-  if (options.base?.named && options.base.ref !== resolved.recipe.repo.base) {
+  if (options.base?.named && options.base.ref !== baseOf(resolved.recipe)) {
     log(
-      `--base ${options.base.ref}, but ${recipePath(repo)} declares repo.base: ${resolved.recipe.repo.base}. ` +
+      `--base ${options.base.ref}, but ${recipePath(repo)} declares repo.base: ${baseOf(resolved.recipe)}. ` +
         "This command will not overrule either — re-run without --base to take the recipe's, " +
         "or fix repo.base in the file.",
     );
     return 1;
   }
   // Past this point these are one branch, and this one is the file's.
-  const base = resolved.recipe.repo.base;
+  const base = baseOf(resolved.recipe);
   log(`base: ${base} — the recipe's repo.base`);
   for (const [key, from] of Object.entries(resolved.provenance ?? {})) {
     if (key.startsWith("runtime.")) log(`  ${key.padEnd(24)} ${from}`);
@@ -315,7 +305,7 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // longer exists. Widening the set to ten (0058 §3) collected on that: this
   // line prints all ten without being touched.
   for (const point of STEPS) {
-    const actions = resolved.recipe.gates[point];
+    const actions = resolved.recipe.steps[point];
     log(`  ${point.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(", ") : "(skipped)"}`);
   }
   // Printed here for the reason the empty points above are: a policy that is
@@ -330,10 +320,10 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // project can cost. One sentence, from `passCeiling`, so this line and the
   // drain's cannot say different things about the same recipe.
   log(`  ${"a pass".padEnd(9)} ${passCeiling({
-    ...resolved.recipe.runtime.limits,
-    wallMs: parseDuration(resolved.recipe.runtime.limits.wall),
+    ...limitsFor(resolved.recipe, "implement"),
+    wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
   })}`);
-  log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${resolved.recipe.source.kinds.join(" > ")}`);
+  log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${kindsOf(resolved.recipe).join(" > ")}`);
 
   log(`  tier ${resolved.recipe.runtime.tier}`);
 
@@ -381,5 +371,5 @@ export function registrationLine(
   const before: ProjectState = reduceProject(prior);
   return isRegistered(before)
     ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
-    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.gates).flat().length} action(s) across 5 gates`;
+    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 gates`;
 }

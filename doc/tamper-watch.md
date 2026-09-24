@@ -9,7 +9,7 @@ its subject* below.
 ## What it does
 
 ```yaml
-gates:
+steps:
   proposed:
     # ... build, review ...
     - name: tamper

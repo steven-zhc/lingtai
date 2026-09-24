@@ -104,7 +104,7 @@
  * recorded about where a scope *starts*, kept here as a test rather than as an
  * intention.
  */
-import { type ResolvedRecipe, baseDivergence, parseDuration } from "@lingtai/recipe";
+import { baseDivergence, baseOf, limitsFor, parseDuration, type ResolvedRecipe } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
@@ -397,7 +397,7 @@ export function runOnce(
       };
     }
     // Safe now, and only now: past the refusal these two are the same branch.
-    const base = recipe.repo.base;
+    const base = baseOf(recipe);
     log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`);
 
     // ---- 2. the environment, before anything is claimed ----------------------
@@ -458,7 +458,7 @@ export function runOnce(
     // from `merged`, so a denied production value would otherwise first throw
     // at `gates.prepared` — past the claim, as a defect in the middle of a run.
     const extensionRefusal = Either.try(() => {
-      for (const point of Object.values(recipe.gates)) {
+      for (const point of Object.values(recipe.steps)) {
         for (const action of point) {
           if ("run" in action) extensionEnv(env.merged, action.env, productionPatterns(recipe.env.refuseHosts));
         }
@@ -662,7 +662,7 @@ export function runOnce(
             // the release owns the one above; logged rather than thrown because
             // this path is already carrying somebody else's failure and must not
             // replace it with its own.
-            const ended = await appendEndActions(store, workItemId, recipe.gates.end, "failed").catch(
+            const ended = await appendEndActions(store, workItemId, recipe.steps.end, "failed").catch(
               (err) => {
                 log(`end actions not resolved: ${(err as Error).message}`);
                 return [];
@@ -939,8 +939,8 @@ export function runOnce(
           // a hook it could not reach and was refused before it read a line.
           settingsPath: reviewSettingsPath,
           limits: {
-            turns: recipe.runtime.limits.turns,
-            wallMs: parseDuration(recipe.runtime.limits.wall),
+            turns: limitsFor(recipe, "implement").turns,
+            wallMs: parseDuration(limitsFor(recipe, "implement").wall),
             diffBytes: recipe.runtime.budget.diff,
           },
         },
@@ -960,7 +960,7 @@ export function runOnce(
       // that agent committed (0038 §1). The same actions, in the same order,
       // with one thing added — the scenarios the last refusal was made of,
       // which the reviewer is asked about by name (0038 §2).
-      const gates = gatesFromRecipe("proposed", recipe.gates.proposed, gateDeps);
+      const gates = gatesFromRecipe("proposed", recipe.steps.proposed, gateDeps);
       const judge = (onSha: string, recheck: readonly GateFinding[], round: number) =>
         Effect.promise(() =>
           runGatePipeline({
@@ -1041,7 +1041,7 @@ export function runOnce(
           const prepared = yield* Effect.promise(() =>
             runGatePipeline({
               point: "prepared",
-              gates: gatesFromRecipe("prepared", recipe.gates.prepared, { env: envForExtension }),
+              gates: gatesFromRecipe("prepared", recipe.steps.prepared, { env: envForExtension }),
               context: {
                 runId,
                 onSha: worktree.baseSha,
@@ -1117,13 +1117,13 @@ export function runOnce(
                * The limits as applied, resolved once.
                *
                * The runtime is handed these and the log records these, from one
-               * expression — two readings of `recipe.runtime.limits` could
+               * expression — two readings of `limitsFor(recipe, "implement")` could
                * disagree about what `2h` is, and the whole point of recording
                * them is that they are what was actually in force.
                */
               const limits = {
-                turns: recipe.runtime.limits.turns,
-                wallMs: parseDuration(recipe.runtime.limits.wall),
+                turns: limitsFor(recipe, "implement").turns,
+                wallMs: parseDuration(limitsFor(recipe, "implement").wall),
               };
               const agentEnv = runnableEnv({ ...env.values, ...wiring.env });
 
@@ -1295,7 +1295,7 @@ export function runOnce(
               const question = `out-of-turns: ${said(detail)}`;
               const ended = yield* Effect.promise(async () => {
                 const blocked = await store.read(workItemId);
-                const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
+                const resolvedEnd = resolveEndActions(blocked, recipe.steps.end, "blocked");
                 await store.append(workItemId, blocked.length, [
                   {
                     type: "WorkItemBlocked",
@@ -1307,7 +1307,7 @@ export function runOnce(
                       needs: "acknowledgement",
                       diagnosis: {
                         what:
-                          `the run reached the recipe's turn limit (${recipe.runtime.limits.turns}) and was stopped: ` +
+                          `the run reached the recipe's turn limit (${limitsFor(recipe, "implement").turns}) and was stopped: ` +
                           `${said(detail)}. The limit is a scope alarm — the ticket asks ` +
                           `for more than one run should do.`,
                         done: null,
@@ -1692,7 +1692,7 @@ export function runOnce(
           }
           const ended = yield* Effect.promise(async () => {
             const blocked = await store.read(workItemId);
-            const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
+            const resolvedEnd = resolveEndActions(blocked, recipe.steps.end, "blocked");
             await store.append(workItemId, blocked.length, [
               {
                 type: "WorkItemBlocked",
@@ -1769,7 +1769,7 @@ export function runOnce(
         Effect.gen(function* () {
           const decision = decideFix({
             refusal,
-            rounds: recipe.runtime.limits.rounds,
+            rounds: limitsFor(recipe, "implement").rounds,
             roundsSpent: rounds,
           });
 
@@ -1838,7 +1838,7 @@ export function runOnce(
                 // recipe. Written here because a field declared and handed to
                 // nothing is `#89`'s shape, and the zod default of zero would
                 // have made it look present.
-                of: recipe.runtime.limits.rounds,
+                of: limitsFor(recipe, "implement").rounds,
                 action: refusal.action,
                 onSha: head,
                 findings: refusal.findings,
@@ -1881,7 +1881,7 @@ export function runOnce(
                         ? { on: "conflict", base, paths: refusal.evidence }
                         : { on: "output", output: refusal.evidence },
                   round: decision.round,
-                  of: recipe.runtime.limits.rounds,
+                  of: limitsFor(recipe, "implement").rounds,
                   action: refusal.action,
                   diff: underReview,
                   diffBytes: recipe.runtime.budget.diff,
@@ -1893,8 +1893,8 @@ export function runOnce(
                 traceTools: true,
                 env: runnableEnv(env.values),
                 limits: {
-                  turns: recipe.runtime.limits.turns,
-                  wallMs: parseDuration(recipe.runtime.limits.wall),
+                  turns: limitsFor(recipe, "implement").turns,
+                  wallMs: parseDuration(limitsFor(recipe, "implement").wall),
                 },
                 signal: fixAbort.signal,
               })
@@ -2197,7 +2197,7 @@ export function runOnce(
           atMerge = yield* Effect.promise(() =>
             runGatePipeline({
               point: "merge",
-              gates: gatesFromRecipe("merge", recipe.gates.merge, gateDeps),
+              gates: gatesFromRecipe("merge", recipe.steps.merge, gateDeps),
               context: {
                 runId,
                 onSha: head,
@@ -2406,7 +2406,7 @@ export function runOnce(
         arms = [...folded.restarts].reverse();
         const second = decideRestart({
           refusal: { action: unresolved.action, on: unresolved.on, exhausted: unresolved.exhausted },
-          restarts: recipe.runtime.limits.restarts,
+          restarts: limitsFor(recipe, "implement").restarts,
           item: folded,
           alsoAsked,
         });
@@ -2755,7 +2755,7 @@ export function runOnce(
           // In the same append as the outcome it is about. A hold is a terminal
           // outcome for this run, and a `when: blocked` action is as configured
           // as any other.
-          const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
+          const resolvedEnd = resolveEndActions(blocked, recipe.steps.end, "blocked");
           await store.append(workItemId, blocked.length, [
             {
               type: "WorkItemBlocked",
@@ -2864,7 +2864,7 @@ export function runOnce(
         });
         const ended = yield* Effect.promise(async () => {
           const blocked = await store.read(workItemId);
-          const resolvedEnd = resolveEndActions(blocked, recipe.gates.end, "blocked");
+          const resolvedEnd = resolveEndActions(blocked, recipe.steps.end, "blocked");
           await store.append(workItemId, blocked.length, [
             {
               type: "WorkItemBlocked",
@@ -2904,7 +2904,7 @@ export function runOnce(
         // append on this line only, which is how every item that landed by any
         // other route — an approval, on the CLI or the board — never resolved
         // the point at all.
-        const resolvedEnd = resolveEndActions(landed, recipe.gates.end, "landed");
+        const resolvedEnd = resolveEndActions(landed, recipe.steps.end, "landed");
         await store.append(workItemId, landed.length, [
           {
             type: "WorkItemLanded",

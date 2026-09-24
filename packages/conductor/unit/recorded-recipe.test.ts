@@ -25,7 +25,7 @@ const OWN = readFileSync(join(ROOT, ".lingtai/config.yaml"), "utf8");
 
 /** Every environment surface the recipe has: `required`, `allow`, `deny`, and an action's own. */
 const DECLARING = `
-version: 1
+version: 2
 repo:
   base: main
 source:
@@ -35,7 +35,7 @@ env:
   allow: [SECRET_ALLOWED_TOKEN, SECRET_REQUIRED_URL]
   deny: [SECRET_DENIED_KEY]
   plantAt: .env.local
-gates:
+steps:
   proposed:
     - name: build
       run: pnpm test

@@ -93,11 +93,11 @@ let client: Db;
 let store: EventStore;
 
 const RECIPE = `
-version: 1
+version: 2
 repo: { base: develop, submodules: false }
 source: { kinds: [bug], exclude: [blocked] }
 env: { required: [ESC_TEST_VALUE], plantAt: .env.local }
-gates:
+steps:
   proposed:
     - { name: build, run: "test -f src/fix.ts", timeout: 2m }
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m, rounds: 1 } }
@@ -113,7 +113,7 @@ const project: ProjectState = {
   configHash: "seeded",
   fromSha: "0".repeat(40),
   refused: null,
-  version: 1,
+  version: 2,
   lastSeq: null,
 };
 
@@ -1342,8 +1342,8 @@ printf '%s\n' '${receipt()}'
    */
   it("runs the prepared point before the agent, so the agent sees a worktree that works", async () => {
     const recipe = RECIPE.replace(
-      "gates:",
-      'gates:\n  prepared:\n    - { name: install, run: "echo ready > .prepared", timeout: 1m }',
+      "steps:",
+      'steps:\n  prepared:\n    - { name: install, run: "echo ready > .prepared", timeout: 1m }',
     );
     const agent = await agentThat(`
 test -f .prepared || { echo "the prepared point did not run before me"; exit 1; }
@@ -1371,8 +1371,8 @@ git add -A && git commit -q -m "fix the race"
 
   it("refuses at the prepared point without starting the agent, and says which action", async () => {
     const recipe = RECIPE.replace(
-      "gates:",
-      'gates:\n  prepared:\n    - { name: install, run: "echo could not resolve dependency; exit 1", timeout: 1m }',
+      "steps:",
+      'steps:\n  prepared:\n    - { name: install, run: "echo could not resolve dependency; exit 1", timeout: 1m }',
     );
     // If this ever runs, the test fails loudly rather than quietly passing.
     const agent = await agentThat(`echo "the agent must not have started"; exit 1`);
@@ -2232,13 +2232,13 @@ git add -A && git commit -q -m "fix the race"
 
     /** `RECIPE`, parsed. `runQueue` asks GitHub itself now, so it needs it. */
     const SCHED_RECIPE = {
-      version: 1,
+      version: 2,
       repo: { base: "develop", submodules: false },
       // `backoff` as the schema resolves it. Hand-built and cast, so nothing
       // fills a default in for it — and `runQueue` reads it every pass (0028).
       source: { kinds: ["bug"], exclude: ["blocked"], backoff: "1h" },
       env: { required: [], plantAt: ".env.local" },
-      gates: { admit: [], prepared: [], proposed: [], merge: [], end: [] },
+      steps: { admit: [], prepared: [], proposed: [], merge: [], end: [] },
       runtime: { agent: "claude-code", limits: { turns: 10, wall: "2m" } },
     } as unknown as Recipe;
 

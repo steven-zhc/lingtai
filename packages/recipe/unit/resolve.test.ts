@@ -16,7 +16,7 @@ import {
 } from "../src/index.ts";
 
 const VALID = `
-version: 1
+version: 2
 repo:
   base: develop
   submodules: true
@@ -26,7 +26,7 @@ source:
 env:
   required: [DATABASE_URL, CLERK_SECRET_KEY]
   plantAt: apps/web/.env.local
-gates:
+steps:
   proposed:
     - name: build
       run: pnpm verify
@@ -44,11 +44,11 @@ describe("resolveRecipe", () => {
 
     expect(resolved.ref).toBe("develop");
     expect(resolved.recipe.repo.base).toBe("develop");
-    expect(resolved.recipe.gates.proposed).toHaveLength(1);
+    expect(resolved.recipe.steps.proposed).toHaveLength(1);
     // The four a recipe did not mention are present and empty — which is what
     // makes "nothing is configured here" visible rather than absent.
-    expect(resolved.recipe.gates.admit).toEqual([]);
-    expect(resolved.recipe.gates.end).toEqual([]);
+    expect(resolved.recipe.steps.admit).toEqual([]);
+    expect(resolved.recipe.steps.end).toEqual([]);
     expect(resolved.recipe.repo.submodules).toBe(true);
   });
 
@@ -64,12 +64,12 @@ describe("resolveRecipe", () => {
     };
 
     const resolved = await resolveRecipe(reader(files), "develop");
-    expect(resolved.recipe.gates.proposed[0]!.name).toBe("build");
+    expect(resolved.recipe.steps.proposed[0]!.name).toBe("build");
 
     // And the tampered one really would have resolved differently, so the test
     // is not passing because both branches say the same thing.
     const other = await resolveRecipe(reader(files), "agent/117");
-    expect(other.recipe.gates.proposed[0]!.name).toBe("nothing");
+    expect(other.recipe.steps.proposed[0]!.name).toBe("nothing");
     expect(other.configHash).not.toBe(resolved.configHash);
   });
 
@@ -220,7 +220,7 @@ describe("resolveRecipe", () => {
 
     expect(resolved.recipe.subscribers[0]!.env).toEqual(["TELEGRAM_BOT_TOKEN"]);
     // The `run:` gate in VALID declares none, so it gets none.
-    const build = resolved.recipe.gates.proposed[0]!;
+    const build = resolved.recipe.steps.proposed[0]!;
     expect("run" in build && build.env).toEqual([]);
   });
 
@@ -284,7 +284,7 @@ describe("resolveRecipe", () => {
     expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/OutboxDelivered.*retired/);
   });
 
-  /** Strict, for the reason `GateMap` and `env` are: `events:` is a draft of 0037. */
+  /** Strict, for the reason `StepMap` and `env` are: `events:` is a draft of 0037. */
   it("refuses a subscriber key that is not one of the three", async () => {
     const stale = WITH_SUBSCRIBER.replace("    on: [", "    events: [");
     const err = await resolveRecipe(
@@ -310,7 +310,7 @@ describe("hashRecipe", () => {
   it("is stable across key order and comments, because it hashes the resolved form", async () => {
     const reordered = `
 # a comment that changes nothing about the run
-version: 1
+version: 2
 source:
   exclude: [blocked]
   kinds: [bug, feature]
@@ -319,7 +319,7 @@ repo:
   base: develop
 runtime:
   agent: claude-code
-gates:
+steps:
   proposed:
     - run: pnpm verify
       name: build
@@ -348,34 +348,33 @@ env:
   });
 
   /**
-   * **The digest this recipe had before the vocabulary went to ten, pinned as a
-   * literal.** It is not computed from anything here on purpose: a hash is the
-   * identity of a document (0047 §2), the log is full of hashes taken when
-   * `gates` had five keys, and **there is no step from an old digest to a new
-   * one** the way `GatesResolved`'s `3 → 4` has one for a stored plan.
+   * **The digest of a `version: 2` recipe, pinned as a literal.** It is not
+   * computed from anything here on purpose: a hash is the identity of a
+   * document (0047 §2), so the literal is the only thing that catches a change
+   * to `canonical` that nobody meant.
    *
-   * What it stops: `GateMap` gaining `claim`, `design`, `implement`, `build`
-   * and `review` put five always-empty keys inside `canonical`, so this exact
-   * text hashed to `abefb64e…` instead. The task page proves an attempt's
-   * recipe by comparing the hash `GatesResolved` recorded against the file at
-   * the run's base commit (`apps/board/src/lib/recipe.ts:285`) — so every
-   * attempt in the record failed that comparison and rendered *Not this run's
-   * recipe … the recipe at base abc1234 hashes to X and this run was given Y*,
-   * about bytes that never changed. `d64081da…` is what `617d686` computed for
-   * the text above.
+   * **The pin moved once and this is the record of why.** It was `d64081da…`,
+   * the digest of the same text under `version: 1` with a `gates:` key, kept so
+   * that hashes already on the log stayed provable. `steps:` replacing `gates:`
+   * ends that: the recorded hashes are all of v1 documents, and a v1 file is
+   * now **refused by name**, so the task page cannot re-hash a past run's
+   * recipe at its base commit at all — it does not get a different answer, it
+   * gets a refusal (`apps/board/src/lib/recipe.ts:285`).
    *
-   * It comes down at 0061 §7's reset (`the-pipeline.md`'s T5), with the nine
-   * upcasters and for the same reason: a reset log has no stored hash to keep
-   * faith with.
+   * **That is 0061 §7's accepted cost rather than a defect**: there is no
+   * migration for the file and none for the log, and the thing that settles it
+   * is the reset (`the-pipeline.md`'s T5), not an upcaster. Until then, an
+   * attempt recorded before this commit cannot have its recipe proved, and the
+   * board says so.
    */
-  it("gives a five-step recipe the digest it had before the vocabulary went to ten", async () => {
+  it("gives a v2 recipe a digest nothing recomputes it from", async () => {
     const a = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
 
-    expect(a.configHash).toBe("d64081da2bbbe9671da41c4f247ef39b513060a9e8d4e0732ca16b9fe68f1aec");
+    expect(a.configHash).toBe("cefec6a9497a47f86eb56b9bd3b8d23fe78793bc34888ffad6dedf27f6399a85");
     // And the body on the event is the document that digest is of (0047 §2),
     // so the five are out of both or neither — a strip on one side only makes
     // `hashRecipe(GatesResolved.recipe) === configHash` false.
-    expect(Object.keys(canonicalRecipe(a.recipe)["gates"] as object).sort()).toEqual([
+    expect(Object.keys(canonicalRecipe(a.recipe)["steps"] as object).sort()).toEqual([
       "admit",
       "end",
       "merge",
@@ -399,10 +398,10 @@ env:
     // Past the schema, which refuses the pair until the step has a call site
     // (`whyNoKindAt`) — this is the shape a resolved recipe takes once it does
     // not, and the hash has to move with it.
-    recipe.gates.build.push({ name: "build", run: "pnpm test", timeout: "20m", env: [] });
+    recipe.steps.build.push({ name: "build", run: "pnpm test", timeout: "20m", env: [] });
 
     expect(hashRecipe(recipe)).not.toBe(empty);
-    expect(Object.keys(canonicalRecipe(recipe)["gates"] as object)).toContain("build");
+    expect(Object.keys(canonicalRecipe(recipe)["steps"] as object)).toContain("build");
   });
 });
 

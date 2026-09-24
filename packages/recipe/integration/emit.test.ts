@@ -13,9 +13,9 @@ import { CommentWouldBeLostError, Recipe, editRecipe, emitRecipe, type RecipeCha
 
 const OWN = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
 type Gate = Record<string, unknown>;
-const own = parse(OWN) as { source: { exclude: string[] }; gates: { proposed: Gate[]; prepared: Gate[] } };
+const own = parse(OWN) as { source: { exclude: string[] }; steps: { proposed: Gate[]; prepared: Gate[] } };
 const LABELS = own.source.exclude;
-const [BUILD, REVIEW] = own.gates.proposed as [Gate, Gate];
+const [BUILD, REVIEW] = own.steps.proposed as [Gate, Gate];
 
 /** What `git diff` says moved between two versions of a file: its `-` and `+` lines. */
 function gitDiff(before: string, after: string): { removed: string[]; added: string[] } {
@@ -86,13 +86,13 @@ describe("editRecipe, on this repository's own recipe", () => {
     },
     {
       name: "a gate renamed where it stands, by its path",
-      change: { path: ["gates", "proposed", 0, "name"], value: "tests" },
+      change: { path: ["steps", "proposed", 0, "name"], value: "tests" },
       removed: ["    - name: build"],
       added: ["    - name: tests"],
     },
     {
       name: "the merge point, from nothing to a person",
-      change: { path: ["gates", "merge"], value: [{ name: "approve", human: "Does this merge?" }] },
+      change: { path: ["steps", "merge"], value: [{ name: "approve", human: "Does this merge?" }] },
       removed: ["  merge: []"],
       added: ["  merge:", "    - name: approve", "      human: Does this merge?"],
     },
@@ -144,7 +144,7 @@ describe("editRecipe, on this repository's own recipe", () => {
 
   it("keeps the comments above, beside and after a flow list that becomes a block", () => {
     const annotated = OWN.replace("  merge: []\n", "  # holds nothing\n  merge: [] # nobody holds it\n  # after merge\n");
-    const out = editRecipe(annotated, [{ path: ["gates", "merge"], value: [{ name: "a person", human: "Merge?" }] }]);
+    const out = editRecipe(annotated, [{ path: ["steps", "merge"], value: [{ name: "a person", human: "Merge?" }] }]);
     // The comment that was beside `[]` is on a line of its own now, and still under `merge:`.
     expect(commentCount(out)).toBe(commentCount(annotated) + 1);
     expect(out).toContain(
@@ -165,9 +165,9 @@ describe("editRecipe, on this repository's own recipe", () => {
   }
 
   it("moves a reordered gate with the comments above and inside it", () => {
-    const before = chunks(OWN, ["gates", "proposed"]);
-    const out = editRecipe(OWN, [{ path: ["gates", "proposed"], value: [REVIEW, BUILD] }]);
-    expect(chunks(out, ["gates", "proposed"])).toEqual([before[1], before[0]]);
+    const before = chunks(OWN, ["steps", "proposed"]);
+    const out = editRecipe(OWN, [{ path: ["steps", "proposed"], value: [REVIEW, BUILD] }]);
+    expect(chunks(out, ["steps", "proposed"])).toEqual([before[1], before[0]]);
     expect(commentCount(out)).toBe(commentCount(OWN));
   });
 
@@ -180,7 +180,7 @@ describe("editRecipe, on this repository's own recipe", () => {
   });
 
   it("rewrites a block-scalar prompt in place, deeper than its key", () => {
-    const multi = editRecipe(OWN, [{ path: ["gates", "proposed", 1, "agent"], value: "line one\nline two\n" }]);
+    const multi = editRecipe(OWN, [{ path: ["steps", "proposed", 1, "agent"], value: "line one\nline two\n" }]);
     expect(multi).toContain("    - name: review\n      agent: |\n        line one\n        line two\n");
     expect(commentCount(multi)).toBe(commentCount(OWN));
   });
@@ -202,7 +202,7 @@ describe("editRecipe, on this repository's own recipe", () => {
 
   // `yaml` reads both of these comments onto the list beside them, not the line below.
   it("removes a first gate with the paragraph between `proposed:` and it", () => {
-    const out = editRecipe(OWN, [{ path: ["gates", "proposed", 0], value: undefined }]);
+    const out = editRecipe(OWN, [{ path: ["steps", "proposed", 0], value: undefined }]);
     const { removed, added } = gitDiff(OWN, out);
     expect(added).toEqual([]);
     expect(removed[0]).toBe("    # `env: []` is written out rather than left to the default, for the reason");
@@ -211,7 +211,7 @@ describe("editRecipe, on this repository's own recipe", () => {
   });
 
   it("removes `merge` with the paragraph above it, which yaml reads as the end of the list before", () => {
-    const out = editRecipe(OWN, [{ path: ["gates", "merge"], value: undefined }]);
+    const out = editRecipe(OWN, [{ path: ["steps", "merge"], value: undefined }]);
     const { removed, added } = gitDiff(OWN, out);
     expect(added).toEqual([]);
     expect(removed.filter((l) => !/^\s*(#.*)?$/.test(l))).toEqual(["  merge: []"]);
@@ -220,7 +220,7 @@ describe("editRecipe, on this repository's own recipe", () => {
   });
 
   it("moves a gate to the end with the paragraph that was between `proposed:` and it", () => {
-    const out = editRecipe(OWN, [{ path: ["gates", "proposed"], value: [REVIEW, BUILD] }]);
+    const out = editRecipe(OWN, [{ path: ["steps", "proposed"], value: [REVIEW, BUILD] }]);
     expect(out).toContain("  proposed:\n    # The cold reviewer, on from 2026-09-09.");
     expect(out).toMatch(/# extension may not name one of Lingtai's own\.\n    - name: build\n/);
   });
@@ -246,14 +246,14 @@ describe("editRecipe, on this repository's own recipe", () => {
   // `proposed` holds the commented-out `tamper` block, and the rendering drops
   // a blank line inside it — so the removed region cannot be put onto the file.
   it("names the change and what to do when a changed line has no line in the file to land on", () => {
-    const remove = () => editRecipe(OWN, [{ path: ["gates", "proposed"], value: undefined }]);
-    expect(remove).toThrow(/^the change to gates\.proposed could not be carried onto the file exactly/);
+    const remove = () => editRecipe(OWN, [{ path: ["steps", "proposed"], value: undefined }]);
+    expect(remove).toThrow(/^the change to steps\.proposed could not be carried onto the file exactly/);
     expect(remove).toThrow(/try again, or make this change by hand$/);
   });
 
   it("refuses an edit that would not be a recipe, rather than writing it", () => {
     expect(() => editRecipe(OWN, [{ path: ["source", "kinds"], value: [] }])).toThrow();
-    expect(() => editRecipe(OWN, [{ path: ["gates", "merg"], value: [] }])).toThrow();
+    expect(() => editRecipe(OWN, [{ path: ["steps", "merg"], value: [] }])).toThrow();
   });
 });
 
@@ -281,35 +281,35 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
 
   it("refuses a different gate in place of a commented one, rather than letting it inherit the reviewer's comments", () => {
     const lint = { name: "lint", run: "pnpm lint", timeout: "5m", env: [] };
-    expect(() => editRecipe(OWN, [{ path: ["gates", "proposed"], value: [BUILD, lint] }])).toThrow(
-      /gates\.proposed\.1 carries a comment/,
+    expect(() => editRecipe(OWN, [{ path: ["steps", "proposed"], value: [BUILD, lint] }])).toThrow(
+      /steps\.proposed\.1 carries a comment/,
     );
-    const byIndex = () => editRecipe(OWN, [{ path: ["gates", "proposed", 1], value: lint }]);
+    const byIndex = () => editRecipe(OWN, [{ path: ["steps", "proposed", 1], value: lint }]);
     expect(byIndex).toThrow(CommentWouldBeLostError);
-    expect(byIndex).toThrow(/gates\.proposed\.1 carries a comment \("The cold reviewer/);
+    expect(byIndex).toThrow(/steps\.proposed\.1 carries a comment \("The cold reviewer/);
     expect(byIndex).not.toThrow(/by their own paths/);
 
     // The same swap made field by field is the same different gate.
     const byFields = () =>
       editRecipe(OWN, [
-        { path: ["gates", "proposed", 1, "name"], value: "lint" },
-        { path: ["gates", "proposed", 1, "agent"], value: undefined },
-        { path: ["gates", "proposed", 1, "run"], value: "pnpm lint" },
+        { path: ["steps", "proposed", 1, "name"], value: "lint" },
+        { path: ["steps", "proposed", 1, "agent"], value: undefined },
+        { path: ["steps", "proposed", 1, "run"], value: "pnpm lint" },
       ]);
     expect(byFields).toThrow(CommentWouldBeLostError);
-    expect(byFields).toThrow(/gates\.proposed\.1 carries a comment \("The cold reviewer/);
+    expect(byFields).toThrow(/steps\.proposed\.1 carries a comment \("The cold reviewer/);
     // Keeping the name does not make a run gate the reviewer.
     expect(() =>
       editRecipe(OWN, [
-        { path: ["gates", "proposed", 1, "agent"], value: undefined },
-        { path: ["gates", "proposed", 1, "run"], value: "pnpm lint" },
+        { path: ["steps", "proposed", 1, "agent"], value: undefined },
+        { path: ["steps", "proposed", 1, "run"], value: "pnpm lint" },
       ]),
     ).toThrow(CommentWouldBeLostError);
 
     // What the refusal says to do: the reviewer goes with its paragraph, and lint arrives bare.
     const out = editRecipe(OWN, [
-      { path: ["gates", "proposed", 1], value: undefined },
-      { path: ["gates", "proposed", 1], value: lint },
+      { path: ["steps", "proposed", 1], value: undefined },
+      { path: ["steps", "proposed", 1], value: lint },
     ]);
     expect(out).not.toContain("The cold reviewer");
     expect(out).toMatch(/      env: \[\]\n    - name: lint\n      run: pnpm lint\n/);
@@ -317,31 +317,31 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
 
   it("puts a different gate in place of an uncommented one bare, and the comment above the list stays where it was", () => {
     const setup = { name: "setup", run: "pnpm install", timeout: "10m", env: [] };
-    const out = editRecipe(OWN, [{ path: ["gates", "prepared"], value: [setup] }]);
+    const out = editRecipe(OWN, [{ path: ["steps", "prepared"], value: [setup] }]);
     expect(commentCount(out)).toBe(commentCount(OWN));
     expect(out).toContain("  # are what the `proposed` gate runs.\n  prepared:\n    - name: setup\n      run: pnpm install\n");
   });
 
   it("refuses a gate renamed and moved in one list, and does it when the rename is said by path first", () => {
     const renamed = { ...BUILD, name: "tests" };
-    expect(() => editRecipe(OWN, [{ path: ["gates", "proposed"], value: [REVIEW, renamed] }])).toThrow(
-      /gates\.proposed\.0 carries a comment \("`env: \[\]` is written out/,
+    expect(() => editRecipe(OWN, [{ path: ["steps", "proposed"], value: [REVIEW, renamed] }])).toThrow(
+      /steps\.proposed\.0 carries a comment \("`env: \[\]` is written out/,
     );
 
     const before = chunks(OWN);
     const out = editRecipe(OWN, [
-      { path: ["gates", "proposed", 0, "name"], value: "tests" },
-      { path: ["gates", "proposed"], value: [REVIEW, renamed] },
+      { path: ["steps", "proposed", 0, "name"], value: "tests" },
+      { path: ["steps", "proposed"], value: [REVIEW, renamed] },
     ]);
     expect(commentCount(out)).toBe(commentCount(OWN));
     expect(chunks(out)).toEqual([before[1], before[0]!.replace("- name: build", "- name: tests")]);
   });
 
   it("refuses a commented gate changed inside a whole list, and does it by path", () => {
-    expect(() => editRecipe(OWN, [{ path: ["gates", "proposed"], value: [{ ...BUILD, timeout: "30m" }, REVIEW] }])).toThrow(
+    expect(() => editRecipe(OWN, [{ path: ["steps", "proposed"], value: [{ ...BUILD, timeout: "30m" }, REVIEW] }])).toThrow(
       CommentWouldBeLostError,
     );
-    const out = editRecipe(OWN, [{ path: ["gates", "proposed", 0, "timeout"], value: "30m" }]);
+    const out = editRecipe(OWN, [{ path: ["steps", "proposed", 0, "timeout"], value: "30m" }]);
     expect(gitDiff(OWN, out)).toEqual({ removed: ["      timeout: 20m"], added: ["      timeout: 30m"] });
   });
 
@@ -352,21 +352,21 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
   it("refuses a gate swapped field by field even when the fields it did not name still match", () => {
     const byFields = () =>
       editRecipe(OWN, [
-        { path: ["gates", "proposed", 0, "name"], value: "lint" },
-        { path: ["gates", "proposed", 0, "run"], value: "pnpm lint" },
+        { path: ["steps", "proposed", 0, "name"], value: "lint" },
+        { path: ["steps", "proposed", 0, "run"], value: "pnpm lint" },
       ]);
     expect(byFields).toThrow(CommentWouldBeLostError);
-    expect(byFields).toThrow(/gates\.proposed\.0 carries a comment \("`env: \[\]` is written out/);
+    expect(byFields).toThrow(/steps\.proposed\.0 carries a comment \("`env: \[\]` is written out/);
     // The claim the refusal makes good on: the same swap set whole is refused too.
     expect(() =>
-      editRecipe(OWN, [{ path: ["gates", "proposed", 0], value: { ...BUILD, name: "lint", run: "pnpm lint" } }]),
+      editRecipe(OWN, [{ path: ["steps", "proposed", 0], value: { ...BUILD, name: "lint", run: "pnpm lint" } }]),
     ).toThrow(CommentWouldBeLostError);
 
     // One field is still a rename or a new timeout, and goes through.
     for (const change of [
-      { path: ["gates", "proposed", 0, "name"], value: "lint" },
-      { path: ["gates", "proposed", 0, "run"], value: "pnpm lint" },
-      { path: ["gates", "proposed", 0, "env"], value: ["CI"] },
+      { path: ["steps", "proposed", 0, "name"], value: "lint" },
+      { path: ["steps", "proposed", 0, "run"], value: "pnpm lint" },
+      { path: ["steps", "proposed", 0, "env"], value: ["CI"] },
     ]) {
       expect(() => editRecipe(OWN, [change]), JSON.stringify(change.path)).not.toThrow();
     }
@@ -379,7 +379,7 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
   });
 
   function chunks(text: string): string[] {
-    const seq = parseDocument(text).getIn(["gates", "proposed"], true) as { items: Node[] };
+    const seq = parseDocument(text).getIn(["steps", "proposed"], true) as { items: Node[] };
     return seq.items.map((item) => {
       const lines = text.slice(0, text.lastIndexOf("\n", item.range![0] - 1) + 1).split("\n").slice(0, -1);
       const above: string[] = [];
@@ -393,18 +393,18 @@ describe("editRecipe never guesses which item a comment belongs to", () => {
 describe("emitRecipe", () => {
   const said = {
     "source.kinds": "order is priority",
-    "gates.merge": "nobody holds it",
+    "steps.merge": "nobody holds it",
     "runtime.limits": "what one ticket may spend before it comes back to you",
-    "gates.proposed":
+    "steps.proposed":
       "every script found, with the guesses ticked — an unticked one is listed rather than dropped, so a person can see what does not run before it merges",
   };
 
   const recipe = Recipe.parse({
-    version: 1,
+    version: 2,
     repo: { base: "develop" },
     source: { kinds: ["bug", "feature"], exclude: ["agent:hold"] },
     env: { required: ["DATABASE_URL"], plantAt: ".env.local" },
-    gates: {
+    steps: {
       proposed: [{ name: "build", run: "pnpm typecheck && pnpm test", timeout: "20m" }],
       end: [{ name: "close the ticket", when: "landed", close: true }],
     },
@@ -440,12 +440,12 @@ describe("emitRecipe", () => {
 
   it("an edit to what it emitted keeps every sentence", () => {
     const text = emitRecipe(recipe, said);
-    const out = editRecipe(text, [{ path: ["gates", "merge"], value: [{ name: "approve", human: "Merge?" }] }]);
+    const out = editRecipe(text, [{ path: ["steps", "merge"], value: [{ name: "approve", human: "Merge?" }] }]);
     expect(commentCount(out)).toBe(commentCount(text));
     expect(out).toContain("  # nobody holds it\n  merge:\n");
   });
 
   it("refuses a sentence about a block the recipe does not have", () => {
-    expect(() => emitRecipe(recipe, { "gates.merg": "nobody holds it" })).toThrow(/gates\.merg/);
+    expect(() => emitRecipe(recipe, { "steps.merg": "nobody holds it" })).toThrow(/steps\.merg/);
   });
 });

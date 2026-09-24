@@ -455,7 +455,7 @@ describe("lingtai doctor — the declared environment", () => {
  */
 describe("lingtai doctor — an extension's declared environment", () => {
   const RECIPE = `
-version: 1
+version: 2
 repo:
   base: main
 source:
@@ -463,7 +463,7 @@ source:
 env:
   required: []
   plantAt: .env.local
-gates:
+steps:
   prepared:
     - name: install
       run: pnpm install
@@ -561,7 +561,7 @@ subscribers:
   /**
    * `#51`. The agent's row checks what survives `deny`; an extension reads its
    * names from the merged files, so a denied production value it declares is
-   * only caught here — before a run, not at `gates.prepared` after the claim.
+   * only caught here — before a run, not at `steps.prepared` after the claim.
    */
   it("is red before a run when an extension declares a denied production value, wherever it runs", async () => {
     const recipe = await resolveRecipe(

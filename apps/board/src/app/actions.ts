@@ -56,6 +56,7 @@ import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } fr
 // Who is acting — next door for the same reason, and so a test can hold the
 // CLI's actor to this one rather than to a copy.
 import { actor } from "@/lib/actor";
+import { kindsOf } from "@lingtai/recipe/settings";
 
 async function project(name: string) {
   const state = await loadProject(name);
@@ -252,7 +253,7 @@ export async function acceptBacklogFinding(input: {
       key: input.key,
       by: actor(),
       kind: input.kind,
-      kinds: recipe.source.kinds,
+      kinds: kindsOf(recipe),
       labels: input.hold === false ? [] : ["agent:hold"],
       tickets: githubTicketStore(client),
     });

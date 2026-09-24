@@ -40,7 +40,7 @@ import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from "@ling
 import {
   type ActionKind,
   type GateAction,
-  GateMap,
+  StepMap,
   KINDS_AT,
   PLUGINS,
   whyNoKindAt,
@@ -165,7 +165,7 @@ function runsAt(point: Step, kind: ActionKind): boolean {
 
 /** Does a recipe naming this action at this point resolve? */
 function accepted(point: Step, kind: ActionKind): string | null {
-  const parsed = GateMap.safeParse({ [point]: [ACTION[kind]] });
+  const parsed = StepMap.safeParse({ [point]: [ACTION[kind]] });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
 
@@ -456,9 +456,9 @@ describe("every step × kind cell runs or refuses", () => {
    */
   it("is the deps run-once passes at each point", async () => {
     const src = await readFile(new URL("../src/run-once.ts", import.meta.url), "utf8");
-    expect(src).toMatch(/gatesFromRecipe\(\s*"prepared",\s*recipe\.gates\.prepared,\s*\{\s*env:/);
-    expect(src).toMatch(/gatesFromRecipe\(\s*"proposed",\s*recipe\.gates\.proposed,\s*gateDeps\s*\)/);
-    expect(src).toMatch(/gatesFromRecipe\(\s*"merge",\s*recipe\.gates\.merge,\s*gateDeps\s*\)/);
+    expect(src).toMatch(/gatesFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
+    expect(src).toMatch(/gatesFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*gateDeps\s*\)/);
+    expect(src).toMatch(/gatesFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*gateDeps\s*\)/);
     // And nowhere else *in this file*: a fourth call site here is a point this
     // test does not know about, judging with deps it has not been told. The
     // whole tree is the next test's.

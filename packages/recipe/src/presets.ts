@@ -2,7 +2,7 @@
  * Presets: the defaults a recipe can `extends` instead of restating.
  *
  * A preset carries the shape a *toolchain* implies — how you install, how you
- * verify — not what a *project* decides. Which gates are mandatory, where the
+ * verify — not what a *project* decides. Which steps are mandatory, where the
  * env file is planted and which kinds of work item are eligible all differ
  * between two repositories using the same package manager, so none of them has
  * a defensible default and none is here.
@@ -16,7 +16,7 @@ import type { Recipe } from "./recipe.ts";
 /** What a preset may fill in. Everything is optional; the recipe always wins. */
 export type Preset = {
   repo?: Partial<Recipe["repo"]>;
-  gates?: Recipe["gates"];
+  steps?: Recipe["steps"];
   runtime?: Partial<Recipe["runtime"]>;
 };
 
@@ -48,7 +48,7 @@ export const PRESETS: Record<string, Preset> = {
     // rather than left to the schema's default for the reason that default is
     // written out: 0061 §5's *the resolved recipe may not omit a step* is a
     // thing to be able to read here as well as infer.
-    gates: {
+    steps: {
       claim: [],
       admit: [],
       // `git worktree add` copies no node_modules, so without this the agent is
@@ -103,7 +103,7 @@ export interface PresetApplied {
  * Applies a preset underneath a parsed recipe.
  *
  * Shallow per section, and arrays replace rather than concatenate. A recipe that
- * lists gates means *those* gates; silently appending the preset's would be a
+ * lists steps means *those* steps; silently appending the preset's would be a
  * way to acquire a gate nobody wrote down, and the merge rule you cannot predict
  * is worse than the one you have to restate.
  *
@@ -143,7 +143,7 @@ export function applyPreset(raw: unknown): PresetApplied {
       // Arrays replace rather than concatenate, for both of these. A recipe
       // that lists its own steps means *those* steps; silently appending the
       // preset's would be a way to acquire work nobody wrote down.
-      gates: recipe["gates"] ?? preset.gates,
+      steps: recipe["steps"] ?? preset.steps,
     },
     preset: name,
   };

@@ -93,7 +93,7 @@ export async function endReplay(
         const ended = await appendEndActions(
           eventStore,
           item.workItemId,
-          resolved.recipe.gates.end,
+          resolved.recipe.steps.end,
           item.outcome,
         );
         // Resolved and then carried out, in that order and in this process. The

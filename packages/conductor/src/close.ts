@@ -118,7 +118,7 @@ export async function close(options: {
   if (options.state && options.client) {
     try {
       const state = options.state;
-      end = (await (options.recipe ?? (() => currentRecipe(state)))()).recipe.gates.end;
+      end = (await (options.recipe ?? (() => currentRecipe(state)))()).recipe.steps.end;
     } catch (err) {
       return {
         ok: false,

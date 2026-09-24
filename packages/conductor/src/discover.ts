@@ -28,6 +28,7 @@
  */
 import type { AssigneeRule, Recipe } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
+import { kindsOf } from "@lingtai/recipe/settings";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
@@ -157,7 +158,7 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   const excluded = new Set(recipe.source.exclude.map((l) => l.toLowerCase()));
   if (labels.some((l) => excluded.has(l))) return { issue, skip: "excluded-label" };
 
-  if (kindOf(issue, recipe.source.kinds) === null) return { issue, skip: "no-kind" };
+  if (kindOf(issue, kindsOf(recipe)) === null) return { issue, skip: "no-kind" };
 
   // After the checks above, and deliberately the least permanent of them. A ticket carrying
   // `agent:hold` is one a person is holding and a ticket of no kind is one this
@@ -336,7 +337,7 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
   for (const issue of issues) {
     if (issue.dependencies === null) unread.push(issue.number);
 
-    const matched = kindLabelOf(issue, recipe.source.kinds);
+    const matched = kindLabelOf(issue, kindsOf(recipe));
     // Before the skip, deliberately: the colour of `bug` is the same whether or
     // not this particular bug can be run, and a held ticket is often the only
     // open issue a kind has.

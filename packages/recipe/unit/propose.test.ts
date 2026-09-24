@@ -66,9 +66,9 @@ describe("proposeRecipe", () => {
     // The repository's own spelling, in the proposal's order.
     expect(recipe.source.kinds).toEqual(["Bug", "feature", "tech-debt"]);
     expect(recipe.source.exclude).toContain("agent:hold");
-    expect(recipe.gates.proposed).toEqual([{ name: "build", run: "npm run test", timeout: "20m", env: [] }]);
-    expect(recipe.gates.end).toEqual([{ name: "close the ticket", when: "landed", close: true }]);
-    expect(recipe.gates.merge).toEqual([]);
+    expect(recipe.steps.proposed).toEqual([{ name: "build", run: "npm run test", timeout: "20m", env: [] }]);
+    expect(recipe.steps.end).toEqual([{ name: "close the ticket", when: "landed", close: true }]);
+    expect(recipe.steps.merge).toEqual([]);
     expect(recipe.env.required).toEqual(["DATABASE_URL"]);
     expect(recipe.runtime.agent).toBe("claude-code");
     expect(found.scripts.map((s) => [s.name, s.guessed])).toEqual([
@@ -96,7 +96,7 @@ describe("proposeRecipe", () => {
 
     const { recipe, found, refusals } = await proposeRecipe("steven-zhc/lingtai", client, { signedIn: ["codex"] });
 
-    expect(recipe.gates.proposed).toEqual([
+    expect(recipe.steps.proposed).toEqual([
       { name: "build", run: "pnpm typecheck && pnpm test && pnpm test:db", timeout: "20m", env: [] },
     ]);
     // Every script is found, the unpicked ones included.
@@ -125,7 +125,7 @@ describe("proposeRecipe", () => {
 
     const { recipe, found, refusals } = await proposeRecipe("acme/admin", client, { signedIn: ["claude-code"] });
 
-    expect(recipe.gates.proposed).toEqual([
+    expect(recipe.steps.proposed).toEqual([
       { name: "build", run: "pnpm typecheck && pnpm test", timeout: "20m", env: [] },
     ]);
     expect(found.scripts).toContainEqual({
@@ -155,7 +155,7 @@ describe("proposeRecipe", () => {
 
     const { recipe, found, refusals } = await proposeRecipe("acme/e2e", client, { signedIn: ["claude-code"] });
 
-    expect(recipe.gates.proposed).toEqual([{ name: "build", run: "pnpm test:unit", timeout: "20m", env: [] }]);
+    expect(recipe.steps.proposed).toEqual([{ name: "build", run: "pnpm test:unit", timeout: "20m", env: [] }]);
     expect(found.scripts.map((s) => [s.name, s.guessed])).toEqual([
       ["test", false],
       ["test:unit", true],
@@ -175,7 +175,7 @@ describe("proposeRecipe", () => {
       },
     });
     const { recipe, refusals } = await proposeRecipe("acme/chain", client, { signedIn: ["claude-code"] });
-    expect(recipe.gates.proposed).toEqual([{ name: "build", run: "npm run test", timeout: "20m", env: [] }]);
+    expect(recipe.steps.proposed).toEqual([{ name: "build", run: "npm run test", timeout: "20m", env: [] }]);
     expect(refusals).toEqual([]);
   });
 
@@ -235,7 +235,7 @@ describe("proposeRecipe", () => {
     const { recipe, found, refusals } = await proposeRecipe("acme/split", client, { signedIn: ["claude-code"] });
 
     expect(Recipe.parse(recipe)).toEqual(recipe);
-    expect(recipe.gates.proposed).toEqual([]);
+    expect(recipe.steps.proposed).toEqual([]);
     expect(found.scripts.filter((s) => s.guessed)).toEqual([]);
     expect(found.scripts.filter((s) => s.name === "test")).toHaveLength(2);
     expect(refusals.join("\n")).toMatch(/2 package\(s\)/);
@@ -250,7 +250,7 @@ describe("proposeRecipe", () => {
     expect(recipe.source.kinds.length).toBeGreaterThan(0);
     expect(refusals.some((r) => r.includes("labels"))).toBe(true);
     // Nothing checks a diff, and no runtime was said to be signed in: both refused.
-    expect(recipe.gates.proposed).toEqual([]);
+    expect(recipe.steps.proposed).toEqual([]);
     expect(refusals.some((r) => r.includes("no check scripts"))).toBe(true);
     expect(found.runtime).toBeNull();
     expect(refusals.some((r) => r.includes("runtime"))).toBe(true);

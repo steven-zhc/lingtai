@@ -17,26 +17,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
-import {
-  AgentUnresolvedError,
-  LIMIT_DEFAULTS,
-  MachineConfigInvalidError,
-  PROVENANCE_ARROW,
-  RecipeInvalidError,
-  RecipeMissingError,
-  disclose,
-  discloseSteps,
-  kindOfAction,
-  machinePath,
-  parseDuration,
-  provenanceSource,
-  recipePath,
-  resolveRecipe,
-  PLUGINS,
-  type GateAction,
-  type PluginSecrets,
-  type Recipe,
-} from "@lingtai/recipe";
+import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, disclose, discloseSteps, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type GateAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
 /** The limits `a pass` is made of, from the recipe rather than listed again here. */
 const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
@@ -102,7 +83,7 @@ export type RunRecipe =
  * differently on the page.
  */
 export interface Change {
-  /** Its path in the recipe, keyed by name where a list has names — `gates.proposed.build.run`. */
+  /** Its path in the recipe, keyed by name where a list has names — `steps.proposed.build.run`. */
   path: string;
   run: string | null;
   head: string | null;
@@ -198,7 +179,7 @@ export function changesFromHead(
 ): Change[] {
   const a = new Map<string, string>();
   const b = new Map<string, string>();
-  const shown = (recipe: Recipe) => ({ ...recipe, gates: discloseSteps(recipe.gates, plugins) });
+  const shown = (recipe: Recipe) => ({ ...recipe, steps: discloseSteps(recipe.steps, plugins) });
   flatten(shown(mine), "", a);
   flatten(shown(head), "", b);
   return [...new Set([...a.keys(), ...b.keys()])]
@@ -677,14 +658,14 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
  * configured and silently did not run (0016 §4, 0061 §5).
  */
 export function readRecipe(recipe: Recipe): Reading[] {
-  const limits = recipe.runtime.limits;
+  const limits = limitsFor(recipe, "implement");
   const budget = recipe.runtime.budget;
   return [
     {
       name: "picks up",
       says:
-        recipe.source.kinds.join(" > ") +
-        (recipe.source.kinds.length > 1 ? " (in priority order)" : ""),
+        kindsOf(recipe).join(" > ") +
+        (kindsOf(recipe).length > 1 ? " (in priority order)" : ""),
       keys: ["source.kinds"],
     },
     {
@@ -699,8 +680,8 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "the points",
-      says: STEPS.map((point) => `${point} ${recipe.gates[point].length}`).join(" · "),
-      keys: ["gates"],
+      says: STEPS.map((point) => `${point} ${recipe.steps[point].length}`).join(" · "),
+      keys: ["steps"],
     },
     {
       name: "a pass",

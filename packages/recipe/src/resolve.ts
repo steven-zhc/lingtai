@@ -21,6 +21,7 @@ import { parse as parseYaml } from "yaml";
 import { applyPreset } from "./presets.ts";
 import type { Plugin } from "./plugin.ts";
 import { PLUGINS, Recipe, discloseSteps } from "./recipe.ts";
+import { baseOf } from "./settings.ts";
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = ".lingtai/config.yaml";
@@ -98,7 +99,7 @@ function canonical(value: unknown): string {
  * `configHash` is the identity of a document
  * ([0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md) §2:
  * *two documents with one hash are one document*), and the log is full of
- * hashes taken when `gates` had five keys. Widening `GateMap` to ten put five
+ * hashes taken when `gates` had five keys. Widening `StepMap` to ten put five
  * more always-empty keys inside `canonical`, so the identical `recipe.yml`
  * hashed to something new — and there is no step from an old digest to a new
  * one the way `GatesResolved`'s `3 → 4` has one for a stored plan. The task
@@ -145,11 +146,11 @@ function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unk
   // rotated one document. Above the drop below rather than under it, because
   // the two answer different questions and only this one is about what may be
   // written down.
-  const gates: Record<string, unknown> = { ...discloseSteps(recipe.gates, plugins) };
+  const steps: Record<string, unknown> = { ...discloseSteps(recipe.steps, plugins) };
   for (const step of NOT_YET_IN_THE_HASH) {
-    if ((gates[step] as readonly unknown[] | undefined)?.length === 0) delete gates[step];
+    if ((steps[step] as readonly unknown[] | undefined)?.length === 0) delete steps[step];
   }
-  return { ...recipe, gates };
+  return { ...recipe, steps };
 }
 
 /**
@@ -285,6 +286,15 @@ function retiredKeys(raw: unknown): string[] {
         "so Lingtai will not guess",
     );
   }
+  if ("gates" in raw) {
+    out.push(
+      "gates: retired by ADR 0061 — a pass is ten steps and all ten are configurable, " +
+        "so the key is `steps:` and it names them in pass order: claim, admit, prepared, " +
+        "design, implement, build, review, proposed, merge, end. Rename the block. " +
+        "**It is refused rather than read as `steps:`** because `gates:` held five of the " +
+        "ten and silently promoting it would leave the other five configured by nobody",
+    );
+  }
   return out;
 }
 
@@ -311,7 +321,7 @@ function retiredKeys(raw: unknown): string[] {
  * doctor check — and none of them may pick a winner between the two branches.
  */
 export function baseDivergence(resolved: ResolvedRecipe, slug: string): string | null {
-  const declared = resolved.recipe.repo.base;
+  const declared = baseOf(resolved.recipe);
   if (declared === resolved.ref) return null;
   return (
     `recipe read from ${resolved.ref} declares repo.base: ${declared} — ` +

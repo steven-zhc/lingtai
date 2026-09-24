@@ -28,7 +28,7 @@ import { z } from "zod";
 import { RuntimeId, STEPS } from "@lingtai/domain";
 import {
   BUILT_IN_JUDGES,
-  GateMap,
+  StepMap,
   PLUGINS,
   Recipe,
   agentPlugin,
@@ -53,7 +53,7 @@ import {
 
 /** The smallest recipe that resolves, so a case can put one action in it. */
 const BASE: Recipe = Recipe.parse({
-  version: 1,
+  version: 2,
   repo: { base: "main" },
   source: { kinds: ["bug"] },
   env: { plantAt: ".env.local" },
@@ -74,7 +74,7 @@ const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unkn
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
 function withAction(action: GateAction): Recipe {
-  return { ...BASE, gates: { ...BASE.gates, proposed: [action] } };
+  return { ...BASE, steps: { ...BASE.steps, proposed: [action] } };
 }
 
 describe("the contract", () => {
@@ -115,7 +115,7 @@ describe("a plugin refuses a field it does not understand", () => {
    * and the refusal says so and lists what it does have.
    */
   it("refuses `env:` on a plugin that spawns nothing, by name", () => {
-    const refused = GateMap.safeParse({
+    const refused = StepMap.safeParse({
       proposed: [{ name: "review", agent: "read the diff", env: ["OPENAI_API_KEY"] }],
     });
 
@@ -131,7 +131,7 @@ describe("a plugin refuses a field it does not understand", () => {
   });
 
   it("takes `env:` on the plugin that does spawn", () => {
-    const taken = GateMap.safeParse({
+    const taken = StepMap.safeParse({
       proposed: [{ name: "build", run: "pnpm verify", env: ["TURBO_TOKEN"] }],
     });
 
@@ -145,11 +145,11 @@ describe("a plugin refuses a field it does not understand", () => {
   });
 
   it("names the plugins when an action names none, or two", () => {
-    const none = GateMap.safeParse({ proposed: [{ name: "nothing" }] });
+    const none = StepMap.safeParse({ proposed: [{ name: "nothing" }] });
     expect(none.error!.issues[0]!.message).toContain('"nothing" action at the "proposed" step names no plugin');
     expect(none.error!.issues[0]!.message).toContain('"run", "agent", "watch", "human", "close", "labels"');
 
-    const two = GateMap.safeParse({ proposed: [{ name: "both", run: "x", human: "ok?" }] });
+    const two = StepMap.safeParse({ proposed: [{ name: "both", run: "x", human: "ok?" }] });
     expect(two.error!.issues[0]!.message).toContain("names 2 plugins");
     expect(two.error!.issues[0]!.message).toContain('"run" and "human"');
   });
@@ -161,7 +161,7 @@ describe("a plugin refuses a field it does not understand", () => {
    * a person gets, and the field checks do not run at all.
    */
   it("says why the step refuses before it says anything about a field", () => {
-    const refused = GateMap.safeParse({ prepared: [{ name: "review", agent: "x", env: ["A"] }] });
+    const refused = StepMap.safeParse({ prepared: [{ name: "review", agent: "x", env: ["A"] }] });
 
     expect(refused.error!.issues).toHaveLength(1);
     expect(refused.error!.issues[0]!.message).toMatch(/nothing has been committed/);
@@ -175,7 +175,7 @@ describe("every problem in one answer", () => {
    * six schemas that had all failed, and a person fixed one thing per attempt.
    */
   it("names all three bad fields, with their step and plugin", () => {
-    const refused = GateMap.safeParse({
+    const refused = StepMap.safeParse({
       proposed: [
         { name: "build", run: "pnpm verify", timeout: 15 },
         { name: "review", agent: "read it", env: ["A"] },
@@ -205,7 +205,7 @@ describe("every problem in one answer", () => {
   });
 
   it("does not let one bad action hide the next, or one step the other nine", () => {
-    const refused = GateMap.safeParse({
+    const refused = StepMap.safeParse({
       prepared: [{ name: "install", run: "pnpm i", timeout: 10 }],
       merge: [{ name: "approve", human: 7 }],
     });
@@ -369,7 +369,7 @@ describe("a `no_log` field never leaves its plugin", () => {
     const build: GateAction = { name: "build", run: "pnpm verify", timeout: "15m", env: [] };
     const recipe = withAction(build);
 
-    expect(discloseSteps(recipe.gates).proposed).toEqual([build]);
+    expect(discloseSteps(recipe.steps).proposed).toEqual([build]);
     expect(hashRecipe(recipe)).toBe(hashRecipe(recipe, PLUGINS));
   });
 });
@@ -381,7 +381,7 @@ describe("the six behind the contract", () => {
    * `close:` were written are still the ones it gets.
    */
   it("resolves the defaults the six had before the contract", () => {
-    const resolved = GateMap.parse({
+    const resolved = StepMap.parse({
       proposed: [
         { name: "build", run: "pnpm verify" },
         { name: "tamper", watch: ["**/recipe.yml"] },
@@ -406,7 +406,7 @@ describe("the six behind the contract", () => {
     expect(runPlugin.declares).toContain("env");
     expect(agentPlugin.declares).not.toContain("env");
 
-    const refused = GateMap.safeParse({
+    const refused = StepMap.safeParse({
       proposed: [{ name: "build", run: "x", env: ["LINGTAI_DATABASE_URL"] }],
     });
     expect(refused.error!.issues[0]!.message).toContain("LINGTAI_DATABASE_URL");

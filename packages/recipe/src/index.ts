@@ -5,6 +5,7 @@ export * from "./presets.ts";
 export * from "./propose.ts";
 export * from "./resolve.ts";
 export * from "./local.ts";
+export * from "./settings.ts";
 export {
   BadWatchPatternError,
   compileWatch,

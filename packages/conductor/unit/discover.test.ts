@@ -21,7 +21,7 @@ import {
 } from "../src/index.ts";
 
 const recipe = {
-  version: 1,
+  version: 2,
   repo: { base: "develop", submodules: false },
   // `documentation` is here on purpose: it is not a member of any enum, and
   // before #76 a recipe naming it did not parse at all — which took the two
@@ -31,7 +31,7 @@ const recipe = {
     exclude: ["blocked", "needs-design", "agent:wip", "agent:review"],
   },
   env: { required: [], plantAt: ".env.local" },
-  gates: { admit: [], prepared: [], proposed: [{ name: "build", run: "pnpm verify", timeout: "15m" }], merge: [], end: [] },
+  steps: { admit: [], prepared: [], proposed: [{ name: "build", run: "pnpm verify", timeout: "15m" }], merge: [], end: [] },
   runtime: { agent: "claude-code", limits: { turns: 300, wall: "2h" } },
 } as unknown as Recipe;
 

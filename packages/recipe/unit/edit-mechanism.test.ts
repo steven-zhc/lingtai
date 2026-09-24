@@ -29,7 +29,7 @@ describe("editRecipe's mechanism", () => {
     const toString = vi.spyOn(yaml.Document.prototype, "toString");
     const out = editRecipe(OWN, [
       { path: ["runtime", "limits", "turns"], value: 200 },
-      { path: ["gates", "merge"], value: [{ name: "approve", human: "Merge?" }] },
+      { path: ["steps", "merge"], value: [{ name: "approve", human: "Merge?" }] },
       { path: ["source", "exclude"], value: ["blocked"].concat((yaml.parse(OWN) as { source: { exclude: string[] } }).source.exclude.slice(1)) },
     ]);
     expect(yaml.parseDocument).toHaveBeenCalledWith(OWN);
@@ -44,7 +44,7 @@ describe("editRecipe's mechanism", () => {
     // colon, quotes nobody needed, a comment at its own indent, two blank lines,
     // and a flow list with padding.
     const quirky = [
-      "version:   1",
+      "version:   2",
       "",
       "",
       "repo:",
@@ -53,7 +53,7 @@ describe("editRecipe's mechanism", () => {
       "      # a comment indented past its key",
       "  kinds: [ bug,   feature ]",
       "env: { plantAt:   .env.local }",
-      "gates: {}",
+      "steps: {}",
       "runtime:",
       "  agent: \"claude-code\"",
       "  limits:",

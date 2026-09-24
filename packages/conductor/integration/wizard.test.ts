@@ -51,17 +51,17 @@ function fresh(): string {
 /** The sentences the page showed. The file's comments and the PR body are both these. */
 const SAID = {
   "source.kinds": "Order is priority: a bug is taken before a feature.",
-  "gates.merge": "Nobody approves a merge — the build is what stands between an agent and develop.",
+  "steps.merge": "Nobody approves a merge — the build is what stands between an agent and develop.",
 } as const;
 
 const YAML = `
-version: 1
+version: 2
 repo:
   base: develop
 source:
   kinds: [bug, feature]
   exclude: [agent:hold, epic]
-gates:
+steps:
   proposed:
     - name: build
       run: pnpm verify
@@ -559,7 +559,7 @@ describe("the recipe the button writes", () => {
    */
   it("warns only when nothing at all reads a diff", () => {
     expect(nothingReadsIt(recipe)).toBeNull();
-    const unchecked = { ...recipe, gates: { ...recipe.gates, proposed: [] } } as Recipe;
+    const unchecked = { ...recipe, steps: { ...recipe.steps, proposed: [] } } as Recipe;
     expect(nothingReadsIt(unchecked)).toContain("straight into `develop`");
   });
 });

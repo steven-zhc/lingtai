@@ -73,7 +73,7 @@ export type TerminalOutcome = "landed" | "blocked" | "failed" | "closed";
  * const item = await store.read(workItemId);
  * await store.append(workItemId, item.length, [
  *   { type: "WorkItemLanded", ... },
- *   ...resolveEndActions(item, recipe.gates.end, "landed"),
+ *   ...resolveEndActions(item, recipe.steps.end, "landed"),
  * ]);
  * ```
  *

@@ -109,11 +109,11 @@ function memoryStore(): EventStore & { streams: Map<string, Envelope[]> } {
 }
 
 const RECIPE = `
-version: 1
+version: 2
 repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
-gates: {}
+steps: {}
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
@@ -127,11 +127,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
  * spent by the recipe rather than by three agent runs.
  */
 const restartRecipe = (restarts: number) => `
-version: 1
+version: 2
 repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
-gates:
+steps:
   proposed:
     - name: review
       agent: look at it coldly
@@ -149,11 +149,11 @@ runtime:
  * a pass, and this is the second agent.
  */
 const REVIEWED = `
-version: 1
+version: 2
 repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
-gates:
+steps:
   proposed:
     - name: review
       agent: look for races
@@ -178,7 +178,7 @@ const project: ProjectState = {
   configHash: "seeded",
   fromSha: "0".repeat(40),
   refused: null,
-  version: 1,
+  version: 2,
   lastSeq: null,
 };
 
@@ -1370,8 +1370,8 @@ describe("runOnce refuses an extension's production value before anything is cla
       }) as never;
 
     const recipe = RECIPE.replace("required: [],", "required: [], deny: [PROD_DATABASE_URL], refuseHosts: [eliwlauokdzgsqfgczkv],").replace(
-      "gates: {}",
-      "gates:\n  prepared:\n    - name: migrate\n      run: pnpm migrate\n      env: [PROD_DATABASE_URL]",
+      "steps: {}",
+      "steps:\n  prepared:\n    - name: migrate\n      run: pnpm migrate\n      env: [PROD_DATABASE_URL]",
     );
     const result = await once(
       {
@@ -1424,8 +1424,8 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
         : git(...call);
 
     const armed = RECIPE.replace(
-      "gates: {}",
-      'gates:\n  proposed:\n    - name: tamper\n      watch: [".lingtai/config.yaml", "packages/actions/**"]\n      then: request-approval',
+      "steps: {}",
+      'steps:\n  proposed:\n    - name: tamper\n      watch: [".lingtai/config.yaml", "packages/actions/**"]\n      then: request-approval',
     );
     const client = {
       ...fakeGitHub([], RECIPE),

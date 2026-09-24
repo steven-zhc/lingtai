@@ -45,17 +45,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { stateDir } from "@lingtai/env";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import {
-  Recipe,
-  type Said,
-  emitRecipe,
-  machineFiles,
-  machinePath,
-  parseDuration,
-  recipePath,
-  resolveLocalRecipe,
-  resolveRecipe,
-} from "@lingtai/recipe";
+import { Recipe, baseOf, emitRecipe, kindsOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
 import { type Runnable, selectRunnable } from "./queue.ts";
 import { nothingChecks } from "./wizard-page.ts";
@@ -100,7 +90,7 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
   const taking = await selectRunnable({
     project: client.repo,
     offered: offered.runnable,
-    kinds: recipe.source.kinds,
+    kinds: kindsOf(recipe),
     // The recipe's, not a constant here (0028). Nothing has been attempted, so
     // it holds nothing — a window read off the wrong recipe would still be the
     // wrong window the first time this screen is shown for a re-onboarding.
@@ -127,9 +117,9 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * deciding.
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
-  if (recipe.gates.merge.length > 0) return null;
-  if (recipe.gates.proposed.length > 0) return null;
-  return nothingChecks(recipe.repo.base);
+  if (recipe.steps.merge.length > 0) return null;
+  if (recipe.steps.proposed.length > 0) return null;
+  return nothingChecks(baseOf(recipe));
 }
 
 /**
@@ -316,7 +306,7 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   const store = options.store ?? eventStore;
   const home = options.home ?? stateDir();
   const slug = `${client.owner}/${client.repo}`;
-  const base = recipe.repo.base;
+  const base = baseOf(recipe);
   const stream = projectStream(client.repo);
   const path = recipePath(client.repo, home);
   const machineFile = machinePath(home);

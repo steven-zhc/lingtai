@@ -334,11 +334,11 @@ export async function proposeRecipe(
   }
 
   const recipe = Recipe.parse({
-    version: 1,
+    version: 2,
     repo: { base, submodules },
     source: { kinds: kinds.length > 0 ? kinds : [...PROPOSED_KINDS], exclude: [...PROPOSED_EXCLUDE] },
     env: { required, plantAt },
-    gates: {
+    steps: {
       proposed,
       end: [{ name: "close the ticket", when: "landed", close: true }],
     },
