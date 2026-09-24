@@ -22,6 +22,7 @@
  *   `hashRecipe` and `changesFromHead` with it: a guard asserted over an empty
  *   set asserts nothing.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { RuntimeId, STEPS } from "@lingtai/domain";
@@ -671,5 +672,57 @@ describe("the one `proposed` will hold", () => {
     expect(judgePlugin.schema.safeParse({ name: "j", judge: "ask-or-assume", when: "needs-input" }).success).toBe(
       false,
     );
+  });
+});
+
+/**
+ * **This file's own header, counted rather than remembered** (`#238`).
+ *
+ * The decision *not* to hoist `when:` and `timeout:` as 0061 §2's universal
+ * keys is sized in prose from how many plugins carry one today — and `judge:`
+ * made that number false the day it declared a `when:`, with nothing going
+ * red. A ticket reading that sentence budgets the hoist from a set one plugin
+ * short, writes `when: WHEN.default("any")` onto every plugin, and silently
+ * replaces `judge:`'s vocabulary — `JudgeWhen` is the reason the last step
+ * gave, and `WHEN` is the work item's outcome — which is the one mistake the
+ * sentence exists to stop somebody making.
+ *
+ * So the numerals come off `PLUGINS`, and the whitespace is normalised first
+ * so that re-wrapping the comment is not a failure.
+ */
+describe("plugin.ts's own count of who carries a universal key", () => {
+  const NUMERAL = [
+    "no",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+  ] as const;
+  const carrying = (field: string) =>
+    PLUGINS.filter((plugin) => plugin.declares.includes(field)).length;
+
+  it("says how many plugins carry `when:` and `timeout:`, and how many a hoist would reach", () => {
+    const prose = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8")
+      .replace(/\n\s*\*/g, " ")
+      .replace(/\s+/g, " ");
+    expect(
+      prose,
+      "plugin.ts's header disagrees with PLUGINS about who carries `when:` or `timeout:`",
+    ).toContain(
+      `\`when:\` is legal on ${NUMERAL[carrying("when")]} plugins and \`timeout:\` on ` +
+        `${NUMERAL[carrying("timeout")]}`,
+    );
+    expect(
+      prose,
+      "plugin.ts's header disagrees with PLUGINS about how many plugins a hoist would reach",
+    ).toContain(`hoisting either would make it legal on all ${NUMERAL[PLUGINS.length]}`);
   });
 });

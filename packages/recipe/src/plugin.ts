@@ -37,9 +37,14 @@
  * workflow's: every action is addressed by it — `task_view` keys a verdict
  * `step:action`, the board draws it, `lingtai waive` names it — and no plugin
  * decides that. 0061 §2 makes `when:` and `timeout:` universal too, and they
- * are **not** hoisted here: today `when:` is legal on two plugins and
- * `timeout:` on one, and hoisting either would make it legal on all six. That
- * is a behavioural change, and this is not the ticket for it.
+ * are **not** hoisted here: today `when:` is legal on three plugins and
+ * `timeout:` on one, and hoisting either would make it legal on all eleven.
+ * That is a behavioural change, and this is not the ticket for it — and the
+ * three are not one key wearing one spelling: `close:` and `labels:` read the
+ * work item's *outcome* (`WHEN`) and `judge:` reads the *reason the last step
+ * gave* (`JudgeWhen`, `#238`), so a hoist has two vocabularies to reconcile
+ * before it has one universal key. The counts here are counted off `PLUGINS`
+ * by `packages/recipe/unit/plugin.test.ts` rather than remembered.
  *
  * ## `no_log`
  *

@@ -612,7 +612,13 @@ export const KINDS_AT = {
   review: [],
   proposed: ["run", "agent", "watch", "human"],
   merge: ["run", "agent", "watch", "human"],
-  /** The two effects — the two kinds that carry `when:`. */
+  /**
+   * The two effects — and **`when:` is not what picks them out**. `judge:`
+   * carries one too (`#238`), so a `"when" in a` test at the point let a
+   * judge action built in code straight past the throw and into a match on
+   * the outcome it could not satisfy: `#61` for one kind, silently.
+   * `end-point.ts`'s guard asks for these two keys instead.
+   */
   end: ["close", "labels"],
 } as const satisfies Record<Step, readonly ActionKind[]>;
 
