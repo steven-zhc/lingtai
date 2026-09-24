@@ -39,13 +39,73 @@
 import {
   backlogStream,
   type Envelope,
+  type Finding,
   type PayloadOf,
+  SEVERITIES,
+  type Severity,
   parsePayload,
   workItemStream,
 } from "@lingtai/domain";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { type BacklogEntry, readBacklog } from "@lingtai/projector";
 import type { ProposedRef, ProposedTicket, TicketStore } from "./ticket-store.ts";
+
+/**
+ * **Where a severity stops being an opinion and becomes an outcome** (`#237`).
+ *
+ * A reviewer returns findings with a severity and **no verdict**
+ * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3),
+ * so something after it has to say what each severity costs. This is that
+ * something, and it is one comparison: at or below the bar a finding is
+ * **filed**, above it a finding **refuses**.
+ *
+ * Nothing calls it yet, and that is the same fact `whyNoKindAt` states about
+ * the `backlog:` plugin. The bar today is a literal `minor` in the fold
+ * (`packages/projector/src/backlog.ts`), which no recipe can see, name or
+ * replace; this is that literal lifted out where a plugin can hand it one.
+ * **Naming a thing is not wiring it** — what is here is the decision, which had
+ * to exist before the ticket that makes the recipe file `steps:` could hand it
+ * a value.
+ *
+ * **`buysARound` is the half worth having a name for.** *Filed* and *bought no
+ * round* are one fact read twice, not two rules that could disagree: a finding
+ * that did not refuse is not a refusal, so nothing downstream is ever asked
+ * what to do about it. Measured over 14 days that is 316 of 660 findings at
+ * `minor` — and 281 more at `major`, which is what a bar raised one rung would
+ * cost or save ([012 §4](../../../doc/experiments/012-where-the-turns-go.md)).
+ *
+ * **What it deliberately does not do is deduplicate.** The same finding raised
+ * in round 2 is the same entry already: `findingKey`
+ * (`packages/domain/src/backlog.ts`) is over the ticket, the step, the action,
+ * the file and the normalised claim, with no run, round or sha in it, and the
+ * fold writes `on conflict (project, key) do nothing`. A second mechanism here
+ * would be a second answer to a question that has one.
+ *
+ * A decision and no I/O, for `fix.ts`'s reason: a rule about what a severity
+ * costs that lives inside an `if` in a fold is a rule nobody can check.
+ */
+export interface BacklogOutcome {
+  /** At or below the bar: filed for a person, and buying nothing. */
+  filed: readonly Finding[];
+  /** Above it: these refuse, and a refusal is what may go on to buy a round. */
+  refuses: readonly Finding[];
+  /** `false` when everything is at or below the bar — there is no refusal to buy one with. */
+  buysARound: boolean;
+}
+
+/** Worst first, so *at or below* is `index >= index`. `SEVERITIES` is the one ladder. */
+function rung(severity: Severity): number {
+  return SEVERITIES.indexOf(severity);
+}
+
+export function decideBacklog(
+  findings: readonly Finding[],
+  bar: Severity = "minor",
+): BacklogOutcome {
+  const filed = findings.filter((f) => rung(f.severity) >= rung(bar));
+  const refuses = findings.filter((f) => rung(f.severity) < rung(bar));
+  return { filed, refuses, buysARound: refuses.length > 0 };
+}
 
 export type BacklogDecision =
   | { ok: true; detail: string; externalRef?: string; url?: string | null }

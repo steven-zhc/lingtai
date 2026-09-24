@@ -9,7 +9,7 @@
  * and converges on one issue the log names.
  */
 import type { Envelope, ToAppend } from "@lingtai/domain";
-import { backlogStream } from "@lingtai/domain";
+import { backlogStream, findingKey } from "@lingtai/domain";
 import { ConcurrencyError, type EventStore } from "@lingtai/event-store";
 import type { GitHubClient, Issue } from "@lingtai/github";
 import type { BacklogEntry } from "@lingtai/projector";
@@ -365,5 +365,51 @@ describe("declineFinding", () => {
     expect((await decline(log, { reason: "  " })).ok).toBe(false);
     expect((await decline(log, { by: "conductor" })).ok).toBe(false);
     expect(log.typesOn(stream)).toEqual([]);
+  });
+});
+
+/**
+ * **The same minor raised in round 2 is the same entry, and this is asserted
+ * against today's behaviour rather than built** (`#237`).
+ *
+ * The `backlog:` plugin declares no `dedup:` because there is nothing to
+ * configure: `findingKey` is an FNV-1a over the ticket, the step, the action,
+ * the file and the normalised claim — **no `runId`, no round, no sha, no
+ * line** — and the fold writes `on conflict (project, key) do nothing`
+ * (`packages/projector/src/backlog.ts`). A second mechanism would be a second
+ * answer to a question that already has one.
+ *
+ * **What moves between rounds is exactly what the key leaves out**, and that is
+ * the case worth writing: a re-review runs in a new run, against a new sha, and
+ * reports the line where the claim now sits, because everything above it has
+ * been edited. All three vary here and the key does not. The wording does, and
+ * that is deliberate — a reviewer who rephrases is making a different claim and
+ * a person is asked again.
+ */
+describe("findingKey across rounds", () => {
+  const round1 = {
+    issue: "237",
+    gate: "proposed",
+    action: "review",
+    file: "packages/conductor/src/backlog.ts",
+    claim: "The  bar is written  twice",
+  };
+
+  it("is the same key when the run, the sha and the line move", () => {
+    // Round 2: a different run, a different sha, a different line — passed as a
+    // variable rather than a literal, so the excess-property check does not hide
+    // the assertion. None of the three reaches the key, which is the property.
+    const round2 = { ...round1, runId: "run-b", onSha: "beefbeefbeef", line: 412 };
+    expect(findingKey(round2)).toBe(findingKey(round1));
+    // And whitespace and case in the claim are folded, which is what makes a
+    // re-review that re-wraps its own sentence land on the entry it already has.
+    expect(findingKey({ ...round1, claim: "the bar is written twice" })).toBe(findingKey(round1));
+  });
+
+  it("is a different key when the claim is a different claim", () => {
+    expect(findingKey({ ...round1, claim: "the bar is unread" })).not.toBe(findingKey(round1));
+    expect(findingKey({ ...round1, file: "packages/projector/src/backlog.ts" })).not.toBe(
+      findingKey(round1),
+    );
   });
 });

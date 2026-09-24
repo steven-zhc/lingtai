@@ -563,6 +563,17 @@ export function describeAction(
         bound: "the workflow counts the rounds and restarts, and offers only the steps still left",
       };
     }
+    // And the one that sits beside it and decides nothing about where the pass
+    // goes: `backlog:` is an effect, so its `bound` is *nothing* — the reading
+    // a person budgets from, since at or below the bar is the half of a
+    // reviewer's output that costs no agent at all (`#237`).
+    case "backlog": {
+      const a = action as Extract<GateAction, { backlog: string }>;
+      return {
+        does: `files every finding at ${a.backlog} or below for a person, instead of refusing`,
+        bound: "no clock, and no round — a finding that did not refuse buys nothing",
+      };
+    }
   }
 }
 

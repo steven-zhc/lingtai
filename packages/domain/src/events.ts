@@ -625,13 +625,31 @@ export const GateStarted = z.object(gateBase);
  * Three copies of the shape would be three places for `failureScenario` to be
  * summarised away, and the whole mechanism is that it is not.
  */
+/**
+ * How bad a defect is, **worst first**.
+ *
+ * The order is the rubric's own, and it is load-bearing rather than
+ * presentational: *at or below the bar* is a comparison of two positions in
+ * this list, so a `backlog:` bar of `minor` files a minor and lets a major
+ * refuse. `severest` in `packages/conductor/src/fix.ts` walks it in this
+ * direction for the same reason.
+ *
+ * Exported so that the one place that decides what a severity **costs** reads
+ * the ladder rather than restating it: `decideBacklog` in
+ * `packages/conductor/src/backlog.ts` and the `backlog:` plugin's schema in
+ * `packages/recipe/src/recipe.ts` are both this array, and a fourth severity
+ * arrives in all three at once (`#237`).
+ */
+export const SEVERITIES = ["blocker", "major", "minor"] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
 const Finding = z.object({
   file: z.string(),
   line: z.number().int().nullable(),
   claim: z.string(),
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: z.string(),
-  severity: z.enum(["blocker", "major", "minor"]),
+  severity: z.enum(SEVERITIES),
 });
 
 export type Finding = z.infer<typeof Finding>;

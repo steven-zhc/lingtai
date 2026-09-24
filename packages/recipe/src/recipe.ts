@@ -16,7 +16,7 @@
  * read from*.
  */
 import { z } from "zod";
-import { Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from "@lingtai/domain";
+import { SEVERITIES, Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import {
   type Plugin,
@@ -459,18 +459,73 @@ export const judgePlugin = definePlugin("judge", {
 });
 
 /**
+ * **The bar: the severity at or below which a finding is filed instead of
+ * refusing.** `minor` is what the code does today, and the default says so.
+ *
+ * Read off `SEVERITIES` in `packages/domain/src/events.ts` rather than spelled
+ * out, because *at or below* is a comparison of two positions in that list and
+ * a copy of the list here would be a second ladder to keep in order. A fourth
+ * severity arrives in the enum, the schema and `decideBacklog` at once.
+ */
+export const BacklogBar = z.enum(SEVERITIES);
+export type BacklogBar = z.infer<typeof BacklogBar>;
+
+/**
+ * **Where a severity stops being an opinion and becomes an outcome** — a name
+ * for `decideBacklog` and for `acceptFinding` / `declineFinding` in
+ * `packages/conductor/src/backlog.ts` (`#137`,
+ * [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
+ *
+ * A reviewer returns findings with a severity and **no verdict**
+ * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3).
+ * Something downstream has to say what a severity costs, and today that
+ * something is a literal `minor` in a fold nobody can name, configure or
+ * replace. Nearly half of what a reviewer says arrives at or below the bar —
+ * **316 minor and 281 major of 660 findings across 231 refusals in 14 days**
+ * ([012 §4](../../../doc/experiments/012-where-the-turns-go.md)) — so the
+ * plugin that decides what happens to them is not a footnote.
+ *
+ * **It routes nothing, and that is the shape of it rather than a limitation.**
+ * A step may hold plugins that route and plugins that only act; `judge:` is
+ * the one that says which step is next, and `proposed` is still the only step
+ * that routes at all. This one is an effect, like `end`'s two: it says which
+ * findings are filed, and a filed finding **buys no round** because it never
+ * refused. So it declares no `when:` — there is no direction for it to answer
+ * — and a recipe writing one is refused by name, listing what it does declare
+ * (0061 §9).
+ *
+ * **And it declares no `kinds:`.** `acceptFinding` is handed the recipe's
+ * `source.kinds` so that an accepted entry cannot open an issue of a kind the
+ * queue never sees; a second list here would be two answers to *what is a
+ * kind*, which is exactly the copy `queuePlugin` shares `QUEUE_FIELDS` to
+ * avoid. One list, in one place, doing the job it already does.
+ *
+ * **No `dedup:` either, because there is nothing to configure.** The same
+ * minor raised in round 2 is the same entry: `findingKey`
+ * (`packages/domain/src/backlog.ts:24`) is over the ticket, the step, the
+ * action, the file and the normalised claim — **no run, no round, no sha** —
+ * and the fold writes `on conflict (project, key) do nothing`
+ * (`packages/projector/src/backlog.ts:162`). A knob over a property that
+ * already holds is a knob whose only reachable value is the one it has.
+ */
+export const backlogPlugin = definePlugin("backlog", {
+  /** At or below this, a finding is filed and buys no round. `minor` today. */
+  backlog: BacklogBar.default("minor"),
+});
+
+/**
  * **The closed set**, and the only list of plugins anywhere.
  *
- * It lists the plugins and not their fields: each of the eleven above declares
+ * It lists the plugins and not their fields: each of the twelve above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
  * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
  * settled that there is no plugin system and an extension is a command — so a
  * key is a bare word and a word that is not one of these is refused.
  *
- * **Eleven of the twelve 0061 §3 names.** `worktree:`, `merge:`, `queue:`,
- * `assignee:` and `judge:` are in the set and in no step's row: they are names
- * for code the pass calls directly today, so every cell of theirs refuses, by a
- * sentence that says where that code is called instead. That is the same
+ * **All twelve of 0061 §3's names, and the last six are in no step's row.**
+ * `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and `backlog:` are
+ * names for code the pass calls directly today, so every cell of theirs
+ * refuses, by a sentence that says where that code is called instead. That is the same
  * two-valued rule the six steps with no call site are held to — **naming a
  * thing is not wiring it** — read down the other axis.
  *
@@ -489,6 +544,7 @@ export const PLUGINS = [
   queuePlugin,
   assigneePlugin,
   judgePlugin,
+  backlogPlugin,
 ] as const;
 
 /**
@@ -520,6 +576,7 @@ export const GateAction = z.union([
   queuePlugin.schema,
   assigneePlugin.schema,
   judgePlugin.schema,
+  backlogPlugin.schema,
 ]);
 export type GateAction = z.infer<typeof GateAction>;
 
@@ -562,9 +619,9 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
 }
 
 /**
- * **Which of the eleven kinds each of the ten steps actually runs.**
+ * **Which of the twelve kinds each of the ten steps actually runs.**
  *
- * A hundred and ten cells, and ten of them used to be accepted here, resolved into
+ * A hundred and twenty cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
  * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
  * the weeks it spent declared-but-unbuilt are the argument for writing the
@@ -590,10 +647,10 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
  * at one of them is the exact `#61` failure one level up — resolved, recorded,
  * drawn, never called — so it is refused by name when the recipe resolves.
  *
- * **And five empty columns, for the same reason read the other way.**
- * `worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` name code the pass
- * calls itself, so no row carries them and `CALLED_DIRECTLY` is what their
- * fifty cells refuse with.
+ * **And six empty columns, for the same reason read the other way.**
+ * `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and `backlog:` name
+ * code the pass calls itself, so no row carries them and `CALLED_DIRECTLY` is
+ * what their sixty cells refuse with.
  */
 export const KINDS_AT = {
   /** Nothing yet: the queue picks the item and no pipeline is constructed here. */
@@ -688,6 +745,33 @@ const WORKFLOW_COUNTS =
   "refused by name";
 
 /**
+ * **What `proposed` will do with the one plugin of its three that decides
+ * nothing about where the pass goes**, and the distinction is the whole of why
+ * it is said here.
+ *
+ * `FIRST_YIELDS` and `WORKFLOW_COUNTS`'s sibling, written for their reason: the
+ * reduction is the step's and the step does not do it yet, so the refusal is
+ * the one place somebody about to wire it meets the rule.
+ *
+ * **A step may hold plugins that route and plugins that only act.** `judge:`
+ * routes — it answers which step is next — and `proposed` is the only step
+ * that routes at all. This one is an effect, like `end`'s two: it decides
+ * which findings are filed rather than where anything goes, so there is no
+ * reduction over several entries to state and no `when:` to match. What it
+ * does decide is what a severity **costs**, and *costs nothing* is the answer
+ * worth spelling out: a finding at or below the bar never refused, so no
+ * refusal exists for a judge to be asked about and no round is bought.
+ */
+const FILES_AND_ROUTES_NOTHING =
+  "When a step does read it, `proposed` files every finding at or below the bar and **buys no " +
+  "round** for one — a finding that did not refuse is not a refusal, so nothing downstream is " +
+  "asked what to do about it. It routes nothing and carries no `when:`: a step may hold plugins " +
+  "that route and plugins that only act, and `judge:` is the one that says which step is next. " +
+  "Filing the same finding twice is not something a recipe can ask for either — `findingKey` in " +
+  "`packages/domain/src/backlog.ts` leaves out the run, the round and the sha, so round 2's " +
+  "sighting lands on round 1's entry";
+
+/**
  * **The same table read down the other axis**: a plugin the pass calls itself,
  * and where it calls it.
  *
@@ -697,7 +781,7 @@ const WORKFLOW_COUNTS =
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
  *
- * Why these five are declared at all before anything reads them: a plugin no
+ * Why these six are declared at all before anything reads them: a plugin no
  * list carries is a plugin no step refuses
  * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2), and
  * `assignee:` is the one that document found missing from every list but 0061
@@ -728,6 +812,12 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     "buys a fresh approach, both from `runtime.limits.rounds` and `runtime.limits.restarts`, and no " +
     "recipe can see that decision, name it or replace it. What a step will hand a judge is already a " +
     `module of its own: \`stepsOnOffer\` in \`packages/conductor/src/judge.ts\`. ${WORKFLOW_COUNTS}`,
+  backlog:
+    "the fold decides it itself, from a literal `minor` no recipe can see — `backlogProjection` in " +
+    "`packages/projector/src/backlog.ts` files every finding at or below it out of a passing step's " +
+    "findings, and `decideBacklog` in `packages/conductor/src/backlog.ts` is that bar as a function " +
+    "a recipe will hand its own. What a person then does with one is `acceptFinding` and " +
+    `\`declineFinding\` in the same module, which \`lingtai backlog\` and the board both call. ${FILES_AND_ROUTES_NOTHING}`,
 };
 
 /**
@@ -739,8 +829,9 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
  * refused at `prepared` should not have to read `run-once.ts` to discover that
  * the reason is that nothing has been committed yet.
  *
- * **Five of them are facts about the plugin instead, and they are asked
- * first.** `worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` are
+ * **Six of them are facts about the plugin instead, and they are asked
+ * first.** `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and
+ * `backlog:` are
  * refused everywhere and each for one reason, so a sentence about the step would be
  * the less useful half of the truth at all ten: *nothing runs a pipeline at
  * `admit`* is right and leaves a reader looking for the code that cuts their

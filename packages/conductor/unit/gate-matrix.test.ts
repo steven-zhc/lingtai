@@ -1,25 +1,26 @@
 /**
- * **A hundred and ten cells, and each one runs or refuses by name.** There is
- * no third answer, and for a year ten of them gave it: an action at `admit`, or
+ * **A hundred and twenty cells, and each one runs or refuses by name.** There
+ * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
  * called (`#61`).
  *
  * **It was thirty until the vocabulary went from five names to ten** (0058 §3),
  * sixty until the closed set grew `worktree:` and `merge:` (`#235`), eighty
- * until it grew `queue:` and `assignee:` (`#236`), and a hundred until it grew
- * `judge:` (`#238`). Eleven of the hundred and ten cells run and **ninety-nine
- * refuse**; sixty-six of those ninety-nine are the six steps with no call site,
- * and fifty are the five plugins no step reads — overlapping each other by
- * thirty, because a `worktree:` action at `design` is both at once.
+ * until it grew `queue:` and `assignee:` (`#236`), a hundred until it grew
+ * `judge:` (`#238`) and a hundred and ten until it grew `backlog:` (`#237`).
+ * Eleven of the hundred and twenty cells run and **a hundred and nine
+ * refuse**; seventy-two of those are the six steps with no call site, and
+ * sixty are the six plugins no step reads — overlapping each other by
+ * thirty-six, because a `worktree:` action at `design` is both at once.
  *
  * That is the property this file is here to hold, and it holds it down both
  * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
  * pipeline has not yet constructed must refuse every kind until it has, and the
- * five plugins that are names for code the conductor calls itself must be
+ * six plugins that are names for code the conductor calls itself must be
  * refused at every step until the recipe is what tells it to. A `design:` block
  * a recipe could write and nothing would run is `#61` with a new spelling; so
- * is a `worktree:` one, and so is a `judge:` one.
+ * is a `worktree:` one, and so is a `backlog:` one.
  *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
@@ -35,7 +36,7 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { STEPS, type Step } from "@lingtai/domain";
+import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from "@lingtai/domain";
 import {
   type ActionKind,
   type GateAction,
@@ -52,12 +53,13 @@ import {
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-point.ts";
 import { BUILT_IN_FOR } from "../src/judge.ts";
+import { decideBacklog } from "../src/backlog.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
- * hold them — **and the last five are actions no resolved recipe can hold**,
- * because `worktree:`, `merge:`, `queue:`, `assignee:` and `judge:` are refused
- * at all ten steps. That is the point of writing them: the cell has to be
+ * hold them — **and the last six are actions no resolved recipe can hold**,
+ * because `worktree:`, `merge:`, `queue:`, `assignee:`, `judge:` and
+ * `backlog:` are refused at all ten steps. That is the point of writing them: the cell has to be
  * *refused by name* rather than *unrepresentable*, and an action the schema
  * never sees is a column this file would walk with nothing in it.
  */
@@ -76,7 +78,19 @@ const ACTION: Record<ActionKind, GateAction> = {
   },
   assignee: { name: "whose work it is", assignee: { login: "steven-zhc", take: "mine" } },
   judge: { name: "the lines or the approach", judge: "claude-code", when: "findings" },
+  backlog: { name: "the minors", backlog: "minor" },
 };
+
+/** One finding of a given severity, with a scenario, so only the severity varies. */
+function finding(severity: Severity): Finding {
+  return {
+    file: "src/a.ts",
+    line: 1,
+    claim: "the name is wrong",
+    failureScenario: "a reader looks for it under the other name and does not find it",
+    severity,
+  };
+}
 /**
  * **The columns are the closed set's, in the closed set's order** (`#228`).
  *
@@ -336,6 +350,67 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
+   * **And the plugin beside it that decides nothing about where the pass goes**
+   * (`#237`).
+   *
+   * `judge:` and `backlog:` will both be written under `proposed`, and a reader
+   * who has just read the judge's refusal will carry *this decides the next
+   * step* across. It does not: **a step may hold plugins that route and plugins
+   * that only act**, and this one is an effect like `end`'s two. The clause
+   * that earns the assertion is the money one read the other way round — at or
+   * below the bar a finding **buys no round**, because a finding that did not
+   * refuse is not a refusal and nothing downstream is ever asked about it.
+   *
+   * Nearly half of everything a reviewer says arrives there (012 §4), so a
+   * recipe that raised the bar believing it bought a round per finding would be
+   * sizing its spend off the wrong half of the output.
+   */
+  it("says how `proposed` will file at or below the bar, and that it routes nothing", () => {
+    const why = whyNoKindAt("proposed", "backlog");
+    expect(why, "`backlog:` is no longer refused at proposed").not.toBeNull();
+    expect(why).toContain("buys no");
+    expect(why).toContain("routes nothing");
+    expect(why).toContain("plugins that route and plugins that only act");
+    // Where the bar is decided today, and where it is a function a recipe will
+    // hand a value to — both file references, so they go red if either moves.
+    expect(why).toContain("packages/projector/src/backlog.ts");
+    expect(why).toContain("packages/conductor/src/backlog.ts");
+    // And the dedup nobody has to build: the refusal says why a second round
+    // does not file a second entry, which is the Done-when this ticket asserts
+    // against today's behaviour rather than adding machinery for.
+    expect(why).toContain("packages/domain/src/backlog.ts");
+    // A fact about the plugin, so it is the same sentence at all ten steps.
+    for (const step of STEPS) expect(whyNoKindAt(step, "backlog")).toBe(why);
+  });
+
+  /**
+   * **The two halves of *a severity is an outcome*, asserted where the matrix
+   * can see them** (`#237`).
+   *
+   * `decideBacklog` is the bar as a function, and the property the plugin
+   * exists to make configurable is that the two answers are one fact: what is
+   * filed is exactly what did not refuse, and `buysARound` is false when
+   * nothing did. Asserted over the whole ladder rather than over `minor`, so a
+   * fourth severity arriving in `SEVERITIES` with no rung of its own is red
+   * here rather than silently filed.
+   */
+  it("files at or below the bar, and nothing filed buys a round", () => {
+    for (const bar of SEVERITIES) {
+      const all = SEVERITIES.map(finding);
+      const { filed, refuses, buysARound } = decideBacklog(all, bar);
+      expect([...filed, ...refuses].length, bar).toBe(all.length);
+      expect(filed.every((f) => SEVERITIES.indexOf(f.severity) >= SEVERITIES.indexOf(bar)), bar).toBe(true);
+      expect(buysARound, bar).toBe(refuses.length > 0);
+      // The whole of *buys no round*: nothing at or below the bar refuses, so
+      // a run whose findings are all filed has no refusal to buy one with.
+      expect(decideBacklog(filed, bar).buysARound, bar).toBe(false);
+    }
+    // And the default is today's fold: a `minor` is filed, a `major` is not.
+    expect(decideBacklog([finding("minor")]).buysARound).toBe(false);
+    expect(decideBacklog([finding("major")]).buysARound).toBe(true);
+  });
+
+  /**
    * The deps in this file are a copy of what `run-once.ts` passes, and a copy
    * is a thing to keep correct. Read rather than reasoned about: narrowing
    * `proposed`'s deps would leave the schema accepting an `agent:` action that
@@ -457,11 +532,11 @@ describe("doc/reference.md's matrix", () => {
     const refusals = STEPS.flatMap((point) =>
       KINDS.map((kind) => whyNoKindAt(point, kind)),
     ).filter((why) => why !== null).length;
-    expect(refusals).toBe(99);
+    expect(refusals).toBe(109);
     expect(
       doc,
       "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
-    ).toContain("**Ninety-nine of the\nhundred and ten are refusals**");
+    ).toContain("**A hundred and nine of the\nhundred and twenty are refusals**");
   });
 
   /**
