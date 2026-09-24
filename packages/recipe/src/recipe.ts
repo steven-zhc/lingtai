@@ -127,7 +127,7 @@ export const runPlugin = definePlugin("run", {
  * is a thing a reader can be shown rather than a blank. Lingtai does not carry
  * a table of each runtime's default here: naming one would be a second place
  * for it to be wrong, and the runtime already knows. Present, it is carried by
- * `gatesFromRecipe` onto `AgentGateSpec` and by `createAgentGate` onto
+ * `actionsFromRecipe` onto `AgentActionSpec` and by `createAgentAction` onto
  * `RunRequest.model`, so the key changes what is spawned rather than only what
  * is hashed.
  *
@@ -533,7 +533,7 @@ export type BacklogBar = z.infer<typeof BacklogBar>;
  * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3).
  * Something downstream has to say what a severity costs, and today that is two
  * somethings nobody can name, configure or replace: `verdictFor`
- * (`packages/actions/src/agent-gate.ts`), which says what refuses, and a
+ * (`packages/actions/src/agent-action.ts`), which says what refuses, and a
  * literal `minor` in the fold (`packages/projector/src/backlog.ts`), which says
  * what is filed. The value this plugin carries has to reach both, and
  * `CALLED_DIRECTLY.backlog` below is where that is said to whoever wires it.
@@ -883,7 +883,7 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     `module of its own: \`stepsOnOffer\` in \`packages/conductor/src/judge.ts\`. ${WORKFLOW_COUNTS}`,
   backlog:
     "**the bar is in two places and wiring one of them changes nothing.** `verdictFor` in " +
-    "`packages/actions/src/agent-gate.ts` decides what **refuses**, off a hard-coded blocker-or-major; " +
+    "`packages/actions/src/agent-action.ts` decides what **refuses**, off a hard-coded blocker-or-major; " +
     "`backlogProjection` in `packages/projector/src/backlog.ts` decides what is **filed**, off a literal " +
     "`minor`. They are one comparison written twice, in two packages that cannot see each other, and " +
     "`decideBacklog` in `packages/conductor/src/backlog.ts` is that comparison as a function a recipe " +
@@ -972,7 +972,7 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
 }
 
 /**
- * The refusal, in the one wording the schema and `gatesFromRecipe` both use.
+ * The refusal, in the one wording the schema and `actionsFromRecipe` both use.
  *
  * **`tail` is the rest of the sentence, and it has a default rather than a
  * second function** (0061 §9). §8's rule grew one clause — *a step refuses a

@@ -75,7 +75,7 @@ reviewer reads against the ADR, then a deletion that is its own diff.
 What survives from the old file is the one thing already the right shape:
 
 ```ts
-runGatePipeline({ point, gates, context })      // packages/actions/src/gate.ts:237
+runActionPipeline({ step, actions, context })   // packages/actions/src/action.ts:240
 ```
 
 That is *run this step's plugins* and it does not change.

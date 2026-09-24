@@ -1,7 +1,7 @@
 /**
- * The human gate: a person, with the same event shape as a process.
+ * The human action: a person, with the same event shape as a process.
  *
- * The whole design turns on this being a *gate* and not a special case. A
+ * The whole design turns on this being an *action* and not a special case. A
  * verification, a cold review and a person's approval are one primitive — a
  * named check that produces a verdict about a specific diff — and that is what
  * makes "require a human on anything touching payments" a configuration line
@@ -19,20 +19,20 @@
  * a recipe that could name its own approvers could approve itself. Who answered
  * is recorded rather than restricted — `by` on the approval, in the log.
  */
-import type { Gate, GateContext, GateResult } from "./gate.ts";
+import type { Action, ActionContext, ActionResult } from "./action.ts";
 
-export interface HumanGateSpec {
+export interface HumanActionSpec {
   name: string;
   /** What the person is being asked. The card shows this and nothing else. */
   question?: string;
 }
 
-export function createHumanGate(spec: HumanGateSpec): Gate {
+export function createHumanAction(spec: HumanActionSpec): Action {
   return {
     name: spec.name,
     kind: "human",
 
-    async run(context: GateContext): Promise<GateResult> {
+    async run(context: ActionContext): Promise<ActionResult> {
       return {
         verdict: "needs-approval",
         // The sha is in the question because the answer is about *this* commit

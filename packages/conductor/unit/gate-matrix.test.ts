@@ -50,10 +50,10 @@ import {
   whyNoKindAt,
 } from "@lingtai/recipe";
 import {
-  type AgentGateDeps,
-  GateActionUnavailableError,
-  type GateDeps,
-  gatesFromRecipe,
+  type AgentActionDeps,
+  ActionUnavailableError,
+  type ActionDeps,
+  actionsFromRecipe,
   verdictFor,
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-point.ts";
@@ -116,20 +116,20 @@ function finding(severity: Severity): Finding {
 const KINDS = PLUGINS.map((plugin) => plugin.key);
 
 /**
- * What each gating point hands `gatesFromRecipe`, which is the other half of
+ * What each gating point hands `actionsFromRecipe`, which is the other half of
  * what it can run: `prepared` gets an environment resolver and nothing else,
  * because there is no diff there for a reviewer to read or globs to match.
  *
  * Pinned against `run-once.ts` itself below, so this cannot drift from the
  * call sites it is describing without a red test.
  */
-const EVERY_DEP: GateDeps = {
+const EVERY_DEP: ActionDeps = {
   env: () => ({}),
   // Built, never run — building is the whole of what this file asserts.
-  agent: {} as unknown as AgentGateDeps,
+  agent: {} as unknown as AgentActionDeps,
   watch: { changedFiles: async () => [] },
 };
-const DEPS: Record<"prepared" | "proposed" | "merge", GateDeps> = {
+const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
   prepared: { env: () => ({}) },
   proposed: EVERY_DEP,
   merge: EVERY_DEP,
@@ -140,7 +140,7 @@ const DEPS: Record<"prepared" | "proposed" | "merge", GateDeps> = {
  *
  * **Compared against the conductor's whole `src/` tree** by *is read off the
  * conductor's own source* below, which is what stops it being a list somebody
- * keeps: a `gatesFromRecipe` call site anywhere under `packages/conductor/src`
+ * keeps: a `actionsFromRecipe` call site anywhere under `packages/conductor/src`
  * is a red test here rather than a matrix that goes on refusing a step the
  * code has started running. That is `#61` inverted, and it is exactly what
  * 0058's own plan will do — it builds `build` and `review`, and a pipeline
@@ -166,7 +166,7 @@ function runsAt(point: Step, kind: ActionKind): boolean {
       const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? [];
       return named.some((a) => a.name === ACTION[kind].name);
     }
-    return gatesFromRecipe(point, [ACTION[kind]], DEPS[point as keyof typeof DEPS]).some(
+    return actionsFromRecipe(point, [ACTION[kind]], DEPS[point as keyof typeof DEPS]).some(
       (gate) => gate.name === ACTION[kind].name,
     );
   } catch {
@@ -230,18 +230,18 @@ describe("every step × kind cell runs or refuses", () => {
         (kind) => [point, kind] as const,
       ),
     ),
-  )("gatesFromRecipe refuses %s × %s by name", (point, kind) => {
-    expect(() => gatesFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
-      GateActionUnavailableError,
+  )("actionsFromRecipe refuses %s × %s by name", (point, kind) => {
+    expect(() => actionsFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
+      ActionUnavailableError,
     );
-    expect(() => gatesFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
+    expect(() => actionsFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
       new RegExp(`"${kind}" at the "${point}" point`),
     );
   });
 
   /**
    * **And the fourth door, which is the one `runsAt` cannot watch.** `end`'s
-   * consumer is `resolveEndActions` rather than `gatesFromRecipe`, and for it
+   * consumer is `resolveEndActions` rather than `actionsFromRecipe`, and for it
    * a throw and a silent drop are the same answer — `runsAt` returns false for
    * both, so the cell above passes either way. Every refused kind has to
    * *throw* here, and that is the assertion the row above cannot make.
@@ -402,7 +402,7 @@ describe("every step × kind cell runs or refuses", () => {
     // bought — under a recipe that reads as honoured. The refusal has to name
     // it, so this asserts it does.
     expect(why).toContain("verdictFor");
-    expect(why).toContain("packages/actions/src/agent-gate.ts");
+    expect(why).toContain("packages/actions/src/agent-action.ts");
     // And the dedup nobody has to build: the refusal says why a second round
     // does not file a second entry, which is the Done-when this ticket asserts
     // against today's behaviour rather than adding machinery for.
@@ -425,7 +425,7 @@ describe("every step × kind cell runs or refuses", () => {
    * rung from `indexOf`, so a fourth severity added to the enum holds here *by
    * construction* — this file stays green and says nothing about whether the
    * rest of the code met it. What says that is the ladder's consumers, walked
-   * against `SEVERITIES` in `packages/actions/unit/agent-gate.test.ts` and
+   * against `SEVERITIES` in `packages/actions/unit/agent-action.test.ts` and
    * `packages/conductor/unit/fix.test.ts`. This test asserts the bar; those
    * assert that there is one ladder to put a bar on.
    */
@@ -449,7 +449,7 @@ describe("every step × kind cell runs or refuses", () => {
    * **And the same bar, read off the half that actually refuses** (`#237`).
    *
    * `decideBacklog`'s default and `verdictFor` in
-   * `packages/actions/src/agent-gate.ts` are one comparison written twice, in
+   * `packages/actions/src/agent-action.ts` are one comparison written twice, in
    * two packages that cannot see each other — so the only thing keeping them
    * the same rule is this assertion. It is what makes *both halves take the
    * recipe's value or neither does* checkable rather than a sentence in a
@@ -474,13 +474,13 @@ describe("every step × kind cell runs or refuses", () => {
    */
   it("is the deps run-once passes at each point", async () => {
     const src = await readFile(new URL("../src/run-once.ts", import.meta.url), "utf8");
-    expect(src).toMatch(/gatesFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
-    expect(src).toMatch(/gatesFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*gateDeps\s*\)/);
-    expect(src).toMatch(/gatesFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*gateDeps\s*\)/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*gateDeps\s*\)/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*gateDeps\s*\)/);
     // And nowhere else *in this file*: a fourth call site here is a point this
     // test does not know about, judging with deps it has not been told. The
     // whole tree is the next test's.
-    expect(src.match(/gatesFromRecipe\(/g)?.length).toBe(3);
+    expect(src.match(/actionsFromRecipe\(/g)?.length).toBe(3);
   });
 
   /**
@@ -496,7 +496,7 @@ describe("every step × kind cell runs or refuses", () => {
    * step the code had started running. That is `#61` with the sign flipped,
    * and this file exists to make it a red test.
    *
-   * `end` by its resolver and not by `gatesFromRecipe`: its actions are
+   * `end` by its resolver and not by `actionsFromRecipe`: its actions are
    * effects, so the thing that is proof the step is built is
    * `resolveEndActions` existing, which is what `runsAt` calls for it.
    */
@@ -511,8 +511,8 @@ describe("every step × kind cell runs or refuses", () => {
 
     for (const file of files) {
       const text = await readFile(new URL(file, src), "utf8");
-      calls += text.match(/gatesFromRecipe\(/g)?.length ?? 0;
-      for (const m of text.matchAll(/gatesFromRecipe\(\s*"([a-z]+)"/g)) {
+      calls += text.match(/actionsFromRecipe\(/g)?.length ?? 0;
+      for (const m of text.matchAll(/actionsFromRecipe\(\s*"([a-z]+)"/g)) {
         literals += 1;
         built.add(m[1]!);
       }
@@ -521,7 +521,7 @@ describe("every step × kind cell runs or refuses", () => {
 
     // A call site whose point is a variable would be invisible to the regex
     // above, so the two counts have to agree before the set means anything.
-    expect(literals, "a gatesFromRecipe call site names its step with a variable").toBe(calls);
+    expect(literals, "a actionsFromRecipe call site names its step with a variable").toBe(calls);
     expect(
       [...built].sort(),
       "HAS_A_CALL_SITE is stale — the matrix, doc/reference.md and KINDS_AT move with it",

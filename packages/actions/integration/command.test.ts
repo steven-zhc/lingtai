@@ -1,7 +1,7 @@
 /**
  * The command runner, against real processes.
  *
- * Nothing is mocked, for `gate.test.ts`'s reason: a command is a process and an
+ * Nothing is mocked, for `action.test.ts`'s reason: a command is a process and an
  * exit code, and a test that stubs the process is testing nothing. Here the
  * properties under test are 0037 §4's two new channels — JSON in on stdin, a
  * richer answer out through `LINGTAI_RESULT` — and, ahead of both of them, the

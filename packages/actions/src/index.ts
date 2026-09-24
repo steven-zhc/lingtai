@@ -1,33 +1,33 @@
 export {
-  runGatePipeline,
-  type Gate,
-  type GateContext,
-  type GateEvent,
-  type GateFinding,
-  type GateResult,
-  type GateVerdict,
+  runActionPipeline,
+  type Action,
+  type ActionContext,
+  type ActionEvent,
+  type ActionFinding,
+  type ActionResult,
+  type ActionVerdict,
   type PipelineOptions,
   type PipelineResult,
-} from "./gate.ts";
+} from "./action.ts";
 export {
-  createProcessGate,
+  createProcessAction,
   EVIDENCE_BYTES,
   EVIDENCE_LINES,
   tail,
-  type ProcessGateSpec,
-} from "./process-gate.ts";
+  type ProcessActionSpec,
+} from "./process-action.ts";
 export {
   buildReviewPrompt,
-  createAgentGate,
+  createAgentAction,
   parseFindings,
   verdictFor,
-  type AgentGateDeps,
-  type AgentGateSpec,
+  type AgentActionDeps,
+  type AgentActionSpec,
   type ReviewIssue,
-} from "./agent-gate.ts";
-export { createHumanGate, type HumanGateSpec } from "./human-gate.ts";
-export { createWatchGate, type WatchGateDeps, type WatchGateSpec } from "./watch-gate.ts";
-export { gatesFromRecipe, GateActionUnavailableError, type GateDeps } from "./from-recipe.ts";
+} from "./agent-action.ts";
+export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
+export { createWatchAction, type WatchActionDeps, type WatchActionSpec } from "./watch-action.ts";
+export { actionsFromRecipe, ActionUnavailableError, type ActionDeps } from "./from-recipe.ts";
 export {
   runCommand,
   startCommand,

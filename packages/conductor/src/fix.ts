@@ -57,7 +57,7 @@
  * about spending money that lives inside an `if` in a 1,500-line file is a rule
  * nobody can check.
  */
-import type { GateFinding } from "@lingtai/actions";
+import type { ActionFinding } from "@lingtai/actions";
 import { SEVERITIES, type Severity } from "@lingtai/domain";
 import type { BlockDiagnosis, RunFailureKind } from "@lingtai/domain";
 
@@ -280,7 +280,7 @@ export interface FixInput {
    */
   refusal: {
     action: string;
-    findings: readonly GateFinding[];
+    findings: readonly ActionFinding[];
     evidence: string;
     /**
      * The shape, when the caller knows it and the evidence does not say.
@@ -446,7 +446,7 @@ export function fixBrief(input: {
    * and the acceptance test turn on which shape this is.
    */
   refusal:
-    | { on: "findings"; findings: readonly GateFinding[] }
+    | { on: "findings"; findings: readonly ActionFinding[] }
     | { on: "output"; output: string }
     | { on: "conflict"; base: string; paths: string };
   round: number;
@@ -524,7 +524,7 @@ and committing nothing is the move that exists so you never have to.`;
  * handing it none.
  */
 function findingsHalf(
-  findings: readonly GateFinding[],
+  findings: readonly ActionFinding[],
   action: string,
 ): { evidence: string; criterion: string } {
   const items = findings.map((f, i) => {
@@ -755,7 +755,7 @@ export function diagnoseDisagreement(input: {
   base: string;
   headSha: string;
   /** What the reviewer last said, still live. */
-  findings: readonly GateFinding[];
+  findings: readonly ActionFinding[];
   /** Rounds of fix-and-re-review that were spent. Zero when none was bought. */
   rounds: number;
   /**
@@ -997,7 +997,7 @@ export interface RestartArm {
   branch: string;
   headSha: string;
   rounds: number;
-  findings: readonly GateFinding[];
+  findings: readonly ActionFinding[];
 }
 
 /**
@@ -1328,7 +1328,7 @@ export function disagreementQuestion(input: {
   action: string;
   branch: string;
   base: string;
-  findings: readonly GateFinding[];
+  findings: readonly ActionFinding[];
   rounds: number;
   /**
    * How many diffs **this reviewer** refused, as `diagnoseDisagreement` reads
@@ -1511,7 +1511,7 @@ function afterArms(restarts: number | undefined): string {
 }
 
 /** The findings, whole — severity, place, claim and scenario, nothing dropped. */
-export function quoteFindings(findings: readonly GateFinding[]): string {
+export function quoteFindings(findings: readonly ActionFinding[]): string {
   return findings
     .map((f) => {
       const at = f.line === null ? f.file : `${f.file}:${f.line}`;
@@ -1520,7 +1520,7 @@ export function quoteFindings(findings: readonly GateFinding[]): string {
     .join("\n\n---\n\n");
 }
 
-function count(findings: readonly GateFinding[]): string {
+function count(findings: readonly ActionFinding[]): string {
   return findings.length === 1 ? "one finding" : `${findings.length} findings`;
 }
 
@@ -1532,7 +1532,7 @@ function count(findings: readonly GateFinding[]): string {
  * being touched, where a hand-written copy would have answered `none` for it
  * and printed `worst: none` beside a finding that exists.
  */
-function severest(findings: readonly GateFinding[]): Severity | "none" {
+function severest(findings: readonly ActionFinding[]): Severity | "none" {
   for (const severity of SEVERITIES) {
     if (findings.some((f) => f.severity === severity)) return severity;
   }

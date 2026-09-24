@@ -431,8 +431,8 @@ describe("the retired names in doc/reference.md", () => {
     const g = await glossary();
 
     expect(g.retired).toEqual(["gate", "gates", "point", "points"]);
-    expect(g.named.map(([old]) => old)).toEqual(["GatePoint", "GateAction"]);
-    expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "Plugin" });
+    expect(g.named.map(([old]) => old)).toEqual(["GatePoint", "GateAction", "Gate"]);
+    expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "Plugin", Gate: "Action" });
   });
 
   /**
@@ -826,18 +826,19 @@ describe("the scanner", () => {
 
   /**
    * **A module specifier is read, and that is the decision rather than a
-   * side-effect of reading string literals.** Eight files under `src/` carry a
-   * retired word in their own name and each is renamed by the ticket that
-   * renames what is inside it; an import of `./gate.ts` is the only place a
-   * ledger over file contents can count that. `packages/actions/src/index.ts`'s
-   * `gate` ×5 is five re-export lines and no identifier at all, which is the
-   * row that would be wrong if this ever stopped being true.
+   * side-effect of reading string literals.** Three files under `src/` still
+   * carry a retired word in their own name and each is renamed by the ticket
+   * that renames what is inside it; an import of `./gate-audit.ts` is the only
+   * place a ledger over file contents can count that. `#248` took five of them
+   * out of `packages/actions/src/` at once, and that package's `index.ts` — five
+   * re-export lines and no identifier at all — lost its whole row in the same
+   * diff, which is what this reading being true looks like from the ledger.
    */
   it("reads a module specifier, so a file named for a retired word is counted where it is imported", () => {
-    const read = tokens('export { createWatchGate } from "./watch-gate.ts";\n', "f.ts");
+    const read = tokens('export { landedWithoutSteps } from "./gate-audit.ts";\n', "f.ts");
 
     expect(read.filter((t) => t === "gate")).toHaveLength(1);
-    expect(read).toContain("createWatchGate");
+    expect(read).toContain("landedWithoutSteps");
   });
 });
 

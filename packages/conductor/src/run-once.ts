@@ -108,10 +108,10 @@ import { backoffOf, baseDivergence, baseOf, limitsFor, parseDuration, submodules
 import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
-  type GateFinding,
+  type ActionFinding,
   type PipelineResult,
-  gatesFromRecipe,
-  runGatePipeline,
+  actionsFromRecipe,
+  runActionPipeline,
 } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
 import {
@@ -984,7 +984,7 @@ export function runOnce(
           diff: () => gitForGates(["diff", `${worktree.baseSha}...HEAD`]),
           // **Not `wiring.settingsPath`.** That file registers the hook, and
           // the two variables the hook needs live in `wiring.env`, which a
-          // `GateContext` does not carry — so the reviewer used to be handed
+          // `ActionContext` does not carry — so the reviewer used to be handed
           // a hook it could not reach and was refused before it read a line.
           settingsPath: reviewSettingsPath,
           limits: {
@@ -1009,12 +1009,12 @@ export function runOnce(
       // that agent committed (0038 §1). The same actions, in the same order,
       // with one thing added — the scenarios the last refusal was made of,
       // which the reviewer is asked about by name (0038 §2).
-      const gates = gatesFromRecipe("proposed", recipe.steps.proposed, gateDeps);
-      const judge = (onSha: string, recheck: readonly GateFinding[], round: number) =>
+      const actions = actionsFromRecipe("proposed", recipe.steps.proposed, gateDeps);
+      const judge = (onSha: string, recheck: readonly ActionFinding[], round: number) =>
         Effect.promise(() =>
-          runGatePipeline({
-            point: "proposed",
-            gates,
+          runActionPipeline({
+            step: "proposed",
+            actions,
             context: {
               runId,
               onSha,
@@ -1088,9 +1088,9 @@ export function runOnce(
           // `onSha` is the base: nothing has been committed yet, so the verdict is
           // about the tree the agent is being handed.
           const prepared = yield* Effect.promise(() =>
-            runGatePipeline({
-              point: "prepared",
-              gates: gatesFromRecipe("prepared", recipe.steps.prepared, { env: envForExtension }),
+            runActionPipeline({
+              step: "prepared",
+              actions: actionsFromRecipe("prepared", recipe.steps.prepared, { env: envForExtension }),
               context: {
                 runId,
                 onSha: worktree.baseSha,
@@ -1557,7 +1557,7 @@ export function runOnce(
        */
       let lease: string | null = worktree.remoteHead;
       /** The findings the next `proposed` run is asked about again (0038 §2). */
-      let recheck: readonly GateFinding[] = [];
+      let recheck: readonly ActionFinding[] = [];
       /** A point that has not run: every ending null, nothing judged, nothing skipped. */
       const nothingRanYet = (): PipelineResult => ({
         ok: true,
@@ -1583,7 +1583,7 @@ export function runOnce(
       let unresolved: {
         action: string;
         on: FixOn;
-        findings: readonly GateFinding[];
+        findings: readonly ActionFinding[];
         evidence: string;
         rounds: number;
         /**
@@ -1811,7 +1811,7 @@ export function runOnce(
        */
       const buyRound = (refusal: {
         action: string;
-        findings: readonly GateFinding[];
+        findings: readonly ActionFinding[];
         evidence: string;
         on?: FixOn;
       }) =>
@@ -2095,13 +2095,13 @@ export function runOnce(
         // about by name (0038 §2).
         pipeline = yield* judge(head, recheck, rounds);
         recheck = [];
-        log(`gates: ${pipeline.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
+        log(`gates: ${pipeline.results.map((r) => `${r.action}=${r.verdict}`).join(" ")}`);
 
         // Before the refusal is read: a gate whose agent never started refused
         // nothing, and must not reach `buyRound`, the hold or the lane.
         if (pipeline.neverRanAt !== null) {
           yield* agentNeverStarted(
-            { of: "gate", gate: `proposed:${pipeline.neverRanAt.gate}` },
+            { of: "gate", gate: `proposed:${pipeline.neverRanAt.action}` },
             pipeline.neverRanAt.detail,
           );
         }
@@ -2111,7 +2111,7 @@ export function runOnce(
         // `#196`).
         if (pipeline.didNotFinishAt !== null) {
           yield* gateDidNotFinish(
-            `proposed:${pipeline.didNotFinishAt.gate}`,
+            `proposed:${pipeline.didNotFinishAt.action}`,
             pipeline.didNotFinishAt.detail,
           );
         }
@@ -2172,9 +2172,9 @@ export function runOnce(
           // Counted here and not below, because this is where *this action said
           // no about this diff* is a fact — whatever the loop then decides to
           // buy, or not to.
-          const refusedDiffs = refusedAgain(refused.gate);
+          const refusedDiffs = refusedAgain(refused.action);
           const bought = yield* buyRound({
-            action: refused.gate,
+            action: refused.action,
             findings: refused.findings,
             evidence: refused.evidence,
           });
@@ -2186,7 +2186,7 @@ export function runOnce(
           }
           if (bought.kind === "declined") {
             unresolved = {
-              action: refused.gate,
+              action: refused.action,
               on: bought.on,
               findings: refused.findings,
               evidence: refused.evidence,
@@ -2244,9 +2244,9 @@ export function runOnce(
         atMerge = nothingRanYet();
         if (pipeline.ok) {
           atMerge = yield* Effect.promise(() =>
-            runGatePipeline({
-              point: "merge",
-              gates: gatesFromRecipe("merge", recipe.steps.merge, gateDeps),
+            runActionPipeline({
+              step: "merge",
+              actions: actionsFromRecipe("merge", recipe.steps.merge, gateDeps),
               context: {
                 runId,
                 onSha: head,
@@ -2264,18 +2264,18 @@ export function runOnce(
             }),
           );
           if (atMerge.results.length > 0) {
-            log(`merge: ${atMerge.results.map((r) => `${r.gate}=${r.verdict}`).join(" ")}`);
+            log(`merge: ${atMerge.results.map((r) => `${r.action}=${r.verdict}`).join(" ")}`);
           }
           // The same ending at the other point that runs an `agent` action.
           if (atMerge.neverRanAt !== null) {
             yield* agentNeverStarted(
-              { of: "gate", gate: `merge:${atMerge.neverRanAt.gate}` },
+              { of: "gate", gate: `merge:${atMerge.neverRanAt.action}` },
               atMerge.neverRanAt.detail,
             );
           }
           if (atMerge.didNotFinishAt !== null) {
             yield* gateDidNotFinish(
-              `merge:${atMerge.didNotFinishAt.gate}`,
+              `merge:${atMerge.didNotFinishAt.action}`,
               atMerge.didNotFinishAt.detail,
             );
           }
@@ -2307,7 +2307,7 @@ export function runOnce(
           headSha: head,
           gatesPassed: pipeline.ok && atMerge.ok,
           gateDetail: refusedAt.failedAt
-            ? `${refusedAt.failedAt}: ${refusedAt.results.find((r) => r.gate === refusedAt.failedAt)?.evidence ?? ""}`
+            ? `${refusedAt.failedAt}: ${refusedAt.results.find((r) => r.action === refusedAt.failedAt)?.evidence ?? ""}`
             : undefined,
           token: options.token,
           home,
@@ -2727,7 +2727,7 @@ export function runOnce(
         const evidence =
           failedAt === null
             ? null
-            : (refusedIn.results.find((r) => r.gate === failedAt)?.evidence ?? "");
+            : (refusedIn.results.find((r) => r.action === failedAt)?.evidence ?? "");
         /**
          * **A point that spent its rounds is diagnosed as what it is, and not as
          * a gate refusing.** 0038's consequence, now in two shapes: what reaches

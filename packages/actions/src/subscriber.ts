@@ -1,10 +1,10 @@
 /**
  * A subscriber: a command that is told what happened and is never waited for.
  *
- * It lives beside `createProcessGate` because it is the same primitive, and
+ * It lives beside `createProcessAction` because it is the same primitive, and
  * that is [0037](../../../doc/decisions/0037-an-extension-is-a-command.md)'s
  * whole claim — **the taxonomy is a command, and whether the core waits for
- * it.** A gate action's exit code is a verdict, so `runGatePipeline` holds for
+ * it.** An action's exit code is a verdict, so `runActionPipeline` holds for
  * it; this one's is not, so nothing does. There is no registry, no manifest and
  * no loader, because `run:` already starts a process out of ours, on a clock,
  * from a declaration in the recipe.
@@ -25,7 +25,7 @@
  * three of the four types Lingtai's own recipe names cannot answer that from
  * their own bytes: `ApprovalRequested` and `RunAwaitingInput` are on a run
  * stream, `IntegrationRefused` on an integration lane. So `subject` is asked,
- * and it is a callback for the reason `GateDeps.env` is one — only the caller
+ * and it is a callback for the reason `ActionDeps.env` is one — only the caller
  * has the log to read, and this package deliberately has no store. A `subject`
  * that answers null means *this event belongs to no repository*, and an event
  * belonging to no repository reaches nobody.
@@ -36,7 +36,7 @@
  * looks at first like a contradiction of 0037 §5 — *"a subscriber has no
  * `on-error` setting; its failure is always ignored, structurally, because
  * nothing reads its exit code"* — and it is not. Ignored there means *it cannot
- * change any outcome*: no work item is blocked, no gate refuses, no pass waits.
+ * change any outcome*: no work item is blocked, no action refuses, no pass waits.
  * §7 asks for the opposite of silence about the same fact: *"a subscriber whose
  * failure is a console line is a notifier that has silently stopped notifying —
  * the one failure mode a notifier must not have."*
@@ -51,7 +51,7 @@
  * subscriber's promise, serialises the appends and refuses to record a failure
  * about `PluginFailed` itself, so the rejection hands it the one thing it
  * wants. **Rejecting is not waiting**: that boundary voids the promise, and no
- * pass, gate or queue pass is behind it.
+ * pass, action or queue pass is behind it.
  */
 import { type Envelope, workItemStream } from "@lingtai/domain";
 import { parseDuration, type Subscriber as SubscriberSpec } from "@lingtai/recipe";

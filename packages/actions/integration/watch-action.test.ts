@@ -6,8 +6,8 @@
  * so sends a person looking for a problem that does not exist.
  *
  * **In `integration/`.** The `watch` and `human` actions decide nothing outside
- * the system, but the pipelines below run them beside real `createProcessGate`
- * gates, and a spawned shell is outside it
+ * the system, but the pipelines below run them beside real `createProcessAction`
+ * actions, and a spawned shell is outside it
  * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). The two
  * hand-written 30s bounds that used to sit on those cases are gone with the
  * move: they were chosen against vitest's 5000ms default, and the project this
@@ -15,18 +15,18 @@
  */
 import { BadWatchPatternError, MIGRATION_WATCH, TAMPER_WATCH } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
-import type { GateEvent } from "../src/gate.ts";
-import { runGatePipeline } from "../src/gate.ts";
-import { createHumanGate } from "../src/human-gate.ts";
-import { createWatchGate } from "../src/watch-gate.ts";
-import { createProcessGate } from "../src/process-gate.ts";
+import type { ActionEvent } from "../src/action.ts";
+import { runActionPipeline } from "../src/action.ts";
+import { createHumanAction } from "../src/human-action.ts";
+import { createWatchAction } from "../src/watch-action.ts";
+import { createProcessAction } from "../src/process-action.ts";
 
 const context = { runId: "run-1", onSha: "b".repeat(40), cwd: process.cwd(), env: {} };
 /** A `run:` action's own environment, since 0037 §1 — never the context's. */
 const shellEnv = { PATH: process.env["PATH"] ?? "" };
 
 const watching = (watch: readonly string[], files: string[], then: "request-approval" | "fail" = "request-approval") =>
-  createWatchGate({ name: "tamper", watch, then }, { changedFiles: async () => files });
+  createWatchAction({ name: "tamper", watch, then }, { changedFiles: async () => files });
 
 describe("the watch action", () => {
   it("passes when the diff touches nothing it watches", async () => {
@@ -64,7 +64,7 @@ describe("the watch action", () => {
   });
 
   it("catches a migration and says to apply it by hand first", async () => {
-    const result = await createWatchGate(
+    const result = await createWatchAction(
       { name: "migrations", watch: MIGRATION_WATCH, then: "request-approval" },
       { changedFiles: async () => ["prisma/migrations/0002_add_column/migration.sql"] },
     ).run(context);
@@ -79,7 +79,7 @@ describe("the watch action", () => {
     expect(result.verdict).toBe("failed");
   });
 
-  it("refuses a broken pattern when the gate is built, not when it runs", () => {
+  it("refuses a broken pattern when the action is built, not when it runs", () => {
     // Built at `lingtai doctor` time. A watch that matches nothing looks exactly
     // like a watch with nothing to report, and `tamper` is supposed to fire
     // rarely — so the two must never be confusable.
@@ -87,27 +87,27 @@ describe("the watch action", () => {
   });
 });
 
-describe("the human gate", () => {
+describe("the human action", () => {
   it("always asks, and says which commit it is asking about", async () => {
-    const result = await createHumanGate({ name: "approval" }).run(context);
+    const result = await createHumanAction({ name: "approval" }).run(context);
 
     expect(result.verdict).toBe("needs-approval");
     expect(result.evidence).toContain(context.onSha.slice(0, 7));
   });
 });
 
-describe("the pipeline, when a gate wants a person", () => {
-  const collect = async (gates: Parameters<typeof runGatePipeline>[0]["gates"]) => {
-    const events: GateEvent[] = [];
-    const result = await runGatePipeline({ point: "proposed", gates, context, emit: (e) => void events.push(e) });
+describe("the pipeline, when an action wants a person", () => {
+  const collect = async (actions: Parameters<typeof runActionPipeline>[0]["actions"]) => {
+    const events: ActionEvent[] = [];
+    const result = await runActionPipeline({ step: "proposed", actions, context, emit: (e) => void events.push(e) });
     return { result, types: events.map((e) => e.type) };
   };
 
   it("stops, and asks in the vocabulary --no-merge already used", async () => {
     const { result, types } = await collect([
-      createProcessGate({ name: "build", run: "true", timeout: "1m", env: shellEnv }),
-      createHumanGate({ name: "approval" }),
-      createProcessGate({ name: "after", run: "true", timeout: "1m", env: shellEnv }),
+      createProcessAction({ name: "build", run: "true", timeout: "1m", env: shellEnv }),
+      createHumanAction({ name: "approval" }),
+      createProcessAction({ name: "after", run: "true", timeout: "1m", env: shellEnv }),
     ]);
 
     expect(result.ok).toBe(false);
@@ -118,15 +118,15 @@ describe("the pipeline, when a gate wants a person", () => {
     // for one idea.
     expect(types).toContain("ApprovalRequested");
     expect(types).not.toContain("GateFailed");
-    // And it stops, for the same reason a failure stops: the gates after it are
+    // And it stops, for the same reason a failure stops: the actions after it are
     // about a diff that is not going anywhere yet.
     expect(result.skipped).toEqual(["after"]);
   });
 
   it("keeps failure and hold distinguishable all the way out", async () => {
     const { result, types } = await collect([
-      createProcessGate({ name: "build", run: "exit 1", timeout: "1m", env: shellEnv }),
-      createHumanGate({ name: "approval" }),
+      createProcessAction({ name: "build", run: "exit 1", timeout: "1m", env: shellEnv }),
+      createHumanAction({ name: "approval" }),
     ]);
 
     expect(result.failedAt).toBe("build");

@@ -61,7 +61,7 @@ import type { ProposedRef, ProposedTicket, TicketStore } from "./ticket-store.ts
  *
  * Nothing calls it yet, and that is the same fact `whyNoKindAt` states about
  * the `backlog:` plugin. **The bar today is written twice, and this lifts out
- * both.** `verdictFor` in `packages/actions/src/agent-gate.ts` is the half that
+ * both.** `verdictFor` in `packages/actions/src/agent-action.ts` is the half that
  * *refuses* — a hard-coded blocker-or-major, which is `refuses` below —
  * and the literal `minor` in the fold (`packages/projector/src/backlog.ts`) is
  * the half that *files*, which is `filed`. One comparison in two packages that
@@ -100,7 +100,7 @@ export interface BacklogOutcome {
   filed: readonly Finding[];
   /**
    * Above it: these refuse, and a refusal is what may go on to buy a round.
-   * `verdictFor` in `packages/actions/src/agent-gate.ts` is where that same
+   * `verdictFor` in `packages/actions/src/agent-action.ts` is where that same
    * question is answered today, off its own copy of the bar.
    */
   refuses: readonly Finding[];

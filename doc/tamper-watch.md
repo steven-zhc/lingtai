@@ -2,7 +2,7 @@
 
 A `watch:` action at `proposed` that holds a diff for a person when it touches
 the machinery that judges diffs. Built by `#31`, live in
-`packages/actions/src/watch-gate.ts`, and **not in this repository's recipe —
+`packages/actions/src/watch-action.ts`, and **not in this repository's recipe —
 because it has lost its subject, not because it was switched off.** See *It lost
 its subject* below.
 

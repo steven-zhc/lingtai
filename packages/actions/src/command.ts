@@ -2,15 +2,15 @@
  * Running one command in a worktree, and coming back with something a person
  * can act on.
  *
- * This was inside `process-gate.ts`, and it is out here because the prepare
- * stage needs exactly the same execution and none of the same meaning. A gate's
+ * This was inside `process-action.ts`, and it is out here because the prepare
+ * stage needs exactly the same execution and none of the same meaning. An action's
  * result is a **verdict about a commit**, bound to `onSha` and invalidated by a
  * force-push. A prepare step runs before the agent has written anything and
  * holds no verdict about anything. Sharing the runner is right; sharing the
  * result type would have quietly given prepare an `onSha` that means nothing.
  *
  * It lives in `@lingtai/actions` rather than in a package of its own because
- * the dependency already runs that way — the conductor imports the gates — and a
+ * the dependency already runs that way — the conductor imports the actions — and a
  * package with one file in it is a worse answer than a slightly wide name.
  *
  * It is also the extension mechanism, and there is no other one:
@@ -75,7 +75,7 @@ export interface RunCommandOptions {
   /**
    * The child's **whole** environment — nothing is inherited from this process.
    *
-   * For a prepare step or a gate action that means the names the recipe
+   * For a prepare step or an action that means the names the recipe
    * declared beside it, plus `runnableEnv`'s six (0037 §1). The caller decides;
    * what this file guarantees is that it does not add to what it was given.
    */
@@ -119,7 +119,7 @@ const ESCAPES =
  * The output as text, with the terminal's escape sequences taken out
  * ([0043](../../../doc/decisions/0043-evidence-is-plain-text.md), #156).
  *
- * A gate's stdout is a pipe, and colour arrives anyway: `pnpm` sets
+ * An action's stdout is a pipe, and colour arrives anyway: `pnpm` sets
  * `FORCE_COLOR` for what it runs, so `pnpm test` hands vitest's red
  * `Caused by` to the card as `[31m[1mCaused by: Error[22m: …`. Stripped here,
  * at capture, rather than rendered on the page, because the evidence is not
@@ -171,8 +171,8 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
 }
 
 /**
- * Run the command and wait for it. A gate action's exit code is a verdict, so
- * this is the caller a gate uses.
+ * Run the command and wait for it. An action's exit code is a verdict, so
+ * this is the caller an action uses.
  */
 export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> {
   return new Promise<CommandOutcome>((resolve) => spawnCommand(options, resolve));
@@ -184,7 +184,7 @@ export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> 
  * exit code decides nothing, so the loop that started it goes on immediately.
  *
  * Not waiting is not the same as not looking. The timeout is enforced exactly
- * as it is for a gate, because 0037 §6's point is that an ignored failure and a
+ * as it is for an action, because 0037 §6's point is that an ignored failure and a
  * bounded one are different guarantees and only the second keeps the loop
  * moving — and the outcome, when it arrives, is handed to `report`, which is
  * the only place a command's exit code can be read. `createSubscriber` in

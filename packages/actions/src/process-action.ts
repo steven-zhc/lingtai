@@ -1,5 +1,5 @@
 /**
- * The process gate: run a command, the exit code is the verdict.
+ * The process action: run a command, the exit code is the verdict.
  *
  * This is `verify.sh` unchanged, which is the point — the old loop's build check
  * was the one part of it that worked, and collapsing it into the same primitive
@@ -10,17 +10,17 @@
  * needs the same spawning, the same bounded buffer and the same distinction
  * between a timeout and a refusal — while needing none of this file's meaning.
  * What is left here is exactly the translation from "a command ended" to "a
- * verdict about a commit", which is the part that is genuinely about gates.
+ * verdict about a commit", which is the part that is genuinely about actions.
  */
 import { parseDuration } from "@lingtai/recipe";
 import { runCommand } from "./command.ts";
-import type { Gate, GateContext, GateResult } from "./gate.ts";
+import type { Action, ActionContext, ActionResult } from "./action.ts";
 
 // Re-exported because they were part of this module's surface before the
 // extraction, and moving a file should not move someone's import.
 export { EVIDENCE_BYTES, EVIDENCE_LINES, tail } from "./command.ts";
 
-export interface ProcessGateSpec {
+export interface ProcessActionSpec {
   name: string;
   run: string;
   /** `15m` by default, per the recipe schema. */
@@ -30,7 +30,7 @@ export interface ProcessGateSpec {
    * recipe declared beside it
    * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
    *
-   * Not `GateContext.env`, and that is the change: a `run:` action is the
+   * Not `ActionContext.env`, and that is the change: a `run:` action is the
    * extension point (0037 §2), its code is not trusted, and it used to be
    * handed the environment the *agent* was given — so a credential put there
    * for one command reached every command. Required rather than optional so
@@ -42,7 +42,7 @@ export interface ProcessGateSpec {
   env: Record<string, string>;
 }
 
-export function createProcessGate(spec: ProcessGateSpec): Gate {
+export function createProcessAction(spec: ProcessActionSpec): Action {
   const timeoutLabel = spec.timeout ?? "15m";
   const timeoutMs = parseDuration(timeoutLabel);
 
@@ -50,19 +50,19 @@ export function createProcessGate(spec: ProcessGateSpec): Gate {
     name: spec.name,
     kind: "run",
 
-    async run(context: GateContext): Promise<GateResult> {
+    async run(context: ActionContext): Promise<ActionResult> {
       const outcome = await runCommand({
         run: spec.run,
         timeoutMs,
         timeoutLabel,
         cwd: context.cwd,
         // `spec.env`, deliberately, and not `context.env`: the context carries
-        // the agent's environment and this is not the agent. See ProcessGateSpec.
+        // the agent's environment and this is not the agent. See ProcessActionSpec.
         env: spec.env,
         signal: context.signal,
       });
 
-      // A process gate finds nothing structured — that is what the agent gate is
+      // A process action finds nothing structured — that is what the agent action is
       // for (#18). Its evidence is the log, which is what someone acting on the
       // card actually needs.
       return { verdict: outcome.ok ? "passed" : "failed", evidence: outcome.evidence, findings: [] };

@@ -1,7 +1,7 @@
 /**
- * The agent gate: a second agent, cold.
+ * The agent action: a second agent, cold.
  *
- * This is the gate experiment 001 was run to justify, and it earned its place.
+ * This is the action experiment 001 was run to justify, and it earned its place.
  * Issue #58 in `nextloom-ai-admin` passed agent self-review, `verify.sh`, CI, a
  * full human read, and merged — and hours later the same agent filed three bugs
  * against its own merged code. A reviewer given only the issue and the diff
@@ -29,9 +29,9 @@
  * opinion, and opinions are what made the old review queue unworkable.
  *
  * **Concurrency and check-then-write are named.** All four known defects were
- * that one shape. The experiment is explicit that this tests *the gate as
+ * that one shape. The experiment is explicit that this tests *the action as
  * designed* rather than a generic reviewer, so the checklist is part of the
- * gate, not part of the configuration.
+ * action, not part of the configuration.
  *
  * A recipe's `prompt` is appended, never substituted. It can add what this
  * project cares about; it cannot remove the rubric — the same rule the recipe
@@ -42,11 +42,11 @@
  * three findings in 001 were real. A filter with nothing to filter still costs
  * an agent call. Add it when false positives actually appear.
  *
- * **And the same gate is what checks a fix**
+ * **And the same action is what checks a fix**
  * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
  * A refusal buys an agent that is handed the findings, and then this runs again
- * on the head that agent produced — with `GateContext.recheck` carrying the
- * findings it was given. Not a second kind of gate: the rubric, the checklist
+ * on the head that agent produced — with `ActionContext.recheck` carrying the
+ * findings it was given. Not a second kind of action: the rubric, the checklist
  * and the contract are the same, and the only addition is the question a fix
  * makes possible to ask wrongly — *does that sequence still produce that
  * outcome*, rather than *is that sentence still in my output*. See
@@ -54,9 +54,9 @@
  */
 import type { Runtime } from "@lingtai/agent";
 import { SEVERITIES, type Severity } from "@lingtai/domain";
-import type { Gate, GateContext, GateFinding, GateResult } from "./gate.ts";
+import type { Action, ActionContext, ActionFinding, ActionResult } from "./action.ts";
 
-export interface AgentGateSpec {
+export interface AgentActionSpec {
   name: string;
   /** Appended to the fixed brief. Adds concerns; cannot remove them. */
   prompt: string;
@@ -73,12 +73,12 @@ export interface AgentGateSpec {
   model?: string;
 }
 
-export interface AgentGateDeps {
+export interface AgentActionDeps {
   runtime: Runtime;
   /** The ticket, exactly as the implementer received it. Fetched lazily so a
-   *  recipe without an agent gate costs no API call. */
+   *  recipe without an agent action costs no API call. */
   issue: () => Promise<{ ref: string; title: string; body: string }>;
-  /** The diff under review, `base...head`. Supplied by the caller: the gates
+  /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
   diff: () => Promise<string>;
   /** Rendered outside the worktree, like the implementer's. */
@@ -176,7 +176,7 @@ export interface ReviewIssue {
  * cheap way to pass — a capability deleted along with its defect is a scenario
  * that no longer *runs*, not one that no longer produces the outcome.
  */
-function recheckBlock(findings: readonly GateFinding[]): string {
+function recheckBlock(findings: readonly ActionFinding[]): string {
   const items = findings.map((f, i) => {
     const at = f.line === null ? f.file : `${f.file}:${f.line}`;
     return [
@@ -215,11 +215,11 @@ have without this section. The fix is part of the diff and is not above review.`
 }
 
 export function buildReviewPrompt(
-  spec: AgentGateSpec,
+  spec: AgentActionSpec,
   issue: ReviewIssue,
   diff: string,
   limitBytes: number,
-  recheck: readonly GateFinding[] = [],
+  recheck: readonly ActionFinding[] = [],
 ): string {
   const clipped =
     diff.length > limitBytes
@@ -266,7 +266,7 @@ ${clipped}
  * in the prompt and enforcing it here is what makes it true rather than
  * aspirational.
  */
-export function parseFindings(text: string | null): { findings: GateFinding[]; parsed: boolean } {
+export function parseFindings(text: string | null): { findings: ActionFinding[]; parsed: boolean } {
   if (!text) return { findings: [], parsed: false };
 
   const candidates: string[] = [];
@@ -286,9 +286,9 @@ export function parseFindings(text: string | null): { findings: GateFinding[]; p
     const list = (value as { findings?: unknown })?.findings;
     if (!Array.isArray(list)) continue;
 
-    const findings: GateFinding[] = [];
+    const findings: ActionFinding[] = [];
     for (const raw of list) {
-      const f = raw as Partial<GateFinding>;
+      const f = raw as Partial<ActionFinding>;
       // The rule from the prompt, enforced.
       if (!f?.claim || !f?.failureScenario) continue;
       findings.push({
@@ -320,7 +320,7 @@ export function parseFindings(text: string | null): { findings: GateFinding[]; p
  * same `minor` in two packages that cannot see each other. `decideBacklog` in
  * `packages/conductor/src/backlog.ts` is that one comparison as a function, and
  * when a step reads the `backlog:` plugin **both** of these have to be handed
- * the recipe's value: wire the fold alone and a `major` still fails the gate
+ * the recipe's value: wire the fold alone and a `major` still fails the action
  * here, `GateFailed` is still emitted, the fold never sees it, and a recipe
  * that said a major costs nothing has bought a fix round.
  *
@@ -329,7 +329,7 @@ export function parseFindings(text: string | null): { findings: GateFinding[]; p
  * being listed.
  */
 const BAR: Severity = "minor";
-export function verdictFor(findings: readonly GateFinding[]): "passed" | "failed" {
+export function verdictFor(findings: readonly ActionFinding[]): "passed" | "failed" {
   const bar = SEVERITIES.indexOf(BAR);
   return findings.some((f) => SEVERITIES.indexOf(f.severity) < bar) ? "failed" : "passed";
 }
@@ -339,19 +339,19 @@ function isSeverity(value: unknown): value is Severity {
   return (SEVERITIES as readonly unknown[]).includes(value);
 }
 
-function summarise(findings: readonly GateFinding[]): string {
+function summarise(findings: readonly ActionFinding[]): string {
   if (findings.length === 0) return "no findings";
   return findings
     .map((f) => `${f.severity} ${f.file}${f.line === null ? "" : `:${f.line}`} — ${f.claim}`)
     .join("\n");
 }
 
-export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate {
+export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
   return {
     name: spec.name,
     kind: "agent",
 
-    async run(context: GateContext): Promise<GateResult> {
+    async run(context: ActionContext): Promise<ActionResult> {
       const diff = await deps.diff();
       if (!diff.trim()) {
         // Nothing to review is not the same as nothing wrong, and saying so is
@@ -402,7 +402,7 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
         // "the runtime's own default" means in the one place it has to be true.
         ...(spec.model === undefined ? {} : { model: spec.model }),
         settingsPath: deps.settingsPath,
-        // Already tagged `<point>:<action>` by the pipeline (#153). The reviewer
+        // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
         // runs without the hook, so its tool calls are the stream's to write.
         log: context.log,
         traceTools: true,
@@ -418,9 +418,9 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
          *
          * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1
          * was written for runs, because when it landed the only agent in a pass
-         * was the implementer — the `agent` gate existed and had never once run
+         * was the implementer — the `agent` action existed and had never once run
          * (`d4fbd1a`). The second agent in a pass became reachable and met a
-         * quota wall in its first afternoon, and the gate turned it into a
+         * quota wall in its first afternoon, and the action turned it into a
          * failed verdict: a sentence about this diff, produced by a condition
          * that has nothing to do with any diff (`#133`).
          *
@@ -478,7 +478,7 @@ export function createAgentGate(spec: AgentGateSpec, deps: AgentGateDeps): Gate 
       const { findings, parsed } = parseFindings(outcome.text);
       if (!parsed) {
         // A reviewer whose answer cannot be read has not reviewed anything. The
-        // alternative is a green gate for a diff nobody assessed.
+        // alternative is a green action for a diff nobody assessed.
         return {
           verdict: "failed",
           evidence: `the reviewer's answer was not readable as findings:\n${(outcome.text ?? "").slice(0, 2_000)}`,

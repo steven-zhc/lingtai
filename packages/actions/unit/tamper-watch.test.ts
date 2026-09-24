@@ -1,5 +1,5 @@
 /**
- * The `tamper` watch (#31): the gate cannot be allowed to edit the gate.
+ * The `tamper` watch (#31): the action cannot be allowed to edit the action.
  *
  * **Read from `doc/tamper-watch.md`, because this repository does not wire it.**
  * It was at `proposed` for one night and held six consecutive items that had
@@ -12,14 +12,14 @@
  * while the watch is off is *cannot be weakened by the change it is judging* —
  * that needs the watch to really be at `proposed`, and it comes back with the
  * block. Everything else below judges the documented list against the real
- * gate code.
+ * action code.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { type GateAction, RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
-import { gatesFromRecipe } from "../src/from-recipe.ts";
-import { runGatePipeline } from "../src/gate.ts";
+import { actionsFromRecipe } from "../src/from-recipe.ts";
+import { runActionPipeline } from "../src/action.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const context = { runId: "run-1", onSha: "b".repeat(40), cwd: root, env: {} };
@@ -46,13 +46,13 @@ async function documented(): Promise<GateAction[]> {
     async (path, ref) => (path === RECIPE_PATH && ref === "main" ? spliced : null),
     "main",
   );
-  return recipe.steps.proposed.filter((gate) => "watch" in gate);
+  return recipe.steps.proposed.filter((action) => "watch" in action);
 }
 
 /** The documented watches, judging a diff of exactly these files. */
 async function judge(files: string[]) {
-  const gates = gatesFromRecipe("proposed", await documented(), { watch: { changedFiles: async () => files } });
-  return runGatePipeline({ point: "proposed", gates, context, emit: () => {} });
+  const actions = actionsFromRecipe("proposed", await documented(), { watch: { changedFiles: async () => files } });
+  return runActionPipeline({ step: "proposed", actions, context, emit: () => {} });
 }
 
 describe("this repository's tamper watch", () => {
@@ -61,7 +61,7 @@ describe("this repository's tamper watch", () => {
     "packages/conductor/src/run-once.ts",
     "packages/event-store/src/db.ts",
     "packages/hook/src/lingtai-hook.ts",
-    "packages/actions/src/watch-gate.ts",
+    "packages/actions/src/watch-action.ts",
     "packages/recipe/src/recipe.ts",
     "packages/domain/src/index.ts",
     "package.json",

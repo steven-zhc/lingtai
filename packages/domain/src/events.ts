@@ -628,11 +628,11 @@ export const GateStarted = z.object(gateBase);
  * **Exported because it is the only copy of the ladder, and that is a claim
  * tests hold rather than a comment** (`#237`). Five places used to spell the
  * three names out and none of them linked here: `parseFindings` and
- * `verdictFor` in `packages/actions/src/agent-gate.ts`, `severest`, and the
+ * `verdictFor` in `packages/actions/src/agent-action.ts`, `severest`, and the
  * `GateFinding` interfaces in `packages/domain/src/run.ts` and
- * `packages/actions/src/gate.ts`. Each reads this array, or the `Severity` it
+ * `packages/actions/src/action.ts`. Each reads this array, or the `Severity` it
  * yields, so a fourth severity added here reaches all of them at once —
- * `packages/actions/unit/agent-gate.test.ts` and
+ * `packages/actions/unit/agent-action.test.ts` and
  * `packages/conductor/unit/fix.test.ts` walk the array against those
  * consumers, so a copy re-introduced is a red test.
  *

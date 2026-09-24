@@ -128,7 +128,7 @@ export function renderSettings(options: RenderOptions): unknown {
  * output is that refusal.
  *
  * That is what happened to the cold reviewer: `run-once.ts` gave the `agent`
- * gate `wiring.settingsPath` alongside a `GateContext.env` built from
+ * gate `wiring.settingsPath` alongside an `ActionContext.env` built from
  * `env.values` alone, so **every review since the gate was configured produced
  * the hook's refusal instead of findings**, and the gate correctly reported that
  * it could not read them. Three layers behaved exactly as designed and the thing

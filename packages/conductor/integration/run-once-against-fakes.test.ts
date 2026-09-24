@@ -1422,7 +1422,7 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
     const git = ports.repo.git;
     ports.repo.git = (...call: Parameters<typeof git>) =>
       call[0][0] === "diff" && call[0][1] === "--name-only"
-        ? git(...call).pipe(Effect.as(".lingtai/config.yaml\npackages/actions/src/watch-gate.ts\n"))
+        ? git(...call).pipe(Effect.as(".lingtai/config.yaml\npackages/actions/src/watch-action.ts\n"))
         : git(...call);
 
     const armed = RECIPE.replace(

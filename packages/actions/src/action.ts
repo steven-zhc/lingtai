@@ -1,5 +1,5 @@
 /**
- * The gate: one primitive, four kinds.
+ * The action: one primitive, four kinds.
  *
  * Verification, code review and human approval look like three features. They
  * are one — **a named check that produces a verdict about a specific diff** —
@@ -38,8 +38,8 @@ import type { Step, PayloadOf, Severity } from "@lingtai/domain";
  *
  * An `agent` action whose agent never started — a quota, a signed-out runtime —
  * has judged nothing ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)
- * §1, one layer up). It cannot pass, because a green gate for a diff nobody
- * assessed is the thing `agent-gate.ts` already refuses to emit; and it must
+ * §1, one layer up). It cannot pass, because a green action for a diff nobody
+ * assessed is the thing `agent-action.ts` already refuses to emit; and it must
  * not fail, because a failure is a sentence about *this diff* produced by a
  * condition that has nothing to do with any diff (`#133`).
  *
@@ -65,9 +65,9 @@ import type { Step, PayloadOf, Severity } from "@lingtai/domain";
  * that works: this is not a refusal, it buys no round, and it stands the pass
  * down rather than the conductor.
  */
-export type GateVerdict = "passed" | "failed" | "needs-approval" | "never-ran" | "did-not-finish";
+export type ActionVerdict = "passed" | "failed" | "needs-approval" | "never-ran" | "did-not-finish";
 
-export interface GateFinding {
+export interface ActionFinding {
   file: string;
   line: number | null;
   claim: string;
@@ -77,21 +77,21 @@ export interface GateFinding {
   severity: Severity;
 }
 
-export interface GateResult {
-  verdict: GateVerdict;
+export interface ActionResult {
+  verdict: ActionVerdict;
   /**
-   * What the board shows. For a process gate this is the log tail — enough to
+   * What the board shows. For a process action this is the log tail — enough to
    * act on without leaving the card, which is the whole point of the board.
    */
   evidence: string;
-  findings: GateFinding[];
+  findings: ActionFinding[];
 }
 
-export interface GateContext {
+export interface ActionContext {
   runId: string;
   /** The commit this verdict is about, and the only thing that makes it stale. */
   onSha: string;
-  /** The worktree. Gates run where the agent worked, never anywhere else. */
+  /** The worktree. Actions run where the agent worked, never anywhere else. */
   cwd: string;
   /**
    * The **agent's** environment, filtered exactly as the agent's was — and an
@@ -101,8 +101,8 @@ export interface GateContext {
    * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1: it is
    * the extension point, its code is not trusted, and it gets the names the
    * recipe declared beside it and nothing else. Its environment therefore
-   * belongs to the action rather than to the point, and lives on
-   * `ProcessGateSpec`. This stays here because a cold reviewer is the core's own
+   * belongs to the action rather than to the step, and lives on
+   * `ProcessActionSpec`. This stays here because a cold reviewer is the core's own
    * agent runtime, not an extension.
    */
   env: Record<string, string>;
@@ -119,10 +119,10 @@ export interface GateContext {
    * Only the `agent` kind reads it, and it is the acceptance contract rather
    * than context: each finding's `failureScenario` was written before anybody
    * knew what the fix would be, which is what makes it a criterion the fixer
-   * could not author. A process gate re-runs unchanged — a build does not need
+   * could not author. A process action re-runs unchanged — a build does not need
    * to be told what the reviewer said.
    */
-  recheck?: readonly GateFinding[];
+  recheck?: readonly ActionFinding[];
   /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
    * Only said on the run log, so a slow re-review reads as *round 2*.
@@ -131,34 +131,34 @@ export interface GateContext {
   /**
    * The run's log ([0034](../../../doc/decisions/0034-the-run-log.md), #153).
    *
-   * `runGatePipeline` writes each action's start and end here under
-   * `<point>:<action>`, and hands the action this same log **already tagged**,
+   * `runActionPipeline` writes each action's start and end here under
+   * `<step>:<action>`, and hands the action this same log **already tagged**,
    * so an `agent` action passes it to its runtime and every line its agent
-   * writes is filed under the gate it belongs to. A `run` or `watch` action has
+   * writes is filed under the action it belongs to. A `run` or `watch` action has
    * no agent and writes nothing further. Absent, nothing is written.
    */
   log?: RunTrace;
   signal?: AbortSignal;
 }
 
-export interface Gate {
+export interface Action {
   readonly name: string;
   /** Which action shape produced it: `run`, `agent`, `watch` or `human`. */
   readonly kind: "run" | "agent" | "watch" | "human";
-  run(context: GateContext): Promise<GateResult>;
+  run(context: ActionContext): Promise<ActionResult>;
 }
 
-/** Emitted for every gate, in order. The pipeline's whole output is events. */
-export type GateEvent =
+/** Emitted for every action, in order. The pipeline's whole output is events. */
+export type ActionEvent =
   | { type: "GateRequested"; data: PayloadOf<"GateRequested"> }
   | { type: "GateStarted"; data: PayloadOf<"GateStarted"> }
   | { type: "GatePassed"; data: PayloadOf<"GatePassed"> }
   | { type: "GateFailed"; data: PayloadOf<"GateFailed"> }
-  /** The point was reached and produced no verdict, because its agent never
-   *  started. Appended so that a gate which did not judge is readable as that
+  /** The step was reached and produced no verdict, because its agent never
+   *  started. Appended so that an action which did not judge is readable as that
    *  rather than as one still running. */
   | { type: "GateNeverRan"; data: PayloadOf<"GateNeverRan"> }
-  /** The point was reached, its agent started and ended with no receipt, so
+  /** The step was reached, its agent started and ended with no receipt, so
    *  nothing judged the diff. Appended once, because the action is run once
    *  (0057 §1, and §4's retry deleted by `#234`). */
   | { type: "GateDidNotFinish"; data: PayloadOf<"GateDidNotFinish"> }
@@ -166,14 +166,14 @@ export type GateEvent =
   | { type: "ApprovalRequested"; data: PayloadOf<"ApprovalRequested"> };
 
 export interface PipelineResult {
-  /** True when every gate passed. Never true when one is waiting on a person. */
+  /** True when every action passed. Never true when one is waiting on a person. */
   ok: boolean;
-  /** The gate that failed, when one did. */
+  /** The action that failed, when one did. */
   failedAt: string | null;
-  /** The gate waiting on a person, when one is. */
+  /** The action waiting on a person, when one is. */
   heldAt: string | null;
   /**
-   * The gate whose agent never started, when one did not — with the runtime's
+   * The action whose agent never started, when one did not — with the runtime's
    * own words, because they are the only evidence there is and 0031 §4 reads a
    * reset time back out of them.
    *
@@ -181,9 +181,9 @@ export interface PipelineResult {
    * ending that is about the account rather than about the diff, and the caller
    * has to be able to tell them apart without reading a sentence.
    */
-  neverRanAt: { gate: string; detail: string } | null;
+  neverRanAt: { action: string; detail: string } | null;
   /**
-   * The gate whose agent started and did not finish
+   * The action whose agent started and did not finish
    * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1).
    *
    * Its own field for the same reason `neverRanAt` is one: this ending buys no
@@ -191,49 +191,52 @@ export interface PipelineResult {
    * that had to read `evidence` to tell it from a refusal would be the second
    * reader of a sentence that 0031 §1 exists to prevent.
    */
-  didNotFinishAt: { gate: string; detail: string } | null;
+  didNotFinishAt: { action: string; detail: string } | null;
   /**
    * Every verdict, with the findings behind it.
    *
    * `findings` is carried here rather than left on the `GateFailed` event
    * because the caller acts on it: a refusal with findings buys a fixing agent
-   * (0038 §1), and reading the log back to discover what the gate it just ran
+   * (0038 §1), and reading the log back to discover what the action it just ran
    * said would be a second source of truth for the same sentence.
    */
-  results: { gate: string; verdict: GateVerdict; evidence: string; findings: GateFinding[] }[];
-  /** Gates never reached because an earlier one failed or is waiting. */
+  results: { action: string; verdict: ActionVerdict; evidence: string; findings: ActionFinding[] }[];
+  /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[];
 }
 
 export interface PipelineOptions {
   /** Which of the ten steps this pipeline is. Stamped on every verdict. */
-  point: Step;
-  gates: readonly Gate[];
-  context: GateContext;
+  step: Step;
+  actions: readonly Action[];
+  context: ActionContext;
   /**
-   * Called for every event, in order, before the next gate starts.
+   * Called for every event, in order, before the next action starts.
    *
-   * The pipeline does not touch the store itself: a gate that ran but whose
+   * The pipeline does not touch the store itself: an action that ran but whose
    * verdict was never recorded is the failure this design exists to remove, and
    * keeping the append in one place makes that impossible to forget.
    */
-  emit: (event: GateEvent) => Promise<void> | void;
+  emit: (event: ActionEvent) => Promise<void> | void;
 }
 
 /**
- * Runs the gates in recipe order and stops at the first failure.
+ * Runs the actions in recipe order and stops at the first failure.
  *
- * Stopping is deliberate. Running the remaining gates after one has already
+ * Stopping is deliberate. Running the remaining actions after one has already
  * refused costs money and produces verdicts about a diff that is not going
  * anywhere; worse, a board showing three green badges and one red invites the
  * reading that it is three-quarters fine.
  */
-export async function runGatePipeline(options: PipelineOptions): Promise<PipelineResult> {
-  const { gates, point, context, emit } = options;
+export async function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
+  const { actions, step, context, emit } = options;
   const results: PipelineResult["results"] = [];
 
-  for (const [index, gate] of gates.entries()) {
-    const base = { gate: point, action: gate.name, runId: context.runId, onSha: context.onSha };
+  for (const [index, action] of actions.entries()) {
+    // `gate:` is the **event payload's** field and stays that spelling until the
+    // log's own vocabulary is renamed — it carries the step, and `action` beside
+    // it carries this action's name.
+    const base = { gate: step, action: action.name, runId: context.runId, onSha: context.onSha };
 
     await emit({ type: "GateRequested", data: base });
 
@@ -243,10 +246,10 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
      * A review is eighteen minutes and a build four and a half, and the file a
      * person was following said nothing for either. The line's own time is
      * *since when*; the round is which question this is. An `agent` action is
-     * handed the log tagged as this gate, so what its agent does lands between
+     * handed the log tagged as this action, so what its agent does lands between
      * these two lines; any other kind has no agent and writes nothing between.
      */
-    const tag = `${point}:${gate.name}`;
+    const tag = `${step}:${action.name}`;
     const round = context.round ? ` · round ${context.round}` : "";
 
     /**
@@ -254,7 +257,7 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
      *
      * [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4 put
      * one here and it never once ran. The session id is a hash of
-     * `<runId>:review:<action>:<sha>` (`agent-gate.ts:356`, `sessionIdFor` at
+     * `<runId>:review:<action>:<sha>` (`agent-action.ts:356`, `sessionIdFor` at
      * `claude-code.ts:93`) and a second attempt moves none of the four, so the
      * retry computed the id attempt 1 had already opened a session with and
      * `claude` refused it in zero seconds: two retries on this machine's run
@@ -270,24 +273,24 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
      */
     await emit({ type: "GateStarted", data: base });
     const started = Date.now();
-    context.log?.note(tag, `started · ${gate.kind} on ${context.onSha.slice(0, 7)}${round}`);
+    context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`);
 
-    let result: GateResult;
+    let result: ActionResult;
     try {
-      result = await gate.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context);
+      result = await action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context);
     } catch (err) {
-      // A gate that throws is a gate that failed. The alternative is an
+      // An action that throws is an action that failed. The alternative is an
       // exception escaping the pipeline and a run ending with no verdict at all.
       result = {
         verdict: "failed",
-        evidence: `the ${gate.name} gate threw: ${(err as Error).message}`,
+        evidence: `the ${action.name} action threw: ${(err as Error).message}`,
         findings: [],
       };
     }
     context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`);
 
     results.push({
-      gate: gate.name,
+      action: action.name,
       verdict: result.verdict,
       evidence: result.evidence,
       findings: result.findings,
@@ -305,20 +308,20 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
 
     if (result.verdict === "never-ran") {
       // No verdict event, because there is no verdict: what is appended says
-      // the point was reached and its agent never started. The pipeline stops
-      // for the reason a refusal stops it and one it does not have — the gates
+      // the step was reached and its agent never started. The pipeline stops
+      // for the reason a refusal stops it and one it does not have — the actions
       // after this one would ask the same account the same question and meet
       // the same wall, which is 0031 §3 with a queue's worth of items replaced
-      // by a recipe's worth of gates.
+      // by a recipe's worth of actions.
       await emit({ type: "GateNeverRan", data: { ...base, detail: result.evidence } });
       return {
         ok: false,
         failedAt: null,
         heldAt: null,
-        neverRanAt: { gate: gate.name, detail: result.evidence },
+        neverRanAt: { action: action.name, detail: result.evidence },
         didNotFinishAt: null,
         results,
-        skipped: gates.slice(index + 1).map((g) => g.name),
+        skipped: actions.slice(index + 1).map((a) => a.name),
       };
     }
 
@@ -334,14 +337,14 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
         failedAt: null,
         heldAt: null,
         neverRanAt: null,
-        didNotFinishAt: { gate: gate.name, detail: result.evidence },
+        didNotFinishAt: { action: action.name, detail: result.evidence },
         results,
-        skipped: gates.slice(index + 1).map((g) => g.name),
+        skipped: actions.slice(index + 1).map((a) => a.name),
       };
     }
 
     if (result.verdict === "needs-approval") {
-      // Stops for the same reason a failure does — the gates after this one are
+      // Stops for the same reason a failure does — the actions after this one are
       // about a diff that is not going anywhere yet — but it is not a failure,
       // and the event says which.
       await emit({
@@ -351,11 +354,11 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
       return {
         ok: false,
         failedAt: null,
-        heldAt: gate.name,
+        heldAt: action.name,
         neverRanAt: null,
         didNotFinishAt: null,
         results,
-        skipped: gates.slice(index + 1).map((g) => g.name),
+        skipped: actions.slice(index + 1).map((a) => a.name),
       };
     }
 
@@ -365,12 +368,12 @@ export async function runGatePipeline(options: PipelineOptions): Promise<Pipelin
     });
     return {
       ok: false,
-      failedAt: gate.name,
+      failedAt: action.name,
       heldAt: null,
       neverRanAt: null,
       didNotFinishAt: null,
       results,
-      skipped: gates.slice(index + 1).map((g) => g.name),
+      skipped: actions.slice(index + 1).map((a) => a.name),
     };
   }
 

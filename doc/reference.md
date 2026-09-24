@@ -262,7 +262,7 @@ the refusal verbatim. An agent that cannot see the failure repeats it.
 | `runtime.budget.evidence` | `2000` chars | how much of one earlier failure's output the next prompt quotes verbatim | `clamp` in `packages/conductor/src/attempts.ts` |
 | `runtime.budget.attempts` | `5` rows | how many attempts the history table names before "and N earlier" | `attemptBrief`, same file |
 | `runtime.budget.findings` | `5` | how many of a review gate's findings are carried into the next attempt | `attemptOutcome`, same file |
-| `runtime.budget.diff` | `400000` bytes | past this, the diff handed to a **review agent** is truncated | `buildReviewPrompt` in `packages/actions/src/agent-gate.ts` |
+| `runtime.budget.diff` | `400000` bytes | past this, the diff handed to a **review agent** is truncated | `buildReviewPrompt` in `packages/actions/src/agent-action.ts` |
 
 The `diff` default is [experiment 001](experiments/001-cold-review-issue-58.md)'s
 reasoning: its diff was 1391 lines across 6 files and fitted comfortably, and far
@@ -514,25 +514,39 @@ of words rather than a regex over `point`.
 | `point` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
 | `points` | `steps` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
 
-And two tokens whose replacement is **not** the word substitution, so a renamer
-reading the four rows above would get them wrong. Both are already caught by
-`gate`; these rows say what to put in their place:
+And three tokens whose replacement is **not** the word substitution, so a
+renamer reading the four rows above would get them wrong. All three are already
+caught by `gate`; these rows say what to put in their place:
 
 | retired | current | decided by |
 |---|---|---|
 | `GatePoint` | `Step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3, landed as `#227` |
 | `GateAction` | `Plugin` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §2 — a step is a list of plugins, and the plugin is the key |
+| `Gate` | `Action` | `#248` — in `@lingtai/actions` it names **the runnable thing**, `{ name, kind, run() }`, and so does its whole family: `GateContext`, `GateResult`, `GateEvent`, `GateDeps`, `GateVerdict`, `GateFinding`, `AgentGate*`, `WatchGate*`, `HumanGateSpec`, `ProcessGateSpec`, `createAgentGate` …, `runGatePipeline`, `gatesFromRecipe` |
+
+**Why the four words do not reach `Gate`, and why they must not.** `gate` → `step`
+is the substitution, and applied here it collides with the ten step names: in
+`packages/actions/src/action.ts` the pipeline's `point` is *where* and its
+`gates` are *what runs there*, so a word-level sweep made both `step` and
+compiled the object literal into the wrong field — `{ step: step, action:
+step.name }`. That is what `#246` measured, at 111 typecheck errors that were
+not converging. **And the name crosses a package boundary**, so a per-directory
+rule is worse than no rule: `runGatePipeline` would be `runActionPipeline` in
+`actions` and `runStepPipeline` in `conductor`, and nothing would compile. The
+family is pinned above as whole tokens for exactly that reason.
 
 **Where it is enforced:** every `.ts`, `.tsx` and `.css` under
 `{apps,packages}/*/src/` — identifiers, types, event types, recipe keys, a
 stylesheet's class selectors, and the strings and JSX a person reads: the
 board's copy, a refusal's text, `lingtai`'s output. **A module
-specifier is one of those strings**, and deliberately: eight files under `src/`
-carry a retired word in their own name — `gate.ts`, `agent-gate.ts`,
-`gate-audit.ts`, `gates-resolved.ts`, `end-point.ts` among them — each renamed
-by the ticket that renames what is inside it, and `./gate.ts` in an import is
-the only place the ledger can count that. `packages/actions/src/index.ts`'s
-`gate` ×5 is five re-export lines and no identifier at all.
+specifier is one of those strings**, and deliberately: three files under `src/`
+still carry a retired word in their own name — `gate-audit.ts`,
+`gates-resolved.ts` and `end-point.ts` — each renamed by the ticket that renames
+what is inside it, and `./gate-audit.ts` in an import is the only place the
+ledger can count that. It was eight until `#248`; the five under
+`packages/actions/src/` moved with their family, which is why that package's
+`index.ts` — five re-export lines and no identifier at all — has no row below
+at all any more.
 
 **A recipe key is enforced through the schema that declares it**, which is
 `packages/recipe/src/recipe.ts` and is read like any other file; no `.yml` or
@@ -561,12 +575,12 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 1446 occurrences in
-80 files**, counted 2026-09-24, across 51 distinct tokens, of which the six
-largest are `gate` ×431, `gates` ×272, `point` ×168, `points` ×95, `GatePassed`
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1073 occurrences in
+73 files**, counted 2026-09-24, across 39 distinct tokens, of which the six
+largest are `gate` ×374, `point` ×152, `points` ×95, `gates` ×73, `GatePassed`
 ×48 and `GateFailed` ×46. `GATE_CARRYING` in
 `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-`apps/board/unit/run-recipe.test.tsx` are two of those 1446 — locals a rename of
+`apps/board/unit/run-recipe.test.tsx` are two of those 1073 — locals a rename of
 `src/` does not reach, and the two a reader meets first, which is exactly why
 naming them and stopping reads as the whole of it. They are
 out because a name that survives only in a test is one no
@@ -677,7 +691,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1004 occurrences in 73 files, counted 2026-09-24** — and that sentence is
+**786 occurrences in 69 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -701,8 +715,9 @@ own word rather than a new one.** `RefusalReason` in
 `packages/domain/src/events.ts` has said it since the lane was built, and
 `judge:`'s `when:` reads the reason the last step gave — so the token arrives in
 `JudgeWhen`'s enum in `packages/recipe/src/recipe.ts`, in `BUILT_IN_FOR` in
-`packages/conductor/src/judge.ts`, and beside two `GateFinding`s that are the
-reviewer's findings under the type's present name. A value on the log is renamed
+`packages/conductor/src/judge.ts`, where the reviewer's findings beside it are
+`ActionFinding` since `#248` and carry no retired word at all. A value on the
+log is renamed
 by the ticket that renames the log's own vocabulary, never ahead of it: the
 alternative was inventing a second word for a reason the events already carry,
 which is two vocabularies for one fact — 0058 §Context's defect, and the thing
@@ -737,10 +752,10 @@ something.
 **The baseline is this table, and there is deliberately no second copy of it in
 the test.** The other design reads better than it works — freeze today's
 `file → tokens` in the test file and refuse any pair it does not hold — because
-**this epic renames files**, by construction: eight files under `src/` say a
-retired word in their own name, `gate.ts`, `agent-gate.ts`, `gate-audit.ts`,
-`gates-resolved.ts` and `end-point.ts` among them, and every one of them is
-renamed by the ticket that renames what is inside it. A frozen copy keyed by
+**this epic renames files**, by construction: `gate-audit.ts`,
+`gates-resolved.ts` and `end-point.ts` still say a retired word in their own
+name, `#248` moved five more out of `packages/actions/src/`, and every one of
+them is renamed by the ticket that renames what is inside it. A frozen copy keyed by
 path reads a file that moved or was renamed as a widening that did not happen,
 and the only way back to green is to hand-edit
 the one table whose edits were supposed to be expensive — teaching, on the
@@ -781,13 +796,9 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/cli/src/service.ts` | `gates` ×1 · `point` ×1 |
 | `apps/cli/src/status.ts` | `gates` ×1 |
 | `apps/site/src/lib/snapshot.ts` | `gates` ×1 |
-| `packages/actions/src/agent-gate.ts` | `AgentGateDeps` ×2 · `AgentGateSpec` ×3 · `Gate` ×2 · `GateContext` ×2 · `GateFinding` ×8 · `GateResult` ×2 · `createAgentGate` ×1 · `gate` ×1 · `point` ×1 |
-| `packages/actions/src/from-recipe.ts` | `AgentGateDeps` ×2 · `Gate` ×2 · `GateAction` ×2 · `GateActionUnavailableError` ×7 · `GateDeps` ×2 · `WatchGateDeps` ×2 · `createAgentGate` ×2 · `createHumanGate` ×2 · `createProcessGate` ×2 · `createWatchGate` ×2 · `gate` ×5 · `gates` ×1 · `gatesFromRecipe` ×4 · `point` ×11 · `wrongPoint` ×3 |
-| `packages/actions/src/gate.ts` | `Gate` ×2 · `GateContext` ×3 · `GateDidNotFinish` ×3 · `GateEvent` ×2 · `GateFailed` ×3 · `GateFinding` ×4 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateResult` ×3 · `GateStarted` ×3 · `GateVerdict` ×3 · `gate` ×19 · `gates` ×7 · `point` ×4 · `runGatePipeline` ×1 |
-| `packages/actions/src/human-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `HumanGateSpec` ×2 · `createHumanGate` ×1 · `gate` ×1 |
-| `packages/actions/src/index.ts` | `AgentGateDeps` ×1 · `AgentGateSpec` ×1 · `Gate` ×1 · `GateActionUnavailableError` ×1 · `GateContext` ×1 · `GateDeps` ×1 · `GateEvent` ×1 · `GateFinding` ×1 · `GateResult` ×1 · `GateVerdict` ×1 · `HumanGateSpec` ×1 · `ProcessGateSpec` ×1 · `WatchGateDeps` ×1 · `WatchGateSpec` ×1 · `createAgentGate` ×1 · `createHumanGate` ×1 · `createProcessGate` ×1 · `createWatchGate` ×1 · `gate` ×5 · `gatesFromRecipe` ×1 · `runGatePipeline` ×1 |
-| `packages/actions/src/process-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `ProcessGateSpec` ×2 · `createProcessGate` ×1 · `gate` ×1 |
-| `packages/actions/src/watch-gate.ts` | `Gate` ×2 · `GateContext` ×2 · `GateResult` ×2 · `WatchGateDeps` ×2 · `WatchGateSpec` ×2 · `createWatchGate` ×1 · `gate` ×1 · `gates` ×1 |
+| `packages/actions/src/action.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `gate` ×1 |
+| `packages/actions/src/agent-action.ts` | `point` ×1 |
+| `packages/actions/src/from-recipe.ts` | `GateAction` ×2 |
 | `packages/conductor/src/approve.ts` | `GateAction` ×2 · `GateWaived` ×4 · `GatesResolved` ×2 · `gate` ×15 · `gates` ×2 · `gatesPassed` ×1 · `point` ×1 · `points` ×1 · `splitGate` ×4 |
 | `packages/conductor/src/attempts.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×1 · `GateStarted` ×3 · `GateWaived` ×1 · `gate` ×5 |
 | `packages/conductor/src/attribution.ts` | `gate` ×3 |
@@ -796,15 +807,15 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/conductor/src/create-app.ts` | `point` ×2 |
 | `packages/conductor/src/end-point.ts` | `GateAction` ×3 |
 | `packages/conductor/src/filter.ts` | `GatePlan` ×3 · `gatePlan` ×2 · `point` ×3 |
-| `packages/conductor/src/fix.ts` | `GateFinding` ×10 · `gates` ×1 · `point` ×4 |
+| `packages/conductor/src/fix.ts` | `gates` ×1 · `point` ×4 |
 | `packages/conductor/src/gate-audit.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `gate` ×2 · `point` ×1 · `points` ×4 |
 | `packages/conductor/src/gates-resolved.ts` | `gate` ×3 · `gatesResolved` ×1 · `points` ×1 |
 | `packages/conductor/src/index.ts` | `GatePlan` ×1 · `gate` ×1 · `gatePlan` ×1 · `point` ×1 |
-| `packages/conductor/src/judge.ts` | `GateFinding` ×3 · `gate` ×1 |
+| `packages/conductor/src/judge.ts` | `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
 | `packages/conductor/src/never-started.ts` | `gate` ×6 |
 | `packages/conductor/src/onboard.ts` | `gates` ×1 · `point` ×3 |
-| `packages/conductor/src/run-once.ts` | `GateFinding` ×5 · `GatesResolved` ×2 · `gate` ×42 · `gateDeps` ×4 · `gateDetail` ×1 · `gateDidNotFinish` ×3 · `gates` ×6 · `gatesFromRecipe` ×4 · `gatesPassed` ×1 · `gatesResolved` ×2 · `gitForGates` ×3 · `point` ×8 · `runGatePipeline` ×4 |
+| `packages/conductor/src/run-once.ts` | `GatesResolved` ×2 · `gate` ×31 · `gateDeps` ×4 · `gateDetail` ×1 · `gateDidNotFinish` ×3 · `gates` ×2 · `gatesPassed` ×1 · `gatesResolved` ×2 · `gitForGates` ×3 · `point` ×5 |
 | `packages/conductor/src/schedule.ts` | `gate` ×1 |
 | `packages/conductor/src/wizard-page.ts` | `GateAction` ×6 · `wholeGates` ×1 |
 | `packages/daemon/src/control.ts` | `gates` ×1 |
@@ -825,14 +836,14 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/projector/src/sqlite.ts` | `gate` ×2 · `gates` ×3 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 |
 | `packages/projector/src/task-view.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateWaived` ×2 · `gate` ×4 · `gates` ×5 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 · `point` ×2 · `setGate` ×2 |
 | `packages/recipe/src/local.ts` | `gates` ×4 |
-| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GatesResolved` ×1 · `gate` ×2 · `gates` ×1 · `point` ×15 |
+| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GatesResolved` ×1 · `gate` ×1 · `gates` ×1 · `point` ×15 |
 | `packages/recipe/src/resolve.ts` | `gates` ×3 |
 | `packages/recipe/src/watch.ts` | `gate` ×9 |
 | `packages/repo/src/integrate.ts` | `gate` ×3 · `gateDetail` ×2 · `gatesPassed` ×2 |
 
 ### ordinary English
 
-**9 of those 1004 occurrences are the English word and not the retired
+**9 of those 786 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
@@ -856,7 +867,7 @@ count no larger than the allowlist's.
 | `apps/cli/src/install.ts` | `points` | 3 of 3 | *the shim still points at …*, and twice more of the same verb |
 | `apps/cli/src/lingtai.ts` | `point` | 1 of 2 | *point ~/.local/bin/lingtai at an older version*. The other is *the end point* |
 | `apps/cli/src/service.ts` | `point` | 1 of 1 | *The whole point. Crash, logout, sleep — it comes back*, in the launchd plist |
-| `packages/actions/src/agent-gate.ts` | `point` | 1 of 1 | *That is the point: this exists because self-review …*, in the reviewer's prompt |
+| `packages/actions/src/agent-action.ts` | `point` | 1 of 1 | *That is the point: this exists because self-review …*, in the reviewer's prompt |
 | `packages/conductor/src/create-app.ts` | `point` | 2 of 2 | *would point .env.local at an id no repository has installed*, and one more |
 
 
@@ -967,7 +978,7 @@ pass exists to have steps at all. `judge:` is the decision `buyRound` makes at
 `decideRestart` in `packages/conductor/src/restart.ts`. `backlog:` is **two
 literals and not one** — the `minor` in `backlogProjection`,
 `packages/projector/src/backlog.ts`, which decides what is *filed*, and the
-blocker-or-major in `verdictFor`, `packages/actions/src/agent-gate.ts`, which
+blocker-or-major in `verdictFor`, `packages/actions/src/agent-action.ts`, which
 decides what *refuses* — beside `acceptFinding` and `declineFinding` in
 `packages/conductor/src/backlog.ts`, which is where that bar now also exists as
 `decideBacklog`, a function a recipe will hand its own value to. **Both halves
@@ -1188,9 +1199,9 @@ table draws and the code no longer has.
 Where each row comes from:
 
 ```
-prepared    run-once.ts   gatesFromRecipe("prepared", …, { env })    an environment, and nothing else
-proposed    run-once.ts   gatesFromRecipe("proposed", …, gateDeps)   every dependency
-merge       run-once.ts   gatesFromRecipe("merge",    …, gateDeps)   every dependency   ← #58
+prepared    run-once.ts   actionsFromRecipe("prepared", …, { env })    an environment, and nothing else
+proposed    run-once.ts   actionsFromRecipe("proposed", …, gateDeps)   every dependency
+merge       run-once.ts   actionsFromRecipe("merge",    …, gateDeps)   every dependency   ← #58
 end         end-point.ts  resolveEndActions                          the two effects
 claim       —             no pipeline is constructed anywhere
 admit       —             no pipeline is constructed anywhere
@@ -1262,7 +1273,7 @@ plugin and only the plugin's says which file to open.
 
 The refusal arrives when the recipe resolves — so `lingtai doctor`, `lingtai
 add` and the first moment of a pass all name it, before a ticket is claimed or
-an install paid for. `gatesFromRecipe` asks the same table again for a caller
+an install paid for. `actionsFromRecipe` asks the same table again for a caller
 that builds actions in code rather than reading a recipe.
 
 ## extension environment — declared, and the declaration is the whole of it

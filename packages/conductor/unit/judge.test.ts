@@ -26,7 +26,7 @@
  * or touches the filesystem.
  */
 import { describe, expect, it } from "vitest";
-import type { GateFinding } from "@lingtai/actions";
+import type { ActionFinding } from "@lingtai/actions";
 import { STEPS } from "@lingtai/domain";
 import { BUILT_IN_JUDGES, JudgeWhen, judgePlugin, readFields } from "@lingtai/recipe";
 import {
@@ -41,7 +41,7 @@ import {
   stepsOnOffer,
 } from "../src/judge.ts";
 
-const FINDING: GateFinding = {
+const FINDING: ActionFinding = {
   file: "packages/conductor/src/run-once.ts",
   line: 1761,
   claim: "the decision that costs the most money is invisible",

@@ -1,7 +1,7 @@
 /**
- * The agent gate.
+ * The agent action.
  *
- * Everything here is about the three properties experiment 001 said the gate
+ * Everything here is about the three properties experiment 001 said the action
  * lives or dies by: the reviewer is cold, a finding without a failure scenario
  * is not a finding, and severity is not the reviewer's to soften.
  */
@@ -11,16 +11,16 @@ import { describe, expect, it } from "vitest";
 import { SEVERITIES, parsePayload } from "@lingtai/domain";
 import {
   buildReviewPrompt,
-  createAgentGate,
+  createAgentAction,
   parseFindings,
   verdictFor,
-} from "../src/agent-gate.ts";
-import { type GateEvent, runGatePipeline } from "../src/gate.ts";
+} from "../src/agent-action.ts";
+import { type ActionEvent, runActionPipeline } from "../src/action.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
 
 /** The recipe's default, written here rather than imported: this file is about
- *  the gate's behaviour at *a* bound, not about which bound the schema picks. */
+ *  the action's behaviour at *a* bound, not about which bound the schema picks. */
 const DIFF_BYTES = 400_000;
 
 const outcome = (over: Partial<RunOutcome> = {}): RunOutcome => ({
@@ -54,8 +54,8 @@ function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
   };
 }
 
-const gateWith = (reply: RunOutcome, diff = "diff --git a/x b/x\n+1", prompt = "") =>
-  createAgentGate(
+const actionWith = (reply: RunOutcome, diff = "diff --git a/x b/x\n+1", prompt = "") =>
+  createAgentAction(
     { name: "review", prompt },
     {
       runtime: reviewer(reply),
@@ -89,7 +89,7 @@ describe("the review prompt", () => {
     // is absent was the first version of this test and it was wrong — the
     // prompt says "no transcript", so the assertion failed on the sentence that
     // makes the guarantee. The real risk is the session id, and that is tested
-    // against the gate rather than the prompt.
+    // against the action rather than the prompt.
     expect(prompt).toMatch(/nothing else/i);
   });
 
@@ -184,7 +184,7 @@ describe("asking the reviewer again after a fix", () => {
   it("keeps the rubric, the checklist and the diff exactly as they were", () => {
     const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES, refused);
 
-    // Not a second kind of gate. A re-review that lost the rubric would rate the
+    // Not a second kind of action. A re-review that lost the rubric would rate the
     // fix's own defects the way 001's reviewer rated silent corruption.
     expect(prompt).toMatch(/silent corruption is a blocker/i);
     expect(prompt).toMatch(/check-then-write/i);
@@ -193,7 +193,7 @@ describe("asking the reviewer again after a fix", () => {
 
   it("runs under an id of its own, so it is not asked whether it still agrees with itself", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
-    const gate = createAgentGate(
+    const action = createAgentAction(
       { name: "review", prompt: "" },
       {
         runtime,
@@ -204,8 +204,8 @@ describe("asking the reviewer again after a fix", () => {
       },
     );
 
-    await gate.run(context);
-    await gate.run({ ...context, onSha: "b".repeat(40), recheck: refused });
+    await action.run(context);
+    await action.run({ ...context, onSha: "b".repeat(40), recheck: refused });
 
     // The session id is a function of the run id, so a re-review sharing the
     // first review's id would resume that session — warm, and agreeing with
@@ -253,7 +253,7 @@ describe("asking the reviewer again after a fix", () => {
       taken.add(session);
       return outcome({ text: '{"findings":[]}' });
     };
-    const gate = createAgentGate(
+    const action = createAgentAction(
       { name: "review", prompt: "" },
       {
         runtime,
@@ -266,8 +266,8 @@ describe("asking the reviewer again after a fix", () => {
 
     // One run, two rounds. The head moves because a round is only bought when
     // the fixer committed, and nothing else about the context changes.
-    const first = await gate.run({ ...context, onSha: "a".repeat(40) });
-    const second = await gate.run({ ...context, onSha: "b".repeat(40), round: 2 });
+    const first = await action.run({ ...context, onSha: "a".repeat(40) });
+    const second = await action.run({ ...context, onSha: "b".repeat(40), round: 2 });
 
     expect(first.verdict).toBe("passed");
     expect(second.verdict).toBe("passed");
@@ -322,7 +322,7 @@ describe("reading the reviewer's answer", () => {
    * The check above held its own `"blocker" | "major" | "minor"`, linked to
    * nothing, so a severity added to the enum was unrecognised here and
    * recorded as `blocker` by the line directly above — the gentlest new rung
-   * arriving as the harshest, refusing the gate and buying a fix round. That
+   * arriving as the harshest, refusing the action and buying a fix round. That
    * is the failure a reader of `SEVERITIES`' comment would have walked into,
    * and walking the array rather than naming three members is what makes it a
    * failing test rather than a claim.
@@ -337,7 +337,7 @@ describe("reading the reviewer's answer", () => {
 
   it("says it could not parse rather than reporting no findings", () => {
     // The difference matters: "nothing wrong" and "I could not read the answer"
-    // must not both render as a green gate.
+    // must not both render as a green action.
     expect(parseFindings("I looked at it and it seems fine to me.")).toEqual({
       findings: [],
       parsed: false,
@@ -355,10 +355,10 @@ describe("the verdict", () => {
   });
 });
 
-describe("the gate", () => {
+describe("the action", () => {
   it("runs the reviewer under its own id, never the implementer's", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
-    const gate = createAgentGate(
+    const action = createAgentAction(
       { name: "review", prompt: "" },
       {
         runtime,
@@ -369,7 +369,7 @@ describe("the gate", () => {
       },
     );
 
-    await gate.run(context);
+    await action.run(context);
 
     // The session id is a pure function of the run id, so reusing the run's own
     // id would resume the implementer's session — a warm review wearing a cold
@@ -400,23 +400,23 @@ describe("the gate", () => {
     });
 
     const named = reviewer(outcome({ text: '{"findings":[]}' }));
-    await createAgentGate({ name: "review", prompt: "", model: "claude-haiku-4-5" }, deps(named)).run(context);
+    await createAgentAction({ name: "review", prompt: "", model: "claude-haiku-4-5" }, deps(named)).run(context);
     expect(named.seen[0]?.model).toBe("claude-haiku-4-5");
 
     // Absent stays absent, rather than becoming a name chosen here: what a
     // runtime defaults to is the runtime's to know, and `in` rather than
     // `toBeUndefined` because the claim is that no key was sent at all.
     const bare = reviewer(outcome({ text: '{"findings":[]}' }));
-    await createAgentGate({ name: "review", prompt: "" }, deps(bare)).run(context);
+    await createAgentAction({ name: "review", prompt: "" }, deps(bare)).run(context);
     expect("model" in (bare.seen[0] ?? {})).toBe(false);
   });
 
   /**
    * The reviewer is eighteen minutes a person used to wait on in the dark
-   * (#153). It writes into the run's own log, under its gate, with its tool
+   * (#153). It writes into the run's own log, under its action, with its tool
    * calls — which no hook reports for it — between the pipeline's start and end.
    */
-  it("hands its agent the run's log, tagged with the point and the action", async () => {
+  it("hands its agent the run's log, tagged with the step and the action", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
     runtime.run = async (request) => {
       runtime.seen.push(request);
@@ -424,7 +424,7 @@ describe("the gate", () => {
       request.log?.note("receipt", "success · 7 turns · $0.42 · exit 0");
       return outcome({ text: '{"findings":[]}' });
     };
-    const gate = createAgentGate(
+    const action = createAgentAction(
       { name: "review", prompt: "" },
       {
         runtime,
@@ -437,7 +437,7 @@ describe("the gate", () => {
     const lines: string[] = [];
     const log = { note: (label: string, detail = "") => void lines.push(`${label} | ${detail}`) };
 
-    await runGatePipeline({ point: "proposed", gates: [gate], context: { ...context, log }, emit: () => {} });
+    await runActionPipeline({ step: "proposed", actions: [action], context: { ...context, log }, emit: () => {} });
 
     expect(runtime.seen[0]?.traceTools).toBe(true);
     expect(lines).toEqual([
@@ -451,14 +451,14 @@ describe("the gate", () => {
   });
 
   it("passes with no findings", async () => {
-    const result = await gateWith(outcome({ text: '{"findings":[]}' })).run(context);
+    const result = await actionWith(outcome({ text: '{"findings":[]}' })).run(context);
 
     expect(result.verdict).toBe("passed");
     expect(result.findings).toEqual([]);
   });
 
   it("fails with the findings attached, so the card can show them", async () => {
-    const result = await gateWith(
+    const result = await actionWith(
       outcome({ text: JSON.stringify({ findings: [finding()] }) }),
     ).run(context);
 
@@ -468,17 +468,17 @@ describe("the gate", () => {
   });
 
   /**
-   * The rubric's third tier (#135). A minor does not refuse, so the gate passes
+   * The rubric's third tier (#135). A minor does not refuse, so the action passes
    * — and before `GatePassed` carried findings, everything the reviewer said
    * survived only as prose inside `evidence`. Asserted on the event the pipeline
    * emits, because the event is what a program reads back.
    */
   it("passes on a minor-only review and leaves its findings structured on the event", async () => {
     const minor = finding({ severity: "minor", line: 313, file: "packages/actions/src/command.ts" });
-    const events: GateEvent[] = [];
-    const result = await runGatePipeline({
-      point: "proposed",
-      gates: [gateWith(outcome({ text: JSON.stringify({ findings: [minor] }) }))],
+    const events: ActionEvent[] = [];
+    const result = await runActionPipeline({
+      step: "proposed",
+      actions: [actionWith(outcome({ text: JSON.stringify({ findings: [minor] }) }))],
       context,
       emit: (e) => void events.push(e),
     });
@@ -494,10 +494,10 @@ describe("the gate", () => {
   });
 
   it("writes an empty array, not an absent field, on a pass with nothing to say", async () => {
-    const events: GateEvent[] = [];
-    await runGatePipeline({
-      point: "proposed",
-      gates: [gateWith(outcome({ text: '{"findings":[]}' }))],
+    const events: ActionEvent[] = [];
+    await runActionPipeline({
+      step: "proposed",
+      actions: [actionWith(outcome({ text: '{"findings":[]}' }))],
       context,
       emit: (e) => void events.push(e),
     });
@@ -508,10 +508,10 @@ describe("the gate", () => {
   });
 
   it("fails when the reviewer's answer cannot be read", async () => {
-    const result = await gateWith(outcome({ text: "looks fine to me" })).run(context);
+    const result = await actionWith(outcome({ text: "looks fine to me" })).run(context);
 
     // Not passed. A reviewer whose answer is unreadable has reviewed nothing,
-    // and a green gate for a diff nobody assessed is the failure this whole
+    // and a green action for a diff nobody assessed is the failure this whole
     // system exists to remove.
     expect(result.verdict).toBe("failed");
     expect(result.evidence).toContain("not readable");
@@ -523,7 +523,7 @@ describe("the gate", () => {
    *
    * This test asserted `failed` for two years, and the verdict it asserted is
    * the one a reviewer that read the diff and refused it returns. So
-   * `run-once.ts` bought a fix round for a gate that judged nothing, and on
+   * `run-once.ts` bought a fix round for an action that judged nothing, and on
    * `run-9e510ffc` the fixing agent spent fourteen seconds working out that
    * *the review never looked at the change*. The evidence sentence had said so
    * all along — and a sentence is not something `decideFix` reads.
@@ -533,7 +533,7 @@ describe("the gate", () => {
    * classification at a seam 0031 §1 says may only have one.
    */
   it("says a reviewer that did not finish judged nothing, with the kind", async () => {
-    const result = await gateWith(
+    const result = await actionWith(
       outcome({ failure: { kind: "timeout", detail: "no result within 60000ms" } }),
     ).run(context);
 
@@ -547,7 +547,7 @@ describe("the gate", () => {
    * reason that has nothing to do with the diff (`#192`, `#195`).
    */
   it("says the same of a reviewer that crashed, and carries the runtime's words", async () => {
-    const result = await gateWith(
+    const result = await actionWith(
       outcome({
         exitCode: 1,
         turns: 0,
@@ -570,16 +570,16 @@ describe("the gate", () => {
    * apart (`#133`).
    *
    * The line above asserts the ordinary case: the reviewer ran and did not
-   * finish, so the gate refuses. This is the case that looks identical and is
+   * finish, so the action refuses. This is the case that looks identical and is
    * not — the reviewer never started, so there is nothing it could have refused.
    * `never-started` is 0031 §1's three checkable facts, decided by the adapter
    * and taken here rather than re-derived, and `never-ran` is what the pipeline
-   * turns into a conductor standing down instead of a card saying a review gate
+   * turns into a conductor standing down instead of a card saying a review action
    * refused this diff.
    */
   it("says a reviewer that never started judged nothing, rather than refusing", async () => {
     const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)";
-    const result = await gateWith(
+    const result = await actionWith(
       outcome({ turns: 0, costUsd: 0, exitCode: 1, failure: { kind: "never-started", detail: said } }),
     ).run(context);
 
@@ -593,7 +593,7 @@ describe("the gate", () => {
 
   it("does not spend an agent call on an empty diff", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
-    const gate = createAgentGate(
+    const action = createAgentAction(
       { name: "review", prompt: "" },
       {
         runtime,
@@ -604,7 +604,7 @@ describe("the gate", () => {
       },
     );
 
-    const result = await gate.run(context);
+    const result = await action.run(context);
 
     expect(result.verdict).toBe("passed");
     expect(runtime.seen).toHaveLength(0);
@@ -612,7 +612,7 @@ describe("the gate", () => {
 
   it("does not fetch the ticket when there is nothing to review", async () => {
     let fetched = 0;
-    const gate = createAgentGate(
+    const action = createAgentAction(
       { name: "review", prompt: "" },
       {
         runtime: reviewer(outcome()),
@@ -626,7 +626,7 @@ describe("the gate", () => {
       },
     );
 
-    await gate.run(context);
+    await action.run(context);
     expect(fetched).toBe(0);
   });
 });

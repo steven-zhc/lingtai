@@ -1,14 +1,14 @@
 /**
- * The process gate and the pipeline, against real processes.
+ * The process action and the pipeline, against real processes.
  *
- * Nothing is mocked: a gate is a command and an exit code, so a test that stubs
+ * Nothing is mocked: an action is a command and an exit code, so a test that stubs
  * the command is testing nothing. The properties that matter are `onSha` on
  * every verdict, a timeout that is distinguishable from a refusal, evidence a
  * person could act on, and a pipeline that stops the moment something says no.
  *
  * **In `integration/`, because *against real processes* is the literal claim.**
- * `createProcessGate` reaches `spawn(run, {shell: true})` through
- * `src/process-gate.ts` and `src/command.ts`, and an OS process is outside the
+ * `createProcessAction` reaches `spawn(run, {shell: true})` through
+ * `src/process-action.ts` and `src/command.ts`, and an OS process is outside the
  * system ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).
  * Nothing in this file names `node:child_process`, which is how it was read as
  * unit at first: the spawn is three modules down the barrel, and #225's own
@@ -25,12 +25,12 @@
 import { describe, expect, it } from "vitest";
 import type { RunRequest, Runtime } from "@lingtai/agent";
 import {
-  GateActionUnavailableError,
-  type GateEvent,
-  type ProcessGateSpec,
-  createProcessGate,
-  gatesFromRecipe,
-  runGatePipeline,
+  ActionUnavailableError,
+  type ActionEvent,
+  type ProcessActionSpec,
+  createProcessAction,
+  actionsFromRecipe,
+  runActionPipeline,
   tail,
 } from "../src/index.ts";
 
@@ -44,17 +44,17 @@ const context = {
   env: { PATH: process.env["PATH"] ?? "", AGENT_ONLY: "the agent's" },
 };
 
-/** What a process gate needs to find `echo` and `sleep`, and nothing else. */
+/** What a process action needs to find `echo` and `sleep`, and nothing else. */
 const runnable = { PATH: process.env["PATH"] ?? "" };
 
-/** A gate whose declared environment is only what a shell needs. */
-const processGate = (spec: Omit<ProcessGateSpec, "env">) =>
-  createProcessGate({ ...spec, env: runnable });
+/** An action whose declared environment is only what a shell needs. */
+const processAction = (spec: Omit<ProcessActionSpec, "env">) =>
+  createProcessAction({ ...spec, env: runnable });
 
-describe("the process gate", () => {
+describe("the process action", () => {
   it("passes on exit 0 and says what ran", async () => {
-    const gate = processGate({ name: "build", run: "exit 0" });
-    const result = await gate.run(context);
+    const action = processAction({ name: "build", run: "exit 0" });
+    const result = await action.run(context);
 
     expect(result.verdict).toBe("passed");
     expect(result.evidence).toContain("exit 0");
@@ -65,11 +65,11 @@ describe("the process gate", () => {
    * build failed" with no output is a link to somewhere else wearing a disguise.
    */
   it("fails on a non-zero exit and carries the log tail", async () => {
-    const gate = processGate({
+    const action = processAction({
       name: "build",
       run: "echo 'src/a.ts(12,3): error TS2345'; echo 'Found 1 error.'; exit 2",
     });
-    const result = await gate.run(context);
+    const result = await action.run(context);
 
     expect(result.verdict).toBe("failed");
     expect(result.evidence).toContain("exited 2");
@@ -78,18 +78,18 @@ describe("the process gate", () => {
   });
 
   it("captures stderr as well as stdout, because compilers use both", async () => {
-    const gate = processGate({ name: "build", run: "echo boom >&2; exit 1" });
-    expect((await gate.run(context)).evidence).toContain("boom");
+    const action = processAction({ name: "build", run: "echo boom >&2; exit 1" });
+    expect((await action.run(context)).evidence).toContain("boom");
   });
 
   /**
-   * A gate that ran out of time and a gate that ran and refused are different
+   * An action that ran out of time and an action that ran and refused are different
    * problems with different fixes. The old loop's could hang to the two-hour
    * wall clock and then report nothing at all.
    */
   it("distinguishes a timeout from a refusal", async () => {
-    const gate = processGate({ name: "build", run: "echo starting; sleep 5", timeout: "300ms" });
-    const result = await gate.run(context);
+    const action = processAction({ name: "build", run: "echo starting; sleep 5", timeout: "300ms" });
+    const result = await action.run(context);
 
     expect(result.verdict).toBe("failed");
     expect(result.evidence).toContain("timed out after 300ms");
@@ -99,22 +99,22 @@ describe("the process gate", () => {
   });
 
   it("fails rather than throwing when the command cannot run at all", async () => {
-    const gate = processGate({ name: "build", run: "this-command-does-not-exist" });
-    const result = await gate.run(context);
+    const action = processAction({ name: "build", run: "this-command-does-not-exist" });
+    const result = await action.run(context);
     expect(result.verdict).toBe("failed");
     expect(result.evidence.length).toBeGreaterThan(0);
   });
 
   it("runs in the worktree it was given", async () => {
-    const gate = processGate({ name: "where", run: "pwd; exit 1" });
-    const result = await gate.run({ ...context, cwd: "/tmp" });
+    const action = processAction({ name: "where", run: "pwd; exit 1" });
+    const result = await action.run({ ...context, cwd: "/tmp" });
     expect(result.evidence).toContain("/tmp");
   });
 
   it("refuses a timeout that is not a duration rather than defaulting to zero", () => {
-    // A gate that silently got a 0ms timeout would fail every run for a reason
+    // An action that silently got a 0ms timeout would fail every run for a reason
     // nobody could see.
-    expect(() => processGate({ name: "x", run: "true", timeout: "soon" })).toThrow(/duration/);
+    expect(() => processAction({ name: "x", run: "true", timeout: "soon" })).toThrow(/duration/);
   });
 });
 
@@ -175,21 +175,21 @@ describe("tail", () => {
 
 describe("the pipeline", () => {
   function collector() {
-    const events: GateEvent[] = [];
-    return { events, emit: (e: GateEvent) => void events.push(e) };
+    const events: ActionEvent[] = [];
+    return { events, emit: (e: ActionEvent) => void events.push(e) };
   }
 
   /**
-   * A gate with no agent writes its start and its end to the run's log and
+   * An action with no agent writes its start and its end to the run's log and
    * nothing between (#153): a four-minute build is no longer four dark minutes,
    * and nothing pretends there is an agent to follow.
    */
-  it("writes each action's start and end to the run's log, tagged with the point", async () => {
+  it("writes each action's start and end to the run's log, tagged with the step", async () => {
     const lines: [string, string][] = [];
     const log = { note: (label: string, detail = "") => void lines.push([label, detail]) };
-    await runGatePipeline({
-      point: "proposed",
-      gates: [processGate({ name: "build", run: "echo compiling; exit 0" })],
+    await runActionPipeline({
+      step: "proposed",
+      actions: [processAction({ name: "build", run: "echo compiling; exit 0" })],
       context: { ...context, onSha: "abcdef0123", round: 2, log },
       emit: () => {},
     });
@@ -202,9 +202,9 @@ describe("the pipeline", () => {
 
   it("puts onSha on every verdict", async () => {
     const { events, emit } = collector();
-    await runGatePipeline({
-      point: "proposed",
-      gates: [processGate({ name: "build", run: "exit 0" })],
+    await runActionPipeline({
+      step: "proposed",
+      actions: [processAction({ name: "build", run: "exit 0" })],
       context,
       emit,
     });
@@ -218,18 +218,18 @@ describe("the pipeline", () => {
 
   it("runs in recipe order", async () => {
     const { events, emit } = collector();
-    await runGatePipeline({
-      point: "proposed",
-      gates: [
-        processGate({ name: "build", run: "exit 0" }),
-        processGate({ name: "lint", run: "exit 0" }),
+    await runActionPipeline({
+      step: "proposed",
+      actions: [
+        processAction({ name: "build", run: "exit 0" }),
+        processAction({ name: "lint", run: "exit 0" }),
       ],
       context,
       emit,
     });
 
-    // `gate` is the point and `action` is what ran there — two fields, because
-    // "the build failed" and "something at the diff point failed" are different
+    // `gate` is the step and `action` is what ran there — two fields, because
+    // "the build failed" and "something at the `proposed` step failed" are different
     // questions and one name could not answer both.
     const started = events.filter((e) => e.type === "GateStarted");
     expect(started.map((e) => e.data.action)).toEqual(["build", "lint"]);
@@ -243,12 +243,12 @@ describe("the pipeline", () => {
    */
   it("stops at the first failure and names what it skipped", async () => {
     const { events, emit } = collector();
-    const result = await runGatePipeline({
-      point: "proposed",
-      gates: [
-        processGate({ name: "build", run: "exit 0" }),
-        processGate({ name: "lint", run: "echo nope; exit 1" }),
-        processGate({ name: "test", run: "exit 0" }),
+    const result = await runActionPipeline({
+      step: "proposed",
+      actions: [
+        processAction({ name: "build", run: "exit 0" }),
+        processAction({ name: "lint", run: "echo nope; exit 1" }),
+        processAction({ name: "test", run: "exit 0" }),
       ],
       context,
       emit,
@@ -262,28 +262,28 @@ describe("the pipeline", () => {
   });
 
   /**
-   * **A gate that never ran stops the pipeline and refuses nothing** (`#133`).
+   * **An action that never ran stops the pipeline and refuses nothing** (`#133`).
    *
-   * Stopping looks like the line above and means something else. The gates
+   * Stopping looks like the line above and means something else. The actions
    * after this one would ask the same account the same question and meet the
    * same wall, so continuing is pointless — but nothing here judged the diff,
    * so no verdict may be appended about it. `GateNeverRan` is what is on the
    * log instead, and `neverRanAt` is how `run-once.ts` tells this ending from a
    * refusal without reading a sentence.
    */
-  it("appends no verdict for a gate whose agent never started, and stops", async () => {
+  it("appends no verdict for an action whose agent never started, and stops", async () => {
     const { events, emit } = collector();
     const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)";
-    const result = await runGatePipeline({
-      point: "proposed",
-      gates: [
-        processGate({ name: "build", run: "exit 0" }),
+    const result = await runActionPipeline({
+      step: "proposed",
+      actions: [
+        processAction({ name: "build", run: "exit 0" }),
         {
           name: "review",
           kind: "agent" as const,
           run: async () => ({ verdict: "never-ran" as const, evidence: said, findings: [] }),
         },
-        processGate({ name: "test", run: "exit 0" }),
+        processAction({ name: "test", run: "exit 0" }),
       ],
       context,
       emit,
@@ -292,13 +292,13 @@ describe("the pipeline", () => {
     expect(result.ok).toBe(false);
     expect(result.failedAt).toBeNull();
     expect(result.heldAt).toBeNull();
-    expect(result.neverRanAt).toEqual({ gate: "review", detail: said });
+    expect(result.neverRanAt).toEqual({ action: "review", detail: said });
     expect(result.skipped).toEqual(["test"]);
 
     const types = events.map((e) => e.type);
     expect(types).toContain("GateNeverRan");
     expect(types).not.toContain("GateFailed");
-    // And the build's own verdict is untouched: one gate did judge the diff.
+    // And the build's own verdict is untouched: one action did judge the diff.
     expect(types.filter((t) => t === "GatePassed")).toHaveLength(1);
     expect(events.at(-1)?.data).toMatchObject({ gate: "proposed", action: "review", onSha: "sha-a" });
   });
@@ -315,19 +315,19 @@ describe("the pipeline", () => {
    *
    * **And the action is run once, which is `#234`.** 0057 §4 ran it a second
    * time under the same session id `sessionIdFor` computes from
-   * `<runId>:<point>:<action>:<sha>`, so every retry this machine took was
+   * `<runId>:<step>:<action>:<sha>`, so every retry this machine took was
    * refused in zero seconds with `Session ID … is already in use` and reached no
    * reviewer. One run, one event, and nothing on that event claiming an attempt
    * number — the fields went with the retry.
    */
-  it("appends one verdictless event for a gate that did not finish, and stops", async () => {
+  it("appends one verdictless event for an action that did not finish, and stops", async () => {
     const { events, emit } = collector();
     const said = "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.";
     let attempts = 0;
-    const result = await runGatePipeline({
-      point: "proposed",
-      gates: [
-        processGate({ name: "build", run: "exit 0" }),
+    const result = await runActionPipeline({
+      step: "proposed",
+      actions: [
+        processAction({ name: "build", run: "exit 0" }),
         {
           name: "review",
           kind: "agent" as const,
@@ -336,7 +336,7 @@ describe("the pipeline", () => {
             return { verdict: "did-not-finish" as const, evidence: said, findings: [] };
           },
         },
-        processGate({ name: "test", run: "exit 0" }),
+        processAction({ name: "test", run: "exit 0" }),
       ],
       context,
       emit,
@@ -352,13 +352,13 @@ describe("the pipeline", () => {
     // And not 0041's ending either: a crash is local, and reading this as an
     // account-wide wall would stand the whole conductor down for it (§3).
     expect(result.neverRanAt).toBeNull();
-    expect(result.didNotFinishAt).toEqual({ gate: "review", detail: said });
+    expect(result.didNotFinishAt).toEqual({ action: "review", detail: said });
     expect(result.skipped).toEqual(["test"]);
 
     const types = events.map((e) => e.type);
     expect(types).not.toContain("GateFailed");
     expect(types).not.toContain("GateNeverRan");
-    // The build's own verdict stands: one gate did judge the diff.
+    // The build's own verdict stands: one action did judge the diff.
     expect(types.filter((t) => t === "GatePassed")).toHaveLength(1);
 
     // One event for one run of the action, and one start for it: a second of
@@ -374,15 +374,15 @@ describe("the pipeline", () => {
     ).toHaveLength(1);
   });
 
-  it("turns a gate that throws into a failure rather than an escaped exception", async () => {
+  it("turns an action that throws into a failure rather than an escaped exception", async () => {
     const { emit } = collector();
-    const result = await runGatePipeline({
-      point: "proposed",
-      gates: [
+    const result = await runActionPipeline({
+      step: "proposed",
+      actions: [
         {
           name: "broken",
           kind: "run" as const,
-          run: () => Promise.reject(new Error("the gate itself is broken")),
+          run: () => Promise.reject(new Error("the action itself is broken")),
         },
       ],
       context,
@@ -391,37 +391,37 @@ describe("the pipeline", () => {
 
     // A run must never end with no verdict.
     expect(result.ok).toBe(false);
-    expect(result.results[0]!.evidence).toContain("the gate itself is broken");
+    expect(result.results[0]!.evidence).toContain("the action itself is broken");
   });
 
   it("emits nothing at all for an empty pipeline", async () => {
     const { events, emit } = collector();
-    const result = await runGatePipeline({ point: "proposed", gates: [], context, emit });
+    const result = await runActionPipeline({ step: "proposed", actions: [], context, emit });
     expect(result.ok).toBe(true);
     expect(events).toEqual([]);
   });
 });
 
-describe("gatesFromRecipe", () => {
-  it("builds the process gates", () => {
-    const gates = gatesFromRecipe(
+describe("actionsFromRecipe", () => {
+  it("builds the process actions", () => {
+    const actions = actionsFromRecipe(
       "proposed",
       [{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }],
       { env: () => runnable },
     );
-    expect(gates.map((g) => g.name)).toEqual(["build"]);
+    expect(actions.map((g) => g.name)).toEqual(["build"]);
   });
 
   /**
    * The declared names reach the resolver, and nothing else does — 0037 §1.
    *
    * Asserted on the *call* rather than only on the child, because this is the
-   * half that decides: a factory that passed the point's environment through
+   * half that decides: a factory that passed the step's environment through
    * would look identical from the outside until somebody read the process list.
    */
   it("asks the resolver for exactly what the action declared", () => {
     const asked: (readonly string[])[] = [];
-    gatesFromRecipe(
+    actionsFromRecipe(
       "proposed",
       [
         { name: "telegram", run: "npx @lingtai/telegram", timeout: "30s", env: ["TELEGRAM_TOKEN"] },
@@ -438,16 +438,16 @@ describe("gatesFromRecipe", () => {
   });
 
   /**
-   * A pipeline that silently skipped the `human` gate because nothing implements
+   * A pipeline that silently skipped the `human` action because nothing implements
    * it would produce a green board for a change nobody approved.
    */
   it("builds every kind the schema allows", () => {
     // All four exist now. The factory has an exhaustiveness check against the
-    // schema union, so a fifth kind is a type error rather than a gate that
+    // schema union, so a fifth kind is a type error rather than an action that
     // falls through and silently does nothing.
-    expect(gatesFromRecipe("proposed", [{ name: "approval", human: "Merge?" }])).toHaveLength(1);
+    expect(actionsFromRecipe("proposed", [{ name: "approval", human: "Merge?" }])).toHaveLength(1);
     expect(
-      gatesFromRecipe("proposed", [{ name: "tamper", watch: ["**/x"], then: "fail" }], {
+      actionsFromRecipe("proposed", [{ name: "tamper", watch: ["**/x"], then: "fail" }], {
         watch: { changedFiles: async () => [] },
       }),
     ).toHaveLength(1);
@@ -458,7 +458,7 @@ describe("gatesFromRecipe", () => {
    *
    * `prompt:` is what the reviewer is told and `model:` is what it costs, and
    * both of them being on the action is not the same as either of them reaching
-   * the spawn — a factory that built the gate from `{name}` alone would resolve,
+   * the spawn — a factory that built the action from `{name}` alone would resolve,
    * hash and render exactly as this one does, and review at the default price
    * with a prompt the recipe never wrote. So this asserts on `RunRequest`, past
    * every layer that could have dropped one: the action, the spec, the request.
@@ -499,12 +499,12 @@ describe("gatesFromRecipe", () => {
       limits: { turns: 40, wallMs: 1000, diffBytes: 400_000 },
     };
 
-    const [gate] = gatesFromRecipe(
+    const [action] = actionsFromRecipe(
       "proposed",
       [{ name: "review", agent: "claude-code", model: "claude-haiku-4-5", prompt: "look for races" }],
       { agent },
     );
-    await gate?.run(context);
+    await action?.run(context);
 
     expect(seen[0]?.model).toBe("claude-haiku-4-5");
     expect(seen[0]?.prompt).toContain("look for races");
@@ -513,7 +513,7 @@ describe("gatesFromRecipe", () => {
 
     // No `model:` on the action sends no `model` key, so the runtime's own
     // default is what runs — the one thing this seam must not invent.
-    const [bare] = gatesFromRecipe(
+    const [bare] = actionsFromRecipe(
       "proposed",
       [{ name: "review", agent: "claude-code", prompt: "look for races" }],
       { agent },
@@ -522,25 +522,25 @@ describe("gatesFromRecipe", () => {
     expect("model" in (seen[1] ?? {})).toBe(false);
   });
 
-  it("refuses a gate whose dependencies are missing, rather than skipping it", () => {
+  it("refuses an action whose dependencies are missing, rather than skipping it", () => {
     // `agent` is implemented, but it needs a runtime, a ticket and a diff, and
     // callers that only want to know whether a recipe *parses* do not have
-    // them. Absent deps refuse for the same reason an unbuilt kind does: a gate
+    // them. Absent deps refuse for the same reason an unbuilt kind does: an action
     // that is silently not run is worse than a run that will not start.
-    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "claude-code", prompt: "p" }])).toThrow(
-      GateActionUnavailableError,
+    expect(() => actionsFromRecipe("proposed", [{ name: "review", agent: "claude-code", prompt: "p" }])).toThrow(
+      ActionUnavailableError,
     );
-    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "claude-code", prompt: "p" }])).toThrow(
+    expect(() => actionsFromRecipe("proposed", [{ name: "review", agent: "claude-code", prompt: "p" }])).toThrow(
       /no reviewer was supplied/,
     );
     expect(() =>
-      gatesFromRecipe("proposed", [{ name: "tamper", watch: ["**/x"], then: "fail" }]),
+      actionsFromRecipe("proposed", [{ name: "tamper", watch: ["**/x"], then: "fail" }]),
     ).toThrow(/no file list was supplied/);
     // A `run:` action's whole environment is now a dependency like the other
     // two. Without a resolver it would have no `PATH` either, so the failure
-    // would read as a broken build rather than as a gate built wrong.
+    // would read as a broken build rather than as an action built wrong.
     expect(() =>
-      gatesFromRecipe("proposed", [{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }]),
+      actionsFromRecipe("proposed", [{ name: "build", run: "pnpm verify", timeout: "15m", env: [] }]),
     ).toThrow(/no environment resolver was supplied/);
   });
 });
@@ -558,13 +558,13 @@ describe("an extension's process", () => {
   const printBoth = 'echo "declared=[${TELEGRAM_TOKEN-}] other=[${LINGTAI_DATABASE_URL-}]"; exit 1';
 
   it("reads what it declared and cannot read what it did not", async () => {
-    const gate = createProcessGate({
+    const action = createProcessAction({
       name: "telegram",
       run: printBoth,
       env: { ...runnable, TELEGRAM_TOKEN: "bot-token" },
     });
 
-    const result = await gate.run({
+    const result = await action.run({
       ...context,
       // The conductor's own environment, in the context, holding the one name
       // 0037 §1 names. The child must not see it.
@@ -579,12 +579,12 @@ describe("an extension's process", () => {
   it("gets nothing when it declared nothing", async () => {
     process.env["LINGTAI_EXTENSION_PROBE"] = "the daemon's";
     try {
-      const gate = createProcessGate({
+      const action = createProcessAction({
         name: "bare",
         run: 'echo "probe=[${LINGTAI_EXTENSION_PROBE-}]"; exit 1',
         env: runnable,
       });
-      expect((await gate.run(context)).evidence).toContain("probe=[]");
+      expect((await action.run(context)).evidence).toContain("probe=[]");
     } finally {
       delete process.env["LINGTAI_EXTENSION_PROBE"];
     }

@@ -17,7 +17,7 @@
  * Unit, under `--project unit`: nothing here reads a database.
  */
 import { describe, expect, it } from "vitest";
-import type { GateFinding } from "@lingtai/actions";
+import type { ActionFinding } from "@lingtai/actions";
 import { SEVERITIES } from "@lingtai/domain";
 import {
   type FixStop,
@@ -39,7 +39,7 @@ const SCENARIO =
   "call deliver() while the log file is unreadable; readFile throws, the catch\n" +
   "swallows it, and the delivery resolves as a success";
 
-const finding = (over: Partial<GateFinding> = {}): GateFinding => ({
+const finding = (over: Partial<ActionFinding> = {}): ActionFinding => ({
   file: "packages/daemon/src/subscribers.ts",
   line: 71,
   claim: "a failed log read is swallowed, so the delivery resolves as a success",
@@ -48,7 +48,7 @@ const finding = (over: Partial<GateFinding> = {}): GateFinding => ({
   ...over,
 });
 
-const refusal = (findings: GateFinding[] = [finding()], evidence = "") => ({
+const refusal = (findings: ActionFinding[] = [finding()], evidence = "") => ({
   action: "review",
   findings,
   evidence,
@@ -57,7 +57,7 @@ const refusal = (findings: GateFinding[] = [finding()], evidence = "") => ({
 /** A command's refusal: no findings, and its output is the whole of what it has. */
 const redBuild = (evidence = "src/a.ts(7,3): error TS2339: Property 'x' does not exist") => ({
   action: "build",
-  findings: [] as GateFinding[],
+  findings: [] as ActionFinding[],
   evidence,
 });
 

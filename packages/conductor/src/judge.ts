@@ -63,7 +63,7 @@
  * reason: a rule about spending money that lives inside an `if` in a
  * 3,000-line file is a rule nobody can check.
  */
-import type { GateFinding } from "@lingtai/actions";
+import type { ActionFinding } from "@lingtai/actions";
 import { STEPS, type Step } from "@lingtai/domain";
 import type { BuiltInJudge, JudgeWhen } from "@lingtai/recipe";
 
@@ -120,7 +120,7 @@ export interface OfferInput {
    */
   refusal: {
     /** The reviewer's, verbatim. Empty for every direction but `findings`. */
-    findings: readonly GateFinding[];
+    findings: readonly ActionFinding[];
     /** What a command printed, clipped by `command.ts` long before it reaches here. */
     evidence: string;
   };
@@ -255,7 +255,7 @@ export interface JudgeBrief {
    */
   evidence: string;
   /** The reviewer's findings, verbatim, and empty for every direction but `findings`. */
-  findings: readonly GateFinding[];
+  findings: readonly ActionFinding[];
   /** The steps on offer. Never empty: `human` is always in it. */
   offer: readonly Destination[];
   /** Never. The ceiling is `implement`'s and a judge cannot widen what it cannot see. */

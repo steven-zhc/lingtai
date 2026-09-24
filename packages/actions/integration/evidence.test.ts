@@ -1,14 +1,14 @@
 /**
- * A gate's evidence is plain text (#156, 0043).
+ * An action's evidence is plain text (#156, 0043).
  *
  * The fixture is real: vitest 4.1.11 failing on an error with a `cause`, run
- * as `pnpm vitest run` into a pipe — which is how a `run:` gate runs it, and
+ * as `pnpm vitest run` into a pipe — which is how a `run:` action runs it, and
  * why it arrives coloured at all (`pnpm` sets `FORCE_COLOR`). Only the absolute
  * path of the worktree it ran in was replaced. A synthetic string with one
  * escape in it would pass a regex that misses the ones vitest actually writes.
  *
  * **In `integration/`**: the last assertion drives the fixture through a real
- * `createProcessGate`, so the stripping is pinned at the `GateFailed` event and
+ * `createProcessAction`, so the stripping is pinned at the `GateFailed` event and
  * not at `tail` — which is the whole of what 0043 claims. That spawns a shell,
  * and an OS process is outside the system
  * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). Nothing
@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { plain } from "../src/command.ts";
-import { type GateEvent, createProcessGate, runGatePipeline, tail } from "../src/index.ts";
+import { type ActionEvent, createProcessAction, runActionPipeline, tail } from "../src/index.ts";
 
 const fixture = join(import.meta.dirname, "..", "test", "fixtures", "vitest-caused-by.ansi.txt");
 const coloured = readFileSync(fixture, "utf8");
@@ -83,11 +83,11 @@ describe("the stored evidence", () => {
    * the claim is pinned at the event, through a real process, not at `tail`.
    */
   it("carries no escape from a failing command into GateFailed", async () => {
-    const events: GateEvent[] = [];
-    await runGatePipeline({
-      point: "proposed",
-      gates: [
-        createProcessGate({
+    const events: ActionEvent[] = [];
+    await runActionPipeline({
+      step: "proposed",
+      actions: [
+        createProcessAction({
           name: "build",
           run: `cat '${fixture}'; exit 1`,
           env: { PATH: process.env["PATH"] ?? "" },
@@ -98,7 +98,7 @@ describe("the stored evidence", () => {
     });
 
     const failed = events.find((e) => e.type === "GateFailed");
-    if (failed?.type !== "GateFailed") throw new Error("the gate did not fail");
+    if (failed?.type !== "GateFailed") throw new Error("the action did not fail");
     expect(failed.data.evidence).not.toContain(ESC);
     expect(failed.data.evidence).toContain(sentence);
   });
