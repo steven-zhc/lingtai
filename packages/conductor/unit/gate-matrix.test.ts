@@ -40,6 +40,7 @@ import {
   type ActionKind,
   type GateAction,
   GateMap,
+  KINDS_AT,
   PLUGINS,
   whyNoKindAt,
 } from "@lingtai/recipe";
@@ -50,6 +51,7 @@ import {
   gatesFromRecipe,
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-point.ts";
+import { BUILT_IN_FOR } from "../src/judge.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
@@ -209,6 +211,50 @@ describe("every step × kind cell runs or refuses", () => {
     expect(() => gatesFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
       new RegExp(`"${kind}" at the "${point}" point`),
     );
+  });
+
+  /**
+   * **And the fourth door, which is the one `runsAt` cannot watch.** `end`'s
+   * consumer is `resolveEndActions` rather than `gatesFromRecipe`, and for it
+   * a throw and a silent drop are the same answer — `runsAt` returns false for
+   * both, so the cell above passes either way. Every refused kind has to
+   * *throw* here, and that is the assertion the row above cannot make.
+   *
+   * It is not hypothetical. `judge:` is the first plugin outside the two
+   * effects to declare a `when:` field (`#238`), and while the guard read
+   * `"when" in a` a judge action built in code went past it into the match on
+   * the outcome, where `findings` equals neither the outcome nor `any`: `end`
+   * resolved, wrote an empty list, and the log said nothing had been declared.
+   * That is `#61` for one kind. The guard asks for `KINDS_AT.end`'s two keys
+   * instead, so a sixth plugin spelling `when:` is refused rather than dropped.
+   */
+  it.each(KINDS.filter((kind) => whyNoKindAt("end", kind) !== null))(
+    "resolveEndActions refuses end × %s by name, rather than dropping it",
+    (kind) => {
+      expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
+        new RegExp(`"${kind}" at the "end" point`),
+      );
+      expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
+        new RegExp(`"${ACTION[kind].name}"`),
+      );
+    },
+  );
+
+  /**
+   * And the keys that guard reads are the row, not a second list beside it: a
+   * kind added to `KINDS_AT.end` whose key `end-point.ts` does not test would
+   * be accepted by the schema and thrown out by the point.
+   */
+  it("refuses at `end` exactly the kinds `KINDS_AT` says it does not run", () => {
+    expect(KINDS_AT.end).toEqual(["close", "labels"]);
+    for (const kind of KINDS) {
+      const resolve = () => resolveEndActions([], [ACTION[kind]], "landed");
+      if ((KINDS_AT.end as readonly ActionKind[]).includes(kind)) {
+        expect(resolve, kind).not.toThrow();
+      } else {
+        expect(resolve, kind).toThrow();
+      }
+    }
   });
 
   /**
@@ -416,5 +462,30 @@ describe("doc/reference.md's matrix", () => {
       doc,
       "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
     ).toContain("**Ninety-nine of the\nhundred and ten are refusals**");
+  });
+
+  /**
+   * **The other table, whose `Needs` column is what a person budgets from.**
+   *
+   * The kind table is read before the matrix and before the prose, and it said
+   * a judge wants an agent *for four of the five directions* while
+   * `BUILT_IN_FOR` and the prose two hundred lines lower said two of the five
+   * are answered by `same-worktree` and spend nothing. Somebody sizing what
+   * judges cost reads the first of those and writes an entry too many, which
+   * is a cell nothing walked — the matrix test above reads the ticks and never
+   * this column.
+   *
+   * Derived rather than compared to a literal: the numeral comes from counting
+   * the directions with no built-in, so the day a third one gets one the
+   * document is red rather than quietly a direction out.
+   */
+  it("says how many directions a judge needs an agent for", async () => {
+    const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
+    const NUMERAL = ["none", "one", "two", "three", "four", "five"] as const;
+    const spendsAnAgent = Object.values(BUILT_IN_FOR).filter((built) => built === null).length;
+    expect(
+      doc,
+      "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs",
+    ).toContain(`for ${NUMERAL[spendsAnAgent]} of the five directions an agent`);
   });
 });

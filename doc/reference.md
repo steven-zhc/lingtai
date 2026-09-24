@@ -561,12 +561,12 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 1443 occurrences in
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1444 occurrences in
 80 files**, counted 2026-09-24, across 51 distinct tokens, of which the six
-largest are `gate` ×429, `gates` ×272, `point` ×167, `points` ×95, `GatePassed`
+largest are `gate` ×429, `gates` ×272, `point` ×168, `points` ×95, `GatePassed`
 ×48 and `GateFailed` ×46. `GATE_CARRYING` in
 `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-`apps/board/unit/run-recipe.test.tsx` are two of those 1443 — locals a rename of
+`apps/board/unit/run-recipe.test.tsx` are two of those 1444 — locals a rename of
 `src/` does not reach, and the two a reader meets first, which is exactly why
 naming them and stopping reads as the whole of it. They are
 out because a name that survives only in a test is one no
@@ -677,7 +677,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1089 occurrences in 78 files, counted 2026-09-24** — and that sentence is
+**1090 occurrences in 78 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -799,7 +799,7 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/conductor/src/gate-audit.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `gate` ×2 · `point` ×1 · `points` ×4 |
 | `packages/conductor/src/gates-resolved.ts` | `gate` ×3 · `gates` ×1 · `gatesResolved` ×1 · `points` ×1 |
 | `packages/conductor/src/index.ts` | `GatePlan` ×1 · `gate` ×1 · `gatePlan` ×1 · `point` ×1 |
-| `packages/conductor/src/judge.ts` | `GateFinding` ×2 · `gate` ×1 |
+| `packages/conductor/src/judge.ts` | `GateFinding` ×3 · `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
 | `packages/conductor/src/never-started.ts` | `gate` ×6 |
 | `packages/conductor/src/onboard.ts` | `gates` ×3 · `point` ×3 |
@@ -834,7 +834,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**9 of those 1089 occurrences are the English word and not the retired
+**9 of those 1090 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
@@ -922,7 +922,7 @@ written as a stand-in.
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken. No step reads it yet | a GitHub client, and the labels its `kinds` names |
 | `assignee:` | — it says whether this machine may take it. No step reads it yet | a GitHub client, and this machine's login |
-| `judge:` | — it says which step is next when something refuses. No step reads it yet | the set of steps the workflow offers it, and for four of the five directions an agent |
+| `judge:` | — it says which step is next when something refuses. No step reads it yet | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `gate-failed` are answered by the `same-worktree` built-in, which spends nothing |
 
 **The last five are names for code that already runs, and no step accepts one**
 (`#235`, `#236`, `#238`). `worktree:` is `provisionWorktree` in

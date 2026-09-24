@@ -37,6 +37,7 @@ import {
   type Judge,
   type JudgeBrief,
   askJudge,
+  briefFor,
   stepsOnOffer,
 } from "../src/judge.ts";
 
@@ -136,6 +137,12 @@ describe("the judge chooses, and cannot widen anything", () => {
    * so is the assertion: a judge cannot widen a ceiling it is never shown, so
    * the brief is checked for what it does *not* carry as carefully as for what
    * it does.
+   *
+   * **And over `briefFor` rather than over a brief written here.** A test that
+   * builds the object it then inspects proves its own arithmetic and nothing
+   * about the workflow: what will be handed to a judge is what the workflow
+   * constructs from the `OfferInput` it is already holding, so that is the
+   * subject. The helper above is for the cases that only need *a* brief.
    */
   it("hands the judge the set and never the counts", async () => {
     let seen: JudgeBrief | null = null;
@@ -143,13 +150,38 @@ describe("the judge chooses, and cannot widen anything", () => {
       seen = b;
       return "human";
     };
-    const offer = stepsOnOffer({ ...EVERYTHING, when: "findings" });
-    await askJudge("claude-code", nosy, brief("findings", offer));
+    const input = { ...EVERYTHING, when: "findings" } as const;
+    await askJudge("claude-code", nosy, briefFor(input, "the review action refused", [FINDING]));
 
     expect(Object.keys(seen!).sort()).toEqual(["findings", "offer", "reason", "when"]);
     expect(seen!.offer).toEqual(["implement", "claim", "human"]);
     expect(JSON.stringify(seen)).not.toContain("rounds");
     expect(JSON.stringify(seen)).not.toContain("restarts");
+  });
+
+  /**
+   * **The construction that would have leaked them, refused by the compiler.**
+   *
+   * The natural line for the ticket that wires `proposed` is
+   * `{ ...input, reason, findings, offer: stepsOnOffer(input) }` — `input` is
+   * the `OfferInput` already in hand — and it used to compile clean and
+   * serialize all four ceilings to an agent judge, because **excess-property
+   * checking is not applied to a spread**. So the four are declared on
+   * `JudgeBrief` as `never`: the same line is now an assignability error, held
+   * by `tsc` on every build rather than by anybody noticing at review.
+   *
+   * `@ts-expect-error` is itself the assertion — it fails the build if the
+   * line ever starts type-checking again — and the runtime check beside it is
+   * what a reader wants to see: those keys really do arrive.
+   */
+  it("will not compile the spread that carries the ceilings across", () => {
+    const input = { ...EVERYTHING, when: "findings" } as const;
+    const leaky = { ...input, reason: "r", findings: [FINDING], offer: stepsOnOffer(input) };
+    // @ts-expect-error — `rounds` is `never` on a brief, and this is the line
+    // that would otherwise hand an agent judge every ceiling it must not see.
+    const _refused: JudgeBrief = leaky;
+    expect(Object.keys(leaky)).toContain("rounds");
+    expect(Object.keys(briefFor(input, "r", [FINDING]))).not.toContain("rounds");
   });
 
   /**

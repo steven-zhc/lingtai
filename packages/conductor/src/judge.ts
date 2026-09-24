@@ -167,6 +167,17 @@ function anAgentHasRun(reached: Step): boolean {
  * only question about money a judge is allowed to have. There is no `rounds`
  * here, no `roundsSpent`, no `restarts` and no ceiling of any kind, and that
  * absence is the safety property — see the head of this file.
+ *
+ * **An absence is not a guard, so the four numbers are declared here as
+ * `never`.** Leaving them out says what a brief is *for* and stops nothing: a
+ * caller writing the construction that will actually be written —
+ * `{ ...input, reason, findings, offer: stepsOnOffer(input) }`, `input` being
+ * the `OfferInput` the workflow already has in its hand — type-checks clean,
+ * because excess-property checking is not applied to a spread, and serializes
+ * every ceiling to an agent judge. Naming them as fields that can only be
+ * `undefined` makes that same line an assignability error at `rounds`, which
+ * is the one moment the mistake is cheap. `briefFor` below is what to write
+ * instead.
  */
 export interface JudgeBrief {
   /** The direction, which is the `when:` the judge was written under. */
@@ -177,6 +188,36 @@ export interface JudgeBrief {
   findings: readonly GateFinding[];
   /** The steps on offer. Never empty: `human` is always in it. */
   offer: readonly Destination[];
+  /** Never. The ceiling is `implement`'s and a judge cannot widen what it cannot see. */
+  rounds?: never;
+  /** Never. What is spent is the workflow's arithmetic, and it is already in `offer`. */
+  roundsSpent?: never;
+  /** Never. The ceiling is `claim`'s, for the same reason. */
+  restarts?: never;
+  /** Never, and for the same reason as `roundsSpent`. */
+  restartsSpent?: never;
+}
+
+/**
+ * **The brief, built by the workflow that holds the numbers** — and the only
+ * construction of one anybody should write.
+ *
+ * It takes the whole `OfferInput` and hands on four fields, so *what a judge
+ * sees* is decided here once rather than at each call site under time
+ * pressure. The counts stay on this side of the call: `stepsOnOffer` reads
+ * them, `offer` is what is left of them, and nothing else crosses.
+ *
+ * Field by field rather than a spread with the ceilings deleted afterwards —
+ * a subtraction is a list to keep correct, and the day `OfferInput` grows a
+ * field the subtraction is silently a field out of date, while this is a
+ * compile error at `JudgeBrief` or nothing at all.
+ */
+export function briefFor(
+  input: OfferInput,
+  reason: string,
+  findings: readonly GateFinding[],
+): JudgeBrief {
+  return { when: input.when, reason, findings, offer: stepsOnOffer(input) };
 }
 
 /**
