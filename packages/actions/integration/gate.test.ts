@@ -457,10 +457,10 @@ describe("gatesFromRecipe", () => {
     // callers that only want to know whether a recipe *parses* do not have
     // them. Absent deps refuse for the same reason an unbuilt kind does: a gate
     // that is silently not run is worse than a run that will not start.
-    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "p" }])).toThrow(
+    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "claude-code", prompt: "p" }])).toThrow(
       GateActionUnavailableError,
     );
-    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "p" }])).toThrow(
+    expect(() => gatesFromRecipe("proposed", [{ name: "review", agent: "claude-code", prompt: "p" }])).toThrow(
       /no reviewer was supplied/,
     );
     expect(() =>

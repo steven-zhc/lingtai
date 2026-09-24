@@ -187,7 +187,8 @@ steps:
     # `agent-gate.ts` and cannot be removed from here — this text is appended.
     # What belongs here is only what *this* repository keeps getting wrong.
     - name: review
-      agent: |
+      agent: claude-code
+      prompt: |
         This is an event-sourced scheduler that schedules its own development.
         Six shapes have produced real defects here. Look for them as well as the
         checklist above.

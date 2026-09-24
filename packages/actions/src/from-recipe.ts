@@ -106,7 +106,10 @@ export function gatesFromRecipe(
       if (!deps.agent) {
         throw new GateActionUnavailableError(action.name, kind, "no reviewer was supplied to gatesFromRecipe");
       }
-      return createAgentGate({ name: action.name, prompt: action.agent }, deps.agent);
+      // `action.agent` is the *runtime* since `#245`; the prose is `prompt:`.
+      // Reading the old field here would compile and send a runtime's name
+      // where a reviewer's instructions belong (0063 §2).
+      return createAgentGate({ name: action.name, prompt: action.prompt }, deps.agent);
     }
 
     if ("watch" in action) {

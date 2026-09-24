@@ -173,7 +173,7 @@ runtime: {`,
 const REVIEWING_RECIPE = RECIPE.replace(
   '- { name: build, run: "test -f src/fix.ts", timeout: 2m }',
   `- { name: build, run: "test -f src/deliver.ts", timeout: 2m }
-    - { name: review, agent: "this project cares about swallowed errors" }`,
+    - { name: review, agent: claude-code, prompt: "this project cares about swallowed errors" }`,
 );
 
 /** A recipe whose only gate refuses, whatever the agent did. */

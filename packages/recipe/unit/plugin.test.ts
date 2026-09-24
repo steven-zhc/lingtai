@@ -115,7 +115,7 @@ describe("a plugin refuses a field it does not understand", () => {
    */
   it("refuses `env:` on a plugin that spawns nothing, by name", () => {
     const refused = StepMap.safeParse({
-      proposed: [{ name: "review", agent: "read the diff", env: ["OPENAI_API_KEY"] }],
+      proposed: [{ name: "review", agent: "claude-code", prompt: "read the diff", env: ["OPENAI_API_KEY"] }],
     });
 
     expect(refused.success).toBe(false);
@@ -177,7 +177,7 @@ describe("every problem in one answer", () => {
     const refused = StepMap.safeParse({
       proposed: [
         { name: "build", run: "pnpm verify", timeout: 15 },
-        { name: "review", agent: "read it", env: ["A"] },
+        { name: "review", agent: "claude-code", prompt: "read it", env: ["A"] },
       ],
       end: [{ name: "close it", close: true, when: "someday" }],
     });

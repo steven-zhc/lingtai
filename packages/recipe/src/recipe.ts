@@ -101,8 +101,38 @@ export const runPlugin = definePlugin("run", {
   env: ExtensionEnvNames,
 });
 
-/** A cold reviewer, given the diff and this prompt. */
-export const agentPlugin = definePlugin("agent", { agent: z.string() });
+/**
+ * A cold reviewer, given the diff: **which runtime runs it**, optionally which
+ * model, and the prompt it is handed
+ * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §2).
+ *
+ * `agent:` carried the prompt until `#245`. It is the runtime now, because
+ * [0053](../../../doc/decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)
+ * has said since 2026-09-17 that *which* CLI does a project's work is the
+ * recipe's decision and not the machine's — and a prompt kept in one file with
+ * its runtime in another splits one decision across two sources. `model:` and
+ * `prompt:` sit beside the key rather than under it, so the scalar stays a
+ * single value (0063 §2).
+ *
+ * **The enum is the whole safety of that reinterpretation, not a style
+ * choice.** A `z.string()` here would take the paragraph of prose a file
+ * written before `#245` puts under `agent:`, parse it cleanly, and hand it on
+ * as the *name of a runtime* — failing at spawn, in a worktree, a long way from
+ * the line that is wrong. `z.enum` refuses it where it is written, by name, at
+ * resolve: that is 0016 §4, and it is the shape
+ * [#230](https://github.com/steven-zhc/lingtai/issues/230) hit when a leftover
+ * `gates:` was dropped by a `z.object` with the suite green.
+ *
+ * `model` is optional, and **absent means the runtime's own default** — which
+ * is a thing a reader can be shown rather than a blank. Lingtai does not carry
+ * a table of each runtime's default here: naming one would be a second place
+ * for it to be wrong, and the runtime already knows.
+ */
+export const agentPlugin = definePlugin("agent", {
+  agent: RuntimeId,
+  model: z.string().optional(),
+  prompt: z.string(),
+});
 
 /** Globs against the diff's file list; a match holds or fails. */
 export const watchPlugin = definePlugin("watch", {

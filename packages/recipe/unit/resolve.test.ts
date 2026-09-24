@@ -139,6 +139,48 @@ describe("resolveRecipe", () => {
   });
 
   /**
+   * **`#245` reinterpreted a key, and this is what makes that safe.** `agent:`
+   * carried the prompt; it carries the runtime. A `z.string()` would have taken
+   * the paragraph of prose an older file writes there, resolved cleanly, and
+   * handed it on as the *name* of a runtime — so the failure would arrive at
+   * spawn, in a worktree, after the claim and after the money. The enum refuses
+   * it here, before any of that, and names the field and the options it has.
+   *
+   * The assertion is in two halves for that reason: the refusal is `resolve`'s
+   * (0016 §4), and it names `agent` rather than reading as *the file is bad*.
+   */
+  it("refuses prose in `agent:` at resolve, rather than at spawn", async () => {
+    const old = VALID.replace(
+      "    - name: build\n      run: pnpm verify\n",
+      "    - name: review\n      agent: |\n        You are reading this diff cold.\n",
+    );
+    const err = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: old }), "develop").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(RecipeInvalidError);
+    const problems = (err as RecipeInvalidError).problems.join("\n");
+    expect(problems).toMatch(/"agent" field/);
+    expect(problems).toContain("claude-code");
+    // And the runtime beside a `prompt:` is the shape that does resolve, so the
+    // refusal above is about the value and not about the key being there.
+    const now = VALID.replace(
+      "    - name: build\n      run: pnpm verify\n",
+      "    - name: review\n      agent: claude-code\n      prompt: |\n        You are reading this diff cold.\n",
+    );
+    const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: now }), "develop");
+    expect(resolved.recipe.steps.proposed[0]).toMatchObject({
+      name: "review",
+      agent: "claude-code",
+      prompt: "You are reading this diff cold.\n",
+    });
+    // Absent `model:` stays absent: what the runtime defaults to is the
+    // runtime's to say, and inventing a value here would be a second place for
+    // it to be wrong.
+    expect(resolved.recipe.steps.proposed[0]).not.toHaveProperty("model");
+  });
+
+  /**
    * `allow` is back, and it means something else.
    *
    * It used to mean "plant these if they exist", which is the half-move 0020

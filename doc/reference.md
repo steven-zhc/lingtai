@@ -882,7 +882,8 @@ attempt, which is [#222](https://github.com/steven-zhc/lingtai/issues/222)'s
 lesson about the build step applied to configuration.
 
 A field may be marked `no_log`, and **none of the twelve is today**: every field
-they have is a name, a command, a prompt, a glob, a branch, a strategy, a label,
+they have is a name, a command, a prompt, a runtime, a model, a glob, a branch, a
+strategy, a label,
 a severity or a GitHub login — and a login is not a credential, which is the distinction
 worth reading (0046 §2: a wrong one hands this machine somebody else's tickets,
 which is a mistake that shows itself). 0021 keeps values out of the file in the
@@ -911,7 +912,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | a cold reviewer reading the diff, given this prompt | a reviewer runtime |
+| `agent:` | a cold reviewer reading the diff. Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the runtime `agent:` names |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail` | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
@@ -921,6 +922,20 @@ written as a stand-in.
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
 | `judge:` | — it says which step is next when something refuses. No step reads it yet | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `gate-failed` are answered by the `same-worktree` built-in, which spends nothing |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
+
+**`agent:` is the one key that changed meaning rather than arriving** (`#245`,
+[0063](decisions/0063-every-setting-is-the-recipes.md) §2). It carried the
+prompt; it carries the runtime, because 0053 has said since 2026-09-17 that
+*which* CLI does a project's work is the recipe's decision and not the
+machine's, and keeping the prompt in one file with its runtime in another splits
+one decision across two sources. **The enum is what makes reinterpreting a key
+safe**: a `z.string()` would take a paragraph of prose written under `agent:` by
+an older file, resolve cleanly, and hand it on as the name of a runtime —
+failing at spawn, in a worktree, after the claim. `z.enum` refuses it at resolve
+and names the field (0016 §4). `model:` is optional and **absent means the
+runtime's own default**, which is a thing to render rather than a blank: Lingtai
+keeps no table of what each runtime defaults to, because the runtime knows and a
+copy here would be a second place for it to be wrong.
 
 **The last five are names for code that already runs, and no step accepts one**
 (`#235`, `#236`, `#237`, `#238`). `worktree:` is `provisionWorktree` in

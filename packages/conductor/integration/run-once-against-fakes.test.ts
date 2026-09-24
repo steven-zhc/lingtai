@@ -134,7 +134,8 @@ env: { required: [], plantAt: .env.local }
 steps:
   proposed:
     - name: review
-      agent: look at it coldly
+      agent: claude-code
+      prompt: look at it coldly
 runtime:
   agent: claude-code
   limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
@@ -156,7 +157,8 @@ env: { required: [], plantAt: .env.local }
 steps:
   proposed:
     - name: review
-      agent: look for races
+      agent: claude-code
+      prompt: look for races
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 

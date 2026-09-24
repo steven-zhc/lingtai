@@ -70,7 +70,7 @@ import { decideBacklog } from "../src/backlog.ts";
  */
 const ACTION: Record<ActionKind, GateAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
-  agent: { name: "review", agent: "read the diff" },
+  agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
   watch: { name: "tamper", watch: ["**/gates.yml"], then: "fail" },
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },

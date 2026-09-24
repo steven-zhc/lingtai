@@ -98,7 +98,8 @@
  * nothing it already was.
  *
  * **Nothing declares one today**, and that is a fact rather than an oversight:
- * every field the eleven plugins have is a name, a command, a prompt, a glob, a
+ * every field the eleven plugins have is a name, a command, a prompt, a runtime,
+ * a model, a glob, a
  * branch, a strategy, a label, a direction, a severity or a GitHub login — and a login is
  * not a credential, which is the distinction worth reading (0046 §2: a wrong
  * one hands this machine somebody else's tickets, and that is a mistake that

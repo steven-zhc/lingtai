@@ -180,8 +180,8 @@ describe("editRecipe, on this repository's own recipe", () => {
   });
 
   it("rewrites a block-scalar prompt in place, deeper than its key", () => {
-    const multi = editRecipe(OWN, [{ path: ["steps", "proposed", 1, "agent"], value: "line one\nline two\n" }]);
-    expect(multi).toContain("    - name: review\n      agent: |\n        line one\n        line two\n");
+    const multi = editRecipe(OWN, [{ path: ["steps", "proposed", 1, "prompt"], value: "line one\nline two\n" }]);
+    expect(multi).toContain("      prompt: |\n        line one\n        line two\n");
     expect(commentCount(multi)).toBe(commentCount(OWN));
   });
 

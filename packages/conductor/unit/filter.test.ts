@@ -40,7 +40,8 @@ steps:
       run: pnpm test
       timeout: 20m
     - name: review
-      agent: reviewer
+      agent: claude-code
+      prompt: reviewer
 runtime:
   agent: claude-code
 `;
