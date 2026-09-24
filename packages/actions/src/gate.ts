@@ -24,7 +24,7 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from "@lingtai/agent/run-log";
-import type { Step, PayloadOf } from "@lingtai/domain";
+import type { Step, PayloadOf, Severity } from "@lingtai/domain";
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -73,7 +73,8 @@ export interface GateFinding {
   claim: string;
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: string;
-  severity: "blocker" | "major" | "minor";
+  /** The ladder is `SEVERITIES` in `@lingtai/domain` and is not restated here. */
+  severity: Severity;
 }
 
 export interface GateResult {

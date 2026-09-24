@@ -18,6 +18,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { GateFinding } from "@lingtai/actions";
+import { SEVERITIES } from "@lingtai/domain";
 import {
   type FixStop,
   decideFix,
@@ -385,6 +386,33 @@ describe("what a person is shown when the rounds are over", () => {
     // And says nothing about restarts, because there have been none. A card on
     // a project that leaves `restarts` at zero reads exactly as it did.
     expect(question).not.toContain("restart");
+  });
+
+  /**
+   * **`severest` walks `SEVERITIES`, and this is where a second copy of the
+   * ladder goes red** (`#237`).
+   *
+   * It held its own `["blocker", "major", "minor"]`, linked to nothing, so a
+   * severity added to the enum fell off the end of the loop and the card's one
+   * line read `worst: none` beside a finding that exists — the person notified
+   * told the disagreement is about nothing. Walking the array here rather than
+   * naming three members is what turns a re-introduced copy into a failing
+   * test instead of a comment claiming the ladder is central.
+   */
+  it("names the worst for every severity on the ladder, whatever the ladder is", () => {
+    for (const severity of SEVERITIES) {
+      const question = disagreementQuestion({
+        action: "review",
+        branch: "agent/123",
+        base: "main",
+        findings: [finding({ severity })],
+        rounds: 1,
+        refusals: 2,
+        stop: { ended: "spent" },
+      });
+
+      expect(question, severity).toContain(`worst: ${severity}`);
+    }
   });
 });
 

@@ -60,9 +60,20 @@ import type { ProposedRef, ProposedTicket, TicketStore } from "./ticket-store.ts
  * **filed**, above it a finding **refuses**.
  *
  * Nothing calls it yet, and that is the same fact `whyNoKindAt` states about
- * the `backlog:` plugin. The bar today is a literal `minor` in the fold
- * (`packages/projector/src/backlog.ts`), which no recipe can see, name or
- * replace; this is that literal lifted out where a plugin can hand it one.
+ * the `backlog:` plugin. **The bar today is written twice, and this lifts out
+ * both.** `verdictFor` in `packages/actions/src/agent-gate.ts` is the half that
+ * *refuses* — a hard-coded blocker-or-major, which is `refuses` below —
+ * and the literal `minor` in the fold (`packages/projector/src/backlog.ts`) is
+ * the half that *files*, which is `filed`. One comparison in two packages that
+ * cannot see each other, and neither of which a recipe can name.
+ *
+ * So **whoever wires `backlog:` has to hand its value to both**. Replace the
+ * fold's literal alone and a `major` still fails at `verdictFor`, the step still
+ * emits `GateFailed`, the fold never sees the finding — and a recipe that said a
+ * major costs nothing has bought a fix round while reading as honoured. That
+ * trap is in `CALLED_DIRECTLY.backlog` (`packages/recipe/src/recipe.ts`) too,
+ * because the refusal is what somebody about to wire it actually reads.
+ *
  * **Naming a thing is not wiring it** — what is here is the decision, which had
  * to exist before the ticket that makes the recipe file `steps:` could hand it
  * a value.
@@ -87,7 +98,11 @@ import type { ProposedRef, ProposedTicket, TicketStore } from "./ticket-store.ts
 export interface BacklogOutcome {
   /** At or below the bar: filed for a person, and buying nothing. */
   filed: readonly Finding[];
-  /** Above it: these refuse, and a refusal is what may go on to buy a round. */
+  /**
+   * Above it: these refuse, and a refusal is what may go on to buy a round.
+   * `verdictFor` in `packages/actions/src/agent-gate.ts` is where that same
+   * question is answered today, off its own copy of the bar.
+   */
   refuses: readonly Finding[];
   /** `false` when everything is at or below the bar — there is no refusal to buy one with. */
   buysARound: boolean;

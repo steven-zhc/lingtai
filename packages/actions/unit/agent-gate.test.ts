@@ -8,7 +8,7 @@
 import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
 import { sessionIdFor } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
-import { parsePayload } from "@lingtai/domain";
+import { SEVERITIES, parsePayload } from "@lingtai/domain";
 import {
   buildReviewPrompt,
   createAgentGate,
@@ -313,6 +313,26 @@ describe("reading the reviewer's answer", () => {
     // The rubric exists because severity ran *low*. Guessing downwards on a
     // malformed answer would reintroduce exactly that.
     expect(findings[0]?.severity).toBe("blocker");
+  });
+
+  /**
+   * **And *unrecognised* is decided by `SEVERITIES`, which is where a second
+   * copy of the ladder goes red** (`#237`).
+   *
+   * The check above held its own `"blocker" | "major" | "minor"`, linked to
+   * nothing, so a severity added to the enum was unrecognised here and
+   * recorded as `blocker` by the line directly above — the gentlest new rung
+   * arriving as the harshest, refusing the gate and buying a fix round. That
+   * is the failure a reader of `SEVERITIES`' comment would have walked into,
+   * and walking the array rather than naming three members is what makes it a
+   * failing test rather than a claim.
+   */
+  it("keeps every severity that is on the ladder, whatever the ladder is", () => {
+    for (const severity of SEVERITIES) {
+      const { findings } = parseFindings(JSON.stringify({ findings: [finding({ severity })] }));
+
+      expect(findings[0]?.severity, severity).toBe(severity);
+    }
   });
 
   it("says it could not parse rather than reporting no findings", () => {

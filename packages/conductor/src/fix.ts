@@ -58,6 +58,7 @@
  * nobody can check.
  */
 import type { GateFinding } from "@lingtai/actions";
+import { SEVERITIES, type Severity } from "@lingtai/domain";
 import type { BlockDiagnosis, RunFailureKind } from "@lingtai/domain";
 
 /**
@@ -1523,9 +1524,16 @@ function count(findings: readonly GateFinding[]): string {
   return findings.length === 1 ? "one finding" : `${findings.length} findings`;
 }
 
-/** The highest severity present, by the rubric's own order. */
-function severest(findings: readonly GateFinding[]): string {
-  for (const severity of ["blocker", "major", "minor"] as const) {
+/**
+ * The highest severity present, by the rubric's own order.
+ *
+ * `SEVERITIES` is that order and is worst first, so this walks it rather than
+ * restating it: a severity added to the enum is found here without this line
+ * being touched, where a hand-written copy would have answered `none` for it
+ * and printed `worst: none` beside a finding that exists.
+ */
+function severest(findings: readonly GateFinding[]): Severity | "none" {
+  for (const severity of SEVERITIES) {
     if (findings.some((f) => f.severity === severity)) return severity;
   }
   return "none";

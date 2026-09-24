@@ -50,6 +50,7 @@ import {
   GateActionUnavailableError,
   type GateDeps,
   gatesFromRecipe,
+  verdictFor,
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-point.ts";
 import { BUILT_IN_FOR } from "../src/judge.ts";
@@ -375,6 +376,15 @@ describe("every step × kind cell runs or refuses", () => {
     // hand a value to — both file references, so they go red if either moves.
     expect(why).toContain("packages/projector/src/backlog.ts");
     expect(why).toContain("packages/conductor/src/backlog.ts");
+    // **And the half a reader of the fold alone would miss.** The bar is one
+    // comparison written in two packages: the fold decides what is *filed*, and
+    // `verdictFor` decides what *refuses*. An implementer who follows this
+    // refusal, replaces the fold's literal and stops leaves `verdictFor`
+    // returning `failed` for a major — `GateFailed`, no filing, a fix round
+    // bought — under a recipe that reads as honoured. The refusal has to name
+    // it, so this asserts it does.
+    expect(why).toContain("verdictFor");
+    expect(why).toContain("packages/actions/src/agent-gate.ts");
     // And the dedup nobody has to build: the refusal says why a second round
     // does not file a second entry, which is the Done-when this ticket asserts
     // against today's behaviour rather than adding machinery for.
@@ -390,9 +400,16 @@ describe("every step × kind cell runs or refuses", () => {
    * `decideBacklog` is the bar as a function, and the property the plugin
    * exists to make configurable is that the two answers are one fact: what is
    * filed is exactly what did not refuse, and `buysARound` is false when
-   * nothing did. Asserted over the whole ladder rather than over `minor`, so a
-   * fourth severity arriving in `SEVERITIES` with no rung of its own is red
-   * here rather than silently filed.
+   * nothing did.
+   *
+   * **Parameterised over the whole ladder, and that is a weaker claim than it
+   * reads as.** Every bar in `SEVERITIES` is tried and each finding gets its
+   * rung from `indexOf`, so a fourth severity added to the enum holds here *by
+   * construction* — this file stays green and says nothing about whether the
+   * rest of the code met it. What says that is the ladder's consumers, walked
+   * against `SEVERITIES` in `packages/actions/unit/agent-gate.test.ts` and
+   * `packages/conductor/unit/fix.test.ts`. This test asserts the bar; those
+   * assert that there is one ladder to put a bar on.
    */
   it("files at or below the bar, and nothing filed buys a round", () => {
     for (const bar of SEVERITIES) {
@@ -408,6 +425,26 @@ describe("every step × kind cell runs or refuses", () => {
     // And the default is today's fold: a `minor` is filed, a `major` is not.
     expect(decideBacklog([finding("minor")]).buysARound).toBe(false);
     expect(decideBacklog([finding("major")]).buysARound).toBe(true);
+  });
+
+  /**
+   * **And the same bar, read off the half that actually refuses** (`#237`).
+   *
+   * `decideBacklog`'s default and `verdictFor` in
+   * `packages/actions/src/agent-gate.ts` are one comparison written twice, in
+   * two packages that cannot see each other — so the only thing keeping them
+   * the same rule is this assertion. It is what makes *both halves take the
+   * recipe's value or neither does* checkable rather than a sentence in a
+   * refusal: move one bar and this goes red naming the severity that now
+   * disagrees.
+   */
+  it("agrees, severity by severity, with the half of the bar that refuses", () => {
+    for (const severity of SEVERITIES) {
+      const one = [finding(severity)];
+      expect(decideBacklog(one).buysARound, severity).toBe(verdictFor(one) === "failed");
+    }
+    expect(verdictFor([])).toBe("passed");
+    expect(decideBacklog([]).buysARound).toBe(false);
   });
 
   /**

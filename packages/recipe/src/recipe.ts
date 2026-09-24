@@ -478,9 +478,13 @@ export type BacklogBar = z.infer<typeof BacklogBar>;
  *
  * A reviewer returns findings with a severity and **no verdict**
  * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3).
- * Something downstream has to say what a severity costs, and today that
- * something is a literal `minor` in a fold nobody can name, configure or
- * replace. Nearly half of what a reviewer says arrives at or below the bar —
+ * Something downstream has to say what a severity costs, and today that is two
+ * somethings nobody can name, configure or replace: `verdictFor`
+ * (`packages/actions/src/agent-gate.ts`), which says what refuses, and a
+ * literal `minor` in the fold (`packages/projector/src/backlog.ts`), which says
+ * what is filed. The value this plugin carries has to reach both, and
+ * `CALLED_DIRECTLY.backlog` below is where that is said to whoever wires it.
+ * Nearly half of what a reviewer says arrives at or below the bar —
  * **316 minor and 281 major of 660 findings across 231 refusals in 14 days**
  * ([012 §4](../../../doc/experiments/012-where-the-turns-go.md)) — so the
  * plugin that decides what happens to them is not a footnote.
@@ -813,10 +817,16 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     "recipe can see that decision, name it or replace it. What a step will hand a judge is already a " +
     `module of its own: \`stepsOnOffer\` in \`packages/conductor/src/judge.ts\`. ${WORKFLOW_COUNTS}`,
   backlog:
-    "the fold decides it itself, from a literal `minor` no recipe can see — `backlogProjection` in " +
-    "`packages/projector/src/backlog.ts` files every finding at or below it out of a passing step's " +
-    "findings, and `decideBacklog` in `packages/conductor/src/backlog.ts` is that bar as a function " +
-    "a recipe will hand its own. What a person then does with one is `acceptFinding` and " +
+    "**the bar is in two places and wiring one of them changes nothing.** `verdictFor` in " +
+    "`packages/actions/src/agent-gate.ts` decides what **refuses**, off a hard-coded blocker-or-major; " +
+    "`backlogProjection` in `packages/projector/src/backlog.ts` decides what is **filed**, off a literal " +
+    "`minor`. They are one comparison written twice, in two packages that cannot see each other, and " +
+    "`decideBacklog` in `packages/conductor/src/backlog.ts` is that comparison as a function a recipe " +
+    "will hand its own value. **Both halves take it or neither does**: a step that replaces the fold's " +
+    "literal alone still gets `failed` out of `verdictFor` for a major, still records a refusal, and the " +
+    "fold files only out of a passing step — so a recipe that said a major costs nothing would buy a fix " +
+    "round exactly as it does today, and read as honoured. What a person then does with a filed one is " +
+    "`acceptFinding` and " +
     `\`declineFinding\` in the same module, which \`lingtai backlog\` and the board both call. ${FILES_AND_ROUTES_NOTHING}`,
 };
 

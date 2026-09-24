@@ -53,6 +53,7 @@
  * `recheckBlock`.
  */
 import type { Runtime } from "@lingtai/agent";
+import { SEVERITIES, type Severity } from "@lingtai/domain";
 import type { Gate, GateContext, GateFinding, GateResult } from "./gate.ts";
 
 export interface AgentGateSpec {
@@ -284,12 +285,13 @@ export function parseFindings(text: string | null): { findings: GateFinding[]; p
         line: typeof f.line === "number" ? f.line : null,
         claim: String(f.claim),
         failureScenario: String(f.failureScenario),
-        severity:
-          f.severity === "blocker" || f.severity === "major" || f.severity === "minor"
-            ? f.severity
-            : // Unrecognised means the rubric was not followed, and the rubric
-              // exists because severity ran *low*. Take the higher one.
-              "blocker",
+        severity: isSeverity(f.severity)
+          ? f.severity
+          : // Unrecognised means the rubric was not followed, and the rubric
+            // exists because severity ran *low*. Take the higher one — and
+            // `SEVERITIES` is worst first, so the highest is its own head
+            // rather than a name spelled again here.
+            SEVERITIES[0],
       });
     }
     return { findings, parsed: true };
@@ -298,11 +300,32 @@ export function parseFindings(text: string | null): { findings: GateFinding[]; p
   return { findings: [], parsed: false };
 }
 
-/** Blocker or major refuses. A minor is worth knowing and not worth stopping for. */
+/**
+ * Blocker or major refuses. A minor is worth knowing and not worth stopping for.
+ *
+ * **This is one half of the bar, and a fold is the other** (`#237`). What
+ * refuses here is exactly what `backlogProjection`
+ * (`packages/projector/src/backlog.ts`) does *not* file, and the two spell the
+ * same `minor` in two packages that cannot see each other. `decideBacklog` in
+ * `packages/conductor/src/backlog.ts` is that one comparison as a function, and
+ * when a step reads the `backlog:` plugin **both** of these have to be handed
+ * the recipe's value: wire the fold alone and a `major` still fails the gate
+ * here, `GateFailed` is still emitted, the fold never sees it, and a recipe
+ * that said a major costs nothing has bought a fix round.
+ *
+ * The ladder is `SEVERITIES` and the bar is a position in it, so a severity
+ * added to the enum lands on one side of this by arithmetic rather than by
+ * being listed.
+ */
+const BAR: Severity = "minor";
 export function verdictFor(findings: readonly GateFinding[]): "passed" | "failed" {
-  return findings.some((f) => f.severity === "blocker" || f.severity === "major")
-    ? "failed"
-    : "passed";
+  const bar = SEVERITIES.indexOf(BAR);
+  return findings.some((f) => SEVERITIES.indexOf(f.severity) < bar) ? "failed" : "passed";
+}
+
+/** Whether the reviewer's word is on the ladder at all. `SEVERITIES` is the ladder. */
+function isSeverity(value: unknown): value is Severity {
+  return (SEVERITIES as readonly unknown[]).includes(value);
 }
 
 function summarise(findings: readonly GateFinding[]): string {

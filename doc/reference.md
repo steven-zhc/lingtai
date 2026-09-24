@@ -561,12 +561,12 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 1445 occurrences in
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 1446 occurrences in
 80 files**, counted 2026-09-24, across 51 distinct tokens, of which the six
-largest are `gate` ×430, `gates` ×272, `point` ×168, `points` ×95, `GatePassed`
+largest are `gate` ×431, `gates` ×272, `point` ×168, `points` ×95, `GatePassed`
 ×48 and `GateFailed` ×46. `GATE_CARRYING` in
 `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-`apps/board/unit/run-recipe.test.tsx` are two of those 1445 — locals a rename of
+`apps/board/unit/run-recipe.test.tsx` are two of those 1446 — locals a rename of
 `src/` does not reach, and the two a reader meets first, which is exactly why
 naming them and stopping reads as the whole of it. They are
 out because a name that survives only in a test is one no
@@ -677,7 +677,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**1091 occurrences in 78 files, counted 2026-09-24** — and that sentence is
+**1092 occurrences in 78 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -828,14 +828,14 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/recipe/src/local.ts` | `gates` ×8 · `gatesRefusal` ×3 · `point` ×2 |
 | `packages/recipe/src/presets.ts` | `gates` ×6 |
 | `packages/recipe/src/propose.ts` | `gates` ×1 |
-| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GateMap` ×4 · `GatesResolved` ×1 · `gate` ×1 · `gates` ×1 · `point` ×15 |
+| `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GateMap` ×4 · `GatesResolved` ×1 · `gate` ×2 · `gates` ×1 · `point` ×15 |
 | `packages/recipe/src/resolve.ts` | `gates` ×5 |
 | `packages/recipe/src/watch.ts` | `gate` ×9 |
 | `packages/repo/src/integrate.ts` | `gate` ×3 · `gateDetail` ×2 · `gatesPassed` ×2 |
 
 ### ordinary English
 
-**9 of those 1091 occurrences are the English word and not the retired
+**9 of those 1092 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
@@ -936,11 +936,16 @@ them together with `claimWorkItem` in `packages/conductor/src/claim.ts`, which
 takes the one that survives; the queue pass calls those itself, before a pass
 exists to have steps at all. `judge:` is the decision `buyRound` makes at
 `run-once.ts:1761`, from `decideFix` in `packages/conductor/src/fix.ts` and
-`decideRestart` in `packages/conductor/src/restart.ts`. `backlog:` is the
-literal `minor` in `backlogProjection`, `packages/projector/src/backlog.ts`,
-beside `acceptFinding` and `declineFinding` in
-`packages/conductor/src/backlog.ts` — which is where that bar now also exists as
-`decideBacklog`, a function a recipe will hand its own value to. So a recipe
+`decideRestart` in `packages/conductor/src/restart.ts`. `backlog:` is **two
+literals and not one** — the `minor` in `backlogProjection`,
+`packages/projector/src/backlog.ts`, which decides what is *filed*, and the
+blocker-or-major in `verdictFor`, `packages/actions/src/agent-gate.ts`, which
+decides what *refuses* — beside `acceptFinding` and `declineFinding` in
+`packages/conductor/src/backlog.ts`, which is where that bar now also exists as
+`decideBacklog`, a function a recipe will hand its own value to. **Both halves
+take that value or neither does**: replace the fold's literal alone and a major
+still fails the step, is never filed, and buys the fix round the recipe said it
+would not, which is why the refusal says so. So a recipe
 cannot yet say any of the six and every one of their sixty cells in the matrix
 below is a ✋. They are declared
 anyway because **a plugin no list carries is a plugin no step refuses**

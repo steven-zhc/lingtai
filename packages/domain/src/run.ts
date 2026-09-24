@@ -16,7 +16,7 @@
  * invalidate anything; a new head simply has no verdicts yet.
  */
 import type { Envelope } from "./envelope.ts";
-import type { Invocation, PayloadOf, RunFailureKind, RuntimeId } from "./events.ts";
+import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from "./events.ts";
 
 /**
  * `never-ran` is not a verdict about the diff, and is here because the absence
@@ -47,7 +47,8 @@ export interface GateFinding {
   claim: string;
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: string;
-  severity: "blocker" | "major" | "minor";
+  /** The ladder is `SEVERITIES` in `./events.ts` and is not restated here. */
+  severity: Severity;
 }
 
 export interface GateState {

@@ -615,6 +615,38 @@ export const EndActionsResolved = z.object({
 
 export const GateRequested = z.object(gateBase);
 export const GateStarted = z.object(gateBase);
+
+/**
+ * How bad a defect is, **worst first**.
+ *
+ * The order is the rubric's own, and it is load-bearing rather than
+ * presentational: *at or below the bar* is a comparison of two positions in
+ * this list, so a `backlog:` bar of `minor` files a minor and lets a major
+ * refuse. `severest` in `packages/conductor/src/fix.ts` walks it in this
+ * direction for the same reason.
+ *
+ * **Exported because it is the only copy of the ladder, and that is a claim
+ * tests hold rather than a comment** (`#237`). Five places used to spell the
+ * three names out and none of them linked here: `parseFindings` and
+ * `verdictFor` in `packages/actions/src/agent-gate.ts`, `severest`, and the
+ * `GateFinding` interfaces in `packages/domain/src/run.ts` and
+ * `packages/actions/src/gate.ts`. Each reads this array, or the `Severity` it
+ * yields, so a fourth severity added here reaches all of them at once —
+ * `packages/actions/unit/agent-gate.test.ts` and
+ * `packages/conductor/unit/fix.test.ts` walk the array against those
+ * consumers, so a copy re-introduced is a red test.
+ *
+ * What a new member does **not** reach by arithmetic is a **bar**, because a
+ * bar is a position in this list somebody chose. There are two of them today
+ * and they are one rule read twice: `verdictFor`'s, which says what refuses,
+ * and `backlogProjection`'s in `packages/projector/src/backlog.ts`, which says
+ * what is filed. `decideBacklog` in `packages/conductor/src/backlog.ts` is
+ * that one comparison as a function, and the `backlog:` plugin's schema in
+ * `packages/recipe/src/recipe.ts` is this array again.
+ */
+export const SEVERITIES = ["blocker", "major", "minor"] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
 /**
  * One finding, as a reviewer reported it.
  *
@@ -625,24 +657,6 @@ export const GateStarted = z.object(gateBase);
  * Three copies of the shape would be three places for `failureScenario` to be
  * summarised away, and the whole mechanism is that it is not.
  */
-/**
- * How bad a defect is, **worst first**.
- *
- * The order is the rubric's own, and it is load-bearing rather than
- * presentational: *at or below the bar* is a comparison of two positions in
- * this list, so a `backlog:` bar of `minor` files a minor and lets a major
- * refuse. `severest` in `packages/conductor/src/fix.ts` walks it in this
- * direction for the same reason.
- *
- * Exported so that the one place that decides what a severity **costs** reads
- * the ladder rather than restating it: `decideBacklog` in
- * `packages/conductor/src/backlog.ts` and the `backlog:` plugin's schema in
- * `packages/recipe/src/recipe.ts` are both this array, and a fourth severity
- * arrives in all three at once (`#237`).
- */
-export const SEVERITIES = ["blocker", "major", "minor"] as const;
-export type Severity = (typeof SEVERITIES)[number];
-
 const Finding = z.object({
   file: z.string(),
   line: z.number().int().nullable(),
