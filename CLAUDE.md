@@ -297,6 +297,13 @@ there is the project's application, never this one.
 
 ## Commits
 
+**Never write `close`, `closes`, `fixes` or `resolves` next to a `#number` unless
+you mean to close it** — GitHub's auto-linker does not read the sentence around
+it. `1a7267f`'s body said *"**This does not close #231.**"* and closed #231.
+A negation, a quotation and a code fence's prose all close it just the same, so
+the only way to mention the relationship is to not use the verb: write *#231 is
+not done by this* or *see #231*.
+
 One line, lower case, stating what is now true rather than what was done —
 `fix(end): the point runs on every outcome, not just an inline merge`. An ADR
 lands as `NNNN: <the decision, as a sentence>`. `git log` is the reference.
