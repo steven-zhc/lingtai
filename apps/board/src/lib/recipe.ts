@@ -505,6 +505,25 @@ export function describeAction(
       const a = action as Extract<GateAction, { labels: string[] }>;
       return { does: `sets labels ${a.labels.join(", ")} when ${a.when}`, bound: "runs for effect" };
     }
+    // The two the pass calls itself, so no step in the recipe can hold one
+    // today — `whyNoKindAt` refuses both everywhere. A reading with no case
+    // for them would be a `switch` that returns `undefined` the moment the
+    // ticket after this one wires them up, on a page nobody would think to
+    // re-test; the closed set is read here, so the set is what this answers.
+    case "worktree": {
+      const a = action as Extract<GateAction, { worktree: { base: string; submodules: boolean } }>;
+      return {
+        does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ", submodules and all" : ""}`,
+        bound: "no clock — it is the directory the work happens in",
+      };
+    }
+    case "merge": {
+      const a = action as Extract<GateAction, { merge: { strategy: string } }>;
+      return {
+        does: `lands the branch by ${a.merge.strategy}, onto the base it was cut from`,
+        bound: "no clock — the base moving under it is a recomputation, not a refusal",
+      };
+    }
   }
 }
 

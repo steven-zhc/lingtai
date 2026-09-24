@@ -24,6 +24,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { STEPS } from "@lingtai/domain";
 import {
   GateMap,
   PLUGINS,
@@ -34,11 +35,14 @@ import {
   disclose,
   discloseSteps,
   hashRecipe,
+  mergePlugin,
   noLog,
   pluginOf,
   readFields,
   runPlugin,
+  whyNoKindAt,
   withheld,
+  worktreePlugin,
   type GateAction,
 } from "../src/index.ts";
 
@@ -401,5 +405,85 @@ describe("the six behind the contract", () => {
       proposed: [{ name: "build", run: "x", env: ["LINGTAI_DATABASE_URL"] }],
     });
     expect(refused.error!.issues[0]!.message).toContain("LINGTAI_DATABASE_URL");
+  });
+});
+
+/**
+ * **The branch a pass owns, cut and landed** (`#235`,
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ *
+ * Both are names for code that already runs — `provisionWorktree` and the
+ * integrator — and neither is read from the recipe yet. So what these cases
+ * hold is the pair of properties that makes declaring them now worth anything:
+ *
+ * - **Refused at all ten steps, by a sentence that says where the code is.**
+ *   Outside the closed set the refusal would be *names no plugin*, which is
+ *   true and about the wrong thing; inside it, an operator is told which file
+ *   cuts their worktree today. That the *schema* carries that sentence — the
+ *   action, its plugin, its step — is asserted of all twenty cells by
+ *   `packages/conductor/unit/gate-matrix.test.ts`, which walks the closed set
+ *   rather than a list of its own; what is here is the sentence itself.
+ * - **`merge:` declares no `base:`.** `base` is one value that flows (§4), and
+ *   a second declaration would manufacture a disagreement between what a pass
+ *   cut and what it lands — which cannot happen today and is not made possible
+ *   here.
+ */
+describe("the two the pass calls itself", () => {
+  it("is refused at every one of the ten steps, and names the file instead", () => {
+    for (const step of STEPS) {
+      for (const kind of ["worktree", "merge"] as const) {
+        expect(whyNoKindAt(step, kind), `${step} × ${kind} is accepted`).not.toBeNull();
+      }
+    }
+
+    expect(whyNoKindAt("admit", "worktree")).toContain("packages/repo/src/worktree.ts");
+    expect(whyNoKindAt("admit", "worktree")).toContain("repo.base");
+    expect(whyNoKindAt("merge", "merge")).toContain("packages/repo/src/integrate.ts");
+  });
+
+  /**
+   * The watch-out this ticket was written around. A `base:` under `merge:` is
+   * an unrecognized key inside the plugin's own map, and it has to stay one.
+   */
+  it("gives `merge:` no `base:` of its own", () => {
+    expect(mergePlugin.declares).toEqual(["name", "merge"]);
+    expect(JSON.stringify(mergePlugin.schema.safeParse({ name: "x", merge: {} }))).not.toContain("base");
+
+    const refused = mergePlugin.schema.safeParse({
+      name: "land it",
+      merge: { base: "main", strategy: "merge-commit" },
+    });
+    expect(refused.success).toBe(false);
+
+    // And the refusal is the map's own words rather than the plugin's field
+    // list: `base` is not one of `merge:`'s fields, and naming `"name",
+    // "merge"` beside it would send a reader to a depth where neither is legal.
+    const problems = readFields(mergePlugin, {
+      name: "land it",
+      merge: { base: "main" },
+    }).problems!;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]!.at).toEqual(["merge"]);
+    expect(problems[0]!.why).toContain("base");
+    expect(problems[0]!.why).not.toContain('what it declares is');
+  });
+
+  /** The values today's code is called with, and no others. */
+  it("carries what the code it wraps is configured by, and nothing more", () => {
+    expect(worktreePlugin.schema.parse({ name: "cut", worktree: { base: "main" } })).toEqual({
+      name: "cut",
+      worktree: { base: "main", submodules: false },
+    });
+
+    // One strategy, because `integrate.ts` offers one. A second value here
+    // would be a behaviour this repository does not have, declared as though
+    // it did.
+    expect(mergePlugin.schema.parse({ name: "land", merge: {} })).toEqual({
+      name: "land",
+      merge: { strategy: "merge-commit" },
+    });
+    expect(mergePlugin.schema.safeParse({ name: "land", merge: { strategy: "squash" } }).success).toBe(
+      false,
+    );
   });
 });

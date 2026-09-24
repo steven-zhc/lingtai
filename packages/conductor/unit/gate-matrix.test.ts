@@ -1,17 +1,24 @@
 /**
- * **Sixty cells, and each one runs or refuses by name.** There is no third
+ * **Eighty cells, and each one runs or refuses by name.** There is no third
  * answer, and for a year ten of them gave it: an action at `admit`, or anything
  * but an effect at `end`, was accepted by the schema, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
  * called (`#61`).
  *
- * **It was thirty until the vocabulary went from five names to ten** (0058 §3).
- * Eleven of the sixty cells run and **forty-nine refuse**; thirty-six of those
- * forty-nine are the six steps with no call site, and they are the property
- * this file is here to hold: naming a step is not building it, and the five
- * steps 0058 named and the pipeline has not yet constructed must refuse every
- * kind until it has. A `design:` block a recipe could write and nothing would
- * run is `#61` with a new spelling.
+ * **It was thirty until the vocabulary went from five names to ten** (0058 §3),
+ * and sixty until the closed set grew two plugins (`#235`). Eleven of the
+ * eighty cells run and **sixty-nine refuse**; forty-eight of those sixty-nine
+ * are the six steps with no call site, and twenty are the two plugins no step
+ * reads — overlapping each other by twelve, because a `worktree:` action at
+ * `design` is both at once.
+ *
+ * That is the property this file is here to hold, and it holds it down both
+ * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
+ * pipeline has not yet constructed must refuse every kind until it has, and the
+ * two plugins that are names for code `run-once.ts` calls itself must be
+ * refused at every step until the recipe is what tells it to. A `design:` block
+ * a recipe could write and nothing would run is `#61` with a new spelling; so
+ * is a `worktree:` one.
  *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
@@ -43,7 +50,14 @@ import {
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-point.ts";
 
-/** The six kinds, one action each, exactly as a resolved recipe would hold them. */
+/**
+ * The closed set's kinds, one action each, exactly as a resolved recipe would
+ * hold them — **and the last two are actions no resolved recipe can hold**,
+ * because `worktree:` and `merge:` are refused at all ten steps. That is the
+ * point of writing them: the cell has to be *refused by name* rather than
+ * *unrepresentable*, and an action the schema never sees is a column this file
+ * would walk with nothing in it.
+ */
 const ACTION: Record<ActionKind, GateAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
   agent: { name: "review", agent: "read the diff" },
@@ -51,6 +65,8 @@ const ACTION: Record<ActionKind, GateAction> = {
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
   labels: { name: "label it", labels: ["shipped"], when: "any" },
+  worktree: { name: "cut the branch", worktree: { base: "main", submodules: false } },
+  merge: { name: "land the branch", merge: { strategy: "merge-commit" } },
 };
 /**
  * **The columns are the closed set's, in the closed set's order** (`#228`).
@@ -285,19 +301,24 @@ describe("doc/reference.md's matrix", () => {
   it("says what the code does, cell for cell", async () => {
     const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
     const rows = new Map<string, string[]>();
+    // The row's own label plus one cell per plugin, read off `PLUGINS` like
+    // everything else here: a seventh and eighth column arrived with `#235`,
+    // and a width written as `7` would have gone on matching the six-wide
+    // table it was no longer about and reported *no table at all*.
+    const width = KINDS.length + 1;
     let header: string[] | null = null;
     for (const line of doc.split("\n")) {
       const cells = line.trim().startsWith("|")
         ? line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
         : null;
       if (cells === null) continue;
-      if (cells.length === 7 && cells.slice(1).join(" ") === KINDS.map((k) => `\`${k}:\``).join(" ")) {
+      if (cells.length === width && cells.slice(1).join(" ") === KINDS.map((k) => `\`${k}:\``).join(" ")) {
         header = cells;
         continue;
       }
       if (header === null) continue;
       const point = cells[0]?.replace(/[`*]/g, "");
-      if (cells.length === 7 && STEPS.includes(point as Step)) {
+      if (cells.length === width && STEPS.includes(point as Step)) {
         rows.set(point!, cells.slice(1));
       }
     }
@@ -322,10 +343,10 @@ describe("doc/reference.md's matrix", () => {
     const refusals = STEPS.flatMap((point) =>
       KINDS.map((kind) => whyNoKindAt(point, kind)),
     ).filter((why) => why !== null).length;
-    expect(refusals).toBe(49);
+    expect(refusals).toBe(69);
     expect(
       doc,
       "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
-    ).toContain("**Forty-nine of the\nsixty are refusals**");
+    ).toContain("**Sixty-nine of the\neighty are refusals**");
   });
 });

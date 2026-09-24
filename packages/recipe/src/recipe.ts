@@ -138,13 +138,74 @@ export const labelsPlugin = definePlugin("labels", {
 });
 
 /**
+ * **The branch a pass owns, cut** — a name for `provisionWorktree` in
+ * `packages/repo/src/worktree.ts`, which is what has always done this
+ * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ *
+ * A map rather than a scalar, which is 0061 §2's rule — *a scalar where one
+ * reads well and a map where it does not* — applied to a plugin that carries
+ * two settings and no obvious principal one. It is also the shape
+ * [`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §1 writes, and
+ * that file is the target T3 is checked against.
+ *
+ * **`base` is written here and nowhere else, and that is what this plugin is
+ * for.** `repo.base` is where it is written today; when the file becomes
+ * `steps:` this is where it moves, and the merge lane goes on being *handed*
+ * it rather than declaring it a second time (§4). Until then no step accepts
+ * this key — `whyNoKindAt` refuses it at all ten — so the two are not two
+ * homes for one setting; they are one home and the name of the one it will
+ * become.
+ *
+ * `submodules` keeps `repo.submodules`'s default and its reason: `git worktree
+ * add` leaves submodule directories empty, and the tests that import one then
+ * fail in a way that reads as the agent's fault.
+ */
+export const worktreePlugin = definePlugin("worktree", {
+  worktree: z.strictObject({
+    /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
+    base: z.string(),
+    submodules: z.boolean().default(false),
+  }),
+});
+
+/**
+ * **The same branch, landed** — a name for the integrator,
+ * `packages/repo/src/integrate.ts`: the base in, verify, the base out.
+ *
+ * **It declares no `base:`, and that is deliberate rather than an omission**
+ * (0061 §4). `base` is one value that flows: `worktree.ts:133` and
+ * `integrate.ts:73` both take it as a parameter and exactly one place writes
+ * it. Giving this plugin one of its own would manufacture a disagreement
+ * between what a pass cut and what it lands — a failure that cannot happen
+ * today and that no amount of checking would be as good as not having.
+ *
+ * `strategy` has one legal value because `integrate.ts` offers one: `git merge
+ * --no-edit` of the branch into the base, then a push that is a fast-forward
+ * where it can be one. A second value here would be a behaviour this repository
+ * does not have, declared as though it did — `#61` one level down — so the
+ * enum says what the code does and grows when the code does.
+ */
+export const mergePlugin = definePlugin("merge", {
+  merge: z.strictObject({
+    strategy: z.enum(["merge-commit"]).default("merge-commit"),
+  }),
+});
+
+/**
  * **The closed set**, and the only list of plugins anywhere.
  *
- * It lists the plugins and not their fields: each of the six above declares
+ * It lists the plugins and not their fields: each of the eight above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
  * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
  * settled that there is no plugin system and an extension is a command — so a
  * key is a bare word and a word that is not one of these is refused.
+ *
+ * **Eight of the twelve 0061 §3 names.** `worktree:` and `merge:` are in the
+ * set and in no step's row: they are names for code the pass calls directly
+ * today, so every cell of theirs refuses, by a sentence that says where that
+ * code is called instead. That is the same two-valued rule the six steps with
+ * no call site are held to — **naming a thing is not wiring it** — read down
+ * the other axis.
  *
  * `as const`, so `ActionKind` and `GateAction` are read off it rather than
  * written down a second time.
@@ -156,6 +217,8 @@ export const PLUGINS = [
   humanPlugin,
   closePlugin,
   labelsPlugin,
+  worktreePlugin,
+  mergePlugin,
 ] as const;
 
 /**
@@ -173,7 +236,7 @@ export const PLUGINS = [
  * six schemas and could not say which one the writer meant. `actionsAt` asks
  * which key is present first and the plugin that owns it second, so the refusal
  * is that plugin's and names the field. This union is now only what gives the
- * six a single type.
+ * closed set a single type.
  */
 export const GateAction = z.union([
   runPlugin.schema,
@@ -182,6 +245,8 @@ export const GateAction = z.union([
   humanPlugin.schema,
   closePlugin.schema,
   labelsPlugin.schema,
+  worktreePlugin.schema,
+  mergePlugin.schema,
 ]);
 export type GateAction = z.infer<typeof GateAction>;
 
@@ -224,9 +289,9 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
 }
 
 /**
- * **Which of the six kinds each of the ten steps actually runs.**
+ * **Which of the eight kinds each of the ten steps actually runs.**
  *
- * Sixty cells, and ten of them used to be accepted here, resolved into
+ * Eighty cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
  * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
  * the weeks it spent declared-but-unbuilt are the argument for writing the
@@ -251,6 +316,10 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
  * pass, which is that plan's next ticket. Until it is built, an action written
  * at one of them is the exact `#61` failure one level up — resolved, recorded,
  * drawn, never called — so it is refused by name when the recipe resolves.
+ *
+ * **And two empty columns, for the same reason read the other way.**
+ * `worktree:` and `merge:` name code the pass calls itself, so no row carries
+ * them and `CALLED_DIRECTLY` is what their twenty cells refuse with.
  */
 export const KINDS_AT = {
   /** Nothing yet: the queue picks the item and no pipeline is constructed here. */
@@ -291,6 +360,33 @@ const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review
 };
 
 /**
+ * **The same table read down the other axis**: a plugin the pass calls itself,
+ * and where it calls it.
+ *
+ * `WHERE_INSTEAD` above is *this step is named and not built*; this is *this
+ * plugin is named and not read*. Both are `#61`'s failure caught before it can
+ * happen, and both say the one thing an operator can act on — not *nothing
+ * runs this* but **the code is already running, here, and the recipe is not yet
+ * what tells it to**.
+ *
+ * Why these two are declared at all before anything reads them: a plugin no
+ * list carries is a plugin no step refuses
+ * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2). Outside
+ * the closed set, `worktree:` written under `end:` is *an action naming no
+ * plugin* — a true refusal with the wrong subject. Inside it, the refusal is
+ * the sentence below, and the day the file becomes `steps:` this entry goes
+ * and a `KINDS_AT` row arrives in the same diff.
+ */
+const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
+  worktree:
+    "`run-once.ts` cuts it itself before the pass reaches any step, from `repo.base` and " +
+    "`repo.submodules` — `provisionWorktree` in `packages/repo/src/worktree.ts`",
+  merge:
+    "the merge lane runs it itself once everything before it has passed — `integrate` in " +
+    "`packages/repo/src/integrate.ts`, which is handed `repo.base` rather than reading a base of its own",
+};
+
+/**
  * Why a step does not run a kind, in the words the refusal carries — or `null`
  * when it does.
  *
@@ -298,9 +394,25 @@ const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review
  * out rather than left as "unsupported": an operator told that `agent:` is
  * refused at `prepared` should not have to read `run-once.ts` to discover that
  * the reason is that nothing has been committed yet.
+ *
+ * **Two of them are facts about the plugin instead, and they are asked first.**
+ * `worktree:` and `merge:` are refused everywhere and for one reason, so a
+ * sentence about the step would be the less useful half of the truth at all
+ * ten: *nothing runs a pipeline at `admit`* is right and leaves a reader
+ * looking for the code that cuts their worktree, which `CALLED_DIRECTLY` names.
  */
 export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
   if ((KINDS_AT[point] as readonly ActionKind[]).includes(kind)) return null;
+  const calledDirectly = CALLED_DIRECTLY[kind];
+  if (calledDirectly !== undefined) {
+    return (
+      `no step reads a \`${kind}:\` action from the recipe yet — the plugin is the name ` +
+      "[0061](doc/decisions/0061-the-recipe-is-the-pipeline.md) §3 gives code the pass already runs, and " +
+      `it is wired to the recipe by the ticket that makes the file \`steps:\`. Today ${calledDirectly}. ` +
+      "Refused rather than accepted here because an action nothing reads would be resolved, recorded on " +
+      "the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
+    );
+  }
   if (point === "admit") {
     return (
       "nothing runs a pipeline at `admit` — the step is in the closed set and no code reaches it, " +

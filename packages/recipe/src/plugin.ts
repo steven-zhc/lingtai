@@ -323,7 +323,14 @@ export function readFields(
 
   const problems: FieldProblem[] = [];
   for (const issue of parsed.error.issues) {
-    if (issue.code === "unrecognized_keys") {
+    // `path` is empty for the plugin's own fields and not for a key inside one
+    // of them — `worktree: { bse: main }` is an unrecognized key at
+    // `["worktree"]`. Only the first is this plugin's field list, so a nested
+    // one takes the branch below and gets zod's own words about the object it
+    // is in; listing `declares` there would name the plugin's fields at a depth
+    // where none of them is legal, which is a refusal that sends a reader to
+    // the wrong line.
+    if (issue.code === "unrecognized_keys" && issue.path.length === 0) {
       // The `env:` case 0061 §9 is written about, and the one a union could
       // never give: the field is named, the plugin is named, and what the
       // plugin does declare is listed beside it.
