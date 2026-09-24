@@ -12,10 +12,12 @@
  *   field would make a person fix one thing per attempt, which is `#222`'s
  *   lesson about the build step applied to configuration.
  * - **A field marked `no_log` is stripped mechanically**, not by everybody
- *   remembering to. **Nothing in the closed set declares one today**, which is
- *   why the cases below define a plugin of their own and drive the real
- *   `canonicalRecipe`, `hashRecipe` and `changesFromHead` with it: a guard
- *   asserted over an empty set asserts nothing.
+ *   remembering to — and a mark that could not be honoured is refused where it
+ *   is written rather than read as a declaration that strips nothing.
+ *   **Nothing in the closed set declares one today**, which is why the cases
+ *   below define a plugin of their own and drive the real `canonicalRecipe`,
+ *   `hashRecipe` and `changesFromHead` with it: a guard asserted over an empty
+ *   set asserts nothing.
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -49,9 +51,14 @@ const BASE: Recipe = Recipe.parse({
  * A plugin that spends money and is handed the key to do it — the first shape
  * that would want `no_log`, written here rather than in `src/` because the
  * closed set has no such plugin and this ticket adds none.
+ *
+ * **The secret sits beside `spend:` rather than on it**, which is the only place
+ * a mark is honoured: marking the key would have `disclose` delete the one word
+ * saying which plugin this action is, and `definePlugin` refuses that — the case
+ * for it is below.
  */
-const spendPlugin = definePlugin("spend", { spend: noLog(z.string()) });
-const PAY = { name: "pay", spend: "sk-live-0000-9999" } as unknown as GateAction;
+const spendPlugin = definePlugin("spend", { spend: z.string(), token: noLog(z.string()) });
+const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as GateAction;
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
 function withAction(action: GateAction): Recipe {
@@ -67,7 +74,7 @@ describe("the contract", () => {
   });
 
   it("reads a field's `no_log` off the schema, not off a list", () => {
-    expect(spendPlugin.secrets).toEqual(["spend"]);
+    expect(spendPlugin.secrets).toEqual(["token"]);
     expect(definePlugin("loud", { loud: z.string() }).secrets).toEqual([]);
   });
 
@@ -200,7 +207,9 @@ describe("every problem in one answer", () => {
 
 describe("a `no_log` field never leaves its plugin", () => {
   it("is stripped from an action by `disclose`", () => {
-    expect(disclose(PAY, [spendPlugin])).toEqual({ name: "pay" });
+    // The value is gone and everything that says what this is stays: the key,
+    // the name, and the field that is not marked.
+    expect(disclose(PAY, [spendPlugin])).toEqual({ name: "pay", spend: "50 USD" });
     // And an action with nothing to strip is the object it was given, so the
     // six plugins in use today are untouched by any of this.
     const build: GateAction = { name: "build", run: "x", timeout: "15m", env: [] };
@@ -212,23 +221,78 @@ describe("a `no_log` field never leaves its plugin", () => {
     const body = JSON.stringify(canonicalRecipe(recipe, [spendPlugin]));
 
     expect(body).not.toContain("sk-live-0000-9999");
-    // The action itself is still there, named: what is dropped is the value.
-    expect(body).toContain("pay");
+    // **The action on the log still names its plugin**, whole and in the
+    // canonical form's own order. A strip that took the key with it would write
+    // an action the log cannot say the kind of, and `kindOfAction` of it would
+    // answer the one it falls back to.
+    expect(body).toContain('{"name":"pay","spend":"50 USD"}');
     // And the digest is of the same document the body is, which is what lets a
     // reader verify one against the other (0047 §2).
     expect(hashRecipe(recipe, [spendPlugin])).toBe(
-      hashRecipe(withAction({ name: "pay" } as unknown as GateAction), [spendPlugin]),
+      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as GateAction), [spendPlugin]),
+    );
+    // Two actions that differ in what is *not* withheld are still two.
+    expect(hashRecipe(recipe, [spendPlugin])).not.toBe(
+      hashRecipe(withAction({ ...PAY, spend: "80 USD" } as unknown as typeof PAY), [spendPlugin]),
     );
   });
 
   /** The board's half of this is `apps/board/unit/run-recipe.test.tsx`. */
   it("never reaches a refusal's text", () => {
-    const read = readFields(spendPlugin, { name: "pay", spend: 4321 });
+    const read = readFields(spendPlugin, { name: "pay", spend: "50 USD", token: 4321 });
 
     expect(read.problems).toHaveLength(1);
-    expect(read.problems![0]!.why).toContain('"spend" field');
+    expect(read.problems![0]!.why).toContain('"token" field');
     expect(read.problems![0]!.why).toContain("declared no_log");
     expect(read.problems![0]!.why).not.toContain("4321");
+  });
+
+  /**
+   * **A mark that would strip nothing is refused where it is written.**
+   * `definePlugin` reads `.meta()` off each field, and zod keeps meta on the
+   * instance `noLog` was called on — so a mark inside a nested object, or under
+   * a wrapper applied after it, is a declaration that reads as marked and
+   * strips nothing at all. That is the failure `noLog` exists to remove, so it
+   * is an error at import rather than an empty `secrets`.
+   */
+  it("refuses a mark written below the field, however deep", () => {
+    expect(() => definePlugin("notify", { notify: z.object({ token: noLog(z.string()) }) })).toThrow(
+      /marks no_log below its "notify" field/,
+    );
+    expect(() => definePlugin("late", { late: noLog(z.string()).optional() })).toThrow(
+      /marks no_log below its "late" field/,
+    );
+    expect(() => definePlugin("deep", { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) })).toThrow(
+      /marks no_log below its "deep" field/,
+    );
+    // And the way round that does work is the way round the wording asks for.
+    expect(definePlugin("fine", { fine: z.string(), token: noLog(z.string().optional()) }).secrets).toEqual(["token"]);
+  });
+
+  /**
+   * **And a mark on what names the action is refused too.** `disclose` deletes
+   * whole fields, so marking the key would delete the one word saying which
+   * plugin an action is: the log would record that something ran without saying
+   * what, `kindOfAction` would answer the kind it falls back to, and the board
+   * would read a spend as an unanswerable human hold. `name` is the address a
+   * verdict, a waiver and every reading use, and goes the same way.
+   */
+  it("refuses a mark on the key, and on `name`", () => {
+    expect(() => definePlugin("spend", { spend: noLog(z.string()) })).toThrow(
+      /"spend" marks its own "spend" field no_log/,
+    );
+    expect(() => definePlugin("spend", { spend: z.string(), name: noLog(z.string()) })).toThrow(
+      /"spend" marks its own "name" field no_log/,
+    );
+    // The same rule at the strip, because a `PluginSecrets` is written by hand
+    // where there is no schema to have refused it — and answering an action
+    // naming no plugin would be the quiet failure one layer further down.
+    expect(() => disclose({ name: "pay", spend: "sk-live-0000" }, [{ key: "spend", secrets: ["spend"] }])).toThrow(
+      /goes beside the key/,
+    );
+    expect(() => disclose({ name: "pay", spend: "50 USD" }, [{ key: "spend", secrets: ["name"] }])).toThrow(
+      /marks its own "name" field no_log/,
+    );
   });
 
   /** What the six do today, so the strip cannot be silently costing anything. */

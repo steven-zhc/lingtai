@@ -437,8 +437,16 @@ describe("what the page may render of an action", () => {
    * — nor zod, which the board does not depend on — to drive it.
    * `packages/recipe/unit/plugin.test.ts` is where those two are proved to come
    * off a schema's own declaration rather than off a list somebody keeps.
+   *
+   * **The key is a real one and the marked field is the test's own.** Both
+   * readings below ask what the *page* makes of an action, and what it makes of
+   * one comes off `kindOfAction`, which reads the closed set in
+   * `@lingtai/recipe` — so under a key nobody declares there is nothing to
+   * assert but the kind the reading falls back to. None of the six declares a
+   * secret field, so `token:` is invented here; the actions are built rather
+   * than resolved, because what is under test is the reading and not the schema.
    */
-  const spendPlugin: PluginSecrets = { key: "spend", secrets: ["spend"] };
+  const payingRun: PluginSecrets = { key: "run", secrets: ["token"] };
   const base = Recipe.parse({
     version: 1,
     repo: { base: "main" },
@@ -446,21 +454,35 @@ describe("what the page may render of an action", () => {
     env: { plantAt: ".env.local" },
     runtime: {},
   });
-  const paying = (key: string) =>
+  const paying = (token: string, timeout = "15m") =>
     ({
       ...base,
-      gates: { ...base.gates, proposed: [{ name: "pay", spend: key }] },
+      gates: { ...base.gates, proposed: [{ name: "pay", run: "pay-the-bill", timeout, token }] },
     }) as unknown as Recipe;
 
   it("walks the two recipes with every secret field already gone", () => {
-    const changed = changesFromHead(paying("sk-live-0000"), paying("sk-live-1111"), [spendPlugin]);
+    const changed = changesFromHead(paying("sk-live-0000"), paying("sk-live-1111", "30m"), [payingRun]);
 
+    // **One row, and it is the field that is not withheld.** Asserting only the
+    // absence of the secret would be green on a walk that had stopped naming
+    // anything at all.
+    expect(changed).toHaveLength(1);
+    expect(changed[0]!.path).toContain("proposed.pay.timeout");
+    expect(changed[0]).toMatchObject({ run: "15m", head: "30m" });
     expect(JSON.stringify(changed)).not.toContain("sk-live");
   });
 
   it("says what an action does with its secret field gone", () => {
-    const said = describeAction({ name: "pay", spend: "sk-live-0000" } as never, [spendPlugin]);
+    const said = describeAction(
+      { name: "pay", run: "pay-the-bill", timeout: "15m", token: "sk-live-0000" } as never,
+      [payingRun],
+    );
 
+    // **Still the reading a command gets**: the strip took the marked field and
+    // nothing that says which plugin this is. A `does` of "asks a person:
+    // undefined" carries no secret either, and is the page telling an operator
+    // the action is something it is not.
+    expect(said).toEqual({ does: "pay-the-bill", bound: "timeout 15m" });
     expect(JSON.stringify(said)).not.toContain("sk-live");
   });
 

@@ -50,6 +50,26 @@
  * reaches the log, the board, or a refusal's text, and every one of those
  * learns it from the one declaration.
  *
+ * **A mark that could not be honoured is refused where it is written**, and
+ * there are two of those. `definePlugin` throws on either, at import, so a
+ * declaration that reads as marked and strips nothing never gets as far as a
+ * recipe:
+ *
+ * - **Below the field's own schema.** The mark is read off each field with
+ *   `.meta()`, and zod keeps meta on the instance `noLog` was called on — so
+ *   `z.object({ token: noLog(z.string()) })` and `noLog(z.string()).optional()`
+ *   are both marks nothing will ever read. Refused rather than walked for,
+ *   because `disclose` deletes whole fields: honouring a mark inside a nested
+ *   object would mean a second stripping mechanism, and this one has to be the
+ *   only one there is.
+ * - **On what names the action.** The key is the discriminator `kindOfAction`
+ *   switches on, and `name` is the address — `task_view` keys a verdict
+ *   `step:action`, `lingtai waive` names one, the board draws it. Stripping
+ *   either leaves an action naming no plugin: the log would record that
+ *   something ran without saying what, the board would read it as the kind it
+ *   falls back to, and two actions differing only in a secret would carry one
+ *   digest. A secret goes in a field *beside* the key, never on it.
+ *
  * **Two honest limits, so neither is a silent hole.** The first is the recipe
  * file's own bytes: the board renders `recipe.source` verbatim, so a value
  * *written in the file* is on the screen whatever any schema says — which is
@@ -75,8 +95,11 @@ export type PluginFields = Readonly<Record<string, z.ZodType>>;
  * A field whose **value** never leaves the plugin — Ansible's `no_log`.
  *
  * Marked on the field and read back off it, so there is no list of secret names
- * anywhere to keep true. Apply it last: `.default()` and the other wrappers
- * return a new schema, and the mark sits on the one it is called on.
+ * anywhere to keep true. Apply it last — `noLog(z.string().optional())` and not
+ * `noLog(z.string()).optional()`: `.default()` and the other wrappers return a
+ * new schema, and the mark sits on the one it is called on. Getting that the
+ * wrong way round is one of the two marks `definePlugin` refuses rather than
+ * accepts and ignores.
  */
 export function noLog<Field extends z.ZodType>(field: Field): Field {
   return field.meta({ no_log: true });
@@ -116,23 +139,93 @@ export interface Plugin extends PluginSecrets {
 }
 
 /**
+ * Why this field of this plugin cannot be the withheld one, or `null`.
+ *
+ * **What names an action is never what a reading of it withholds.** Deleting
+ * either of these two leaves an object naming no plugin, which `disclose`'s own
+ * callers then read as something it is not — so the answer is a refusal and not
+ * a best effort. Asked of a declaration by `definePlugin` and of a
+ * `PluginSecrets` by `disclose`, because the second is written by hand in places
+ * that have no schema for the first to have checked.
+ */
+function whyItCannotBeWithheld(key: string, field: string): string | null {
+  if (field === key) return "that key is the one word saying which plugin an action is";
+  if (field === "name") return "that is the name every verdict, waiver and reading addresses it by";
+  return null;
+}
+
+/** The refusal a mark that cannot be honoured gets, in the one wording both raise. */
+function markRefused(key: string, field: string, why: string): Error {
+  return new Error(
+    `"${key}" marks its own "${field}" field no_log, and ${why}. A no_log field goes beside the key ` +
+      "rather than on it, so that what ran is still on the log and only the value is not (0061 §9)",
+  );
+}
+
+/**
+ * Whether anything *below* this schema carries the mark — a mark on a schema no
+ * field is, and so one nothing reads.
+ *
+ * The walk is over zod's own `_zod.def` and is generic on purpose: an object's
+ * `shape`, an array's `element`, a wrapper's `innerType` and a union's `options`
+ * are all schemas sitting somewhere under a def, and enumerating the shapes zod
+ * has would be a list to keep true — which is what this file exists not to
+ * have. `seen` is for the cycle a recursive schema has; a `z.lazy` getter is a
+ * function and is walked past, so a mark reached only through one is missed —
+ * the refusal is a guard against the mistake somebody makes writing a
+ * declaration, not a proof about every schema zod can build.
+ */
+function markedBelow(schema: z.ZodType): boolean {
+  const seen = new Set<object>();
+  const walk = (value: unknown, own: boolean): boolean => {
+    if (typeof value !== "object" || value === null || seen.has(value)) return false;
+    seen.add(value);
+    if (isSchema(value)) {
+      if (!own && value.meta()?.["no_log"] === true) return true;
+      return walk(value._zod.def, false);
+    }
+    return Object.values(value).some((each) => walk(each, false));
+  };
+  return walk(schema, true);
+}
+
+/** A schema, told apart from the defs and checks the walk above also meets. */
+function isSchema(value: object): value is z.ZodType {
+  return "_zod" in value && typeof (value as { meta?: unknown }).meta === "function";
+}
+
+/**
  * A plugin, from its key and the fields it declares.
  *
  * The strictness is the contract's rather than each plugin's, because *refuse a
  * field you do not understand* is the rule all of them are held to (0061 §9)
  * and a plugin that forgot to say `strictObject` would be the one that accepts
  * `env:` and drops it.
+ *
+ * **It throws on a `no_log` mark it could not honour**, rather than answering a
+ * plugin whose `secrets` is quietly shorter than its author wrote — see the two
+ * cases at the head of this file. A declaration is code, so the throw is at
+ * import: there is no recipe, no worktree and nothing claimed to be halfway
+ * through.
  */
 export function definePlugin<Key extends string, Fields extends PluginFields>(key: Key, fields: Fields) {
   const shape = { name: z.string(), ...fields };
-  return {
-    key,
-    schema: z.strictObject(shape),
-    declares: Object.keys(shape),
-    secrets: Object.entries(fields)
-      .filter(([, field]) => field.meta()?.["no_log"] === true)
-      .map(([field]) => field),
-  };
+  const secrets: string[] = [];
+  for (const [field, schema] of Object.entries(fields)) {
+    if (schema.meta()?.["no_log"] !== true) {
+      if (markedBelow(schema))
+        throw new Error(
+          `"${key}" marks no_log below its "${field}" field, where nothing reads it: zod keeps the mark ` +
+            "on the schema noLog was called on, and disclose deletes whole fields. Mark the field " +
+            "itself, and mark it last — noLog(z.string().optional()), never noLog(z.string()).optional()",
+        );
+      continue;
+    }
+    const why = whyItCannotBeWithheld(key, field);
+    if (why !== null) throw markRefused(key, field, why);
+    secrets.push(field);
+  }
+  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets };
 }
 
 /**
@@ -228,11 +321,22 @@ export function readFields(
  * Returns the action itself where there is nothing to strip, which is every
  * action today — so the log's bytes, the hash over them and the board's reading
  * are the same as they were before this existed.
+ *
+ * **It throws rather than delete what names the action.** `definePlugin` refuses
+ * such a declaration, and a `PluginSecrets` is the shape that is written by hand
+ * — by a test outside this package, which has no schema to have been refused —
+ * so the same rule is asked here, where the deletion would happen. Answering a
+ * stripped object instead would be the quiet failure the whole mark exists to
+ * remove, one layer further down.
  */
 export function disclose<Action>(action: Action, plugins: readonly PluginSecrets[]): Action {
   const plugin = pluginNaming(action, plugins);
   if (plugin === null || plugin.secrets.length === 0) return action;
   const shown = { ...(action as object) } as Record<string, unknown>;
-  for (const field of plugin.secrets) delete shown[field];
+  for (const field of plugin.secrets) {
+    const why = whyItCannotBeWithheld(plugin.key, field);
+    if (why !== null) throw markRefused(plugin.key, field, why);
+    delete shown[field];
+  }
   return shown as Action;
 }

@@ -865,8 +865,13 @@ they have is a name, a command, a prompt or a glob, and 0021 keeps values out of
 the file in the first place. The mechanism is there so the first plugin that
 needs one gets it from its declaration rather than from a convention — `disclose`
 strips it before an action reaches the log's body, the hash over it, or the
-board's reading. What it cannot reach is the recipe file's own bytes, which the
-task page renders verbatim, and the plugin's own output.
+board's reading. **The mark goes on a field beside the key, and `definePlugin`
+throws on one that would strip nothing**: a mark below the field it is written on
+(zod keeps it on the schema `noLog` was called on) is read by nothing, and a mark
+on the key, or on `name`, would delete what says which plugin an action is and
+what every verdict addresses it by. What the strip cannot reach is the recipe
+file's own bytes, which the task page renders verbatim, and the plugin's own
+output.
 
 | Key | Verdict comes from | Needs |
 |---|---|---|
