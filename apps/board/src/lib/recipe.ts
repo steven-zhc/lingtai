@@ -524,6 +524,31 @@ export function describeAction(
         bound: "no clock — the base moving under it is a recomputation, not a refusal",
       };
     }
+    // And the two `claim` will hold, on the same footing and for the same
+    // reason: the queue calls them itself today, so no step can hold one and
+    // this reading is here so that the day one can, the page already says what
+    // it does rather than returning `undefined`.
+    case "queue": {
+      const a = action as Extract<GateAction, { queue: { kinds: string[]; exclude: string[]; backoff: string } }>;
+      const exclude = a.queue.exclude.length === 0 ? "" : `, never ${a.queue.exclude.join(", ")}`;
+      return {
+        does: `takes ${a.queue.kinds.join(" before ")}${exclude}`,
+        bound: `a failed attempt waits ${a.queue.backoff} before its own ticket is offered again`,
+      };
+    }
+    case "assignee": {
+      const a = action as Extract<GateAction, { assignee: { login?: string; take: string } }>;
+      const me = a.assignee.login ?? "this machine's login";
+      return {
+        does:
+          a.assignee.take === "mine"
+            ? `takes only issues assigned to ${me}`
+            : a.assignee.take === "unassigned"
+              ? "takes only issues assigned to nobody"
+              : "takes every issue, whoever it is assigned to",
+        bound: "no clock — a person wrote the assignee, so it never goes stale (0027)",
+      };
+    }
   }
 }
 
