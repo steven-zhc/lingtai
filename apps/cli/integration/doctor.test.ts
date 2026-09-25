@@ -7,7 +7,7 @@
  */
 import { createDb, createEventStore, directPostgresUrl, postgresUrl } from "@lingtai/event-store";
 import { beat, createStatusTable } from "@lingtai/daemon";
-import { SUBSCRIBER_STREAM, type ProjectState } from "@lingtai/domain";
+import { SUBSCRIBER_STREAM, emptyProject } from "@lingtai/domain";
 import pg from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
@@ -769,7 +769,12 @@ steps:
     // Registered against `main`, which is what the recipe above says governs it
     // — so `base:` compares two branches that agree. Never appended: the report
     // is told which projects it is about, and the log is left as it was.
-    const load = async () => [{ project: OWN, owner: "me", base: "main" } as ProjectState];
+    //
+    // **Spread from `emptyProject` rather than cast.** A cast over three keys
+    // leaves `refused` `undefined`, which is not a state the fold can produce —
+    // `refused !== null` then reads as *refusing* and the refusals row throws on
+    // `codeSha`. A field added to `ProjectState` later stays covered here.
+    const load = async () => [{ ...emptyProject, project: OWN, owner: "me", base: "main" }];
 
     let home: string;
     let saved: string | undefined;
