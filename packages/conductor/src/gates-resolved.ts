@@ -12,7 +12,9 @@ export function stepsResolved(runId: string, resolved: ResolvedRecipe) {
   return {
     runId,
     configHash: resolved.configHash,
-    steps: STEPS.map((step) => ({
+    // `points` and `gate` are the payload's own spelling and stay until the
+    // log's vocabulary is renamed (events.ts:603).
+    points: STEPS.map((step) => ({
       gate: step,
       actions: resolved.recipe.steps[step].map((a) => a.name),
     })),

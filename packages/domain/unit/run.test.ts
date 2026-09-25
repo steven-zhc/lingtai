@@ -230,7 +230,7 @@ describe("reduceRun", () => {
 
     expect(reduceRun(asked).lifecycle).toEqual({
       status: "awaiting-approval",
-      step: "merge:human",
+      gate: "merge:human",
       onSha: "sha-a",
       question: "Merge into develop?",
     });
@@ -283,7 +283,7 @@ describe("reduceRun", () => {
     expect(s.steps["merge:human"]!.verdict).toBe("requested");
     // And the run is waiting again, on the same commit, with the reason the
     // person gave — not merged, not queued, not failed.
-    expect(s.lifecycle).toMatchObject({ status: "awaiting-approval", step: "merge:human", onSha: "sha-a" });
+    expect(s.lifecycle).toMatchObject({ status: "awaiting-approval", gate: "merge:human", onSha: "sha-a" });
     expect(s.lifecycle).toHaveProperty("question", expect.stringContaining("spotted a migration"));
   });
 

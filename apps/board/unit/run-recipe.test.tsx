@@ -74,16 +74,16 @@ function runWith(configHash: string | null): RunView {
           e("GatesResolved", {
             runId: RUN,
             configHash,
-            steps: [
-              { step: "admit", actions: [] },
-              { step: "prepared", actions: [] },
-              { step: "proposed", actions: ["build"] },
-              { step: "merge", actions: [] },
-              { step: "end", actions: [] },
+            points: [
+              { gate: "admit", actions: [] },
+              { gate: "prepared", actions: [] },
+              { gate: "proposed", actions: ["build"] },
+              { gate: "merge", actions: [] },
+              { gate: "end", actions: [] },
             ],
           }),
         ]),
-    e("GateCheckPassed", { step: "proposed", action: "build", onSha: "c".repeat(40) }),
+    e("GateCheckPassed", { gate: "proposed", action: "build", onSha: "c".repeat(40) }),
     e("RunFinished", { turns: 1, durationMs: 1, costUsd: 0, exitCode: 0 }),
   ]);
 }

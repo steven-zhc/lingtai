@@ -93,7 +93,7 @@ describe("one attempt", () => {
     const one = foldRun(CLAIM, 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
       e(RUN_1, "GateFailed", {
-        step: "proposed",
+        gate: "proposed",
         action: "build",
         onSha: "b".repeat(40),
         evidence: "error TS2741",
@@ -101,7 +101,7 @@ describe("one attempt", () => {
     ]);
     const two = foldRun({ ...CLAIM, runId: RUN_2 }, 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: "c".repeat(40) }),
-      e(RUN_2, "GatePassed", { step: "proposed", action: "build", onSha: "c".repeat(40) }),
+      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: "c".repeat(40) }),
     ]);
 
     expect(one.steps.map((g) => [g.step, g.state])).toEqual([["proposed:build", "failed"]]);
@@ -121,7 +121,7 @@ describe("one attempt", () => {
     const run = foldRun(CLAIM, 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
       e(RUN_1, "GateNeverRan", {
-        step: "proposed",
+        gate: "proposed",
         action: "review",
         onSha: "b".repeat(40),
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
@@ -170,7 +170,7 @@ describe("one attempt", () => {
 
   it("still shows all ten steps, including the ones nothing was configured at", () => {
     const run = foldRun(CLAIM, 1, [
-      e(RUN_1, "GatesResolved", { steps: [{ step: "proposed", actions: ["build"] }] }),
+      e(RUN_1, "GatesResolved", { points: [{ gate: "proposed", actions: ["build"] }] }),
     ]);
 
     // `progress.ts`'s fold, which is the one the rail reads (#189).

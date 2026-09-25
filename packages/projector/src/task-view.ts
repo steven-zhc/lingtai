@@ -633,9 +633,9 @@ export const taskViewProjection: Projection = {
           // run an action of the same name; the run is there because two
           // attempts can run the same point, and without it the second silently
           // inherited the first's verdicts (#78).
-          const d = event.data as { step: string; action: string; onSha: string; question?: string };
+          const d = event.data as { gate: string; action: string; onSha: string; question?: string };
           const verdict = VERDICT[event.type];
-          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict);
+          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.gate}:${d.action}`, verdict);
           if (event.type === "ApprovalRequested") {
             await viaRun(ctx, event.streamId, seq, at, {
               state: "waiting",

@@ -541,7 +541,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm "change $n"
     // destination, or a build that spent every round would also buy a run.
     expect(run.some((e) => e.type === "RepairRequested")).toBe(false);
     const asked = run.find((e) => e.type === "ApprovalRequested");
-    expect(asked!.data).toMatchObject({ step: "proposed", action: "unfixed" });
+    expect(asked!.data).toMatchObject({ gate: "proposed", action: "unfixed" });
     expect((asked!.data as { question: string }).question).toContain("still red after 1 fix round");
 
     const events = await store.read(workItemStream(PROJECT, 118));
@@ -1368,7 +1368,7 @@ git add -A && git commit -q -m "fix the race"
     const events = await store.read(result.runId!);
     const types = events.map((e) => e.type);
     const passedPrepared = events.findIndex(
-      (e) => e.type === "GatePassed" && (e.data as { step?: string }).step === "prepared",
+      (e) => e.type === "GatePassed" && (e.data as { gate?: string }).gate === "prepared",
     );
     // Ordering is the assertion. The point finishes before the run begins.
     expect(passedPrepared).toBeGreaterThanOrEqual(0);
@@ -1687,7 +1687,7 @@ git add -A && git commit -q -m "fix the race"
     // `proposed` append, stamped with the point they ran at.
     const events = await store.read(result.runId);
     const atMerge = (type: string) =>
-      events.filter((e) => e.type === type && (e.data as { step?: string }).step === "merge");
+      events.filter((e) => e.type === type && (e.data as { gate?: string }).gate === "merge");
     expect(atMerge("GateRequested")).toHaveLength(1);
     expect(atMerge("GateStarted")).toHaveLength(1);
 
@@ -1940,7 +1940,7 @@ git add -A && git commit -q -m "fix the race"
       const step = (type: string, action: string, onSha: string, extra: object) => ({
         type,
         actor: "conductor",
-        data: parsePayload(type as "GateFailed", { step: "proposed", action, runId: r.runId, onSha, ...extra } as never),
+        data: parsePayload(type as "GateFailed", { gate: "proposed", action, runId: r.runId, onSha, ...extra } as never),
       });
       const run = await store.read(r.runId);
       await store.append(r.runId, run.length, [
@@ -1987,8 +1987,8 @@ git add -A && git commit -q -m "fix the race"
       const waived = after.filter((e) => e.type === "GateWaived");
       expect(waived.map((e) => e.data)).toEqual(
         expect.arrayContaining([
-          { step: "proposed", action: "review", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
-          { step: "proposed", action: "scan", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
+          { gate: "proposed", action: "review", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
+          { gate: "proposed", action: "scan", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
         ]),
       );
       // Exactly the gates the run reported refusing — never one it did not.

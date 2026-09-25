@@ -30,7 +30,7 @@ function at(time: string, type: string, data: unknown): Envelope {
 }
 
 const step = (step: Step, action: string) => ({
-  step: step,
+  gate: step,
   action,
   runId: "run-59",
   onSha: "b1b8694",
@@ -64,8 +64,8 @@ function timeline(): Envelope[] {
     at("2026-09-04T17:12:30Z", "GatesResolved", {
       runId: "run-59",
       configHash: "abc",
-      steps: STEPS.map((step) => ({
-        step: step,
+      points: STEPS.map((step) => ({
+        gate: step,
         actions: (PLAN.get(step) ?? []).map((a) => a.name),
       })),
     }),

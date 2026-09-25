@@ -51,7 +51,7 @@ async function attempt(n: number, a: number, findings: unknown[], verdict = "Gat
     {
       type: verdict,
       actor: "conductor",
-      data: { step: "proposed", action: "review", runId: run(n, a), onSha: `sha-${a}`, evidence: "ok", findings },
+      data: { gate: "proposed", action: "review", runId: run(n, a), onSha: `sha-${a}`, evidence: "ok", findings },
     },
   ]);
 }
@@ -148,7 +148,7 @@ describe("finding_backlog", () => {
       issue: "1",
       taskId: wi(1),
       runId: run(1, 1),
-      step: "proposed",
+      gate: "proposed",
       action: "review",
       file: "src/a.ts",
       line: 10,

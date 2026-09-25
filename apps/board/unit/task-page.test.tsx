@@ -87,7 +87,7 @@ function blocked(): TaskDetail {
   const run = foldRun(claim, 1, [
     e(RUN, "RunStarted", { baseSha: BASE }),
     e(RUN, "RunProposedCompletion", { headSha: HEAD }),
-    e(RUN, "GateFailed", { step: "proposed", action: "review", onSha: HEAD, evidence: CRASH }),
+    e(RUN, "GateFailed", { gate: "proposed", action: "review", onSha: HEAD, evidence: CRASH }),
     e(RUN, "RunFinished", { turns: 30, durationMs: 900_000, costUsd: 2.5, exitCode: 0 }),
   ]);
   const own = [
@@ -279,12 +279,12 @@ describe("the rail on the task page", () => {
   ]) as unknown as StepPlan;
 
   const resolved = e(RUN, "GatesResolved", {
-    steps: [
-      { step: "prepared", actions: ["install"] },
-      { step: "admit", actions: [] },
-      { step: "proposed", actions: ["build", "review"] },
-      { step: "merge", actions: [] },
-      { step: "end", actions: [] },
+    points: [
+      { gate: "prepared", actions: ["install"] },
+      { gate: "admit", actions: [] },
+      { gate: "proposed", actions: ["build", "review"] },
+      { gate: "merge", actions: [] },
+      { gate: "end", actions: [] },
     ],
   }, "2026-09-14T08:40:00Z");
 
@@ -295,9 +295,9 @@ describe("the rail on the task page", () => {
       [
         e(RUN, "RunStarted", { baseSha: BASE }, "2026-09-14T08:40:00Z"),
         resolved,
-        e(RUN, "GatePassed", { step: "prepared", action: "install" }, "2026-09-14T08:41:00Z"),
+        e(RUN, "GatePassed", { gate: "prepared", action: "install" }, "2026-09-14T08:41:00Z"),
         e(RUN, "RunFinished", { turns: 9, durationMs: 600_000, costUsd: 1, exitCode: 0 }, "2026-09-14T08:50:00Z"),
-        e(RUN, "GateStarted", { step: "proposed", action: "build" }, "2026-09-14T08:57:26Z"),
+        e(RUN, "GateStarted", { gate: "proposed", action: "build" }, "2026-09-14T08:57:26Z"),
       ],
       { plan },
     );
@@ -351,7 +351,7 @@ describe("the rail on the task page", () => {
     const events = [
       e(RUN, "RunStarted", { baseSha: BASE }),
       resolved,
-      e(RUN, "GatePassed", { step: "prepared", action: "install" }),
+      e(RUN, "GatePassed", { gate: "prepared", action: "install" }),
       e(RUN, "RunFinished", { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
     ];
     const own = [
@@ -380,7 +380,7 @@ describe("the record", () => {
     const run = foldRun(claim, 1, [
       e(RUN, "RunStarted", { baseSha: BASE }),
       e(RUN, "RunProposedCompletion", { headSha: HEAD }),
-      e(RUN, "GatePassed", { step: "proposed", action: "review", onSha: HEAD }),
+      e(RUN, "GatePassed", { gate: "proposed", action: "review", onSha: HEAD }),
       e(RUN, "RunFinished", { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
     ]);
     const landed = task(

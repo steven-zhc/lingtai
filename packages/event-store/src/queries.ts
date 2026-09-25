@@ -270,7 +270,7 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
              and point->>'gate' <> 'end'
              and jsonb_array_length(point->'actions') > 0
          )
-         select last_run.work_item, planned.run_id, planned.gate
+         select last_run.work_item, planned.run_id, planned.gate as step
          from landed
          join last_run on last_run.work_item = landed.work_item
          join planned on planned.run_id = last_run.run_id

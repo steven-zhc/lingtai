@@ -140,7 +140,7 @@ describe("the evidence", () => {
   it("carries one line and names the attempt that holds the whole of it", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     const standing = standingOf(
@@ -180,14 +180,14 @@ describe("the evidence", () => {
   it("names a gate that never ran, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     const two = foldRun(claim(RUN_2, "2026-09-08T04:00:00.000Z"), 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_2, "GatePassed", { step: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
+      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
       e(RUN_2, "GateNeverRan", {
-        step: "proposed",
+        gate: "proposed",
         action: "review",
         onSha: SHA,
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
@@ -227,14 +227,14 @@ describe("the evidence", () => {
   it("names a gate that did not finish, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     const two = foldRun(claim(RUN_2, "2026-09-08T04:00:00.000Z"), 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_2, "GatePassed", { step: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
+      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
       e(RUN_2, "GateDidNotFinish", {
-        step: "proposed",
+        gate: "proposed",
         action: "review",
         onSha: SHA,
         detail: "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.",
@@ -275,11 +275,11 @@ describe("the evidence", () => {
     const FIXED = "c".repeat(40);
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GatePassed", { step: "proposed", action: "review", onSha: SHA, evidence: "ok" }),
-      e(RUN_1, "GateFailed", { step: "proposed", action: "test", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "GatePassed", { gate: "proposed", action: "review", onSha: SHA, evidence: "ok" }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "test", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunProposedCompletion", { headSha: FIXED }),
       e(RUN_1, "GateNeverRan", {
-        step: "proposed",
+        gate: "proposed",
         action: "review",
         onSha: FIXED,
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
@@ -330,7 +330,7 @@ describe("the evidence", () => {
   it("walks back to the attempt that refused when the named one refused nothing", () => {
     const first = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     // The repair, from a log written before `#143` retired the purchase: it
@@ -440,7 +440,7 @@ describe("the move the block ends in", () => {
     // #92: they differ the moment a branch is repaired and approval re-requested
     // on a new head, and sending the wrong one refuses what the CLI accepts.
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
-      e(RUN_1, "ApprovalRequested", { step: "proposed", action: "human", onSha: "b".repeat(40) }),
+      e(RUN_1, "ApprovalRequested", { gate: "proposed", action: "human", onSha: "b".repeat(40) }),
       e(RUN_1, "RunProducedDiff", { headSha: SHA, branch: "agent/89", files: 2, insertions: 9, deletions: 1 }),
     ]);
     const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 }), blocked(RUN_1)], [run]);
@@ -455,8 +455,8 @@ describe("the move the block ends in", () => {
    */
   it("has nothing to approve once the approval was spent", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
-      e(RUN_1, "ApprovalRequested", { step: "merge", action: "human", onSha: SHA }),
-      e(RUN_1, "ApprovalGranted", { step: "merge", action: "human", onSha: SHA, by: "human:steven" }),
+      e(RUN_1, "ApprovalRequested", { gate: "merge", action: "human", onSha: SHA }),
+      e(RUN_1, "ApprovalGranted", { gate: "merge", action: "human", onSha: SHA, by: "human:steven" }),
     ]);
     const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 }), blocked(RUN_1)], [run]);
 
@@ -465,7 +465,7 @@ describe("the move the block ends in", () => {
 
   it("asks nothing of anybody while a run is still in flight", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
-      e(RUN_1, "ApprovalRequested", { step: "proposed", action: "human", onSha: SHA }),
+      e(RUN_1, "ApprovalRequested", { gate: "proposed", action: "human", onSha: SHA }),
     ]);
     const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 })], [run]);
 
@@ -595,7 +595,7 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", { step: "proposed", action: "build", evidence: TAIL }),
+          e(RUN_2, "GateFailed", { gate: "proposed", action: "build", evidence: TAIL }),
         ]),
       ],
     );
@@ -634,7 +634,7 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", { step: "proposed", action: "build", evidence: TAIL }),
+          e(RUN_2, "GateFailed", { gate: "proposed", action: "build", evidence: TAIL }),
         ]),
       ],
     );
@@ -676,7 +676,7 @@ describe("the block, rendered", () => {
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
           e(RUN_2, "GateFailed", {
-            step: "proposed",
+            gate: "proposed",
             action: "review",
             // `agent-gate.ts`'s `summarise` and its turns line.
             evidence: "major src/x.ts:4 — claim\n\n(12 turns · $0.40)",
@@ -728,7 +728,7 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", { step: "proposed", action: "test", evidence: "" }),
+          e(RUN_2, "GateFailed", { gate: "proposed", action: "test", evidence: "" }),
         ]),
       ],
     );

@@ -66,7 +66,7 @@ const SHA = "a".repeat(40);
 async function landedItem(
   issue: number,
   steps: Record<string, string[]>,
-  ran: { step: string; action: string }[],
+  ran: { gate: string; action: string }[],
 ): Promise<{ workItemId: string; runId: string }> {
   const workItemId = workItemStream(PROJECT, issue);
   const runId = `run-${crypto.randomUUID()}`;
@@ -91,7 +91,7 @@ async function landedItem(
     {
       type: "GatesResolved",
       actor: "conductor",
-      data: parsePayload("GatesResolved", { runId, configHash: "seeded", steps: plan(steps) }),
+      data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(steps) }),
     },
     ...ran.map((r) => ({
       type: "GatePassed",
@@ -119,12 +119,12 @@ describe("landedWithoutSteps", () => {
     const { workItemId } = await landedItem(
       201,
       { proposed: ["build"], merge: ["approval"] },
-      [{ step: "proposed", action: "build" }],
+      [{ gate: "proposed", action: "build" }],
     );
 
     const found = await forProject();
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ workItemId, issue: 201, steps: ["merge"] });
+    expect(found[0]).toMatchObject({ workItemId, issue: 201, points: ["merge"] });
   });
 
   it("says nothing when every planned point recorded a verdict", async () => {
@@ -132,8 +132,8 @@ describe("landedWithoutSteps", () => {
       202,
       { proposed: ["build"], merge: ["approval"] },
       [
-        { step: "proposed", action: "build" },
-        { step: "merge", action: "approval" },
+        { gate: "proposed", action: "build" },
+        { gate: "merge", action: "approval" },
       ],
     );
 
@@ -146,7 +146,7 @@ describe("landedWithoutSteps", () => {
    * configured and did not run is Lingtai's bug.
    */
   it("says nothing about a point that was never configured", async () => {
-    await landedItem(203, { proposed: ["build"] }, [{ step: "proposed", action: "build" }]);
+    await landedItem(203, { proposed: ["build"] }, [{ gate: "proposed", action: "build" }]);
     expect((await forProject()).map((f) => f.issue)).not.toContain(203);
   });
 

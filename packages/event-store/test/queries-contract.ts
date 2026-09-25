@@ -66,7 +66,7 @@ export function describeLogQueriesContract(
     h: LogQueriesHarness,
     workItemId: string,
     steps: Record<string, string[]>,
-    ran: { step: string; action: string }[] = [],
+    ran: { gate: string; action: string }[] = [],
   ): Promise<string> {
     const runId = `run-${h.project}-${crypto.randomUUID().slice(0, 8)}`;
     h.note?.(runId);
@@ -88,7 +88,7 @@ export function describeLogQueriesContract(
       {
         type: "GatesResolved",
         actor: "conductor",
-        data: parsePayload("GatesResolved", { runId, configHash: "seeded", steps: plan(steps) }),
+        data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(steps) }),
       },
       ...ran.map((r) => ({
         type: "GatePassed",
@@ -253,7 +253,7 @@ export function describeLogQueriesContract(
       const item = workItemStream(h.project, 401);
       h.note?.(item);
       const runId = await run(h, item, { proposed: ["build"], merge: ["approval"] }, [
-        { step: "proposed", action: "build" },
+        { gate: "proposed", action: "build" },
       ]);
       await h.store.append(item, 0, [landed()]);
 
@@ -261,7 +261,7 @@ export function describeLogQueriesContract(
         (f) => f.workItemId === item,
       );
 
-      expect(found).toEqual([{ workItemId: item, runId, step: "merge" }]);
+      expect(found).toEqual([{ workItemId: item, runId, gate: "merge" }]);
     });
 
     it("says nothing when every planned point recorded a verdict", async () => {
@@ -269,8 +269,8 @@ export function describeLogQueriesContract(
       const item = workItemStream(h.project, 402);
       h.note?.(item);
       await run(h, item, { proposed: ["build"], merge: ["approval"] }, [
-        { step: "proposed", action: "build" },
-        { step: "merge", action: "approval" },
+        { gate: "proposed", action: "build" },
+        { gate: "merge", action: "approval" },
       ]);
       await h.store.append(item, 0, [landed()]);
 
@@ -316,8 +316,8 @@ export function describeLogQueriesContract(
       h.note?.(item);
       await run(h, item, { proposed: ["build"], merge: ["approval"] });
       const second = await run(h, item, { proposed: ["build"], merge: ["approval"] }, [
-        { step: "proposed", action: "build" },
-        { step: "merge", action: "approval" },
+        { gate: "proposed", action: "build" },
+        { gate: "merge", action: "approval" },
       ]);
       await h.store.append(item, 0, [landed()]);
 
@@ -348,7 +348,7 @@ export function describeLogQueriesContract(
       const h = await make();
       const item = workItemStream(h.project, 407);
       h.note?.(item);
-      await run(h, item, { merge: ["approval"] }, [{ step: "merge", action: "approval" }]);
+      await run(h, item, { merge: ["approval"] }, [{ gate: "merge", action: "approval" }]);
       await h.store.append(item, 0, [landed()]);
 
       const withStepPassed = (await h.queries.landedWithoutSteps(RAN)).filter(

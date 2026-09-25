@@ -380,8 +380,8 @@ export function foldProgress(
         break;
 
       case "GatesResolved": {
-        const steps = (data["points"] ?? []) as { step: string; actions: string[] }[];
-        resolved = new Map(steps.map((p) => [p.step, p.actions]));
+        const steps = (data["points"] ?? []) as { gate: string; actions: string[] }[];
+        resolved = new Map(steps.map((p) => [p.gate, p.actions]));
         break;
       }
 

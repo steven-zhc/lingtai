@@ -1060,7 +1060,7 @@ export function foldRun(
 
   for (const g of steps.values()) {
     const onSha = run.find(
-      (e) => (e.data as { step?: string })?.step === g.step && (e.data as { onSha?: string })?.onSha,
+      (e) => (e.data as { gate?: string })?.gate === g.step && (e.data as { onSha?: string })?.onSha,
     );
     const sha = (onSha?.data as { onSha?: string } | undefined)?.onSha ?? null;
     g.current = headSha === null || sha === null || sha === headSha;

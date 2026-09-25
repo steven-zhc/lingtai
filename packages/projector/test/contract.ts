@@ -150,7 +150,7 @@ const stepPassed = (runId: string, findings: unknown[] = []) => ({
   type: "GatePassed",
   actor: "conductor",
   data: {
-    step: "proposed" as const,
+    gate: "proposed" as const,
     action: "build",
     runId,
     onSha: "a".repeat(40),

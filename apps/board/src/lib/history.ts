@@ -213,8 +213,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   GatesResolved: (d) => {
     const steps = d["points"];
     if (!Array.isArray(steps) || steps.length === 0) throw new Error("no points");
-    return (steps as { step: string; actions: string[] }[])
-      .map((p) => `${p.step} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
+    return (steps as { gate: string; actions: string[] }[])
+      .map((p) => `${p.gate} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
       .join(" · ");
   },
   EndActionsResolved: (d) => {

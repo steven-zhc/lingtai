@@ -240,12 +240,12 @@ describe("the gate point rename", () => {
   };
 
   it.each(STEP_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
-    const v1 = { ...base, ...extra[type], step: "diff" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type], step: "proposed" });
+    const v1 = { ...base, ...extra[type], gate: "diff" };
+    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type], gate: "proposed" });
   });
 
   it.each(STEP_CARRYING)("leaves a v1 %s at another step alone", (type) => {
-    const v1 = { ...base, ...extra[type], step: "merge", action: "human" };
+    const v1 = { ...base, ...extra[type], gate: "merge", action: "human" };
     expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type] });
   });
 
@@ -264,7 +264,7 @@ describe("the gate point rename", () => {
    * is here for. Its neighbours in this describe all compare.
    */
   it.each(STEP_CARRYING)("reads a %s stamped by this build back unchanged", (type) => {
-    const current = { ...base, ...extra[type], ...later[type], step: "proposed" };
+    const current = { ...base, ...extra[type], ...later[type], gate: "proposed" };
     expect(parseStoredPayload(type, SCHEMA_VER[type], current)).toEqual(current);
   });
 
@@ -385,7 +385,7 @@ describe("the gate point rename", () => {
    * and the step from 3 is what keeps the two apart.
    */
   it("refuses a plan that is not all ten steps", () => {
-    const short = { runId: "run-01JX", configHash: "abc", steps: steps.slice(0, 5) };
+    const short = { runId: "run-01JX", configHash: "abc", points: steps.slice(0, 5) };
     expect(() => parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, short)).toThrow();
   });
 
@@ -410,7 +410,7 @@ describe("the gate point rename", () => {
  */
 describe("a pass with findings", () => {
   const v2 = {
-    step: "proposed",
+    gate: "proposed",
     action: "review",
     runId: "run-01JX",
     onSha: "sha-a",
@@ -510,7 +510,7 @@ describe("the lease, dropped on read", () => {
  */
 describe("the retry's two fields, dropped on read", () => {
   const stored = {
-    step: "proposed" as const,
+    gate: "proposed" as const,
     action: "review",
     runId: "run-f8dc341e",
     onSha: "b198b57",
@@ -531,7 +531,7 @@ describe("the retry's two fields, dropped on read", () => {
     // Nothing ever wrote one of these with the `diff` point — the type is
     // younger than that rename — so a v1 `gate` is already `proposed` and the
     // step must not be the renamer.
-    expect(UPCASTERS.GateDidNotFinish?.[1]?.({ ...stored, step: "proposed", attempt: 1 })).toEqual(stored);
+    expect(UPCASTERS.GateDidNotFinish?.[1]?.({ ...stored, gate: "proposed", attempt: 1 })).toEqual(stored);
   });
 });
 
