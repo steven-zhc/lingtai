@@ -51,7 +51,7 @@ async function attempt(n: number, a: number, findings: unknown[], verdict = "Gat
     {
       type: verdict,
       actor: "conductor",
-      data: { gate: "proposed", action: "review", runId: run(n, a), onSha: `sha-${a}`, evidence: "ok", findings },
+      data: { step: "proposed", action: "review", runId: run(n, a), onSha: `sha-${a}`, evidence: "ok", findings },
     },
   ]);
 }
@@ -75,7 +75,7 @@ async function fold(): Promise<void> {
 }
 
 const keyOf = (claim: string) =>
-  findingKey({ issue: "1", gate: "proposed", action: "review", file: "src/a.ts", claim });
+  findingKey({ issue: "1", step: "proposed", action: "review", file: "src/a.ts", claim });
 
 beforeAll(async () => {
   client = createDb();
@@ -148,7 +148,7 @@ describe("finding_backlog", () => {
       issue: "1",
       taskId: wi(1),
       runId: run(1, 1),
-      gate: "proposed",
+      step: "proposed",
       action: "review",
       file: "src/a.ts",
       line: 10,

@@ -67,7 +67,7 @@ export interface UnrunStep {
   issue: number;
   runId: string;
   /** The steps, in pass order — every one of the ten but `end`, which is `end-point.ts`'s. */
-  points: string[];
+  steps: string[];
 }
 
 /**
@@ -116,12 +116,12 @@ export async function landedWithoutSteps(queries?: LogQueries): Promise<UnrunSte
     const split = splitWorkItem(row.workItemId);
     if (split === null) continue;
     const found = byItem.get(row.workItemId);
-    if (found) found.points.push(row.gate);
+    if (found) found.steps.push(row.step);
     else {
       byItem.set(row.workItemId, {
         workItemId: row.workItemId,
         runId: row.runId,
-        points: [row.gate],
+        steps: [row.step],
         ...split,
       });
     }
@@ -131,7 +131,7 @@ export async function landedWithoutSteps(queries?: LogQueries): Promise<UnrunSte
   // imported here rather than written out: a list with its own copy of the
   // names is the thing that goes stale when the set changes, and it just did.
   for (const found of byItem.values()) {
-    found.points.sort((a, b) => STEPS.indexOf(a as never) - STEPS.indexOf(b as never));
+    found.steps.sort((a, b) => STEPS.indexOf(a as never) - STEPS.indexOf(b as never));
   }
   return [...byItem.values()];
 }

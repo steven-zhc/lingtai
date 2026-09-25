@@ -93,9 +93,9 @@ function listed(name: string, kinds: string[], refs: string[]): ProjectQueue {
 
 describe("the projects on a board", () => {
   it("are all asked at once, not one after the one before", async () => {
-    const gate = barrier(2);
+    const step = barrier(2);
     const result = await queuedCards([project("lingtai"), project("nextloom-ai-admin")], async (p) => {
-      await gate.wait();
+      await step.wait();
       return listed(p.project!, ["bug"], ["1"]);
     });
 

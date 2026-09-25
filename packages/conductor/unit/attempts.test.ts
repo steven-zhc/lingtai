@@ -67,7 +67,7 @@ const claim = (runId: string): PayloadOf<"WorkItemClaimed"> => ({
   kind: "bug",
 });
 
-const gate = (action: string, onSha = "sha-1") => ({
+const step = (action: string, onSha = "sha-1") => ({
   gate: "proposed" as const,
   action,
   runId: "run-2",
@@ -175,9 +175,9 @@ describe("attemptOutcome", () => {
         insertions: 120,
         deletions: 3,
       }),
-      e("GateStarted", gate("build")),
+      e("GateStarted", step("build")),
       e("GateFailed", {
-        ...gate("build"),
+        ...step("build"),
         evidence: "tsc: apps/board/src/lib/board.ts(12,5): error TS2322",
         findings: [],
       }),
@@ -201,7 +201,7 @@ describe("attemptOutcome", () => {
     const e = stream("run-2");
     const outcome = attemptOutcome([
       e("GateFailed", {
-        ...gate("review"),
+        ...step("review"),
         evidence: "1 blocker",
         findings: [
           {
@@ -242,7 +242,7 @@ describe("attemptOutcome", () => {
    */
   it("names the point a run died inside", () => {
     const e = stream("run-1");
-    const outcome = attemptOutcome([e("GateStarted", gate("install"))], BUDGET);
+    const outcome = attemptOutcome([e("GateStarted", step("install"))], BUDGET);
 
     expect(outcome.evidence?.what).toBe("proposed:install");
     expect(outcome.evidence?.text).toContain("never returned a verdict");
@@ -251,8 +251,8 @@ describe("attemptOutcome", () => {
   it("says nothing about a gate that passed", () => {
     const e = stream("run-1");
     const outcome = attemptOutcome([
-      e("GateStarted", gate("install")),
-      e("GatePassed", { ...gate("install"), evidence: "ok", findings: [] }),
+      e("GateStarted", step("install")),
+      e("GatePassed", { ...step("install"), evidence: "ok", findings: [] }),
     ], BUDGET);
 
     expect(outcome.evidence).toBeNull();
@@ -280,7 +280,7 @@ describe("attemptBrief", () => {
         deletions: 3,
       }),
       run("GateFailed", {
-        ...gate("build"),
+        ...step("build"),
         evidence: "tsc: apps/board/src/lib/board.ts(12,5): error TS2322",
         findings: [],
       }),
@@ -367,7 +367,7 @@ describe("attemptBrief", () => {
     const attempts = priorAttempts(events);
     const run = stream("run-8");
     attempts[attempts.length - 1]!.outcome = attemptOutcome([
-      run("GateFailed", { ...gate("build"), evidence: "x".repeat(10_000), findings: [] }),
+      run("GateFailed", { ...step("build"), evidence: "x".repeat(10_000), findings: [] }),
     ], BUDGET);
 
     const brief = attemptBrief(attempts, BUDGET);
@@ -441,7 +441,7 @@ describe("attemptBrief", () => {
         stream("wi-lingtai-169")("WorkItemReleased", { runId: "run-1", reason: "gates refused the diff" }),
       ]);
       attempts[0]!.outcome = attemptOutcome(
-        [run("GateFailed", { ...gate("build"), evidence, findings: [] })],
+        [run("GateFailed", { ...step("build"), evidence, findings: [] })],
         budget,
       );
       return attemptBrief(attempts, budget);

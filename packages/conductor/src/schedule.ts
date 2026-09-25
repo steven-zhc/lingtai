@@ -246,7 +246,7 @@ export function runQueue(
       // Every ending is reported, including the ones that are nobody's fault.
       // A scheduler that only logs successes is the old loop.
       if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
-      else if (result.ok === "held") log(`held at ${result.gate}`);
+      else if (result.ok === "held") log(`held at ${result.step}`);
       else log(`stopped at ${result.stage}: ${result.detail}`);
 
       // The environment is the project's, not the item's. `runOnce` refused

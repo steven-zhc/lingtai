@@ -64,10 +64,10 @@ export interface EndedWithoutEnd {
 }
 
 /** One landed item, one run, one point that was planned and recorded nothing. */
-export interface PointNeverRan {
+export interface StepNeverRan {
   workItemId: string;
   runId: string;
-  gate: string;
+  step: string;
 }
 
 /** One event type the log holds, and how many rows carry it. */
@@ -124,7 +124,7 @@ export interface LogQueries {
    * `ranTypes` is the caller's: which events are proof a pipeline reached a
    * point is the conductor's rule, not a store's.
    */
-  landedWithoutSteps(ranTypes: readonly string[]): Promise<PointNeverRan[]>;
+  landedWithoutSteps(ranTypes: readonly string[]): Promise<StepNeverRan[]>;
 
   /**
    * Every type in the log with its row count, in **byte order of the type** —
@@ -252,7 +252,7 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
     },
 
     async landedWithoutSteps(ranTypes) {
-      const rows = await ask<{ work_item: string; run_id: string; gate: string }>(
+      const rows = await ask<{ work_item: string; run_id: string; step: string }>(
         `with landed as (
            select distinct stream_id as work_item from events where type = 'WorkItemLanded'
          ),
@@ -283,7 +283,7 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
          order by last_run.work_item, planned.gate`,
         [[...ranTypes]],
       );
-      return rows.map((r) => ({ workItemId: r.work_item, runId: r.run_id, gate: r.gate }));
+      return rows.map((r) => ({ workItemId: r.work_item, runId: r.run_id, step: r.step }));
     },
 
     async typeCounts() {

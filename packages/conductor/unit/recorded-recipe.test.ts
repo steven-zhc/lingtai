@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { parsePayload } from "@lingtai/domain";
 import { RECIPE_PATH, type Recipe, hashRecipe, resolveRecipe } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
-import { gatesResolved } from "../src/gates-resolved.ts";
+import { stepsResolved } from "../src/gates-resolved.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const OWN = readFileSync(join(ROOT, ".lingtai/config.yaml"), "utf8");
@@ -60,7 +60,7 @@ describe("the recipe on GatesResolved", () => {
     ["a recipe declaring every env surface", DECLARING],
   ])("is the body its configHash is the hash of — %s", async (_, source) => {
     const resolved = await resolve(source);
-    const payload = parsePayload("GatesResolved", gatesResolved("run-1", resolved));
+    const payload = parsePayload("GatesResolved", stepsResolved("run-1", resolved));
 
     expect(payload.recipe).toBeDefined();
     // Out through the log and back, keys in whatever order the store likes.
@@ -70,8 +70,8 @@ describe("the recipe on GatesResolved", () => {
   });
 
   it("changes when the recipe does, so the hash is proving something", async () => {
-    const before = gatesResolved("run-1", await resolve(DECLARING));
-    const after = gatesResolved("run-1", await resolve(DECLARING.replace("pnpm test", "pnpm test:db")));
+    const before = stepsResolved("run-1", await resolve(DECLARING));
+    const after = stepsResolved("run-1", await resolve(DECLARING.replace("pnpm test", "pnpm test:db")));
     expect(after.recipe).not.toEqual(before.recipe);
     expect(hashRecipe(before.recipe as unknown as Recipe)).not.toBe(after.configHash);
   });
@@ -96,12 +96,12 @@ describe("the recipe on GatesResolved", () => {
     try {
       for (const source of [DECLARING, OWN]) {
         const appended = JSON.stringify(
-          parsePayload("GatesResolved", gatesResolved("run-1", await resolve(source))),
+          parsePayload("GatesResolved", stepsResolved("run-1", await resolve(source))),
         );
         for (const value of Object.values(values)) expect(appended).not.toContain(value);
         expect(appended).not.toContain("sentinel");
       }
-      const declaring = JSON.stringify(gatesResolved("run-1", await resolve(DECLARING)));
+      const declaring = JSON.stringify(stepsResolved("run-1", await resolve(DECLARING)));
       for (const name of ["SECRET_REQUIRED_URL", "SECRET_ALLOWED_TOKEN", "SECRET_DENIED_KEY", "SECRET_ACTION_TOKEN"]) {
         expect(declaring).toContain(name);
       }

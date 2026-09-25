@@ -633,9 +633,9 @@ export const taskViewProjection: Projection = {
           // run an action of the same name; the run is there because two
           // attempts can run the same point, and without it the second silently
           // inherited the first's verdicts (#78).
-          const d = event.data as { gate: string; action: string; onSha: string; question?: string };
+          const d = event.data as { step: string; action: string; onSha: string; question?: string };
           const verdict = VERDICT[event.type];
-          if (verdict) await setGate(ctx, event.streamId, seq, at, `${d.gate}:${d.action}`, verdict);
+          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict);
           if (event.type === "ApprovalRequested") {
             await viaRun(ctx, event.streamId, seq, at, {
               state: "waiting",
@@ -890,12 +890,12 @@ async function viaRunQuery(
  * set rather than overwriting a dead one. `readTasks` then shows the cells
  * belonging to the run the row names, and nothing else.
  */
-async function setGate(
+async function setStep(
   ctx: ProjectionContext,
   runId: string,
   seq: string,
   at: Date,
-  point: string,
+  step: string,
   verdict: string,
 ): Promise<void> {
   const rows = await ctx.query<{ task_id: string }>(
@@ -904,14 +904,14 @@ async function setGate(
   );
   const taskId = rows[0]?.task_id;
   if (!taskId) return;
-  const gate = `${runId}:${point}`;
+  const key = `${runId}:${step}`;
   await ctx.query(
     `update task_view
      set verdicts = verdicts || jsonb_build_object($3::text, $4::text),
          updated_at = $5,
          updated_seq = greatest(updated_seq, $2::bigint)
      where task_id = $1`,
-    [taskId, seq, gate, verdict, at],
+    [taskId, seq, key, verdict, at],
   );
 }
 

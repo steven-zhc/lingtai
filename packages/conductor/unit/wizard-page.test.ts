@@ -24,7 +24,7 @@ import {
   openDecision,
   settledDecisions,
   updateState,
-  wholeGates,
+  wholeSteps,
   wizardReducer,
 } from "../src/wizard-page.ts";
 
@@ -321,11 +321,11 @@ describe("wholeGates", () => {
       { path: ["steps", "end"], value: [] },
       { path: ["runtime", "limits", "turns"], value: 200 },
     ];
-    expect(wholeGates(changes, after)).toEqual([
+    expect(wholeSteps(changes, after)).toEqual([
       { path: ["runtime", "limits", "turns"], value: 200 },
       { path: ["steps"], value: after.steps },
     ]);
-    expect(wholeGates([changes[1]!], after)).toEqual([changes[1]]);
+    expect(wholeSteps([changes[1]!], after)).toEqual([changes[1]]);
   });
 });
 

@@ -158,7 +158,7 @@ export async function status(
     // `running`: from an operator's seat they are the same fact.
     const NAMES: Record<string, string> = {
       running: "running",
-      gates: "running",
+      steps: "running",
       waiting: "waiting on you",
       landed: "landed",
     };

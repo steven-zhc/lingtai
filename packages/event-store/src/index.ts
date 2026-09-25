@@ -21,7 +21,7 @@ export {
   type EndedOutcome,
   type EndedWithoutEnd,
   type LogQueries,
-  type PointNeverRan,
+  type StepNeverRan,
   type PostgresLogQueriesOptions,
   type SubscriberFailures,
   type TypeCount,

@@ -1188,7 +1188,7 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
  * From the log alone, and from the *item's own stream* for the second half, so
  * it says nothing about what the recipe happens to contain today.
  */
-async function endPointRan(queries: LogQueries): Promise<CheckResult> {
+async function endStepRan(queries: LogQueries): Promise<CheckResult> {
   const name = "gates: end ran on what landed";
   const found = await endedWithoutEndActions(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
@@ -1241,7 +1241,7 @@ async function stepsRan(queries: LogQueries): Promise<CheckResult> {
     status: "fail",
     detail:
       `${found.length} item(s) landed past a step that was configured and did not run — ` +
-      `${found.map((f) => `${f.project}#${f.issue} (${f.points.join(", ")})`).join(", ")}. ` +
+      `${found.map((f) => `${f.project}#${f.issue} (${f.steps.join(", ")})`).join(", ")}. ` +
       "The plan in GatesResolved names actions there and the run recorded no verdict, " +
       "no request and no waiver: those changes merged past a control the log says exists.",
   };
@@ -1568,7 +1568,7 @@ export function limitsRow(
 export interface DeclaredExtension {
   name: string;
   env: readonly string[];
-  where: "gate" | "subscriber";
+  where: "step" | "subscriber";
 }
 
 /**
@@ -1584,9 +1584,9 @@ export interface DeclaredExtension {
  */
 export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
   const out: DeclaredExtension[] = [];
-  for (const point of Object.values(recipe.steps)) {
-    for (const action of point) {
-      if ("run" in action) out.push({ name: action.name, env: action.env, where: "gate" });
+  for (const step of Object.values(recipe.steps)) {
+    for (const action of step) {
+      if ("run" in action) out.push({ name: action.name, env: action.env, where: "step" });
     }
   }
   for (const subscriber of recipe.subscribers) {
@@ -1662,7 +1662,7 @@ export function extensionRow(
   }
 
   const layerOf = new Map(agentEnv.names.map((n) => [n.name, n.layer]));
-  const missing: Record<DeclaredExtension["where"], string[]> = { gate: [], subscriber: [] };
+  const missing: Record<DeclaredExtension["where"], string[]> = { step: [], subscriber: [] };
   const detail = asking
     .map((extension) => {
       const names = extension.env.map((variable) => {
@@ -1674,12 +1674,12 @@ export function extensionRow(
     })
     .join(" · ");
 
-  const absent = [...new Set([...missing.gate, ...missing.subscriber])];
+  const absent = [...new Set([...missing.step, ...missing.subscriber])];
   if (absent.length === 0) return { name, status: "ok", detail };
 
   // A gate action decides the pass, so one missing name is red however many
   // subscribers are also short: the worst outcome sets the row.
-  const inTheLoop = missing.gate.length > 0;
+  const inTheLoop = missing.step.length > 0;
   return {
     name,
     status: inTheLoop ? "fail" : "warn",
@@ -1931,7 +1931,7 @@ export async function runDoctor(
     results.push(await orphans());
     results.push(await unconverged(queries));
     results.push(await subscribers(queries));
-    results.push(await endPointRan(queries));
+    results.push(await endStepRan(queries));
     results.push(await stepsRan(queries));
     // Named one at a time, each saying why it does not apply and naming the
     // store. See `postgresOnlyRows`.
@@ -1968,7 +1968,7 @@ export async function runDoctor(
     results.push(await orphans());
     results.push(await unconverged(audit));
     results.push(await subscribers(audit));
-    results.push(await endPointRan(audit));
+    results.push(await endStepRan(audit));
     results.push(await stepsRan(audit));
   } else {
     results.push({

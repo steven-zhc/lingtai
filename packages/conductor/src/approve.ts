@@ -17,7 +17,7 @@
  * vocabularies for one idea. What is here is what makes `--no-merge`
  * mean something before then.
  */
-import { type GateAction, type ResolvedRecipe, resolveLocalRecipe } from "@lingtai/recipe";
+import { type StepAction, type ResolvedRecipe, resolveLocalRecipe } from "@lingtai/recipe";
 import { signedInHere } from "./projects.ts";
 import { parsePayload, reduceRun, reduceWorkItem, type RunState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
@@ -67,10 +67,10 @@ async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise
  * build failed" and "something at the `proposed` point failed" are different
  * questions. Splitting at the first colon, since a point never contains one.
  */
-function splitGate(key: string): { gate: string; action: string } {
+function splitStep(key: string): { step: string; action: string } {
   const cut = key.indexOf(":");
-  if (cut < 0) return { gate: "merge", action: key };
-  return { gate: key.slice(0, cut), action: key.slice(cut + 1) };
+  if (cut < 0) return { step: "merge", action: key };
+  return { step: key.slice(0, cut), action: key.slice(cut + 1) };
 }
 
 /**
@@ -89,9 +89,9 @@ function splitGate(key: string): { gate: string; action: string } {
 const UNPASSED = new Set(["failed", "never-ran", "did-not-finish"]);
 
 export function refusingOn(run: RunState, onSha: string): string[] {
-  return Object.values(run.gates)
+  return Object.values(run.steps)
     .filter((g) => g.onSha === onSha && UNPASSED.has(g.verdict))
-    .map((g) => g.gate);
+    .map((g) => g.step);
 }
 
 export interface ApproveOptions {
@@ -182,7 +182,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
     };
   }
 
-  const { gate, onSha } = run.lifecycle;
+  const { step, onSha } = run.lifecycle;
   const branch = agentBranch(options.issue);
 
 
@@ -248,7 +248,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
   // `runtime.limits.rounds` out, because a failed merge here asked the recipe
   // whether it bought an agent; `#143` takes that question away, so a refusal
   // needs nothing from the recipe but the point it has to resolve.
-  let end: readonly GateAction[];
+  let end: readonly StepAction[];
   try {
     const recipe = await (
       options.recipe ??
@@ -274,7 +274,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
       ...refusing.map((key) => ({
         type: "GateWaived" as const,
         actor: options.by,
-        data: parsePayload("GateWaived", { ...splitGate(key), runId, onSha, by: options.by, reason: note }),
+        data: parsePayload("GateWaived", { ...splitStep(key), runId, onSha, by: options.by, reason: note }),
       })),
       {
         type: "ApprovalGranted",
@@ -283,7 +283,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
         // payload readable without the two ever disagreeing.
         actor: options.by,
         data: parsePayload("ApprovalGranted", {
-          ...splitGate(gate),
+          ...splitStep(step),
           runId,
           onSha,
           by: options.by,
@@ -314,7 +314,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
     // The gates already ran and their verdicts are on the log against this same
     // sha. A person approving a red build is granting a waiver, and the log
     // shows both the failure and the approval rather than one hiding the other.
-    gatesPassed: true,
+    stepsPassed: true,
     token: options.token,
     home: options.home,
     gitEnv: options.gitEnv,
@@ -527,7 +527,7 @@ async function requeueHolding(
 export async function waive(options: {
   project: string;
   issue: number;
-  gate: string;
+  step: string;
   by: string;
   reason: string;
   onSha?: string;
@@ -562,11 +562,11 @@ export async function waive(options: {
         p.gate === "end" ? [] : p.actions.map((a) => `${p.gate}:${a}`),
       )
     : [];
-  if (!run.gates[options.gate] && !planned.includes(options.gate)) {
+  if (!run.steps[options.step] && !planned.includes(options.step)) {
     return {
       ok: false,
       workItemId,
-      detail: `${runId} reported no gate named "${options.gate}" — a waiver can only name one it did`,
+      detail: `${runId} reported no gate named "${options.step}" — a waiver can only name one it did`,
     };
   }
 
@@ -586,7 +586,7 @@ export async function waive(options: {
       type: "GateWaived",
       actor: options.by,
       data: parsePayload("GateWaived", {
-        ...splitGate(options.gate),
+        ...splitStep(options.step),
         runId,
         onSha: run.headSha,
         by: options.by,
@@ -598,6 +598,6 @@ export async function waive(options: {
   return {
     ok: true,
     workItemId,
-    detail: `${options.gate} waived on ${run.headSha.slice(0, 7)} by ${options.by}: ${options.reason}`,
+    detail: `${options.step} waived on ${run.headSha.slice(0, 7)} by ${options.by}: ${options.reason}`,
   };
 }

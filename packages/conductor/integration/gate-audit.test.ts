@@ -53,8 +53,8 @@ afterAll(async () => {
  * `.length(10)`, so a fixture with its own copy of the names fails at
  * `parsePayload` the day the set changes rather than moving with it.
  */
-const plan = (points: Record<string, string[]>) =>
-  STEPS.map((gate) => ({ gate, actions: points[gate] ?? [] }));
+const plan = (steps: Record<string, string[]>) =>
+  STEPS.map((step) => ({ gate: step, actions: steps[step] ?? [] }));
 
 const SHA = "a".repeat(40);
 
@@ -65,8 +65,8 @@ const SHA = "a".repeat(40);
  */
 async function landedItem(
   issue: number,
-  points: Record<string, string[]>,
-  ran: { gate: string; action: string }[],
+  steps: Record<string, string[]>,
+  ran: { step: string; action: string }[],
 ): Promise<{ workItemId: string; runId: string }> {
   const workItemId = workItemStream(PROJECT, issue);
   const runId = `run-${crypto.randomUUID()}`;
@@ -91,7 +91,7 @@ async function landedItem(
     {
       type: "GatesResolved",
       actor: "conductor",
-      data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(points) }),
+      data: parsePayload("GatesResolved", { runId, configHash: "seeded", steps: plan(steps) }),
     },
     ...ran.map((r) => ({
       type: "GatePassed",
@@ -119,12 +119,12 @@ describe("landedWithoutSteps", () => {
     const { workItemId } = await landedItem(
       201,
       { proposed: ["build"], merge: ["approval"] },
-      [{ gate: "proposed", action: "build" }],
+      [{ step: "proposed", action: "build" }],
     );
 
     const found = await forProject();
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ workItemId, issue: 201, points: ["merge"] });
+    expect(found[0]).toMatchObject({ workItemId, issue: 201, steps: ["merge"] });
   });
 
   it("says nothing when every planned point recorded a verdict", async () => {
@@ -132,8 +132,8 @@ describe("landedWithoutSteps", () => {
       202,
       { proposed: ["build"], merge: ["approval"] },
       [
-        { gate: "proposed", action: "build" },
-        { gate: "merge", action: "approval" },
+        { step: "proposed", action: "build" },
+        { step: "merge", action: "approval" },
       ],
     );
 
@@ -146,7 +146,7 @@ describe("landedWithoutSteps", () => {
    * configured and did not run is Lingtai's bug.
    */
   it("says nothing about a point that was never configured", async () => {
-    await landedItem(203, { proposed: ["build"] }, [{ gate: "proposed", action: "build" }]);
+    await landedItem(203, { proposed: ["build"] }, [{ step: "proposed", action: "build" }]);
     expect((await forProject()).map((f) => f.issue)).not.toContain(203);
   });
 
@@ -154,7 +154,7 @@ describe("landedWithoutSteps", () => {
     await landedItem(204, { prepared: ["install"], proposed: ["build"], merge: ["approval"] }, []);
 
     const found = (await forProject()).find((f) => f.issue === 204);
-    expect(found?.points).toEqual(["prepared", "proposed", "merge"]);
+    expect(found?.steps).toEqual(["prepared", "proposed", "merge"]);
   });
 
   /**

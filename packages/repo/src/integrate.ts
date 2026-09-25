@@ -76,8 +76,8 @@ export interface IntegrateOptions {
   /** The commit the gates gave their verdicts about. */
   headSha: string;
   /** False when a gate refused. The integrator records it and does not merge. */
-  gatesPassed: boolean;
-  gateDetail?: string;
+  stepsPassed: boolean;
+  stepDetail?: string;
   token?: TokenSource;
   home?: string;
   gitEnv?: NodeJS.ProcessEnv;
@@ -322,8 +322,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   const attempt: Effect.Effect<IntegrateResult | LostPush> = Effect.scoped(
     Effect.gen(function* () {
       // The gates' verdict is the integrator's business only in that it refuses.
-      if (!options.gatesPassed) {
-        return yield* refuse("gate-failed", options.gateDetail ?? "a gate refused this diff");
+      if (!options.stepsPassed) {
+        return yield* refuse("gate-failed", options.stepDetail ?? "a gate refused this diff");
       }
 
       const mirror = `${home}/repos/${options.project}.git`;

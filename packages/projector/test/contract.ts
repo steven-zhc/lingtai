@@ -146,11 +146,11 @@ const started = (workItemId: string) => ({
   },
 });
 
-const gatePassed = (runId: string, findings: unknown[] = []) => ({
+const stepPassed = (runId: string, findings: unknown[] = []) => ({
   type: "GatePassed",
   actor: "conductor",
   data: {
-    gate: "proposed" as const,
+    step: "proposed" as const,
     action: "build",
     runId,
     onSha: "a".repeat(40),
@@ -435,7 +435,7 @@ export function describeProjectionStoreContract(
       try {
         const written = [
           ...(await f.events.append(task, 0, [claimed(run, "a card the board renders")])),
-          ...(await f.events.append(run, 0, [gatePassed(run)])),
+          ...(await f.events.append(run, 0, [stepPassed(run)])),
         ];
         await made(f, taskViewProjection, written);
 
@@ -492,7 +492,7 @@ export function describeProjectionStoreContract(
       const task = f.stream("wi", "43");
       const run = f.stream("run", "backlog");
       try {
-        const written = await f.events.append(run, 0, [started(task), gatePassed(run, [minor])]);
+        const written = await f.events.append(run, 0, [started(task), stepPassed(run, [minor])]);
         await made(f, backlogProjection, written);
 
         const entries = await f.store.backlog({ project: f.project });
@@ -501,7 +501,7 @@ export function describeProjectionStoreContract(
         expect(entry.issue).toBe("43");
         expect(entry.taskId).toBe(task);
         expect(entry.runId).toBe(run);
-        expect(entry.gate).toBe("proposed");
+        expect(entry.step).toBe("proposed");
         expect(entry.action).toBe("build");
         expect(entry.severity).toBe("minor");
         expect(entry.claim).toBe(minor.claim);

@@ -40,7 +40,7 @@ import {
   runQueue,
   waive,
 } from "../src/index.ts";
-import { type GateAction, type Recipe, resolveRecipe } from "@lingtai/recipe";
+import { type StepAction, type Recipe, resolveRecipe } from "@lingtai/recipe";
 import type { ProjectState } from "@lingtai/domain";
 
 const exec = promisify(execFile);
@@ -541,7 +541,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm "change $n"
     // destination, or a build that spent every round would also buy a run.
     expect(run.some((e) => e.type === "RepairRequested")).toBe(false);
     const asked = run.find((e) => e.type === "ApprovalRequested");
-    expect(asked!.data).toMatchObject({ gate: "proposed", action: "unfixed" });
+    expect(asked!.data).toMatchObject({ step: "proposed", action: "unfixed" });
     expect((asked!.data as { question: string }).question).toContain("still red after 1 fix round");
 
     const events = await store.read(workItemStream(PROJECT, 118));
@@ -802,7 +802,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'the repair th
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
-    expect(result.gate).toBe("merge");
+    expect(result.step).toBe("merge");
     // Nothing reached the base branch without a person.
     expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before.stdout);
 
@@ -1368,7 +1368,7 @@ git add -A && git commit -q -m "fix the race"
     const events = await store.read(result.runId!);
     const types = events.map((e) => e.type);
     const passedPrepared = events.findIndex(
-      (e) => e.type === "GatePassed" && (e.data as { gate?: string }).gate === "prepared",
+      (e) => e.type === "GatePassed" && (e.data as { step?: string }).step === "prepared",
     );
     // Ordering is the assertion. The point finishes before the run begins.
     expect(passedPrepared).toBeGreaterThanOrEqual(0);
@@ -1578,7 +1578,7 @@ git add -A && git commit -q -m "the work a person is asked about"
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
-    expect(result.gate).toBe("proposed");
+    expect(result.step).toBe("proposed");
 
     // The whole of the ticket: the sha the hold names is on origin, so the
     // approval it is asking for can be acted on.
@@ -1678,7 +1678,7 @@ git add -A && git commit -q -m "fix the race"
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
-    expect(result.gate).toBe("merge");
+    expect(result.step).toBe("merge");
 
     // Nothing reached the base branch. That is the entire ticket.
     expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before.stdout);
@@ -1687,7 +1687,7 @@ git add -A && git commit -q -m "fix the race"
     // `proposed` append, stamped with the point they ran at.
     const events = await store.read(result.runId);
     const atMerge = (type: string) =>
-      events.filter((e) => e.type === type && (e.data as { gate?: string }).gate === "merge");
+      events.filter((e) => e.type === type && (e.data as { step?: string }).step === "merge");
     expect(atMerge("GateRequested")).toHaveLength(1);
     expect(atMerge("GateStarted")).toHaveLength(1);
 
@@ -1696,7 +1696,7 @@ git add -A && git commit -q -m "fix the race"
     const asked = atMerge("ApprovalRequested");
     expect(asked).toHaveLength(1);
     expect(asked[0]!.data).toMatchObject({
-      gate: "merge",
+      step: "merge",
       action: "approval",
       onSha: result.headSha,
     });
@@ -1804,7 +1804,7 @@ git add -A && git commit -q -m "fix the race"
 
     // And it resolves *once*. Asking again — a second approval, a replay —
     // appends nothing, and the item's own stream is where that is checked.
-    const close: GateAction = { name: "close the ticket", close: true, when: "landed" };
+    const close: StepAction = { name: "close the ticket", close: true, when: "landed" };
     await appendEndActions(store, result.workItemId, [close], "landed");
     expect(outcomes(await store.read(result.workItemId))).toEqual(["blocked", "landed"]);
   }, 180_000);
@@ -1875,7 +1875,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 130,
-        gate: "merge:no-merge",
+        step: "merge:no-merge",
         by: "human:test",
         reason: "   ",
         store,
@@ -1891,7 +1891,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 131,
-        gate: "merge:no-merge",
+        step: "merge:no-merge",
         by: "human:test",
         reason: "unrelated flake in the importer suite",
         store,
@@ -1912,7 +1912,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 132,
-        gate: "merge:no-merge",
+        step: "merge:no-merge",
         by: "human:test",
         reason: "looks fine",
         // What a stale card would send.
@@ -1937,18 +1937,18 @@ git add -A && git commit -q -m "fix the race"
       created.add(r.runId);
       const before = (await g(["rev-parse", "develop"], originPath)).stdout;
 
-      const gate = (type: string, action: string, onSha: string, extra: object) => ({
+      const step = (type: string, action: string, onSha: string, extra: object) => ({
         type,
         actor: "conductor",
-        data: parsePayload(type as "GateFailed", { gate: "proposed", action, runId: r.runId, onSha, ...extra } as never),
+        data: parsePayload(type as "GateFailed", { step: "proposed", action, runId: r.runId, onSha, ...extra } as never),
       });
       const run = await store.read(r.runId);
       await store.append(r.runId, run.length, [
         // Refused an earlier head: not about this diff, so nothing to waive.
-        gate("GateFailed", "build", "c".repeat(40), { evidence: "red", findings: [] }),
+        step("GateFailed", "build", "c".repeat(40), { evidence: "red", findings: [] }),
         // Still refusing the head the approval is about.
-        gate("GateFailed", "review", r.headSha, { evidence: "wrong approach", findings: [] }),
-        gate("GateNeverRan", "scan", r.headSha, { detail: "quota" }),
+        step("GateFailed", "review", r.headSha, { evidence: "wrong approach", findings: [] }),
+        step("GateNeverRan", "scan", r.headSha, { detail: "quota" }),
       ]);
       const approving = {
         project: PROJECT,
@@ -1987,8 +1987,8 @@ git add -A && git commit -q -m "fix the race"
       const waived = after.filter((e) => e.type === "GateWaived");
       expect(waived.map((e) => e.data)).toEqual(
         expect.arrayContaining([
-          { gate: "proposed", action: "review", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
-          { gate: "proposed", action: "scan", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
+          { step: "proposed", action: "review", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
+          { step: "proposed", action: "scan", runId: r.runId, onSha: r.headSha, by: "human:test", reason },
         ]),
       );
       // Exactly the gates the run reported refusing — never one it did not.
@@ -2013,7 +2013,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 1501,
-        gate: "proposed:build-that-never-was",
+        step: "proposed:build-that-never-was",
         by: "human:test",
         reason: "unrelated flake",
         store,
@@ -2155,7 +2155,7 @@ git add -A && git commit -q -m "fix the race"
           type: "ApprovalRequested",
           actor: "conductor",
           data: {
-            gate: "merge",
+            step: "merge",
             action: "repair",
             runId: r.runId,
             onSha: repaired,

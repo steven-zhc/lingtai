@@ -532,7 +532,7 @@ export function LandedRow({
           says why it stops where it does. */}
       {card.progress ? (
         <span className="lseq">
-          <Segs points={card.progress.points} at={null} labels={false} />
+          <Segs steps={card.progress.steps} at={null} labels={false} />
         </span>
       ) : null}
       {showProject ? <span className="proj">{card.project}</span> : null}

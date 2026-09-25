@@ -39,7 +39,7 @@
  * skip is the user's decision, and `GatesResolved` already records it.
  */
 import { workItemStream } from "@lingtai/domain";
-import { type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
+import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
@@ -89,7 +89,7 @@ export type TerminalOutcome = "landed" | "blocked" | "failed" | "closed";
  */
 export function resolveEndActions(
   events: readonly Envelope[],
-  actions: readonly GateAction[],
+  actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): ToAppend[] {
   // Nothing declared is not this point's business: the skip is the user's
@@ -163,7 +163,7 @@ export function resolveEndActions(
 export async function appendEndActions(
   store: EventStore,
   workItemId: string,
-  actions: readonly GateAction[],
+  actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): Promise<ToAppend[]> {
   if (actions.length === 0) return [];

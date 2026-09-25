@@ -415,11 +415,11 @@ describe("runOnce, with no world to run in", () => {
     expect(run).not.toContain("GateFailed");
     expect(run).not.toContain("GatePassed");
     const neverRan = (await store.read(runId)).find((e) => e.type === "GateNeverRan");
-    const gate = neverRan!.data as { gate: string; action: string; detail: string };
-    expect(gate).toMatchObject({ gate: "proposed", action: "review" });
+    const step = neverRan!.data as { step: string; action: string; detail: string };
+    expect(step).toMatchObject({ step: "proposed", action: "review" });
     // The runtime's own words, kept whole: evidence about the account, and the
     // only place the reset time can be read back out of (0031 §4).
-    expect(gate.detail).toContain("You've hit your session limit");
+    expect(step.detail).toContain("You've hit your session limit");
 
     // Released, not blocked: the queue brings it back with nobody requeueing it,
     // and no question was put to a person about a diff nothing read.
@@ -738,7 +738,7 @@ describe("runOnce, with no world to run in", () => {
     expect(types).not.toContain("GateNeverRan");
 
     const didNot = run.filter((e) => e.type === "GateDidNotFinish");
-    expect(didNot.map((e) => e.data)).toMatchObject([{ gate: "proposed", action: "review" }]);
+    expect(didNot.map((e) => e.data)).toMatchObject([{ step: "proposed", action: "review" }]);
     // And nothing on it claiming an attempt number: the two fields went with the
     // retry (`#234`), so a reader cannot be told a second attempt happened.
     expect(didNot[0]!.data).not.toHaveProperty("attempt");
@@ -1450,7 +1450,7 @@ describe("runOnce, with no world to run in", () => {
         ports,
       );
       if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-      expect(result).toMatchObject({ ok: "held", gate: "proposed" });
+      expect(result).toMatchObject({ ok: "held", step: "proposed" });
       expect(did).not.toContain("integrate");
 
       const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;

@@ -130,7 +130,7 @@ describe("standDown", () => {
     const { until, reason } = standDown({
       detail: QUOTA,
       backoffMs: 3_600_000,
-      what: { of: "gate", gate: "proposed:review" },
+      what: { of: "gate", step: "proposed:review" },
       now,
     });
 

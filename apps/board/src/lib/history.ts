@@ -128,7 +128,7 @@ function list(v: unknown): string {
  * indistinguishable, which is the same confusion `gate`/`action` was split
  * into two fields to end.
  */
-function gateAt(d: Payload): string {
+function stepAt(d: Payload): string {
   return `${need(d, "gate")} · ${need(d, "action")}`;
 }
 
@@ -211,10 +211,10 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * run had no record on the page that says it should have.
    */
   GatesResolved: (d) => {
-    const points = d["points"];
-    if (!Array.isArray(points) || points.length === 0) throw new Error("no points");
-    return (points as { gate: string; actions: string[] }[])
-      .map((p) => `${p.gate} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
+    const steps = d["points"];
+    if (!Array.isArray(steps) || steps.length === 0) throw new Error("no points");
+    return (steps as { step: string; actions: string[] }[])
+      .map((p) => `${p.step} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
       .join(" · ");
   },
   EndActionsResolved: (d) => {
@@ -235,22 +235,22 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     );
     return `${outcome}: ${said.join(" · ")}`;
   },
-  GateRequested: gateAt,
-  GateStarted: gateAt,
-  GatePassed: gateAt,
+  GateRequested: stepAt,
+  GateStarted: stepAt,
+  GatePassed: stepAt,
   GateFailed: (d) => {
     const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
-    return n > 0 ? `${gateAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : gateAt(d);
+    return n > 0 ? `${stepAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : stepAt(d);
   },
-  GateNeverRan: (d) => `${gateAt(d)} — never ran: ${clip(d["detail"])}`,
+  GateNeverRan: (d) => `${stepAt(d)} — never ran: ${clip(d["detail"])}`,
   // One line, because the action ran once: 0057 §4's retry is deleted (`#234`),
   // and with it the *attempt 2, no more attempts* this line used to print about
   // a second attempt that never left the starting block.
-  GateDidNotFinish: (d) => `${gateAt(d)} — did not finish: ${clip(d["detail"])}`,
-  GateWaived: (d) => `${gateAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
-  ApprovalRequested: (d) => `${gateAt(d)} — ${clip(need(d, "question"))}`,
-  ApprovalGranted: (d) => `${gateAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,
-  ApprovalRevoked: (d) => `${gateAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
+  GateDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d["detail"])}`,
+  GateWaived: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
+  ApprovalRequested: (d) => `${stepAt(d)} — ${clip(need(d, "question"))}`,
+  ApprovalGranted: (d) => `${stepAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,
+  ApprovalRevoked: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
 
   // ---------------------------------------------------------- integration --
   IntegrationAttempted: (d) => `${need(d, "branch")} at ${sha(d, "headSha")}`,

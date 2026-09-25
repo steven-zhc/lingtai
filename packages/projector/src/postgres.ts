@@ -134,7 +134,7 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
     issue: row.issue,
     taskId: row.task_id,
     runId: row.run_id,
-    gate: row.gate,
+    step: row.step,
     action: row.action,
     onSha: row.on_sha,
     file: row.file,

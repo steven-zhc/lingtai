@@ -49,7 +49,7 @@ export interface PlannedAction {
  * step that is merely absent from this map is indistinguishable from one that
  * was configured and silently did not run.
  */
-export type GatePlan = ReadonlyMap<Step, readonly PlannedAction[]>;
+export type StepPlan = ReadonlyMap<Step, readonly PlannedAction[]>;
 
 /**
  * The recipe's gates, with every duration already a number.
@@ -59,11 +59,11 @@ export type GatePlan = ReadonlyMap<Step, readonly PlannedAction[]>;
  * The board needs it to say how far into its timeout a running gate has got,
  * which is the difference between *slow* and *about to be killed* (#79).
  */
-export function gatePlan(recipe: Recipe): GatePlan {
+export function stepPlan(recipe: Recipe): StepPlan {
   return new Map(
-    STEPS.map((point) => [
-      point,
-      recipe.steps[point].map((action) => ({
+    STEPS.map((step) => [
+      step,
+      recipe.steps[step].map((action) => ({
         name: action.name,
         // Only a command has a clock. `parseDuration` throws on nonsense, and a
         // recipe that resolved has already been through the schema's check.
@@ -139,7 +139,7 @@ export type ProjectFilter =
        * thing: a gate's timeout is the denominator a running card measures
        * against, and the board must not parse `20m` itself (#79).
        */
-      plan: GatePlan;
+      plan: StepPlan;
       /**
        * The recipe and the client that read it, carried so a caller that wants
        * to go on and ask GitHub what is offered does not fetch either twice.
@@ -213,7 +213,7 @@ export async function projectFilter(
         wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
       },
       backoffMs: parseDuration(backoffOf(resolved.recipe)),
-      plan: gatePlan(resolved.recipe),
+      plan: stepPlan(resolved.recipe),
       recipe: resolved.recipe,
       client,
     };

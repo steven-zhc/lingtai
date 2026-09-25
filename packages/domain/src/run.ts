@@ -32,7 +32,7 @@ import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from 
  * opposite things — one stands the conductor down for an account-wide wall,
  * and the other is local and retried once.
  */
-export type GateVerdict =
+export type StepVerdict =
   | "requested"
   | "running"
   | "passed"
@@ -41,7 +41,7 @@ export type GateVerdict =
   | "did-not-finish"
   | "waived";
 
-export interface GateFinding {
+export interface StepFinding {
   file: string;
   line: number | null;
   claim: string;
@@ -51,13 +51,13 @@ export interface GateFinding {
   severity: Severity;
 }
 
-export interface GateState {
-  gate: string;
-  verdict: GateVerdict;
+export interface StepState {
+  step: string;
+  verdict: StepVerdict;
   /** The commit this verdict is about. A verdict on any other sha is stale. */
   onSha: string;
   evidence: string | null;
-  findings: readonly GateFinding[];
+  findings: readonly StepFinding[];
   /** Set for a waiver, and for an approval. A waiver is recorded, never silent. */
   by: string | null;
   reason: string | null;
@@ -69,7 +69,7 @@ export type RunLifecycle =
   | { status: "running" }
   | { status: "awaiting-input"; prompt: string }
   | { status: "gating"; headSha: string }
-  | { status: "awaiting-approval"; gate: string; onSha: string; question: string }
+  | { status: "awaiting-approval"; step: string; onSha: string; question: string }
   | { status: "finished"; exitCode: number; turns: number; durationMs: number; costUsd: number | null }
   /**
    * `prepare-failed` has no matching `RunFailed` kind, and that is on purpose.
@@ -134,7 +134,7 @@ export interface RunState {
   prompt: string | null;
 
   /** Latest verdict per gate name, each carrying the sha it was made against. */
-  gates: Readonly<Record<string, GateState>>;
+  steps: Readonly<Record<string, StepState>>;
 
 
   receipt: { exitCode: number; turns: number; durationMs: number; costUsd: number | null } | null;
@@ -160,7 +160,7 @@ export const emptyRun: RunState = {
   compactedAtTurns: [],
   prompts: 0,
   prompt: null,
-  gates: {},
+  steps: {},
   receipt: null,
   version: 0,
   lastSeq: null,
@@ -173,13 +173,13 @@ export const emptyRun: RunState = {
  * counting here without anything having to revoke it. That is the whole reason
  * `onSha` is on the event.
  */
-export function gatesOn(state: RunState): GateState[] {
+export function stepsOn(state: RunState): StepState[] {
   if (state.headSha === null) return [];
-  return Object.values(state.gates).filter((g) => g.onSha === state.headSha);
+  return Object.values(state.steps).filter((g) => g.onSha === state.headSha);
 }
 
-function withGate(state: RunState, gate: GateState): Readonly<Record<string, GateState>> {
-  return { ...state.gates, [gate.gate]: gate };
+function withStep(state: RunState, step: StepState): Readonly<Record<string, StepState>> {
+  return { ...state.steps, [step.step]: step };
 }
 
 export function applyRun(state: RunState, event: Envelope): RunState {
@@ -272,8 +272,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: event.type === "GateRequested" ? "requested" : "running",
           onSha: d.onSha,
           evidence: null,
@@ -289,8 +289,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "passed",
           onSha: d.onSha,
           evidence: d.evidence,
@@ -306,8 +306,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "failed",
           onSha: d.onSha,
           evidence: d.evidence,
@@ -323,8 +323,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "never-ran",
           onSha: d.onSha,
           // The runtime's own sentence: evidence that the agent never started,
@@ -343,8 +343,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "did-not-finish",
           onSha: d.onSha,
           // The runtime's own sentence about the machinery, never about the
@@ -363,8 +363,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "waived",
           onSha: d.onSha,
           evidence: null,
@@ -380,9 +380,9 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        lifecycle: { status: "awaiting-approval", gate: `${d.gate}:${d.action}`, onSha: d.onSha, question: d.question },
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        lifecycle: { status: "awaiting-approval", step: `${d.gate}:${d.action}`, onSha: d.onSha, question: d.question },
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "requested",
           onSha: d.onSha,
           evidence: null,
@@ -399,8 +399,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         ...state,
         ...at,
         lifecycle: { status: "gating", headSha: d.onSha },
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "passed",
           onSha: d.onSha,
           evidence: null,
@@ -429,12 +429,12 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         ...at,
         lifecycle: {
           status: "awaiting-approval",
-          gate: `${d.gate}:${d.action}`,
+          step: `${d.gate}:${d.action}`,
           onSha: d.onSha,
           question: `${d.by} withdrew the approval: ${d.reason}`,
         },
-        gates: withGate(state, {
-          gate: `${d.gate}:${d.action}`,
+        steps: withStep(state, {
+          step: `${d.gate}:${d.action}`,
           verdict: "requested",
           onSha: d.onSha,
           evidence: null,

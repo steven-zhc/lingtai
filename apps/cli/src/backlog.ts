@@ -80,7 +80,7 @@ function oneLine(text: string, n = 120): string {
 export function describeEntry(e: BacklogEntry): string[] {
   const where = e.line === null ? e.file : `${e.file}:${e.line}`;
   const lines = [
-    `${e.key}  #${e.issue}  ${e.gate}:${e.action}  ${where}`,
+    `${e.key}  #${e.issue}  ${e.step}:${e.action}  ${where}`,
     `    ${oneLine(e.claim)}`,
     `    fails when: ${oneLine(e.failureScenario)}`,
     `    from ${e.runId} at seq ${e.raisedSeq}`,

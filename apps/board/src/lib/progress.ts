@@ -31,7 +31,7 @@
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
 import { STEPS, type Envelope, type Step } from "@lingtai/domain";
-import type { GatePlan } from "@lingtai/conductor/filter";
+import type { StepPlan } from "@lingtai/conductor/filter";
 
 /**
  * What a point has come to on *this* run.
@@ -47,7 +47,7 @@ import type { GatePlan } from "@lingtai/conductor/filter";
  * reading correctly rather than a gap: the recipe configures nothing there, so
  * nothing ran there, so `skipped` is what the fold owes a reader.
  */
-export type PointState =
+export type StepState =
   | "skipped"
   | "pending"
   | "running"
@@ -99,14 +99,14 @@ export type PointState =
  */
 export interface ActionProgress {
   name: string;
-  state: PointState;
+  state: StepState;
 }
 
-export interface PointProgress {
-  point: Step;
+export interface StepProgress {
+  step: Step;
   /** What the recipe put here. Empty is what makes the point `skipped`. */
   planned: readonly string[];
-  state: PointState;
+  state: StepState;
   /**
    * The planned actions in recipe order, each with its own verdict, followed by
    * anything the log recorded here that the plan did not name — an approval at
@@ -150,7 +150,7 @@ export interface RunProgress {
   /** Null between phases: the agent has finished and no gate has started yet. */
   now: Phase | null;
   /** All ten, in pass order. */
-  points: readonly PointProgress[];
+  steps: readonly StepProgress[];
 }
 
 /** The label the agent phase carries. Not a gate point, and not spelled like one. */
@@ -171,7 +171,7 @@ const FIXING = "fixing";
  * splits on the colon and trusts the head highlights nothing and prints
  * `2 of 3`, which is how a fixing agent came to be described as a point.
  */
-export function pointOf(label: string): Step | null {
+export function stepOf(label: string): Step | null {
   const head = label.split(":")[0] ?? "";
   return (STEPS as readonly string[]).includes(head) ? (head as Step) : null;
 }
@@ -198,9 +198,9 @@ function keyOf(data: Record<string, unknown>): string {
   return `${String(data["gate"])}:${String(data["action"])}`;
 }
 
-function budgetOf(plan: GatePlan, data: Record<string, unknown>): number | null {
-  const point = plan.get(String(data["gate"]) as Step);
-  return point?.find((a) => a.name === String(data["action"]))?.budgetMs ?? null;
+function budgetOf(plan: StepPlan, data: Record<string, unknown>): number | null {
+  const step = plan.get(String(data["gate"]) as Step);
+  return step?.find((a) => a.name === String(data["action"]))?.budgetMs ?? null;
 }
 
 /**
@@ -211,9 +211,9 @@ function budgetOf(plan: GatePlan, data: Record<string, unknown>): number | null 
  * ones that have already passed.
  */
 function stateOf(
-  point: Step,
+  step: Step,
   planned: readonly string[],
-  seen: readonly PointState[],
+  seen: readonly StepState[],
   /**
    * The item landed, **and** `GatesResolved` is what named `planned`.
    *
@@ -226,7 +226,7 @@ function stateOf(
    * recipe the run never saw.
    */
   onRecord: boolean,
-): PointState {
+): StepState {
   if (planned.length === 0 && seen.length === 0) return "skipped";
   // Above `failed`, because it is always the ending: the pipeline and the pass
   // both stop there (0041 §4), so a `failed` beside it on the same point is a
@@ -262,7 +262,7 @@ function stateOf(
   // are reached by the line above rather than by this one: their `planned` is
   // empty, so they are `skipped` before this rule is asked — which is the same
   // guard `landedWithoutSteps` has in SQL (`jsonb_array_length(...) > 0`).
-  if (onRecord && point !== "end" && seen.length === 0) return "never-ran";
+  if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";
   const settled = seen.filter((s) => s === "passed" || s === "waived");
@@ -282,7 +282,7 @@ function stateOf(
  */
 export function foldProgress(
   events: readonly Envelope[],
-  plan: GatePlan = new Map(),
+  plan: StepPlan = new Map(),
   /**
    * Whether this item **landed**. Not whether it is over.
    *
@@ -304,7 +304,7 @@ export function foldProgress(
   if (!first) return null;
 
   /** `point:action` → where that action got to. */
-  const verdicts = new Map<string, PointState>();
+  const verdicts = new Map<string, StepState>();
   let now: Phase | null = null;
   /** The plan as the log recorded it, once `GatesResolved` has landed. */
   let resolved: Map<string, readonly string[]> | null = null;
@@ -321,7 +321,7 @@ export function foldProgress(
   /** The round in flight, if the pass bought one and it has not come back. */
   let fixing: string | null = null;
 
-  const close = (data: Record<string, unknown>, state: PointState) => {
+  const close = (data: Record<string, unknown>, state: StepState) => {
     const key = keyOf(data);
     verdicts.set(key, state);
     // Only the phase this verdict is about. A verdict for something else means
@@ -380,8 +380,8 @@ export function foldProgress(
         break;
 
       case "GatesResolved": {
-        const points = (data["points"] ?? []) as { gate: string; actions: string[] }[];
-        resolved = new Map(points.map((p) => [p.gate, p.actions]));
+        const steps = (data["points"] ?? []) as { step: string; actions: string[] }[];
+        resolved = new Map(steps.map((p) => [p.step, p.actions]));
         break;
       }
 
@@ -444,18 +444,18 @@ export function foldProgress(
     }
   }
 
-  const points = STEPS.map((point) => {
+  const steps = STEPS.map((step) => {
     // The log first, the recipe second. `GatesResolved` is appended after the
     // `prepared` gates have already run, so for the first seconds of a run it
     // is the only thing that can say a point exists — and once it lands it is
     // the record, because a recipe read now may not be the one this run got.
-    const recorded = resolved?.get(point);
-    const planned = recorded ?? (plan.get(point) ?? []).map((a) => a.name);
+    const recorded = resolved?.get(step);
+    const planned = recorded ?? (plan.get(step) ?? []).map((a) => a.name);
     const mine = [...verdicts]
-      .filter(([k]) => k.startsWith(`${point}:`))
-      .map(([k, v]) => [k.slice(point.length + 1), v] as const);
+      .filter(([k]) => k.startsWith(`${step}:`))
+      .map(([k, v]) => [k.slice(step.length + 1), v] as const);
     const state = stateOf(
-      point,
+      step,
       planned,
       mine.map(([, v]) => v),
       // Landed, *and* against the plan the log says this run was given. A
@@ -477,8 +477,8 @@ export function foldProgress(
       // the point's own state was just made to carry.
       state: byAction.get(name) ?? (state === "never-ran" ? "never-ran" : "pending"),
     }));
-    return { point, planned, state, actions };
+    return { step, planned, state, actions };
   });
 
-  return { since: first.at.toISOString(), now, points };
+  return { since: first.at.toISOString(), now, steps };
 }

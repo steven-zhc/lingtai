@@ -12,10 +12,10 @@ import { parse, parseDocument, isMap, isScalar, type Node, type YAMLMap } from "
 import { CommentWouldBeLostError, Recipe, editRecipe, emitRecipe, type RecipeChange } from "../src/index.ts";
 
 const OWN = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
-type Gate = Record<string, unknown>;
-const own = parse(OWN) as { source: { exclude: string[] }; steps: { proposed: Gate[]; prepared: Gate[] } };
+type Step = Record<string, unknown>;
+const own = parse(OWN) as { source: { exclude: string[] }; steps: { proposed: Step[]; prepared: Step[] } };
 const LABELS = own.source.exclude;
-const [BUILD, REVIEW] = own.steps.proposed as [Gate, Gate];
+const [BUILD, REVIEW] = own.steps.proposed as [Step, Step];
 
 /** What `git diff` says moved between two versions of a file: its `-` and `+` lines. */
 function gitDiff(before: string, after: string): { removed: string[]; added: string[] } {

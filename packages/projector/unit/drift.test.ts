@@ -68,7 +68,7 @@ describe("a column the row has not got", () => {
   it("refuses when the column is absent, and names the rebuild", () => {
     let err: unknown;
     try {
-      columnOf({ gates: "{}" }, "task_view", "verdicts");
+      columnOf({ steps: "{}" }, "task_view", "verdicts");
     } catch (e) {
       err = e;
     }

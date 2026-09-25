@@ -93,7 +93,7 @@ describe("one attempt", () => {
     const one = foldRun(CLAIM, 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
       e(RUN_1, "GateFailed", {
-        gate: "proposed",
+        step: "proposed",
         action: "build",
         onSha: "b".repeat(40),
         evidence: "error TS2741",
@@ -101,11 +101,11 @@ describe("one attempt", () => {
     ]);
     const two = foldRun({ ...CLAIM, runId: RUN_2 }, 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: "c".repeat(40) }),
-      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: "c".repeat(40) }),
+      e(RUN_2, "GatePassed", { step: "proposed", action: "build", onSha: "c".repeat(40) }),
     ]);
 
-    expect(one.gates.map((g) => [g.gate, g.state])).toEqual([["proposed:build", "failed"]]);
-    expect(two.gates.map((g) => [g.gate, g.state])).toEqual([["proposed:build", "passed"]]);
+    expect(one.steps.map((g) => [g.step, g.state])).toEqual([["proposed:build", "failed"]]);
+    expect(two.steps.map((g) => [g.step, g.state])).toEqual([["proposed:build", "passed"]]);
   });
 
   /**
@@ -121,17 +121,17 @@ describe("one attempt", () => {
     const run = foldRun(CLAIM, 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
       e(RUN_1, "GateNeverRan", {
-        gate: "proposed",
+        step: "proposed",
         action: "review",
         onSha: "b".repeat(40),
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
       }),
     ]);
 
-    expect(run.gates.map((g) => [g.gate, g.state])).toEqual([["proposed:review", "never-ran"]]);
-    expect(run.gates[0]?.evidence).toContain("You've hit your session limit");
+    expect(run.steps.map((g) => [g.step, g.state])).toEqual([["proposed:review", "never-ran"]]);
+    expect(run.steps[0]?.evidence).toContain("You've hit your session limit");
     // And no findings: there is no verdict, so there is nothing it found.
-    expect(run.gates[0]?.findings).toEqual([]);
+    expect(run.steps[0]?.findings).toEqual([]);
   });
 
   it("says a run was released rather than leaving it reading as still running", () => {
@@ -170,12 +170,12 @@ describe("one attempt", () => {
 
   it("still shows all ten steps, including the ones nothing was configured at", () => {
     const run = foldRun(CLAIM, 1, [
-      e(RUN_1, "GatesResolved", { points: [{ gate: "proposed", actions: ["build"] }] }),
+      e(RUN_1, "GatesResolved", { steps: [{ step: "proposed", actions: ["build"] }] }),
     ]);
 
     // `progress.ts`'s fold, which is the one the rail reads (#189).
-    expect(run.progress?.points).toHaveLength(10);
-    expect(run.progress?.points.filter((p) => p.state === "skipped")).toHaveLength(9);
+    expect(run.progress?.steps).toHaveLength(10);
+    expect(run.progress?.steps.filter((p) => p.state === "skipped")).toHaveLength(9);
   });
 });
 

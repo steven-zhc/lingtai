@@ -304,9 +304,9 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // one of them (0018) would have left onboarding printing a step that no
   // longer exists. Widening the set to ten (0058 §3) collected on that: this
   // line prints all ten without being touched.
-  for (const point of STEPS) {
-    const actions = resolved.recipe.steps[point];
-    log(`  ${point.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(", ") : "(skipped)"}`);
+  for (const step of STEPS) {
+    const actions = resolved.recipe.steps[step];
+    log(`  ${step.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(", ") : "(skipped)"}`);
   }
   // Printed here for the reason the empty points above are: a policy that is
   // only visible when it fires is one nobody can audit, and this one spends an

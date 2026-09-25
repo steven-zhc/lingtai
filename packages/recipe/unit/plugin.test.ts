@@ -48,7 +48,7 @@ import {
   whyNoKindAt,
   withheld,
   worktreePlugin,
-  type GateAction,
+  type StepAction,
 } from "../src/index.ts";
 
 /** The smallest recipe that resolves, so a case can put one action in it. */
@@ -70,10 +70,10 @@ const BASE: Recipe = Recipe.parse({
  * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
 const spendPlugin = definePlugin("spend", { spend: z.string(), token: noLog(z.string()) });
-const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as GateAction;
+const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as StepAction;
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
-function withAction(action: GateAction): Recipe {
+function withAction(action: StepAction): Recipe {
   return { ...BASE, steps: { ...BASE.steps, proposed: [action] } };
 }
 
@@ -235,7 +235,7 @@ describe("a `no_log` field never leaves its plugin", () => {
 
     // An action with nothing to withhold is the object it was given, so the
     // six plugins in use today are untouched by any of this.
-    const build: GateAction = { name: "build", run: "x", timeout: "15m", env: [] };
+    const build: StepAction = { name: "build", run: "x", timeout: "15m", env: [] };
     expect(disclose(build, PLUGINS)).toBe(build);
     // An optional secret nobody wrote is not invented, so a recipe without one
     // is not made into a recipe with one.
@@ -275,14 +275,14 @@ describe("a `no_log` field never leaves its plugin", () => {
    * dropped.
    */
   it("keeps two recipes that differ only in a secret two documents", () => {
-    const a = withAction({ name: "pay", spend: "50 USD", token: "KEY_A" } as unknown as GateAction);
-    const b = withAction({ name: "pay", spend: "50 USD", token: "KEY_B" } as unknown as GateAction);
+    const a = withAction({ name: "pay", spend: "50 USD", token: "KEY_A" } as unknown as StepAction);
+    const b = withAction({ name: "pay", spend: "50 USD", token: "KEY_B" } as unknown as StepAction);
 
     expect(hashRecipe(a, [spendPlugin])).not.toBe(hashRecipe(b, [spendPlugin]));
     // And an action that carries a credential is not the same document as the
     // same action carrying none.
     expect(hashRecipe(a, [spendPlugin])).not.toBe(
-      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as GateAction), [spendPlugin]),
+      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as StepAction), [spendPlugin]),
     );
     // Neither body says which key, and both say there was one.
     for (const recipe of [a, b]) {
@@ -366,7 +366,7 @@ describe("a `no_log` field never leaves its plugin", () => {
 
   /** What the six do today, so the strip cannot be silently costing anything. */
   it("changes nothing for a recipe with no secret field in it", () => {
-    const build: GateAction = { name: "build", run: "pnpm verify", timeout: "15m", env: [] };
+    const build: StepAction = { name: "build", run: "pnpm verify", timeout: "15m", env: [] };
     const recipe = withAction(build);
 
     expect(discloseSteps(recipe.steps).proposed).toEqual([build]);

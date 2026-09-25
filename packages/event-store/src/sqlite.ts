@@ -516,7 +516,7 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
       );
       return statement
         .all(...ranTypes)
-        .map((r) => r as unknown as { workItemId: string; runId: string; gate: string });
+        .map((r) => r as unknown as { workItemId: string; runId: string; step: string });
     },
 
     async typeCounts() {

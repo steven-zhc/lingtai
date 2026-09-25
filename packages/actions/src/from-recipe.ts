@@ -7,7 +7,7 @@
  * is worse than a run that will not start.
  */
 import type { Step } from "@lingtai/domain";
-import { type ActionKind, type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
+import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type AgentActionDeps, createAgentAction } from "./agent-action.ts";
 import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
@@ -68,7 +68,7 @@ export class ActionUnavailableError extends Error {
  */
 export function actionsFromRecipe(
   step: Step,
-  actions: readonly GateAction[],
+  actions: readonly StepAction[],
   deps: ActionDeps = {},
 ): Action[] {
   return actions.map((action) => {

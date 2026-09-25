@@ -688,10 +688,10 @@ function Reason({
         </p>
       );
     }
-    const gate = refused.at(-1)!.replace(":", " / ");
+    const step = refused.at(-1)!.replace(":", " / ");
     return (
       <p className="sevidence snone">
-        The {gate} gate refused, and nothing it said was recorded here to quote.
+        The {step} gate refused, and nothing it said was recorded here to quote.
       </p>
     );
   }

@@ -70,7 +70,7 @@ beforeAll(async () => {
       type: "ApprovalRequested",
       actor: "conductor",
       data: {
-        gate: "merge",
+        step: "merge",
         action: "approve",
         runId,
         onSha: "c".repeat(40),

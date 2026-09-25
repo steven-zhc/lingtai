@@ -322,7 +322,7 @@ function toEntry(row: ProjectionRow): BacklogEntry {
     issue: row.issue as string,
     taskId: row.task_id as string,
     runId: row.run_id as string,
-    gate: row.gate as string,
+    step: row.step as string,
     action: row.action as string,
     onSha: row.on_sha as string,
     file: row.file as string,

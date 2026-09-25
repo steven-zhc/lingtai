@@ -261,7 +261,7 @@ export function Attempt({
         <p className="empty">Nothing is on this attempt's stream, so no point has been reached.</p>
       ) : (
         <div className="seq aseq">
-          <Segs points={run.progress.points} at={null} labels />
+          <Segs steps={run.progress.steps} at={null} labels />
         </div>
       )}
 
@@ -355,15 +355,15 @@ export function RecipeGiven({ run }: { run: RunView }) {
 
       {run.progress === null ? null : (
         <ol className="acts">
-          {run.progress.points.map((p) => (
-            <li key={p.point}>
-              <span className="actpoint">{p.point}</span>
+          {run.progress.steps.map((p) => (
+            <li key={p.step}>
+              <span className="actpoint">{p.step}</span>
               {p.planned.length === 0 ? (
                 <span className="empty">skipped</span>
               ) : (
                 <span className="actlist">
                   {p.planned.map((name) => {
-                    const action = recipe.recipe.steps[p.point].find((a) => a.name === name);
+                    const action = recipe.recipe.steps[p.step].find((a) => a.name === name);
                     if (!action) {
                       return (
                         <span key={name} className="act">
@@ -519,9 +519,9 @@ export function Record({ task }: { task: TaskDetail }) {
   const many = task.runs.length > 1;
   const project = task.ticket?.project ?? "";
 
-  const verdicts = task.runs.reduce((n, r) => n + r.gates.length, 0);
+  const verdicts = task.runs.reduce((n, r) => n + r.steps.length, 0);
   const findings = task.runs.reduce(
-    (n, r) => n + r.gates.reduce((m, g) => m + g.findings.length, 0),
+    (n, r) => n + r.steps.reduce((m, g) => m + g.findings.length, 0),
     0,
   );
   const paths = new Set(task.runs.flatMap((r) => r.files.map((f) => f.path))).size;
@@ -547,7 +547,7 @@ export function Record({ task }: { task: TaskDetail }) {
           <p className="empty">No gate has reported on any attempt.</p>
         ) : (
           newest
-            .filter((run) => run.gates.length > 0)
+            .filter((run) => run.steps.length > 0)
             .map((run) => (
               <div key={run.runId} className="rpart">
                 <Of run={run} many={many} />
@@ -557,7 +557,7 @@ export function Record({ task }: { task: TaskDetail }) {
                   project={project}
                   baseSha={run.baseSha}
                   headSha={run.headSha ?? ""}
-                  gates={run.gates}
+                  steps={run.steps}
                 />
               </div>
             ))
