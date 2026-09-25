@@ -27,11 +27,19 @@ import {
   type Cut,
   type Drafted,
   type PassPorts,
+  type SentBack,
   type Taken,
   type Ticket,
   type Worked,
 } from "../src/pass-steps.ts";
-import { NEEDS_INPUT, outcomeOf, runPass, type PassOptions } from "../src/pass.ts";
+import {
+  NEEDS_INPUT,
+  outcomeOf,
+  runPass,
+  type PassOptions,
+  type StepBodies,
+  type StepBody,
+} from "../src/pass.ts";
 
 // --------------------------------------------------------------- fixtures ----
 
@@ -77,6 +85,23 @@ const AT_END = {
   ],
 };
 
+/**
+ * An item with something on its stream already, so the version the append expects
+ * is not zero — which is the half of `record` that is about the race.
+ */
+const claimedAlready: Envelope[] = [
+  {
+    seq: 1,
+    streamId: item.workItemId,
+    version: 1,
+    type: "WorkItemClaimed",
+    actor: "conductor",
+    at: new Date(0),
+    schemaVer: 1,
+    data: {},
+  } as unknown as Envelope,
+];
+
 const events = (): { emit: PassOptions["emit"]; seen: ActionEvent[] } => {
   const seen: ActionEvent[] = [];
   return { emit: (event) => void seen.push(event), seen };
@@ -101,8 +126,16 @@ const judging = (seen: { onSha: string; round: number | undefined }[]): Action =
 interface Asked {
   took: number;
   cut: Claimed[];
+  /** Why `admit` was asked, per call — `null` on the way through. */
+  admitted: (SentBack | null)[];
   drafted: Brief[];
   dispatched: Brief[];
+  /**
+   * Every call to `record` — **one per pass that claimed, whether anything
+   * resolved or not**, because the ending is what the call is about and the
+   * resolution rides with it.
+   */
+  endings: { workItemId: string; at: number; outcome: TerminalOutcome; resolved: number }[];
   /** Every `EndActionsResolved` `end` recorded, unwrapped to what it says. */
   recorded: { workItemId: string; at: number; outcome: TerminalOutcome; actions: string[] }[];
 }
@@ -120,53 +153,100 @@ const resolvedIn = (appended: ToAppend): { outcome: TerminalOutcome; actions: st
  * The ordinary thing is *this repository, today*: an item taken, a worktree cut,
  * **no design at all**, an agent that committed, and an item whose stream has
  * nothing on it yet, which is what makes the version the append expects zero.
+ *
+ * **An override answers; it does not record.** What each port was asked is noted
+ * by the wrapper below, so a test that changes one answer still sees every call
+ * — which matters at `implement`, where the whole question is what the *second*
+ * brief said.
  */
 function ports(overrides: Partial<PassPorts> = {}): { ports: PassPorts; asked: Asked } {
-  const asked: Asked = { took: 0, cut: [], drafted: [], dispatched: [], recorded: [] };
+  const asked: Asked = { took: 0, cut: [], admitted: [], drafted: [], dispatched: [], endings: [], recorded: [] };
   const ordinary: PassPorts = {
-    take: async (): Promise<Taken> => {
-      asked.took += 1;
-      return { taken: item };
-    },
-    cut: async (claimed): Promise<Cut> => {
-      asked.cut.push(claimed);
-      return { worktree: tree };
-    },
-    draft: async (brief): Promise<Drafted> => {
-      asked.drafted.push(brief);
-      // Every pass today: nothing writes a design yet, so the step produces none.
-      return { document: "" };
-    },
-    dispatch: async (brief): Promise<Worked> => {
-      asked.dispatched.push(brief);
-      return { committed: "c0mm1tted5ha" };
-    },
+    take: async (): Promise<Taken> => ({ taken: item }),
+    cut: async (): Promise<Cut> => ({ worktree: tree }),
+    // Every pass today: nothing writes a design yet, so the step produces none.
+    draft: async (): Promise<Drafted> => ({ document: "" }),
+    dispatch: async (): Promise<Worked> => ({ committed: "c0mm1tted5ha" }),
     // An item with nothing on its stream yet, which is what makes the version
     // the append expects zero.
     read: async (): Promise<readonly Envelope[]> => [],
-    record: async ({ claimed, at, resolved }) => {
-      for (const appended of resolved) {
-        asked.recorded.push({ workItemId: claimed.workItemId, at, ...resolvedIn(appended) });
-      }
+    record: async () => {},
+  };
+  const answering: PassPorts = { ...ordinary, ...overrides };
+  return {
+    asked,
+    ports: {
+      take: async () => {
+        asked.took += 1;
+        return answering.take();
+      },
+      cut: async (claimed, again) => {
+        asked.cut.push(claimed);
+        asked.admitted.push(again);
+        return answering.cut(claimed, again);
+      },
+      draft: async (brief) => {
+        asked.drafted.push(brief);
+        return answering.draft(brief);
+      },
+      dispatch: async (brief) => {
+        asked.dispatched.push(brief);
+        return answering.dispatch(brief);
+      },
+      read: async (claimed) => answering.read(claimed),
+      record: async (ending) => {
+        const { claimed, at, outcome, resolved } = ending;
+        asked.endings.push({ workItemId: claimed.workItemId, at, outcome, resolved: resolved.length });
+        for (const appended of resolved) {
+          asked.recorded.push({ workItemId: claimed.workItemId, at, ...resolvedIn(appended) });
+        }
+        return answering.record(ending);
+      },
     },
   };
-  return { ports: { ...ordinary, ...overrides }, asked };
 }
 
-/** One pass, with the six real bodies and the four the skeleton still has. */
+/**
+ * One pass, with the six real bodies and the four the skeleton still has.
+ *
+ * `bodies` is a partial override rather than a replacement, so a test that needs
+ * a judge at `proposed` — the one T4b has not written — puts one there and keeps
+ * the six under test.
+ */
 const pass = (
-  options: Partial<PassOptions> & { ports: PassPorts },
+  options: Omit<Partial<PassOptions>, "bodies"> & { ports: PassPorts; bodies?: Partial<StepBodies> },
 ) => {
   const { emit } = events();
+  const { ports: p, bodies, ...rest } = options;
   return runPass({
     recipe: recipeWith({}),
     context,
     emit,
     actionsAt: actionsFrom(),
-    ...options,
-    bodies: bodiesFor(options.ports),
+    ...rest,
+    bodies: { ...bodiesFor(p), ...bodies },
   });
 };
+
+/**
+ * The judge `Asked` promises and T4b will write: a question answered with *that
+ * step again*, rather than with a person.
+ *
+ * It is here rather than in `pass-steps.ts` because routing is `proposed`'s and
+ * `proposed` is not one of these six. What it proves about them is the other end
+ * of that edge — that a step the judge sends back is told it was sent back.
+ */
+const stateYourAssumption: StepBody<"proposed"> = async ({ arriving, offering }) => {
+  if (arriving === null) return { ending: "passed" };
+  // A judge answers *which of these*, never *what is legal* (0061 §3), so a
+  // spent round leaves the asking step off the offer and a person is the answer.
+  return offering.includes(arriving.step)
+    ? { ending: "routed", to: arriving.step, why: "state your assumption" }
+    : { ending: "routed", to: "waiting", why: "the rounds are spent" };
+};
+
+/** A round to spend, which is what the edge back into the spine costs. */
+const ONE_ROUND: PassOptions["ceilings"] = { rounds: 1, restartsLeft: 0 };
 
 // ------------------------------------------------------------------ the ten ----
 
@@ -192,14 +272,20 @@ describe("the six bodies fill a contract that already runs", () => {
     ]);
   });
 
-  /** And a recipe that declares nothing at `end` records nothing (`end-step.ts`). */
-  it("records no resolution where nothing was declared at end", async () => {
+  /**
+   * A recipe that declares nothing at `end` resolves nothing (`end-step.ts`) —
+   * **and the item's ending is still recorded**, because the ending is not the
+   * effects. The port is called once, with an empty list, which is what makes the
+   * outcome's own append the same append.
+   */
+  it("records no resolution where nothing was declared at end, and the ending anyway", async () => {
     const { ports: p, asked } = ports();
 
     const result = await pass({ ports: p });
 
     expect(result.steps.at(-1)).toMatchObject({ step: "end", ending: { ending: "passed" } });
     expect(asked.recorded).toEqual([]);
+    expect(asked.endings).toEqual([{ workItemId: item.workItemId, at: 0, outcome: "landed", resolved: 0 }]);
   });
 });
 
@@ -237,7 +323,9 @@ describe("claim picks the ticket, and cannot refuse", () => {
     expect(result.routes).toEqual([]);
     // Nothing was claimed, so there is no stream for `end` to resolve onto — and
     // `close it` is declared, so this is a resolution withheld rather than absent.
+    // No ending is recorded either: there is no item to have ended.
     expect(asked.recorded).toEqual([]);
+    expect(asked.endings).toEqual([]);
   });
 
   /** Losing the append is an ordinary outcome of two schedulers on one queue. */
@@ -253,6 +341,79 @@ describe("claim picks the ticket, and cannot refuse", () => {
       because: "not-claimed",
       detail: "held by host:123 as run-9",
     });
+  });
+});
+
+// ------------------------------------------------------ one closure, two passes ----
+
+describe("a second pass on one closure is its own pass", () => {
+  /** Both passes, in order, on the ports and the bodies a daemon would build once. */
+  const twice = async (p: PassPorts, options: Partial<PassOptions> = {}) => {
+    const bodies = bodiesFor(p);
+    const { emit } = events();
+    const run = () =>
+      runPass({ recipe: recipeWith(AT_END), context, emit, actionsAt: actionsFrom(), ...options, bodies });
+    return [await run(), await run()] as const;
+  };
+
+  /**
+   * **The item is cleared at `claim`, so a pass that took nothing has nothing.**
+   *
+   * A daemon builds its ports at startup and `bodiesFor(ports)` beside them — the
+   * natural reading of a factory over a stateless `PassPorts` — and calls
+   * `runPass({ bodies })` once per queue pass. Held facts that were never cleared
+   * made the second pass the first one's: `take` declines, the walk stops at
+   * `claim`, and `end` resolves `blocked` onto the item the pass before it landed
+   * and closed. `tell.ts` then labels a closed issue `needs-attention`, and the
+   * log carries a blocked ending for a ticket whose `main` moved.
+   */
+  it("resolves nothing onto the item the pass before it landed", async () => {
+    let takes = 0;
+    const { ports: p, asked } = ports({
+      take: async () => (takes++ === 0 ? { taken: item } : { passedOver: "excluded-label" }),
+    });
+
+    const [first, second] = await twice(p);
+
+    expect(outcomeOf(first)).toBe("landed");
+    expect(second.steps.map((s) => s.step)).toEqual(["claim", "end"]);
+    expect(second.stoppedAt).toMatchObject({ step: "claim", ending: { because: "passed-over" } });
+    // One ending and one resolution between the two passes, and both the first's.
+    expect(asked.endings).toEqual([{ workItemId: item.workItemId, at: 0, outcome: "landed", resolved: 1 }]);
+    expect(asked.recorded).toMatchObject([{ outcome: "landed", actions: ["close it", "say so"] }]);
+  });
+
+  /** And the worktree and the design go with it: no agent is briefed on the last pass's. */
+  it("briefs nothing on the worktree the pass before it cut", async () => {
+    let takes = 0;
+    const { ports: p, asked } = ports({
+      take: async () => (takes++ === 0 ? { taken: item } : { passedOver: "excluded-label" }),
+      draft: async () => ({ document: "# the first pass's design" }),
+    });
+
+    await twice(p);
+
+    expect(asked.cut).toEqual([item]);
+    expect(asked.dispatched).toHaveLength(1);
+  });
+
+  /** A second pass that *does* take one is briefed on that one, start to finish. */
+  it("carries the second pass's own item through to its ending", async () => {
+    const next: Claimed = {
+      workItemId: "wi-lingtai-260",
+      ticket: { ref: "260", title: "the one after", body: "its own text" },
+      kind: "bug",
+    };
+    let takes = 0;
+    const { ports: p, asked } = ports({
+      take: async () => ({ taken: takes++ === 0 ? item : next }),
+    });
+
+    await twice(p);
+
+    expect(asked.cut).toEqual([item, next]);
+    expect(asked.dispatched.map((b) => b.ticket.ref)).toEqual(["259", "260"]);
+    expect(asked.endings.map((e) => e.workItemId)).toEqual([item.workItemId, next.workItemId]);
   });
 });
 
@@ -516,6 +677,101 @@ describe("implement is one agent, and it reports the head it committed", () => {
   });
 });
 
+// ----------------------------------------------------------- sent back again ----
+
+describe("a step the judge sent back is told it was sent back", () => {
+  /**
+   * **A round costs an agent run, so the second brief must not be the first one.**
+   *
+   * `Asked` promises the judge at `proposed` may answer a question with *that step
+   * again with* state your assumption, and `onOffer` implements it by putting the
+   * asking step back on the offer. Nothing else on the brief moves on that edge:
+   * `context.recheck` is empty, because a question raised no findings, and
+   * `context.onSha` is unchanged, because nothing was committed. So a body that
+   * ignored `reached` would hand the agent exactly what produced the question, get
+   * the question back, and burn every round in `ceilings.rounds` — with the
+   * judge's instruction never reaching the agent it was written for.
+   */
+  it("tells the agent at implement what it asked and what the judge answered", async () => {
+    let asks = 0;
+    const { ports: p, asked } = ports({
+      dispatch: async () =>
+        asks++ === 0
+          ? { asked: "the ticket names two files and neither exists" }
+          : { committed: "c0mm1tted5ha" },
+    });
+
+    const result = await pass({
+      ports: p,
+      ceilings: ONE_ROUND,
+      bodies: { proposed: stateYourAssumption },
+    });
+
+    expect(result.routes).toEqual([
+      { from: "implement", to: "implement", why: "state your assumption" },
+    ]);
+    expect(asked.dispatched).toHaveLength(2);
+    expect(asked.dispatched[0]?.again).toBeNull();
+    expect(asked.dispatched[1]?.again).toEqual({
+      why: "state your assumption",
+      asked: "the ticket names two files and neither exists",
+    });
+    // And it is the only thing that differs, which is why it has to be there.
+    expect(asked.dispatched[1]?.context.recheck).toEqual([]);
+    expect(asked.dispatched[1]?.ticket).toEqual(asked.dispatched[0]?.ticket);
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * The same edge at `admit` — where it rides beside the item rather than on a
+   * `Brief`, because the worktree a brief carries is what this step makes.
+   */
+  it("tells admit what it asked and what the judge answered", async () => {
+    let cuts = 0;
+    const { ports: p, asked } = ports({
+      cut: async () => (cuts++ === 0 ? { asked: "which of the two bases did you mean?" } : { worktree: tree }),
+    });
+
+    const result = await pass({ ports: p, ceilings: ONE_ROUND, bodies: { proposed: stateYourAssumption } });
+
+    expect(result.routes[0]).toEqual({ from: "admit", to: "admit", why: "state your assumption" });
+    expect(asked.admitted).toEqual([
+      null,
+      { why: "state your assumption", asked: "which of the two bases did you mean?" },
+    ]);
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /** And at `design`, which is the third of 0058 §3b's three that can ask. */
+  it("tells design what it asked and what the judge answered", async () => {
+    let drafts = 0;
+    const { ports: p, asked } = ports({
+      draft: async () => (drafts++ === 0 ? { asked: "a schema change or a rename?" } : { document: "" }),
+    });
+
+    const result = await pass({ ports: p, ceilings: ONE_ROUND, bodies: { proposed: stateYourAssumption } });
+
+    expect(result.routes[0]).toEqual({ from: "design", to: "design", why: "state your assumption" });
+    expect(asked.drafted).toHaveLength(2);
+    expect(asked.drafted[0]?.again).toBeNull();
+    expect(asked.drafted[1]?.again).toEqual({
+      why: "state your assumption",
+      asked: "a schema change or a rename?",
+    });
+  });
+
+  /** And a step reached on the way through is told nothing, because nothing sent it. */
+  it("says nothing to a step the pass simply walked into", async () => {
+    const { ports: p, asked } = ports();
+
+    await pass({ ports: p });
+
+    expect(asked.admitted).toEqual([null]);
+    expect(asked.drafted[0]?.again).toBeNull();
+    expect(asked.dispatched[0]?.again).toBeNull();
+  });
+});
+
 // --------------------------------------------------------------------- end ----
 
 describe("end runs on every ending, and the effects never decide whether it happened", () => {
@@ -530,6 +786,35 @@ describe("end runs on every ending, and the effects never decide whether it happ
     ]);
     // And it passes: `end` cannot refuse.
     expect(result.steps.at(-1)).toMatchObject({ step: "end", ending: { ending: "passed" } });
+  });
+
+  /**
+   * **The ending and its resolution are one append or they are a window.**
+   *
+   * `end-step.ts` states the rule its own example is written to show — *one
+   * transaction, so the outcome and its resolution cannot come apart; a crash
+   * between two appends is the shape of failure this system exists to make
+   * impossible, and the version check that guards the outcome guards both* — and
+   * every live resolver keeps it (`run-once.ts:3423`, `:3274`).
+   *
+   * So the port is handed the outcome beside the resolution, at the version the
+   * read expects, and appends `[<the outcome's own event>, ...resolved]` there.
+   * Handed only the resolution it could not: the terminal event would be a second
+   * append at `at + 1`, and a conductor killed by `runtime.limits.wall` in between
+   * leaves an item resolved and never ended — claimed for ever to the work-item
+   * fold, invisible to `endedWithoutEndActions`, whose audit is the anti-join the
+   * other way, and with its issue already closed by `tell.ts`.
+   */
+  it("hands the outcome to the same call as the resolution, at the version the read expects", async () => {
+    const { ports: p, asked } = ports({ read: async () => claimedAlready });
+
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(outcomeOf(result)).toBe("landed");
+    expect(asked.endings).toEqual([
+      { workItemId: item.workItemId, at: claimedAlready.length, outcome: "landed", resolved: 1 },
+    ]);
+    expect(asked.recorded).toMatchObject([{ at: claimedAlready.length, outcome: "landed" }]);
   });
 
   it("resolves blocked when a step refused, on the same declared list", async () => {

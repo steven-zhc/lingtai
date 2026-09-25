@@ -55,12 +55,17 @@
  * the design      design → implement                 and `""` is an answer
  * ```
  *
- * They are held by `bodiesFor` — one closure per pass, made where the pass is —
- * rather than on the ports, which stay stateless and therefore fakeable one
- * method at a time. The head is the exception and is the loop's: a step that
- * moved the tree says so on its ending (`LeftTheTreeAt`) and `runPass` carries
- * it to every visit after, which is why `admit` and `implement` return one and
- * nothing here reads `onSha` back.
+ * They are held by `bodiesFor`, cleared at `claim` so one closure may conduct one
+ * pass after another, rather than on the ports, which stay stateless and
+ * therefore fakeable one method at a time.
+ *
+ * **What the loop already carries is read off `StepWork` and never kept here**,
+ * and there are two of those. The head: a step that moved the tree says so on its
+ * ending (`LeftTheTreeAt`) and `runPass` carries it to every visit after, which
+ * is why `admit` and `implement` return one and nothing here reads `onSha` back.
+ * And the route back: which visit sent the pass to this step and why is in
+ * `reached`, so `SentBack` is computed from the visit list rather than remembered
+ * — a body that remembered it would have to know how many rounds ago it was.
  *
  * **What does not travel is the worktree's path into `ActionContext.cwd`.** The
  * pass rebuilds three fields of the context per visit — `onSha`, `round`,
@@ -72,12 +77,12 @@
  * filling in.
  */
 import type { ActionContext } from "@lingtai/actions";
-import type { Envelope, ToAppend } from "@lingtai/domain";
+import type { Envelope, Step, ToAppend } from "@lingtai/domain";
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
 import type { Worktree } from "@lingtai/repo";
-import { resolveEndActions } from "./end-step.ts";
+import { type TerminalOutcome, resolveEndActions } from "./end-step.ts";
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
@@ -85,6 +90,7 @@ import {
   type StepDidNotFinish,
   type StepNeverRan,
   type StepPassed,
+  type StepReached,
 } from "./pass.ts";
 
 // ------------------------------------------------------------ what a pass is about ----
@@ -126,6 +132,37 @@ export interface Claimed {
 export interface Asked {
   /** What the step wants answered, in words a person reads (0043). */
   readonly asked: string;
+}
+
+/**
+ * **The judge's other answer, as it reaches the step it was written for.**
+ *
+ * `Asked` above says the judge at `proposed` may answer a question with `waiting`
+ * *or that step again with* state your assumption. The second of those spends a
+ * round — `onOffer` puts the asking step back on the offer, and `runPass` walks
+ * into it again — and a round costs an agent run. So the step must be run
+ * *differently* the second time, and the only thing that can make it different is
+ * what the judge said: `context.recheck` is empty on this edge, because a
+ * question raised no findings, and `context.onSha` is unchanged, because nothing
+ * was committed. A second byte-identical brief buys the same question back and
+ * burns every round in `ceilings.rounds` arriving at the answer the first one did.
+ *
+ * Read off `StepWork.reached` rather than held in the closure, because it is the
+ * *loop's* fact and not a step's: which visit routed here, and why, is in the
+ * visit list the pass hands every body.
+ */
+export interface SentBack {
+  /**
+   * The judge's own words — *state your assumption* — verbatim, and 0043's rule
+   * again: it is prose for an agent and a person, never a token to parse.
+   */
+  readonly why: string;
+  /**
+   * The question this step asked, where the round was bought on its own
+   * `needs-input`. `null` where the judge sent the pass back for some other
+   * reason — a refusal downstream, whose evidence is `context.recheck`'s.
+   */
+  readonly asked: string | null;
 }
 
 /**
@@ -203,6 +240,15 @@ export interface Brief {
   readonly design: string;
   readonly worktree: Worktree;
   /**
+   * **Why this step is being run a second time**, or `null` on the way through.
+   *
+   * The whole of what makes a re-run brief different from the first one when the
+   * round was bought on a question: see `SentBack`. An implementation hands it to
+   * the agent beside the ticket — *you asked this, and the judge said that* — and
+   * a port that ignores it dispatches the brief that produced the question.
+   */
+  readonly again: SentBack | null;
+  /**
    * This visit's — the head it is working from, the round it is in, and the
    * findings that round was bought on (0038 §2), which an agent on a fix round
    * is asked about by name.
@@ -230,8 +276,16 @@ export interface PassPorts {
    * whole of the mutual exclusion (`claim.ts`).
    */
   take(): Promise<Taken>;
-  /** `admit` — cut the worktree, at the base the recipe names. `repo.provision`. */
-  cut(claimed: Claimed): Promise<Cut>;
+  /**
+   * `admit` — cut the worktree, at the base the recipe names. `repo.provision`.
+   *
+   * `again` is beside the item rather than inside a `Brief` because there is no
+   * brief at `admit`: the worktree an agent is briefed on is what this step
+   * makes. It carries the same thing for the same reason — a step routed back to
+   * must be run differently, and `admit` is one of the three that can ask
+   * (`SentBack`).
+   */
+  cut(claimed: Claimed, again: SentBack | null): Promise<Cut>;
   /** `design` — a document, before any code, or nothing. */
   draft(brief: Brief): Promise<Drafted>;
   /** `implement` — one agent, in that worktree, and what it committed. */
@@ -247,24 +301,45 @@ export interface PassPorts {
    */
   read(claimed: Claimed): Promise<readonly Envelope[]>;
   /**
-   * `end` — record what the step resolved, on the item's own stream.
+   * `end` — **the item's ending, and what the step resolved for it, in one
+   * append.**
    *
-   * **Resolving and doing are two acts and neither of them is this**
+   * The outcome is here rather than left to the caller, and that is the whole of
+   * why this port is shaped as it is. `end-step.ts` states the rule its example
+   * is written to show — *one transaction, so the outcome and its resolution
+   * cannot come apart; a crash between two appends is the shape of failure this
+   * system exists to make impossible, and the version check that guards the
+   * outcome guards both* — and every live resolver keeps it (`run-once.ts:3423`,
+   * *One transaction with the landing itself*; `:3274`, *In the same append as
+   * the outcome it is about*). A port that took only the resolution could not:
+   * the terminal event would be a second append at `at + 1`, and a conductor that
+   * lost its connection in between would leave an item with a resolution and no
+   * ending — claimed for ever to the work-item fold, silent to
+   * `endedWithoutEndActions`, whose audit is the anti-join the other way, and
+   * with its issue already closed by `tell.ts`.
+   *
+   * So an implementation appends `[<the outcome's own event>, ...resolved]` at
+   * version `at`, and **the caller appends no terminal event of its own**: the
+   * pass's last step is where a claimed item's ending is written.
+   *
+   * **Resolving and doing are still two acts and neither of them is the doing**
    * (`end-step.ts`): the resolving is `resolveEndActions`, which the body calls;
-   * this is the record of that decision, at an expected version; and carrying
-   * the effects out is I/O that must not be able to undo the fact, which is
-   * `tell.ts`'s and the port-owner's.
+   * this is the record; and carrying the effects out is I/O that must not be able
+   * to undo the fact, which is `tell.ts`'s and the port-owner's.
    *
-   * Called only with a non-empty list, so an implementation never has to decide
-   * what an empty one means. **An empty resolution is still a resolution** and is
-   * *in* the list — one `EndActionsResolved` whose own `actions` are `[]`, which
-   * is the row that keeps *nothing was configured* apart from *something was
-   * configured and did not run* (0016 §4).
+   * **`resolved` may be empty and the call is made anyway**, because the ending
+   * is owed whatever the effects came to. Empty is *nothing was declared* or
+   * *this outcome was already resolved* — neither is a row, and neither is a
+   * reason to leave the outcome unwritten. An empty resolution in the 0016 §4
+   * sense is not this: that is one `EndActionsResolved` whose own `actions` are
+   * `[]`, and it arrives here *in* the list.
    */
-  record(recording: {
+  record(ending: {
     readonly claimed: Claimed;
     /** The version the append expects — `read`'s length, and the whole of the race. */
     readonly at: number;
+    /** Where the pass came to rest, in `end-step.ts`'s vocabulary — `outcomeOf`'s. */
+    readonly outcome: TerminalOutcome;
     readonly resolved: readonly ToAppend[];
   }): Promise<void>;
 }
@@ -281,9 +356,23 @@ export interface PassPorts {
  * step back would be the workflow inventing the judgement 0061 §3 reserves for a
  * plugin.
  *
- * One call per pass. The three facts that travel between steps are this
- * closure's, and a second pass wants a second closure — sharing one would let a
- * pass be briefed on the worktree of the pass before it.
+ * The three facts that travel between steps are this closure's, and **`claim`
+ * clears all three before it takes anything** — so one `StepBodies` may conduct
+ * one pass after another, which is how a daemon that builds its ports once at
+ * startup will hold them. Without that clearing a `claim` that took nothing left
+ * the last pass's item in place and `end` resolved onto it: a `blocked` ending
+ * appended to an issue that had landed and closed, and `implement` briefed on a
+ * worktree from a pass that finished hours ago.
+ *
+ * `claim` is where the clearing goes because it is the one step every pass runs
+ * first and exactly once — a restart is `proposed`'s route to `claim`, and that
+ * requeues and *ends* the pass (`runPass`'s `take`) rather than re-entering the
+ * spine.
+ *
+ * **Two passes at once still want two closures.** The clearing makes a second
+ * pass safe *after* the first, not beside it, and nothing here can catch an
+ * overlapping one — which is no worse than the lock that stops it: one conductor
+ * takes work at a time (`#93`).
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
   /** The item, from `claim`. Null until it has taken one. */
@@ -318,11 +407,38 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     return value;
   };
 
-  const briefOn = (step: string, context: ActionContext): Brief => ({
+  /**
+   * **Why the pass is at this step a second time, read off the visits** — or
+   * `null`, which is every visit on the way through.
+   *
+   * The route is the last visit when a body is re-entered: `runPass` records
+   * `proposed`'s decision and then walks straight into the step it chose. The
+   * question is the visit before that one, and only where *this* step asked it —
+   * a route back to `implement` from a `build` that refused carries findings
+   * rather than a question, and `context.recheck` is where those are.
+   */
+  const sentBackTo = (step: Step, reached: readonly StepReached[]): SentBack | null => {
+    const judged = reached.at(-1);
+    if (judged === undefined || judged.step !== "proposed") return null;
+    const route = judged.ending;
+    if (route.ending !== "routed" || route.to !== step) return null;
+    const arrived = reached.at(-2);
+    const asked =
+      arrived !== undefined &&
+      arrived.step === step &&
+      arrived.ending.ending === "did-not-finish" &&
+      arrived.ending.because === NEEDS_INPUT
+        ? arrived.ending.detail
+        : null;
+    return { why: route.why, asked };
+  };
+
+  const briefOn = (step: Step, work: { context: ActionContext; reached: readonly StepReached[] }): Brief => ({
     ticket: madeBy(step, "item", claimed).ticket,
     design,
     worktree: madeBy(step, "worktree", worktree),
-    context,
+    again: sentBackTo(step, work.reached),
+    context: work.context,
   });
 
   /** 0057 §2, at whichever of the three steps reported it. */
@@ -360,8 +476,17 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      *
      * A pass that took nothing still runs `end`, which resolves nothing because
      * there is no stream to resolve it onto.
+     *
+     * **It is also where a pass begins**, which is why the three facts are
+     * cleared here and not left from the pass before: see `bodiesFor`.
      */
     claim: async (): Promise<StepPassed | StepDidNotFinish> => {
+      // Before the answer, not after it — the two ways `take` can decline write
+      // nothing, and it was exactly those that let `end` resolve onto the item
+      // the pass before had landed.
+      claimed = null;
+      worktree = null;
+      design = "";
       const answer = await ports.take();
       if ("taken" in answer) {
         claimed = answer.taken;
@@ -389,8 +514,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * change — nothing has been written yet — so it is 0057's class and the pass
      * stops rather than buying a round to fix a repository.
      */
-    admit: async ({ context }): Promise<StepPassed | StepDidNotFinish> => {
-      const answer = await ports.cut(madeBy("admit", "item", claimed));
+    admit: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish> => {
+      const answer = await ports.cut(madeBy("admit", "item", claimed), sentBackTo("admit", reached));
       if ("worktree" in answer) {
         worktree = answer.worktree;
         return { ending: "passed", head: answer.worktree.baseSha };
@@ -440,8 +565,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * It cannot refuse — a design is not a judgement about a diff, there being
      * no diff yet — but it can ask, and 0058 §3b draws that edge.
      */
-    design: async ({ context }): Promise<StepPassed | StepDidNotFinish> => {
-      const answer = await ports.draft(briefOn("design", context));
+    design: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish> => {
+      const answer = await ports.draft(briefOn("design", { context, reached }));
       if ("document" in answer) {
         design = answer.document;
         return { ending: "passed" };
@@ -467,8 +592,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * It cannot refuse, and that is 0058 §3b's rectangle: arriving at the router
      * and refusing are different things, and only one of them is charged for.
      */
-    implement: async ({ context }): Promise<StepPassed | StepDidNotFinish | StepNeverRan> => {
-      const answer = await ports.dispatch(briefOn("implement", context));
+    implement: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish | StepNeverRan> => {
+      const answer = await ports.dispatch(briefOn("implement", { context, reached }));
       if ("committed" in answer) return { ending: "passed", head: answer.committed };
       if ("asked" in answer) return asking(answer.asked);
       if ("neverStarted" in answer) {
@@ -505,15 +630,23 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * 0016 §4 refuses: `EndActionsResolved` lives on the work item's stream, and
      * a pass whose `claim` took no item has no stream to append it to. There is
      * no item for the audit to find either, so nothing goes quiet.
+     *
+     * **And the outcome goes down with the resolution, in one append.** The port
+     * is handed both because `end-step.ts`'s rule is that they cannot come apart:
+     * a resolution recorded at one version and a `WorkItemLanded` at the next is
+     * a window in which an item can be left resolved and never ended. See
+     * `PassPorts.record`, which is why it is called on a pass that claimed
+     * whether anything resolved or not.
      */
     end: async ({ actions, outcome }): Promise<StepPassed> => {
       if (claimed === null) return { ending: "passed" };
       const events = await ports.read(claimed);
+      // An empty list is *nothing declared* or *already resolved for this
+      // outcome*, and neither is a row — but the ending is owed either way, so
+      // the call is made either way. A step that resolved a declared list down to
+      // no effects is not empty here: that is one row whose own `actions` are `[]`.
       const resolved = resolveEndActions(events, actions, outcome);
-      // Empty is *nothing declared* or *already resolved for this outcome*, and
-      // neither is a row. A step that resolved a declared list down to no effects
-      // is not empty here: that is one row whose own `actions` are `[]`.
-      if (resolved.length > 0) await ports.record({ claimed, at: events.length, resolved });
+      await ports.record({ claimed, at: events.length, outcome, resolved });
       return { ending: "passed" };
     },
   };
