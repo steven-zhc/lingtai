@@ -1229,6 +1229,103 @@ describe("runOnce, with no world to run in", () => {
       expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
     });
   });
+
+  /**
+   * **The half-rejected push is not the wall's alone, and the correction has to
+   * reach the endings that already answered** (`#251`).
+   *
+   * Section 9 appends a `RunProducedDiff` naming `agent/<n>` for every pass
+   * that reaches the gates, which is every ending but the wall and the crash.
+   * So a hold — a `human:` action here, the tamper watch in this repository —
+   * publishes with that answer already on the stream, and if origin then takes
+   * only the arm, the row a next attempt reads names the ref that rejected the
+   * push: the sibling's commits, at a head this run never made.
+   *
+   * `attemptOutcome` folds `RunProducedDiff` last-wins, so the correction is a
+   * second row. What must not come back is a *third*: the finalizer publishes
+   * again on the way out, finds the same half-rejection, and has nothing new to
+   * say about it.
+   */
+  describe("when the pass reaches the gates and a person is asked", () => {
+    it("corrects the ref a half-rejected push left, though the gates were already told the branch", async () => {
+      const store = memoryStore();
+      const did: string[] = [];
+      const said: string[] = [];
+      const ports = fakePorts(did, store);
+
+      // Only the refspec carrying the lease is refused, which is what origin
+      // does when a sibling claim moved `agent/7` after this worktree was cut.
+      const rejected = "! [rejected] agent/7 -> agent/7 (stale info)";
+      const inner = ports.repo.git;
+      ports.repo.git = (args, o) =>
+        args[0] === "push" && args.some((a) => a.startsWith("--force-with-lease="))
+          ? Effect.sync(() => {
+              did.push(`git push ${args.filter((a) => a.includes(":refs/heads/")).join(" ")}`);
+            }).pipe(
+              Effect.andThen(
+                Effect.fail({
+                  _tag: "RepoFailed",
+                  operation: "git push",
+                  detail: rejected,
+                } as never),
+              ),
+            )
+          : inner(args, o);
+
+      const held = RECIPE.replace(
+        "steps: {}",
+        'steps:\n  proposed:\n    - { name: approval, human: "look at it before it merges" }',
+      );
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said, held),
+          runtime,
+          issue: 7,
+          hookBinary: "/tmp/fake/lingtai-hook",
+          prompt: "fix {{issue}}",
+          // Nothing else is to hold this: the `human:` action at `proposed` is,
+          // and `fakePorts` throws if the integrator is reached anyway.
+          merge: true,
+          home: "/tmp/fake-home",
+          store,
+        },
+        ports,
+      );
+      if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+      expect(result).toMatchObject({ ok: "held", gate: "proposed" });
+      expect(did).not.toContain("integrate");
+
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+      // The gates were told `agent/7`; the publish on the way out corrects it
+      // to the arm, and the finalizer's second call adds nothing.
+      const produced = run.filter((e) => e.type === "RunProducedDiff");
+      expect(produced.map((e) => (e.data as { branch: string }).branch)).toEqual([
+        "agent/7",
+        "agent/7-attempt-1",
+      ]);
+      expect(produced[1]!.data).toMatchObject({
+        branch: "agent/7-attempt-1",
+        headSha: "b".repeat(40),
+      });
+      expect(
+        run
+          .filter((e) => e.type === "RunRefsPublished")
+          .map((e) => (e.data as { outcome: string }).outcome),
+      ).toEqual(["arm-only", "arm-only"]);
+      expect(did).toContain("git push +HEAD:refs/heads/agent/7-attempt-1");
+
+      // And the next attempt is sent to the ref that holds this run's work.
+      const item = await store.read(`wi-${PROJECT}-7`);
+      const brief = nextPrompt({
+        base: "ticket@1",
+        budget: { evidence: 2_000, attempts: 3, findings: 5 },
+        item,
+        lastRun: run,
+      }).failure;
+      expect(brief).toContain("git fetch origin agent/7-attempt-1");
+    });
+  });
 });
 
 /**

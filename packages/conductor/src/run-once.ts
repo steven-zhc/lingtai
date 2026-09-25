@@ -1013,15 +1013,32 @@ export function runOnce(
       /** The head this pass has already published, so nothing pushes it twice. */
       let published: string | null = null;
       /**
-       * Whether anything has recorded the commits on the run's own stream.
+       * What the run's own stream has already been told this claim produced,
+       * as `<ref>@<head>` — null while nothing has said anything.
        *
        * Section 9 does it for every pass that reaches the gates. A pass that
        * does not — the agent met the wall, or crashed with work committed — has
        * to record it where it publishes, or the ref exists and the next attempt
        * is told *Nothing*: `attemptBrief` reads `RunProducedDiff` and nothing
        * else, so an unrecorded branch is a branch nobody will fetch.
+       *
+       * **A key and not a flag, because `arm-only` corrects an answer §9 has
+       * already given** (`#251`). A pass that reached the gates and then held —
+       * a `human:` action, the tamper watch — has already said `agent/<n>` at
+       * this head; if the publish on the way out then finds that origin took
+       * only the arm, that row is wrong, because `agent/<n>` is whatever
+       * invalidated the lease. A flag made the correction unreachable on every
+       * path that got as far as a gate, which is every ending but the wall and
+       * the crash. `attemptOutcome` folds `RunProducedDiff` last-wins
+       * (`attempts.ts`), so the correction is a further row and never an edit.
+       *
+       * What the key still refuses is the *same* answer twice: two rows naming
+       * one ref at one head would be two answers to *what did this attempt
+       * produce*, which is what the flag was for.
        */
-      let recordedDiff = false;
+      let recordedDiff: string | null = null;
+      /** The key `recordedDiff` holds, so every writer of it spells it one way. */
+      const producedKey = (ref: string, head: string) => `${ref}@${head}`;
 
       /**
        * **What this claim leaves behind, whatever ending it had**
@@ -1160,12 +1177,15 @@ export function runOnce(
        * **The ref is a parameter and not `branch`**, because `arm-only` exists
        * (`#251`): where origin took the arm and rejected the leased
        * `agent/<n>`, naming `branch` here would send the next agent to fetch a
-       * ref holding whatever invalidated the lease.
+       * ref holding whatever invalidated the lease. Which is also why the guard
+       * is per *answer* and not per pass: on every ending but the wall and the
+       * crash, §9 has already named `agent/<n>`, and a correction that cannot
+       * be appended is a correction that does not exist (`recordedDiff`).
        */
       const recordDiff = (ref: string, head: string) =>
         Effect.gen(function* () {
-          if (recordedDiff) return;
-          recordedDiff = true;
+          if (recordedDiff === producedKey(ref, head)) return;
+          recordedDiff = producedKey(ref, head);
           const counted = yield* Effect.either(numstat);
           yield* appendAtEnd(runId, [
             {
@@ -1879,9 +1899,11 @@ export function runOnce(
         },
       ]);
       // Said once. The publish above this is what records it for a pass that
-      // never reaches here, and two `RunProducedDiff` for one head would be two
-      // answers to *what did this attempt produce*.
-      recordedDiff = true;
+      // never reaches here, and two `RunProducedDiff` for one ref at one head
+      // would be two answers to *what did this attempt produce*. The key rather
+      // than a flag, because this answer names `branch`, and a publish that
+      // finds origin took only the arm has to be able to correct it (`#251`).
+      recordedDiff = producedKey(branch, firstHead);
 
       // ---- 10. one pass, and it is a loop -----------------------------------
       /**
@@ -2414,6 +2436,10 @@ export function runOnce(
               data: parsePayload("RunProducedDiff", { branch, headSha: after, ...moved }),
             },
           ]);
+          // The head moved, so what §9 recorded is no longer the answer: without
+          // this the publish on the way out would say `branch` at this head a
+          // second time.
+          recordedDiff = producedKey(branch, after);
           return { kind: "committed" as const, round: decision.round, head: after };
         });
 
