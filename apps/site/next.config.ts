@@ -16,6 +16,13 @@ import type { NextConfig } from "next";
  * file. See `src/lib/snapshot.ts` for what is in it and what is withheld.
  */
 const config: NextConfig = {
+  // Next writes an `AGENTS.md` and a `CLAUDE.md` into this directory on every
+  // start, describing its own conventions. Two of them were committed here
+  // before anybody noticed, and a directory-level `CLAUDE.md` is read as
+  // project instructions by an agent working in it — so a generated file
+  // becomes an instruction nobody wrote. Every agent in this repository
+  // commits with `git add -A`, which is how they get in.
+  agentRules: false,
   output: "export",
   // The whole point of an export is a directory of files; `/docs/tutorial/`
   // wants to be a directory with an `index.html` in it so any static host

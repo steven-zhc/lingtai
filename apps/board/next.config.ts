@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
+  // Next writes an `AGENTS.md` and a `CLAUDE.md` into this directory on every
+  // start, describing its own conventions. Two of them were committed here
+  // before anybody noticed, and a directory-level `CLAUDE.md` is read as
+  // project instructions by an agent working in it — so a generated file
+  // becomes an instruction nobody wrote. Every agent in this repository
+  // commits with `git add -A`, which is how they get in.
+  agentRules: false,
   // Localhost, one user. See doc/decisions/0008-nextjs.md for why there is no
   // auth here and what has to change before that stops being true.
   // Every workspace package the board reaches. They ship as TypeScript source
