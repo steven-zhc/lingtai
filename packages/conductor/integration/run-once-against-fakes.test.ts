@@ -615,6 +615,15 @@ describe("runOnce, with no world to run in", () => {
     // whether the run landed is not yet a fact about the world.
     expect(did.indexOf("integrate")).toBeLessThan(did.indexOf("runLog delete"));
     expect(did).not.toContain("runLog keep");
+
+    // **And a landing leaves no `RunRefsPublished` at all** (`#251`), which is
+    // the exception the rule about that row has to carry. The finalizer is
+    // skipped here on purpose — the branch is on origin and the diff is in the
+    // base — and §11's own push writes no row, so *`RunStarted`, a terminal
+    // event and no `RunRefsPublished`* is the shape of **every run that
+    // merged**. It means *the publish never ran* only where the run did not
+    // land, and this line is what stops that caveat being dropped.
+    expect((await store.read(result.runId)).map((e) => e.type)).not.toContain("RunRefsPublished");
   });
 
   /**
@@ -791,8 +800,8 @@ describe("runOnce, with no world to run in", () => {
     // satisfies too. **The ordering is not.** Pre-`#251` the only call was the
     // finalizer, which runs while the scope unwinds, after `WorkItemBlocked` and
     // after GitHub is told: these two lines are in the other order, and the
-    // assertion goes red. On `#250` itself the finalizer never ran at all, which
-    // is why the ending that lost the work now has a call of its own.
+    // assertion goes red. That, and not any doubt that a finalizer fires, is why
+    // the ending that lost `#250`'s work now has a call of its own.
     const pushed = did.indexOf(
       "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1",
     );
@@ -978,15 +987,17 @@ describe("runOnce, with no world to run in", () => {
    *
    * This is what makes *no row* mean something. `RunStarted` is appended at §8,
    * after the finalizer is registered, so a run stream with `RunStarted`, a
-   * terminal event and no `RunRefsPublished` says the finalizer **did not run** —
-   * which is the one hypothesis `#250`'s evidence points at and the one a row
-   * written only from inside the publish cannot reach on its own. The inference
-   * is only worth having if a refused append cannot counterfeit it: swallowed
-   * into `Effect.void`, a stale version on the run stream renders exactly like a
-   * finalizer that never fired. So it lands in the file a run that did not land
-   * keeps.
+   * terminal event and no `RunRefsPublished` says the publish **did not run** —
+   * a reading a row written only from inside the publish cannot reach on its
+   * own. **It holds only where the run did not land**, which is why this test's
+   * run is blocked at the wall and not merged: the finalizer is skipped on a
+   * landing and §11's own push writes no row, so every run that merged has that
+   * shape and means nothing by it. The inference is only worth having if a
+   * refused append cannot counterfeit it either: swallowed into `Effect.void`, a
+   * stale version on the run stream renders exactly like a publish that never
+   * ran. So it lands in the file a run that did not land keeps.
    */
-  it("says in the run log when the store refused the account, so no row still means it never ran", async () => {
+  it("says in the run log when the store refused the account, so no row on a run that did not land still means it never ran", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const said: string[] = [];
@@ -1081,6 +1092,83 @@ describe("runOnce, with no world to run in", () => {
     // And the run's ending is still the wall's, not its bookkeeping's — a defect
     // out of this call reaches `unexpected` if nothing catches it.
     expect(result.stage).toBe("run");
+  });
+
+  /**
+   * **A defect before the publish has said anything is `#250`'s own shape**
+   * (`#251`).
+   *
+   * `#250` met the wall with two commits, and the evidence says the finalizer
+   * *ran*: its run log carries the `end` line and the file was **kept**, and the
+   * three finalizers release in reverse order of acquisition — the publish, then
+   * the worktree, then the log — so the scope closed with `didLand` false and
+   * this body was entered. Every ending it can reach is excluded by something
+   * else: it committed (the rescued commits are parented on the base), a refusal
+   * at either git call writes a `push` line and there is none, and neither ref
+   * ever reached origin.
+   *
+   * **What is left is a throw from under an `Effect.either`, before the first
+   * `runLog.note`** — which wrote no line, left no ref, and pre-`#251` left no
+   * row either, so it was indistinguishable from a finalizer that never fired.
+   * It is why the handler exists, and this is the test of it: the account is a
+   * `refused` row naming what threw, with **no head**, because a `rev-parse` that
+   * died read none.
+   */
+  it("leaves a refused row when the publish dies before it has said anything", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const fake = fakePorts(did, store);
+    const ports: RunPorts = {
+      ...fake,
+      repo: {
+        ...fake.repo,
+        // A throw from under the `Effect.either`, not a `RepoFailed` through it:
+        // the failure channel is already answered, and the defect channel is the
+        // one that was silent.
+        git: (args, o) =>
+          args[0] === "rev-parse" ? Effect.die(new Error("git: cannot exec")) : fake.repo.git(args, o),
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: atTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+
+    // Two, because both the ending's own call and the finalizer behind it died
+    // the same way — and *two rows* is the reading `#250` could not get, where
+    // no row at all was the only thing either of them left.
+    const refs = (await store.read(result.runId!)).filter((e) => e.type === "RunRefsPublished");
+    expect(refs).toHaveLength(2);
+    for (const ref of refs) {
+      expect(ref.data).toEqual({
+        branch: "agent/7",
+        arm: "agent/7-attempt-1",
+        headSha: null,
+        outcome: "refused",
+        detail: "git: cannot exec",
+      });
+    }
+    expect(did).toContain("note push the publish itself failed — git: cannot exec");
+    // Nothing was pushed, and nothing about the ending moved: a defect in the
+    // bookkeeping is not a second opinion about the ticket.
+    expect(did.filter((d) => d.startsWith("git push"))).toEqual([]);
+    expect(result.stage).toBe("run");
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemBlocked");
   });
 
   /**

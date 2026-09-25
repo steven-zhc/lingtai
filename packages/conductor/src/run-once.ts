@@ -1055,8 +1055,8 @@ export function runOnce(
        *
        * `#250` met the wall with two commits in its worktree, left no ref and no
        * line, and was collected. Every question anybody could then ask of it —
-       * did the finalizer run, did it find nothing, was it refused — met the
-       * same silence, because the only account this function gave was
+       * did the finalizer run, did it find nothing, was it refused, did it throw
+       * — met the same silence, because the only account this function gave was
        * `runLog.note` and:
        *
        *   a **success wrote nothing at all**, so the ordinary case and the
@@ -1066,18 +1066,21 @@ export function runOnce(
        *   a run log is a trace and not a record (0034 §8) — it is deleted on a
        *   landing, and it is not what a behavioural claim is settled by
        *
-       * **The run log was open, and that is what settles #250.** #251 supposed
-       * the finalizer's `runLog.note` had nowhere to go because the file was
-       * already closed; it is the other way round. The three finalizers release
-       * in reverse order of acquisition — this publish, then `removeWorktree`,
-       * then the run log, whose own release writes `RUN_LOG_END` — so a `push`
-       * line written here always precedes the `end` line. #250's log has the
-       * `end` line, so the scope closed and the log took its last write; and the
-       * word *push* appears nowhere in it but the branch on line 2.
+       * **The run log was open, and that is what settles #250 — the other way
+       * round from how the ticket read it.** #251 supposed the finalizer's
+       * `runLog.note` had nowhere to go because the file was already closed. It
+       * is the reverse, and it proves more than it was reached for. The three
+       * finalizers release in reverse order of acquisition — this publish, then
+       * `removeWorktree`, then the run log, whose own release writes
+       * `RUN_LOG_END` and then keeps or deletes the file from the same
+       * `didLand`. #250's log carries that `end` line *and was kept*: so the
+       * scope closed, `didLand` was false, every finalizer ran, and this one ran
+       * first. **`publishWhatIsCommitted` was entered.**
        *
-       * **So this function was never entered, and the ending #250 had is the
-       * first hypothesis in that ticket's *Start here*: the finalizer did not
-       * run.** Each of the other four is excluded by something outside the log:
+       * **So the first hypothesis in that ticket's *Start here* — the finalizer
+       * did not run — is the one the evidence excludes**, and the open question
+       * is how a body that ran left neither a ref nor a line. Every ending it
+       * can reach is excluded too:
        *
        *   *it found nothing* — `origin/rescue/250` is `79aaaa8`, whose two
        *   commits (22:01:04, 22:13:18) are parented straight on `579f768`, the
@@ -1085,7 +1088,8 @@ export function runOnce(
        *   false, and the run log shows no `reset` or `checkout` after the second
        *   commit. **#250 committed, and the head had moved.**
        *   *it was refused*, either at `rev-parse` or at the push — both write a
-       *   `push` line, and there is none
+       *   `push` line, and the word *push* appears nowhere in that file but the
+       *   branch on line 2
        *   *it succeeded* — neither `agent/250` nor `agent/250-attempt-1` is on
        *   origin or in the mirror, and **no `agent/*-attempt-*` ref has ever
        *   reached origin at all**, while the three `-restart-<k>` refs from
@@ -1097,20 +1101,36 @@ export function runOnce(
        *   which an out-of-turns ending never made until the call below the
        *   receipt existed
        *
-       * Which is why there is now a call on that ending as well as this
-       * finalizer. A row from here says the finalizer ran; **no row at all, on a
-       * stream that has `RunStarted`, says it did not** — and that is the
-       * sentence #250 needed and could not get.
+       * **What is left is the one ending this body could not report: entered,
+       * and dead into the defect channel before its first `runLog.note`.** Every
+       * git call here is wrapped in an `Effect.either`, so that is not a
+       * *failure* — it is a throw from underneath one, or out of `parsePayload`,
+       * or out of an append. It leaves exactly #250's signature and leaves it
+       * everywhere at once: no `push` line in an open log, no ref on origin, and
+       * no account anywhere else, because a defect raised while a scope unwinds
+       * is the one thing this function never got to write about. **That is the
+       * hypothesis the `catchAllDefect` below plugs**, and the reason that
+       * handler is the fix and not a precaution — it is not enumerated in the
+       * ticket, and it is the only reading consistent with all of the evidence.
+       *
+       * A row from here says the publish ran; **no row at all, on a stream that
+       * has `RunStarted` and a terminal event that is not a landing, says it did
+       * not** — and that is the sentence #250 needed and could not get.
        *
        * **The absence of a row is itself the answer, and only if this cannot be
        * quiet.** `RunStarted` is appended at §8, *after* the finalizer is
-       * registered below, so a run stream carrying `RunStarted` and a terminal
-       * event and no `RunRefsPublished` says the finalizer did not run. That
-       * inference is worth nothing if a refused append looks the same as no
-       * append: `appendAtEnd` is an `Effect.promise`, so a store that would not
-       * take the row arrives as a defect, and a defect raised from inside a
-       * finalizer would replace the ending the run actually had with the failure
-       * of its own bookkeeping. So it is caught — and **said**, in the file that
+       * registered below, so a run stream carrying `RunStarted`, a terminal
+       * event, and no `RunRefsPublished` says the publish never ran — **unless
+       * the run landed**, which is the one ending the finalizer skips on purpose
+       * and where §11's own bare push writes no row either. Every run that
+       * merged has that exact shape, so a reader who drops the caveat reads the
+       * whole happy path as finalizers that did not fire and buries the one
+       * signal this event exists to make. That inference is worth nothing if a
+       * refused append looks the same as no append either: `appendAtEnd` is an
+       * `Effect.promise`, so a store that would not take the row arrives as a
+       * defect, and a defect raised from inside a finalizer would replace the
+       * ending the run actually had with the failure of its own bookkeeping. So
+       * it is caught — and **said**, in the file that
        * a run which did not land keeps, rather than swallowed into the same
        * silence the row exists to end. The account is worth a row and a line,
        * and is not worth an ending.
@@ -1239,14 +1259,15 @@ export function runOnce(
        * crash, a declined round, a hold, a restart, a lane refusal and a defect
        * — enumerating them is how the next one gets missed.
        *
-       * **It is the floor and not the only call, and `#250` is why.** A ref that
-       * only ever reaches origin while a scope unwinds is a ref no test asserts
-       * and no reader can check: on that run this finalizer did not run at all
-       * (see the elimination above), and everything else about the ending was
-       * correct. So the wall has its own call beside the declined round's and the
-       * hold's, and this stays underneath all three — the reason those calls are
-       * *there* is ordering, never doubt about this one, and the reason this one
-       * exists is the endings that have no call and never will.
+       * **It is the floor and not the only call, and ordering is why.** A ref
+       * that only ever reaches origin while a scope unwinds reaches it *after*
+       * the person has been asked and after GitHub has been told — and a person
+       * asked a question wants the branch already there. So the wall has its own
+       * call beside the declined round's and the hold's, and this stays
+       * underneath all three: the reason those calls are *there* is ordering,
+       * never doubt about this one — which on `#250` did run (see the
+       * elimination above) — and the reason this one exists is the endings that
+       * have no call and never will.
        *
        * Registered after the worktree is acquired, so it runs *before* the
        * worktree is removed: finalizers release in reverse order, and the
@@ -1648,13 +1669,13 @@ export function runOnce(
                * **The commits go to origin here, and not only from the
                * finalizer** (`#251`).
                *
-               * This is the ending that lost `#250`'s $26.84, and the elimination
-               * above says why one line at this exit is not the pattern the
-               * finalizer's own comment argues against: **on that run the
-               * finalizer did not run.** A push that only ever happens while a
-               * scope unwinds is a push whose happening no test in this file can
-               * assert and no reader can check — every one of them is satisfied
-               * by the fakes, on which the unwinding always works.
+               * This is the ending that lost `#250`'s $26.84, and what makes a
+               * line at this exit something other than the pattern the
+               * finalizer's own comment argues against is **ordering, not doubt
+               * about the finalizer**: on that run it did run (see the
+               * elimination above), and a push that only ever happens while the
+               * scope unwinds happens after the `WorkItemBlocked` below and
+               * after GitHub is told.
                *
                * So the wall joins the declined round and the hold at §10, which
                * call this for the reason stated there and restated here: *a

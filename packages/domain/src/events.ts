@@ -458,16 +458,26 @@ export const RunProducedDiff = z.object({
  * log is a **trace and never a record** (0034 §8): it is deleted when the run
  * lands, it is not on the log a claim is settled by, and a *successful* push
  * wrote nothing to it at all. So *did the finalizer run and find nothing*, *did
- * it run and get refused*, and *did it never run* were one silence, and telling
- * them apart cost a night of archaeology on a log two resets old.
+ * it run and get refused*, *did it run and die*, and *did it never run* were one
+ * silence, and telling them apart cost a night of archaeology on a log two
+ * resets old.
  *
- * One type rather than three, and appended on **every** outcome including the
+ * One type rather than four, and appended on **every** outcome including the
  * ones that are not failures: what the incident needed was not a record of
  * pushes but the answer to *did this happen at all*, and only an event that is
  * always there answers that. It settles nothing and nothing reads it to decide
  * anything — `run.ts` has no case for it — which is 0034 §8's test passed on
  * purpose, in the other direction: the account belongs on the log because it
  * outlives the file, not because anything branches on it.
+ *
+ * **Every outcome of the publish, which is not every run.** A run that *landed*
+ * has none of these and is meant to: the finalizer that publishes is skipped on
+ * a landing (0062 §4 would only have to take the arm ref back off), and §11's
+ * own push to the base writes no row. So a stream with `RunStarted`, a terminal
+ * event and no `RunRefsPublished` says the publish never ran **only where the
+ * run did not land** — read without that, every successful run in the log comes
+ * back as a publish that did not fire, which buries the signal this type exists
+ * to make.
  */
 export const RunRefsPublished = z.object({
   /** `agent/<n>` — the ref the next attempt's prompt tells an agent to fetch. */
