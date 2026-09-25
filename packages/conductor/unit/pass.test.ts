@@ -1828,19 +1828,30 @@ describe("the ten bodies are empty, and the two that are not silent", () => {
 describe("nothing in the conductor imports it", () => {
   /**
    * The ticket's first *Done when*, and the thing that makes the blast radius
-   * zero: `pass.ts` lands beside `run-once.ts` and is reachable only from this
-   * file. The day T5 wires it, this test is deleted in the same commit as the
+   * zero: the pass lands beside `run-once.ts` and is reachable only from its own
+   * tests. The day T5 wires it, this test is deleted in the same commit as the
    * line that wires it — which is the point of having it say so out loud.
+   *
+   * **It is two files now** (`#259`): `pass-steps.ts` holds six of the ten bodies
+   * and is the one source file allowed to import `pass.ts`, because it is filling
+   * in that file's own contract. So the rule is read per file rather than as one
+   * list — *nothing imports the pass, and nothing imports the bodies either* —
+   * and a third file importing either fails this whichever of the two it reaches
+   * for.
    *
    * The pattern is `one-store.test.ts`'s: a rule nobody keeps by reading a
    * comment is a failing test.
    */
-  it("is imported by no source file in the package", () => {
+  it.each([
+    { module: "pass.ts", allowed: ["pass-steps.ts"] },
+    { module: "pass-steps.ts", allowed: [] as string[] },
+  ])("$module is imported by no source file in the package", ({ module, allowed }) => {
     const src = fileURLToPath(new URL("../src", import.meta.url));
+    const imports = new RegExp(`["']\\./${module.replace(".", "\\.")}["']`);
 
     const offenders = readdirSync(src)
-      .filter((f) => f.endsWith(".ts") && f !== "pass.ts")
-      .filter((f) => /["']\.\/pass\.ts["']/.test(readFileSync(join(src, f), "utf8")))
+      .filter((f) => f.endsWith(".ts") && f !== module && !allowed.includes(f))
+      .filter((f) => imports.test(readFileSync(join(src, f), "utf8")))
       .sort();
 
     expect(offenders).toEqual([]);
