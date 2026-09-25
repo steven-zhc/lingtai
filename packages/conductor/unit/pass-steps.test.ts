@@ -114,11 +114,12 @@ const resolvedIn = (appended: ToAppend): { outcome: TerminalOutcome; actions: st
 };
 
 /**
- * The five ports, answering the ordinary thing — and whichever of them a test
- * wants to answer differently.
+ * Every port, answering the ordinary thing — and whichever of them a test wants
+ * to answer differently.
  *
  * The ordinary thing is *this repository, today*: an item taken, a worktree cut,
- * **no design at all**, an agent that committed, and an `end` that resolved.
+ * **no design at all**, an agent that committed, and an item whose stream has
+ * nothing on it yet, which is what makes the version the append expects zero.
  */
 function ports(overrides: Partial<PassPorts> = {}): { ports: PassPorts; asked: Asked } {
   const asked: Asked = { took: 0, cut: [], drafted: [], dispatched: [], recorded: [] };
