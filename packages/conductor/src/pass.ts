@@ -504,6 +504,27 @@ export interface StepWork<S extends Step = Step> {
    */
   readonly outcome: S extends "end" ? TerminalOutcome : null;
   /**
+   * **What that outcome was read off — at `end`, and nowhere else.**
+   *
+   * The outcome above is a word: `blocked`. This is the evidence behind it, and
+   * `end` is the one step with any use for it, because `end` is the one step that
+   * writes the item's ending down. A `WorkItemBlocked` needs a `question`, a
+   * `WorkItemReleased` a `reason`, and neither is derivable from the word — see
+   * `Resting`, which says which field answers which.
+   *
+   * **Handed down rather than re-derived**, and that is the point of the field.
+   * `stoppedAt` is written at three places in the walk and is emphatically not
+   * *the last visit that did not pass*: a pass that asked at `implement`, was
+   * sent back, and then landed has a `did-not-finish` in `reached` and a null
+   * `stoppedAt`. A body computing it off `reached` would be a second
+   * implementation of the loop's own outcome rule, which 0058 §2b puts here and
+   * not in a plugin.
+   *
+   * `null` at the other nine, for the reason `outcome` is: the outcome is *where
+   * the pass came to rest*, and only `end` runs after that is known.
+   */
+  readonly resting: S extends "end" ? Resting : null;
+  /**
    * **This visit's context, and the same object its plugins were just run
    * with** — so a body dispatching an agent and the pipeline that judges what
    * the agent wrote are talking about one commit, in one round.
@@ -862,6 +883,36 @@ export interface RouteTaken {
 /** Where a pass came to rest, when it did not simply get through. */
 export type Rest = "waiting" | "requeued";
 
+/**
+ * **What the outcome was read off** — the two facts `outcomeOf` takes, kept
+ * together because nobody can act on one of them without the other.
+ *
+ * `end`'s body is handed this beside the outcome itself, and the terminal events
+ * are the reason. `outcomeOf` says *which* event an item's ending is; nothing
+ * else in the pass says what goes **in** it. `WorkItemBlocked` requires a
+ * `question` and carries `needs` and `diagnosis`; `WorkItemReleased` requires a
+ * `reason`; and the only component holding either is the step that stopped the
+ * pass — `stoppedAt.ending.detail` is the install that failed or the question an
+ * agent asked, and `stoppedAt.ending.because` is the token beside it. A body
+ * handed the word `blocked` and nothing else could only invent a question, and a
+ * *Waiting on you* card carrying an invented one is the failure
+ * `WorkItemBlocked`'s own doc records — *the old `agent:blocked` label carried no
+ * question* — and `#197` fixed.
+ *
+ * `rested` and `routes` are here for the two endings **no step reports**, where
+ * `stoppedAt` is null and a reader of `stoppedAt` alone would have nothing at
+ * all: a requeue, where `proposed` decided a fresh approach beats another round
+ * (0040); and a route to `waiting` taken on the way through, where `build` and
+ * `review` both passed and what the judge acted on was `review`'s findings.
+ * Both are a decision rather than a report, and the last route's `why` is the
+ * judge's own words for it — which is the question, or the reason, that would
+ * otherwise have to be invented.
+ *
+ * It is a superset of `outcomeOf`'s argument and assignable to it, so the
+ * evidence and the rule that reads it cannot drift apart.
+ */
+export type Resting = Pick<PassResult, "stoppedAt" | "rested" | "routes">;
+
 export interface PassResult {
   /**
    * Every **visit**, in order, with how it ended — and `end` last, always.
@@ -1094,9 +1145,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         // is nothing arriving; what the judge reads is the findings on `reached`,
         // and what it may answer is this set.
         offering: spec.routes ? onOffer(at, { ending: "passed" }, ceilings, roundsSpent) : [],
-        // Nothing but `end` is told the outcome, because nothing but `end` runs
-        // after it is known.
+        // Nothing but `end` is told the outcome, or what it was read off,
+        // because nothing but `end` runs after either is known.
         outcome: null,
+        resting: null,
       }),
     );
     const ending = reached.ending;
@@ -1134,6 +1186,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         arriving: reached,
         offering: onOffer(at, ending, ceilings, roundsSpent),
         outcome: null,
+        resting: null,
       }),
     );
 
@@ -1160,6 +1213,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       arriving: null,
       offering: [],
       outcome,
+      // The word and the evidence behind it, from the two variables `outcomeOf`
+      // was just handed — so the body that writes the item's ending has what
+      // goes *in* the event and not only which event it is (`Resting`).
+      resting: { stoppedAt, rested, routes },
     }),
   );
 
@@ -1167,14 +1224,14 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
 }
 
 /**
- * The four things a visit is handed that depend on *how* it was reached rather
+ * The five things a visit is handed that depend on *how* it was reached rather
  * than on which step it is.
  *
  * Kept together and computed by `runPass` alone, because each is the workflow's
  * own answer and none is derivable inside `runStep`: `outcome` needs where the
- * pass rested, `arriving`/`offering` need what the last step said and what has
- * been spent, and `context` needs the head the walk has reached, the round it is
- * in and what that round was bought on.
+ * pass rested and `resting` is that reading itself, `arriving`/`offering` need
+ * what the last step said and what has been spent, and `context` needs the head
+ * the walk has reached, the round it is in and what that round was bought on.
  */
 interface Reaching {
   /**
@@ -1187,6 +1244,7 @@ interface Reaching {
   readonly arriving: StepReached | null;
   readonly offering: readonly Destination[];
   readonly outcome: TerminalOutcome | null;
+  readonly resting: Resting | null;
 }
 
 /**
@@ -1269,6 +1327,7 @@ async function runStep(
       arriving: reaching.arriving,
       offering: reaching.offering,
       outcome: reaching.outcome,
+      resting: reaching.resting,
       context: reaching.context,
       emit: options.emit,
     });

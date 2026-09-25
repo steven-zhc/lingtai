@@ -86,6 +86,7 @@ import { type TerminalOutcome, resolveEndActions } from "./end-step.ts";
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
+  type Resting,
   type StepBodies,
   type StepDidNotFinish,
   type StepNeverRan,
@@ -176,6 +177,33 @@ export interface Stopped {
   readonly stopped: string;
 }
 
+/**
+ * **The agent never started** — 0031 §1's `never-started`, and the wall that is
+ * about the *account* rather than about the diff: a quota, a signed-out runtime,
+ * `You've hit your session limit`. Zero turns and zero cost.
+ *
+ * One shape shared by the two steps that dispatch an agent, for the reason
+ * `Asked` is shared by the three that can ask: **a port cannot report what its
+ * type cannot say**, and leaving it off one of them makes the difference
+ * disappear at exactly that step. 0061 §3's table puts `agent:` at `design` as
+ * well as at `implement`, so a design agent meets this wall identically — and
+ * without this case the port's only truthful answer there was `Stopped`, which
+ * the body maps to `did-not-finish`: the item is held for a person, nothing
+ * signals the account-wide condition, and the next queue pass claims the next
+ * ticket and walks into the same wall. That is 0031's own incident — eighty
+ * events and six claims in ninety-two seconds — and it is the silence this
+ * file's `Asked` calls worse than an unused case.
+ *
+ * What it costs instead is 0031 §3: the conductor stands down and the item is
+ * **released**, because every queued item would meet this identically. The pass
+ * reports `never-ran`, `outcomeOf` reads `failed`, and the claim goes back.
+ *
+ * `agent` is which runtime refused, because 0041 §3 asks for it by name.
+ */
+export interface NeverStarted {
+  readonly neverStarted: { readonly agent: string; readonly detail: string };
+}
+
 // ----------------------------------------------------------------- the ports ----
 
 /** What `claim` found when it asked whether it may take the item. */
@@ -210,21 +238,14 @@ export type Cut =
  * workflow. Every pass today is the empty one: nothing writes a design yet (T9),
  * and this repository's own recipe omits the step.
  */
-export type Drafted = { readonly document: string } | Asked | Stopped;
+export type Drafted = { readonly document: string } | Asked | NeverStarted | Stopped;
 
 /** What the one agent at `implement` did in that worktree. */
 export type Worked =
   /** The commit it left the worktree at — the whole of what moves `onSha`. */
   | { readonly committed: string }
   | Asked
-  /**
-   * The agent never started: a quota, a signed-out runtime — the wall that is
-   * about the *account* rather than about the diff
-   * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3), whose
-   * consequence is that the conductor stands down and the item is released.
-   * `agent` is which runtime refused, because 0041 §3 asks for it by name.
-   */
-  | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
+  | NeverStarted
   | Stopped;
 
 /** What an agent at `design` or `implement` is handed. */
@@ -286,7 +307,14 @@ export interface PassPorts {
    * (`SentBack`).
    */
   cut(claimed: Claimed, again: SentBack | null): Promise<Cut>;
-  /** `design` — a document, before any code, or nothing. */
+  /**
+   * `design` — a document, before any code, or nothing.
+   *
+   * The same four answers as `dispatch` below, because 0061 §3 puts `agent:` at
+   * both steps and an agent meets the same walls at either: `""` is *this needs
+   * no design*, and the other three are a question, a wall about the account,
+   * and a run that left no receipt (`NeverStarted`).
+   */
   draft(brief: Brief): Promise<Drafted>;
   /** `implement` — one agent, in that worktree, and what it committed. */
   dispatch(brief: Brief): Promise<Worked>;
@@ -323,20 +351,70 @@ export interface PassPorts {
    * this call succeeds**: the pass's last step is where a claimed item's ending
    * is written.
    *
-   * **And when it does not succeed, the caller writes the ending** — `end`'s
-   * visit ends `did-not-finish` with `because` exactly `NOT_ENDED`, and that
-   * token means *nothing at all reached this item's stream*. One append cannot
-   * be made to always happen, so what the shape has to decide is which way it
-   * fails: a resolution with no ending is silent to both audits and leaves the
-   * item claimed for ever, and *neither* would be worse still — nothing on the
-   * stream, nothing for `endedWithoutEndActions` to anti-join, and a
-   * `PassResult` whose `outcomeOf` says `landed`. So the failure is handed back
-   * as a token rather than a sentence, and the caller's answer is the bare
-   * terminal event at the same expected version: that lands the item in the one
+   * ## What goes in the event, and where each field of it comes from
+   *
+   * **The outcome is a word and the terminal events want evidence**, so the
+   * evidence is handed down beside it. Every required field of all three events
+   * has a source here and none of them is the implementation's to invent:
+   *
+   * ```
+   * landed   WorkItemLanded      mergeCommit  `head` — the commit the walk ended at
+   *                              base         the recipe's own (`baseOf`), which the
+   *                                           port-owner holds and the pass does not
+   * blocked  WorkItemBlocked     question     `resting.stoppedAt.ending.detail` — the
+   *                                           install that failed, the question an
+   *                                           agent asked — or, where nothing
+   *                                           reported anything, the judge's own
+   *                                           `why` on the last of `resting.routes`
+   *                              runId        `runId`
+   *                              needsFrom    `human`; `needs`/`diagnosis` are the
+   *                                           port's to write and may be null
+   * failed   WorkItemReleased    reason       the same two places as `question`:
+   *                                           a `never-ran`'s `detail`, or the
+   *                                           judge's `why` on a requeue
+   *                              runId        `runId`
+   * ```
+   *
+   * **An invented `question` is the failure this is shaped to prevent**, and it
+   * is a failure with a history: `WorkItemBlocked`'s own doc records that *the
+   * old `agent:blocked` label carried no question*, and `#197` is what fixing
+   * that cost. A port handed `{ outcome: "blocked" }` and nothing else could
+   * only put a placeholder on the board's *Waiting on you* card for an item
+   * whose real reason — `pnpm install exited 1` — the pass was holding in memory
+   * one function call away. `resting` is that memory, and `Resting` in
+   * [`pass.ts`](pass.ts) is why it is the loop's to hand down rather than a
+   * body's to re-derive.
+   *
+   * ## When the append does not succeed
+   *
+   * One append cannot be made to always happen, so what the shape has to decide
+   * is which way it fails. A resolution with no ending is silent to both audits
+   * and leaves the item claimed for ever; *neither* would be worse still —
+   * nothing on the stream, nothing for `endedWithoutEndActions` to anti-join,
+   * and a `PassResult` whose `outcomeOf` says `landed`. So the failure is handed
+   * back as a token rather than a sentence, and the caller writes the ending.
+   *
+   * **There are two tokens and they are not one, because the two failures leave
+   * the stream in different states.** `end` ends `did-not-finish` with:
+   *
+   * - `NOT_ENDED` — *no append was attempted*. `read` or `resolve` threw, this
+   *   call was never made, and nothing this pass did reached the item's stream;
+   * - `ENDING_UNCONFIRMED` — *this call was made and its fate is unknown*. The
+   *   append may have committed and then lost its connection, which is the case
+   *   a version check cannot help with: the commit is already in.
+   *
+   * **Neither token is an instruction to append at a remembered version.** `at`
+   * is this body's read, it is stale the moment the connection is in doubt, and
+   * on the `ENDING_UNCONFIRMED` path the very append in question may have moved
+   * it. The caller's repair is the same two steps either way — **read the item's
+   * stream, and append the bare terminal event only if this outcome is not
+   * already on it, at the length that read returned.** What the token then says
+   * is what finding one there *means*: under `ENDING_UNCONFIRMED` it is this
+   * call's own append having landed after all, and nothing is owed; under
+   * `NOT_ENDED` it is another writer having ended the item, which is a race
+   * worth reporting rather than a repair. Either way the item ends in the one
    * window this system already audits and already repairs (`lingtai end
-   * replay`), rather than in a new one with no audit on either side. The
-   * version check is what makes that answer safe where this call committed and
-   * then lost its connection — a second terminal event at `at` is rejected.
+   * replay`), rather than in one with no audit on either side.
    *
    * **Resolving and doing are still two acts and neither of them is the doing**
    * (`end-step.ts`): the resolving is `resolveEndActions`, which the body calls;
@@ -356,6 +434,29 @@ export interface PassPorts {
     readonly at: number;
     /** Where the pass came to rest, in `end-step.ts`'s vocabulary — `outcomeOf`'s. */
     readonly outcome: TerminalOutcome;
+    /**
+     * **Why that outcome** — the step that stopped the pass and what it
+     * reported, where the router sent it, and in whose words (`Resting`).
+     *
+     * The table above says which field of it answers which key of which event.
+     * It is the loop's own reading, handed down rather than re-derived: a body
+     * computing it off the visit list would be a second implementation of the
+     * rule 0058 §2b keeps in the core, and would get a pass that asked, was sent
+     * back and then landed wrong.
+     */
+    readonly resting: Resting;
+    /** The run that ended — `WorkItemBlocked.runId`, `WorkItemReleased.runId`. */
+    readonly runId: string;
+    /**
+     * The commit the walk ended at — `WorkItemLanded.mergeCommit`.
+     *
+     * The caller's base until a step says it moved the tree, and then that
+     * step's (`LeftTheTreeAt`): `admit`'s at the cut, `implement`'s at the
+     * commit, and `merge`'s once T4b writes a body that reports one. It is the
+     * one field of a landing that no port-owner can hold, because it is made
+     * during the pass it records.
+     */
+    readonly head: string;
     readonly resolved: readonly ToAppend[];
   }): Promise<void>;
 }
@@ -363,24 +464,53 @@ export interface PassPorts {
 // ---------------------------------------------------------------- the bodies ----
 
 /**
- * **The one `because` a caller of the pass reads**, and the reason it is a
- * constant rather than a sentence spelled out at one call site.
+ * **The two `because` values a caller of the pass reads**, and the reason they
+ * are constants rather than sentences spelled out at one call site.
  *
- * `NEEDS_INPUT` is the token the *workflow* reads; this is the token the
- * *caller* reads, and it says one thing: **`end` could not write this item's
- * ending, so nothing reached its stream and writing it is yours.** A pass whose
- * `end` visit carries it still reports the outcome it actually reached —
- * `PassResult.stoppedAt` is never `end`, a merge that landed has landed — and
- * that is exactly what makes the token necessary: without it a caller reading
- * `outcomeOf(result) === "landed"` and obeying `PassPorts.record`'s *the caller
- * appends no terminal event of its own* writes nothing, and the item is left
- * claimed for ever with `main` moved and no event of any kind to find it by.
+ * `NEEDS_INPUT` is the token the *workflow* reads; these are the tokens the
+ * *caller* reads, and between them they say one thing: **`end` did not confirm
+ * this item's ending, so writing it is yours.** A pass whose `end` visit carries
+ * either still reports the outcome it actually reached — `PassResult.stoppedAt`
+ * is never `end`, a merge that landed has landed — and that is exactly what
+ * makes them necessary: without them a caller reading `outcomeOf(result) ===
+ * "landed"` and obeying `PassPorts.record`'s *the caller appends no terminal
+ * event of its own* writes nothing, and the item is left claimed for ever with
+ * `main` moved and no event of any kind to find it by.
  *
  * Prose would not do. `detail` carries the store's own words for a person
  * (0043), and a caller that had to read them to decide whether to append would
  * be the second reader of a sentence `StepNeverRan` already refuses to create.
+ *
+ * **Nothing at all reached the item's stream** — the `read` that should have
+ * given the expected version threw, or `resolveEndActions` did, so `record` was
+ * never called and this pass appended nothing anywhere.
+ *
+ * A caller that reads the stream and finds a terminal event there anyway has
+ * found a **race**, not this pass's own append: something else ended the item
+ * while the pass was running, which is worth saying out loud rather than
+ * quietly repairing.
  */
 export const NOT_ENDED = "not-ended";
+
+/**
+ * **The append was made and its fate is unknown** — `record` threw.
+ *
+ * Kept apart from `NOT_ENDED` because the two are opposite facts about the
+ * stream, and one of them is the case a version check cannot save anybody from:
+ * a transaction that **committed** and then lost its connection is already in,
+ * and the client that raises is the one that cannot tell. `PassPorts.record`'s
+ * own doc names it. Folded into one token, a caller obeying *write the bare
+ * terminal event at the expected version* would append a second
+ * `WorkItemLanded` for one merge whenever it guessed a version the committed
+ * append had already moved past — and it could only guess, the version never
+ * having been handed back.
+ *
+ * So the repair is a read and not a remembered number: **read the item's stream,
+ * and append only if this outcome is not already on it.** Finding it there under
+ * this token is the ordinary case — the append landed after all, and nothing is
+ * owed.
+ */
+export const ENDING_UNCONFIRMED = "ending-unconfirmed";
 
 /**
  * The ten bodies: these six, and `NOT_BUILT_YET`'s four.
@@ -486,6 +616,19 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     because: "did-not-finish",
     at: null,
     detail,
+  });
+
+  /**
+   * 0031 §3, at whichever of the two steps dispatched the agent.
+   *
+   * Shared rather than written twice, because the whole value of the case is
+   * that `design` and `implement` answer the same wall the same way: a body that
+   * spelled it out at one of them is a body that can be changed at one of them.
+   */
+  const stoodDown = (wall: NeverStarted["neverStarted"]): StepNeverRan => ({
+    ending: "never-ran",
+    at: wall.agent,
+    detail: wall.detail,
   });
 
   /** 0058 §3c, and the one `because` the workflow itself reads. */
@@ -600,14 +743,25 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      *
      * It cannot refuse — a design is not a judgement about a diff, there being
      * no diff yet — but it can ask, and 0058 §3b draws that edge.
+     *
+     * **And it stands the conductor down on the same wall `implement` does.**
+     * `agent:` is declared at both steps (0061 §3), so a design agent meets
+     * `You've hit your session limit` identically, and the answer has to be the
+     * same one: `never-ran`, released, 0031 §3. Reported as `did-not-finish` it
+     * would hold the item for a person and leave the account-wide condition
+     * unsaid, and the next queue pass would claim the next ticket and meet the
+     * same wall — which is 0031's own incident. `EndingAt<"design">` permits
+     * `never-ran` already, `design` being a `SettlingStep`; what was missing was
+     * a way for the port to say it (`NeverStarted`).
      */
-    design: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish> => {
+    design: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish | StepNeverRan> => {
       const answer = await ports.draft(briefOn("design", { context, reached }));
       if ("document" in answer) {
         design = answer.document;
         return { ending: "passed" };
       }
       if ("asked" in answer) return asking(answer.asked);
+      if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
       return noReceipt(answer.stopped);
     },
 
@@ -632,13 +786,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
       const answer = await ports.dispatch(briefOn("implement", { context, reached }));
       if ("committed" in answer) return { ending: "passed", head: answer.committed };
       if ("asked" in answer) return asking(answer.asked);
-      if ("neverStarted" in answer) {
-        return {
-          ending: "never-ran",
-          at: answer.neverStarted.agent,
-          detail: answer.neverStarted.detail,
-        };
-      }
+      if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
       return noReceipt(answer.stopped);
     },
 
@@ -674,26 +822,42 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `PassPorts.record`, which is why it is called on a pass that claimed
      * whether anything resolved or not.
      *
+     * **And the outcome is not the only thing the port is handed, because the
+     * events want evidence.** `WorkItemBlocked` requires a `question`,
+     * `WorkItemLanded` a `mergeCommit`, `WorkItemReleased` a `reason`, and the
+     * word `blocked` answers none of them. The loop reads the outcome off two
+     * facts and hands both down (`Resting`), so the port writes the install that
+     * failed rather than a placeholder — the whole of what `#197` bought. The
+     * run and the head travel with them: `runId` is on every block and every
+     * release, and the head is the commit the walk ended at, which is the one
+     * field of a landing nobody outside the pass can hold.
+     *
      * **And the one append that cannot be retried from here is reported rather
-     * than swallowed.** A store that drops the connection, or an expected-version
-     * append another writer got in ahead of, leaves the item with *nothing* on
-     * its stream — no ending for the work-item fold, nothing for
-     * `endedWithoutEndActions` to anti-join, and a `PassResult` that still says
-     * `landed`. Letting that reach `runStep`'s generic `threw` would make it
-     * indistinguishable from any other crash in this body, so it is caught here
-     * and named: `NOT_ENDED`, which is the caller's instruction to write the
-     * bare terminal event itself. The item then sits in the window that has an
-     * audit and a repair rather than in one that has neither.
+     * than swallowed** — as one of *two* tokens, because the two ways it fails
+     * are opposite facts about the stream. A `read` or a `resolve` that threw
+     * leaves the item with nothing on it: no ending for the work-item fold,
+     * nothing for `endedWithoutEndActions` to anti-join, and a `PassResult` that
+     * still says `landed` — `NOT_ENDED`. A `record` that threw may have
+     * committed first and lost the connection afterwards, which no version check
+     * can undo — `ENDING_UNCONFIRMED`, and the caller reads the stream before it
+     * writes anything. Letting either reach `runStep`'s generic `threw` would
+     * make it indistinguishable from any other crash in this body; folding them
+     * into one token would make a committed append indistinguishable from an
+     * empty stream, which is a duplicate `WorkItemLanded` for one merge. Named,
+     * the item sits in the window that has an audit and a repair.
      */
-    end: async ({ actions, outcome }): Promise<StepPassed | StepDidNotFinish> => {
+    end: async ({ actions, outcome, resting, context }): Promise<StepPassed | StepDidNotFinish> => {
       if (claimed === null) return { ending: "passed" };
       const item = claimed;
-      // Which of the step's own three acts did not finish. All three leave the
-      // stream in the same state — no ending on it — and the caller does the
-      // same thing about each, so this is a person's detail and never the signal.
+      // Which of the step's own three acts did not finish — and at the third it
+      // is the signal and not just a person's detail: `read` and `resolve` leave
+      // the stream untouched and `record` may not have.
       let act = "read";
+      /** The version the append expected, once the read has given one. */
+      let at = 0;
       try {
         const events = await ports.read(item);
+        at = events.length;
         // An empty list is *nothing declared* or *already resolved for this
         // outcome*, and neither is a row — but the ending is owed either way, so
         // the call is made either way. A step that resolved a declared list down
@@ -702,18 +866,37 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         act = "resolve";
         const resolved = resolveEndActions(events, actions, outcome);
         act = "record";
-        await ports.record({ claimed: item, at: events.length, outcome, resolved });
+        await ports.record({
+          claimed: item,
+          at,
+          outcome,
+          // Why that outcome, so the port writes a question rather than invents
+          // one. The loop's own reading, never re-derived here — `Resting`.
+          resting,
+          runId: context.runId,
+          // The head the walk reached: `admit`'s cut, `implement`'s commit, and
+          // `merge`'s once it reports one. `WorkItemLanded.mergeCommit`.
+          head: context.onSha,
+          resolved,
+        });
         return { ending: "passed" };
       } catch (error) {
+        // The third act is the one that may have committed. Everything before it
+        // certainly did not, and the caller acts on that difference.
+        const attempted = act === "record";
         return {
           ending: "did-not-finish",
-          because: NOT_ENDED,
+          because: attempted ? ENDING_UNCONFIRMED : NOT_ENDED,
           // No action asked it: the step's own work did — the same reason
           // `asking` and `noReceipt` above are `null` here.
           at: null,
-          detail:
-            `${item.workItemId} has no \`${outcome}\` on its stream — \`${act}\` threw: ` +
-            `${String(error)}. The pass reached that ending and nothing was written about it.`,
+          detail: attempted
+            ? `${item.workItemId} may or may not have its \`${outcome}\` — the append was made ` +
+              `at version ${at} and \`record\` threw: ${String(error)}. Read the stream before ` +
+              "writing anything: an append that committed and then lost its connection throws here too."
+            : `${item.workItemId} has no \`${outcome}\` on its stream — \`${act}\` threw: ` +
+              `${String(error)}. No append was attempted, so the pass reached that ending and ` +
+              "nothing was written about it.",
         };
       }
     },

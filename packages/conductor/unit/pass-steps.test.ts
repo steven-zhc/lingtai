@@ -21,6 +21,7 @@ import type { Worktree } from "@lingtai/repo";
 import { describe, expect, it } from "vitest";
 import type { TerminalOutcome } from "../src/end-step.ts";
 import {
+  ENDING_UNCONFIRMED,
   NOT_ENDED,
   bodiesFor,
   type Brief,
@@ -38,6 +39,7 @@ import {
   outcomeOf,
   runPass,
   type PassOptions,
+  type Resting,
   type StepBodies,
   type StepBody,
   type StepWork,
@@ -136,8 +138,21 @@ interface Asked {
    * Every call to `record` — **one per pass that claimed, whether anything
    * resolved or not**, because the ending is what the call is about and the
    * resolution rides with it.
+   *
+   * The evidence is noted beside the outcome, because the outcome alone is a
+   * word and the terminal events want more than a word: a `question`, a
+   * `mergeCommit`, a `reason`. What a port could only invent is what these
+   * assertions are about.
    */
-  endings: { workItemId: string; at: number; outcome: TerminalOutcome; resolved: number }[];
+  endings: {
+    workItemId: string;
+    at: number;
+    outcome: TerminalOutcome;
+    resolved: number;
+    runId: string;
+    head: string;
+    resting: Resting;
+  }[];
   /** Every `EndActionsResolved` `end` recorded, unwrapped to what it says. */
   recorded: { workItemId: string; at: number; outcome: TerminalOutcome; actions: string[] }[];
 }
@@ -197,8 +212,16 @@ function ports(overrides: Partial<PassPorts> = {}): { ports: PassPorts; asked: A
       },
       read: async (claimed) => answering.read(claimed),
       record: async (ending) => {
-        const { claimed, at, outcome, resolved } = ending;
-        asked.endings.push({ workItemId: claimed.workItemId, at, outcome, resolved: resolved.length });
+        const { claimed, at, outcome, resolved, runId, head, resting } = ending;
+        asked.endings.push({
+          workItemId: claimed.workItemId,
+          at,
+          outcome,
+          resolved: resolved.length,
+          runId,
+          head,
+          resting,
+        });
         for (const appended of resolved) {
           asked.recorded.push({ workItemId: claimed.workItemId, at, ...resolvedIn(appended) });
         }
@@ -247,6 +270,21 @@ const stateYourAssumption: StepBody<"proposed"> = async ({ arriving, offering })
     : { ending: "routed", to: "waiting", why: "the rounds are spent" };
 };
 
+/**
+ * The judge's other way of reaching `waiting`: on the way through, with nothing
+ * having refused — 0058 §3b's visit that exists for its own sake, where what is
+ * judged is a `review` that **passed** carrying findings.
+ *
+ * It is the one ending where `PassResult.stoppedAt` is null and the outcome is
+ * still `blocked`, so it is the one that says whether the evidence a block needs
+ * survives when no step reported anything.
+ */
+const aPersonShouldSeeThis: StepBody<"proposed"> = async () => ({
+  ending: "routed",
+  to: "waiting",
+  why: "the review found something above the bar",
+});
+
 /** A round to spend, which is what the edge back into the spine costs. */
 const ONE_ROUND: PassOptions["ceilings"] = { rounds: 1, restartsLeft: 0 };
 
@@ -268,6 +306,7 @@ const visit = <S extends Step>(step: S): StepWork<S> =>
     arriving: null,
     offering: [],
     outcome: null,
+    resting: null,
     context,
     emit: () => {},
   }) as unknown as StepWork<S>;
@@ -309,7 +348,9 @@ describe("the six bodies fill a contract that already runs", () => {
 
     expect(result.steps.at(-1)).toMatchObject({ step: "end", ending: { ending: "passed" } });
     expect(asked.recorded).toEqual([]);
-    expect(asked.endings).toEqual([{ workItemId: item.workItemId, at: 0, outcome: "landed", resolved: 0 }]);
+    expect(asked.endings).toMatchObject([
+      { workItemId: item.workItemId, at: 0, outcome: "landed", resolved: 0 },
+    ]);
   });
 });
 
@@ -403,7 +444,9 @@ describe("a second pass on one closure is its own pass", () => {
     expect(second.steps.map((s) => s.step)).toEqual(["claim", "end"]);
     expect(second.stoppedAt).toMatchObject({ step: "claim", ending: { because: "passed-over" } });
     // One ending and one resolution between the two passes, and both the first's.
-    expect(asked.endings).toEqual([{ workItemId: item.workItemId, at: 0, outcome: "landed", resolved: 1 }]);
+    expect(asked.endings).toMatchObject([
+      { workItemId: item.workItemId, at: 0, outcome: "landed", resolved: 1 },
+    ]);
     expect(asked.recorded).toMatchObject([{ outcome: "landed", actions: ["close it", "say so"] }]);
   });
 
@@ -632,6 +675,61 @@ describe("design may produce nothing, and that is an answer", () => {
     expect(result.steps.map((s) => s.step)).toEqual(["claim", "admit", "prepared", "design", "proposed", "end"]);
     expect(result.routes).toMatchObject([{ from: "design", to: "waiting" }]);
     expect(asked.dispatched).toEqual([]);
+  });
+
+  /**
+   * **The wall that is about the account is the same wall at `design`.**
+   *
+   * 0061 §3's table puts `agent:` at `design` as well as at `implement`, so a
+   * design agent meets `You've hit your session limit` — zero turns, zero cost,
+   * 0031 §1's `never-started` — exactly as an implementing one does. Reported as
+   * `did-not-finish` it is `blocked`: the item is held for a person, the
+   * account-wide condition is unsaid, and the next queue pass claims the next
+   * ticket and meets the same wall. That is 0031's own incident, eighty events
+   * and six claims in ninety-two seconds.
+   *
+   * `EndingAt<"design">` permits `never-ran` already, `design` being a
+   * `SettlingStep`; what was missing was a way for the port to say it.
+   */
+  it("stands the conductor down when the design agent never started", async () => {
+    const { ports: p, asked } = ports({
+      draft: async () => ({
+        neverStarted: { agent: "claude-code", detail: "You've hit your session limit" },
+      }),
+    });
+
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(result.stoppedAt).toMatchObject({
+      step: "design",
+      ending: { ending: "never-ran", at: "claude-code", detail: "You've hit your session limit" },
+    });
+    // Released rather than held: no judge was asked, and `failed` is what puts
+    // the claim back (0031 §3).
+    expect(result.routes).toEqual([]);
+    expect(outcomeOf(result)).toBe("failed");
+    // And no agent was paid at `implement`, the wall being the account's.
+    expect(asked.dispatched).toEqual([]);
+    expect(asked.recorded).toMatchObject([{ outcome: "failed", actions: ["say so"] }]);
+  });
+
+  /**
+   * And the two steps answer it **identically** — which is the whole reason the
+   * shape is shared rather than written out at each of them. A `design` that
+   * said `did-not-finish` to what `implement` calls `never-ran` would make where
+   * the agent was dispatched decide whether the conductor stands down.
+   */
+  it("answers that wall the same way at design as at implement", async () => {
+    const wall = { agent: "claude-code", detail: "Credit balance is too low" };
+
+    const atDesign = await pass({ ports: ports({ draft: async () => ({ neverStarted: wall }) }).ports });
+    const atImplement = await pass({
+      ports: ports({ dispatch: async () => ({ neverStarted: wall }) }).ports,
+    });
+
+    expect(atDesign.stoppedAt?.ending).toEqual(atImplement.stoppedAt?.ending);
+    expect(outcomeOf(atDesign)).toBe("failed");
+    expect(outcomeOf(atImplement)).toBe("failed");
   });
 
   /** An agent that started and left no receipt has nothing for a judge to route. */
@@ -868,10 +966,127 @@ describe("end runs on every ending, and the effects never decide whether it happ
     const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(outcomeOf(result)).toBe("landed");
-    expect(asked.endings).toEqual([
+    expect(asked.endings).toMatchObject([
       { workItemId: item.workItemId, at: claimedAlready.length, outcome: "landed", resolved: 1 },
     ]);
     expect(asked.recorded).toMatchObject([{ at: claimedAlready.length, outcome: "landed" }]);
+  });
+
+  /**
+   * **The outcome is a word, and the terminal events want more than a word.**
+   *
+   * `WorkItemBlocked` requires a `question` (`packages/domain/src/events.ts`),
+   * and its own doc says what an empty one costs: *the old `agent:blocked` label
+   * carried no question*, which `#197` fixed. A port handed `{ outcome:
+   * "blocked" }` and nothing else can only put a placeholder on the board's
+   * *Waiting on you* card — for an item whose real reason, `pnpm install exited
+   * 1`, the pass was holding in memory one call away.
+   *
+   * So the step that stopped the pass travels with the outcome, and it is the
+   * **loop's** reading of it rather than this body's: `stoppedAt` is null on a
+   * pass that asked, was sent back and then landed, though a `did-not-finish`
+   * sits in the visit list.
+   */
+  it("hands the port the refusal a block's question is written from", async () => {
+    const { ports: p, asked } = ports();
+
+    await pass({
+      ports: p,
+      recipe: recipeWith({ ...AT_END, prepared: [{ name: "install", run: "pnpm install" }] }),
+      actionsAt: actionsFrom({
+        prepared: [
+          canned("install", { verdict: "failed", evidence: "pnpm install exited 1", findings: [] }),
+        ],
+      }),
+    });
+
+    expect(asked.endings).toHaveLength(1);
+    expect(asked.endings[0]).toMatchObject({
+      outcome: "blocked",
+      // `WorkItemBlocked.runId`, which is not nullable for a question a run asked.
+      runId: context.runId,
+      resting: {
+        rested: "waiting",
+        stoppedAt: {
+          step: "prepared",
+          // The question, the token beside it, and what refused — all three of
+          // 0058 §3c's, none of them invented.
+          ending: { ending: "refused", at: "install", detail: "pnpm install exited 1" },
+        },
+      },
+    });
+  });
+
+  /**
+   * `WorkItemLanded` requires a `mergeCommit`, and it is the one field of a
+   * landing that no port-owner can hold: `base` is the recipe's, but the commit
+   * is made during the pass that records it. The head the walk reached is that
+   * commit — `implement`'s today, and `merge`'s once T4b reports one.
+   */
+  it("hands the port the head a landing's merge commit is written from", async () => {
+    const { ports: p, asked } = ports();
+
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(outcomeOf(result)).toBe("landed");
+    expect(asked.endings[0]).toMatchObject({
+      outcome: "landed",
+      head: "c0mm1tted5ha",
+      // Nothing stopped it, so there is nothing to explain — and that absence is
+      // itself the loop's answer rather than a missing field.
+      resting: { stoppedAt: null, rested: null },
+    });
+  });
+
+  /**
+   * `WorkItemReleased` requires a `reason`, and a `never-ran` is where it comes
+   * from: the wall the agent met, by name and in the runtime's own words.
+   */
+  it("hands the port the wall a release's reason is written from", async () => {
+    const { ports: p, asked } = ports({
+      dispatch: async () => ({
+        neverStarted: { agent: "claude-code", detail: "Credit balance is too low" },
+      }),
+    });
+
+    await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(asked.endings[0]).toMatchObject({
+      outcome: "failed",
+      runId: context.runId,
+      resting: {
+        stoppedAt: { step: "implement", ending: { ending: "never-ran", detail: "Credit balance is too low" } },
+      },
+    });
+  });
+
+  /**
+   * **And the block no step reported still has a reason.** A judge may send a
+   * pass to a person on the way through, where `build` and `review` both passed
+   * and what it acted on was `review`'s findings: `stoppedAt` is null and the
+   * outcome is `blocked` all the same. The judge's own words are then the only
+   * account of why anybody is being interrupted, so they travel too — without
+   * them this is the one ending where an invented question is the *only* option.
+   */
+  it("hands the port the judge's own words where no step reported anything", async () => {
+    const { ports: p, asked } = ports();
+
+    const result = await pass({
+      ports: p,
+      recipe: recipeWith(AT_END),
+      bodies: { proposed: aPersonShouldSeeThis },
+    });
+
+    expect(result.stoppedAt).toBeNull();
+    expect(outcomeOf(result)).toBe("blocked");
+    expect(asked.endings[0]).toMatchObject({
+      outcome: "blocked",
+      resting: {
+        stoppedAt: null,
+        rested: "waiting",
+        routes: [{ to: "waiting", why: "the review found something above the bar" }],
+      },
+    });
   });
 
   it("resolves blocked when a step refused, on the same declared list", async () => {
@@ -945,21 +1160,22 @@ describe("end runs on every ending, and the effects never decide whether it happ
    * pass did: the merge landed, `main` moved, and `PassResult.stoppedAt` is
    * never `end`.
    *
-   * **And `because` is `NOT_ENDED` rather than `threw`, which is the whole of
-   * what saves the item.** One append cannot be made to always happen: the
-   * connection drops, or something else appended between the read and the
-   * expected-version append. What the body decides is what the caller learns.
-   * With a generic crash token the caller reads `outcomeOf(result) === "landed"`,
-   * obeys `PassPorts.record`'s *the caller appends no terminal event of its own*
-   * and writes nothing — and the stream then holds neither `WorkItemLanded` nor
-   * `EndActionsResolved`: the work-item fold still reads the item as claimed so
-   * the queue never re-offers it, `endedWithoutEndActions` cannot see it because
-   * that anti-join names only items that *ended*, and the issue stays open with
-   * `main` moved. `NOT_ENDED` is the instruction to write the bare terminal
-   * event, which puts the item in the one window that already has an audit and
-   * `lingtai end replay` to repair it.
+   * **And `because` is a token rather than `threw`, which is the whole of what
+   * saves the item.** One append cannot be made to always happen. What the body
+   * decides is what the caller learns: with a generic crash token the caller
+   * reads `outcomeOf(result) === "landed"`, obeys `PassPorts.record`'s *the
+   * caller appends no terminal event of its own* and writes nothing — and the
+   * stream then holds neither `WorkItemLanded` nor `EndActionsResolved`: the
+   * work-item fold still reads the item as claimed so the queue never re-offers
+   * it, `endedWithoutEndActions` cannot see it because that anti-join names only
+   * items that *ended*, and the issue stays open with `main` moved.
+   *
+   * **And this one is `ENDING_UNCONFIRMED`, because `record` was called.** A
+   * transaction that committed and then lost its connection raises in exactly
+   * this shape and is already in, so *nothing reached the stream* is a claim
+   * this path cannot make.
    */
-  it("names the ending it could not write, so the caller writes it", async () => {
+  it("says the ending may have been written, when the append was made", async () => {
     const { ports: p } = ports({
       record: async () => {
         throw new Error("the store would not append");
@@ -974,25 +1190,40 @@ describe("end runs on every ending, and the effects never decide whether it happ
       step: "end",
       ending: {
         ending: "did-not-finish",
-        because: NOT_ENDED,
+        because: ENDING_UNCONFIRMED,
         at: null,
         detail: expect.stringContaining("the store would not append"),
       },
     });
-    // And the detail says which item has no ending and which ending it has not
-    // got, because that is what a person reading the run has to act on.
+    // And the detail says which item, which ending it has not been confirmed to
+    // have, and that the stream is to be read before anything is written —
+    // because that is what a person reading the run has to act on.
     const ending = result.steps.at(-1)?.ending;
     expect(ending?.ending === "did-not-finish" && ending.detail).toContain(item.workItemId);
     expect(ending?.ending === "did-not-finish" && ending.detail).toContain("landed");
+    expect(ending?.ending === "did-not-finish" && ending.detail).toContain("Read the stream");
   });
 
   /**
-   * The read is the other half of the same call, and it leaves the stream in the
-   * same state: nothing on it. So it carries the same token — a caller that had
-   * to tell `read` failing from `record` failing to decide whether to append
-   * would be reading two tokens for one question.
+   * **And the read failing is a different token, because it is a different fact
+   * about the stream.**
+   *
+   * `read` throwing means `record` was never called, so this pass appended
+   * nothing anywhere: `NOT_ENDED`, and a terminal event found on the stream
+   * afterwards belongs to some other writer. The resolve is on this side for the
+   * same reason and is not driven from here: `resolveEndActions` throws only on
+   * an action list built in code, every kind `end` cannot run being refused when
+   * the recipe parses.
+   *
+   * Pinned to *one* token the two are indistinguishable, and the cost is a
+   * duplicate. A caller told only *the ending was not written* has one version
+   * to append at — its own read — and on the `record` path the committed append
+   * has already moved past it, so `[WorkItemLanded, EndActionsResolved]` at 12
+   * becomes a second `WorkItemLanded` at 14 and one merge has two landings. The
+   * version check the old doc leaned on can only reject an append at 12, and
+   * nothing ever handed the caller a 12.
    */
-  it("says the same when it could not read the stream to resolve against", async () => {
+  it("says a different thing when it could not read the stream to resolve against", async () => {
     const { ports: p, asked } = ports({
       read: async () => {
         throw new Error("the store would not answer");
@@ -1006,9 +1237,12 @@ describe("end runs on every ending, and the effects never decide whether it happ
       step: "end",
       ending: { ending: "did-not-finish", because: NOT_ENDED },
     });
-    // Nothing was recorded, which is the state the token is about.
+    // Nothing was recorded, which is the state this token and not the other is
+    // about — and the two are not the same string.
     expect(asked.endings).toEqual([]);
+    expect(NOT_ENDED).not.toBe(ENDING_UNCONFIRMED);
   });
+
 
   /**
    * And a pass whose `end` *did* write says nothing of the kind — otherwise the
@@ -1029,6 +1263,7 @@ describe("end runs on every ending, and the effects never decide whether it happ
       { take: async () => ({ passedOver: "no-kind" }) },
       { cut: async () => ({ notCut: "no mirror" }) },
       { dispatch: async () => ({ asked: "which one?" }) },
+      { draft: async () => ({ neverStarted: { agent: "claude-code", detail: "signed out" } }) },
       { dispatch: async () => ({ neverStarted: { agent: "claude-code", detail: "signed out" } }) },
       { dispatch: async () => ({ stopped: "no receipt" }) },
     ];
