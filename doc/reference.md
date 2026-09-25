@@ -1134,9 +1134,10 @@ one scanner at $46.92 before a fifth found the fault was in the design. Which
 kind of refusal this is, is the judgement the split is for, so it moves to the
 judge; `restarts` still bounds how many times it can be made.
 
-The two effects carry `when:` (`landed` / `blocked` / `failed` / `closed` / `any`), because
+`close:` and `labels:` carry `when:` (`landed` / `blocked` / `failed` / `closed` / `any`), because
 `end` fires on *every* terminal outcome. "Close it when it lands, label it when
-it is blocked" is one configuration rather than two mechanisms. Putting either
+it is blocked" is one configuration rather than two mechanisms. `refs:` carries
+the same key narrowed to `landed` alone, because it deletes. Putting any of them
 at a gating point is refused by name — a gate that silently did nothing would be
 worse. Which kind may be at which point is the matrix below, and every cell in
 it answers one way or the other.

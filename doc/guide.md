@@ -209,8 +209,10 @@ defines it. *"If it comes back it should be tried against that objection, not
 around it."*
 
 **`end` cannot refuse.** It runs on every terminal outcome, and its actions are
-effects: `close:` and `labels:`, each carrying `when:` (`landed` / `blocked` /
-`failed` / `any`). Putting either at a gating point is refused by name.
+effects: `close:`, `labels:` and `refs:`. The first two carry `when:` (`landed`
+/ `blocked` / `failed` / `closed` / `any`); `refs:`, which deletes a landed
+ticket's `agent/<n>-attempt-<k>` refs, carries the same key narrowed to `landed`
+alone. Putting any of them at a gating point is refused by name.
 
 ### The gate you have never seen fail
 

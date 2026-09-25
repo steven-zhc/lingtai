@@ -140,3 +140,80 @@ describe("listOpenIssues", () => {
     expect(asked.filter((url) => url.includes("/issues"))).toHaveLength(1);
   });
 });
+
+/**
+ * **What a sweep is answered with, and what it sends** (`#240`).
+ *
+ * `refs:` at `end` deletes a landed ticket's `agent/<n>-attempt-<k>` refs, and
+ * two facts about this endpoint are the ones the deleting side is written
+ * around. They are asserted here, at the seam, because each is a property of
+ * GitHub's API rather than of the caller:
+ *
+ * - **A name comes back as `refs/heads/…` and goes out as `heads/…`.** A
+ *   wrapper that answered the first and took the second would make every delete
+ *   a 404 on `refs/refs/heads/…`, which is the kind of failure that shows up
+ *   only against the live API.
+ * - **No match is a 404 and not an empty array.** A ticket that landed before
+ *   `#239` published any arm has no refs under its branch at all, and a throw
+ *   there would make *nothing to do* read as *GitHub refused*.
+ */
+describe("the refs a landed ticket leaves", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The token endpoint, then whatever this test wants of the git-refs ones. */
+  function stubRefs(answer: (url: string, init?: RequestInit) => Response) {
+    const sent: { method: string; url: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/access_tokens")) {
+        return new Response(
+          JSON.stringify({ token: "ghs_x", expires_at: new Date(Date.now() + 3_600_000).toISOString() }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        );
+      }
+      sent.push({ method: init?.method ?? "GET", url: String(url) });
+      return answer(String(url), init);
+    });
+    return sent;
+  }
+
+  const json = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+
+  async function client() {
+    return createGitHubClient({ auth, owner: "steven-zhc", repo: "lingtai", installation });
+  }
+
+  it("answers ref names without the `refs/`, and deletes them under it", async () => {
+    const sent = stubRefs((url, init) =>
+      (init?.method ?? "GET") === "DELETE"
+        ? new Response(null, { status: 204 })
+        : json([
+            { ref: "refs/heads/agent/240" },
+            { ref: "refs/heads/agent/240-attempt-1" },
+          ]),
+    );
+    const gh = await client();
+
+    expect(await gh.matchingRefs("heads/agent/240")).toEqual([
+      "heads/agent/240",
+      "heads/agent/240-attempt-1",
+    ]);
+
+    await gh.deleteRef("heads/agent/240-attempt-1");
+    expect(sent.at(-1)).toEqual({
+      method: "DELETE",
+      url: "https://api.github.com/repos/steven-zhc/lingtai/git/refs/heads/agent/240-attempt-1",
+    });
+  });
+
+  it("reads a 404 as no ref matches, rather than as a failure", async () => {
+    stubRefs(() =>
+      new Response(JSON.stringify({ message: "Not Found" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect((await client()).matchingRefs("heads/agent/999")).resolves.toEqual([]);
+  });
+});

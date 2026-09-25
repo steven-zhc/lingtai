@@ -84,7 +84,7 @@ export const ExtensionEnvNames = z
     }
   });
 
-/** The outcomes `end` fires on, which is what the two effects filter by. */
+/** The outcomes `end` fires on, which is what `close:` and `labels:` filter by. */
 const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
 
 /**
@@ -464,7 +464,8 @@ export const queuePlugin = definePlugin("queue", { queue: z.strictObject(QUEUE_F
  * **`when:` is one key and its legal values are the step's**, which is
  * [0059](../../../doc/decisions/0059-a-point-carries-only-the-kinds-it-runs.md)'s
  * rule a third time: `close:` and `labels:` read the work item's *outcome* at
- * `end` (`WHEN` above — `landed`, `blocked`, `failed`, `closed`, `any`), and a
+ * `end` (`WHEN` above — `landed`, `blocked`, `failed`, `closed`, `any`),
+ * `refs:` reads the one value of that vocabulary it is safe to delete on, and a
  * judge reads **the reason the last step gave**. Two steps, two vocabularies,
  * and a value one of them does not know is refused by name when the recipe
  * resolves.
