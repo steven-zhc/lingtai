@@ -27,6 +27,7 @@ import { parseWorkItemStream } from "@lingtai/domain";
 import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
 import { foreignLabels } from "./labels.ts";
+import { agentBranch, armPrefix } from "./restart.ts";
 
 /** What this needs of GitHub, and nothing more. */
 export interface IssueChannel {
@@ -49,10 +50,41 @@ export interface IssueChannel {
 }
 
 /**
- * The four things Lingtai ever says about an issue.
+ * **The refs half, declared apart from the issue half** (`#240`).
+ *
+ * `end`'s third effect deletes branches rather than writing to an issue, so it
+ * needs two calls `IssueChannel` has no business carrying — and everything that
+ * only comments, labels or closes (`discuss.ts`, the board's own ticket path)
+ * would have had to grow them for nothing. `GitHubClient` satisfies both, and
+ * `tellGitHubAbout` asks for both because it is the one function that carries
+ * out an `EndActionsResolved` and may meet any of the three.
+ */
+export interface RefChannel {
+  /**
+   * Every ref beginning `refs/<prefix>`, named **without** the leading `refs/`
+   * — `heads/agent/240-attempt-1`. GitHub matches this as a plain string
+   * prefix, so `heads/agent/24` answers `heads/agent/240`'s refs too and the
+   * caller filters.
+   */
+  matchingRefs(prefix: string): Promise<readonly string[]>;
+  /** Deletes one, named as `matchingRefs` names it. */
+  deleteRef(ref: string): Promise<void>;
+}
+
+/**
+ * The five things Lingtai ever does to an issue and the refs that belong to it.
  *
  * A field rather than an event type each, because with the failures that would
- * have been eight, and all four are handled identically.
+ * have been ten, and all five are handled identically.
+ *
+ * **`refs` is the one that is not a write to the issue** (`#240`): it deletes
+ * the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left
+ * on `origin`. It is here rather than in a module of its own because it is one
+ * of `end`'s effects, and `tellGitHubAbout` is the single place those are
+ * carried out — a second carrier is a path that forgets one, which is the
+ * failure `end-point.ts`'s header is about. It names no refs: the branch is
+ * derived from the work item, and which arms exist is asked of GitHub at the
+ * moment of deleting rather than carried from a resolution minutes earlier.
  *
  * `body` is the one that changes what a *later run* reads
  * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §6):
@@ -66,14 +98,27 @@ export type IssueChange =
   | { kind: "comment"; body: string }
   | { kind: "labels"; labels: readonly string[] }
   | { kind: "closed" }
-  | { kind: "body"; body: string };
+  | { kind: "body"; body: string }
+  | { kind: "refs"; andTheBranch: boolean };
+
+/**
+ * The four of them `tellGitHub` takes — every change that is a write to the
+ * issue, and so every change an `IssueChannel` can carry out.
+ *
+ * `refs` is the fifth and is `sweepRefs`'s, because it needs a `RefChannel`
+ * instead. Split by *what port it needs* rather than kept as one function with
+ * a wider one: `discuss.ts` and the board's ticket path hand `tellGitHub` an
+ * object with four methods on it, and widening the parameter would make them
+ * supply two they never call.
+ */
+export type IssueWrite = Exclude<IssueChange, { kind: "refs" }>;
 
 export interface TellOptions {
   store: EventStore;
   github: IssueChannel;
   /** `wi-<project>-<issue>`. */
   workItemId: string;
-  change: IssueChange;
+  change: IssueWrite;
 }
 
 /** `wi-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
@@ -149,6 +194,78 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
 }
 
 /**
+ * **`end`'s third effect: the history refs a landed ticket left on `origin`,
+ * deleted** (`#240`).
+ *
+ * `agent/<n>-attempt-<k>` is published by every claim that produced commits
+ * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2), one
+ * per approach the item tried, and nothing has ever deleted one — so the count
+ * of `agent/*` on a remote is monotone in how many issues the repository has
+ * had, and every clone, `ls-remote` and fetch pays for all of them. After a
+ * landing those arms name approaches that were abandoned or superseded and
+ * their commits are unreachable from `main`.
+ *
+ * **Which refs is asked of GitHub here, not carried from the resolution.**
+ * `EndActionsResolved` says *sweep this item's arms*, and minutes may pass
+ * before this runs; a list resolved then is a list that can disagree with what
+ * is on the remote now.
+ *
+ * **It asks under `agent/<n>` and then filters by hand, and that is not
+ * belt-and-braces.** GitHub's matching-refs is a plain string prefix, so
+ * `heads/agent/24` answers `heads/agent/240-attempt-1` as well —
+ * `startsWith(armPrefix)` is what keeps a two-digit ticket from deleting a
+ * three-digit one's work, and `=== branch` is what keeps `agent/240` from
+ * going when nobody asked for it.
+ *
+ * **A ref that is already gone is not an error**, which the shape gives for
+ * free: only what was listed is deleted. Nothing here throws either — `end`
+ * cannot refuse, so a delete GitHub declined is an `IssueUpdateFailed` and a
+ * run that still landed.
+ */
+export async function sweepRefs(options: {
+  store: EventStore;
+  github: RefChannel;
+  /** `wi-<project>-<issue>`. */
+  workItemId: string;
+  /** `agent/<n>` itself, on top of its arms. */
+  andTheBranch: boolean;
+}): Promise<void> {
+  const { store, github, workItemId } = options;
+  const target = split(workItemId);
+  if (target === null) return;
+  const { project, issue } = target;
+
+  const branch = agentBranch(issue);
+  const arms = armPrefix(branch);
+  let detail = "";
+  try {
+    const found = await github.matchingRefs(`heads/${branch}`);
+    const doomed = found.filter(
+      (ref) =>
+        ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
+    );
+    for (const ref of doomed) await github.deleteRef(ref);
+    // The names and not the count, because *which* arms went is the only thing
+    // a reader coming back to this row can no longer get from the remote.
+    detail = doomed.length === 0 ? "none" : doomed.join(",");
+  } catch (err) {
+    await record(store, workItemId, "IssueUpdateFailed", {
+      project,
+      issue: String(issue),
+      change: "refs",
+      error: (err as Error).message,
+    });
+    return;
+  }
+  await record(store, workItemId, "IssueUpdated", {
+    project,
+    issue: String(issue),
+    change: "refs",
+    detail,
+  });
+}
+
+/**
  * Appending the outcome must not be able to fail the caller either.
  *
  * A run that merged, told GitHub, and then could not write down that it had
@@ -202,7 +319,13 @@ async function record(
  */
 export async function tellGitHubAbout(options: {
   store: EventStore;
-  github: IssueChannel;
+  /**
+   * Both ports, because this is the one function that carries out an
+   * `EndActionsResolved` and `refs:` is one of the three things it may hold
+   * (`#240`). Required rather than optional: a channel that silently cannot
+   * delete is a recipe that resolved an effect nothing ran, which is `#61`.
+   */
+  github: IssueChannel & RefChannel;
   workItemId: string;
   /** Lingtai's own labels for this state, or `null` to leave them alone. */
   labels?: readonly string[] | null;
@@ -224,7 +347,12 @@ export async function tellGitHubAbout(options: {
     const d = e.data as PayloadOf<"EndActionsResolved">;
     for (const action of d.actions) {
       if ("close" in action) await tell({ kind: "closed" });
-      else await tell({ kind: "labels", labels: action.labels });
+      else if ("labels" in action) await tell({ kind: "labels", labels: action.labels });
+      // The sweep goes last within the item for the same reason the end point's
+      // own actions go after the labels: it is the only irreversible one, and a
+      // failure anywhere before it must not have already deleted the branches
+      // somebody would use to work out what went wrong.
+      else await sweepRefs({ store, github, workItemId, andTheBranch: action.branch });
     }
   }
 }

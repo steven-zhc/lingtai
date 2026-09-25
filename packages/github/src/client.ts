@@ -130,6 +130,26 @@ export interface GitHubClient {
   /** The commit a ref points at right now, so a resolution can be replayed. */
   refSha(ref: string): Promise<string>;
 
+  /**
+   * Every ref beginning `refs/<prefix>`, named without that `refs/` —
+   * `heads/agent/240-attempt-1`.
+   *
+   * **GitHub matches this as a plain string and not as a path**, so
+   * `heads/agent/24` answers `heads/agent/240`'s refs too. That is the API's
+   * behaviour rather than a wrapper's, so it is said here: a caller deleting
+   * what it gets back has to filter, and `sweepRefs` in
+   * `packages/conductor/src/tell.ts` is the one that does.
+   */
+  matchingRefs(prefix: string): Promise<readonly string[]>;
+
+  /**
+   * Deletes a ref, named as `matchingRefs` names it.
+   *
+   * A ref that is not there answers 422, which is a throw like any other: the
+   * caller that must not fail on one deletes only what it has just listed.
+   */
+  deleteRef(ref: string): Promise<void>;
+
   listOpenIssues(): Promise<Issue[]>;
 
   /**
@@ -405,6 +425,26 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
         `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
       );
       return raw.sha;
+    },
+
+    async matchingRefs(prefix) {
+      // 404 is *no ref matches*, which this endpoint answers instead of an
+      // empty array when nothing shares the prefix at all — an answer, like
+      // `fileAt`'s missing file, and not a failure.
+      try {
+        const raw = await request<{ ref: string }[]>(
+          "GET",
+          `/repos/${owner}/${repo}/git/matching-refs/${prefix}`,
+        );
+        return raw.map((each) => each.ref.replace(/^refs\//, ""));
+      } catch (err) {
+        if (err instanceof GitHubError && err.status === 404) return [];
+        throw err;
+      }
+    },
+
+    async deleteRef(ref) {
+      await request<unknown>("DELETE", `/repos/${owner}/${repo}/git/refs/${ref}`);
     },
 
     async listOpenIssues() {

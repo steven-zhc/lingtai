@@ -103,7 +103,10 @@ export function resolveEndActions(
   );
   if (already) return [];
 
-  type Resolved = { name: string; close: true } | { name: string; labels: string[] };
+  type Resolved =
+    | { name: string; close: true }
+    | { name: string; labels: string[] }
+    | { name: string; refs: true; branch: boolean };
   const resolved: Resolved[] = [];
   for (const a of actions) {
     // **The kind, and not the shape.** Every kind but the two that run for
@@ -113,7 +116,7 @@ export function resolveEndActions(
     // this point must never do (`#61`): four of `end`'s six cells were
     // declarable, drawn, and dropped by that line.
     //
-    // It asks for the two keys `KINDS_AT.end` names rather than for `when`,
+    // It asks for the three keys `KINDS_AT.end` names rather than for `when`,
     // because **`when:` stopped being the effects' own key** the day `judge:`
     // declared one (`#238`) — and a `"when" in a` test let a judge action
     // straight past this throw into the `continue` below, where a `findings`
@@ -121,12 +124,24 @@ export function resolveEndActions(
     // silently: `end` resolves, records an empty list, and the log says
     // nothing was declared. A plugin's fields are its own and any of them may
     // spell a word twice; what this point runs is a kind.
-    if (!("close" in a) && !("labels" in a)) {
+    if (!("close" in a) && !("labels" in a) && !("refs" in a)) {
       const kind = kindOfAction(a);
       throw new Error(kindRefusedAt("end", kind, a.name, whyNoKindAt("end", kind) ?? "it produces no effect"));
     }
+    // **This line is the whole safety of `refs:`** (`#240`). Its `when:` is a
+    // `z.literal("landed")`, so an ending that is not a landing fails the match
+    // here and resolves to nothing — and for an item that did not land those
+    // refs are the only surviving account of what was tried. Nothing downstream
+    // re-derives which refs to delete: an action that is not in the list was
+    // not resolved, and `tell.ts` carries out the list.
     if (a.when !== outcome && a.when !== "any") continue;
-    resolved.push("close" in a ? { name: a.name, close: true } : { name: a.name, labels: a.labels });
+    resolved.push(
+      "close" in a
+        ? { name: a.name, close: true }
+        : "labels" in a
+          ? { name: a.name, labels: a.labels }
+          : { name: a.name, refs: true, branch: a.branch },
+    );
   }
 
   return [

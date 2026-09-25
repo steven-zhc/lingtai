@@ -219,5 +219,30 @@ export function restartReason(input: {
  * same name on the retry instead of stranding one.
  */
 export function armBranch(branch: string, n: number): string {
-  return `${branch}-attempt-${n}`;
+  return `${armPrefix(branch)}${n}`;
+}
+
+/**
+ * **The branch a ticket's passes own**, `agent/<n>`, from the issue number.
+ *
+ * One function because the name is now read by something that *deletes* it
+ * (`#240`): `refs:` at `end` sweeps what this and `armBranch` wrote, and a
+ * cleanup working from its own spelling of the name is a cleanup that misses
+ * the refs, or hits somebody else's. `run-once.ts` and `approve.ts` compose it
+ * too, so the publish and the delete are provably about one string.
+ */
+export function agentBranch(issue: number | string): string {
+  return `agent/${issue}`;
+}
+
+/**
+ * **What every arm of a branch begins with**, and so what a sweep matches on.
+ *
+ * `agent/<n>` is not a prefix of its own arms in the way that matters —
+ * `agent/24` is a prefix of `agent/240`'s refs as a string — so the deleting
+ * side asks for this and never for the branch, and takes the branch itself by
+ * equality.
+ */
+export function armPrefix(branch: string): string {
+  return `${branch}-attempt-`;
 }

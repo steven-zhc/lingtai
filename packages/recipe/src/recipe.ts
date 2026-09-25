@@ -179,6 +179,52 @@ export const labelsPlugin = definePlugin("labels", {
 });
 
 /**
+ * **Deletes the history refs a landed ticket left on `origin`** — the
+ * `agent/<n>-attempt-<k>` siblings `armBranch` pushes
+ * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2), one
+ * per approach the item tried.
+ *
+ * Nothing else deletes a branch, so the count is monotone in how many issues a
+ * repository has had: this one carried **150 `agent/*` refs**, thirteen of them
+ * abandoned arms, and every clone, `ls-remote` and fetch pays for all of them.
+ * An effect, like `close:` and `labels:` beside it, so `end` is the only point
+ * that carries it out and it cannot refuse.
+ *
+ * **It is declinable by not being declared, and that is the whole reason it is
+ * a plugin** (0061 §2). A team that keeps every branch for audit says so by
+ * leaving this out; a pass that deleted refs on its own would give them no way
+ * to say no.
+ *
+ * ## `when:` is `landed` and the schema admits no other value
+ *
+ * **This is the safety argument, not a default somebody may override.** For an
+ * item that did *not* land, those refs are the only surviving account of what
+ * was tried — `#239` exists to create them precisely so a later attempt can
+ * fetch them, and `attemptBrief` tells the next agent to. A cleanup on any
+ * other ending destroys the thing the ticket before it was written to preserve,
+ * and a value nobody can write is a mistake nobody can make. So this is a
+ * `z.literal` where the other two effects carry `WHEN`: `when: any` here is
+ * refused by name when the recipe resolves, which is the same argument
+ * `agent:`'s enum makes one plugin up — *the enum is what makes a destructive
+ * reading safe*. It is written rather than inferred because the file should say
+ * out loud which ending it is cleaning up after.
+ *
+ * `branch:` is the one thing left to decide, and it is **`false`**. After a
+ * merge `agent/<n>`'s commits are reachable from `main`, so deleting it loses
+ * no history — but it is the ref a person follows from the merge commit, and
+ * the default a cleanup ships with should be the one that keeps what somebody
+ * might read. `branch: true` takes it too.
+ */
+export const refsPlugin = definePlugin("refs", {
+  /** `true` and nothing else: what it deletes is decided by `branch:`, not by a value here. */
+  refs: z.literal(true),
+  /** `agent/<n>` itself, on top of its arms. Off, so the merge commit's ref still resolves. */
+  branch: z.boolean().default(false),
+  /** `landed`, and only `landed` — see above. Written out, so the file says which ending. */
+  when: z.literal("landed").default("landed"),
+});
+
+/**
  * **The branch a pass owns, cut** — a name for `provisionWorktree` in
  * `packages/repo/src/worktree.ts`, which is what has always done this
  * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
@@ -573,13 +619,19 @@ export const backlogPlugin = definePlugin("backlog", {
 /**
  * **The closed set**, and the only list of plugins anywhere.
  *
- * It lists the plugins and not their fields: each of the eleven above declares
+ * It lists the plugins and not their fields: each of the twelve above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
  * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
  * settled that there is no plugin system and an extension is a command — so a
  * key is a bare word and a word that is not one of these is refused.
  *
- * **Eleven of 0061 §3's twelve names, and the last five are in no step's row.**
+ * **`refs:` is the first member that 0061 §3 did not name** (`#240`). The set
+ * is not closed against *new* work: §3's list is the names the v2 file gives
+ * code that already runs, and a plugin doing something no code did before joins
+ * the same set by the same rules — a key, a schema, a row in `KINDS_AT`, a cell
+ * in the matrix.
+ *
+ * **Five of them are in no step's row.**
  * `worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` are
  * names for code the pass calls directly today, so every cell of theirs
  * refuses, by a sentence that says where that code is called instead. That is the same
@@ -600,6 +652,7 @@ export const PLUGINS = [
   humanPlugin,
   closePlugin,
   labelsPlugin,
+  refsPlugin,
   worktreePlugin,
   mergePlugin,
   queuePlugin,
@@ -631,6 +684,7 @@ export const GateAction = z.union([
   humanPlugin.schema,
   closePlugin.schema,
   labelsPlugin.schema,
+  refsPlugin.schema,
   worktreePlugin.schema,
   mergePlugin.schema,
   queuePlugin.schema,
@@ -678,9 +732,9 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Gat
 }
 
 /**
- * **Which of the eleven kinds each of the ten steps actually runs.**
+ * **Which of the twelve kinds each of the ten steps actually runs.**
  *
- * A hundred and ten cells, and ten of them used to be accepted here, resolved into
+ * A hundred and twenty cells, and ten of them used to be accepted here, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
  * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
  * the weeks it spent declared-but-unbuilt are the argument for writing the
@@ -729,13 +783,13 @@ export const KINDS_AT = {
   proposed: ["run", "agent", "watch", "human"],
   merge: ["run", "agent", "watch", "human"],
   /**
-   * The two effects — and **`when:` is not what picks them out**. `judge:`
+   * The three effects — and **`when:` is not what picks them out**. `judge:`
    * carries one too (`#238`), so a `"when" in a` test at the point let a
    * judge action built in code straight past the throw and into a match on
    * the outcome it could not satisfy: `#61` for one kind, silently.
-   * `end-point.ts`'s guard asks for these two keys instead.
+   * `end-point.ts`'s guard asks for these three keys instead.
    */
-  end: ["close", "labels"],
+  end: ["close", "labels", "refs"],
 } as const satisfies Record<Step, readonly ActionKind[]>;
 
 /**
@@ -949,13 +1003,13 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
   if (point === "end") {
     return (
       "`end` fires on every terminal outcome and produces no verdict, so the only actions it can " +
-      "carry are the two that run for effect — `close:` and `labels:`, whose `when:` is which of " +
-      "those outcomes it was. It is not that they are the two plugins with a `when:` field: " +
+      "carry are the three that run for effect — `close:`, `labels:` and `refs:`, whose `when:` is " +
+      "which of those outcomes it was. It is not that they are the plugins with a `when:` field: " +
       "`judge:` declares one too and reads the reason the last step gave (`#238`), so what picks " +
-      "these two out is the kind and never the shape"
+      "these three out is the kind and never the shape"
     );
   }
-  if (kind === "close" || kind === "labels") {
+  if (kind === "close" || kind === "labels" || kind === "refs") {
     return "it is an effect rather than a verdict, and only the `end` point carries out effects";
   }
   if (kind === "agent") {

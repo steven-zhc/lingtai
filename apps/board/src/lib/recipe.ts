@@ -497,6 +497,17 @@ export function describeAction(
       const a = action as Extract<GateAction, { labels: string[] }>;
       return { does: `sets labels ${a.labels.join(", ")} when ${a.when}`, bound: "runs for effect" };
     }
+    // **The effect that deletes** (`#240`), and the row says so in those words:
+    // the other two write to an issue and can be written again, and this one
+    // takes refs off `origin`. `when:` is not on the line because it cannot
+    // vary — the schema admits `landed` and nothing else — so *when it lands*
+    // is said as prose rather than read off a field an operator might think
+    // they could change here.
+    case "refs": {
+      const a = action as Extract<GateAction, { refs: true; branch: boolean }>;
+      const what = a.branch ? "agent/<n> and every agent/<n>-attempt-<k>" : "every agent/<n>-attempt-<k>";
+      return { does: `deletes ${what} from origin when it lands`, bound: "runs for effect, and cannot be undone" };
+    }
     // The two the pass calls itself, so no step in the recipe can hold one
     // today — `whyNoKindAt` refuses both everywhere. A reading with no case
     // for them would be a `switch` that returns `undefined` the moment the

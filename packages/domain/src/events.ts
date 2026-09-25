@@ -605,10 +605,22 @@ export const EndActionsResolved = z.object({
    * here at all.
    */
   outcome: z.enum(["landed", "blocked", "failed", "closed"]),
+  /**
+   * `refs` is the third, and it is the one that **deletes** (`#240`): the
+   * `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on
+   * `origin`, and `branch` says whether `agent/<n>` goes with them. It carries
+   * no ref names, for the reason the other two carry no issue number — the
+   * stream says which work item this is, and a list resolved minutes before the
+   * delete would be a list that can disagree with what is actually there.
+   *
+   * **Additive to the union**, so no stored event is rewritten and no version
+   * is bumped.
+   */
   actions: z.array(
     z.union([
       z.object({ name: z.string(), close: z.literal(true) }),
       z.object({ name: z.string(), labels: z.array(z.string()) }),
+      z.object({ name: z.string(), refs: z.literal(true), branch: z.boolean() }),
     ]),
   ),
 });
@@ -1310,8 +1322,16 @@ export const OutboxFailed = z.object({
  * is an implementation detail and an event name must not spend the log's
  * vocabulary on one ([0022](../../../doc/decisions/0022-the-seams.md)) — which
  * this pair outlived by two commits, as intended. The kind is a field rather
- * than an event type each, which would have been eight once the failures are
+ * than an event type each, which would have been ten once the failures are
  * counted.
+ *
+ * **`refs` is the fifth and the only one that is not a write to the issue**
+ * (`#240`): it deletes the `agent/<n>-attempt-<k>` refs a landed ticket left
+ * behind. It is recorded here rather than under a noun of its own because it
+ * is one of `end`'s effects and `tell.ts` is what carries those out — a second
+ * carrier is a path that forgets one, which is the failure `end-point.ts`'s own
+ * header is about. `detail` is the refs that went, so *nothing was there* and
+ * *thirteen were deleted* are different rows.
  *
  * `body` is the fourth, and it is
  * [0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §6:
@@ -1332,8 +1352,8 @@ export const OutboxFailed = z.object({
 export const IssueUpdated = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(["comment", "labels", "closed", "body"]),
-  /** Whatever identifies what happened: a comment id, the labels that were set. */
+  change: z.enum(["comment", "labels", "closed", "body", "refs"]),
+  /** Whatever identifies what happened: a comment id, the labels that were set, the refs deleted. */
   detail: z.string(),
 });
 
@@ -1350,7 +1370,7 @@ export const IssueUpdated = z.object({
 export const IssueUpdateFailed = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(["comment", "labels", "closed", "body"]),
+  change: z.enum(["comment", "labels", "closed", "body", "refs"]),
   error: z.string(),
 });
 

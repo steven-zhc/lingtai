@@ -691,7 +691,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**738 occurrences in 69 files, counted 2026-09-24** — and that sentence is
+**739 occurrences in 69 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -797,7 +797,7 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `gateAt` ×12 · `points` ×6 |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `PointProgress` ×2 · `PointState` ×7 · `gate` ×4 · `point` ×12 · `pointOf` ×1 · `points` ×6 |
 | `apps/board/src/lib/queued.ts` | `GatePlan` ×2 · `PlannedPoint` ×2 · `point` ×4 · `points` ×2 |
-| `apps/board/src/lib/recipe.ts` | `GateAction` ×13 · `GatesResolved` ×1 · `point` ×3 · `points` ×1 |
+| `apps/board/src/lib/recipe.ts` | `GateAction` ×14 · `GatesResolved` ×1 · `point` ×3 · `points` ×1 |
 | `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateVerdict` ×4 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×12 · `gates` ×11 |
 | `apps/cli/src/backlog.ts` | `gate` ×1 |
 | `apps/cli/src/conduct.ts` | `gate` ×1 |
@@ -855,7 +855,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**9 of those 738 occurrences are the English word and not the retired
+**9 of those 739 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for
@@ -940,6 +940,7 @@ written as a stand-in.
 | `human:` | a person, later, on the same stream; the string is the question | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
 | `labels:` | — same | a GitHub client |
+| `refs:` | — same, and the only effect that **deletes**: the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on `origin`, with `branch: true` taking `agent/<n>` too. Its `when:` is `landed` and the schema admits no other value | a GitHub client that can list and delete refs |
 | `worktree:` | — it cuts the branch the pass owns. No step reads it yet | the mirror, and `base` |
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
@@ -1008,8 +1009,12 @@ code is called today. **`assignee:` was the plugin that rule was written about**
 — it had a row in 0061 §3 and appeared in no other list, so it was precisely
 the cell nobody had decided — and
 [0063](decisions/0063-every-setting-is-the-recipes.md) §3 has since made it a
-*field* of `queue:` rather than a plugin beside it, so the closed set is eleven
-(`#244`).
+*field* of `queue:` rather than a plugin beside it, so the closed set went to
+eleven (`#244`) — and back to twelve with `refs:` (`#240`), which is the first
+member 0061 §3 did not name at all. The set is not closed against *new* work:
+§3's list is the names the v2 file gives code that already runs, and a plugin
+doing something no code did before joins by the same rules — a key, a schema, a
+row in `KINDS_AT`, a cell here.
 
 **`assignee` is `queue:`'s and not a plugin of its own** (0063 §3, revising 0061
 §§2–3). The two answer one question: `kinds` orders the listing, `exclude`
@@ -1150,7 +1155,7 @@ second silently overwrite the first.
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
 it by arithmetic rather than by anybody noticing.
 
-## step × kind — the 110 cells, and which of them run
+## step × kind — the 120 cells, and which of them run
 
 Not every kind runs at every step, and for a year ten of the cells said
 neither yes nor no: an action there was accepted by the schema, resolved into
@@ -1162,11 +1167,12 @@ refusal names the action, its kind, the step and why.
 It was thirty cells until the vocabulary went to ten names, sixty until the
 closed set grew `worktree:` and `merge:` (`#235`), eighty until it grew
 `queue:` and `assignee:` (`#236`), a hundred until it grew `judge:` (`#238`)
-and a hundred and twenty until it grew `backlog:` (`#237`) — and a hundred and
+and a hundred and twenty until it grew `backlog:` (`#237`) — a hundred and
 ten again when 0063 §3 made `assignee` a field of `queue:` rather than a plugin
-beside it (`#244`). **Ninety-nine of the
-hundred and ten are refusals** — count the ✋ in the table below, which is what
-`whyNoKindAt` answers for every cell but the eleven that run. Sixty-six of
+beside it (`#244`), and a hundred and twenty once more with `refs:` (`#240`).
+**A hundred and eight of the
+hundred and twenty are refusals** — count the ✋ in the table below, which is what
+`whyNoKindAt` answers for every cell but the twelve that run. Seventy-two of
 them are the six steps with no call site and fifty are the five
 plugins no step reads, overlapping each other by thirty; they are the
 interesting
@@ -1186,27 +1192,27 @@ checks is not worth having.
 walks the closed set rather than a list of its own, so the day a ninth plugin
 lands it has no action to try, no row here and no cell in `KINDS_AT` — and all
 three say so at once. That is 0059 §5's rule surviving the growth 0061 §3
-describes: the set is eleven and this table now carries all eleven. It
-is also what made `#235`, `#236`, `#238` and `#237` cheap — each new column
-arrived in `PLUGINS`, and the test asked for it here rather than walking ten
-of eleven in silence. **And `#244` is the same test read backwards**: a column
+describes: the set is twelve and this table now carries all twelve. It
+is also what made `#235`, `#236`, `#238`, `#237` and `#240` cheap — each new column
+arrived in `PLUGINS`, and the test asked for it here rather than walking eleven
+of twelve in silence. **And `#244` is the same test read backwards**: a column
 that *goes* has to take its cells with it, rather than leaving a twelfth the
 table draws and the code no longer has.
 
 ✅ runs · ✋ refused when the recipe resolves, by name
 
-| | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` | `worktree:` | `merge:` | `queue:` | `judge:` | `backlog:` |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `claim` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `design` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `implement` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `build` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `review` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` | `refs:` | `worktree:` | `merge:` | `queue:` | `judge:` | `backlog:` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `claim` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `design` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `implement` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `build` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `review` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
+| `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
 
 Where each row comes from:
 
@@ -1214,7 +1220,7 @@ Where each row comes from:
 prepared    run-once.ts   actionsFromRecipe("prepared", …, { env })    an environment, and nothing else
 proposed    run-once.ts   actionsFromRecipe("proposed", …, gateDeps)   every dependency
 merge       run-once.ts   actionsFromRecipe("merge",    …, gateDeps)   every dependency   ← #58
-end         end-point.ts  resolveEndActions                          the two effects
+end         end-point.ts  resolveEndActions                          the three effects
 claim       —             no pipeline is constructed anywhere
 admit       —             no pipeline is constructed anywhere
 design      —             no pipeline is constructed anywhere        ← 0058 §3, not yet built
@@ -1262,10 +1268,16 @@ plugin and only the plugin's says which file to open.
   half an operator can act on; *nothing runs here* on its own is a recipe key
   and no next move.
 - **`end` produces no verdict**, so the four kinds that produce one have nothing
-  to be there. Its two carry `when:`, which is how one step serves every
-  terminal outcome.
-- **`close:` and `labels:` at a step that decides** are effects rather than
-  verdicts, and only `end` carries out effects. This is the direction the
+  to be there. Its three carry `when:`, which is how one step serves every
+  terminal outcome — and `refs:`'s is a `z.literal("landed")` rather than the
+  enum the other two take, because that word is the whole safety argument for a
+  plugin that deletes: for an item that did *not* land, the
+  `agent/<n>-attempt-<k>` refs are the only surviving account of what was tried
+  ([#239](https://github.com/steven-zhc/lingtai/issues/239) creates them so a
+  later attempt can fetch them), and a value nobody can write is a mistake
+  nobody can make.
+- **`close:`, `labels:` and `refs:` at a step that decides** are effects rather
+  than verdicts, and only `end` carries out effects. This is the direction the
   codebase already got right, and its wording is the argument for the rest:
   *an action that is silently absent is worse than a run that will not start.*
 - **`worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` at any step at

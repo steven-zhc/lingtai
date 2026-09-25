@@ -188,8 +188,17 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const outcome = need(d, "outcome");
     const actions = d["actions"];
     if (!Array.isArray(actions) || actions.length === 0) return `${outcome}: nothing to do`;
-    const said = (actions as { name: string; close?: true; labels?: string[] }[]).map((a) =>
-      a.close ? `${a.name} (close)` : `${a.name} → ${list(a.labels)}`,
+    // Three shapes, and the fall-through is the labels one: a `refs:` action
+    // drawn by it would read `name → ` with nothing after the arrow, which is
+    // the row saying an effect ran and not saying which (`#240`).
+    const said = (
+      actions as { name: string; close?: true; labels?: string[]; refs?: true; branch?: boolean }[]
+    ).map((a) =>
+      a.close
+        ? `${a.name} (close)`
+        : a.refs
+          ? `${a.name} (delete ${a.branch ? "the branch and its arms" : "the arms"})`
+          : `${a.name} → ${list(a.labels)}`,
     );
     return `${outcome}: ${said.join(" · ")}`;
   },

@@ -4,7 +4,7 @@
  * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
  *
  * This file knows *what a plugin is*. It does not know which plugins exist:
- * the closed set is `PLUGINS` in `recipe.ts`, beside the eleven declarations, and
+ * the closed set is `PLUGINS` in `recipe.ts`, beside the twelve declarations, and
  * every function here takes the set it is to work against. That is the whole of
  * the separation — **a plugin owns its schema, and a second copy of that
  * knowledge would be a second thing to keep true**, so there is no registry of
@@ -37,13 +37,16 @@
  * workflow's: every action is addressed by it — `task_view` keys a verdict
  * `step:action`, the board draws it, `lingtai waive` names it — and no plugin
  * decides that. 0061 §2 makes `when:` and `timeout:` universal too, and they
- * are **not** hoisted here: today `when:` is legal on three plugins and
- * `timeout:` on one, and hoisting either would make it legal on all eleven.
+ * are **not** hoisted here: today `when:` is legal on four plugins and
+ * `timeout:` on one, and hoisting either would make it legal on all twelve.
  * That is a behavioural change, and this is not the ticket for it — and the
- * three are not one key wearing one spelling: `close:` and `labels:` read the
- * work item's *outcome* (`WHEN`) and `judge:` reads the *reason the last step
- * gave* (`JudgeWhen`, `#238`), so a hoist has two vocabularies to reconcile
- * before it has one universal key. The counts here are counted off `PLUGINS`
+ * four are not one key wearing one spelling: `close:` and `labels:` read the
+ * work item's *outcome* (`WHEN`), `refs:` reads the one value of it that is
+ * safe to delete a ref on and refuses the rest (`#240`), and `judge:` reads
+ * the *reason the last step gave* (`JudgeWhen`, `#238`) — so a hoist has two
+ * vocabularies and a narrowing to reconcile before it has one universal key,
+ * and hoisting `WHEN` would hand `refs:` back the values its own schema exists
+ * to refuse. The counts here are counted off `PLUGINS`
  * by `packages/recipe/unit/plugin.test.ts` rather than remembered.
  *
  * ## `no_log`
@@ -98,9 +101,9 @@
  * nothing it already was.
  *
  * **Nothing declares one today**, and that is a fact rather than an oversight:
- * every field the eleven plugins have is a name, a command, a prompt, a runtime,
+ * every field the twelve plugins have is a name, a command, a prompt, a runtime,
  * a model, a glob, a
- * branch, a strategy, a label, a direction, a severity or a GitHub login — and a login is
+ * branch, a strategy, a label, a flag, a direction, a severity or a GitHub login — and a login is
  * not a credential, which is the distinction worth reading (0046 §2: a wrong
  * one hands this machine somebody else's tickets, and that is a mistake that
  * shows itself). Both numerals in this file are counted off `PLUGINS` by

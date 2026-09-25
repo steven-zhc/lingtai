@@ -26,6 +26,7 @@ import { workItemStream } from "@lingtai/domain";
 import { resolveEndActions } from "./end-point.ts";
 import { labelsFor } from "./labels.ts";
 import { diagnoseRefusal } from "./attribution.ts";
+import { agentBranch } from "./restart.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { integrate, type TokenSource } from "@lingtai/repo";
 import { createFileLocker } from "@lingtai/env/lock";
@@ -182,7 +183,7 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
   }
 
   const { gate, onSha } = run.lifecycle;
-  const branch = `agent/${options.issue}`;
+  const branch = agentBranch(options.issue);
 
 
   if (options.onSha && options.onSha !== onSha) {
