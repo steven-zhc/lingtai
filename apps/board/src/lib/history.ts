@@ -173,11 +173,22 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * The two silent outcomes get a sentence here for the same reason they get an
    * event: *no ref* and *no account of why there is no ref* are what cost `#250`
    * $26.84, and a row that read `—` would put the silence back on the page.
+   *
+   * **A refusal says the head, because that is what says whether anything was
+   * lost.** A push rejected with two commits behind it is a run somebody can
+   * still rescue — `#250`'s was, from unreachable objects — and a `rev-parse`
+   * that errored has nothing behind it at all. Those are the two halves of
+   * `refused`, `headSha` is the only thing on the payload that tells them
+   * apart, and a reader who has to open the disclosure to find that out is
+   * being asked to do the triage the row exists to do.
    */
   RunRefsPublished: (d) => {
     const outcome = need(d, "outcome");
     if (outcome === "nothing-committed") return "nothing committed, so no ref was left";
-    if (outcome === "refused") return `${need(d, "branch")} was not pushed: ${clip(d["detail"])}`;
+    if (outcome === "refused")
+      return d["headSha"]
+        ? `${need(d, "branch")} at ${sha(d, "headSha")} was not pushed: ${clip(d["detail"])}`
+        : `${need(d, "branch")} was not pushed, and no head was read: ${clip(d["detail"])}`;
     const where = `${need(d, "branch")} and ${need(d, "arm")} at ${sha(d, "headSha")}`;
     return outcome === "already-published" ? `already there — ${where}` : where;
   },

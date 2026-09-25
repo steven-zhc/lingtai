@@ -91,6 +91,41 @@ describe("a line of history", () => {
     expect(said).toBe("held at the merge gate: agent/112 into develop");
   });
 
+  /**
+   * **A refusal with something behind it does not read like a refusal with
+   * nothing** (`#251`).
+   *
+   * `refused` is two endings: a push rejected over commits somebody can still
+   * rescue — `#250`'s were, out of unreachable objects — and a `rev-parse` that
+   * errored, where there was never anything to lose. `headSha` is the only
+   * field that tells them apart, and a reader who has to open the disclosure to
+   * find out is doing the triage this row exists to do.
+   */
+  it("says on a refused push whether there was a head to lose", () => {
+    const lost = summarise(
+      e("RunRefsPublished", {
+        branch: "agent/250",
+        arm: "agent/250-attempt-1",
+        headSha: "79aaaa8b1c2d3e4f5607182930415263748596a0",
+        outcome: "refused",
+        detail: "stale info: agent/250 moved",
+      }),
+    );
+    expect(lost).toBe("agent/250 at 79aaaa8 was not pushed: stale info: agent/250 moved");
+
+    const nothing = summarise(
+      e("RunRefsPublished", {
+        branch: "agent/250",
+        arm: "agent/250-attempt-1",
+        headSha: null,
+        outcome: "refused",
+        detail: "not a git repository",
+      }),
+    );
+    expect(nothing).not.toBe(lost);
+    expect(nothing).toBe("agent/250 was not pushed, and no head was read: not a git repository");
+  });
+
   it("names the action on a gate row, not only the point", () => {
     const build = e("GateStarted", { gate: "prepared", action: "build", runId: "run-1", onSha: "abc" });
     const lint = e("GateStarted", { gate: "prepared", action: "lint", runId: "run-1", onSha: "abc" });

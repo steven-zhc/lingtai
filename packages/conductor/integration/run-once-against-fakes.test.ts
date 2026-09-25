@@ -774,15 +774,21 @@ describe("runOnce, with no world to run in", () => {
     expect(item).toContain("WorkItemBlocked");
     expect(item).not.toContain("WorkItemReleased");
 
-    // **And the work is on origin, which is what `#250` did not get** (0062 §1,
-    // `#251`). This test existed through the whole of `#239` and asserted the
-    // receipt and the block; the ending it drives is the one the finalizer was
-    // added for, and nothing here said so.
+    // **The push on this ending, pinned where it was only implied** (0062 §1).
+    // `#239` made the finalizer run here and this line passes on its source —
+    // it is not what `#251` changed and it is not a claim that `#250` is fixed.
+    // It is written down because the ending it drives is the one the finalizer
+    // exists for, and a test that asserted only the receipt and the block would
+    // let a later edit drop the push without going red.
     expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
 
-    // On the log, not only in the run log. A push writes no run-log line when it
-    // works, so *it pushed* and *it never ran* were the same absence — the
-    // silence a night of `git ls-remote` was spent on.
+    // **What `#251` adds is the account, in both places.** Against the fakes the
+    // finalizer runs, so this test cannot reproduce `#250` — what it can do is
+    // make the ending say, on the log and in the file, which of the four things
+    // happened. Pre-`#251` a success said neither, so *it pushed*, *it found
+    // nothing* and *it never ran* were one absence, and a night of `git
+    // ls-remote` could not separate them.
+    expect(did).toContain("note push agent/7 and agent/7-attempt-1 at bbbbbbb");
     const refs = events.filter((e) => e.type === "RunRefsPublished");
     expect(refs).toHaveLength(1);
     expect(refs[0]!.data).toEqual({
@@ -927,6 +933,109 @@ describe("runOnce, with no world to run in", () => {
     });
     // And no ref was made up for it.
     expect(did.filter((d) => d.startsWith("git push"))).toEqual([]);
+  });
+
+  /**
+   * **A store that will not take the account says so, rather than joining the
+   * silence it was added to end** (`#251`).
+   *
+   * This is what makes *no row* mean something. `RunStarted` is appended at §8,
+   * after the finalizer is registered, so a run stream with `RunStarted`, a
+   * terminal event and no `RunRefsPublished` says the finalizer **did not run** —
+   * which is the one hypothesis `#250`'s evidence points at and the one a row
+   * written only from inside the publish cannot reach on its own. The inference
+   * is only worth having if a refused append cannot counterfeit it: swallowed
+   * into `Effect.void`, a stale version on the run stream renders exactly like a
+   * finalizer that never fired. So it lands in the file a run that did not land
+   * keeps.
+   */
+  it("says in the run log when the store refused the account, so no row still means it never ran", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const refusing: EventStore = {
+      ...store,
+      append: async (streamId, expectedVersion, events) => {
+        if (events.some((e) => e.type === "RunRefsPublished")) throw new Error("stale: run-… is at 9");
+        return store.append(streamId, expectedVersion, events);
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: atTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store: refusing,
+      },
+      fakePorts(did, refusing),
+    );
+
+    // The ending is the wall's. A store that would not take the bookkeeping must
+    // not become the run's ending, which is what a defect out of a finalizer is.
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("run");
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemBlocked");
+
+    // No row — and a line saying why there is no row.
+    const refs = (await store.read(result.runId!)).filter((e) => e.type === "RunRefsPublished");
+    expect(refs).toHaveLength(0);
+    expect(did).toContain("note push the account of published was not appended — stale: run-… is at 9");
+  });
+
+  /**
+   * **A defect inside the publish is the last row, not no row** (`#251`).
+   *
+   * Everything `publishWhatIsCommitted` reaches for today is an `Effect.either`,
+   * which is a statement about today's body. The `numstat` append after a
+   * successful push is not, and neither is anything a later edit adds: those die
+   * into the defect channel, and a defect swallowed at the finalizer would put
+   * *the publish ran and threw* back into the same absence as *it never ran*.
+   *
+   * **And it does not overwrite an ending already described.** The push here
+   * succeeded; the row stays `published`, because a bookkeeping failure after
+   * the refs are on origin is not a refusal.
+   */
+  it("keeps the published row when the record of the diff dies after the push", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const breaking: EventStore = {
+      ...store,
+      append: async (streamId, expectedVersion, events) => {
+        if (events.some((e) => e.type === "RunProducedDiff")) throw new Error("numstat row refused");
+        return store.append(streamId, expectedVersion, events);
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: atTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store: breaking,
+      },
+      fakePorts(did, breaking),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+
+    const refs = (await store.read(result.runId!)).filter((e) => e.type === "RunRefsPublished");
+    expect(refs).toHaveLength(1);
+    expect((refs[0]!.data as { outcome: string }).outcome).toBe("published");
+    expect(did).toContain("note push the publish itself failed — numstat row refused");
   });
 
   /**

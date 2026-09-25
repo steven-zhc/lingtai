@@ -1047,6 +1047,9 @@ export function runOnce(
        * they are told the branch is not there to answer it with — which is what
        * the returned detail is for, and null means there is nothing to say.
        */
+      /** Whether `noteRefs` has already described this ending. See the finalizer. */
+      let accounted = false;
+
       /**
        * **The account of the above, on the log rather than in the file** (`#251`).
        *
@@ -1063,25 +1066,57 @@ export function runOnce(
        *   a run log is a trace and not a record (0034 §8) — it is deleted on a
        *   landing, and it is not what a behavioural claim is settled by
        *
-       * So the outcome goes where the log settles things. **Tolerant, like
-       * everything else in here**: `appendAtEnd` is an `Effect.promise`, so a
-       * store that would not take the row arrives as a defect — and a defect
-       * raised from inside a finalizer would replace the ending the run actually
-       * had with the failure of its own bookkeeping. The account is worth a row
+       * **The run log was open, and that is what makes the third question
+       * answerable at all.** #251 supposed the finalizer's `runLog.note` had
+       * nowhere to go because the file was already closed; it is the other way
+       * round. The three finalizers release in reverse order of acquisition —
+       * this publish, then `removeWorktree`, then the run log, whose own release
+       * writes `RUN_LOG_END` — so a `push` line written here always precedes the
+       * `end` line, and #250's log has the `end` line and no `push` line. On the
+       * source it ran, the paths that wrote nothing were the success and the two
+       * quiet returns; the refs were on neither origin nor the mirror, so the
+       * success is out, and `already-published` needs an earlier push in the
+       * same pass, which an out-of-turns ending never makes. By elimination the
+       * head was still at the base — which is now a row, and was silence.
+       *
+       * **The absence of a row is itself the answer, and only if this cannot be
+       * quiet.** `RunStarted` is appended at §8, *after* the finalizer is
+       * registered below, so a run stream carrying `RunStarted` and a terminal
+       * event and no `RunRefsPublished` says the finalizer did not run. That
+       * inference is worth nothing if a refused append looks the same as no
+       * append: `appendAtEnd` is an `Effect.promise`, so a store that would not
+       * take the row arrives as a defect, and a defect raised from inside a
+       * finalizer would replace the ending the run actually had with the failure
+       * of its own bookkeeping. So it is caught — and **said**, in the file that
+       * a run which did not land keeps, rather than swallowed into the same
+       * silence the row exists to end. The account is worth a row and a line,
        * and is not worth an ending.
        */
       const noteRefs = (
         outcome: "published" | "nothing-committed" | "already-published" | "refused",
         headSha: string | null,
         detail: string | null,
-      ) =>
-        appendAtEnd(runId, [
+      ) => {
+        // Set before the append rather than after it: what this guards is the
+        // finalizer's own defect handler writing a *second* row for an ending
+        // this one has already described.
+        accounted = true;
+        return appendAtEnd(runId, [
           {
             type: "RunRefsPublished",
             actor: "conductor",
             data: parsePayload("RunRefsPublished", { branch, arm, headSha, outcome, detail }),
           },
-        ]).pipe(Effect.catchAllDefect(() => Effect.void));
+        ]).pipe(
+          Effect.catchAllDefect((defect) =>
+            Effect.sync(() => {
+              const why = defect instanceof Error ? defect.message : String(defect);
+              runLog.note("push", `the account of ${outcome} was not appended — ${why}`);
+              log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`);
+            }),
+          ),
+        );
+      };
 
       const publishWhatIsCommitted: Effect.Effect<string | null> = Effect.gen(function* () {
         const at = yield* Effect.either(gitInWorktree(["rev-parse", "HEAD"]));
@@ -1156,9 +1191,28 @@ export function runOnce(
        * anything for — and an arm ref written there is one
        * [0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §4's
        * cleanup would have to take straight back off.
+       *
+       * **And it accounts for its own defects, so that no row means it did not
+       * run** (`#251`). Everything inside `publishWhatIsCommitted` that can
+       * fail is an `Effect.either`, which is a statement about today's body and
+       * not about tomorrow's; `parsePayload`, the `numstat` append and anything
+       * a later edit adds still die into the defect channel. Left there, *the
+       * publish ran and threw* would be indistinguishable from *the publish
+       * never ran* — the one reading the row was added to rule out. So a defect
+       * becomes the last row rather than no row, unless `noteRefs` has already
+       * written one: a `numstat` append that dies after the push succeeded must
+       * not turn a published ending into a refused one.
        */
       yield* Effect.addFinalizer(() =>
-        didLand ? Effect.void : publishWhatIsCommitted,
+        didLand
+          ? Effect.void
+          : publishWhatIsCommitted.pipe(
+              Effect.catchAllDefect((defect) => {
+                const why = defect instanceof Error ? defect.message : String(defect);
+                runLog.note("push", `the publish itself failed — ${why}`);
+                return accounted ? Effect.succeed(why) : noteRefs("refused", null, why).pipe(Effect.as(why));
+              }),
+            ),
       );
 
       // `actions` a package of plain functions, so the callbacks it is handed

@@ -7,7 +7,10 @@ document asserting a state of the world the code had moved past.
 Where a list is open-ended (streams, runs, projects) it says so and gives
 examples instead of pretending to be exhaustive.
 
-**Counted 2026-09-10.**
+**Counted 2026-09-10**, except where a table says otherwise: a recount is the
+whole of one table against its named source, and it stamps that table. The
+`event` table drifted 59 → 66 under a stamp that never moved, which is how a
+reader learns to disbelieve the stamp instead of the table.
 
 > **This describes the code as it is.** It is updated as each step lands, never ahead of it. A
 > reference that documents intent instead of behaviour is the defect this
@@ -20,6 +23,7 @@ examples instead of pretending to be exhaustive.
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
+**Recounted 2026-09-24** — every group below, against that registry.
 
 | Group | Types |
 |---|---|
