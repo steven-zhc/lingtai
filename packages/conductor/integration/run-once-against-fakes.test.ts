@@ -743,6 +743,15 @@ describe("runOnce, with no world to run in", () => {
     const store = memoryStore();
     const did: string[] = [];
     const said: string[] = [];
+    // The moment the person is asked, in the same list as the git, so that
+    // *before* and *after* are one comparison. See the ordering assertion below.
+    const marking: EventStore = {
+      ...store,
+      append: async (streamId, expectedVersion, events) => {
+        if (events.some((e) => e.type === "WorkItemBlocked")) did.push("the person is asked");
+        return store.append(streamId, expectedVersion, events);
+      },
+    };
 
     const result = await once(
       {
@@ -754,9 +763,9 @@ describe("runOnce, with no world to run in", () => {
         prompt: "fix {{issue}}",
         merge: false,
         home: "/tmp/fake-home",
-        store,
+        store: marking,
       },
-      fakePorts(did, store),
+      fakePorts(did, marking),
     );
     expect(result.ok).toBe(false);
 
@@ -774,23 +783,37 @@ describe("runOnce, with no world to run in", () => {
     expect(item).toContain("WorkItemBlocked");
     expect(item).not.toContain("WorkItemReleased");
 
-    // **The push on this ending, pinned where it was only implied** (0062 §1).
-    // `#239` made the finalizer run here and this line passes on its source —
-    // it is not what `#251` changed and it is not a claim that `#250` is fixed.
-    // It is written down because the ending it drives is the one the finalizer
-    // exists for, and a test that asserted only the receipt and the block would
-    // let a later edit drop the push without going red.
-    expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
+    // **The refs are on origin before the person is asked the question**
+    // (`#251`), which is what `#250` did not get and is the whole of the fix.
+    //
+    // `#239` put this push in a finalizer, and against these fakes a finalizer
+    // always runs — so *that* the push happens is a claim the old source
+    // satisfies too. **The ordering is not.** Pre-`#251` the only call was the
+    // finalizer, which runs while the scope unwinds, after `WorkItemBlocked` and
+    // after GitHub is told: these two lines are in the other order, and the
+    // assertion goes red. On `#250` itself the finalizer never ran at all, which
+    // is why the ending that lost the work now has a call of its own.
+    const pushed = did.indexOf(
+      "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1",
+    );
+    const asked = did.indexOf("the person is asked");
+    expect(pushed).toBeGreaterThan(-1);
+    expect(asked).toBeGreaterThan(-1);
+    expect(pushed).toBeLessThan(asked);
 
-    // **What `#251` adds is the account, in both places.** Against the fakes the
-    // finalizer runs, so this test cannot reproduce `#250` — what it can do is
-    // make the ending say, on the log and in the file, which of the four things
-    // happened. Pre-`#251` a success said neither, so *it pushed*, *it found
-    // nothing* and *it never ran* were one absence, and a night of `git
-    // ls-remote` could not separate them.
+    // **And the account of it, in both places.** Pre-`#251` a success wrote
+    // neither, so *it pushed*, *it found nothing* and *it never ran* were one
+    // absence, and a night of `git ls-remote` could not separate them.
     expect(did).toContain("note push agent/7 and agent/7-attempt-1 at bbbbbbb");
     const refs = events.filter((e) => e.type === "RunRefsPublished");
-    expect(refs).toHaveLength(1);
+    // Two rows, and the second is the finalizer saying it ran. The call above
+    // published; the finalizer then found the head already where it wanted it
+    // and pushed nothing — so a wall that worked is legible as *both ran*, and
+    // the one row `#250` would have left is legible as *only one did*.
+    expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual([
+      "published",
+      "already-published",
+    ]);
     expect(refs[0]!.data).toEqual({
       branch: "agent/7",
       arm: "agent/7-attempt-1",
@@ -798,6 +821,9 @@ describe("runOnce, with no world to run in", () => {
       outcome: "published",
       detail: null,
     });
+    // One push for two calls: the second is idempotent, and a second force-push
+    // of the same head would be a round trip bought for a ref that has not moved.
+    expect(did.filter((d) => d.startsWith("git push"))).toHaveLength(1);
   });
 
   /**
@@ -856,15 +882,22 @@ describe("runOnce, with no world to run in", () => {
 
     const run = await store.read(result.runId!);
     const refs = run.filter((e) => e.type === "RunRefsPublished");
-    expect(refs).toHaveLength(1);
-    expect(refs[0]!.data).toMatchObject({
-      branch: "agent/7",
-      arm: "agent/7-attempt-1",
-      outcome: "refused",
-      detail: "stale info: agent/7 moved",
-    });
-    // The head it could not push, so a person knows there was something to lose.
-    expect((refs[0]!.data as { headSha: string }).headSha).toBe("b".repeat(40));
+    // **Twice, and the second is worth having.** The ending's own call is
+    // refused; the finalizer tries again while the scope unwinds and is refused
+    // again. Nothing here makes the two attempts one — a `stale info` that has
+    // cleared in the seconds between them is a run whose work reaches origin on
+    // the second, and a row per attempt is what says which of them it was.
+    expect(refs).toHaveLength(2);
+    for (const ref of refs) {
+      expect(ref.data).toMatchObject({
+        branch: "agent/7",
+        arm: "agent/7-attempt-1",
+        outcome: "refused",
+        detail: "stale info: agent/7 moved",
+      });
+      // The head it could not push, so a person knows there was something to lose.
+      expect((ref.data as { headSha: string }).headSha).toBe("b".repeat(40));
+    }
     // Nothing recorded a diff, because nothing is fetchable — `attemptBrief`
     // reads `RunProducedDiff` and would otherwise name a branch nobody can get.
     expect(run.map((e) => e.type)).not.toContain("RunProducedDiff");
@@ -923,14 +956,18 @@ describe("runOnce, with no world to run in", () => {
     if (result.ok !== false) return;
 
     const refs = (await store.read(result.runId!)).filter((e) => e.type === "RunRefsPublished");
-    expect(refs).toHaveLength(1);
-    expect(refs[0]!.data).toEqual({
-      branch: "agent/7",
-      arm: "agent/7-attempt-1",
-      headSha: null,
-      outcome: "nothing-committed",
-      detail: null,
-    });
+    // One per look, and both looks found the same nothing: the ending's own call
+    // and the finalizer behind it.
+    expect(refs).toHaveLength(2);
+    for (const ref of refs) {
+      expect(ref.data).toEqual({
+        branch: "agent/7",
+        arm: "agent/7-attempt-1",
+        headSha: null,
+        outcome: "nothing-committed",
+        detail: null,
+      });
+    }
     // And no ref was made up for it.
     expect(did.filter((d) => d.startsWith("git push"))).toEqual([]);
   });
@@ -1033,9 +1070,17 @@ describe("runOnce, with no world to run in", () => {
     if (result.ok !== false) return;
 
     const refs = (await store.read(result.runId!)).filter((e) => e.type === "RunRefsPublished");
-    expect(refs).toHaveLength(1);
-    expect((refs[0]!.data as { outcome: string }).outcome).toBe("published");
+    // `published`, and then the finalizer finding the head already where it
+    // wanted it. What must not be here is a `refused` row: the defect landed
+    // after the refs were on origin.
+    expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual([
+      "published",
+      "already-published",
+    ]);
     expect(did).toContain("note push the publish itself failed — numstat row refused");
+    // And the run's ending is still the wall's, not its bookkeeping's — a defect
+    // out of this call reaches `unexpected` if nothing catches it.
+    expect(result.stage).toBe("run");
   });
 
   /**

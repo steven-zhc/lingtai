@@ -1066,18 +1066,41 @@ export function runOnce(
        *   a run log is a trace and not a record (0034 §8) — it is deleted on a
        *   landing, and it is not what a behavioural claim is settled by
        *
-       * **The run log was open, and that is what makes the third question
-       * answerable at all.** #251 supposed the finalizer's `runLog.note` had
-       * nowhere to go because the file was already closed; it is the other way
-       * round. The three finalizers release in reverse order of acquisition —
-       * this publish, then `removeWorktree`, then the run log, whose own release
-       * writes `RUN_LOG_END` — so a `push` line written here always precedes the
-       * `end` line, and #250's log has the `end` line and no `push` line. On the
-       * source it ran, the paths that wrote nothing were the success and the two
-       * quiet returns; the refs were on neither origin nor the mirror, so the
-       * success is out, and `already-published` needs an earlier push in the
-       * same pass, which an out-of-turns ending never makes. By elimination the
-       * head was still at the base — which is now a row, and was silence.
+       * **The run log was open, and that is what settles #250.** #251 supposed
+       * the finalizer's `runLog.note` had nowhere to go because the file was
+       * already closed; it is the other way round. The three finalizers release
+       * in reverse order of acquisition — this publish, then `removeWorktree`,
+       * then the run log, whose own release writes `RUN_LOG_END` — so a `push`
+       * line written here always precedes the `end` line. #250's log has the
+       * `end` line, so the scope closed and the log took its last write; and the
+       * word *push* appears nowhere in it but the branch on line 2.
+       *
+       * **So this function was never entered, and the ending #250 had is the
+       * first hypothesis in that ticket's *Start here*: the finalizer did not
+       * run.** Each of the other four is excluded by something outside the log:
+       *
+       *   *it found nothing* — `origin/rescue/250` is `79aaaa8`, whose two
+       *   commits (22:01:04, 22:13:18) are parented straight on `579f768`, the
+       *   sha that worktree was cut at. So `head === worktree.baseSha` was
+       *   false, and the run log shows no `reset` or `checkout` after the second
+       *   commit. **#250 committed, and the head had moved.**
+       *   *it was refused*, either at `rev-parse` or at the push — both write a
+       *   `push` line, and there is none
+       *   *it succeeded* — neither `agent/250` nor `agent/250-attempt-1` is on
+       *   origin or in the mirror, and **no `agent/*-attempt-*` ref has ever
+       *   reached origin at all**, while the three `-restart-<k>` refs from
+       *   before 0062 §2 renamed it are all still there. `publishRefs()` writes
+       *   both names in one command; the merge lane at §10 writes only
+       *   `agent/<n>`, which is why every branch that landed is there without an
+       *   arm beside it
+       *   *`already-published`* — that needs an earlier push in the same pass,
+       *   which an out-of-turns ending never made until the call below the
+       *   receipt existed
+       *
+       * Which is why there is now a call on that ending as well as this
+       * finalizer. A row from here says the finalizer ran; **no row at all, on a
+       * stream that has `RunStarted`, says it did not** — and that is the
+       * sentence #250 needed and could not get.
        *
        * **The absence of a row is itself the answer, and only if this cannot be
        * quiet.** `RunStarted` is appended at §8, *after* the finalizer is
@@ -1118,7 +1141,12 @@ export function runOnce(
         );
       };
 
-      const publishWhatIsCommitted: Effect.Effect<string | null> = Effect.gen(function* () {
+      const publishing: Effect.Effect<string | null> = Effect.gen(function* () {
+        // Per call, not per pass: this is reached twice on an ending that has its
+        // own call as well as the finalizer, and what the handler below asks is
+        // *did the call that just died describe itself* — never *did an earlier
+        // one*.
+        accounted = false;
         const at = yield* Effect.either(gitInWorktree(["rev-parse", "HEAD"]));
         if (Either.isLeft(at)) {
           runLog.note("push", `${branch} was not pushed — ${at.left.detail}`);
@@ -1171,6 +1199,35 @@ export function runOnce(
       });
 
       /**
+       * **The same publish, with its own defects accounted for** (`#251`).
+       *
+       * Everything inside `publishing` that can fail is an `Effect.either`, which
+       * is a statement about today's body and not about tomorrow's:
+       * `parsePayload`, the `numstat` append and anything a later edit adds still
+       * die into the defect channel. Left there, two things go wrong at once —
+       * *the publish ran and threw* becomes indistinguishable from *the publish
+       * never ran*, which is the one reading the row was added to rule out; and
+       * **the run's ending becomes the failure of its own bookkeeping**, because
+       * a defect reaches the `catchAllDefect` at the bottom of this function and
+       * comes back as `unexpected`.
+       *
+       * So a defect becomes the last row rather than no row, unless the call that
+       * died had already written one: a `numstat` append that dies after the push
+       * succeeded must not turn a published ending into a refused one.
+       *
+       * **This and not `publishing` is what every caller wants**, which is why
+       * the name that reads like the operation is the one that cannot end a run.
+       * The bookkeeping is worth a row and a line, and is not worth an ending.
+       */
+      const publishWhatIsCommitted: Effect.Effect<string | null> = publishing.pipe(
+        Effect.catchAllDefect((defect) => {
+          const why = defect instanceof Error ? defect.message : String(defect);
+          runLog.note("push", `the publish itself failed — ${why}`);
+          return accounted ? Effect.succeed(why) : noteRefs("refused", null, why).pipe(Effect.as(why));
+        }),
+      );
+
+      /**
        * **Every ending, and not a list of them.**
        *
        * A finalizer rather than a call at each exit, because this class of bug
@@ -1182,6 +1239,15 @@ export function runOnce(
        * crash, a declined round, a hold, a restart, a lane refusal and a defect
        * — enumerating them is how the next one gets missed.
        *
+       * **It is the floor and not the only call, and `#250` is why.** A ref that
+       * only ever reaches origin while a scope unwinds is a ref no test asserts
+       * and no reader can check: on that run this finalizer did not run at all
+       * (see the elimination above), and everything else about the ending was
+       * correct. So the wall has its own call beside the declined round's and the
+       * hold's, and this stays underneath all three — the reason those calls are
+       * *there* is ordering, never doubt about this one, and the reason this one
+       * exists is the endings that have no call and never will.
+       *
        * Registered after the worktree is acquired, so it runs *before* the
        * worktree is removed: finalizers release in reverse order, and the
        * commits only exist in that directory.
@@ -1192,27 +1258,14 @@ export function runOnce(
        * [0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §4's
        * cleanup would have to take straight back off.
        *
-       * **And it accounts for its own defects, so that no row means it did not
-       * run** (`#251`). Everything inside `publishWhatIsCommitted` that can
-       * fail is an `Effect.either`, which is a statement about today's body and
-       * not about tomorrow's; `parsePayload`, the `numstat` append and anything
-       * a later edit adds still die into the defect channel. Left there, *the
-       * publish ran and threw* would be indistinguishable from *the publish
-       * never ran* — the one reading the row was added to rule out. So a defect
-       * becomes the last row rather than no row, unless `noteRefs` has already
-       * written one: a `numstat` append that dies after the push succeeded must
-       * not turn a published ending into a refused one.
+       * **And a defect here is the last row rather than no row** (`#251`), which
+       * is `publishWhatIsCommitted`'s doing and not this line's: a defect raised
+       * out of a finalizer would replace the ending the run actually had with
+       * the failure of its own bookkeeping, and *the publish ran and threw* would
+       * land in the same absence as *the publish never ran*.
        */
       yield* Effect.addFinalizer(() =>
-        didLand
-          ? Effect.void
-          : publishWhatIsCommitted.pipe(
-              Effect.catchAllDefect((defect) => {
-                const why = defect instanceof Error ? defect.message : String(defect);
-                runLog.note("push", `the publish itself failed — ${why}`);
-                return accounted ? Effect.succeed(why) : noteRefs("refused", null, why).pipe(Effect.as(why));
-              }),
-            ),
+        didLand ? Effect.void : publishWhatIsCommitted,
       );
 
       // `actions` a package of plain functions, so the callbacks it is handed
@@ -1591,6 +1644,36 @@ export function runOnce(
              * does not undo the block by putting the item back in the queue.
              */
             if (outcome.failure.kind === "out-of-turns") {
+              /**
+               * **The commits go to origin here, and not only from the
+               * finalizer** (`#251`).
+               *
+               * This is the ending that lost `#250`'s $26.84, and the elimination
+               * above says why one line at this exit is not the pattern the
+               * finalizer's own comment argues against: **on that run the
+               * finalizer did not run.** A push that only ever happens while a
+               * scope unwinds is a push whose happening no test in this file can
+               * assert and no reader can check — every one of them is satisfied
+               * by the fakes, on which the unwinding always works.
+               *
+               * So the wall joins the declined round and the hold at §10, which
+               * call this for the reason stated there and restated here: *a
+               * person asked a question wants the branch already there*. It runs
+               * **before** the `WorkItemBlocked` below, so the ref is on origin
+               * before the ticket carries the question — which is the ordering
+               * the test pins, and the ordering the old source could not have.
+               *
+               * The finalizer is not replaced and must not be: this covers one
+               * ending and it covers the rest. Reached twice, the second call is
+               * `already-published` and pushes nothing — so a wall that worked
+               * leaves two rows, and the second of them is the finalizer saying
+               * it ran.
+               *
+               * Tolerant, like every other call: a push that failed is not a
+               * second opinion about the ticket, and the block, the receipt and
+               * the recommendation below are unchanged by it.
+               */
+              yield* publishWhatIsCommitted;
               const { detail } = outcome.failure;
               const question = `out-of-turns: ${said(detail)}`;
               const ended = yield* Effect.promise(async () => {
