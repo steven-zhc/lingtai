@@ -124,7 +124,7 @@ describe("landedWithoutSteps", () => {
 
     const found = await forProject();
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ workItemId, issue: 201, points: ["merge"] });
+    expect(found[0]).toMatchObject({ workItemId, issue: 201, steps: ["merge"] });
   });
 
   it("says nothing when every planned point recorded a verdict", async () => {

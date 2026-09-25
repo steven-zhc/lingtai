@@ -63,14 +63,22 @@ async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise
  * `proposed:build` → the point and the action.
  *
  * A person decides about the thing the card names, which is the composite key
- * (`point:action`); the event carries the two fields separately, because "the
- * build failed" and "something at the `proposed` point failed" are different
- * questions. Splitting at the first colon, since a point never contains one.
+ * (`step:action`); the event carries the two fields separately, because "the
+ * build failed" and "something at the `proposed` step failed" are different
+ * questions. Splitting at the first colon, since a step never contains one.
+ *
+ * **It returns `gate`, because every caller spreads it straight into
+ * `parsePayload`** and `gateBase` (`events.ts:609`) is still spelled `gate` —
+ * the half of the vocabulary that waits on the log's own rename. Returning
+ * `step` here type-checks at all three call sites, because `parsePayload` takes
+ * `unknown`, and then Zod refuses the append at run time: every `approve` and
+ * every `waive` throws `Invalid option: expected one of "claim"|…`, which is a
+ * held run nobody can land.
  */
-function splitStep(key: string): { step: string; action: string } {
+function splitStep(key: string): { gate: string; action: string } {
   const cut = key.indexOf(":");
-  if (cut < 0) return { step: "merge", action: key };
-  return { step: key.slice(0, cut), action: key.slice(cut + 1) };
+  if (cut < 0) return { gate: "merge", action: key };
+  return { gate: key.slice(0, cut), action: key.slice(cut + 1) };
 }
 
 /**
@@ -84,7 +92,7 @@ function splitStep(key: string): { step: string; action: string } {
  * `failed`, `never-ran` and `did-not-finish` alike: a gate whose agent never
  * started, or started and produced no receipt, did not pass either, and merging
  * over one is merging past a point nobody judged. A verdict on any other sha is
- * not about this diff and is left out, as `gatesOn` does.
+ * not about this diff and is left out, as `stepsOn` does.
  */
 const UNPASSED = new Set(["failed", "never-ran", "did-not-finish"]);
 

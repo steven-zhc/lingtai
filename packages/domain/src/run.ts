@@ -11,7 +11,7 @@
  * The load-bearing subtlety is `onSha`. A gate verdict is about **a diff**, not
  * about a ticket. In the old system approval was a label, and a label survives
  * any amount of rewriting — so a force-push inherited its own approval. Here a
- * verdict records the sha it was made against, and `gatesOn(state)` returns only
+ * verdict records the sha it was made against, and `stepsOn(state)` returns only
  * the verdicts that match the current head. Nothing has to remember to
  * invalidate anything; a new head simply has no verdicts yet.
  */

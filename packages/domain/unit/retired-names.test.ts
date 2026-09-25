@@ -302,7 +302,7 @@ function parse(doc: string) {
     outside: { occurrences: Number(outside![1]), files: Number(outside![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
-    /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
+    /** `GatePoint` → `Step` and `GateAction` → `StepAction`: a replacement the word rules do not give. */
     named: glossaryRows.filter((r) => !/^[a-z]+$/.test(r[0]!)).map((r) => [r[0]!, r[1]!] as const),
     /**
      * Tokens that carry a retired word glued to a letter, where the whole-word

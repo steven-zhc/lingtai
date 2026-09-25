@@ -702,7 +702,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**259 occurrences in 30 files, counted 2026-09-25** — and that sentence is
+**265 occurrences in 33 files, counted 2026-09-25** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank.
 
@@ -725,13 +725,25 @@ table below now holds, and nothing else:
 - **The payload fields `gate` and `points`**, wherever they are written, read or
   queried — including the SQL in `queries.ts` and `sqlite.ts`, which reaches
   into the stored JSON by those names, and `finding_backlog`'s `gate` column,
-  which follows the field it folds.
+  which follows the field it folds. **A column is read by the name it was
+  declared under**, so the projector's two `toEntry`s say `row.gate` into a
+  `step` field: `#250` first renamed the read with the field and every backlog
+  entry came back `step: undefined`, which neither `pnpm typecheck` nor
+  `pnpm test` can see — `pg.QueryResultRow` and `ProjectionRow` are
+  index-signature types, and the only assertion is in the integration half.
+  `approve.ts`'s `splitStep` is the same trap with teeth: it is spread straight
+  into `parsePayload`, so returning `step` type-checks — the parameter is
+  `unknown` — and then Zod refuses every `approve` and every `waive` at run time.
 - **`gate-failed`**, the `RefusalReason` the merge lane has recorded since the
   lane was built and `judge:`'s `when:` reads.
-- **`gates`**, the `LabelState` and `task_view.state` value. `#249` left it
-  standing on its own argument, which is in `task-view.ts`: under ten steps that
-  phase has no word yet, and renaming it to a guess costs a rebuild now and a
-  second when the pass rewrite picks the real one.
+- **`gates`**, the `LabelState` and `task_view.state` value, and **the key every
+  reader of that value looks it up by** — `status.ts`'s `NAMES`, which folds it
+  into `running`. `#249` left the value standing on its own argument, which is in
+  `task-view.ts`: under ten steps that phase has no word yet, and renaming it to
+  a guess costs a rebuild now and a second when the pass rewrite picks the real
+  one. A lookup renamed ahead of the value it reads matches nothing and falls
+  through to printing the retired word, which is how `1 running, 1 gates` came
+  to be one fact under two labels.
 - **`gates:`**, the v1 recipe key `steps:` replaced. It is refused **by name**,
   so the spelling is the refusal.
 
@@ -797,9 +809,10 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/lib/recipe.ts` | `GatesResolved` ×1 |
 | `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×4 |
 | `apps/cli/src/doctor.ts` | `GatesResolved` ×1 |
+| `apps/cli/src/status.ts` | `gates` ×1 |
 | `apps/site/src/lib/snapshot.ts` | `gates` ×1 |
 | `packages/actions/src/action.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `gate` ×1 |
-| `packages/conductor/src/approve.ts` | `GateWaived` ×4 · `GatesResolved` ×2 · `gate` ×2 · `points` ×1 |
+| `packages/conductor/src/approve.ts` | `GateWaived` ×4 · `GatesResolved` ×2 · `gate` ×5 · `points` ×1 |
 | `packages/conductor/src/attempts.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×1 · `GateStarted` ×3 · `GateWaived` ×1 · `gate` ×5 |
 | `packages/conductor/src/attribution.ts` | `gate` ×2 |
 | `packages/conductor/src/judge.ts` | `gate` ×1 |
@@ -816,6 +829,8 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/event-store/src/queries.ts` | `GatesResolved` ×2 · `gate` ×8 · `point` ×7 · `points` ×2 |
 | `packages/event-store/src/sqlite.ts` | `GatesResolved` ×2 · `gate` ×8 · `point` ×7 · `points` ×2 |
 | `packages/projector/src/backlog.ts` | `GatePassed` ×2 · `gate` ×4 |
+| `packages/projector/src/postgres.ts` | `gate` ×1 |
+| `packages/projector/src/sqlite.ts` | `gate` ×1 |
 | `packages/projector/src/task-view.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateWaived` ×2 · `gate` ×2 · `gates` ×1 |
 | `packages/recipe/src/local.ts` | `gates` ×4 |
 | `packages/recipe/src/recipe.ts` | `GatesResolved` ×1 · `gate` ×1 · `gates` ×1 |
@@ -824,7 +839,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**0 of those 259 occurrences are the English word** — the table that stood here
+**0 of those 265 occurrences are the English word** — the table that stood here
 is gone, and that is what `#250` spent ten reworded sentences on. It listed nine
 (the tenth, `Point ${PREFIX}TEST_DATABASE_URL …` in `packages/env/src/index.ts`,
 it had missed), each one word in copy that was correct as it stood, and each the

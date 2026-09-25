@@ -77,7 +77,7 @@ export type FailureOwner = "repository" | "lingtai" | "person";
  * Two of the three sources are the two the seam already draws (0025 §1):
  * project-level refusals are Lingtai's, and `IntegrationRefused` is the
  * repository's. A **gate** verdict needs no source of its own — a diff whose
- * gates refused reaches the integrator with `gatesPassed: false` and comes back
+ * gates refused reaches the integrator with `stepsPassed: false` and comes back
  * out as `gate-failed`, so the gates arrive here already in this vocabulary.
  *
  * A **run** failure was deliberately not modelled, and that was the gap

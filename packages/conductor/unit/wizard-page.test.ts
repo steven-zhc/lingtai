@@ -314,7 +314,7 @@ describe("a check the scan did not find", () => {
   });
 });
 
-describe("wholeGates", () => {
+describe("wholeSteps", () => {
   it("makes every change under gates one change to the block, and leaves the rest", () => {
     const after = scanned();
     const changes = [

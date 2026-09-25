@@ -11,7 +11,7 @@
  * and `RunFinished` closes it, `GatesResolved` names all ten steps, and the
  * last `GateStarted` with no matching verdict is the step the run is at. The
  * recipe's timeout is the denominator, and it arrives already parsed as
- * `GatePlan` so that the board has no opinion about what `20m` is.
+ * `StepPlan` so that the board has no opinion about what `20m` is.
  *
  * **Why this is a second read, when `task_view` is the one projection.** 0012's
  * rule is that a *list* is cheap, and this does not make it less so: what a
@@ -130,7 +130,7 @@ export interface Phase {
    * `proposed:build` — the point and the action, as the log keys them — or a
    * phase that is not a gate at all: `agent`, and `fixing round 2 of 3`.
    *
-   * **Not every label is `point:action`**, which is what `pointOf` is for. A
+   * **Not every label is `point:action`**, which is what `stepOf` is for. A
    * reader that splits on the colon and believes the head is a point will
    * print `2 of 3` for the third of those.
    */

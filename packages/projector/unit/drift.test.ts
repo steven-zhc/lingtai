@@ -20,11 +20,25 @@
  * touches no filesystem, no process and no network — `openSqliteProjections`
  * skips WAL for exactly that path. It is here rather than in `test/contract.ts`
  * because the `build` gate runs the unit half and this is a claim about a diff.
+ *
+ * **And the same position one table along, where there is no guard at all.**
+ * `finding_backlog`'s reader does not go through `columnOf`: `toEntry` in
+ * `postgres.ts` and `sqlite.ts` takes each field straight off a `select *` row,
+ * so a key the table has not got is `undefined` and no refusal is raised
+ * anywhere. `#250` renamed `BacklogEntry.gate` to `step` and renamed the read
+ * with it, over a column still declared `gate` — every entry came back
+ * `step: undefined`, and `lingtai backlog` printed `undefined:review` while
+ * `backlog accept` wrote it into a GitHub issue body as the step that raised the
+ * finding. Neither `pnpm typecheck` nor `pnpm test` could see it:
+ * `pg.QueryResultRow` and `ProjectionRow` are index-signature types, and the
+ * only assertion was `test/contract.ts`'s, in the integration half. So the
+ * round trip is asserted here, where the gate runs.
  */
 import { describe, expect, it } from "vitest";
 import { ProjectionShapeError, columnOf } from "../src/store.ts";
 import { createSqliteProjectionStore, openSqliteProjections } from "../src/sqlite.ts";
 import { taskViewProjection } from "../src/task-view.ts";
+import { backlogProjection, type BacklogEntry } from "../src/backlog.ts";
 import type { ProjectionStore } from "../src/store.ts";
 
 const RUN = "run-drift-1";
@@ -114,6 +128,107 @@ describe("the board, reading a task_view built before the rename", () => {
       const [card] = await store.tasks({ retentionDays: 2 });
       expect(card!.failed).toBe(1);
       expect(card!.passed).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+/**
+ * The columns `finding_backlog` is declared with, and the value each one holds
+ * in the row below. Written as the entry a reader is owed, so that the two names
+ * for one column — `gate` in the table, `step` on the entry — are the only place
+ * the two vocabularies are allowed to meet.
+ */
+const RAISED = {
+  project: "drift",
+  key: "f-1",
+  issue: "251",
+  task_id: "wi-drift-251",
+  run_id: "run-drift-2",
+  gate: "proposed",
+  action: "review",
+  on_sha: "e".repeat(40),
+  file: "packages/projector/src/postgres.ts",
+  line: 136,
+  severity: "minor",
+  claim: "the bar is written twice",
+  failure_scenario: "a passing review raises a minor and the backlog cannot say what raised it",
+  raised_seq: 4211,
+  raised_at: "2026-09-25T09:15:00.000Z",
+} as const;
+
+async function withOneRaised(): Promise<ProjectionStore> {
+  const store = createSqliteProjectionStore(openSqliteProjections(":memory:"));
+  const columns = Object.keys(RAISED);
+  await store.transact(async (ctx) => {
+    await backlogProjection.create(ctx);
+    await ctx.query(
+      `insert into finding_backlog (${columns.join(", ")})
+       values (${columns.map((_, i) => `$${i + 1}`).join(", ")})`,
+      Object.values(RAISED) as unknown[],
+    );
+  });
+  return store;
+}
+
+describe("a backlog entry read back out of the table that holds it", () => {
+  it("says which step raised the finding, and never `undefined`", async () => {
+    const store = await withOneRaised();
+    try {
+      const [entry] = await store.backlog({ project: RAISED.project });
+
+      // The defect, stated as the thing a person reads: `lingtai backlog` prints
+      // `${step}:${action}` and `backlog accept` writes it into an issue body,
+      // so `undefined` here is a durable record of which step raised it, wrong.
+      expect(entry?.step).toBe("proposed");
+      expect(entry?.step).not.toBeUndefined();
+      expect(`${entry?.step}:${entry?.action}`).toBe("proposed:review");
+    } finally {
+      await store.close();
+    }
+  });
+
+  /**
+   * **And the next one of these, not only this one.** The defect was a field
+   * whose key stopped naming a column, which `toEntry` reports as `undefined`
+   * rather than refusing the way `columnOf` does. Asserting the whole entry is
+   * what makes that a red test for any of the twenty-three columns instead of
+   * for the one somebody happened to rename — the round trip, and no field left
+   * to be quietly absent.
+   */
+  it("carries every declared column through, with nothing silently absent", async () => {
+    const store = await withOneRaised();
+    try {
+      const [entry] = await store.backlog({ project: RAISED.project });
+
+      expect(entry).toEqual({
+        key: RAISED.key,
+        project: RAISED.project,
+        issue: RAISED.issue,
+        taskId: RAISED.task_id,
+        runId: RAISED.run_id,
+        step: RAISED.gate,
+        action: RAISED.action,
+        onSha: RAISED.on_sha,
+        file: RAISED.file,
+        line: RAISED.line,
+        severity: RAISED.severity,
+        claim: RAISED.claim,
+        failureScenario: RAISED.failure_scenario,
+        raisedSeq: String(RAISED.raised_seq),
+        raisedAt: new Date(RAISED.raised_at),
+        // The default the DDL gives a row nobody has decided yet, and the nulls
+        // beside it: absent because nothing was decided, not because a key
+        // missed its column.
+        status: "open",
+        decidedBy: null,
+        decidedAt: null,
+        kind: null,
+        proposedRef: null,
+        proposedUrl: null,
+        reason: null,
+      } satisfies BacklogEntry);
     } finally {
       await store.close();
     }

@@ -9,7 +9,7 @@
  *
  * **`onSha` is load-bearing.** A verdict is about a diff, not about a ticket.
  * Bind it to the commit and a force-push invalidates the approval by
- * arithmetic — `gatesOn()` in `@lingtai/domain` simply stops returning it. In
+ * arithmetic — `stepsOn()` in `@lingtai/domain` simply stops returning it. In
  * the old system approval was a label, and a label survives any amount of
  * rewriting.
  *

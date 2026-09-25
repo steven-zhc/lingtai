@@ -314,7 +314,10 @@ function toCard(row: ProjectionRow): TaskCard {
   };
 }
 
-/** A `finding_backlog` row → a backlog entry. `postgres.ts`'s twin. */
+/**
+ * A `finding_backlog` row → a backlog entry. `postgres.ts`'s twin, and the
+ * `gate` column read by its own name for the reason given there.
+ */
 function toEntry(row: ProjectionRow): BacklogEntry {
   return {
     key: row.key as string,
@@ -322,7 +325,7 @@ function toEntry(row: ProjectionRow): BacklogEntry {
     issue: row.issue as string,
     taskId: row.task_id as string,
     runId: row.run_id as string,
-    step: row.step as string,
+    step: row.gate as string,
     action: row.action as string,
     onSha: row.on_sha as string,
     file: row.file as string,

@@ -193,8 +193,8 @@ describe("what a project's recipe says today", () => {
     const view = await projectRecipe(state);
     const file = join(home, "app", "recipe.yml");
 
-    expect(sourceIn(view, "the points")).toBe("preset pnpm-workspace");
-    expect(sourceIn(view, "the points")).not.toContain(file);
+    expect(sourceIn(view, "the steps")).toBe("preset pnpm-workspace");
+    expect(sourceIn(view, "the steps")).not.toContain(file);
     expect(sourceIn(view, "excludes")).toBe("default");
     // The page says it where a reader is looking — beside the row, and in the
     // exhaustive block under it, which carries `env.required` too.
@@ -207,7 +207,7 @@ describe("what a project's recipe says today", () => {
 
     // And with no preset either, ten empty steps are the schema's.
     await writeFile(join(home, "app", "recipe.yml"), EXTENDS.replace("extends: pnpm-workspace\n", ""));
-    expect(sourceIn(await projectRecipe(state), "the points")).toBe("default");
+    expect(sourceIn(await projectRecipe(state), "the steps")).toBe("default");
   });
 
   /** So a reader can hold this against an attempt's recorded recipe (#217). */

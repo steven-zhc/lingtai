@@ -1769,7 +1769,7 @@ export async function declaredEnvironment(
  * so: the divergence is invisible until a run merges into `repo.base` under
  * gates it read from somewhere else, and every event that run writes is
  * internally consistent — `GatesResolved` carries the hash of the recipe it
- * obeyed, so `gates: every step that was planned ran` compares a plan against
+ * obeyed, so `steps: every step that was planned ran` compares a plan against
  * itself and finds nothing wrong. Comparing the plan's *origin* to the merge
  * target is the only thing that sees it, and this is where that happens without
  * waiting for a run to pay for it.

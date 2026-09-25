@@ -189,7 +189,7 @@ function refusedAt(steps: readonly StepProgress[]): string | null {
  * **The point name is said once.** The line used to read `proposed:build 42s /
  * 20m`; the highlighted label already says `proposed`, so the sentence is the
  * action and its bound and nothing else. A phase that names no point — the
- * agent, a bought round — is printed whole, which is `pointOf`'s whole job.
+ * agent, a bought round — is printed whole, which is `stepOf`'s whole job.
  *
  * **The sentence has four readings and the lane settles three of them.** What
  * is running, what refused, a run in flight between two points, and a run that

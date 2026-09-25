@@ -450,7 +450,7 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
 /**
  * What an action does, and what bounds it, as one line each.
  *
- * Only a command carries a clock of its own (`gatePlan` reads the same
+ * Only a command carries a clock of its own (`stepPlan` reads the same
  * `timeout`), so every other kind says what holds it instead of inventing one.
  */
 export function describeAction(

@@ -37,7 +37,7 @@ const step = (step: Step, action: string) => ({
 });
 
 /**
- * This repository's own recipe, as `gatePlan` reduces it — every point present
+ * This repository's own recipe, as `stepPlan` reduces it — every point present
  * and every duration already a number. That reduction has its own test in
  * `packages/conductor/unit/filter.test.ts`; this one is about what the fold
  * does with the answer.
@@ -90,7 +90,7 @@ describe("where a run has got to", () => {
 
     expect(progress?.now?.label).toBe("proposed:build");
     expect(progress?.now?.since).toBe("2026-09-04T17:20:43.000Z");
-    // The recipe's own `timeout: 20m`, parsed once by `gatePlan`. Without the
+    // The recipe's own `timeout: 20m`, parsed once by `stepPlan`. Without the
     // denominator "slow" and "about to be killed" read the same.
     expect(progress?.now?.budgetMs).toBe(20 * 60_000);
   });

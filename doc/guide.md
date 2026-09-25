@@ -224,7 +224,7 @@ time"* — exists because this repository's own `merge` point **does not execute
 that never refuses and a point that never runs look identical from outside, and
 this project has been on the wrong side of that for long enough to write the
 workaround into its own instructions. `lingtai doctor` now
-carries `gates: every step that was planned ran`, and `GatesResolved` is an
+carries `steps: every step that was planned ran`, and `GatesResolved` is an
 event rather than a convention so that an unconfigured point renders as
 `skipped` on the board and in `lingtai status` — **never omitted**. A check you
 cannot see is a check you will forget you never had.

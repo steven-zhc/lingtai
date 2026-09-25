@@ -261,7 +261,7 @@ export function describeLogQueriesContract(
         (f) => f.workItemId === item,
       );
 
-      expect(found).toEqual([{ workItemId: item, runId, gate: "merge" }]);
+      expect(found).toEqual([{ workItemId: item, runId, step: "merge" }]);
     });
 
     it("says nothing when every planned point recorded a verdict", async () => {

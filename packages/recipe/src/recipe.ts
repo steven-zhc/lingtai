@@ -643,7 +643,7 @@ export const backlogPlugin = definePlugin("backlog", {
  * of `queue:` rather than a plugin beside it, because the two answer one
  * question and `discover.ts` applies them in one pass over one GitHub response.
  *
- * `as const`, so `ActionKind` and `GateAction` are read off it rather than
+ * `as const`, so `ActionKind` and `StepAction` are read off it rather than
  * written down a second time.
  */
 export const PLUGINS = [

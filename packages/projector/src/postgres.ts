@@ -126,7 +126,16 @@ function toCard(row: pg.QueryResultRow): TaskCard {
   };
 }
 
-/** A `finding_backlog` row → a backlog entry. Unchanged from `readBacklog`. */
+/**
+ * A `finding_backlog` row → a backlog entry. Unchanged from `readBacklog`.
+ *
+ * **The column is `gate` and the field is `step`, and the pair is deliberate.**
+ * The column follows the payload field it folds — `gate text not null` in
+ * `backlog.ts`, off `GatePassed`'s own `gate` — and that spelling stays until
+ * the log's vocabulary is renamed. Reading `row.step` here is a column no row
+ * has got, so every entry came back with `step: undefined`, which `tsc` cannot
+ * see through `pg.QueryResultRow`'s index signature.
+ */
 function toEntry(row: pg.QueryResultRow): BacklogEntry {
   return {
     key: row.key,
@@ -134,7 +143,7 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
     issue: row.issue,
     taskId: row.task_id,
     runId: row.run_id,
-    step: row.step,
+    step: row.gate,
     action: row.action,
     onSha: row.on_sha,
     file: row.file,

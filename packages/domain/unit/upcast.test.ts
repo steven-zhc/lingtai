@@ -208,7 +208,7 @@ describe("parseStoredPayload", () => {
  * And at `GatePassed` it cannot come down at all while `2 → 3` stands: that
  * type is at 3, and *has an unbroken chain of steps for every type past
  * version 1* at the top of this file requires a step at 1. The argument in
- * full is on `gatePointRenamed` in `upcast.ts`.
+ * full is on `stepRenamed` in `upcast.ts`.
  */
 describe("the gate point rename", () => {
   const STEP_CARRYING = [

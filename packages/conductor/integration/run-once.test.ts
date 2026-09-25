@@ -202,7 +202,7 @@ const NO_ROUNDS_RECIPE = REFUSING_RECIPE.replace(
  *
  * The one refusal the round loop never sees: `proposed` is where `buyRound`
  * runs, and a `merge`-point verdict is taken by `integrate()` as
- * `gatesPassed: false` and comes back out as `gate-failed`. `decideFix` is
+ * `stepsPassed: false` and comes back out as `gate-failed`. `decideFix` is
  * never asked about it — no `FixRequested` and no `FixDeclined` — so it is the
  * case that proves a lane `gate-failed` is not always one a round declined.
  * Before `#143` it bought a whole new run.
@@ -711,7 +711,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'a change the 
     expect(item.question).toContain("gate-failed");
     // The sentence, rather than the reason code the question still carries.
     expect(item.diagnosis?.what).toBe(
-      `a gate refused agent/143, so it was not merged into develop.`,
+      `a step refused agent/143, so it was not merged into develop.`,
     );
     // Whose failure it is and why nothing is coming — `whoseFailure`'s answer,
     // composed by `diagnoseRefusal` and handed in by nobody.
@@ -1467,7 +1467,7 @@ git add -A && git commit -q -m "fix the race"
       } | null;
     };
     expect(block.needs).toBe("judgement");
-    expect(block.diagnosis?.what).toContain("every gate passed");
+    expect(block.diagnosis?.what).toContain("every step passed");
     expect(block.diagnosis?.recommendation?.action).toBe("approve");
     // Nothing refused, so there is nothing to quote — and null rather than an
     // empty string, so the block leaves no hole where a quote would be (#132).
@@ -1533,8 +1533,8 @@ git add -A && git commit -q -m "fix the race"
     const block = held.find((e) => e.type === "WorkItemBlocked")!.data as {
       diagnosis: { what: string; raw: string | null } | null;
     };
-    // The name is still there, because a reader has to know which gate.
-    expect(block.diagnosis?.what).toContain("gate refused it");
+    // The name is still there, because a reader has to know which step.
+    expect(block.diagnosis?.what).toContain("step refused it");
     // And the reason is there too, verbatim, which it was not.
     expect(block.diagnosis?.raw).toContain("this branch may not land");
   }, 240_000);
@@ -1696,7 +1696,8 @@ git add -A && git commit -q -m "fix the race"
     const asked = atMerge("ApprovalRequested");
     expect(asked).toHaveLength(1);
     expect(asked[0]!.data).toMatchObject({
-      step: "merge",
+      // The payload's own field, which `gateBase` still spells `gate`.
+      gate: "merge",
       action: "approval",
       onSha: result.headSha,
     });
@@ -2155,7 +2156,7 @@ git add -A && git commit -q -m "fix the race"
           type: "ApprovalRequested",
           actor: "conductor",
           data: {
-            step: "merge",
+            gate: "merge",
             action: "repair",
             runId: r.runId,
             onSha: repaired,

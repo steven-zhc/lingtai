@@ -97,7 +97,7 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
     });
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    expect(result).toMatchObject({ ok: "held", gate: "proposed" });
+    expect(result).toMatchObject({ ok: "held", step: "proposed" });
     // Held by the machine's watch, which the repository's copy does not have.
     const asked = (await store.read(result.runId)).filter((e) => e.type === "ApprovalRequested");
     expect(asked.map((e) => e.data)).toMatchObject([{ gate: "proposed", action: "tamper" }]);

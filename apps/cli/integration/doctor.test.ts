@@ -295,8 +295,8 @@ describe("lingtai doctor — a machine whose log is a file", () => {
         "log: every type is readable",
         "github: what we said and did not manage",
         "subscribers: failures",
-        "gates: end ran on what landed",
-        "gates: every step that was planned ran",
+        "steps: end ran on what landed",
+        "steps: every step that was planned ran",
       ]) {
         expect(find(report.results, name).status, `${name} did not run`).not.toBe("skip");
       }
@@ -488,8 +488,8 @@ subscribers:
   /** A `run:` at any point and every subscriber — the whole extension mechanism. */
   it("finds every extension, at a gate point or subscribed", async () => {
     expect(declaredExtensions(await recipeOf())).toEqual([
-      { name: "install", env: [], where: "gate" },
-      { name: "scan", env: ["SCANNER_TOKEN"], where: "gate" },
+      { name: "install", env: [], where: "step" },
+      { name: "scan", env: ["SCANNER_TOKEN"], where: "step" },
       { name: "telegram", env: ["TELEGRAM_BOT_TOKEN"], where: "subscriber" },
     ]);
   });

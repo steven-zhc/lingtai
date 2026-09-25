@@ -3021,7 +3021,7 @@ export function runOnce(
         // Naming it after the action reads well — *the thing a person is looking
         // at is that action's findings* — and gives this request the same
         // `${gate}:${action}` key as the `GateFailed` that holds them.
-        // `task-view.ts:427` folds both through one `setGate`, so the request,
+        // `task-view.ts:427` folds both through one `setStep`, so the request,
         // which carries no verdict and no findings, overwrites the refusal it
         // exists to report: verdict, evidence and findings replaced by an empty
         // `pending` entry, on every projection and every rebuild.
@@ -3287,7 +3287,7 @@ export function runOnce(
          * buying a *run* for exactly what a *round* is refused for was the same
          * decision made twice with opposite answers. From a `merge:` gate it
          * never met `decideFix` at all: the merge point runs after the round
-         * loop, `integrate()` takes its verdict as `gatesPassed: false`, and it
+         * loop, `integrate()` takes its verdict as `stepsPassed: false`, and it
          * comes here with no `FixRequested` or `FixDeclined` on the log — so
          * this block, with its diagnosis, is the whole of what that path gets,
          * and nothing upstream has already answered it. And a

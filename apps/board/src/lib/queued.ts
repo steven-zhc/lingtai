@@ -45,7 +45,7 @@ export interface PlannedStep {
    * Nothing is configured here.
    *
    * A first-class state and not an absence, for the reason the attempt's own
-   * `PointState` `skipped` is (ADR 0016 §4): a step that is merely left out looks
+   * `StepState` `skipped` is (ADR 0016 §4): a step that is merely left out looks
    * exactly like a step that was configured and silently did not run, and only
    * the second is Lingtai's bug. It has to be said *before* a run as well as
    * after one — an operator deciding whether to press the button is deciding

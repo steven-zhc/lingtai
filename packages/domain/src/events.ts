@@ -728,8 +728,8 @@ export const GateStarted = z.object(gateBase);
  * tests hold rather than a comment** (`#237`). Five places used to spell the
  * three names out and none of them linked here: `parseFindings` and
  * `verdictFor` in `packages/actions/src/agent-action.ts`, `severest`, and the
- * `GateFinding` interfaces in `packages/domain/src/run.ts` and
- * `packages/actions/src/action.ts`. Each reads this array, or the `Severity` it
+ * `StepFinding` and `ActionFinding` interfaces in `packages/domain/src/run.ts`
+ * and `packages/actions/src/action.ts`. Each reads this array, or the `Severity` it
  * yields, so a fourth severity added here reaches all of them at once —
  * `packages/actions/unit/agent-action.test.ts` and
  * `packages/conductor/unit/fix.test.ts` walk the array against those

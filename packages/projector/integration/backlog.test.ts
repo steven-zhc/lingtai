@@ -142,13 +142,13 @@ describe("finding_backlog", () => {
     ]);
   });
 
-  it("keeps the run and gate that first raised it, and everything the finding said", async () => {
+  it("keeps the run and step that first raised it, and everything the finding said", async () => {
     const [entry] = await readBacklog({ project: PROJECT, key: keyOf("the name shadows an import") });
     expect(entry).toMatchObject({
       issue: "1",
       taskId: wi(1),
       runId: run(1, 1),
-      gate: "proposed",
+      step: "proposed",
       action: "review",
       file: "src/a.ts",
       line: 10,
