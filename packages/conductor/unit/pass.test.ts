@@ -67,6 +67,8 @@ interface Handed {
   arriving: StepReached | null;
   offering: readonly Destination[];
   reached: readonly StepReached[];
+  /** This visit's — the head it is judged against, the round, and the recheck. */
+  context: ActionContext;
 }
 
 /**
@@ -109,6 +111,7 @@ function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
           arriving: work.arriving,
           offering: work.offering,
           reached: work.reached,
+          context: work.context,
         });
         const override = overrides[step];
         if (override) return await override(work);
@@ -128,6 +131,45 @@ function watchingActions(at: Record<string, readonly Action[]> = {}) {
     return built;
   };
   return { actionsAt, ran };
+}
+
+/** What one action was judged against, which is the half `Handed` cannot see. */
+interface Judged {
+  step: Step;
+  onSha: string;
+  round: number | undefined;
+  recheck: readonly ActionFinding[];
+}
+
+/**
+ * One action at every step, recording the context it was run with.
+ *
+ * `runActionPipeline` hands the context to `Action.run`, so this is the only
+ * place a test can read back what the loop actually judged each visit against —
+ * and `answering` is told which visit it is at, so a lap can be red and the next
+ * green.
+ */
+function judging(answering: (step: Step, lap: number) => ActionResult = () => PASSED) {
+  const judged: Judged[] = [];
+  const laps = new Map<Step, number>();
+  const actionsAt: PassOptions["actionsAt"] = (step) => [
+    {
+      name: "check",
+      kind: "run",
+      run: async (seenWith) => {
+        const lap = laps.get(step) ?? 0;
+        laps.set(step, lap + 1);
+        judged.push({
+          step,
+          onSha: seenWith.onSha,
+          round: seenWith.round,
+          recheck: seenWith.recheck ?? [],
+        });
+        return answering(step, lap);
+      },
+    },
+  ];
+  return { actionsAt, judged };
 }
 
 const events: () => { emit: PassOptions["emit"]; seen: ActionEvent[] } = () => {
@@ -566,6 +608,7 @@ describe("every step that does not pass arrives at proposed", () => {
           arriving: work.arriving,
           offering: work.offering,
           reached: work.reached,
+          context: work.context,
         };
         return { ending: "routed", to: "waiting", why: "a base that will not install is yours" };
       },
@@ -1123,6 +1166,229 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
     await runPass({ recipe, context, emit, bodies, actionsAt, ceilings: { rounds: 2, restartsLeft: 0 } });
 
     expect(offering).toEqual(["waiting"]);
+  });
+});
+
+// ------------------------------------------- the head, the round, the findings ----
+
+describe("a visit is judged against the head the walk has reached", () => {
+  /**
+   * **`onSha` is *the commit this verdict is about, and the only thing that
+   * makes it stale*** (`ActionContext`), and `stepsOn()`
+   * (`packages/domain/src/run.ts`) shows a step only where its `onSha` is the
+   * item's head. So a pass that judged the base while the agent's commit was the
+   * head would pay for `build`, `review` and `proposed` and show none of them —
+   * a card with no build and no review, beside a `PassResult` saying all ten
+   * steps passed.
+   *
+   * The loop runs no git and the caller cannot know the value either, because
+   * the commit is made in the middle of the walk. So the step that moved the
+   * tree says so on its ending, and every visit after it is judged against it.
+   */
+  it("judges the steps after a commit against the commit, and the ones before against the base", async () => {
+    const { bodies, seen } = watching({
+      // T4b's `implement`: the agent ran, and this is the head it committed.
+      implement: async () => ({ ending: "passed", head: "b2b2b2b" }),
+    });
+    const { actionsAt, judged } = judging();
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt).toBeNull();
+    expect(judged.map((j) => [j.step, j.onSha])).toEqual([
+      // Before the agent, including `implement`'s own plugins: the base is what
+      // they are about, because nothing has been written yet.
+      ["claim", "abc1234def"],
+      ["admit", "abc1234def"],
+      ["prepared", "abc1234def"],
+      ["design", "abc1234def"],
+      ["implement", "abc1234def"],
+      // And after it, the head the agent left — which is what the board reads.
+      ["build", "b2b2b2b"],
+      ["review", "b2b2b2b"],
+      ["proposed", "b2b2b2b"],
+      ["merge", "b2b2b2b"],
+    ]);
+    // The bodies are handed the same context their plugins were run with.
+    expect(seen.find((s) => s.step === "build")?.context.onSha).toBe("b2b2b2b");
+    expect(seen.find((s) => s.step === "design")?.context.onSha).toBe("abc1234def");
+  });
+
+  /** A step that moved nothing says nothing, which is eight of the ten. */
+  it("leaves the head alone when no step says it moved the tree", async () => {
+    const { bodies } = watching();
+    const { actionsAt, judged } = judging();
+    const { emit } = events();
+
+    await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(judged.every((j) => j.onSha === "abc1234def")).toBe(true);
+  });
+
+  /**
+   * And a fix round is the case the whole thing is for: the second agent commits
+   * too, so the second `build` and the second `review` are about that commit and
+   * not about the one the first round was refused for.
+   */
+  it("advances the head again on a fix round", async () => {
+    const heads = ["b2b2b2b", "c3c3c3c"];
+    let commits = 0;
+    const { bodies } = watching({
+      implement: async () => ({ ending: "passed", head: heads[commits++] ?? "" }),
+      proposed: routerSaying(() => "implement"),
+    });
+    const { actionsAt, judged } = judging((step, lap) =>
+      step === "build" && lap === 0
+        ? { verdict: "failed", evidence: "3 failing", findings: [] }
+        : PASSED,
+    );
+    const { emit } = events();
+
+    const result = await runPass({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restartsLeft: 0 },
+    });
+
+    expect(result.stoppedAt).toBeNull();
+    expect(judged.filter((j) => j.step === "build").map((j) => j.onSha)).toEqual([
+      "b2b2b2b",
+      "c3c3c3c",
+    ]);
+    expect(judged.filter((j) => j.step === "review").map((j) => j.onSha)).toEqual(["c3c3c3c"]);
+  });
+});
+
+describe("a visit is judged in the round the pass is in", () => {
+  /**
+   * `round` is *which fix round this pipeline is judging — 0 before any fix was
+   * bought* (`ActionContext`), and it is the workflow's own count rather than
+   * anything a plugin or a caller supplies: the pass is the thing that buys the
+   * rounds. A frozen 0 files the second round's actions under the first, so a
+   * slow re-review reads as the one that already finished.
+   */
+  it("counts the rounds it bought, and every lap is judged in its own", async () => {
+    const { bodies } = watching({ proposed: routerSaying(() => "implement") });
+    const { actionsAt, judged } = judging((step, lap) =>
+      step === "build" && lap === 0
+        ? { verdict: "failed", evidence: "3 failing", findings: [] }
+        : PASSED,
+    );
+    const { emit } = events();
+
+    const result = await runPass({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restartsLeft: 0 },
+    });
+
+    expect(result.routes).toEqual([{ from: "build", to: "implement", why: "because a test said so" }]);
+    expect(judged.map((j) => [j.step, j.round])).toEqual([
+      ["claim", 0],
+      ["admit", 0],
+      ["prepared", 0],
+      ["design", 0],
+      ["implement", 0],
+      ["build", 0],
+      // the round the refusal bought
+      ["implement", 1],
+      ["build", 1],
+      ["review", 1],
+      ["proposed", 1],
+      ["merge", 1],
+    ]);
+  });
+});
+
+describe("the round a pass buys is bought on something", () => {
+  const finding: ActionFinding = {
+    file: "packages/conductor/src/pass.ts",
+    line: 1,
+    claim: "the reviewer is never told what it refused last time",
+    failureScenario: "the fix round re-reviews from scratch and the criterion is lost",
+    severity: "major",
+  };
+
+  /**
+   * 0038 §2, and the acceptance contract this pass exists to keep: **the
+   * findings a previous version of this diff was refused for, and that an agent
+   * has since been asked to make stop happening.** Each `failureScenario` was
+   * written before anybody knew what the fix would be, which is what makes it a
+   * criterion the fixer could not author — and a reviewer that is never handed
+   * them silently stops applying it.
+   *
+   * The lap's findings rather than a refusal's, because a route is chosen on
+   * both of `proposed`'s visits: here the review **passed** carrying a finding
+   * and the way-through judge bought the round on it (0058 §3b), which is the
+   * case 0061 §3 calls the one judgement worth an agent.
+   */
+  it("hands the next round's plugins the findings this one was bought on", async () => {
+    let laps = 0;
+    const { bodies } = watching({
+      proposed: async (work) => {
+        const at = work as StepWork<"proposed">;
+        if (at.arriving !== null) return { ending: "routed", to: "waiting", why: "unreachable here" };
+        return laps++ === 0
+          ? { ending: "routed", to: "implement", why: "the lines, not the approach" }
+          : { ending: "passed" };
+      },
+    });
+    const { actionsAt, judged } = judging((step, lap) =>
+      step === "review" && lap === 0
+        ? { verdict: "passed", evidence: "read the diff", findings: [finding] }
+        : PASSED,
+    );
+    const { emit } = events();
+
+    const result = await runPass({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restartsLeft: 0 },
+    });
+
+    expect(result.stoppedAt).toBeNull();
+    // The first review was asked about nothing; the second is asked about the
+    // scenario the first wrote, by name.
+    expect(judged.filter((j) => j.step === "review").map((j) => j.recheck)).toEqual([[], [finding]]);
+    // Nothing in the first lap was, because nothing had been refused yet.
+    expect(judged.filter((j) => j.round === 0).every((j) => j.recheck.length === 0)).toBe(true);
+    // And the agent being asked to fix it is judged with it too.
+    expect(judged.find((j) => j.step === "implement" && j.round === 1)?.recheck).toEqual([finding]);
+  });
+
+  /**
+   * And a refusal's findings are the same story from the other side — a `build`
+   * that refused carrying what it found, and the round it bought asked about it.
+   */
+  it("carries a refusing action's findings into the round it bought", async () => {
+    const { bodies } = watching({ proposed: routerSaying(() => "implement") });
+    const { actionsAt, judged } = judging((step, lap) =>
+      step === "build" && lap === 0
+        ? { verdict: "failed", evidence: "3 failing", findings: [finding] }
+        : PASSED,
+    );
+    const { emit } = events();
+
+    await runPass({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restartsLeft: 0 },
+    });
+
+    expect(judged.filter((j) => j.step === "build").map((j) => j.recheck)).toEqual([[], [finding]]);
   });
 });
 

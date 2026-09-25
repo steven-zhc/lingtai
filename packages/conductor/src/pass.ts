@@ -69,6 +69,7 @@ import {
   type Action,
   type ActionContext,
   type ActionEvent,
+  type ActionFinding,
   type ActionVerdict,
   type PipelineResult,
 } from "@lingtai/actions";
@@ -175,8 +176,32 @@ function after(step: Step): Step | null {
 
 // ------------------------------------------------- what a step hands back ----
 
+/**
+ * **Where the step left the worktree — the one seam by which `onSha` advances**,
+ * and it is on every ending because it is a fact about the tree rather than
+ * about the judgement.
+ *
+ * `onSha` is *the commit this verdict is about, and the only thing that makes it
+ * stale* (`ActionContext`), and `stepsOn()` (`packages/domain/src/run.ts`) shows
+ * a verdict only where it equals the item's head. So a pass that judged `A`
+ * while the tree stood at `B` has paid for every verdict and can show none of
+ * them. The workflow cannot work the value out — it runs no git — and the caller
+ * cannot either, because the commit happens in the middle of the walk: the agent
+ * at `implement` makes it, and `admit` is where the worktree is cut at all. So
+ * the step that moved the tree says so, and the loop carries it to every visit
+ * after it.
+ *
+ * Absent is *the tree did not move*, which is eight of the ten and every ending
+ * the pipeline produces — `endingOf` never sets it, because an action's verdict
+ * is about the head it was handed.
+ */
+export interface LeftTheTreeAt {
+  /** The commit the step's own work left the worktree at, when it moved it. */
+  readonly head?: string;
+}
+
 /** Nothing to report. The pass moves to the next step on the spine. */
-export interface StepPassed {
+export interface StepPassed extends LeftTheTreeAt {
   readonly ending: "passed";
 }
 
@@ -204,7 +229,7 @@ export interface StepPassed {
  * the pass has anywhere to go. Every other token is read by a judge and by a
  * person, and neither of them needs it enumerated here.
  */
-export interface StepRefused {
+export interface StepRefused extends LeftTheTreeAt {
   readonly ending: "refused";
   readonly because: string;
   /** The action that refused, or null where the step refused without one. */
@@ -228,7 +253,7 @@ export interface StepRefused {
  * asks a person. Handing it to a judge would be asking whether to ask, after
  * the question was put.
  */
-export interface StepHeld {
+export interface StepHeld extends LeftTheTreeAt {
   readonly ending: "held";
   readonly at: string;
   readonly question: string;
@@ -254,7 +279,7 @@ export interface StepHeld {
  *
  * Neither buys a fix round. Only the first has anywhere to go.
  */
-export interface StepDidNotFinish {
+export interface StepDidNotFinish extends LeftTheTreeAt {
   readonly ending: "did-not-finish";
   readonly because: string;
   readonly at: string | null;
@@ -289,7 +314,7 @@ export const NEEDS_INPUT = "needs-input";
  * and an account that has just refused one agent will refuse the next. Paying
  * to ask *what shall we do about the quota* is the one route that cannot work.
  */
-export interface StepNeverRan {
+export interface StepNeverRan extends LeftTheTreeAt {
   readonly ending: "never-ran";
   readonly at: string;
   readonly detail: string;
@@ -320,7 +345,7 @@ export type Destination = Step | "waiting";
  * [0043](../../../doc/decisions/0043-evidence-is-plain-text.md) already says
  * evidence is plain text and not a structure to be parsed.
  */
-export interface StepRouted {
+export interface StepRouted extends LeftTheTreeAt {
   readonly ending: "routed";
   readonly to: Destination;
   readonly why: string;
@@ -470,6 +495,17 @@ export interface StepWork<S extends Step = Step> {
    * only `end` runs after that is known. `outcomeOf` is the rule.
    */
   readonly outcome: S extends "end" ? TerminalOutcome : null;
+  /**
+   * **This visit's context, and the same object its plugins were just run
+   * with** — so a body dispatching an agent and the pipeline that judges what
+   * the agent wrote are talking about one commit, in one round.
+   *
+   * Three of its fields move as the pass walks and the loop rebuilds them per
+   * visit: `onSha` (the head, which a body advances by returning one on its
+   * ending — `LeftTheTreeAt`), `round` (the pass's own count of the rounds it
+   * bought), and `recheck` (what this round was bought on, 0038 §2). The rest is
+   * the caller's and never changes.
+   */
   readonly context: ActionContext;
   readonly emit: (event: ActionEvent) => Promise<void> | void;
 }
@@ -501,13 +537,20 @@ const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: "pas
 export const NOT_BUILT_YET: StepBodies = {
   /** Pick the ticket — `discover`/`claim`, and `queue:`'s four fields. */
   claim: nothingBeyondThePlugins,
-  /** Start work on it; the worktree is cut here. May report `needs-input`. */
+  /**
+   * Start work on it; the worktree is cut here, so this is where the `head` a
+   * pass is judged against first has a value. May report `needs-input`.
+   */
   admit: nothingBeyondThePlugins,
   /** The tree is ready to be worked in. **Refuses** — the cheapest one in the pass. */
   prepared: nothingBeyondThePlugins,
   /** A document, before any code — **or nothing, which is an answer** (0058 §3). */
   design: nothingBeyondThePlugins,
-  /** One agent, in that worktree. May report `needs-input`. */
+  /**
+   * One agent, in that worktree — and **it reports the `head` it committed**,
+   * which is the whole of what moves `onSha` on a fix round. May report
+   * `needs-input`.
+   */
   implement: nothingBeyondThePlugins,
   /** **Refuses**, and a red one skips `review` — T4b. */
   build: nothingBeyondThePlugins,
@@ -730,6 +773,21 @@ export interface PassOptions {
    * so `recipe.steps[step]` is a lookup that cannot miss.
    */
   readonly recipe: Pick<Recipe, "steps">;
+  /**
+   * **What the walk starts from, and not what every visit is handed.**
+   *
+   * `runId`, `cwd`, `env` and `log` are the pass's throughout. The other three
+   * move while it runs and the loop rebuilds them per visit, so a caller sets
+   * them once and never again: `onSha` is the base until a step says it moved
+   * the tree (`LeftTheTreeAt`), `round` is replaced by the pass's own count of
+   * the rounds it bought, and `recheck` is replaced at every route back into the
+   * spine by what that round was bought on (`contextFor`).
+   *
+   * A frozen context here was `#253`'s first refusal, and it is worth naming:
+   * every verdict a fix round pays for is stamped with the head *before* the fix,
+   * so `stepsOn()` filters all of them out and the board shows a change with no
+   * build and no review — while `PassResult.steps` says ten steps passed.
+   */
   readonly context: ActionContext;
   /**
    * Every event the pipeline produces, in order, before the next action starts.
@@ -921,6 +979,43 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   let at: Step | null = "claim";
 
   /**
+   * The three fields of the context that move while the pass runs, and the one
+   * place any of them is written.
+   *
+   * `onSha` is the head the tree stands at — the base the caller handed in until
+   * a step says it moved it. `roundsSpent` is `round`. `recheck` is what the
+   * round the pass is in was bought on, and is empty on the first lap because
+   * nothing has been refused yet.
+   */
+  let onSha = options.context.onSha;
+  let recheck: readonly ActionFinding[] = options.context.recheck ?? [];
+  /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
+  let lapStart = 0;
+
+  /**
+   * What this visit is judged against — rebuilt per visit, never shared.
+   *
+   * The same object goes to the step's plugins and to its body, because they are
+   * judging the same tree in the same round: a `review` handed a different
+   * `onSha` from the pipeline that just ran at `build` would be two verdicts
+   * about two commits on one card.
+   */
+  const contextFor = (): ActionContext => ({ ...options.context, onSha, round: roundsSpent, recheck });
+
+  /**
+   * One visit, recorded — and the head it left the tree at, if it moved it.
+   *
+   * Read here rather than in `runStep`, because `onSha` is the walk's and not
+   * one visit's: what a step that committed changes is what **every** visit
+   * after it is judged against.
+   */
+  const record = (visit: StepReached): StepReached => {
+    steps.push(visit);
+    if (visit.ending.head !== undefined) onSha = visit.ending.head;
+    return visit;
+  };
+
+  /**
    * What a route does to the walk, in one place — because a route is chosen at
    * two of them: `proposed`'s own visit on the way through, and the visit the
    * loop takes a step that did not pass to. `reported` is what a person should
@@ -936,6 +1031,22 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       return false;
     }
     // Back into the spine, and a round is what that costs.
+    //
+    // **The round the pass is about to buy is bought on something**, and 0038 §2
+    // is what the next agent is owed: *the findings a previous version of this
+    // diff was refused for, that an agent has since been asked to make stop
+    // happening* — each one's `failureScenario` written before anybody knew what
+    // the fix would be, which is what makes it a criterion the fixer could not
+    // author. So the lap's findings become the next lap's `recheck`, and the
+    // reviewer at `review` is handed them by name.
+    //
+    // The lap's, rather than the arriving step's alone: a route is chosen on
+    // both of `proposed`'s visits, and the way-through one is judged on a
+    // `review` that **passed** carrying findings (0058 §3b). Reading only what
+    // refused would hand the fixer nothing in exactly the case 0061 §3 calls the
+    // one judgement worth an agent.
+    recheck = findingsIn(steps.slice(lapStart));
+    lapStart = steps.length;
     roundsSpent += 1;
     at = route.to;
     return true;
@@ -943,22 +1054,24 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
 
   while (at !== null && at !== "end") {
     const spec = SPEC[at];
-    const reached = await runStep(spec, options, bodies, [...steps], {
-      // The spine visit: the step's own plugins, then its own body. Nothing has
-      // arrived, and at nine of the ten there is nothing to route.
-      arriving: null,
-      // **`proposed` routes on the way through as well as on the way back**
-      // (0058 §3b) — and that visit is where a `review`'s findings are judged,
-      // which is 231 of the log's refusals and 0061 §3's one judgement worth an
-      // agent. `review` judges nothing and passes, so nothing refused and there
-      // is nothing arriving; what the judge reads is the findings on `reached`,
-      // and what it may answer is this set.
-      offering: spec.routes ? onOffer(at, { ending: "passed" }, ceilings, roundsSpent) : [],
-      // Nothing but `end` is told the outcome, because nothing but `end` runs
-      // after it is known.
-      outcome: null,
-    });
-    steps.push(reached);
+    const reached = record(
+      await runStep(spec, options, bodies, [...steps], {
+        context: contextFor(),
+        // The spine visit: the step's own plugins, then its own body. Nothing has
+        // arrived, and at nine of the ten there is nothing to route.
+        arriving: null,
+        // **`proposed` routes on the way through as well as on the way back**
+        // (0058 §3b) — and that visit is where a `review`'s findings are judged,
+        // which is 231 of the log's refusals and 0061 §3's one judgement worth an
+        // agent. `review` judges nothing and passes, so nothing refused and there
+        // is nothing arriving; what the judge reads is the findings on `reached`,
+        // and what it may answer is this set.
+        offering: spec.routes ? onOffer(at, { ending: "passed" }, ceilings, roundsSpent) : [],
+        // Nothing but `end` is told the outcome, because nothing but `end` runs
+        // after it is known.
+        outcome: null,
+      }),
+    );
     const ending = reached.ending;
 
     if (ending.ending === "routed") {
@@ -988,12 +1101,14 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // visit to `proposed` in the pass rather than a branch inside the spine
     // walk, and it runs the router without the inspection: see
     // `StepWork.arriving`.
-    const router = await runStep(SPEC.proposed, options, bodies, [...steps], {
-      arriving: reached,
-      offering: onOffer(at, ending, ceilings, roundsSpent),
-      outcome: null,
-    });
-    steps.push(router);
+    const router = record(
+      await runStep(SPEC.proposed, options, bodies, [...steps], {
+        context: contextFor(),
+        arriving: reached,
+        offering: onOffer(at, ending, ceilings, roundsSpent),
+        outcome: null,
+      }),
+    );
 
     if (router.ending.ending !== "routed") {
       // The router did not answer — its body threw, or `theWorkflowsToSay`
@@ -1012,26 +1127,51 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   // cannot live on one of the paths that reaches one (`end-step.ts`), so it is
   // here, once, after the walk, whichever of the four ways the walk ended.
   const outcome = outcomeOf({ stoppedAt, rested });
-  steps.push(
-    await runStep(SPEC.end, options, bodies, [...steps], { arriving: null, offering: [], outcome }),
+  record(
+    await runStep(SPEC.end, options, bodies, [...steps], {
+      context: contextFor(),
+      arriving: null,
+      offering: [],
+      outcome,
+    }),
   );
 
   return { steps, stoppedAt, routes, rested };
 }
 
 /**
- * The three fields a visit is handed that depend on *how* it was reached rather
+ * The four things a visit is handed that depend on *how* it was reached rather
  * than on which step it is.
  *
  * Kept together and computed by `runPass` alone, because each is the workflow's
  * own answer and none is derivable inside `runStep`: `outcome` needs where the
- * pass rested, and `arriving`/`offering` need what the last step said and what
- * has been spent.
+ * pass rested, `arriving`/`offering` need what the last step said and what has
+ * been spent, and `context` needs the head the walk has reached, the round it is
+ * in and what that round was bought on.
  */
 interface Reaching {
+  /**
+   * This visit's context — `contextFor()`, and never `options.context`.
+   *
+   * A visit is judged against a head, in a round, about findings, and all three
+   * move: the one a caller handed in is the base the walk started from.
+   */
+  readonly context: ActionContext;
   readonly arriving: StepReached | null;
   readonly offering: readonly Destination[];
   readonly outcome: TerminalOutcome | null;
+}
+
+/**
+ * Every finding a lap's plugins raised, in visit order.
+ *
+ * What one round was bought on, which is what the next round's agents are asked
+ * about (0038 §2). It is read off the visits rather than off the log, for the
+ * reason `StepReached.results` exists at all: the pass is holding the sentence
+ * in memory, and reading it back would be a second source of truth for it.
+ */
+function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
+  return lap.flatMap((visit) => visit.results.flatMap((result) => result.findings));
 }
 
 /**
@@ -1066,7 +1206,7 @@ async function runStep(
       const result = await runActionPipeline({
         step: spec.step,
         actions: options.actionsAt(spec.step, actions),
-        context: options.context,
+        context: reaching.context,
         emit: options.emit,
       });
       // Carried out whatever the step then did, because the verdicts are what a
@@ -1102,7 +1242,7 @@ async function runStep(
       arriving: reaching.arriving,
       offering: reaching.offering,
       outcome: reaching.outcome,
-      context: options.context,
+      context: reaching.context,
       emit: options.emit,
     });
     return { step: spec.step, ending: theWorkflowsToSay(spec, ending, reaching), results };
