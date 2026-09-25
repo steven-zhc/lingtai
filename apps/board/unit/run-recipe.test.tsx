@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { PLUGINS, Recipe, resolveRecipe, withheld, type GateAction, type PluginSecrets } from "@lingtai/recipe";
+import { PLUGINS, Recipe, resolveRecipe, withheld, type StepAction, type PluginSecrets } from "@lingtai/recipe";
 import { foldRun, type Claim, type RunView } from "../src/lib/task.ts";
 import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from "../src/lib/recipe.ts";
 import { Attempt, RECORD_ROWS } from "../src/app/task/[id]/page.tsx";
@@ -191,8 +191,8 @@ describe("the recipe beside an attempt's actions", () => {
     const { client, atHead } = fake({ [BASE]: RECIPE });
     const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) });
 
-    for (const point of ["admit", "prepared", "merge", "end"]) {
-      expect(html).toMatch(new RegExp(`<span class="actpoint">${point}</span><span class="empty">skipped</span>`));
+    for (const step of ["admit", "prepared", "merge", "end"]) {
+      expect(html).toMatch(new RegExp(`<span class="actstep">${step}</span><span class="empty">skipped</span>`));
     }
     // One command, for the one action configured.
     expect(html.match(/class="actcmd"/g)).toHaveLength(1);
@@ -530,7 +530,7 @@ describe("what the page may render of an action", () => {
  */
 describe("describeAction, over the closed set", () => {
   /** One action per plugin, as a resolved recipe would hold it. */
-  const ACTION: Record<string, GateAction> = {
+  const ACTION: Record<string, StepAction> = {
     run: { name: "build", run: "pnpm test", timeout: "15m", env: [] },
     agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
     watch: { name: "tamper", watch: ["**/x"], then: "fail" },
@@ -546,7 +546,7 @@ describe("describeAction, over the closed set", () => {
     },
     judge: { name: "judge", judge: "claude-code", when: "findings" },
     backlog: { name: "minors", backlog: "minor" },
-  } as unknown as Record<string, GateAction>;
+  } as unknown as Record<string, StepAction>;
 
   it.each(PLUGINS.map((plugin) => plugin.key))("says what a %s action does", (kind) => {
     const action = ACTION[kind];

@@ -18,7 +18,7 @@ import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/e
 import { createPostgresLogQueries } from "@lingtai/event-store/queries";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { landedWithoutSteps } from "../src/gate-audit.ts";
+import { landedWithoutSteps } from "../src/step-audit.ts";
 import { workItemStream } from "@lingtai/domain";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -53,8 +53,8 @@ afterAll(async () => {
  * `.length(10)`, so a fixture with its own copy of the names fails at
  * `parsePayload` the day the set changes rather than moving with it.
  */
-const plan = (points: Record<string, string[]>) =>
-  STEPS.map((gate) => ({ gate, actions: points[gate] ?? [] }));
+const plan = (steps: Record<string, string[]>) =>
+  STEPS.map((step) => ({ gate: step, actions: steps[step] ?? [] }));
 
 const SHA = "a".repeat(40);
 
@@ -65,7 +65,7 @@ const SHA = "a".repeat(40);
  */
 async function landedItem(
   issue: number,
-  points: Record<string, string[]>,
+  steps: Record<string, string[]>,
   ran: { gate: string; action: string }[],
 ): Promise<{ workItemId: string; runId: string }> {
   const workItemId = workItemStream(PROJECT, issue);
@@ -91,7 +91,7 @@ async function landedItem(
     {
       type: "GatesResolved",
       actor: "conductor",
-      data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(points) }),
+      data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(steps) }),
     },
     ...ran.map((r) => ({
       type: "GatePassed",
@@ -124,7 +124,7 @@ describe("landedWithoutSteps", () => {
 
     const found = await forProject();
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ workItemId, issue: 201, points: ["merge"] });
+    expect(found[0]).toMatchObject({ workItemId, issue: 201, steps: ["merge"] });
   });
 
   it("says nothing when every planned point recorded a verdict", async () => {
@@ -154,7 +154,7 @@ describe("landedWithoutSteps", () => {
     await landedItem(204, { prepared: ["install"], proposed: ["build"], merge: ["approval"] }, []);
 
     const found = (await forProject()).find((f) => f.issue === 204);
-    expect(found?.points).toEqual(["prepared", "proposed", "merge"]);
+    expect(found?.steps).toEqual(["prepared", "proposed", "merge"]);
   });
 
   /**

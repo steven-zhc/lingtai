@@ -5,8 +5,8 @@
  * init-time choice does not reach**
  * ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
  * §1). There were three of them under `src/` — `listProjectStreams` in
- * `projects.ts`, `endedWithoutEndActions` in `end-point.ts` and
- * `landedWithoutSteps` in `gate-audit.ts` — each opening its own
+ * `projects.ts`, `endedWithoutEndActions` in `end-step.ts` and
+ * `landedWithoutSteps` in `step-audit.ts` — each opening its own
  * connection from `postgresUrl()` and writing SQL against `events`. They were
  * readers of the log that never learned the log has an interface, and the first
  * of them is why `lingtai status`, the first command anybody types, died on a
@@ -43,7 +43,7 @@ describe("the conductor asks the log, and never a driver", () => {
     // A rename that emptied this list would leave every assertion below
     // vacuously true, which is the failure mode a source-reading test has.
     expect(sources.map((s) => s.file)).toEqual(
-      expect.arrayContaining(["projects.ts", "end-point.ts", "gate-audit.ts"]),
+      expect.arrayContaining(["projects.ts", "end-step.ts", "step-audit.ts"]),
     );
   });
 

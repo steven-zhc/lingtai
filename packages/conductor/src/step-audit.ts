@@ -4,7 +4,7 @@
  * The other half of the comparison
  * [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) promised
  * and [0016](../../../doc/decisions/0016-the-settled-model.md) §4 makes a rule:
- * *a step that was configured and did not run is Lingtai's bug*. `end-point.ts`
+ * *a step that was configured and did not run is Lingtai's bug*. `end-step.ts`
  * computes it for `end`, whose record lives on the work item's stream. This
  * computes it for the other nine, whose record lives on the run's.
  *
@@ -58,7 +58,7 @@ import { STEPS } from "@lingtai/domain";
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
 import type { LogQueries } from "@lingtai/event-store/log";
-import { splitWorkItem } from "./end-point.ts";
+import { splitWorkItem } from "./end-step.ts";
 
 /** A landed item whose run planned actions at a step and recorded none. */
 export interface UnrunStep {
@@ -66,8 +66,8 @@ export interface UnrunStep {
   project: string;
   issue: number;
   runId: string;
-  /** The steps, in pass order — every one of the ten but `end`, which is `end-point.ts`'s. */
-  points: string[];
+  /** The steps, in pass order — every one of the ten but `end`, which is `end-step.ts`'s. */
+  steps: string[];
 }
 
 /**
@@ -116,12 +116,12 @@ export async function landedWithoutSteps(queries?: LogQueries): Promise<UnrunSte
     const split = splitWorkItem(row.workItemId);
     if (split === null) continue;
     const found = byItem.get(row.workItemId);
-    if (found) found.points.push(row.gate);
+    if (found) found.steps.push(row.step);
     else {
       byItem.set(row.workItemId, {
         workItemId: row.workItemId,
         runId: row.runId,
-        points: [row.gate],
+        steps: [row.step],
         ...split,
       });
     }
@@ -131,7 +131,7 @@ export async function landedWithoutSteps(queries?: LogQueries): Promise<UnrunSte
   // imported here rather than written out: a list with its own copy of the
   // names is the thing that goes stale when the set changes, and it just did.
   for (const found of byItem.values()) {
-    found.points.sort((a, b) => STEPS.indexOf(a as never) - STEPS.indexOf(b as never));
+    found.steps.sort((a, b) => STEPS.indexOf(a as never) - STEPS.indexOf(b as never));
   }
   return [...byItem.values()];
 }

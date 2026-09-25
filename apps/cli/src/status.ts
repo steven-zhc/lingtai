@@ -156,6 +156,11 @@ export async function status(
     // sees eight eligible and none runnable has to be told why, or the honest
     // reading of the pair is "something is broken" (`#54`). `gates` folds into
     // `running`: from an operator's seat they are the same fact.
+    //
+    // **The key is the projection's value, not this epic's word.** `gates` is what
+    // `task-view.ts` writes and what `LABEL_STATES` holds, and `#250` left that one
+    // standing on `#249`'s argument — so a `steps:` here matches nothing, and the
+    // `?? t.state` below prints the retired word as a label of its own.
     const NAMES: Record<string, string> = {
       running: "running",
       gates: "running",

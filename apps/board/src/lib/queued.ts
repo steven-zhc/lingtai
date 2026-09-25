@@ -31,21 +31,21 @@
  */
 import { STEPS, retiredRepairPending, type Envelope } from "@lingtai/domain";
 import { loadProject } from "@lingtai/conductor/projects";
-import { projectFilter, type GatePlan } from "@lingtai/conductor/filter";
+import { projectFilter, type StepPlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { limitsFor } from "@lingtai/recipe/settings";
 
 /** One of the ten steps, and what the recipe runs there. */
-export interface PlannedPoint {
-  point: string;
+export interface PlannedStep {
+  step: string;
   /** The action names, in the order they run. Empty when nothing is configured. */
   actions: string[];
   /**
    * Nothing is configured here.
    *
    * A first-class state and not an absence, for the reason the attempt's own
-   * `PointState` `skipped` is (ADR 0016 §4): a step that is merely left out looks
+   * `StepState` `skipped` is (ADR 0016 §4): a step that is merely left out looks
    * exactly like a step that was configured and silently did not run, and only
    * the second is Lingtai's bug. It has to be said *before* a run as well as
    * after one — an operator deciding whether to press the button is deciding
@@ -63,7 +63,7 @@ export interface PlannedPoint {
  */
 export interface PlanView {
   /** All ten, in pass order, including the ones nothing is configured at. */
-  points: PlannedPoint[];
+  steps: PlannedStep[];
   /** `runtime.limits.turns`. */
   turns: number;
   /** `runtime.limits.wall`, in the recipe's own words rather than milliseconds. */
@@ -173,16 +173,16 @@ export interface QueuedView {
 
 /** The recipe's plan, as the page states it. Pure, and asserted as such. */
 export function planOf(
-  plan: GatePlan,
+  plan: StepPlan,
   runtime: {
     limits: { turns: number; wall: string; rounds: number; restarts: number };
     tier: string;
   },
 ): PlanView {
   return {
-    points: STEPS.map((point) => {
-      const actions = (plan.get(point) ?? []).map((a) => a.name);
-      return { point, actions, skipped: actions.length === 0 };
+    steps: STEPS.map((step) => {
+      const actions = (plan.get(step) ?? []).map((a) => a.name);
+      return { step, actions, skipped: actions.length === 0 };
     }),
     turns: runtime.limits.turns,
     wall: runtime.limits.wall,

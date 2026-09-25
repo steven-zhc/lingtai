@@ -502,7 +502,7 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
              AND json_extract(point.value, '$.gate') <> 'end'
              AND json_array_length(point.value, '$.actions') > 0
          )
-         SELECT last_run.work_item AS workItemId, planned.run_id AS runId, planned.gate AS gate
+         SELECT last_run.work_item AS workItemId, planned.run_id AS runId, planned.gate AS step
          FROM landed
          JOIN last_run ON last_run.work_item = landed.work_item
          JOIN planned ON planned.run_id = last_run.run_id
@@ -516,7 +516,7 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
       );
       return statement
         .all(...ranTypes)
-        .map((r) => r as unknown as { workItemId: string; runId: string; gate: string });
+        .map((r) => r as unknown as { workItemId: string; runId: string; step: string });
     },
 
     async typeCounts() {

@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
-import type { GatePlan } from "@lingtai/conductor/filter";
+import type { StepPlan } from "@lingtai/conductor/filter";
 import { exists, type StandingView, type TicketView } from "../src/lib/task.ts";
 import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from "../src/lib/queued.ts";
 import { Plan } from "../src/app/plan.tsx";
@@ -233,7 +233,7 @@ describe("the backoff, folded from the item's own stream", () => {
 
 // --------------------------------------------------- what will happen ----
 
-const GATES: GatePlan = new Map([
+const STEPS: StepPlan = new Map([
   ["admit", []],
   ["prepared", [{ name: "install", budgetMs: 300_000 }]],
   ["proposed", [{ name: "build", budgetMs: 900_000 }, { name: "review", budgetMs: null }]],
@@ -241,7 +241,7 @@ const GATES: GatePlan = new Map([
   ["end", [{ name: "close the ticket", budgetMs: null }]],
 ]);
 
-const PLAN: PlanView = planOf(GATES, {
+const PLAN: PlanView = planOf(STEPS, {
   limits: { turns: 150, wall: "1h", rounds: 2, restarts: 0 },
   tier: "guarded",
 });
@@ -254,7 +254,7 @@ describe("what will happen", () => {
    * count this ticket gave it — *the resolved recipe may not omit a step*.
    */
   it("names all ten steps, including the ones nothing is configured at", () => {
-    expect(PLAN.points.map((p) => p.point)).toEqual([
+    expect(PLAN.steps.map((p) => p.step)).toEqual([
       "claim",
       "admit",
       "prepared",
@@ -272,7 +272,7 @@ describe("what will happen", () => {
     // `build`, `review`. Two plus five, with nothing counted twice, so
     // building one of the five takes this list and the count down by one. The
     // sibling assertion below counts the same seven in rendered HTML.
-    expect(PLAN.points.filter((p) => p.skipped).map((p) => p.point)).toEqual([
+    expect(PLAN.steps.filter((p) => p.skipped).map((p) => p.step)).toEqual([
       "claim",
       "admit",
       "design",
@@ -281,7 +281,7 @@ describe("what will happen", () => {
       "review",
       "merge",
     ]);
-    expect(PLAN.points[7]?.actions).toEqual(["build", "review"]);
+    expect(PLAN.steps[7]?.actions).toEqual(["build", "review"]);
   });
 
   it("carries the recipe's limits, in the recipe's own words", () => {
@@ -320,7 +320,7 @@ describe("what will happen", () => {
     // `rounds: 0` is the whole of what `repair.on: false` used to say (0039
     // §4), and it has to render as loudly: a project that sends every refusal
     // to a person is making a choice somebody should be able to see.
-    const none = planOf(GATES, {
+    const none = planOf(STEPS, {
       limits: { turns: 300, wall: "2h", rounds: 0, restarts: 0 },
       tier: "guarded",
     });
@@ -339,7 +339,7 @@ describe("what will happen", () => {
    * to be wrong on.
    */
   it("does not promise a refusal is yours when a restart is bought", () => {
-    const over = planOf(GATES, {
+    const over = planOf(STEPS, {
       limits: { turns: 150, wall: "1h", rounds: 0, restarts: 2 },
       tier: "guarded",
     });

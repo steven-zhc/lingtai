@@ -208,10 +208,10 @@ describe("parseStoredPayload", () => {
  * And at `GatePassed` it cannot come down at all while `2 → 3` stands: that
  * type is at 3, and *has an unbroken chain of steps for every type past
  * version 1* at the top of this file requires a step at 1. The argument in
- * full is on `gatePointRenamed` in `upcast.ts`.
+ * full is on `stepRenamed` in `upcast.ts`.
  */
 describe("the gate point rename", () => {
-  const GATE_CARRYING = [
+  const STEP_CARRYING = [
     "GateRequested",
     "GateStarted",
     "GatePassed",
@@ -223,7 +223,7 @@ describe("the gate point rename", () => {
   ] as const;
 
   const base = { action: "build", runId: "run-01JX", onSha: "sha-a" };
-  const extra: Record<(typeof GATE_CARRYING)[number], object> = {
+  const extra: Record<(typeof STEP_CARRYING)[number], object> = {
     GateRequested: {},
     GateStarted: {},
     GatePassed: { evidence: "exit 0" },
@@ -235,16 +235,16 @@ describe("the gate point rename", () => {
   };
 
   /** What a later step adds on the way up; the rename touches nothing else. */
-  const later: Partial<Record<(typeof GATE_CARRYING)[number], object>> = {
+  const later: Partial<Record<(typeof STEP_CARRYING)[number], object>> = {
     GatePassed: { findings: [] },
   };
 
-  it.each(GATE_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
+  it.each(STEP_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
     const v1 = { ...base, ...extra[type], gate: "diff" };
     expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type], gate: "proposed" });
   });
 
-  it.each(GATE_CARRYING)("leaves a v1 %s at another step alone", (type) => {
+  it.each(STEP_CARRYING)("leaves a v1 %s at another step alone", (type) => {
     const v1 = { ...base, ...extra[type], gate: "merge", action: "human" };
     expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type] });
   });
@@ -263,7 +263,7 @@ describe("the gate point rename", () => {
    * payload without raising anything, and *unchanged* is the word this test
    * is here for. Its neighbours in this describe all compare.
    */
-  it.each(GATE_CARRYING)("reads a %s stamped by this build back unchanged", (type) => {
+  it.each(STEP_CARRYING)("reads a %s stamped by this build back unchanged", (type) => {
     const current = { ...base, ...extra[type], ...later[type], gate: "proposed" };
     expect(parseStoredPayload(type, SCHEMA_VER[type], current)).toEqual(current);
   });
@@ -300,7 +300,7 @@ describe("the gate point rename", () => {
   });
 
   /** All ten since 0058 §3; `.length(10)` is what the schema asserts. */
-  const points = [
+  const steps = [
     "claim",
     "admit",
     "prepared",
@@ -311,7 +311,7 @@ describe("the gate point rename", () => {
     "proposed",
     "merge",
     "end",
-  ].map((gate) => ({ gate, actions: [] }));
+  ].map((step) => ({ gate: step, actions: [] }));
 
   /**
    * #191, 0047 §3: the recipe was never recorded on a v1 or v2 event, and the
@@ -319,7 +319,7 @@ describe("the gate point rename", () => {
    * can tell *not recorded* from *recorded, and empty*.
    */
   it("adds no recipe to a v1 or v2 GatesResolved, and absent is not empty", () => {
-    const stored = { runId: "run-01JX", configHash: "abc", points };
+    const stored = { runId: "run-01JX", configHash: "abc", points: steps };
 
     for (const ver of [1, 2]) {
       const up = parseStoredPayload("GatesResolved", ver, stored);
@@ -385,12 +385,12 @@ describe("the gate point rename", () => {
    * and the step from 3 is what keeps the two apart.
    */
   it("refuses a plan that is not all ten steps", () => {
-    const short = { runId: "run-01JX", configHash: "abc", points: points.slice(0, 5) };
+    const short = { runId: "run-01JX", configHash: "abc", points: steps.slice(0, 5) };
     expect(() => parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, short)).toThrow();
   });
 
   it("moved all nine past v1, and none of them is still there", () => {
-    for (const type of [...GATE_CARRYING, "GatesResolved"] as const) {
+    for (const type of [...STEP_CARRYING, "GatesResolved"] as const) {
       expect(SCHEMA_VER[type], `${type} carries a Step and must be past v1`).toBeGreaterThanOrEqual(2);
       expect(
         UPCASTERS[type]?.[1],

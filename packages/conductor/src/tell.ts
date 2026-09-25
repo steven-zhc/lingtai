@@ -82,7 +82,7 @@ export interface RefChannel {
  * on `origin`. It is here rather than in a module of its own because it is one
  * of `end`'s effects, and `tellGitHubAbout` is the single place those are
  * carried out — a second carrier is a path that forgets one, which is the
- * failure `end-point.ts`'s header is about. It names no refs: the branch is
+ * failure `end-step.ts`'s header is about. It names no refs: the branch is
  * derived from the work item, and which arms exist is asked of GitHub at the
  * moment of deleting rather than carried from a resolution minutes earlier.
  *
@@ -233,7 +233,7 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
  * which arms are still there and `convergeIssues` deletes those
  * (`packages/daemon/src/converge.ts`), so the refusal is a job with an owner
  * rather than a permanent warning — the resolution is deduped per outcome
- * (`end-point.ts`) and nothing ever runs this function again for the same item.
+ * (`end-step.ts`) and nothing ever runs this function again for the same item.
  */
 export async function sweepRefs(options: {
   store: EventStore;

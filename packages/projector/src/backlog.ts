@@ -48,7 +48,7 @@ export interface BacklogEntry {
   taskId: string;
   /** The first run whose gate raised it. */
   runId: string;
-  gate: string;
+  step: string;
   action: string;
   onSha: string;
   file: string;
@@ -149,7 +149,7 @@ export const backlogProjection: Projection = {
           for (const f of minors) {
             const key = findingKey({
               issue: task.issue,
-              gate: d.gate,
+              step: d.gate,
               action: d.action,
               file: f.file,
               claim: f.claim,

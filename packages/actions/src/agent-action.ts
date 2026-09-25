@@ -228,7 +228,7 @@ export function buildReviewPrompt(
 
   return `You are reviewing a change you did not write. You have the ticket and the
 diff, and deliberately nothing else — no plan, no transcript, no reasoning from
-whoever wrote it. That is the point: this exists because self-review after a
+whoever wrote it. That is deliberate: this exists because self-review after a
 long implementation is not a second opinion.
 
 ## The ticket

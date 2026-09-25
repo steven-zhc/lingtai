@@ -533,7 +533,7 @@ async function convertAndWrite(
     return refuse(
       "Lingtai cannot tell whether an App was already created here: the log could not be read " +
         `(${already.unanswered}). This return was not applied and nothing was written, because ` +
-        "writing it over an App this process cannot see would point .env.local at an id no " +
+        "writing it over an App this process cannot see would leave .env.local naming an id no " +
         "repository has installed. GitHub did create the App this tab named — it is under Settings " +
         "→ Developer settings → GitHub Apps, where it can be deleted, or kept and finished by hand " +
         "once pnpm lingtai doctor passes (doc/operating.md from step 2, with a private key " +
@@ -766,7 +766,7 @@ async function writeEnv(file: string, values: Record<string, string>, keep: stri
     if (named(parseEnvFile(text).values, keep) !== null) {
       throw new Error(
         `${keep} is already set in ${file} — it was written between this page's check and this write, ` +
-          "and replacing it would point Lingtai at a different App",
+          "and replacing it would send Lingtai to a different App",
       );
     }
   };

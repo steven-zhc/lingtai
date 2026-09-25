@@ -48,7 +48,7 @@ import {
   type WorkItemLifecycle,
 } from "@lingtai/domain";
 import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
-import { githubClientFor, projectFilter, type GatePlan } from "@lingtai/conductor/filter";
+import { githubClientFor, projectFilter, type StepPlan } from "@lingtai/conductor/filter";
 // For the one distinction a message cannot carry: `status === 404` is GitHub
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
@@ -68,8 +68,8 @@ export interface Finding {
   severity: string;
 }
 
-export interface GateVerdict {
-  gate: string;
+export interface StepVerdict {
+  step: string;
   state: string;
   /**
    * False when the verdict was made against a commit that is no longer the
@@ -243,7 +243,7 @@ export interface RunView {
    * stream because that is where the approval events land.
    */
   awaitingSha: string | null;
-  gates: GateVerdict[];
+  steps: StepVerdict[];
   /**
    * Where this attempt got to, as the board's rail reads it — all ten steps,
    * one verdict per action, and the phase in flight with its bound. Null for a
@@ -452,7 +452,7 @@ export interface StandingView {
  * quoted. So a verdict with findings is quoted when every finding's head line,
  * as `quoteFindings` (`packages/conductor/src/fix.ts`) writes it, is in `raw`.
  */
-function quotes(raw: string, verdict: GateVerdict): boolean {
+function quotes(raw: string, verdict: StepVerdict): boolean {
   if (
     verdict.findings.length > 0 &&
     verdict.findings.every((f) =>
@@ -516,11 +516,11 @@ function refusalOn(run: RunView): Deciding | null {
    * pass both stop there, 0041 §4), so when there is one it is the ending, and
    * any refusal beside it is history.
    */
-  const never = [...run.gates].reverse().find((g) => g.state === "never-ran");
+  const never = [...run.steps].reverse().find((g) => g.state === "never-ran");
   if (never) {
     return {
       attempt: run.attempt,
-      source: never.gate.replace(":", " / "),
+      source: never.step.replace(":", " / "),
       line: `never ran — nothing judged this diff: ${oneLine(never.evidence) ?? "no detail was recorded"}`,
     };
   }
@@ -538,22 +538,22 @@ function refusalOn(run: RunView): Deciding | null {
    * The sentence says the machinery and never the diff: *did not finish*, not
    * *refused*.
    */
-  const unfinished = [...run.gates].reverse().find((g) => g.state === "did-not-finish");
+  const unfinished = [...run.steps].reverse().find((g) => g.state === "did-not-finish");
   if (unfinished) {
     return {
       attempt: run.attempt,
-      source: unfinished.gate.replace(":", " / "),
+      source: unfinished.step.replace(":", " / "),
       line:
         "did not finish — nothing judged this diff: " +
         (oneLine(unfinished.evidence) ?? "no detail was recorded"),
     };
   }
 
-  const refused = [...run.gates].reverse().find((g) => g.state === "failed");
+  const refused = [...run.steps].reverse().find((g) => g.state === "failed");
   if (refused) {
     return {
       attempt: run.attempt,
-      source: refused.gate.replace(":", " / "),
+      source: refused.step.replace(":", " / "),
       line: oneLine(refused.evidence) ?? run.outcome.detail ?? "refused, and said nothing",
     };
   }
@@ -658,12 +658,12 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     asked: blocked && life.runId === null,
     askedQuestion: blocked && life.runId === null ? life.question : null,
     headSha: run?.headSha ?? null,
-    failed: run?.gates.filter((g) => g.state === "failed").map((g) => g.gate) ?? [],
+    failed: run?.steps.filter((g) => g.state === "failed").map((g) => g.step) ?? [],
     saidBy:
       raw === null
         ? null
-        : ([...(run?.gates ?? [])].reverse().find((g) => g.state === "failed" && quotes(raw, g))
-            ?.gate ?? null),
+        : ([...(run?.steps ?? [])].reverse().find((g) => g.state === "failed" && quotes(raw, g))
+            ?.step ?? null),
     deciding: decidingOf(runs, run),
   };
 }
@@ -953,7 +953,7 @@ export function foldRun(
    * attempt is the one that landed — the whole difference between `pending`
    * and `never-ran`. Neither is on the run's own stream. See `loadTask`.
    */
-  { plan, over = false }: { plan?: GatePlan; over?: boolean } = {},
+  { plan, over = false }: { plan?: StepPlan; over?: boolean } = {},
 ): RunView {
   let baseSha: string | null = null;
   let headSha: string | null = null;
@@ -970,7 +970,7 @@ export function foldRun(
   let awaitingSha: string | null = null;
   /** Keyed by path: an agent touches one file many times and the page wants the file. */
   const files = new Map<string, TouchedFile>();
-  const gates = new Map<string, GateVerdict>();
+  const steps = new Map<string, StepVerdict>();
 
   for (const e of run) {
     const d = (e.data ?? {}) as Record<string, unknown>;
@@ -1042,8 +1042,8 @@ export function foldRun(
       // `point:action` — see task-view. Two points may run an action of the
       // same name, and the page has to show both.
       const key = `${String(d["gate"])}:${String(d["action"] ?? "")}`;
-      gates.set(key, {
-        gate: key,
+      steps.set(key, {
+        step: key,
         state: verdict,
         current: true,
         // `GateNeverRan` calls it `detail` and not `evidence`, because it is
@@ -1058,15 +1058,15 @@ export function foldRun(
     }
   }
 
-  for (const g of gates.values()) {
+  for (const g of steps.values()) {
     const onSha = run.find(
-      (e) => (e.data as { gate?: string })?.gate === g.gate && (e.data as { onSha?: string })?.onSha,
+      (e) => (e.data as { gate?: string })?.gate === g.step && (e.data as { onSha?: string })?.onSha,
     );
     const sha = (onSha?.data as { onSha?: string } | undefined)?.onSha ?? null;
     g.current = headSha === null || sha === null || sha === headSha;
   }
 
-  const all = [...gates.values()];
+  const all = [...steps.values()];
 
   return {
     runId: claim.runId,
@@ -1084,7 +1084,7 @@ export function foldRun(
     diff,
     prompt,
     awaitingSha,
-    gates: all,
+    steps: all,
     // The plan the conductor wrote down when this run started is read inside
     // the fold, and so are the states 0016 §4 needs kept apart.
     progress: foldProgress(run, plan, over),
@@ -1324,7 +1324,7 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
  * will not read costs the page its `/ 20m` and nothing else, and no bound is
  * drawn as no denominator rather than as zero.
  */
-async function planFor(project: string): Promise<GatePlan | undefined> {
+async function planFor(project: string): Promise<StepPlan | undefined> {
   const state = await loadProject(project).catch(() => null);
   if (!state) return undefined;
   const filter = await projectFilter(state);

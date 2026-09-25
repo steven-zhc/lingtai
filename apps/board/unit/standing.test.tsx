@@ -46,7 +46,7 @@ const claim = (runId: string, at: string): Claim => ({ runId, at, repair: false,
 
 /** The failure as a gate hands it over: a tail, not a line. */
 const TAIL = [
-  "packages/actions typecheck: test/agent-gate.test.ts(36,5): error TS2741:",
+  "packages/actions typecheck: test/agent-step.test.ts(36,5): error TS2741:",
   "  Property 'enforcesLimits' is missing in type '{ id: \"claude-code\"; … }'",
   "Exit code 2",
 ].join("\n");
@@ -160,7 +160,7 @@ describe("the evidence", () => {
     expect(standing.deciding).toEqual({
       attempt: 1,
       source: "proposed / build",
-      line: "packages/actions typecheck: test/agent-gate.test.ts(36,5): error TS2741:",
+      line: "packages/actions typecheck: test/agent-step.test.ts(36,5): error TS2741:",
     });
     // A pointer, and not a copy. Printing the failing gate twice — at the top
     // and inside its attempt — is how two copies of one fact come to disagree.
@@ -177,7 +177,7 @@ describe("the evidence", () => {
    * whose actual answer is that the account ran out. What it says instead names
    * the gate, says nothing judged the diff, and calls nothing a refusal.
    */
-  it("names a gate that never ran, rather than an earlier attempt's refusal", () => {
+  it("names a step that never ran, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
       e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
@@ -198,7 +198,7 @@ describe("the evidence", () => {
     const standing = standingOf(
       [
         e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
-        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "the proposed:build gate refused it" }),
+        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "the proposed:build step refused it" }),
         e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
       ],
       [one, two],
@@ -224,7 +224,7 @@ describe("the evidence", () => {
    *
    * One `GateDidNotFinish`, because the action is run once (`#234`).
    */
-  it("names a gate that did not finish, rather than an earlier attempt's refusal", () => {
+  it("names a step that did not finish, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
       e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
@@ -245,7 +245,7 @@ describe("the evidence", () => {
     const standing = standingOf(
       [
         e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
-        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "the proposed:build gate refused it" }),
+        e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "the proposed:build step refused it" }),
         e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
       ],
       [one, two],
@@ -271,7 +271,7 @@ describe("the evidence", () => {
    * that stale line, about a commit that is no longer the head, where the quota
    * that actually ended the pass should be.
    */
-  it("names the gate that never ran over an earlier round's refusal in the same attempt", () => {
+  it("names the step that never ran over an earlier round's refusal in the same attempt", () => {
     const FIXED = "c".repeat(40);
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
@@ -298,7 +298,7 @@ describe("the evidence", () => {
    * The case a gate-shaped summary could never name: a run that died before any
    * verdict landed. `#89`'s `error_max_turns` is exactly this.
    */
-  it("falls back to the attempt's own outcome when no gate ever reported", () => {
+  it("falls back to the attempt's own outcome when no step ever reported", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunStarted", { baseSha: SHA }),
       e(RUN_1, "RunFailed", { kind: "error_max_turns" }),
@@ -308,7 +308,7 @@ describe("the evidence", () => {
     expect(standing.deciding).toEqual({ attempt: 1, source: "failed", line: "error_max_turns" });
   });
 
-  it("points at nothing when there is nothing that went wrong to point at", () => {
+  it("steps at nothing when there is nothing that went wrong to step at", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunStarted", { baseSha: SHA }),
       e(RUN_1, "RunFinished", { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
@@ -575,7 +575,7 @@ describe("the block, rendered", () => {
    * still names the build, and `raw` is git's. Heading the one with the other
    * is the mislabelled cause #132 is about.
    */
-  it("does not name a gate as the source of words that gate never said", () => {
+  it("does not name a step as the source of words that step never said", () => {
     const standing = standingOf(
       [
         e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
@@ -619,7 +619,7 @@ describe("the block, rendered", () => {
     expect(html).not.toContain("proposed / build");
   });
 
-  it("names the gate whose own evidence is the quote", () => {
+  it("names the step whose own evidence is the quote", () => {
     const standing = standingOf(
       [
         e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
@@ -628,7 +628,7 @@ describe("the block, rendered", () => {
           needsFrom: "human",
           runId: RUN_2,
           needs: "judgement",
-          diagnosis: { what: "the proposed:build gate refused it", done: null, raw: TAIL, recommendation: null },
+          diagnosis: { what: "the proposed:build step refused it", done: null, raw: TAIL, recommendation: null },
         }),
       ],
       [
@@ -768,14 +768,14 @@ describe("the block, rendered", () => {
         queued={null}
       />,
     );
-    expect(html).toContain("The proposed / review gate refused, and nothing it said was recorded here to quote.");
+    expect(html).toContain("The proposed / review step refused, and nothing it said was recorded here to quote.");
   });
 
   /**
    * 0016 §4, one page along: a rank that renders empty looks exactly like a
    * rank that failed to render, and only one of those is our bug.
    */
-  it("states an absence where a gate refused and recorded nothing", () => {
+  it("states an absence where a step refused and recorded nothing", () => {
     const html = renderToStaticMarkup(
       <Standing
         subject={null}
@@ -783,7 +783,7 @@ describe("the block, rendered", () => {
           ...HELD,
           failed: ["proposed:review"],
           saidBy: "proposed:review",
-          diagnosis: { what: "the review gate refused it", done: null, raw: "", recommendation: null },
+          diagnosis: { what: "the review step refused it", done: null, raw: "", recommendation: null },
         }}
         project="lingtai"
         issue={112}
@@ -793,12 +793,12 @@ describe("the block, rendered", () => {
         queued={null}
       />,
     );
-    expect(html).toContain("The proposed / review gate recorded no output");
+    expect(html).toContain("The proposed / review step recorded no output");
     expect(html).not.toContain('class="sreason"');
   });
 
   /** Nothing refused, so there is nothing to quote — and no hole where one would be. */
-  it("leaves no second rank at all when every gate passed", () => {
+  it("leaves no second rank at all when every step passed", () => {
     const html = renderToStaticMarkup(
       <Standing
         subject={null}
@@ -807,10 +807,10 @@ describe("the block, rendered", () => {
           failed: [],
           deciding: null,
           diagnosis: {
-            what: "agent/112 is at 293fe3a and every gate passed. The merge point holds for no-merge.",
+            what: "agent/112 is at 293fe3a and every step passed. The merge step holds for no-merge.",
             done: null,
             raw: null,
-            recommendation: { action: "approve", why: "every gate passed on this diff" },
+            recommendation: { action: "approve", why: "every step passed on this diff" },
           },
         }}
         project="lingtai"
@@ -821,7 +821,7 @@ describe("the block, rendered", () => {
         queued={null}
       />,
     );
-    expect(html).toContain("every gate passed");
+    expect(html).toContain("every step passed");
     expect(html).not.toContain('class="sreason"');
     expect(html).not.toContain("sevidence");
   });
@@ -849,10 +849,10 @@ describe("the block, rendered", () => {
           // Attempt 1's, while the block is attempt 2's. See `HELD`.
           deciding: { attempt: 1, source: "proposed / build", line: "error TS2741: …" },
           diagnosis: {
-            what: "agent/112 is at 293fe3a and every gate passed. The merge point holds for no-merge.",
+            what: "agent/112 is at 293fe3a and every step passed. The merge step holds for no-merge.",
             done: null,
             raw: null,
-            recommendation: { action: "approve", why: "every gate passed on this diff" },
+            recommendation: { action: "approve", why: "every step passed on this diff" },
           },
         }}
         project="lingtai"
@@ -863,7 +863,7 @@ describe("the block, rendered", () => {
         queued={null}
       />,
     );
-    expect(html).toContain("every gate passed");
+    expect(html).toContain("every step passed");
     expect(html).not.toContain("error TS2741");
     expect(html).not.toContain("proposed / build");
   });
@@ -881,7 +881,7 @@ describe("the block, rendered", () => {
           ...HELD,
           failed: ["proposed:review"],
           diagnosis: {
-            what: "agent/112 is at 293fe3a and the review gate refused it.",
+            what: "agent/112 is at 293fe3a and the review step refused it.",
             done: "a repair for gate-failed produced this diff",
             raw: "the reviewer's answer was not readable as findings",
             recommendation: null,
@@ -902,7 +902,7 @@ describe("the block, rendered", () => {
     expect(read.split(RUN_2.slice(0, 12)).length - 1).toBe(0);
   });
 
-  it("points at the attempt rather than reprinting it", () => {
+  it("steps at the attempt rather than reprinting it", () => {
     const html = renderToStaticMarkup(<Standing subject={null} standing={HELD} project="lingtai" issue={112} taskId="wi-lingtai-112" discussions={[]} outgoing={null} queued={null} />);
     expect(html).toContain('href="#attempt-1"');
     expect(html).toContain("in attempt 1");

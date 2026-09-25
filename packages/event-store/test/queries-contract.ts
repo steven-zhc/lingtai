@@ -51,8 +51,8 @@ const MERGE = "b".repeat(40);
  * so a fixture with its own copy of the names would be a schema failure the
  * day the set changes rather than a test that moved with it.
  */
-const plan = (points: Record<string, string[]>) =>
-  STEPS.map((gate) => ({ gate, actions: points[gate] ?? [] }));
+const plan = (steps: Record<string, string[]>) =>
+  STEPS.map((step) => ({ gate: step, actions: steps[step] ?? [] }));
 
 export function describeLogQueriesContract(
   name: string,
@@ -65,7 +65,7 @@ export function describeLogQueriesContract(
   async function run(
     h: LogQueriesHarness,
     workItemId: string,
-    points: Record<string, string[]>,
+    steps: Record<string, string[]>,
     ran: { gate: string; action: string }[] = [],
   ): Promise<string> {
     const runId = `run-${h.project}-${crypto.randomUUID().slice(0, 8)}`;
@@ -88,7 +88,7 @@ export function describeLogQueriesContract(
       {
         type: "GatesResolved",
         actor: "conductor",
-        data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(points) }),
+        data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(steps) }),
       },
       ...ran.map((r) => ({
         type: "GatePassed",
@@ -261,7 +261,7 @@ export function describeLogQueriesContract(
         (f) => f.workItemId === item,
       );
 
-      expect(found).toEqual([{ workItemId: item, runId, gate: "merge" }]);
+      expect(found).toEqual([{ workItemId: item, runId, step: "merge" }]);
     });
 
     it("says nothing when every planned point recorded a verdict", async () => {
@@ -288,7 +288,7 @@ export function describeLogQueriesContract(
 
       const found = (await h.queries.landedWithoutSteps(RAN))
         .filter((f) => f.workItemId === item)
-        .map((f) => f.gate);
+        .map((f) => f.step);
 
       expect(found.sort()).toEqual(["merge", "prepared", "proposed"]);
     });
@@ -351,15 +351,15 @@ export function describeLogQueriesContract(
       await run(h, item, { merge: ["approval"] }, [{ gate: "merge", action: "approval" }]);
       await h.store.append(item, 0, [landed()]);
 
-      const withGatePassed = (await h.queries.landedWithoutSteps(RAN)).filter(
+      const withStepPassed = (await h.queries.landedWithoutSteps(RAN)).filter(
         (f) => f.workItemId === item,
       );
       const without = (await h.queries.landedWithoutSteps(["ApprovalGranted"])).filter(
         (f) => f.workItemId === item,
       );
 
-      expect(withGatePassed).toEqual([]);
-      expect(without.map((f) => f.gate)).toEqual(["merge"]);
+      expect(withStepPassed).toEqual([]);
+      expect(without.map((f) => f.step)).toEqual(["merge"]);
     });
 
     // ---------------------------------------------------------- typeCounts ----

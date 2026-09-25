@@ -24,7 +24,7 @@ import {
   changesFrom,
   finishRefusals,
   saidFor,
-  wholeGates,
+  wholeSteps,
   type WizardState,
 } from "@lingtai/conductor/wizard-page";
 import { startOnboarding } from "@lingtai/conductor/wizard";
@@ -123,7 +123,7 @@ export async function editExisting(
   let changes = changesFrom(recipe, after);
   let file = editRecipe(existing, changes);
   if (!(await describes(file))) {
-    changes = wholeGates(changes, after);
+    changes = wholeSteps(changes, after);
     file = editRecipe(existing, changes);
     if (!(await describes(file))) {
       return {

@@ -78,7 +78,7 @@ const base = () => ({
   base: "develop",
   workItemId: `wi-${PROJECT}-1`,
   headSha: "0".repeat(40),
-  gatesPassed: true,
+  stepsPassed: true,
   home,
   store,
 });
@@ -187,8 +187,8 @@ describe("integrate", () => {
     const result = await integrate({
       ...base(),
       branch: "agent/5",
-      gatesPassed: false,
-      gateDetail: "build exited 1",
+      stepsPassed: false,
+      stepDetail: "build exited 1",
     });
 
     expect(result.ok).toBe(false);
@@ -252,7 +252,7 @@ describe("integrate", () => {
     const before = (await lane()).length;
 
     let releaseFirst: () => void = () => {};
-    const gate = new Promise<void>((r) => (releaseFirst = r));
+    const step = new Promise<void>((r) => (releaseFirst = r));
     let atVerify: () => void = () => {};
     const reachedVerify = new Promise<void>((r) => (atVerify = r));
     let verifies = 0;
@@ -263,7 +263,7 @@ describe("integrate", () => {
       verify: async () => {
         verifies++;
         atVerify();
-        await gate;
+        await step;
         return { ok: true, evidence: "" };
       },
     });

@@ -23,7 +23,7 @@ const entry: BacklogEntry = {
   issue: "135",
   taskId: "wi-lingtai-135",
   runId: "run-abc",
-  gate: "proposed",
+  step: "proposed",
   action: "review",
   onSha: "f".repeat(40),
   file: "packages/a.ts",
@@ -389,7 +389,7 @@ describe("declineFinding", () => {
 describe("findingKey across rounds", () => {
   const round1 = {
     issue: "237",
-    gate: "proposed",
+    step: "proposed",
     action: "review",
     file: "packages/conductor/src/backlog.ts",
     claim: "The  bar is written  twice",

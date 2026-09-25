@@ -300,7 +300,7 @@ describe("the last line lingtai add prints", () => {
 
     expect(line).toContain("added nextloom-ai-admin");
     expect(line).toContain("tier ");
-    expect(line).toContain("across 5 gates");
+    expect(line).toContain("across 5 steps");
     expect(line).not.toContain("updated");
   });
 

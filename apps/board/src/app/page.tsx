@@ -246,12 +246,12 @@ export function Card({
             {card.passed > 0 ? <li className="pill pass">{card.passed} passed</li> : null}
             {card.failed > 0 ? <li className="pill fail">{card.failed} failed</li> : null}
             {card.waived > 0 ? (
-              <li className="pill hold" title="a person overrode a failed gate">
+              <li className="pill hold" title="a person overrode a failed step">
                 {card.waived} waived
               </li>
             ) : null}
             {card.approved > 0 ? (
-              <li className="pill hold" title="a person approved, rather than a gate passing">
+              <li className="pill hold" title="a person approved, rather than a step passing">
                 {card.approved} approved
               </li>
             ) : null}
@@ -532,7 +532,7 @@ export function LandedRow({
           says why it stops where it does. */}
       {card.progress ? (
         <span className="lseq">
-          <Segs points={card.progress.points} at={null} labels={false} />
+          <Segs steps={card.progress.steps} at={null} labels={false} />
         </span>
       ) : null}
       {showProject ? <span className="proj">{card.project}</span> : null}

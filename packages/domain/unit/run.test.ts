@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyRun, gatesOn, reduceRun } from "../src/index.ts";
+import { emptyRun, stepsOn, reduceRun } from "../src/index.ts";
 import { makeStream, unknownEvent } from "../test/support.ts";
 
 const started = {
@@ -125,10 +125,10 @@ describe("reduceRun", () => {
     ]);
 
     expect(s.lifecycle).toEqual({ status: "gating", headSha: "sha-a" });
-    expect(s.gates["proposed:build"]!.verdict).toBe("passed");
-    expect(s.gates["proposed:review"]!.verdict).toBe("failed");
-    expect(s.gates["proposed:review"]!.findings[0]!.failureScenario).toContain("increment is lost");
-    expect(gatesOn(s).map((g) => g.gate).sort()).toEqual(["proposed:build", "proposed:review"]);
+    expect(s.steps["proposed:build"]!.verdict).toBe("passed");
+    expect(s.steps["proposed:review"]!.verdict).toBe("failed");
+    expect(s.steps["proposed:review"]!.findings[0]!.failureScenario).toContain("increment is lost");
+    expect(stepsOn(s).map((g) => g.step).sort()).toEqual(["proposed:build", "proposed:review"]);
   });
 
   /**
@@ -155,11 +155,11 @@ describe("reduceRun", () => {
       }),
     ]);
 
-    expect(s.gates["proposed:review"]!.verdict).toBe("never-ran");
-    expect(s.gates["proposed:review"]!.findings).toEqual([]);
+    expect(s.steps["proposed:review"]!.verdict).toBe("never-ran");
+    expect(s.steps["proposed:review"]!.findings).toEqual([]);
     // The runtime's own words survive as what they are: evidence that the agent
     // never started, never evidence about the diff.
-    expect(s.gates["proposed:review"]!.evidence).toContain("session limit");
+    expect(s.steps["proposed:review"]!.evidence).toContain("session limit");
   });
 
   /**
@@ -184,14 +184,14 @@ describe("reduceRun", () => {
     ];
 
     const before = reduceRun(approved);
-    expect(gatesOn(before).map((g) => g.gate).sort()).toEqual(["merge:human", "proposed:build"]);
+    expect(stepsOn(before).map((g) => g.step).sort()).toEqual(["merge:human", "proposed:build"]);
 
     const after = reduceRun([...approved, e("RunProposedCompletion", { headSha: "sha-b" })]);
     expect(after.headSha).toBe("sha-b");
     // The verdicts are still on the record — they were made, and about what —
     // but none of them is about the diff now on the table.
-    expect(gatesOn(after)).toEqual([]);
-    expect(after.gates["merge:human"]!.onSha).toBe("sha-a");
+    expect(stepsOn(after)).toEqual([]);
+    expect(after.steps["merge:human"]!.onSha).toBe("sha-a");
   });
 
   it("records a waiver with who and why — never silently", () => {
@@ -208,9 +208,9 @@ describe("reduceRun", () => {
       }),
     ]);
 
-    expect(s.gates["proposed:review"]!.verdict).toBe("waived");
-    expect(s.gates["proposed:review"]!.by).toBe("human:steven");
-    expect(s.gates["proposed:review"]!.reason).toContain("docs typo");
+    expect(s.steps["proposed:review"]!.verdict).toBe("waived");
+    expect(s.steps["proposed:review"]!.by).toBe("human:steven");
+    expect(s.steps["proposed:review"]!.reason).toContain("docs typo");
   });
 
   it("waits on a person, then proceeds when they answer", () => {
@@ -230,7 +230,7 @@ describe("reduceRun", () => {
 
     expect(reduceRun(asked).lifecycle).toEqual({
       status: "awaiting-approval",
-      gate: "merge:human",
+      step: "merge:human",
       onSha: "sha-a",
       question: "Merge into develop?",
     });
@@ -247,7 +247,7 @@ describe("reduceRun", () => {
       }),
     ]);
     expect(granted.lifecycle).toEqual({ status: "gating", headSha: "sha-a" });
-    expect(granted.gates["merge:human"]!.verdict).toBe("passed");
+    expect(granted.steps["merge:human"]!.verdict).toBe("passed");
   });
 
   /**
@@ -280,10 +280,10 @@ describe("reduceRun", () => {
       }),
     ]);
 
-    expect(s.gates["merge:human"]!.verdict).toBe("requested");
+    expect(s.steps["merge:human"]!.verdict).toBe("requested");
     // And the run is waiting again, on the same commit, with the reason the
     // person gave — not merged, not queued, not failed.
-    expect(s.lifecycle).toMatchObject({ status: "awaiting-approval", gate: "merge:human", onSha: "sha-a" });
+    expect(s.lifecycle).toMatchObject({ status: "awaiting-approval", step: "merge:human", onSha: "sha-a" });
     expect(s.lifecycle).toHaveProperty("question", expect.stringContaining("spotted a migration"));
   });
 

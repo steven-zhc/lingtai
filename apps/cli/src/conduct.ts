@@ -182,7 +182,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
         );
         outcome.ran += 1;
         if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
-        else if (result.ok === "held") log(`held at ${result.gate}`);
+        else if (result.ok === "held") log(`held at ${result.step}`);
         else log(`stopped at ${result.stage}: ${result.detail}`);
       } else {
         const ran = await Effect.runPromise(

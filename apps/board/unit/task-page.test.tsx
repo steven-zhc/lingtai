@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
-import type { GatePlan } from "@lingtai/conductor/filter";
+import type { StepPlan } from "@lingtai/conductor/filter";
 import {
   foldRun,
   standingOf,
@@ -274,9 +274,9 @@ describe("a running task", () => {
  * state the old list could not.
  */
 describe("the rail on the task page", () => {
-  const PLAN: GatePlan = new Map([
+  const PLAN: StepPlan = new Map([
     ["proposed", [{ name: "build", budgetMs: 20 * 60_000 }, { name: "review", budgetMs: null }]],
-  ]) as unknown as GatePlan;
+  ]) as unknown as StepPlan;
 
   const resolved = e(RUN, "GatesResolved", {
     points: [
@@ -288,7 +288,7 @@ describe("the rail on the task page", () => {
     ],
   }, "2026-09-14T08:40:00Z");
 
-  function building(plan?: GatePlan): TaskDetail {
+  function building(plan?: StepPlan): TaskDetail {
     const run = foldRun(
       claim,
       1,

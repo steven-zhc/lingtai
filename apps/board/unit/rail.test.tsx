@@ -29,7 +29,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { STEPS, type Envelope, type Step } from "@lingtai/domain";
-import type { GatePlan } from "@lingtai/conductor/filter";
+import type { StepPlan } from "@lingtai/conductor/filter";
 import type { TaskCard } from "@lingtai/projector/task-view";
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from "../src/lib/board.ts";
 import { foldProgress } from "../src/lib/progress.ts";
@@ -56,8 +56,8 @@ function at(time: string, type: string, data: unknown): Envelope {
   };
 }
 
-const gate = (point: Step, action: string) => ({
-  gate: point,
+const step = (step: Step, action: string) => ({
+  gate: step,
   action,
   runId: "run-170",
   onSha: "b1b8694",
@@ -68,7 +68,7 @@ const gate = (point: Step, action: string) => ({
  * `proposed` is `build` and `review`, and it is the case `1 passed` answered
  * worst — one action of two, reported as a whole point going green.
  */
-const PLAN: GatePlan = new Map([
+const PLAN: StepPlan = new Map([
   ["admit", []],
   ["prepared", [{ name: "install", budgetMs: 10 * 60_000 }]],
   [
@@ -83,13 +83,13 @@ const PLAN: GatePlan = new Map([
 ]);
 
 /** `GatesResolved`, from a plan — the log's own record of what was configured. */
-const resolved = (plan: GatePlan) =>
+const resolved = (plan: StepPlan) =>
   at("2026-09-15T17:12:30Z", "GatesResolved", {
     runId: "run-170",
     configHash: "abc",
-    points: STEPS.map((point) => ({
-      gate: point,
-      actions: (plan.get(point) ?? []).map((a) => a.name),
+    points: STEPS.map((step) => ({
+      gate: step,
+      actions: (plan.get(step) ?? []).map((a) => a.name),
     })),
   });
 
@@ -97,10 +97,10 @@ const resolved = (plan: GatePlan) =>
 function running(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-15T17:12:20Z", "GateRequested", gate("prepared", "install")),
-    at("2026-09-15T17:12:20Z", "GateStarted", gate("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateRequested", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateStarted", step("prepared", "install")),
     at("2026-09-15T17:12:26Z", "GatePassed", {
-      ...gate("prepared", "install"),
+      ...step("prepared", "install"),
       evidence: "ok",
       findings: [],
     }),
@@ -120,8 +120,8 @@ function running(): Envelope[] {
       durationMs: 492_000,
       costUsd: 5.92,
     }),
-    at("2026-09-15T17:20:43Z", "GateRequested", gate("proposed", "build")),
-    at("2026-09-15T17:20:43Z", "GateStarted", gate("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateRequested", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateStarted", step("proposed", "build")),
   ];
 }
 
@@ -129,7 +129,7 @@ function running(): Envelope[] {
 const refused = (): Envelope[] => [
   ...running(),
   at("2026-09-15T17:34:00Z", "GateFailed", {
-    ...gate("proposed", "build"),
+    ...step("proposed", "build"),
     evidence: "2 tests failed",
     findings: [],
   }),
@@ -182,17 +182,17 @@ function refusedByTheLane(): Envelope[] {
   const upToTheAgent = running().slice(0, 6);
   return [
     ...upToTheAgent,
-    at("2026-09-15T17:20:43Z", "GateRequested", gate("proposed", "build")),
-    at("2026-09-15T17:20:43Z", "GateStarted", gate("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateRequested", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateStarted", step("proposed", "build")),
     at("2026-09-15T17:21:10Z", "GatePassed", {
-      ...gate("proposed", "build"),
+      ...step("proposed", "build"),
       evidence: "ok",
       findings: [],
     }),
-    at("2026-09-15T17:21:11Z", "GateRequested", gate("proposed", "review")),
-    at("2026-09-15T17:21:11Z", "GateStarted", gate("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "GateRequested", step("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "GateStarted", step("proposed", "review")),
     at("2026-09-15T17:22:00Z", "GatePassed", {
-      ...gate("proposed", "review"),
+      ...step("proposed", "review"),
       evidence: "no findings",
       findings: [],
     }),
@@ -211,11 +211,11 @@ function refusedByTheLane(): Envelope[] {
 function refusedAtPrepared(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-15T17:12:20Z", "GateRequested", gate("prepared", "install")),
-    at("2026-09-15T17:12:20Z", "GateStarted", gate("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateRequested", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateStarted", step("prepared", "install")),
     resolved(PLAN),
     at("2026-09-15T17:12:26Z", "GateFailed", {
-      ...gate("prepared", "install"),
+      ...step("prepared", "install"),
       evidence: "the lockfile is out of date",
       findings: [],
     }),
@@ -262,7 +262,7 @@ function noPlanRecorded(): Envelope[] {
  *
  * So: `merge` is configured, every other point ran, and the item landed.
  */
-const MERGE_PLAN: GatePlan = new Map([
+const MERGE_PLAN: StepPlan = new Map([
   ...PLAN,
   ["merge", [{ name: "approve", budgetMs: null }]],
 ]);
@@ -270,10 +270,10 @@ const MERGE_PLAN: GatePlan = new Map([
 function landedPastMerge(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-15T17:12:20Z", "GateRequested", gate("prepared", "install")),
-    at("2026-09-15T17:12:20Z", "GateStarted", gate("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateRequested", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "GateStarted", step("prepared", "install")),
     at("2026-09-15T17:12:26Z", "GatePassed", {
-      ...gate("prepared", "install"),
+      ...step("prepared", "install"),
       evidence: "ok",
       findings: [],
     }),
@@ -293,17 +293,17 @@ function landedPastMerge(): Envelope[] {
       durationMs: 492_000,
       costUsd: 1.46,
     }),
-    at("2026-09-15T17:20:43Z", "GateRequested", gate("proposed", "build")),
-    at("2026-09-15T17:20:43Z", "GateStarted", gate("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateRequested", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "GateStarted", step("proposed", "build")),
     at("2026-09-15T17:21:10Z", "GatePassed", {
-      ...gate("proposed", "build"),
+      ...step("proposed", "build"),
       evidence: "ok",
       findings: [],
     }),
-    at("2026-09-15T17:21:11Z", "GateRequested", gate("proposed", "review")),
-    at("2026-09-15T17:21:11Z", "GateStarted", gate("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "GateRequested", step("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "GateStarted", step("proposed", "review")),
     at("2026-09-15T17:22:00Z", "GatePassed", {
-      ...gate("proposed", "review"),
+      ...step("proposed", "review"),
       evidence: "no findings",
       findings: [],
     }),
@@ -318,7 +318,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     taskId: "wi-lingtai-170",
     project: "lingtai",
     issue: "170",
-    title: "the five points are a sequence, so draw one",
+    title: "the five steps are a sequence, so draw one",
     kind: "tech-debt",
     state: "running",
     tier: "guarded",
@@ -387,9 +387,9 @@ const cells = (html: string): string[] =>
   [...html.matchAll(/<span class="scell (t-[a-z]+)"/g)].map((m) => m[1] ?? "");
 
 /** The cells belonging to one step, by its position in `STEPS`. */
-function cellsAt(html: string, point: Step): string[] {
+function cellsAt(html: string, step: Step): string[] {
   const parts = html.split(/<li class="seg s-[a-z-]+"/).slice(1);
-  const one = parts[STEPS.indexOf(point)] ?? "";
+  const one = parts[STEPS.indexOf(step)] ?? "";
   return [...one.matchAll(/<span class="scell (t-[a-z]+)"/g)].map((m) => m[1] ?? "");
 }
 
@@ -482,7 +482,7 @@ describe("a running card", () => {
 
   it("says so when the agent has finished and no step has started", () => {
     const between = running().slice(0, 6);
-    expect(sentence(render({}, between))).toBe("between points");
+    expect(sentence(render({}, between))).toBe("between steps");
   });
 
   /**
@@ -523,7 +523,7 @@ describe("a running card", () => {
    * order — and a point holding two actions draws a cell each, which is the
    * granularity the counter had and the flat row did not.
    */
-  it("drops the gate counters the rail already says, per action", () => {
+  it("drops the step counters the rail already says, per action", () => {
     const html = render({}, running());
 
     expect(html).not.toContain("1 passed");
@@ -638,13 +638,13 @@ describe("a card stopped on a person", () => {
     expect(sentence(html)).toBe("proposed:build refused");
     // And not the bare action name, which is also a label on the same bar.
     expect(labels(html).map(([, name]) => name)).toContain("build");
-    expect(html).not.toContain("between points");
-    expect(html).not.toContain("the agent has finished and no point has started yet");
+    expect(html).not.toContain("between steps");
+    expect(html).not.toContain("the agent has finished and no step has started yet");
   });
 
   /** And a run with nothing refused keeps the neutral sentence it had. */
   it("leaves the in-between sentence to a run that is in between", () => {
-    expect(sentence(render({}, running().slice(0, 6)))).toBe("between points");
+    expect(sentence(render({}, running().slice(0, 6)))).toBe("between steps");
   });
 
   /**
@@ -657,15 +657,15 @@ describe("a card stopped on a person", () => {
    * something is coming, was the wrong half of that on the one lane 0016 §8
    * calls the lane the board exists for.
    */
-  it("never says between points about a pass that is not between anything", () => {
+  it("never says between steps about a pass that is not between anything", () => {
     const html = render(
       { state: "waiting", note: "conflict: base moved", updatedAt: new Date("2026-09-15T17:25:00Z") },
       refusedByTheLane(),
     );
 
     expect(sentence(html)).toBe("nothing running");
-    expect(html).not.toContain("between points");
-    expect(html).not.toContain("the agent has finished and no point has started yet");
+    expect(html).not.toContain("between steps");
+    expect(html).not.toContain("the agent has finished and no step has started yet");
     // The rail itself is unchanged and honest: the gates it drew all passed.
     expect(cellsAt(html, "proposed")).toEqual(["t-pass", "t-pass"]);
     // And the reason is on the card, one line down, where `task_view` put it.
@@ -692,7 +692,7 @@ describe("a card answering a refusal", () => {
 
     expect(sentence(html)).toMatch(/^fixing round 1 of 3 \d/);
     expect(html).not.toContain("build refused");
-    expect(html).not.toContain("between points");
+    expect(html).not.toContain("between steps");
     expect(html).not.toContain(
       "the pipeline stops at the first refusal and waits for a person",
     );
@@ -717,7 +717,7 @@ describe("a card answering a refusal", () => {
   it("keeps the refusal off a card whose lane says the pass is still working", () => {
     const html = render({}, refused());
 
-    expect(sentence(html)).toBe("between points");
+    expect(sentence(html)).toBe("between steps");
     expect(html).not.toContain("build refused");
     // The segment is red all the same. The bar reports the verdict; the
     // sentence reports who is waiting on what.
@@ -725,7 +725,7 @@ describe("a card answering a refusal", () => {
   });
 
   /** The name of a phase that is not a point, printed whole and not sliced. */
-  it("highlights no point for a phase that is not one", () => {
+  it("highlights no step for a phase that is not one", () => {
     const html = render({}, fixRound());
 
     expect(labels(html).filter(([tone]) => tone === "l-at")).toEqual([]);
@@ -796,12 +796,12 @@ describe("the seven states", () => {
    */
   it("reaches the card from the run doctor fails on", () => {
     const over = foldProgress(landedPastMerge(), MERGE_PLAN, true);
-    expect(over?.points.find((p) => p.point === "merge")?.state).toBe("never-ran");
+    expect(over?.steps.find((p) => p.step === "merge")?.state).toBe("never-ran");
 
     // And never on a run still in flight, where a point not reached yet is the
     // ordinary case and painting it red would put the fail colour everywhere.
     const live = foldProgress(landedPastMerge(), MERGE_PLAN, false);
-    expect(live?.points.find((p) => p.point === "merge")?.state).toBe("pending");
+    expect(live?.steps.find((p) => p.step === "merge")?.state).toBe("pending");
   });
 });
 
@@ -866,7 +866,7 @@ describe("the hatch, and what may not draw it", () => {
   it("never draws it from a plan the log did not record", () => {
     const over = foldProgress(noPlanRecorded(), PLAN, true);
 
-    expect(over?.points.map((p) => p.state)).toEqual([
+    expect(over?.steps.map((p) => p.state)).toEqual([
       "skipped",
       "skipped",
       "pending",

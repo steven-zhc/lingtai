@@ -99,15 +99,15 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
     --once                      the same as --max 1
-    --no-merge                  stop after the gates and ask before merging
+    --no-merge                  stop after the steps and ask before merging
 
   the decisions — each the one the board's card takes, recorded the same way:
   lingtai approve <project> --issue <n>
                                 merge what a held run produced, if its head has
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval, and required when
-                                a gate still refuses the head: approving then
-                                waives each refusing gate, with this as why
+                                a step still refuses the head: approving then
+                                waives each refusing step, with this as why
   lingtai requeue <project> --issue <n> --note <why>
                                 end the wait with a new run instead: a blocked
                                 item goes back to the queue — held for approval
@@ -115,7 +115,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 from a base that has since moved. --note is
                                 required — a person overruling a block is not
                                 anonymous
-  lingtai backlog [project]         the minor findings passing gates raised, open
+  lingtai backlog [project]         the minor findings passing steps raised, open
     --all                       decided ones too, and what was decided
   lingtai backlog accept <project> <key> --kind <kind>
                                 open one as an issue through the ticket store.
@@ -177,7 +177,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai env set <project> KEY     read the value from stdin, unechoed
   lingtai env list <project>        names and which layer answered — never values
   lingtai env unset <project> KEY   remove one
-  lingtai end replay [project]      resolve the end point for items that landed
+  lingtai end replay [project]      resolve the end step for items that landed
     --issue <n>                 without it, and deliver what it resolves to
   lingtai start                     hold the projections current and take work.
                                 Reads no standing signal: a pause or a shutdown
@@ -211,7 +211,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 no other
   lingtai resume                    take tickets again
   lingtai shutdown [why]            stop the daemon, letting the ticket in flight
-                                finish first — the pass, so the gates and the
+                                finish first — the pass, so the steps and the
                                 merge lane run too. It does not outlive the
                                 daemon it was sent to, so the next lingtai start
                                 needs nothing lifted
@@ -246,7 +246,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 With lingtai doctor, the one request to the
                                 network this tool makes on its own account
     --despite-doctor            upgrade in spite of failed doctor checks
-  lingtai rollback [<version>]      point ~/.local/bin/lingtai at an older version
+  lingtai rollback [<version>]      run ~/.local/bin/lingtai from an older version
                                 still in ~/.lingtai/versions — the newest one
                                 below the current, unless named
   lingtai uninstall                 ask once, remove everything under ~/.lingtai
@@ -799,7 +799,7 @@ async function daemonCommand(
           // there is no longer anything to approximate: the multiple *is* the
           // number, and asking the reader to multiply was only ever the cost of
           // not having it.
-          ? `a pass is the agents, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
+          ? `a pass is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
           : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
       ),
     );

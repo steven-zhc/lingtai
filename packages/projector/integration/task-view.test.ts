@@ -85,10 +85,10 @@ const released = (runId: string, reason: string) => ({
 
 const KILLED = "the run was killed by an operator timeout before it produced anything";
 
-const passed = (runId: string, point: string, action: string, onSha: string) => ({
+const passed = (runId: string, step: string, action: string, onSha: string) => ({
   type: "GatePassed",
   actor: "conductor",
-  data: { gate: point, action, runId, onSha, evidence: "exit 0", findings: [] },
+  data: { gate: step, action, runId, onSha, evidence: "exit 0", findings: [] },
 });
 
 const started = (n: number) => ({

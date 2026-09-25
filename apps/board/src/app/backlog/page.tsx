@@ -29,7 +29,7 @@ function Entry({ entry }: { entry: BacklogEntry }) {
       <p className="why">fails when: {entry.failureScenario}</p>
       <p className="why">
         <Link href={`/task/${encodeURIComponent(entry.taskId)}`}>#{entry.issue}</Link> ·{" "}
-        {entry.gate}:{entry.action} · <span className="mono">{entry.runId}</span> · seq {entry.raisedSeq} ·{" "}
+        {entry.step}:{entry.action} · <span className="mono">{entry.runId}</span> · seq {entry.raisedSeq} ·{" "}
         <span className="mono">{entry.key}</span>
       </p>
       {entry.status === "open" ? (

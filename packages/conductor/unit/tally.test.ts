@@ -61,7 +61,7 @@ const held = (n: number): RunOnceResult => ({
   workItemId: wi(n),
   runId: runId(n),
   headSha: "sha-a",
-  gate: "merge",
+  step: "merge",
 });
 const failed = (n: number, stage: string): RunOnceResult => ({
   ok: false,

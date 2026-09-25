@@ -148,7 +148,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
         ) : null}
 
         <p className="rnote">
-          Read-only. Nothing on this page writes the recipe, and that is the point rather than an
+          Read-only. Nothing on this page writes the recipe, and that is deliberate rather than an
           omission: 0046 §4 retired <span className="mono">tamper</span> because the recipe sits
           outside every worktree and nothing an agent can reach may write it. Edit{" "}
           <span className="mono">{underHome(view.at)}</span> and this page says so on the next

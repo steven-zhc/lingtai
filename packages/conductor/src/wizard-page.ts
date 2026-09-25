@@ -33,7 +33,7 @@
  * something a person can get wrong and fix in a minute; a slow one is something
  * they cannot.
  */
-import type { GateAction, Recipe, RecipeChange } from "@lingtai/recipe";
+import type { StepAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
 import { baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "@lingtai/recipe/settings";
@@ -127,7 +127,7 @@ export interface Check {
   label: string;
   ticked: boolean;
   /** The gate as the recipe has it, when the check came from a recipe rather than a scan. */
-  action?: GateAction;
+  action?: StepAction;
 }
 
 export interface Limits {
@@ -169,10 +169,10 @@ export interface WizardState {
 }
 
 /** The human action a *yes* to the merge question writes. */
-export const APPROVE_ACTION: GateAction = { name: "approve", human: "Merge this?" };
+export const APPROVE_ACTION: StepAction = { name: "approve", human: "Merge this?" };
 
 /** The end action *close the issue when it lands* writes. */
-export const CLOSE_ACTION: GateAction = { name: "close the ticket", when: "landed", close: true };
+export const CLOSE_ACTION: StepAction = { name: "close the ticket", when: "landed", close: true };
 
 /**
  * The sentence for a chain nothing reads, or null when something does.
@@ -310,7 +310,7 @@ function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
   };
 }
 
-function closesOnLand(action: GateAction): boolean {
+function closesOnLand(action: StepAction): boolean {
   return "close" in action && (action.when === "landed" || action.when === "any");
 }
 
@@ -545,7 +545,7 @@ export function finishRefusals(state: WizardState): string[] {
 export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
   const { draft } = state;
   const ticked = draft.checks.filter((c) => c.ticked);
-  const proposed: GateAction[] =
+  const proposed: StepAction[] =
     state.mode === "update"
       ? ticked.flatMap((c) => (c.action === undefined ? [] : [c.action]))
       : ticked.length === 0
@@ -636,7 +636,7 @@ export function saidFor(state: WizardState): Record<string, string> {
  * `gates` of one point and every gate the preset supplied is gone. Writing the
  * block the page describes keeps them, spelled out in the file.
  */
-export function wholeGates(changes: readonly RecipeChange[], after: Recipe): RecipeChange[] {
+export function wholeSteps(changes: readonly RecipeChange[], after: Recipe): RecipeChange[] {
   const rest = changes.filter((c) => c.path[0] !== "steps");
   return rest.length === changes.length ? [...changes] : [...rest, { path: ["steps"], value: after.steps }];
 }

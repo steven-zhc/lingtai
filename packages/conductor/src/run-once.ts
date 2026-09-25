@@ -156,8 +156,8 @@ import {
   workItemStream,
 } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
-import { appendEndActions, resolveEndActions } from "./end-point.ts";
-import { gatesResolved } from "./gates-resolved.ts";
+import { appendEndActions, resolveEndActions } from "./end-step.ts";
+import { stepsResolved } from "./steps-resolved.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 
@@ -294,7 +294,7 @@ export type RunOnceResult =
    * not `ok: false` with a stage — nothing refused, and calling it a failure
    * would be the kind of convenient fiction the log exists to prevent.
    */
-  | { ok: "held"; workItemId: string; runId: string; headSha: string; gate: string }
+  | { ok: "held"; workItemId: string; runId: string; headSha: string; step: string }
   | { ok: false; workItemId: string | null; runId: string | null; stage: string; detail: string };
 
 /**
@@ -508,8 +508,8 @@ export function runOnce(
     // from `merged`, so a denied production value would otherwise first throw
     // at `gates.prepared` — past the claim, as a defect in the middle of a run.
     const extensionRefusal = Either.try(() => {
-      for (const point of Object.values(recipe.steps)) {
-        for (const action of point) {
+      for (const step of Object.values(recipe.steps)) {
+        for (const action of step) {
           if ("run" in action) extensionEnv(env.merged, action.env, productionPatterns(recipe.env.refuseHosts));
         }
       }
@@ -767,8 +767,8 @@ export function runOnce(
         const it =
           what.of === "run"
             ? "a run"
-            : what.of === "gate"
-              ? `the ${what.gate} gate's agent`
+            : what.of === "step"
+              ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`;
         const events = await store.read(CONTROL_STREAM);
         const control = reduceControl(events);
@@ -1452,8 +1452,8 @@ export function runOnce(
       // boundary moving. `orDie` because a git failure inside a gate callback
       // is the defect channel's business, and the handler at the bottom of
       // this function is where that is answered.
-      const gitForGates = (args: string[]) => Effect.runPromise(Effect.orDie(gitInWorktree(args)));
-      const gateDeps = {
+      const gitForSteps = (args: string[]) => Effect.runPromise(Effect.orDie(gitInWorktree(args)));
+      const stepDeps = {
         // Every `run:` action at these points gets what it declared and
         // nothing else. See `envForExtension`.
         env: envForExtension,
@@ -1464,7 +1464,7 @@ export function runOnce(
             title: ticket.title,
             body: ticket.body,
           }),
-          diff: () => gitForGates(["diff", `${worktree.baseSha}...HEAD`]),
+          diff: () => gitForSteps(["diff", `${worktree.baseSha}...HEAD`]),
           // **Not `wiring.settingsPath`.** That file registers the hook, and
           // the two variables the hook needs live in `wiring.env`, which a
           // `ActionContext` does not carry — so the reviewer used to be handed
@@ -1478,7 +1478,7 @@ export function runOnce(
         },
         watch: {
           changedFiles: async () => {
-            const names = await gitForGates(changedFilesArgs(worktree.baseSha));
+            const names = await gitForSteps(changedFilesArgs(worktree.baseSha));
             return names.split("\n").filter(Boolean);
           },
         },
@@ -1492,7 +1492,7 @@ export function runOnce(
       // that agent committed (0038 §1). The same actions, in the same order,
       // with one thing added — the scenarios the last refusal was made of,
       // which the reviewer is asked about by name (0038 §2).
-      const actions = actionsFromRecipe("proposed", recipe.steps.proposed, gateDeps);
+      const actions = actionsFromRecipe("proposed", recipe.steps.proposed, stepDeps);
       const judge = (onSha: string, recheck: readonly ActionFinding[], round: number) =>
         Effect.promise(() =>
           runActionPipeline({
@@ -1710,7 +1710,7 @@ export function runOnce(
                 {
                   type: "GatesResolved",
                   actor: "conductor",
-                  data: parsePayload("GatesResolved", gatesResolved(runId, resolved)),
+                  data: parsePayload("GatesResolved", stepsResolved(runId, resolved)),
                 },
               ]);
 
@@ -2169,7 +2169,7 @@ export function runOnce(
       const agentNeverStarted = (what: Exclude<NeverStarted, { of: "run" }>, detail: string) =>
         Effect.gen(function* () {
           const who =
-            what.of === "gate" ? `the ${what.gate} gate's agent` : `the agent fixing ${what.action}`;
+            what.of === "step" ? `the ${what.step} step's agent` : `the agent fixing ${what.action}`;
           runLog.note(what.of, `${who} never started — ${detail}`);
           yield* standDownConductor(what, detail);
           const notPushed = yield* publishWhatIsCommitted;
@@ -2181,8 +2181,8 @@ export function runOnce(
             // either — the implementer ran and its cost is on `RunFinished`.
             // What is true of the diff is that nobody judged it.
             release:
-              what.of === "gate"
-                ? `the ${what.gate} gate never ran — its agent never started, so nothing judged this diff: ${said(detail)}${unpushed}`
+              what.of === "step"
+                ? `the ${what.step} step never ran — its agent never started, so nothing judged this diff: ${said(detail)}${unpushed}`
                 : `the agent fixing ${what.action} never started, so nothing answered the refusal: ${said(detail)}${unpushed}`,
           });
         });
@@ -2219,9 +2219,9 @@ export function runOnce(
        * stand-down's, because a rejected lease must not turn this ending into a
        * push failure.
        */
-      const gateDidNotFinish = (what: string, detail: string) =>
+      const stepDidNotFinish = (what: string, detail: string) =>
         Effect.gen(function* () {
-          runLog.note("gate", `the ${what} action did not finish — ${detail}`);
+          runLog.note("step", `the ${what} action did not finish — ${detail}`);
           const question = `did-not-finish: the ${what} action's agent produced no verdict`;
           const notPushed = yield* publishWhatIsCommitted;
           const ended = yield* Effect.promise(async () => {
@@ -2275,7 +2275,7 @@ export function runOnce(
           const unpushed =
             notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
           return yield* new Stopped({
-            stage: "gate",
+            stage: "step",
             detail: `the ${what} action did not finish: ${detail}`,
             release:
               `the ${what} action's agent produced no verdict, so nothing judged this ` +
@@ -2395,7 +2395,7 @@ export function runOnce(
           // The same diff the reviewer was shown, from the same function and
           // under the same ceiling: two agents arguing about a change have to be
           // looking at the same change.
-          const underReview = yield* Effect.promise(() => gateDeps.agent.diff());
+          const underReview = yield* Effect.promise(() => stepDeps.agent.diff());
 
           const fixed = yield* Effect.promise(() =>
             options.runtime
@@ -2583,13 +2583,13 @@ export function runOnce(
         // about by name (0038 §2).
         pipeline = yield* judge(head, recheck, rounds);
         recheck = [];
-        log(`gates: ${pipeline.results.map((r) => `${r.action}=${r.verdict}`).join(" ")}`);
+        log(`steps: ${pipeline.results.map((r) => `${r.action}=${r.verdict}`).join(" ")}`);
 
         // Before the refusal is read: a gate whose agent never started refused
         // nothing, and must not reach `buyRound`, the hold or the lane.
         if (pipeline.neverRanAt !== null) {
           yield* agentNeverStarted(
-            { of: "gate", gate: `proposed:${pipeline.neverRanAt.action}` },
+            { of: "step", step: `proposed:${pipeline.neverRanAt.action}` },
             pipeline.neverRanAt.detail,
           );
         }
@@ -2598,7 +2598,7 @@ export function runOnce(
         // a reviewer that started and produced no receipt judged nothing (0057,
         // `#196`).
         if (pipeline.didNotFinishAt !== null) {
-          yield* gateDidNotFinish(
+          yield* stepDidNotFinish(
             `proposed:${pipeline.didNotFinishAt.action}`,
             pipeline.didNotFinishAt.detail,
           );
@@ -2723,7 +2723,7 @@ export function runOnce(
           atMerge = yield* Effect.promise(() =>
             runActionPipeline({
               step: "merge",
-              actions: actionsFromRecipe("merge", recipe.steps.merge, gateDeps),
+              actions: actionsFromRecipe("merge", recipe.steps.merge, stepDeps),
               context: {
                 runId,
                 onSha: head,
@@ -2746,12 +2746,12 @@ export function runOnce(
           // The same ending at the other point that runs an `agent` action.
           if (atMerge.neverRanAt !== null) {
             yield* agentNeverStarted(
-              { of: "gate", gate: `merge:${atMerge.neverRanAt.action}` },
+              { of: "step", step: `merge:${atMerge.neverRanAt.action}` },
               atMerge.neverRanAt.detail,
             );
           }
           if (atMerge.didNotFinishAt !== null) {
-            yield* gateDidNotFinish(
+            yield* stepDidNotFinish(
               `merge:${atMerge.didNotFinishAt.action}`,
               atMerge.didNotFinishAt.detail,
             );
@@ -2782,8 +2782,8 @@ export function runOnce(
           branch,
           workItemId,
           headSha: head,
-          gatesPassed: pipeline.ok && atMerge.ok,
-          gateDetail: refusedAt.failedAt
+          stepsPassed: pipeline.ok && atMerge.ok,
+          stepDetail: refusedAt.failedAt
             ? `${refusedAt.failedAt}: ${refusedAt.results.find((r) => r.action === refusedAt.failedAt)?.evidence ?? ""}`
             : undefined,
           token: options.token,
@@ -3080,7 +3080,7 @@ export function runOnce(
         // Naming it after the action reads well — *the thing a person is looking
         // at is that action's findings* — and gives this request the same
         // `${gate}:${action}` key as the `GateFailed` that holds them.
-        // `task-view.ts:427` folds both through one `setGate`, so the request,
+        // `task-view.ts:427` folds both through one `setStep`, so the request,
         // which carries no verdict and no findings, overwrites the refusal it
         // exists to report: verdict, evidence and findings replaced by an empty
         // `pending` entry, on every projection and every rebuild.
@@ -3098,7 +3098,7 @@ export function runOnce(
         // nothing was decided. `stopAction` is that table, and its words are
         // the headlines' — a row reading `proposed · unfinished` over a card
         // reading *A fixing agent did not finish* is one fact said twice.
-        const gate = pipeline.heldAt !== null || unresolved !== null ? "proposed" : "merge";
+        const step = pipeline.heldAt !== null || unresolved !== null ? "proposed" : "merge";
         const action =
           pipeline.heldAt ??
           atMerge.heldAt ??
@@ -3115,7 +3115,7 @@ export function runOnce(
               type: "ApprovalRequested",
               actor: "conductor",
               data: parsePayload("ApprovalRequested", {
-                gate,
+                gate: step,
                 action,
                 runId,
                 onSha: headSha,
@@ -3140,8 +3140,8 @@ export function runOnce(
                       // about, and unlike the other two nothing ever rewrites it.
                       `Merge ${branch} into ${base} anyway? ${mergeAnywayBecause(unresolved)}`
                     : pipeline.ok && atMerge.ok
-                      ? `Merge ${branch} into ${base}? Every gate passed.`
-                      : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} gate refused.`),
+                      ? `Merge ${branch} into ${base}? Every step passed.`
+                      : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} step refused.`),
                 artifacts: [`${branch}@${headSha}`],
               }),
             },
@@ -3163,7 +3163,7 @@ export function runOnce(
             : unfixedQuestion({ ...unresolved, branch, base, restarts: arms.length })
           : repairOf
             ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
-            : `held at the ${gate} gate: ${branch} into ${base}`;
+            : `held at the ${step} step: ${branch} into ${base}`;
         /**
          * The hold, as something a person can act on rather than only read.
          *
@@ -3232,15 +3232,15 @@ export function runOnce(
               what:
                 `${branch} is at ${headSha.slice(0, 7)} and ` +
                 (failedAt !== null
-                  ? `the ${failedAt} gate refused it. The ${gate} point holds for ${action}.`
+                  ? `the ${failedAt} step refused it. The ${step} step holds for ${action}.`
                   : green
-                    ? `every gate passed. The ${gate} point holds for ${action}.`
+                    ? `every step passed. The ${step} step holds for ${action}.`
                     : // Neither green nor refused: a gate asked for a person rather
                       // than judging — a `human:` action, or a `watch` one that saw
                       // a migration. It used to fall through to the sentence above
                       // and print `the null gate refused it`, which is the same
                       // defect one word further on: a cause the block does not have.
-                      `the ${action} gate at ${gate} asked for a person before anything after it ran.`),
+                      `the ${action} step at ${step} asked for a person before anything after it ran.`),
               // What was done about it, when something was: a repair spent an agent
               // and this diff is what it produced. An ordinary hold had no failure
               // to do anything about, and says so by saying nothing.
@@ -3261,8 +3261,8 @@ export function runOnce(
                 ? {
                     action: "approve" as const,
                     why: repairOf
-                      ? `every gate passed on what the repair for ${repairOf.reason} produced`
-                      : "every gate passed on this diff; approving merges what this run produced",
+                      ? `every step passed on what the repair for ${repairOf.reason} produced`
+                      : "every step passed on this diff; approving merges what this run produced",
                   }
                 : null,
             };
@@ -3308,7 +3308,7 @@ export function runOnce(
         );
 
         log(`held at ${headSha.slice(0, 7)} — asked for approval to merge into ${base}`);
-        return { ok: "held", workItemId, runId, headSha, gate } satisfies RunOnceResult;
+        return { ok: "held", workItemId, runId, headSha, step } satisfies RunOnceResult;
       }
 
       // ---- 14. what the lane produced --------------------------------------
@@ -3346,7 +3346,7 @@ export function runOnce(
          * buying a *run* for exactly what a *round* is refused for was the same
          * decision made twice with opposite answers. From a `merge:` gate it
          * never met `decideFix` at all: the merge point runs after the round
-         * loop, `integrate()` takes its verdict as `gatesPassed: false`, and it
+         * loop, `integrate()` takes its verdict as `stepsPassed: false`, and it
          * comes here with no `FixRequested` or `FixDeclined` on the log — so
          * this block, with its diagnosis, is the whole of what that path gets,
          * and nothing upstream has already answered it. And a

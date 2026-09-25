@@ -17,7 +17,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
-import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type GateAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
+import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
 /** The limits `a pass` is made of, from the recipe rather than listed again here. */
 const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
@@ -450,11 +450,11 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
 /**
  * What an action does, and what bounds it, as one line each.
  *
- * Only a command carries a clock of its own (`gatePlan` reads the same
+ * Only a command carries a clock of its own (`stepPlan` reads the same
  * `timeout`), so every other kind says what holds it instead of inventing one.
  */
 export function describeAction(
-  action: GateAction,
+  action: StepAction,
   plugins: readonly PluginSecrets[] = PLUGINS,
 ): { does: string; bound: string } {
   // Every `no_log` value gone before a word of this is written (0061 §9). It
@@ -463,7 +463,7 @@ export function describeAction(
   action = disclose(action, plugins);
   switch (kindOfAction(action)) {
     case "run": {
-      const a = action as Extract<GateAction, { run: string }>;
+      const a = action as Extract<StepAction, { run: string }>;
       return { does: a.run, bound: `timeout ${a.timeout}` };
     }
     // **Three fields since `#245`, and the prose is `prompt:`** (0063 §2).
@@ -474,7 +474,7 @@ export function describeAction(
     // costs, so all three are on the line and the prompt is last: it is the
     // long one, and the two short facts would be lost after it.
     case "agent": {
-      const a = action as Extract<GateAction, { agent: string }>;
+      const a = action as Extract<StepAction, { agent: string }>;
       // Absent `model:` is the runtime's own default, which is a thing to say
       // rather than a blank — and not a name invented here, because the
       // runtime is the one that knows it.
@@ -482,19 +482,19 @@ export function describeAction(
       return { does: `a cold reviewer on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
     }
     case "watch": {
-      const a = action as Extract<GateAction, { watch: string[] }>;
+      const a = action as Extract<StepAction, { watch: string[] }>;
       return { does: `watches ${a.watch.join(", ")}, then ${a.then}`, bound: "no clock — a match against the diff" };
     }
     case "human": {
-      const a = action as Extract<GateAction, { human: string }>;
+      const a = action as Extract<StepAction, { human: string }>;
       return { does: `asks a person: ${a.human}`, bound: "waits on a person, with no timeout" };
     }
     case "close": {
-      const a = action as Extract<GateAction, { close: true }>;
+      const a = action as Extract<StepAction, { close: true }>;
       return { does: `closes the issue when ${a.when}`, bound: "runs for effect" };
     }
     case "labels": {
-      const a = action as Extract<GateAction, { labels: string[] }>;
+      const a = action as Extract<StepAction, { labels: string[] }>;
       return { does: `sets labels ${a.labels.join(", ")} when ${a.when}`, bound: "runs for effect" };
     }
     // **The effect that deletes** (`#240`), and the row says so in those words:
@@ -504,7 +504,7 @@ export function describeAction(
     // is said as prose rather than read off a field an operator might think
     // they could change here.
     case "refs": {
-      const a = action as Extract<GateAction, { refs: true; branch: boolean }>;
+      const a = action as Extract<StepAction, { refs: true; branch: boolean }>;
       const what = a.branch ? "agent/<n> and every agent/<n>-attempt-<k>" : "every agent/<n>-attempt-<k>";
       return { does: `deletes ${what} from origin when it lands`, bound: "runs for effect, and cannot be undone" };
     }
@@ -514,14 +514,14 @@ export function describeAction(
     // ticket after this one wires them up, on a page nobody would think to
     // re-test; the closed set is read here, so the set is what this answers.
     case "worktree": {
-      const a = action as Extract<GateAction, { worktree: { base: string; submodules: boolean } }>;
+      const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>;
       return {
         does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ", submodules and all" : ""}`,
         bound: "no clock — it is the directory the work happens in",
       };
     }
     case "merge": {
-      const a = action as Extract<GateAction, { merge: { strategy: string } }>;
+      const a = action as Extract<StepAction, { merge: { strategy: string } }>;
       return {
         does: `lands the branch by ${a.merge.strategy}, onto the base it was cut from`,
         bound: "no clock — the base moving under it is a recomputation, not a refusal",
@@ -537,7 +537,7 @@ export function describeAction(
     // page drew for it were two rows about one decision.
     case "queue": {
       const a = action as Extract<
-        GateAction,
+        StepAction,
         { queue: { kinds: string[]; exclude: string[]; backoff: string; assignee?: { login?: string; take: string } } }
       >;
       const exclude = a.queue.exclude.length === 0 ? "" : `, never ${a.queue.exclude.join(", ")}`;
@@ -558,7 +558,7 @@ export function describeAction(
     // them, so what this row says about money is true of any judge a project
     // writes, including one that is somebody else's code (0061 §3).
     case "judge": {
-      const a = action as Extract<GateAction, { judge: string; when: string }>;
+      const a = action as Extract<StepAction, { judge: string; when: string }>;
       return {
         does:
           a.judge === "same-worktree"
@@ -572,7 +572,7 @@ export function describeAction(
     // a person budgets from, since at or below the bar is the half of a
     // reviewer's output that costs no agent at all (`#237`).
     case "backlog": {
-      const a = action as Extract<GateAction, { backlog: string }>;
+      const a = action as Extract<StepAction, { backlog: string }>;
       return {
         does: `files every finding at ${a.backlog} or below for a person, instead of refusing`,
         bound: "no clock, and no round — a finding that did not refuse buys nothing",
@@ -702,8 +702,8 @@ export function readRecipe(recipe: Recipe): Reading[] {
       keys: ["runtime.assignee.take", "runtime.assignee.login"],
     },
     {
-      name: "the points",
-      says: STEPS.map((point) => `${point} ${recipe.steps[point].length}`).join(" · "),
+      name: "the steps",
+      says: STEPS.map((step) => `${step} ${recipe.steps[step].length}`).join(" · "),
       keys: ["steps"],
     },
     {

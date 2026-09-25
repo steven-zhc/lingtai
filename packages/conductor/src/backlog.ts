@@ -134,7 +134,7 @@ export function proposalFor(entry: BacklogEntry, decision: Decision, since: Date
   const title = firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine;
   const where = entry.line === null ? entry.file : `${entry.file}:${entry.line}`;
   const body = [
-    `A \`${entry.severity}\` finding from a passing \`${entry.gate}:${entry.action}\` on #${entry.issue}. ` +
+    `A \`${entry.severity}\` finding from a passing \`${entry.step}:${entry.action}\` on #${entry.issue}. ` +
       `It did not stop that run, and a person accepted it from the backlog.`,
     "",
     `**\`${where}\`** — ${entry.claim.trim()}`,
@@ -147,7 +147,7 @@ export function proposalFor(entry: BacklogEntry, decision: Decision, since: Date
     "",
     `- ticket: #${entry.issue}`,
     `- run: \`${entry.runId}\`, reviewing \`${entry.onSha.slice(0, 12)}\``,
-    `- gate: \`${entry.gate}\`, action \`${entry.action}\``,
+    `- step: \`${entry.step}\`, action \`${entry.action}\``,
     `- finding: \`${entry.key}\` (seq ${entry.raisedSeq})`,
     "",
     "## Done when",

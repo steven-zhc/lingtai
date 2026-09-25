@@ -1,5 +1,5 @@
 import { inWords } from "@lingtai/conductor/queue";
-import { elapsed, pointOf, type PointProgress, type PointState, type RunProgress } from "@/lib/progress";
+import { elapsed, stepOf, type StepProgress, type StepState, type RunProgress } from "@/lib/progress";
 
 /**
  * The ten steps as a sequence, on every surface that draws one.
@@ -30,7 +30,7 @@ import { elapsed, pointOf, type PointProgress, type PointState, type RunProgress
  * all ten steps with only "filled means done" would render the second of
  * those as the first, which is precisely the failure 0016 §4 names.
  */
-const CELL_TONE: Record<PointState, string> = {
+const CELL_TONE: Record<StepState, string> = {
   passed: "t-pass",
   failed: "t-fail",
   running: "t-run",
@@ -56,23 +56,23 @@ const CELL_TONE: Record<PointState, string> = {
  * reached yet* are both grey, so the difference between them has to survive
  * being grey: it is italic.
  */
-function labelTone(p: PointProgress, at: string | null): string {
+function labelTone(p: StepProgress, at: string | null): string {
   if (p.actions.length === 0) return "l-off";
   if (p.state === "failed" || p.state === "never-ran" || p.state === "did-not-finish") return "l-bad";
-  if (p.state === "running" || p.point === at) return "l-at";
+  if (p.state === "running" || p.step === at) return "l-at";
   return "l-done";
 }
 
 /** What a segment says on hover: what was configured there, and what came of it. */
-function segTitle(p: PointProgress): string {
-  if (p.actions.length === 0) return `${p.point}: nothing configured, so nothing runs`;
+function segTitle(p: StepProgress): string {
+  if (p.actions.length === 0) return `${p.step}: nothing configured, so nothing runs`;
   if (p.state === "never-ran") {
-    return `${p.point}: ${p.planned.join(", ")} — configured and did not run, which is Lingtai's bug (0016 §4)`;
+    return `${p.step}: ${p.planned.join(", ")} — configured and did not run, which is Lingtai's bug (0016 §4)`;
   }
   if (p.state === "did-not-finish") {
-    return `${p.point}: ${p.planned.join(", ")} — its agent started and produced no verdict (0057)`;
+    return `${p.step}: ${p.planned.join(", ")} — its agent started and produced no verdict (0057)`;
   }
-  return `${p.point}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
+  return `${p.step}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
 }
 
 /**
@@ -110,11 +110,11 @@ function segTitle(p: PointProgress): string {
  * sequence without claiming anything happened in it.
  */
 export function Segs({
-  points,
+  steps,
   at,
   labels,
 }: {
-  points: readonly PointProgress[];
+  steps: readonly StepProgress[];
   at: string | null;
   /**
    * Off on a landed row, which is one line by #81's decision and has no room
@@ -125,14 +125,14 @@ export function Segs({
 }) {
   return (
     <ol className="segs">
-      {points.map((p) => (
-        <li key={p.point} className={`seg s-${p.state}`} title={segTitle(p)}>
+      {steps.map((p) => (
+        <li key={p.step} className={`seg s-${p.state}`} title={segTitle(p)}>
           <span className="sbar">
-            {(p.actions.length === 0 ? [{ name: p.point, state: p.state }] : p.actions).map((a) => (
+            {(p.actions.length === 0 ? [{ name: p.step, state: p.state }] : p.actions).map((a) => (
               <span key={a.name} className={`scell ${CELL_TONE[a.state]}`} />
             ))}
           </span>
-          {labels ? <span className={`slab ${labelTone(p, at)}`}>{p.point}</span> : null}
+          {labels ? <span className={`slab ${labelTone(p, at)}`}>{p.step}</span> : null}
         </li>
       ))}
     </ol>
@@ -164,13 +164,13 @@ export function Segs({
  * own label is lit and eight columns of highlight say which; a refusal lights
  * nothing, so it says the pair.
  */
-function refusedAt(points: readonly PointProgress[]): string | null {
-  for (const p of points) {
+function refusedAt(steps: readonly StepProgress[]): string | null {
+  for (const p of steps) {
     const bad = p.actions.find((a) => a.state === "failed");
-    if (bad) return `${p.point}:${bad.name}`;
+    if (bad) return `${p.step}:${bad.name}`;
     // A step that failed with no action naming it is already a step name, and
     // qualifying it with itself would read `proposed:proposed`.
-    if (p.state === "failed") return p.point;
+    if (p.state === "failed") return p.step;
   }
   return null;
 }
@@ -189,7 +189,7 @@ function refusedAt(points: readonly PointProgress[]): string | null {
  * **The point name is said once.** The line used to read `proposed:build 42s /
  * 20m`; the highlighted label already says `proposed`, so the sentence is the
  * action and its bound and nothing else. A phase that names no point — the
- * agent, a bought round — is printed whole, which is `pointOf`'s whole job.
+ * agent, a bought round — is printed whole, which is `stepOf`'s whole job.
  *
  * **The sentence has four readings and the lane settles three of them.** What
  * is running, what refused, a run in flight between two points, and a run that
@@ -220,18 +220,18 @@ export function Rail({
   const now = progress.now;
   // The point half of `proposed:build`, which is what the label highlights.
   // Null where the phase names no point — the agent, and a bought round.
-  const at = now === null ? null : pointOf(now.label);
+  const at = now === null ? null : stepOf(now.label);
   // Only when nothing is in flight, **and** only off the running lane — the
   // sentence's own title says a person is being waited on, and that is a fact
   // about the lane rather than about the stream. A refusal from an earlier
   // round sits under a live gate on the same card, and between a refusal and
   // the round bought to answer it there is a moment with neither; both are a
   // pass still working, and neither is anybody's to act on.
-  const refused = now === null && !live ? refusedAt(progress.points) : null;
+  const refused = now === null && !live ? refusedAt(progress.steps) : null;
 
   return (
     <div className="seq">
-      <Segs points={progress.points} at={at} labels />
+      <Segs steps={progress.steps} at={at} labels />
       {now ? (
         <p
           className="snow"
@@ -276,8 +276,8 @@ export function Rail({
            string, its title, the task page's, the assertions in
            `rail.test.tsx` that quote them, and `the-card.md`'s copy of the
            same sentence. */
-        <p className="snow quiet" title="the agent has finished and no point has started yet">
-          between points
+        <p className="snow quiet" title="the agent has finished and no step has started yet">
+          between steps
         </p>
       ) : (
         /* The fourth reading, and the one the run's own stream cannot name.

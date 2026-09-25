@@ -643,7 +643,7 @@ export const backlogPlugin = definePlugin("backlog", {
  * of `queue:` rather than a plugin beside it, because the two answer one
  * question and `discover.ts` applies them in one pass over one GitHub response.
  *
- * `as const`, so `ActionKind` and `GateAction` are read off it rather than
+ * `as const`, so `ActionKind` and `StepAction` are read off it rather than
  * written down a second time.
  */
 export const PLUGINS = [
@@ -678,7 +678,7 @@ export const PLUGINS = [
  * is that plugin's and names the field. This union is now only what gives the
  * closed set a single type.
  */
-export const GateAction = z.union([
+export const StepAction = z.union([
   runPlugin.schema,
   agentPlugin.schema,
   watchPlugin.schema,
@@ -692,7 +692,7 @@ export const GateAction = z.union([
   judgePlugin.schema,
   backlogPlugin.schema,
 ]);
-export type GateAction = z.infer<typeof GateAction>;
+export type StepAction = z.infer<typeof StepAction>;
 
 /** The action's kind, for an event and for dispatch. Exactly one key decides it. */
 export type ActionKind = (typeof PLUGINS)[number]["key"];
@@ -702,7 +702,7 @@ export function pluginOf(action: unknown, plugins: readonly Plugin[] = PLUGINS):
   return pluginNaming(action, plugins);
 }
 
-export function kindOfAction(action: GateAction): ActionKind {
+export function kindOfAction(action: StepAction): ActionKind {
   // The loop rather than `pluginOf`, which answers `null` for an action naming
   // two plugins: a resolved recipe can hold no such thing, and this is read on
   // the board's path where the first key is a better answer than none.
@@ -721,7 +721,7 @@ export function kindOfAction(action: GateAction): ActionKind {
  * `plugin.ts`: a value taken out of the hash would make two recipes that differ
  * in a credential one document (0047 §2).
  */
-export function discloseSteps<Steps extends Readonly<Record<string, readonly GateAction[]>>>(
+export function discloseSteps<Steps extends Readonly<Record<string, readonly StepAction[]>>>(
   steps: Steps,
   plugins: readonly PluginSecrets[] = PLUGINS,
 ): Steps {
@@ -788,7 +788,7 @@ export const KINDS_AT = {
    * carries one too (`#238`), so a `"when" in a` test at the point let a
    * judge action built in code straight past the throw and into a match on
    * the outcome it could not satisfy: `#61` for one kind, silently.
-   * `end-point.ts`'s guard asks for these three keys instead.
+   * `end-step.ts`'s guard asks for these three keys instead.
    */
   end: ["close", "labels", "refs"],
 } as const satisfies Record<Step, readonly ActionKind[]>;
@@ -969,8 +969,8 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
  * the step's own sentence and the plugin's are about the same plugin —
  * and only the plugin's says where `discover.ts` is.
  */
-export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
-  if ((KINDS_AT[point] as readonly ActionKind[]).includes(kind)) return null;
+export function whyNoKindAt(step: Step, kind: ActionKind): string | null {
+  if ((KINDS_AT[step] as readonly ActionKind[]).includes(kind)) return null;
   const calledDirectly = CALLED_DIRECTLY[kind];
   if (calledDirectly !== undefined) {
     return (
@@ -981,7 +981,7 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
       "the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
   }
-  if (point === "admit") {
+  if (step === "admit") {
     return (
       "nothing runs a pipeline at `admit` — the step is in the closed set and no code reaches it, " +
       "so an action here would be resolved, printed, and never called. A question that has to be " +
@@ -992,16 +992,16 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
   // sentence per step and not one for the group: *nothing runs here* is the
   // same refusal at all five, and **where the work actually happens today** is
   // different at each — which is the only part an operator can act on.
-  if (point === "claim" || point === "design" || point === "implement" || point === "build" || point === "review") {
+  if (step === "claim" || step === "design" || step === "implement" || step === "build" || step === "review") {
     return (
-      `nothing runs a pipeline at \`${point}\` yet — the step is named by ` +
+      `nothing runs a pipeline at \`${step}\` yet — the step is named by ` +
       "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
-      `have a word for it, and the pass that runs it is that plan's next ticket. Today ${WHERE_INSTEAD[point]}. ` +
+      `have a word for it, and the pass that runs it is that plan's next ticket. Today ${WHERE_INSTEAD[step]}. ` +
       "Refused rather than accepted here because an action at a step no code reaches would be resolved, recorded " +
       "in `GatesResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
   }
-  if (point === "end") {
+  if (step === "end") {
     return (
       "`end` fires on every terminal outcome and produces no verdict, so the only actions it can " +
       "carry are the three that run for effect — `close:`, `labels:` and `refs:`, whose `when:` is " +
@@ -1011,7 +1011,7 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
     );
   }
   if (kind === "close" || kind === "labels" || kind === "refs") {
-    return "it is an effect rather than a verdict, and only the `end` point carries out effects";
+    return "it is an effect rather than a verdict, and only the `end` step carries out effects";
   }
   if (kind === "agent") {
     return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";
@@ -1036,13 +1036,13 @@ export function whyNoKindAt(point: Step, kind: ActionKind): string | null {
  * action, its kind and the step either way, and only what follows differs.
  */
 export function kindRefusedAt(
-  point: Step,
+  step: Step,
   kind: ActionKind,
   action: string,
   why: string,
   tail = "Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start.",
 ): string {
-  return `the "${action}" action is a "${kind}" at the "${point}" point, and ${why}. ${tail}`;
+  return `the "${action}" action is a "${kind}" at the "${step}" step, and ${why}. ${tail}`;
 }
 
 /** What a plugin's own refusal of a field says after the sentence above. */
@@ -1094,7 +1094,7 @@ function actionsAt(step: Step) {
   return z
     .array(z.unknown())
     .transform((written, ctx) => {
-      const resolved: GateAction[] = [];
+      const resolved: StepAction[] = [];
       written.forEach((action, i) => {
         const named = pluginsNamed(action, PLUGINS);
         const plugin = pluginNaming(action, PLUGINS);
@@ -1119,7 +1119,7 @@ function actionsAt(step: Step) {
           }
           return;
         }
-        resolved.push(read.value as GateAction);
+        resolved.push(read.value as StepAction);
       });
       return resolved;
     })

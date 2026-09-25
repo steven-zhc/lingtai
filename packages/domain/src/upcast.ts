@@ -65,7 +65,7 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * row of any version, so the nine versions and every step beneath them come
  * down together rather than one type at a time.
  */
-const gatePointRenamed: Upcaster = (data) => {
+const stepRenamed: Upcaster = (data) => {
   const d = data as { gate?: string };
   return d.gate === "diff" ? { ...d, gate: "proposed" } : data;
 };
@@ -259,14 +259,14 @@ export const UPCASTERS: UpcastRegistry = {
       const byStep = new Map(stored.map((p) => [p.gate, p.actions ?? []]));
       return {
         ...(data as object),
-        points: STEPS.map((gate) => ({ gate, actions: byStep.get(gate) ?? [] })),
+        points: STEPS.map((step) => ({ gate: step, actions: byStep.get(step) ?? [] })),
       };
     },
   },
-  GateRequested: { 1: gatePointRenamed },
-  GateStarted: { 1: gatePointRenamed },
+  GateRequested: { 1: stepRenamed },
+  GateStarted: { 1: stepRenamed },
   GatePassed: {
-    1: gatePointRenamed,
+    1: stepRenamed,
     /**
      * 2 → 3: `findings` was added (#135). An empty array, and unlike the nulls
      * above it is not a guess: a v2 pass's findings exist only as prose inside
@@ -276,7 +276,7 @@ export const UPCASTERS: UpcastRegistry = {
      */
     2: (data) => ({ ...(data as object), findings: [] }),
   },
-  GateFailed: { 1: gatePointRenamed },
+  GateFailed: { 1: stepRenamed },
   GateDidNotFinish: {
     /**
      * 1 → 2: `attempt` and `retrying` are dropped with 0057 §4's retry (`#234`).
@@ -294,10 +294,10 @@ export const UPCASTERS: UpcastRegistry = {
       return rest;
     },
   },
-  GateWaived: { 1: gatePointRenamed },
-  ApprovalRequested: { 1: gatePointRenamed },
-  ApprovalGranted: { 1: gatePointRenamed },
-  ApprovalRevoked: { 1: gatePointRenamed },
+  GateWaived: { 1: stepRenamed },
+  ApprovalRequested: { 1: stepRenamed },
+  ApprovalGranted: { 1: stepRenamed },
+  ApprovalRevoked: { 1: stepRenamed },
 };
 
 export class MissingUpcasterError extends Error {

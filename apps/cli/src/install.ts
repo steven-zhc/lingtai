@@ -269,7 +269,7 @@ export function shimVersion(paths: Paths): string | null | { refused: string } {
   const target = resolve(dirname(paths.shim), readlinkSync(paths.shim));
   const dir = dirname(target);
   if (dirname(dir) !== paths.versions && (!existsSync(paths.versions) || dirname(dir) !== realpath(paths.versions))) {
-    return { refused: `${paths.shim} points at ${target}, which is not under ${paths.versions} — not Lingtai's to replace. Move it and run this again` };
+    return { refused: `${paths.shim} resolves to ${target}, which is not under ${paths.versions} — not Lingtai's to replace. Move it and run this again` };
   }
   return basename(dir);
 }
@@ -481,7 +481,7 @@ async function upgrade(argv: readonly string[], world: World): Promise<number> {
 
   const drained = await world.drain(`upgrading ${pointed} to ${release.version}`, argv.includes("--despite-doctor"));
   if (!drained.ok) {
-    world.log(paint.held(`the shim still points at ${pointed}. lingtai upgrade again picks up where this stopped`));
+    world.log(paint.held(`the shim still runs ${pointed}. lingtai upgrade again picks up where this stopped`));
     return drained.code;
   }
 
@@ -490,7 +490,7 @@ async function upgrade(argv: readonly string[], world: World): Promise<number> {
   world.log(paint.pass(`${paths.shim} now runs ${release.version} (was ${pointed})`));
   world.log(
     paint.muted(
-      `${join(paths.versions, pointed)} is kept: lingtai rollback points back at it. Nothing was started — lingtai start runs ${release.version}`,
+      `${join(paths.versions, pointed)} is kept: lingtai rollback returns to it. Nothing was started — lingtai start runs ${release.version}`,
     ),
   );
   return 0;

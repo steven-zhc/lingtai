@@ -25,8 +25,8 @@ import { useState, useTransition } from "react";
 import { loadDiff } from "./actions.ts";
 import type { DiffFile } from "@/lib/diff";
 
-export interface GateEvidence {
-  gate: string;
+export interface StepEvidence {
+  step: string;
   state: string;
   current: boolean;
   evidence: string | null;
@@ -39,7 +39,7 @@ export interface GateEvidence {
   }[];
 }
 
-function Findings({ findings }: { findings: GateEvidence["findings"] }) {
+function Findings({ findings }: { findings: StepEvidence["findings"] }) {
   return (
     <ul className="findings">
       {findings.map((f, i) => (
@@ -101,26 +101,26 @@ export function Evidence({
   project,
   baseSha,
   headSha,
-  gates,
+  steps,
 }: {
   project: string;
   baseSha: string | null;
   headSha: string;
-  gates: GateEvidence[];
+  steps: StepEvidence[];
 }) {
   const [diff, setDiff] = useState<{ files: DiffFile[]; truncated: boolean } | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  const interesting = gates.filter((g) => g.evidence || g.findings.length > 0);
+  const interesting = steps.filter((g) => g.evidence || g.findings.length > 0);
 
   return (
     <div className="evidence">
       {interesting.map((g) => (
-        <details key={g.gate} className="gdetail">
+        <details key={g.step} className="gdetail">
           <summary>
             <span className={`pill ${g.state === "passed" ? "pass" : g.state === "failed" ? "fail" : "hold"}`}>
-              {g.gate}
+              {g.step}
             </span>
             <span className="gsum">
               {g.findings.length > 0
@@ -136,7 +136,7 @@ export function Evidence({
               where a minor is read — on a gate that passed with one. */}
           {g.state === "passed" && g.findings.some((f) => f.severity === "minor") ? (
             <p className="note">
-              A passing gate's minors wait in the <Link href="/backlog">backlog</Link>, to be opened as an issue or
+              A passing step's minors wait in the <Link href="/backlog">backlog</Link>, to be opened as an issue or
               declined.
             </p>
           ) : null}

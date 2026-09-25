@@ -40,7 +40,7 @@ import {
   runQueue,
   waive,
 } from "../src/index.ts";
-import { type GateAction, type Recipe, resolveRecipe } from "@lingtai/recipe";
+import { type StepAction, type Recipe, resolveRecipe } from "@lingtai/recipe";
 import type { ProjectState } from "@lingtai/domain";
 
 const exec = promisify(execFile);
@@ -202,7 +202,7 @@ const NO_ROUNDS_RECIPE = REFUSING_RECIPE.replace(
  *
  * The one refusal the round loop never sees: `proposed` is where `buyRound`
  * runs, and a `merge`-point verdict is taken by `integrate()` as
- * `gatesPassed: false` and comes back out as `gate-failed`. `decideFix` is
+ * `stepsPassed: false` and comes back out as `gate-failed`. `decideFix` is
  * never asked about it — no `FixRequested` and no `FixDeclined` — so it is the
  * case that proves a lane `gate-failed` is not always one a round declined.
  * Before `#143` it bought a whole new run.
@@ -711,7 +711,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'a change the 
     expect(item.question).toContain("gate-failed");
     // The sentence, rather than the reason code the question still carries.
     expect(item.diagnosis?.what).toBe(
-      `a gate refused agent/143, so it was not merged into develop.`,
+      `a step refused agent/143, so it was not merged into develop.`,
     );
     // Whose failure it is and why nothing is coming — `whoseFailure`'s answer,
     // composed by `diagnoseRefusal` and handed in by nobody.
@@ -802,7 +802,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'the repair th
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
-    expect(result.gate).toBe("merge");
+    expect(result.step).toBe("merge");
     // Nothing reached the base branch without a person.
     expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before.stdout);
 
@@ -1467,7 +1467,7 @@ git add -A && git commit -q -m "fix the race"
       } | null;
     };
     expect(block.needs).toBe("judgement");
-    expect(block.diagnosis?.what).toContain("every gate passed");
+    expect(block.diagnosis?.what).toContain("every step passed");
     expect(block.diagnosis?.recommendation?.action).toBe("approve");
     // Nothing refused, so there is nothing to quote — and null rather than an
     // empty string, so the block leaves no hole where a quote would be (#132).
@@ -1533,8 +1533,8 @@ git add -A && git commit -q -m "fix the race"
     const block = held.find((e) => e.type === "WorkItemBlocked")!.data as {
       diagnosis: { what: string; raw: string | null } | null;
     };
-    // The name is still there, because a reader has to know which gate.
-    expect(block.diagnosis?.what).toContain("gate refused it");
+    // The name is still there, because a reader has to know which step.
+    expect(block.diagnosis?.what).toContain("step refused it");
     // And the reason is there too, verbatim, which it was not.
     expect(block.diagnosis?.raw).toContain("this branch may not land");
   }, 240_000);
@@ -1578,7 +1578,7 @@ git add -A && git commit -q -m "the work a person is asked about"
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
-    expect(result.gate).toBe("proposed");
+    expect(result.step).toBe("proposed");
 
     // The whole of the ticket: the sha the hold names is on origin, so the
     // approval it is asking for can be acted on.
@@ -1678,7 +1678,7 @@ git add -A && git commit -q -m "fix the race"
     expect(result.ok, JSON.stringify(result)).toBe("held");
     if (result.ok !== "held") return;
     created.add(result.runId);
-    expect(result.gate).toBe("merge");
+    expect(result.step).toBe("merge");
 
     // Nothing reached the base branch. That is the entire ticket.
     expect((await g(["rev-parse", "develop"], originPath)).stdout).toBe(before.stdout);
@@ -1696,6 +1696,7 @@ git add -A && git commit -q -m "fix the race"
     const asked = atMerge("ApprovalRequested");
     expect(asked).toHaveLength(1);
     expect(asked[0]!.data).toMatchObject({
+      // The payload's own field, which `gateBase` still spells `gate`.
       gate: "merge",
       action: "approval",
       onSha: result.headSha,
@@ -1804,7 +1805,7 @@ git add -A && git commit -q -m "fix the race"
 
     // And it resolves *once*. Asking again — a second approval, a replay —
     // appends nothing, and the item's own stream is where that is checked.
-    const close: GateAction = { name: "close the ticket", close: true, when: "landed" };
+    const close: StepAction = { name: "close the ticket", close: true, when: "landed" };
     await appendEndActions(store, result.workItemId, [close], "landed");
     expect(outcomes(await store.read(result.workItemId))).toEqual(["blocked", "landed"]);
   }, 180_000);
@@ -1875,7 +1876,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 130,
-        gate: "merge:no-merge",
+        step: "merge:no-merge",
         by: "human:test",
         reason: "   ",
         store,
@@ -1891,7 +1892,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 131,
-        gate: "merge:no-merge",
+        step: "merge:no-merge",
         by: "human:test",
         reason: "unrelated flake in the importer suite",
         store,
@@ -1912,7 +1913,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 132,
-        gate: "merge:no-merge",
+        step: "merge:no-merge",
         by: "human:test",
         reason: "looks fine",
         // What a stale card would send.
@@ -1937,7 +1938,7 @@ git add -A && git commit -q -m "fix the race"
       created.add(r.runId);
       const before = (await g(["rev-parse", "develop"], originPath)).stdout;
 
-      const gate = (type: string, action: string, onSha: string, extra: object) => ({
+      const step = (type: string, action: string, onSha: string, extra: object) => ({
         type,
         actor: "conductor",
         data: parsePayload(type as "GateFailed", { gate: "proposed", action, runId: r.runId, onSha, ...extra } as never),
@@ -1945,10 +1946,10 @@ git add -A && git commit -q -m "fix the race"
       const run = await store.read(r.runId);
       await store.append(r.runId, run.length, [
         // Refused an earlier head: not about this diff, so nothing to waive.
-        gate("GateFailed", "build", "c".repeat(40), { evidence: "red", findings: [] }),
+        step("GateFailed", "build", "c".repeat(40), { evidence: "red", findings: [] }),
         // Still refusing the head the approval is about.
-        gate("GateFailed", "review", r.headSha, { evidence: "wrong approach", findings: [] }),
-        gate("GateNeverRan", "scan", r.headSha, { detail: "quota" }),
+        step("GateFailed", "review", r.headSha, { evidence: "wrong approach", findings: [] }),
+        step("GateNeverRan", "scan", r.headSha, { detail: "quota" }),
       ]);
       const approving = {
         project: PROJECT,
@@ -2013,7 +2014,7 @@ git add -A && git commit -q -m "fix the race"
       const outcome = await waive({
         project: PROJECT,
         issue: 1501,
-        gate: "proposed:build-that-never-was",
+        step: "proposed:build-that-never-was",
         by: "human:test",
         reason: "unrelated flake",
         store,

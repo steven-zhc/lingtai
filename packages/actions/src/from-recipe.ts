@@ -7,7 +7,7 @@
  * is worse than a run that will not start.
  */
 import type { Step } from "@lingtai/domain";
-import { type ActionKind, type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
+import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type AgentActionDeps, createAgentAction } from "./agent-action.ts";
 import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
@@ -68,7 +68,7 @@ export class ActionUnavailableError extends Error {
  */
 export function actionsFromRecipe(
   step: Step,
-  actions: readonly GateAction[],
+  actions: readonly StepAction[],
   deps: ActionDeps = {},
 ): Action[] {
   return actions.map((action) => {
@@ -140,7 +140,7 @@ export function actionsFromRecipe(
 
     // `close` and `labels` are effects, not verdicts. The check above refuses
     // one at any step that decides; reaching here is `actionsFromRecipe("end",
-    // …)`, which nothing does — `end` is resolved by `end-point.ts` and carried
+    // …)`, which nothing does — `end` is resolved by `end-step.ts` and carried
     // out by `tell.ts`, and there is no pipeline for it to be an action in.
     throw new ActionUnavailableError(
       action.name,

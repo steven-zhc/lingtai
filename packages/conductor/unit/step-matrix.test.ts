@@ -51,7 +51,7 @@ import { describe, expect, it } from "vitest";
 import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from "@lingtai/domain";
 import {
   type ActionKind,
-  type GateAction,
+  type StepAction,
   StepMap,
   KINDS_AT,
   PLUGINS,
@@ -64,7 +64,7 @@ import {
   actionsFromRecipe,
   verdictFor,
 } from "@lingtai/actions";
-import { resolveEndActions } from "../src/end-point.ts";
+import { resolveEndActions } from "../src/end-step.ts";
 import { BUILT_IN_FOR } from "../src/judge.ts";
 import { decideBacklog } from "../src/backlog.ts";
 
@@ -76,10 +76,10 @@ import { decideBacklog } from "../src/backlog.ts";
  * *refused by name* rather than *unrepresentable*, and an action the schema
  * never sees is a column this file would walk with nothing in it.
  */
-const ACTION: Record<ActionKind, GateAction> = {
+const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
   agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
-  watch: { name: "tamper", watch: ["**/gates.yml"], then: "fail" },
+  watch: { name: "tamper", watch: ["**/steps.yml"], then: "fail" },
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
   labels: { name: "label it", labels: ["shipped"], when: "any" },
@@ -159,8 +159,8 @@ const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
 const HAS_A_CALL_SITE = ["prepared", "proposed", "merge", "end"] as const;
 
 /** Does the code that consumes this step actually dispatch this action? */
-function runsAt(point: Step, kind: ActionKind): boolean {
-  if (!(HAS_A_CALL_SITE as readonly string[]).includes(point)) {
+function runsAt(step: Step, kind: ActionKind): boolean {
+  if (!(HAS_A_CALL_SITE as readonly string[]).includes(step)) {
     // Nothing constructs a pipeline at `claim`, `admit`, `design`, `implement`,
     // `build` or `review`: no call site, nothing to ask. Five of those six are
     // named by 0058 §3 and built by its next ticket; `admit` has been in the
@@ -170,13 +170,13 @@ function runsAt(point: Step, kind: ActionKind): boolean {
   // A throw is a refusal and not a run, which is the answer this asks for; the
   // refusals themselves are asserted by name below.
   try {
-    if (point === "end") {
+    if (step === "end") {
       const resolved = resolveEndActions([], [ACTION[kind]], "landed");
       const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? [];
       return named.some((a) => a.name === ACTION[kind].name);
     }
-    return actionsFromRecipe(point, [ACTION[kind]], DEPS[point as keyof typeof DEPS]).some(
-      (gate) => gate.name === ACTION[kind].name,
+    return actionsFromRecipe(step, [ACTION[kind]], DEPS[step as keyof typeof DEPS]).some(
+      (step) => step.name === ACTION[kind].name,
     );
   } catch {
     return false;
@@ -184,13 +184,13 @@ function runsAt(point: Step, kind: ActionKind): boolean {
 }
 
 /** Does a recipe naming this action at this point resolve? */
-function accepted(point: Step, kind: ActionKind): string | null {
-  const parsed = StepMap.safeParse({ [point]: [ACTION[kind]] });
+function accepted(step: Step, kind: ActionKind): string | null {
+  const parsed = StepMap.safeParse({ [step]: [ACTION[kind]] });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
 
 describe("every step × kind cell runs or refuses", () => {
-  const cells = STEPS.flatMap((point) => KINDS.map((kind) => [point, kind] as const));
+  const cells = STEPS.flatMap((step) => KINDS.map((kind) => [step, kind] as const));
 
   /**
    * **The size of the matrix is the closed set's, and it is read rather than
@@ -207,13 +207,13 @@ describe("every step × kind cell runs or refuses", () => {
     }
   });
 
-  it.each(cells)("%s × %s", (point, kind) => {
-    const refusal = accepted(point, kind);
+  it.each(cells)("%s × %s", (step, kind) => {
+    const refusal = accepted(step, kind);
     if (refusal === null) {
       // Accepted, so it must run. This is the half `#58` and `#61` are about:
       // a recipe the log says was resolved, and a point that never called it.
-      expect(whyNoKindAt(point, kind)).toBeNull();
-      expect(runsAt(point, kind), `${point} accepts a ${kind} action and nothing runs it`).toBe(
+      expect(whyNoKindAt(step, kind)).toBeNull();
+      expect(runsAt(step, kind), `${step} accepts a ${kind} action and nothing runs it`).toBe(
         true,
       );
       return;
@@ -222,9 +222,9 @@ describe("every step × kind cell runs or refuses", () => {
     // a reason about the point rather than about a missing dependency.
     expect(refusal).toContain(`"${ACTION[kind].name}"`);
     expect(refusal).toContain(`"${kind}"`);
-    expect(refusal).toContain(`"${point}"`);
-    expect(whyNoKindAt(point, kind)).not.toBeNull();
-    expect(runsAt(point, kind)).toBe(false);
+    expect(refusal).toContain(`"${step}"`);
+    expect(whyNoKindAt(step, kind)).not.toBeNull();
+    expect(runsAt(step, kind)).toBe(false);
   });
 
   /**
@@ -234,17 +234,17 @@ describe("every step × kind cell runs or refuses", () => {
    * to answer the same at both doors.
    */
   it.each(
-    (["prepared", "proposed", "merge"] as const).flatMap((point) =>
-      KINDS.filter((kind) => whyNoKindAt(point, kind) !== null).map(
-        (kind) => [point, kind] as const,
+    (["prepared", "proposed", "merge"] as const).flatMap((step) =>
+      KINDS.filter((kind) => whyNoKindAt(step, kind) !== null).map(
+        (kind) => [step, kind] as const,
       ),
     ),
-  )("actionsFromRecipe refuses %s × %s by name", (point, kind) => {
-    expect(() => actionsFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
+  )("actionsFromRecipe refuses %s × %s by name", (step, kind) => {
+    expect(() => actionsFromRecipe(step, [ACTION[kind]], DEPS[step])).toThrow(
       ActionUnavailableError,
     );
-    expect(() => actionsFromRecipe(point, [ACTION[kind]], DEPS[point])).toThrow(
-      new RegExp(`"${kind}" at the "${point}" point`),
+    expect(() => actionsFromRecipe(step, [ACTION[kind]], DEPS[step])).toThrow(
+      new RegExp(`"${kind}" at the "${step}" step`),
     );
   });
 
@@ -267,7 +267,7 @@ describe("every step × kind cell runs or refuses", () => {
     "resolveEndActions refuses end × %s by name, rather than dropping it",
     (kind) => {
       expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
-        new RegExp(`"${kind}" at the "end" point`),
+        new RegExp(`"${kind}" at the "end" step`),
       );
       expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
         new RegExp(`"${ACTION[kind].name}"`),
@@ -277,7 +277,7 @@ describe("every step × kind cell runs or refuses", () => {
 
   /**
    * And the keys that guard reads are the row, not a second list beside it: a
-   * kind added to `KINDS_AT.end` whose key `end-point.ts` does not test would
+   * kind added to `KINDS_AT.end` whose key `end-step.ts` does not test would
    * be accepted by the schema and thrown out by the point.
    */
   it("refuses at `end` exactly the kinds `KINDS_AT` says it does not run", () => {
@@ -481,11 +481,11 @@ describe("every step × kind cell runs or refuses", () => {
    * refused mid-pass and released the item, which is the failure this whole
    * file exists to make impossible.
    */
-  it("is the deps run-once passes at each point", async () => {
+  it("is the deps run-once passes at each step", async () => {
     const src = await readFile(new URL("../src/run-once.ts", import.meta.url), "utf8");
     expect(src).toMatch(/actionsFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
-    expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*gateDeps\s*\)/);
-    expect(src).toMatch(/actionsFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*gateDeps\s*\)/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*stepDeps\s*\)/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*stepDeps\s*\)/);
     // And nowhere else *in this file*: a fourth call site here is a point this
     // test does not know about, judging with deps it has not been told. The
     // whole tree is the next test's.
@@ -571,19 +571,19 @@ describe("doc/reference.md's matrix", () => {
         continue;
       }
       if (header === null) continue;
-      const point = cells[0]?.replace(/[`*]/g, "");
-      if (cells.length === width && STEPS.includes(point as Step)) {
-        rows.set(point!, cells.slice(1));
+      const step = cells[0]?.replace(/[`*]/g, "");
+      if (cells.length === width && STEPS.includes(step as Step)) {
+        rows.set(step!, cells.slice(1));
       }
     }
 
-    expect(header, "no point × kind table in doc/reference.md").not.toBeNull();
+    expect(header, "no step × kind table in doc/reference.md").not.toBeNull();
     expect([...rows.keys()]).toEqual([...STEPS]);
-    for (const point of STEPS) {
-      const drawn = rows.get(point)!;
+    for (const step of STEPS) {
+      const drawn = rows.get(step)!;
       KINDS.forEach((kind, i) => {
-        const runs = whyNoKindAt(point, kind) === null;
-        expect(drawn[i]?.replace(/[`*]/g, ""), `${point} × ${kind} in doc/reference.md`).toBe(
+        const runs = whyNoKindAt(step, kind) === null;
+        expect(drawn[i]?.replace(/[`*]/g, ""), `${step} × ${kind} in doc/reference.md`).toBe(
           runs ? RUNS : REFUSES,
         );
       });
@@ -594,8 +594,8 @@ describe("doc/reference.md's matrix", () => {
     // steps with no call site, not the total — while the table below it drew
     // forty-nine, so a reader auditing the closed set counted one number
     // against another and concluded the code or the table had drifted.
-    const refusals = STEPS.flatMap((point) =>
-      KINDS.map((kind) => whyNoKindAt(point, kind)),
+    const refusals = STEPS.flatMap((step) =>
+      KINDS.map((kind) => whyNoKindAt(step, kind)),
     ).filter((why) => why !== null).length;
     expect(refusals).toBe(108);
     expect(

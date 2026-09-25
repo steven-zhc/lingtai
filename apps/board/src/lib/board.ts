@@ -37,7 +37,7 @@ import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue"
 import { passedOver, runnableNow } from "@lingtai/conductor/discover";
 import { loadAllProjects } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/filter";
-import { projectFilter, type GatePlan, type ProjectFilter } from "@lingtai/conductor/filter";
+import { projectFilter, type StepPlan, type ProjectFilter } from "@lingtai/conductor/filter";
 import { foldProgress, type RunProgress } from "./progress.ts";
 
 /**
@@ -575,7 +575,7 @@ export async function queuedCards(
    * Gathered here for the reason `backoffMs` is: this loop already resolved
    * every recipe, and reading one twice is how a render gets expensive.
    */
-  plans: Map<string, GatePlan>;
+  plans: Map<string, StepPlan>;
   /**
    * What each project's repository calls each kind's colour, keyed by project
    * and then by kind. Off the issues `runnableNow` has already read, for the
@@ -594,7 +594,7 @@ export async function queuedCards(
   // arrived with the first answer is how a render gets expensive.
   const limits: PassLimitsView[] = [];
   const backoffMs = new Map<string, number>();
-  const plans = new Map<string, GatePlan>();
+  const plans = new Map<string, StepPlan>();
   const kindColors = new Map<string, Record<string, string>>();
   // First mention wins, so two projects that order their kinds differently give
   // one column one order rather than an order that changes as rows arrive.
@@ -722,7 +722,7 @@ export async function queuedCards(
  */
 async function laneProgress(
   tasks: readonly TaskCard[],
-  plans: ReadonlyMap<string, GatePlan>,
+  plans: ReadonlyMap<string, StepPlan>,
 ): Promise<Map<string, RunProgress>> {
   const folded = await Promise.all(
     railCandidates(tasks).map(async ({ task, over }) => {
@@ -747,7 +747,7 @@ export interface RailCandidate {
    * point that recorded nothing from `pending` into `never-ran`, so it is held
    * to `landedWithoutSteps`'s own anchor: *an item that landed is the case
    * with no excuse — a change on the base branch went past every point on its
-   * way there* (`gate-audit.ts`). A **closed** item has that excuse and shares
+   * way there* (`step-audit.ts`). A **closed** item has that excuse and shares
    * this lane anyway (`COLUMN_OF`): the pipeline stops at the first refusal
    * (0041 §4), so a run refused at `prepared` and then closed by a person has
    * later points that correctly did not run, and marking them our bug would

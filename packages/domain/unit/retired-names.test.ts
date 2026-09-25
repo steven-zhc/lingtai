@@ -302,7 +302,7 @@ function parse(doc: string) {
     outside: { occurrences: Number(outside![1]), files: Number(outside![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
-    /** `GatePoint` → `Step` and `GateAction` → `Plugin`: a replacement the word rules do not give. */
+    /** `GatePoint` → `Step` and `GateAction` → `StepAction`: a replacement the word rules do not give. */
     named: glossaryRows.filter((r) => !/^[a-z]+$/.test(r[0]!)).map((r) => [r[0]!, r[1]!] as const),
     /**
      * Tokens that carry a retired word glued to a letter, where the whole-word
@@ -432,7 +432,10 @@ describe("the retired names in doc/reference.md", () => {
 
     expect(g.retired).toEqual(["gate", "gates", "point", "points"]);
     expect(g.named.map(([old]) => old)).toEqual(["GatePoint", "GateAction", "Gate"]);
-    expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "Plugin", Gate: "Action" });
+    // `GateAction` is `StepAction` and not `Plugin` since `#250`: `#228` took
+    // `Plugin` for the plugin *definition* — a key, its fields and its schema —
+    // and a `GateAction` is one written use of one, so only the retired word moves.
+    expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "StepAction", Gate: "Action" });
   });
 
   /**

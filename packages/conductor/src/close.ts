@@ -50,8 +50,8 @@
 import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import type { GitHubClient } from "@lingtai/github";
-import type { GateAction } from "@lingtai/recipe";
-import { resolveEndActions } from "./end-point.ts";
+import type { StepAction } from "@lingtai/recipe";
+import { resolveEndActions } from "./end-step.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { currentRecipe } from "./projects.ts";
@@ -114,7 +114,7 @@ export async function close(options: {
   // Before the close is recorded, so an unreadable recipe refuses rather than
   // appending a terminal whose point silently could not run — `approve`'s rule
   // and its reason (0005, 0044).
-  let end: readonly GateAction[] = [];
+  let end: readonly StepAction[] = [];
   if (options.state && options.client) {
     try {
       const state = options.state;

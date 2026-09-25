@@ -1,5 +1,5 @@
 /**
- * **`end`'s third effect, carried out** (`#240`) — the half `end-point.ts` does
+ * **`end`'s third effect, carried out** (`#240`) — the half `end-step.ts` does
  * not do.
  *
  * Resolving is a decision and doing is I/O, and they are two steps on purpose;

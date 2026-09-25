@@ -326,7 +326,7 @@ describe("what a person is shown when the rounds are over", () => {
    * refused*. The second sentence describes the first half of something that has
    * since happened twice.
    */
-  it("says two agents disagreed, and not that a gate refused", () => {
+  it("says two agents disagreed, and not that a step refused", () => {
     expect(diagnosis.what).toContain("Two agents disagreed");
     expect(diagnosis.what).not.toMatch(/gate refused/i);
     expect(diagnosis.what).toContain("agent/123");
@@ -550,7 +550,7 @@ describe("the headline says what stopped the pass", () => {
    * An argument, and the one ending where the findings are not what to read
    * first. 0039 §5's point, carried all the way to the headline.
    */
-  it("opens a decline with the decline, and points at the objection", () => {
+  it("opens a decline with the decline, and steps at the objection", () => {
     const declined = card({ ended: "declined" });
 
     expect(declined.what).toMatch(/declined/i);
@@ -693,7 +693,7 @@ describe("the headline says what stopped the pass", () => {
    * believes them adjudicates instead of raising the ceiling or reading the
    * findings.
    */
-  it("does not say two agents disagreed where the rounds went on another point", () => {
+  it("does not say two agents disagreed where the rounds went on another step", () => {
     const after = (rounds: number, refusals: number) =>
       diagnoseDisagreement({
         action: "review",
@@ -927,7 +927,7 @@ describe("the headline says what stopped the pass", () => {
      * instead of understated — and overstated in the direction that makes a
      * person readier to treat the red as settled.
      */
-    it("counts the diffs this point refused, and not the rounds the pass bought", () => {
+    it("counts the diffs this step refused, and not the rounds the pass bought", () => {
       const after = (rounds: number, refusals: number, stop: FixStop) =>
         diagnoseUnfixed({
           action: "build",
@@ -945,7 +945,7 @@ describe("the headline says what stopped the pass", () => {
       expect(after(1, 1, { ended: "crashed", failure: "crash: ENOSPC" })).toContain(
         "and nothing was run again",
       );
-      expect(after(1, 1, { ended: "declined" })).toContain("the point has run once");
+      expect(after(1, 1, { ended: "declined" })).toContain("the step has run once");
 
       // Round 2, both of them this point's — two results, and only the last of
       // them untested.
@@ -967,9 +967,9 @@ describe("the headline says what stopped the pass", () => {
         expect(once).not.toContain("2 times in all");
         expect(once).not.toContain("2 different diffs");
       }
-      expect(after(2, 2, { ended: "declined" })).toContain("the point has run 2 times");
+      expect(after(2, 2, { ended: "declined" })).toContain("the step has run 2 times");
       expect(after(2, 2, { ended: "declined" })).not.toContain("has run once");
-      expect(after(2, 1, { ended: "declined" })).toContain("the point has run once");
+      expect(after(2, 1, { ended: "declined" })).toContain("the step has run once");
     });
 
     /**
@@ -987,7 +987,7 @@ describe("the headline says what stopped the pass", () => {
      * overstated in the direction that makes a person readier to merge over the
      * red or close the ticket rather than requeue it.
      */
-    it("does not call a check repeated where the rounds went on another point", () => {
+    it("does not call a check repeated where the rounds went on another step", () => {
       const after = (rounds: number, refusals: number) =>
         diagnoseUnfixed({
           action: "build",
@@ -1471,10 +1471,10 @@ describe("what a conflict tells the fixer", () => {
   /**
    * The strictest acceptance test of the three, and the only one that is two
    * things. Taking one side wholesale merges cleanly and is exactly the wrong
-   * answer, so the second half — the point runs again — is what catches it.
+   * answer, so the second half — the step runs again — is what catches it.
    */
-  it("asks for both the merge and the point, and refuses picking a side", () => {
-    expect(brief).toMatch(/the whole `proposed` point runs\s+again/i);
+  it("asks for both the merge and the step, and refuses picking a side", () => {
+    expect(brief).toMatch(/the whole `proposed` step runs\s+again/i);
     expect(brief).toMatch(/both have to\s+pass/i);
     expect(brief).toMatch(/--ours` and `--theirs` wholesale are not a resolution/i);
     expect(brief).toMatch(/Do not\s+`git merge --abort`/i);

@@ -48,7 +48,7 @@ import {
   whyNoKindAt,
   withheld,
   worktreePlugin,
-  type GateAction,
+  type StepAction,
 } from "../src/index.ts";
 
 /** The smallest recipe that resolves, so a case can put one action in it. */
@@ -70,10 +70,10 @@ const BASE: Recipe = Recipe.parse({
  * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
 const spendPlugin = definePlugin("spend", { spend: z.string(), token: noLog(z.string()) });
-const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as GateAction;
+const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as StepAction;
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
-function withAction(action: GateAction): Recipe {
+function withAction(action: StepAction): Recipe {
   return { ...BASE, steps: { ...BASE.steps, proposed: [action] } };
 }
 
@@ -200,7 +200,7 @@ describe("every problem in one answer", () => {
 
     // The same sentence the step's own refusal opens with, so the two read as
     // one rule rather than as two mechanisms (0061 §8).
-    for (const one of said) expect(one).toMatch(/^the ".+" action is a ".+" at the ".+" point, and /);
+    for (const one of said) expect(one).toMatch(/^the ".+" action is a ".+" at the ".+" step, and /);
     for (const one of said) expect(one).toContain("before a worktree, before an agent, before any money");
   });
 
@@ -235,7 +235,7 @@ describe("a `no_log` field never leaves its plugin", () => {
 
     // An action with nothing to withhold is the object it was given, so the
     // six plugins in use today are untouched by any of this.
-    const build: GateAction = { name: "build", run: "x", timeout: "15m", env: [] };
+    const build: StepAction = { name: "build", run: "x", timeout: "15m", env: [] };
     expect(disclose(build, PLUGINS)).toBe(build);
     // An optional secret nobody wrote is not invented, so a recipe without one
     // is not made into a recipe with one.
@@ -275,14 +275,14 @@ describe("a `no_log` field never leaves its plugin", () => {
    * dropped.
    */
   it("keeps two recipes that differ only in a secret two documents", () => {
-    const a = withAction({ name: "pay", spend: "50 USD", token: "KEY_A" } as unknown as GateAction);
-    const b = withAction({ name: "pay", spend: "50 USD", token: "KEY_B" } as unknown as GateAction);
+    const a = withAction({ name: "pay", spend: "50 USD", token: "KEY_A" } as unknown as StepAction);
+    const b = withAction({ name: "pay", spend: "50 USD", token: "KEY_B" } as unknown as StepAction);
 
     expect(hashRecipe(a, [spendPlugin])).not.toBe(hashRecipe(b, [spendPlugin]));
     // And an action that carries a credential is not the same document as the
     // same action carrying none.
     expect(hashRecipe(a, [spendPlugin])).not.toBe(
-      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as GateAction), [spendPlugin]),
+      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as StepAction), [spendPlugin]),
     );
     // Neither body says which key, and both say there was one.
     for (const recipe of [a, b]) {
@@ -366,7 +366,7 @@ describe("a `no_log` field never leaves its plugin", () => {
 
   /** What the six do today, so the strip cannot be silently costing anything. */
   it("changes nothing for a recipe with no secret field in it", () => {
-    const build: GateAction = { name: "build", run: "pnpm verify", timeout: "15m", env: [] };
+    const build: StepAction = { name: "build", run: "pnpm verify", timeout: "15m", env: [] };
     const recipe = withAction(build);
 
     expect(discloseSteps(recipe.steps).proposed).toEqual([build]);
@@ -426,7 +426,7 @@ describe("the six behind the contract", () => {
  *   true and about the wrong thing; inside it, an operator is told which file
  *   cuts their worktree today. That the *schema* carries that sentence — the
  *   action, its plugin, its step — is asserted of all twenty cells by
- *   `packages/conductor/unit/gate-matrix.test.ts`, which walks the closed set
+ *   `packages/conductor/unit/step-matrix.test.ts`, which walks the closed set
  *   rather than a list of its own; what is here is the sentence itself.
  * - **`merge:` declares no `base:`.** `base` is one value that flows (§4), and
  *   a second declaration would manufacture a disagreement between what a pass
@@ -517,7 +517,7 @@ describe("the two the pass calls itself", () => {
  * - **Refused at all ten steps, by a sentence that says where the code is** and
  *   how `claim` will reduce the list when it reads it. The first half is the
  *   same property `worktree:` and `merge:` have; the second is this plugin's
- *   own, and `packages/conductor/unit/gate-matrix.test.ts` is where it is
+ *   own, and `packages/conductor/unit/step-matrix.test.ts` is where it is
  *   pinned.
  */
 describe("the one `claim` will hold", () => {
@@ -753,7 +753,7 @@ describe("the one that deletes", () => {
       }
       expect(whyNoKindAt(step, "refs"), `${step} × refs is accepted`).not.toBeNull();
     }
-    expect(whyNoKindAt("proposed", "refs")).toContain("only the `end` point carries out effects");
+    expect(whyNoKindAt("proposed", "refs")).toContain("only the `end` step carries out effects");
   });
 
   /**

@@ -9,8 +9,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { STEPS, type Envelope, type Step } from "@lingtai/domain";
-import type { GatePlan } from "@lingtai/conductor/filter";
-import { AGENT, elapsed, foldProgress, type PointState } from "../src/lib/progress.ts";
+import type { StepPlan } from "@lingtai/conductor/filter";
+import { AGENT, elapsed, foldProgress, type StepState } from "../src/lib/progress.ts";
 
 let seq = 0n;
 
@@ -29,20 +29,20 @@ function at(time: string, type: string, data: unknown): Envelope {
   };
 }
 
-const gate = (point: Step, action: string) => ({
-  gate: point,
+const step = (step: Step, action: string) => ({
+  gate: step,
   action,
   runId: "run-59",
   onSha: "b1b8694",
 });
 
 /**
- * This repository's own recipe, as `gatePlan` reduces it — every point present
+ * This repository's own recipe, as `stepPlan` reduces it — every point present
  * and every duration already a number. That reduction has its own test in
  * `packages/conductor/unit/filter.test.ts`; this one is about what the fold
  * does with the answer.
  */
-const PLAN: GatePlan = new Map([
+const PLAN: StepPlan = new Map([
   ["admit", []],
   ["prepared", [{ name: "install", budgetMs: 10 * 60_000 }]],
   ["proposed", [{ name: "build", budgetMs: 20 * 60_000 }]],
@@ -54,9 +54,9 @@ const PLAN: GatePlan = new Map([
 function timeline(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-04T17:12:20Z", "GateRequested", gate("prepared", "install")),
-    at("2026-09-04T17:12:20Z", "GateStarted", gate("prepared", "install")),
-    at("2026-09-04T17:12:26Z", "GatePassed", { ...gate("prepared", "install"), evidence: "ok", findings: [] }),
+    at("2026-09-04T17:12:20Z", "GateRequested", step("prepared", "install")),
+    at("2026-09-04T17:12:20Z", "GateStarted", step("prepared", "install")),
+    at("2026-09-04T17:12:26Z", "GatePassed", { ...step("prepared", "install"), evidence: "ok", findings: [] }),
     at("2026-09-04T17:12:30Z", "RunStarted", {
       workItemId: "wi-lingtai-59",
       invocation: { command: "claude", args: [], tier: "guarded", limits: { turns: 150, wallMs: 3_600_000 } },
@@ -64,9 +64,9 @@ function timeline(): Envelope[] {
     at("2026-09-04T17:12:30Z", "GatesResolved", {
       runId: "run-59",
       configHash: "abc",
-      points: STEPS.map((point) => ({
-        gate: point,
-        actions: (PLAN.get(point) ?? []).map((a) => a.name),
+      points: STEPS.map((step) => ({
+        gate: step,
+        actions: (PLAN.get(step) ?? []).map((a) => a.name),
       })),
     }),
     at("2026-09-04T17:20:42Z", "RunProposedCompletion", { headSha: "b1b8694" }),
@@ -76,13 +76,13 @@ function timeline(): Envelope[] {
       durationMs: 492_000,
       costUsd: 2.19,
     }),
-    at("2026-09-04T17:20:43Z", "GateRequested", gate("proposed", "build")),
-    at("2026-09-04T17:20:43Z", "GateStarted", gate("proposed", "build")),
+    at("2026-09-04T17:20:43Z", "GateRequested", step("proposed", "build")),
+    at("2026-09-04T17:20:43Z", "GateStarted", step("proposed", "build")),
   ];
 }
 
-const stateOf = (points: readonly { point: string; state: PointState }[], point: string) =>
-  points.find((p) => p.point === point)?.state;
+const stateOf = (steps: readonly { step: string; state: StepState }[], step: string) =>
+  steps.find((p) => p.step === step)?.state;
 
 describe("where a run has got to", () => {
   it("names the point it is at and how far into that point's budget", () => {
@@ -90,7 +90,7 @@ describe("where a run has got to", () => {
 
     expect(progress?.now?.label).toBe("proposed:build");
     expect(progress?.now?.since).toBe("2026-09-04T17:20:43.000Z");
-    // The recipe's own `timeout: 20m`, parsed once by `gatePlan`. Without the
+    // The recipe's own `timeout: 20m`, parsed once by `stepPlan`. Without the
     // denominator "slow" and "about to be killed" read the same.
     expect(progress?.now?.budgetMs).toBe(20 * 60_000);
   });
@@ -127,15 +127,15 @@ describe("where a run has got to", () => {
    * the only other way a point can be silent.
    */
   it("shows all ten steps, and which are done", () => {
-    const points = foldProgress(timeline(), PLAN)?.points ?? [];
+    const steps = foldProgress(timeline(), PLAN)?.steps ?? [];
 
-    expect(points.map((p) => p.point)).toEqual([...STEPS]);
-    expect(stateOf(points, "admit")).toBe("skipped");
-    expect(stateOf(points, "prepared")).toBe("passed");
-    expect(stateOf(points, "proposed")).toBe("running");
-    expect(stateOf(points, "merge")).toBe("skipped");
+    expect(steps.map((p) => p.step)).toEqual([...STEPS]);
+    expect(stateOf(steps, "admit")).toBe("skipped");
+    expect(stateOf(steps, "prepared")).toBe("passed");
+    expect(stateOf(steps, "proposed")).toBe("running");
+    expect(stateOf(steps, "merge")).toBe("skipped");
     // Configured, not reached. Not the same fact as nothing being there.
-    expect(stateOf(points, "end")).toBe("pending");
+    expect(stateOf(steps, "end")).toBe("pending");
   });
 
   /**
@@ -145,25 +145,25 @@ describe("where a run has got to", () => {
    */
   it("names a configured point before GatesResolved has landed", () => {
     const first = timeline().slice(0, 3);
-    const points = foldProgress(first, PLAN)?.points ?? [];
+    const steps = foldProgress(first, PLAN)?.steps ?? [];
 
-    expect(stateOf(points, "proposed")).toBe("pending");
-    expect(points.find((p) => p.point === "proposed")?.planned).toEqual(["build"]);
-    expect(stateOf(points, "merge")).toBe("skipped");
+    expect(stateOf(steps, "proposed")).toBe("pending");
+    expect(steps.find((p) => p.step === "proposed")?.planned).toEqual(["build"]);
+    expect(stateOf(steps, "merge")).toBe("skipped");
   });
 
   it("reads a failure at a point as failed, whatever else that point did", () => {
     const failed = [
       ...timeline(),
       at("2026-09-04T17:34:00Z", "GateFailed", {
-        ...gate("proposed", "build"),
+        ...step("proposed", "build"),
         evidence: "2 tests failed",
         findings: [],
       }),
     ];
     const progress = foldProgress(failed, PLAN);
 
-    expect(stateOf(progress?.points ?? [], "proposed")).toBe("failed");
+    expect(stateOf(progress?.steps ?? [], "proposed")).toBe("failed");
     // The verdict ended the phase; nothing is executing.
     expect(progress?.now).toBeNull();
   });
@@ -173,7 +173,7 @@ describe("where a run has got to", () => {
     const held = [
       ...timeline().slice(0, 7),
       at("2026-09-04T17:21:00Z", "ApprovalRequested", {
-        ...gate("merge", "read it"),
+        ...step("merge", "read it"),
         question: "land this?",
         artifacts: [],
       }),
@@ -198,7 +198,7 @@ describe("where a run has got to", () => {
     expect(progress?.now?.label).toBe("proposed:build");
     expect(progress?.now?.budgetMs).toBeNull();
     // The plan the log recorded is still the plan.
-    expect(stateOf(progress?.points ?? [], "prepared")).toBe("passed");
+    expect(stateOf(progress?.steps ?? [], "prepared")).toBe("passed");
   });
 });
 

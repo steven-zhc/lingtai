@@ -39,7 +39,7 @@
  * skip is the user's decision, and `GatesResolved` already records it.
  */
 import { workItemStream } from "@lingtai/domain";
-import { type GateAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
+import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
@@ -89,7 +89,7 @@ export type TerminalOutcome = "landed" | "blocked" | "failed" | "closed";
  */
 export function resolveEndActions(
   events: readonly Envelope[],
-  actions: readonly GateAction[],
+  actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): ToAppend[] {
   // Nothing declared is not this point's business: the skip is the user's
@@ -163,7 +163,7 @@ export function resolveEndActions(
 export async function appendEndActions(
   store: EventStore,
   workItemId: string,
-  actions: readonly GateAction[],
+  actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): Promise<ToAppend[]> {
   if (actions.length === 0) return [];
@@ -200,7 +200,7 @@ export interface UnresolvedEnd {
  * The last hyphen, which is what keeps a project name containing one intact.
  * Safe because the same code writes the id — `workItemStream` in `discover.ts`.
  *
- * Exported for `gate-audit.ts`, which asks the same question about the gating
+ * Exported for `step-audit.ts`, which asks the same question about the gating
  * points that this file asks about `end`, and not re-exported from the barrel:
  * a caller outside the conductor has a `ProjectState` and does not need it.
  */
@@ -228,7 +228,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, computed from the log alone.** `GatesResolved` names all ten steps
  * and the actions planned for each — `.length(10)` in the schema since 0058 §3
- * widened the vocabulary, and the same event `gate-audit.ts` reads for the
+ * widened the vocabulary, and the same event `step-audit.ts` reads for the
  * other nine — so "the recipe asked for something at `end`" is a fact in the
  * log rather than in a recipe that may have changed since;
  * `EndActionsResolved` on the item's own stream is the record that the step

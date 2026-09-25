@@ -16,7 +16,7 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { type GateAction, RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
+import { type StepAction, RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
 import { actionsFromRecipe } from "../src/from-recipe.ts";
 import { runActionPipeline } from "../src/action.ts";
@@ -29,7 +29,7 @@ const context = { runId: "run-1", onSha: "b".repeat(40), cwd: root, env: {} };
  * it is not wired. Parsed rather than duplicated: an edit to the document is an
  * edit to what this test judges, and there is no second copy to drift from.
  */
-async function documented(): Promise<GateAction[]> {
+async function documented(): Promise<StepAction[]> {
   const md = await readFile(`${root}doc/tamper-watch.md`, "utf8");
   const fence = md.match(/```yaml\n([\s\S]*?)```/);
   if (!fence) throw new Error("doc/tamper-watch.md has no yaml block — the watch list has no home");

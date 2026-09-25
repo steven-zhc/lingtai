@@ -11,12 +11,12 @@ import picomatch from "picomatch";
 
 export class BadWatchPatternError extends Error {
   override readonly name = "BadWatchPatternError";
-  readonly gate: string;
+  readonly step: string;
   readonly pattern: string;
 
-  constructor(gate: string, pattern: string, cause: string) {
-    super(`the "${gate}" gate watches "${pattern}", which is not a usable glob: ${cause}`);
-    this.gate = gate;
+  constructor(step: string, pattern: string, cause: string) {
+    super(`the "${step}" step watches "${pattern}", which is not a usable glob: ${cause}`);
+    this.step = step;
     this.pattern = pattern;
   }
 }
@@ -26,10 +26,10 @@ export interface Watcher {
   matches(paths: readonly string[]): string[];
 }
 
-export function compileWatch(gate: string, patterns: readonly string[]): Watcher {
+export function compileWatch(step: string, patterns: readonly string[]): Watcher {
   const compiled = patterns.map((pattern) => {
     if (!pattern.trim()) {
-      throw new BadWatchPatternError(gate, pattern, "it is empty");
+      throw new BadWatchPatternError(step, pattern, "it is empty");
     }
     try {
       // `dot: true` because half of what is worth watching is a dotfile —
@@ -37,7 +37,7 @@ export function compileWatch(gate: string, patterns: readonly string[]): Watcher
       // that skips them by default would watch nothing while looking correct.
       return picomatch(pattern, { dot: true });
     } catch (err) {
-      throw new BadWatchPatternError(gate, pattern, (err as Error).message);
+      throw new BadWatchPatternError(step, pattern, (err as Error).message);
     }
   });
 

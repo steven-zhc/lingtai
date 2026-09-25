@@ -6,14 +6,14 @@
  * nothing about it needs a merge lane, a worktree or GitHub. The path that
  * lands an item through an approval is exercised for real in `run-once.test.ts`.
  */
-import type { GateAction } from "@lingtai/recipe";
+import type { StepAction } from "@lingtai/recipe";
 import type { Envelope } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
-import { resolveEndActions } from "../src/end-point.ts";
+import { resolveEndActions } from "../src/end-step.ts";
 
-const CLOSE: GateAction = { name: "close the ticket", close: true, when: "landed" };
-const LABEL: GateAction = { name: "label it", labels: ["lingtai:done"], when: "any" };
-const BUILD: GateAction = { name: "build", run: "true", timeout: "2m", env: [] };
+const CLOSE: StepAction = { name: "close the ticket", close: true, when: "landed" };
+const LABEL: StepAction = { name: "label it", labels: ["lingtai:done"], when: "any" };
+const BUILD: StepAction = { name: "build", run: "true", timeout: "2m", env: [] };
 
 /** One event on a work item stream. Only `type` and `data` are read here. */
 const event = (type: string, data: unknown): Envelope => ({
@@ -31,7 +31,7 @@ const event = (type: string, data: unknown): Envelope => ({
 const resolved = (outcome: string, actions: unknown[] = []) =>
   event("EndActionsResolved", { outcome, actions });
 
-describe("the end point", () => {
+describe("the end step", () => {
   it("says nothing when the recipe declares nothing", () => {
     // The skip is the operator's decision, and `GatesResolved` already records
     // that the point was empty.
@@ -52,7 +52,7 @@ describe("the end point", () => {
    * configured and resolved to nothing is not the same fact as a point that
    * never ran, and from the log they must not look alike.
    */
-  it("still records the point when nothing matches the outcome", () => {
+  it("still records the step when nothing matches the outcome", () => {
     const [ev] = resolveEndActions([], [CLOSE], "failed");
     expect(ev?.data).toEqual({ outcome: "failed", actions: [] });
   });
@@ -66,7 +66,7 @@ describe("the end point", () => {
    */
   it("refuses an action at `end` that has no effect to run, rather than dropping it", () => {
     expect(() => resolveEndActions([], [BUILD], "landed")).toThrow(
-      /the "build" action is a "run" at the "end" point/,
+      /the "build" action is a "run" at the "end" step/,
     );
   });
 
@@ -93,8 +93,8 @@ describe("the end point", () => {
  * and the sentence quietly stopped being true. A recipe saying `when: any`
  * would have gone on saying it while doing nothing.
  */
-describe("the end point on a close", () => {
-  const CLOSE_ON_CLOSED: GateAction = { name: "close the issue", close: true, when: "closed" };
+describe("the end step on a close", () => {
+  const CLOSE_ON_CLOSED: StepAction = { name: "close the issue", close: true, when: "closed" };
 
   it("fires the actions that said any", () => {
     const [ev] = resolveEndActions([], [LABEL], "closed");
@@ -147,9 +147,9 @@ describe("the end point on a close", () => {
  * `when:` (`packages/recipe/unit/plugin.test.ts`); this holds the resolver
  * against an action built in code, which is the door the schema is not on.
  */
-describe("the end point on the refs", () => {
-  const SWEEP: GateAction = { name: "delete the arms", refs: true, branch: false, when: "landed" };
-  const SWEEP_ALL: GateAction = { name: "delete them all", refs: true, branch: true, when: "landed" };
+describe("the end step on the refs", () => {
+  const SWEEP: StepAction = { name: "delete the arms", refs: true, branch: false, when: "landed" };
+  const SWEEP_ALL: StepAction = { name: "delete them all", refs: true, branch: true, when: "landed" };
 
   it("resolves the sweep on a landing, and carries `branch` as written", () => {
     expect(resolveEndActions([], [SWEEP], "landed")[0]?.data).toEqual({

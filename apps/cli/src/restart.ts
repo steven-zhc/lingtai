@@ -935,7 +935,7 @@ export async function prepareRestart(
     log(
       paint.muted(
         drainTimeoutMs === null
-          ? `a pass is the agents, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
+          ? `a pass is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
           : `the daemon gives up after ${Math.round(drainTimeoutMs / 1000)}s and exits with its agent still running, which the next conductor kills.`,
       ),
     );
