@@ -10,8 +10,8 @@
  * credential guard came to live outside `events` entirely (#51).
  *
  * **Not a gate point.** A `human:` action at `admit` cannot be written at all —
- * `KINDS_AT` refuses the pair by name — and even run it would hold at a point with no
- * branch and no diff — the person is asked to answer, not to review. The
+ * `KINDS_AT` refuses the pair by name — and even run it would hold at a point
+ * with no branch and no diff — the person is asked to answer, not to review. The
  * decision belongs before the claim, which makes it a queue fact: the queue
  * subtracts every row the log says is not `backlog` (`queue.ts`), so a block
  * that belongs to no run is passed over by machinery that already exists.

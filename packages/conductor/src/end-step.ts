@@ -229,8 +229,8 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, computed from the log alone.** `GatesResolved` names all ten steps
  * and the actions planned for each — `.length(10)` in the schema since 0058 §3
- * widened the vocabulary — so "the recipe asked for something at `end`" is a fact in the
- * log rather than in a recipe that may have changed since;
+ * widened the vocabulary — so "the recipe asked for something at `end`" is a
+ * fact in the log rather than in a recipe that may have changed since;
  * `EndActionsResolved` on the item's own stream is the record that the step
  * ran. An item with the first and not the second is a gate that was
  * configured and did not run, which

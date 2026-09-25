@@ -223,9 +223,9 @@ time"* — exists because this repository's own `merge` point **does not execute
 (`#58`), so a run without the flag merges itself into `main` unapproved. A point
 that never refuses and a point that never runs look identical from outside, and
 this project has been on the wrong side of that for long enough to write the
-workaround into its own instructions. `lingtai doctor` carries `steps: end ran on
-what landed`, the board's bar has a `never-ran` mark of its own for a step that
-was configured and did not run, and `GatesResolved` is an
+workaround into its own instructions. `lingtai doctor` carries `steps: end ran
+on what landed`, the board's bar has a `never-ran` mark of its own for a step
+that was configured and did not run, and `GatesResolved` is an
 event rather than a convention so that an unconfigured point renders as
 `skipped` on the board and in `lingtai status` — **never omitted**. A check you
 cannot see is a check you will forget you never had.

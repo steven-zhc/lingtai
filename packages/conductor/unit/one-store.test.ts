@@ -6,9 +6,9 @@
  * ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
  * §1). There were three of them under `src/` — `listProjectStreams` in
  * `projects.ts`, `endedWithoutEndActions` in `end-step.ts` and
- * `landedWithoutSteps` in `step-audit.ts`, which `#257` has since deleted
- * whole — each opening its own
- * connection from `postgresUrl()` and writing SQL against `events`. They were
+ * `landedWithoutSteps` in `step-audit.ts`, which `#257` has since deleted whole
+ * — each opening its own connection from `postgresUrl()` and writing SQL
+ * against `events`. They were
  * readers of the log that never learned the log has an interface, and the first
  * of them is why `lingtai status`, the first command anybody types, died on a
  * machine with no Postgres.

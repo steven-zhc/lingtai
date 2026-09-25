@@ -811,8 +811,8 @@ describe("the seven states", () => {
 /**
  * `never-ran` is the one mark on the rail that accuses Lingtai rather than
  * reporting on a run, so the rule that draws it is held to the strict
- * comparison — *this item landed*, and *against
- * the plan the log says this run was given*. Everything looser than that puts
+ * comparison — *this item landed*, and *against the plan the log says this run
+ * was given*. Everything looser than that puts
  * the hatch on a pipeline that was working.
  */
 describe("the hatch, and what may not draw it", () => {

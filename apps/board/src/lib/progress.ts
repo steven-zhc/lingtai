@@ -220,10 +220,9 @@ function stateOf(
    * Both halves, because the rule below is meant to be the strict comparison
    * and not a looser one: the plan is the `GatesResolved` the run was given, so
    * a run whose stream has none accuses nothing — and here such a run is folded
-   * against the
-   * recipe being read *now*, which may not be the one it got. Calling a point
-   * that recipe configures `never-ran` would invent Lingtai's bug out of a
-   * recipe the run never saw.
+   * against the recipe being read *now*, which may not be the one it got.
+   * Calling a point that recipe configures `never-ran` would invent Lingtai's
+   * bug out of a recipe the run never saw.
    */
   onRecord: boolean,
 ): StepState {
@@ -252,8 +251,8 @@ function stateOf(
   // pipeline that was working.
   //
   // **Every step but `end`**, and the exclusion is a fact about where the
-  // record lives: `end`'s is `EndActionsResolved` on the *work
-  // item's* stream (`end-step.ts`), and this fold reads the run's. A silent
+  // record lives: `end`'s is `EndActionsResolved` on the *work item's* stream
+  // (`end-step.ts`), and this fold reads the run's. A silent
   // `end` here is a question this stream cannot answer, not a step that did not
   // run — `lingtai doctor` has its own check for that one, against the stream
   // that holds it.
@@ -296,8 +295,8 @@ export function foldProgress(
    * A **closed** item is not this, however finished it is: the pipeline stops
    * at the first refusal (0041 §4), so its later points recorded nothing
    * because nothing should have run in them. This is anchored on
-   * `WorkItemLanded` for that reason — see
-   * `RailCandidate.over`, which is the caller holding the same line.
+   * `WorkItemLanded` for that reason — see `RailCandidate.over`, which is the
+   * caller holding the same line.
    */
   over = false,
 ): RunProgress | null {
