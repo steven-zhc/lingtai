@@ -7,7 +7,10 @@ document asserting a state of the world the code had moved past.
 Where a list is open-ended (streams, runs, projects) it says so and gives
 examples instead of pretending to be exhaustive.
 
-**Counted 2026-09-10.**
+**Counted 2026-09-10**, except where a table says otherwise: a recount is the
+whole of one table against its named source, and it stamps that table. The
+`event` table drifted 59 → 66 under a stamp that never moved, which is how a
+reader learns to disbelieve the stamp instead of the table.
 
 > **This describes the code as it is.** It is updated as each step lands, never ahead of it. A
 > reference that documents intent instead of behaviour is the defect this
@@ -16,18 +19,20 @@ examples instead of pretending to be exhaustive.
 
 ---
 
-## event — 59 types
+## event — 66 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
+**Recounted 2026-09-24** — every group below, against that registry.
 
 | Group | Types |
 |---|---|
-| work item (7) | `WorkItemDiscovered` `WorkItemClaimed` `WorkItemReleased` `WorkItemBlocked` `WorkItemUnblocked` `WorkItemLinked` `WorkItemLanded` |
+| work item (8) | `WorkItemDiscovered` `WorkItemClaimed` `WorkItemReleased` `WorkItemBlocked` `WorkItemUnblocked` `WorkItemLinked` `WorkItemLanded` `WorkItemClosed` |
 | dispatch (1) | `DispatchRefused` |
-| run (9) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunProposedCompletion` `RunFinished` `RunFailed` |
+| run (10) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run |
 | gate (9) | `GatesResolved` `EndActionsResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateNeverRan` `GateDidNotFinish` `GateWaived` — the last two are the two ways a gate's agent ends without judging the diff: it never started ([0041](decisions/0041-a-gate-that-never-ran.md)), or it started and produced no receipt ([0057](decisions/0057-a-gate-that-did-not-finish.md)) |
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
+| finding (3) | `FindingAccepted` `FindingProposed` `FindingDeclined` — the minors a passing gate raised, and what a person then did with each one. `finding_backlog` is the projection that folds them (`#137`) |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
 | repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
 | fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |

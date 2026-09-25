@@ -55,6 +55,40 @@ describe("a line of history", () => {
     expect(said).toBe("daemon started an unrecorded commit");
   });
 
+  /**
+   * **The two silent outcomes get a sentence, or the silence is back on the
+   * page** (`#251`).
+   *
+   * `#250` left no ref and no account of why, and the row that would have said
+   * so is this one. A `RunRefsPublished` rendering as a bare `—` would put a
+   * reader back where that incident left them, so the four outcomes are four
+   * sentences — and a refusal says the head, because that is what says whether
+   * there is anything still to rescue.
+   */
+  it("says what a claim left on origin, including when it left nothing", () => {
+    const row = (data: Record<string, unknown>) =>
+      summarise(e("RunRefsPublished", { branch: "agent/250", arm: "agent/250-attempt-1", ...data }));
+
+    expect(row({ outcome: "published", headSha: "a".repeat(40), detail: null })).toContain(
+      "agent/250 and agent/250-attempt-1 at aaaaaaa",
+    );
+    expect(row({ outcome: "already-published", headSha: "a".repeat(40), detail: null })).toContain(
+      "already there",
+    );
+    expect(row({ outcome: "nothing-committed", headSha: null, detail: null })).toBe(
+      "nothing committed, so no ref was left",
+    );
+    // With a head: there are commits behind the refusal, so there is something
+    // to go and get.
+    expect(row({ outcome: "refused", headSha: "a".repeat(40), detail: "stale info" })).toBe(
+      "agent/250 at aaaaaaa was not pushed: stale info",
+    );
+    // Without one: the `rev-parse` itself failed and nothing is known to exist.
+    expect(row({ outcome: "refused", headSha: null, detail: "not a git repository" })).toBe(
+      "agent/250 was not pushed, and no head was read: not a git repository",
+    );
+  });
+
   it("keeps a null in the payload, because a null is a statement", () => {
     expect(describePayload({ prompt: null })).toBe("prompt=null");
   });
