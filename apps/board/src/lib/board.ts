@@ -99,10 +99,10 @@ export interface BoardCard {
    * from passed because they are a person's word standing in for a gate's, and
    * folding them together made an override read as a green build (#78).
    */
-  gatesPassed: number;
-  gatesFailed: number;
-  gatesWaived: number;
-  gatesApproved: number;
+  passed: number;
+  failed: number;
+  waived: number;
+  approved: number;
   turns: number | null;
   costUsd: number | null;
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
@@ -466,10 +466,10 @@ export function toCard(
     tier: t.tier,
     headSha: t.headSha,
     awaitingSha: t.awaitingSha,
-    gatesPassed: t.gatesPassed,
-    gatesFailed: t.gatesFailed,
-    gatesWaived: t.gatesWaived,
-    gatesApproved: t.gatesApproved,
+    passed: t.passed,
+    failed: t.failed,
+    waived: t.waived,
+    approved: t.approved,
     turns: t.turns,
     costUsd: t.costUsd,
     note: t.note,
@@ -659,10 +659,10 @@ export async function queuedCards(
         tier: "guarded",
         headSha: null,
         awaitingSha: null,
-        gatesPassed: 0,
-        gatesFailed: 0,
-        gatesWaived: 0,
-        gatesApproved: 0,
+        passed: 0,
+        failed: 0,
+        waived: 0,
+        approved: 0,
         turns: null,
         costUsd: null,
         note: null,

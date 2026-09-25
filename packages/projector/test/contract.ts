@@ -449,10 +449,10 @@ export function describeProjectionStoreContract(
         expect(card.state).toBe("running");
         expect(card.runId).toBe(run);
         expect(card.attempts).toBe(1);
-        // The gates column is a map keyed by the run, so a card counts the
+        // The verdicts column is a map keyed by the run, so a card counts the
         // verdicts of the attempt it names and of no other (#78).
-        expect(card.gatesPassed).toBe(1);
-        expect(card.gatesFailed).toBe(0);
+        expect(card.passed).toBe(1);
+        expect(card.failed).toBe(0);
         expect(card.updatedAt).toBeInstanceOf(Date);
         expect(card.closedAt).toBeNull();
         expect(card.blocked).toBe(false);

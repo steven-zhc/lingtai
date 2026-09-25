@@ -98,7 +98,16 @@ export const taskViewProjection: Projection = {
         -- assignment rather than appending; keyed by the run that produced the
         -- verdict, so an attempt that is over cannot lend its verdicts to the
         -- next one. Evidence is not here on purpose.
-        gates        jsonb not null default '{}'::jsonb,
+        --
+        -- Named for what it holds rather than for what wrote it (#249). The
+        -- keys are runId:step and the values are verdicts, so 0058 moving
+        -- which steps record one costs this column nothing.
+        --
+        -- A table built before #249 has the old column and not this one, and
+        -- create table if not exists does not add it. The drift check in
+        -- shape.ts names both halves and says the remedy: rebuild task_view.
+        -- Until that runs, the write below is to a column that is not there.
+        verdicts     jsonb not null default '{}'::jsonb,
 
         -- One line for the card: what it is waiting on, or why it stopped.
         note         text,
@@ -169,8 +178,8 @@ export const taskViewProjection: Projection = {
         -- the backoff exemption its repair was bought with.
         repair_pending boolean not null default false,
         repair_run_id  text,
-        -- { "run-abc#fix1": 1.42 }. A map for the reason the gates column is
-        -- one: assignment replays to the same number and += does not.
+        -- { "run-abc#fix1": 1.42 }. A map for the reason the verdicts column
+        -- is one: assignment replays to the same number and += does not.
         --
         -- **Wider than its name since 0039 §3.** It began as what a *repair*
         -- cost — an agent the merge lane bought for the next run — and holds
@@ -482,6 +491,21 @@ export const taskViewProjection: Projection = {
           break;
         }
 
+        /**
+         * **The one stored value `#249` left carrying the retired word, and it
+         * is left on purpose.** The column beside it became `verdicts` and the
+         * four counts lost their prefix, because each of those names a thing
+         * that survives
+         * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md).
+         * This one names a *phase* — a run that is finished and having its
+         * verdicts taken — and under ten steps that phase has no word yet:
+         * `proposed` is a step rather than a phase, and `steps` says nothing.
+         * Renaming it to a guess costs a rebuild now and a second rebuild when
+         * the pass rewrite picks the real word, so it waits for that ticket.
+         *
+         * `LABEL_STATES`, `labelsFor` and the board's `COLUMN_OF` therefore do
+         * not move either: there is nothing for them to follow.
+         */
         case "RunProposedCompletion": {
           const d = event.data as PayloadOf<"RunProposedCompletion">;
           await viaRun(ctx, event.streamId, seq, at, { state: "gates", head_sha: d.headSha });
@@ -879,7 +903,7 @@ async function setGate(
   const gate = `${runId}:${point}`;
   await ctx.query(
     `update task_view
-     set gates = gates || jsonb_build_object($3::text, $4::text),
+     set verdicts = verdicts || jsonb_build_object($3::text, $4::text),
          updated_at = $5,
          updated_seq = greatest(updated_seq, $2::bigint)
      where task_id = $1`,
@@ -903,15 +927,25 @@ export interface TaskCard {
   costUsd: number | null;
   /**
    * Verdicts from the run this card names, and no other. Four counts rather
-   * than two, because a person's word is not a gate's: `gatesWaived` is an
-   * override of a failure and `gatesApproved` is a human answering a `human`
+   * than two, because a person's word is not a gate's: `waived` is an
+   * override of a failure and `approved` is a human answering a `human`
    * action. Counting either as passed made the card say the opposite of what
    * happened.
+   *
+   * **No prefix, and that is the whole of `#249`.** A prefix on these names the
+   * *population* — which steps recorded a verdict — and
+   * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3a
+   * changes it: `review` stops giving one at all and raises findings instead, so
+   * the 231 refusals it recorded over 14 days
+   * ([012](../../../doc/experiments/012-where-the-turns-go.md) §4) will arrive at
+   * `proposed`. `stepsPassed` would then promise a population it does not count,
+   * exactly as the retired prefix did. These four say only *this run recorded
+   * that many*, which was true before that rewrite and is true after it.
    */
-  gatesPassed: number;
-  gatesFailed: number;
-  gatesWaived: number;
-  gatesApproved: number;
+  passed: number;
+  failed: number;
+  waived: number;
+  approved: number;
   baseSha: string | null;
   headSha: string | null;
   files: number | null;

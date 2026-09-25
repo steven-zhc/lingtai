@@ -325,10 +325,10 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     runId: "run-170",
     turns: 48,
     costUsd: 5.92,
-    gatesPassed: 1,
-    gatesFailed: 0,
-    gatesWaived: 0,
-    gatesApproved: 0,
+    passed: 1,
+    failed: 0,
+    waived: 0,
+    approved: 0,
     baseSha: null,
     headSha: null,
     files: null,
@@ -567,7 +567,7 @@ describe("all ten steps, in every lane", () => {
 
   it("draws ten segments on a blocked card", () => {
     const html = render(
-      { state: "waiting", blocked: true, gatesFailed: 1, awaitingSha: "b".repeat(40) },
+      { state: "waiting", blocked: true, failed: 1, awaitingSha: "b".repeat(40) },
       refused(),
     );
 
@@ -600,7 +600,7 @@ describe("all ten steps, in every lane", () => {
 describe("a card stopped on a person", () => {
   const blocked = () =>
     render(
-      { state: "waiting", blocked: true, gatesFailed: 1, awaitingSha: "b".repeat(40) },
+      { state: "waiting", blocked: true, failed: 1, awaitingSha: "b".repeat(40) },
       refused(),
     );
 
@@ -741,7 +741,7 @@ describe("a card answering a refusal", () => {
    */
   it("goes back to the refusal when the round is spent", () => {
     const html = render(
-      { state: "waiting", blocked: true, gatesFailed: 1, awaitingSha: "b".repeat(40) },
+      { state: "waiting", blocked: true, failed: 1, awaitingSha: "b".repeat(40) },
       fixSpent(),
     );
 
@@ -826,7 +826,7 @@ describe("the hatch, and what may not draw it", () => {
   it("never draws it on a closed item whose run was refused", () => {
     const html = renderToStaticMarkup(
       <Card
-        card={asBoard({ state: "closed", gatesFailed: 1 }, refusedAtPrepared())}
+        card={asBoard({ state: "closed", failed: 1 }, refusedAtPrepared())}
         showProject={false}
         issue={null}
         paused={false}

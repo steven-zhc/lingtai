@@ -691,7 +691,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**786 occurrences in 69 files, counted 2026-09-24** — and that sentence is
+**738 occurrences in 69 files, counted 2026-09-24** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank. The rest of the
 epic empties the table: a ticket that renames its area deletes its rows and
@@ -722,6 +722,18 @@ by the ticket that renames the log's own vocabulary, never ahead of it: the
 alternative was inventing a second word for a reason the events already carry,
 which is two vocabularies for one fact — 0058 §Context's defect, and the thing
 this ledger exists to make visible rather than to make impossible.
+
+**It came down by forty-eight when `#249` renamed the projection's own
+vocabulary**, and that is the first time this number has gone down by a rename
+rather than by a row moving. `task_view`'s `gates` column is `verdicts`, and the
+four counts on a `TaskCard` are `passed` · `failed` · `waived` · `approved`
+with no prefix at all — the prefix named the population, and 0058 changes the
+population by taking `review` out of it, so a name that promised one was going
+to be wrong within the epic. **Four occurrences of `gatesPassed` stayed**, in
+`integrate.ts`, `approve.ts` and `run-once.ts`: that one is a `boolean` on
+`IntegrateOptions` and not a count of anything, it sits beside `gateDetail`, and
+renaming half a pair is the two-vocabularies defect this ledger exists to make
+visible. It goes with `gateDetail`, in the sweep.
 
 Each row is one file, every retired token still in it, and **how many times the
 rule reads that token there**. The count is the entry and not decoration: a
@@ -774,14 +786,14 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/app/backlog/page.tsx` | `gate` ×1 |
 | `apps/board/src/app/evidence.tsx` | `GateEvidence` ×3 · `gate` ×4 · `gates` ×3 |
 | `apps/board/src/app/globals.css` | `actpoint` ×1 · `point` ×7 · `points` ×2 · `sgate` ×1 |
-| `apps/board/src/app/page.tsx` | `gate` ×2 · `gatesApproved` ×2 · `gatesFailed` ×4 · `gatesPassed` ×2 · `gatesWaived` ×2 · `points` ×2 |
+| `apps/board/src/app/page.tsx` | `gate` ×2 · `points` ×2 |
 | `apps/board/src/app/plan.tsx` | `point` ×4 · `points` ×2 |
 | `apps/board/src/app/rail.tsx` | `PointProgress` ×5 · `PointState` ×2 · `point` ×11 · `pointOf` ×2 · `points` ×9 |
 | `apps/board/src/app/recipe/[project]/page.tsx` | `point` ×1 |
 | `apps/board/src/app/setup/wizard/finish.ts` | `wholeGates` ×2 |
 | `apps/board/src/app/standing.tsx` | `gate` ×4 · `sgate` ×3 |
 | `apps/board/src/app/task/[id]/page.tsx` | `actpoint` ×1 · `gate` ×2 · `gates` ×5 · `point` ×4 · `points` ×3 |
-| `apps/board/src/lib/board.ts` | `GatePlan` ×4 · `gates` ×1 · `gatesApproved` ×4 · `gatesFailed` ×4 · `gatesPassed` ×4 · `gatesWaived` ×4 |
+| `apps/board/src/lib/board.ts` | `GatePlan` ×4 · `gates` ×1 |
 | `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `gateAt` ×12 · `points` ×6 |
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GatePlan` ×3 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `PointProgress` ×2 · `PointState` ×7 · `gate` ×4 · `point` ×12 · `pointOf` ×1 · `points` ×6 |
 | `apps/board/src/lib/queued.ts` | `GatePlan` ×2 · `PlannedPoint` ×2 · `point` ×4 · `points` ×2 |
@@ -832,9 +844,9 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/event-store/src/queries.ts` | `GatesResolved` ×2 · `PointNeverRan` ×2 · `gate` ×12 · `point` ×7 · `points` ×2 |
 | `packages/event-store/src/sqlite.ts` | `GatesResolved` ×2 · `gate` ×10 · `point` ×7 · `points` ×2 |
 | `packages/projector/src/backlog.ts` | `GatePassed` ×2 · `gate` ×6 |
-| `packages/projector/src/postgres.ts` | `gate` ×2 · `gates` ×3 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 |
-| `packages/projector/src/sqlite.ts` | `gate` ×2 · `gates` ×3 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 |
-| `packages/projector/src/task-view.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateWaived` ×2 · `gate` ×4 · `gates` ×5 · `gatesApproved` ×1 · `gatesFailed` ×1 · `gatesPassed` ×1 · `gatesWaived` ×1 · `point` ×2 · `setGate` ×2 |
+| `packages/projector/src/postgres.ts` | `gate` ×2 |
+| `packages/projector/src/sqlite.ts` | `gate` ×2 |
+| `packages/projector/src/task-view.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateWaived` ×2 · `gate` ×4 · `gates` ×1 · `point` ×2 · `setGate` ×2 |
 | `packages/recipe/src/local.ts` | `gates` ×4 |
 | `packages/recipe/src/recipe.ts` | `GateAction` ×7 · `GatesResolved` ×1 · `gate` ×1 · `gates` ×1 · `point` ×15 |
 | `packages/recipe/src/resolve.ts` | `gates` ×3 |
@@ -843,7 +855,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**9 of those 786 occurrences are the English word and not the retired
+**9 of those 738 occurrences are the English word and not the retired
 term**, and nothing mechanical can tell them apart: `points at` in the installer
 is the same verb `pointShim` is exempted for ten lines below it. They are the
 reason `0 occurrences in 0 files` is **not** reached by renaming alone — for

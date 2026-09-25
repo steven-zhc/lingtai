@@ -87,13 +87,13 @@ export const dynamic = "force-dynamic";
  * none.
  *
  * `a-hold` is the one #78 added, and it is why a stripe was missing: a run
- * killed from outside fails no gate, so `gatesFailed` stayed 0 and a ticket that
+ * killed from outside fails no gate, so `failed` stayed 0 and a ticket that
  * had burned money and produced nothing came back to Queued looking new. A
  * queued card carrying a note is exactly that card — the note is the release's
  * reason, and the next claim clears it.
  */
 function accent(card: BoardCard): string {
-  if (card.gatesFailed > 0) return "a-fail";
+  if (card.failed > 0) return "a-fail";
   if (card.column === "queued" && card.note) return "a-hold";
   if (card.column === "waiting") return "a-sig";
   if (card.column === "landed") return "a-pass";
@@ -243,16 +243,16 @@ export function Card({
             held colour and their own word. */}
         {card.progress === null ? (
           <>
-            {card.gatesPassed > 0 ? <li className="pill pass">{card.gatesPassed} passed</li> : null}
-            {card.gatesFailed > 0 ? <li className="pill fail">{card.gatesFailed} failed</li> : null}
-            {card.gatesWaived > 0 ? (
+            {card.passed > 0 ? <li className="pill pass">{card.passed} passed</li> : null}
+            {card.failed > 0 ? <li className="pill fail">{card.failed} failed</li> : null}
+            {card.waived > 0 ? (
               <li className="pill hold" title="a person overrode a failed gate">
-                {card.gatesWaived} waived
+                {card.waived} waived
               </li>
             ) : null}
-            {card.gatesApproved > 0 ? (
+            {card.approved > 0 ? (
               <li className="pill hold" title="a person approved, rather than a gate passing">
-                {card.gatesApproved} approved
+                {card.approved} approved
               </li>
             ) : null}
           </>
@@ -376,7 +376,7 @@ export function Card({
           a disagreement — where *run it again* is the move — was the one card
           without it. And no gate names: `approve()` reads which gates refuse
           off the run, where this card once sent a literal `"build"` for a
-          refused `review`. `gatesFailed` only decides whether to ask why
+          refused `review`. `failed` only decides whether to ask why
           before the click. */}
       {card.blocked ? (
         <div className="btnrow">
@@ -385,7 +385,7 @@ export function Card({
               project={card.project}
               issue={Number(card.ref)}
               onSha={card.awaitingSha}
-              refusing={card.gatesFailed > 0}
+              refusing={card.failed > 0}
               recommended={card.diagnosis?.recommendation?.action ?? null}
             />
           ) : null}

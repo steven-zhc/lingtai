@@ -442,7 +442,7 @@ git -c user.name=agent -c user.email=a@example.invalid commit -qm 'fix the race'
       expect(card!.costUsd).toBe(0.42);
       // The count, not the verdicts: evidence is read from the stream when
       // somebody opens the task.
-      expect(card!.gatesPassed).toBeGreaterThan(0);
+      expect(card!.passed).toBeGreaterThan(0);
     } finally {
       await runner.close();
     }

@@ -190,8 +190,8 @@ function rewrite(text: string): string {
       // A cast is Postgres saying what it means, and SQLite has no syntax for
       // it and no need of one. Read for `bind` first, then dropped.
       .replace(CAST, "")
-      // `gates || jsonb_build_object(k, v)` merges a key into a map. In SQLite
-      // `||` is string concatenation, which would quietly produce `{}{"k":"v"}`
+      // `verdicts || jsonb_build_object(k, v)` merges a key into a map. In
+      // SQLite `||` is concatenation, which would quietly produce `{}{"k":"v"}`
       // — the one rewrite here that would be wrong rather than a syntax error
       // if it were missing.
       .replace(
@@ -258,10 +258,10 @@ const parseBool = (v: unknown): boolean => v === 1 || v === 1n || v === true;
 
 /** A `task_view` row → the card the board renders. `postgres.ts`'s twin. */
 function toCard(row: ProjectionRow): TaskCard {
-  const gates = (parseJson(row.gates) ?? {}) as Record<string, string>;
+  const recorded = (parseJson(row.verdicts) ?? {}) as Record<string, string>;
   const mine = row.run_id ? `${row.run_id as string}:` : null;
   const verdicts = mine
-    ? Object.entries(gates)
+    ? Object.entries(recorded)
         .filter(([key]) => key.startsWith(mine))
         .map(([, verdict]) => verdict)
     : [];
@@ -282,10 +282,10 @@ function toCard(row: ProjectionRow): TaskCard {
     runId: (row.run_id as string | null) ?? null,
     turns: row.turns === null ? null : Number(row.turns),
     costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
-    gatesPassed: count("passed"),
-    gatesFailed: count("failed"),
-    gatesWaived: count("waived"),
-    gatesApproved: count("approved"),
+    passed: count("passed"),
+    failed: count("failed"),
+    waived: count("waived"),
+    approved: count("approved"),
     baseSha: (row.base_sha as string | null) ?? null,
     headSha: (row.head_sha as string | null) ?? null,
     files: row.files === null ? null : Number(row.files),

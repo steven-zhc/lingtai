@@ -551,8 +551,8 @@ describe("task_view", () => {
     // board does not read recipes.
 
     const three = card(tasks, 3)!;
-    expect(three.gatesPassed).toBe(1);
-    expect(three.gatesFailed).toBe(1);
+    expect(three.passed).toBe(1);
+    expect(three.failed).toBe(1);
     expect(three.headSha).toBe("sha-a");
     expect(three.files).toBe(3);
   });
@@ -622,12 +622,12 @@ describe("task_view", () => {
     expect(six.runId).toBe(`run-${PROJECT}-6b`);
     // Attempt 2 has reached no gate. Attempt 1's `prepared:install` is still in
     // the map, against the run that earned it, and is not this card's.
-    expect(six.gatesPassed).toBe(0);
-    expect(six.gatesFailed).toBe(0);
+    expect(six.passed).toBe(0);
+    expect(six.failed).toBe(0);
   });
 
   /**
-   * A run killed from outside fails no gate, so `gatesFailed` stayed 0 and the
+   * A run killed from outside fails no gate, so `failed` stayed 0 and the
    * card came back to Queued with a green pill and nothing else — a ticket that
    * had burned money and produced nothing, looking like a fresh one.
    */
@@ -638,7 +638,7 @@ describe("task_view", () => {
     expect(seven.state).toBe("queued");
     // No run named, so no verdict is this card's to show.
     expect(seven.runId).toBeNull();
-    expect(seven.gatesPassed).toBe(0);
+    expect(seven.passed).toBe(0);
     // The sentence the release already carried.
     expect(seven.note).toBe(KILLED);
   });
@@ -652,12 +652,12 @@ describe("task_view", () => {
     const tasks = await readTasks({ project: PROJECT });
     const eight = card(tasks, 8)!;
 
-    expect(eight.gatesPassed).toBe(0);
+    expect(eight.passed).toBe(0);
     // The waiver replaced the failure in its own cell: one verdict per point
     // per run, and the latest one is what stands.
-    expect(eight.gatesFailed).toBe(0);
-    expect(eight.gatesWaived).toBe(1);
-    expect(eight.gatesApproved).toBe(1);
+    expect(eight.failed).toBe(0);
+    expect(eight.waived).toBe(1);
+    expect(eight.approved).toBe(1);
   });
 
   /**

@@ -96,13 +96,13 @@ describe("sqlite: the dialect the projections are written in", () => {
 
   it("merges a key into a map rather than concatenating two strings", () => {
     // `||` is a jsonb merge in Postgres and string concatenation in SQLite. Left
-    // alone, `gates` would become `{}{"g":"passed"}` and every card would count
-    // no verdicts while nothing threw.
-    const q = translate("update t set gates = gates || jsonb_build_object($1::text, $2::text)", [
-      "run-1:proposed:build",
-      "passed",
-    ]);
-    expect(q.text).toBe("update t set gates = json_patch(gates, json_object(?, ?))");
+    // alone, `verdicts` would become `{}{"g":"passed"}` and every card would
+    // count no verdicts while nothing threw.
+    const q = translate(
+      "update t set verdicts = verdicts || jsonb_build_object($1::text, $2::text)",
+      ["run-1:proposed:build", "passed"],
+    );
+    expect(q.text).toBe("update t set verdicts = json_patch(verdicts, json_object(?, ?))");
   });
 
   it("leaves a placeholder inside a string literal alone", () => {

@@ -60,14 +60,14 @@ function ctxFor(client: pg.PoolClient | pg.Client): ProjectionContext {
 
 /** A `task_view` row → the card the board renders. Unchanged from `readTasks`. */
 function toCard(row: pg.QueryResultRow): TaskCard {
-  const gates = (row.gates ?? {}) as Record<string, string>;
+  const recorded = (row.verdicts ?? {}) as Record<string, string>;
   // Only the run the row names. A released row names none, so it counts
   // nothing — which is the point: between a release and the next attempt
   // reaching the same point there is no live verdict to report, and the
   // card used to report the dead one anyway (#78).
   const mine = row.run_id ? `${row.run_id as string}:` : null;
   const verdicts = mine
-    ? Object.entries(gates)
+    ? Object.entries(recorded)
         .filter(([key]) => key.startsWith(mine))
         .map(([, verdict]) => verdict)
     : [];
@@ -91,10 +91,10 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     runId: row.run_id,
     turns: row.turns,
     costUsd: row.cost_usd,
-    gatesPassed: count("passed"),
-    gatesFailed: count("failed"),
-    gatesWaived: count("waived"),
-    gatesApproved: count("approved"),
+    passed: count("passed"),
+    failed: count("failed"),
+    waived: count("waived"),
+    approved: count("approved"),
     baseSha: row.base_sha,
     headSha: row.head_sha,
     files: row.files,
