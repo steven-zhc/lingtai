@@ -14,7 +14,7 @@
  * is spawned, no agent is paid and no person is asked, which is what puts it in
  * `unit/` and under the `build` point (0060 §1).
  */
-import { STEPS } from "@lingtai/domain";
+import { STEPS, type Envelope, type PayloadOf, type ToAppend } from "@lingtai/domain";
 import type { Action, ActionContext, ActionEvent, ActionResult } from "@lingtai/actions";
 import { StepMap } from "@lingtai/recipe";
 import type { Worktree } from "@lingtai/repo";
@@ -60,6 +60,23 @@ const recipeWith = (steps: Record<string, unknown>): PassOptions["recipe"] => ({
   steps: StepMap.parse(steps),
 });
 
+/**
+ * Two declared effects at `end`, because a recipe that declares none resolves to
+ * no row at all — *the skip is the user's decision, and `GatesResolved` already
+ * records it* — and a test asserting `[]` against `[]` would say nothing.
+ *
+ * Two rather than one, and neither writes a `when:`: `close:`'s defaults to
+ * `landed` and `labels:`'s to `any` (`recipe.ts:172`, `:178`). So the pair reads
+ * differently at every outcome, and an `end` that ran every declared cell on
+ * every ending — `#61`'s failure — closes a ticket that landed nothing.
+ */
+const AT_END = {
+  end: [
+    { name: "close it", close: true },
+    { name: "say so", labels: ["needs-attention"] },
+  ],
+};
+
 const events = (): { emit: PassOptions["emit"]; seen: ActionEvent[] } => {
   const seen: ActionEvent[] = [];
   return { emit: (event) => void seen.push(event), seen };
@@ -86,8 +103,15 @@ interface Asked {
   cut: Claimed[];
   drafted: Brief[];
   dispatched: Brief[];
-  settled: { workItemId: string; actions: readonly string[]; outcome: TerminalOutcome }[];
+  /** Every `EndActionsResolved` `end` recorded, unwrapped to what it says. */
+  recorded: { workItemId: string; at: number; outcome: TerminalOutcome; actions: string[] }[];
 }
+
+/** `EndActionsResolved`'s payload, read off what the port was handed. */
+const resolvedIn = (appended: ToAppend): { outcome: TerminalOutcome; actions: string[] } => {
+  const data = appended.data as PayloadOf<"EndActionsResolved">;
+  return { outcome: data.outcome, actions: data.actions.map((a) => a.name) };
+};
 
 /**
  * The five ports, answering the ordinary thing — and whichever of them a test
@@ -97,7 +121,7 @@ interface Asked {
  * **no design at all**, an agent that committed, and an `end` that resolved.
  */
 function ports(overrides: Partial<PassPorts> = {}): { ports: PassPorts; asked: Asked } {
-  const asked: Asked = { took: 0, cut: [], drafted: [], dispatched: [], settled: [] };
+  const asked: Asked = { took: 0, cut: [], drafted: [], dispatched: [], recorded: [] };
   const ordinary: PassPorts = {
     take: async (): Promise<Taken> => {
       asked.took += 1;
@@ -116,12 +140,13 @@ function ports(overrides: Partial<PassPorts> = {}): { ports: PassPorts; asked: A
       asked.dispatched.push(brief);
       return { committed: "c0mm1tted5ha" };
     },
-    settle: async ({ claimed, actions, outcome }) => {
-      asked.settled.push({
-        workItemId: claimed.workItemId,
-        actions: actions.map((a) => a.name),
-        outcome,
-      });
+    // An item with nothing on its stream yet, which is what makes the version
+    // the append expects zero.
+    read: async (): Promise<readonly Envelope[]> => [],
+    record: async ({ claimed, at, resolved }) => {
+      for (const appended of resolved) {
+        asked.recorded.push({ workItemId: claimed.workItemId, at, ...resolvedIn(appended) });
+      }
     },
   };
   return { ports: { ...ordinary, ...overrides }, asked };
@@ -154,14 +179,26 @@ describe("the six bodies fill a contract that already runs", () => {
   it("walks the ten and lands", async () => {
     const { ports: p, asked } = ports();
 
-    const result = await pass({ ports: p });
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(result.steps.map((s) => s.step)).toEqual([...STEPS]);
     expect(result.stoppedAt).toBeNull();
     expect(result.rested).toBeNull();
     expect(outcomeOf(result)).toBe("landed");
     expect(asked).toMatchObject({ took: 1, cut: [item] });
-    expect(asked.settled).toEqual([{ workItemId: item.workItemId, actions: [], outcome: "landed" }]);
+    expect(asked.recorded).toEqual([
+      { workItemId: item.workItemId, at: 0, outcome: "landed", actions: ["close it", "say so"] },
+    ]);
+  });
+
+  /** And a recipe that declares nothing at `end` records nothing (`end-step.ts`). */
+  it("records no resolution where nothing was declared at end", async () => {
+    const { ports: p, asked } = ports();
+
+    const result = await pass({ ports: p });
+
+    expect(result.steps.at(-1)).toMatchObject({ step: "end", ending: { ending: "passed" } });
+    expect(asked.recorded).toEqual([]);
   });
 });
 
@@ -189,7 +226,7 @@ describe("claim picks the ticket, and cannot refuse", () => {
       take: async () => ({ passedOver: "blocked-by" }),
     });
 
-    const result = await pass({ ports: p });
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(result.steps.map((s) => s.step)).toEqual(["claim", "end"]);
     expect(result.stoppedAt).toMatchObject({
@@ -197,8 +234,9 @@ describe("claim picks the ticket, and cannot refuse", () => {
       ending: { ending: "did-not-finish", because: "passed-over", detail: "blocked-by" },
     });
     expect(result.routes).toEqual([]);
-    // Nothing was claimed, so there is no stream for `end` to resolve onto.
-    expect(asked.settled).toEqual([]);
+    // Nothing was claimed, so there is no stream for `end` to resolve onto — and
+    // `close it` is declared, so this is a resolution withheld rather than absent.
+    expect(asked.recorded).toEqual([]);
   });
 
   /** Losing the append is an ordinary outcome of two schedulers on one queue. */
@@ -256,7 +294,7 @@ describe("admit cuts the worktree, so the head first has a value here", () => {
       cut: async () => ({ notCut: "the mirror has no ref main" }),
     });
 
-    const result = await pass({ ports: p });
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(result.steps.map((s) => s.step)).toEqual(["claim", "admit", "end"]);
     expect(result.stoppedAt).toMatchObject({
@@ -267,7 +305,8 @@ describe("admit cuts the worktree, so the head first has a value here", () => {
       detail: expect.stringContaining("the mirror has no ref main"),
     });
     expect(result.routes).toEqual([]);
-    expect(asked.settled).toEqual([{ workItemId: item.workItemId, actions: [], outcome: "blocked" }]);
+    // `end` ran anyway, for the outcome the pass actually reached.
+    expect(asked.recorded).toMatchObject([{ outcome: "blocked", actions: ["say so"] }]);
   });
 
   /** 0058 §3b draws the edge, so the port has to be able to say it. */
@@ -301,7 +340,10 @@ describe("prepared refuses, and the refusal travels", () => {
 
     const result = await pass({
       ports: p,
-      recipe: recipeWith({ prepared: [{ name: "install", run: "pnpm install --frozen-lockfile" }] }),
+      recipe: recipeWith({
+        ...AT_END,
+        prepared: [{ name: "install", run: "pnpm install --frozen-lockfile" }],
+      }),
       actionsAt: actionsFrom({
         prepared: [canned("install", { verdict: "failed", evidence: "pnpm install exited 1", findings: [] })],
       }),
@@ -317,7 +359,7 @@ describe("prepared refuses, and the refusal travels", () => {
     // No money was spent past it: no design was drafted and no agent dispatched.
     expect(asked.drafted).toEqual([]);
     expect(asked.dispatched).toEqual([]);
-    expect(asked.settled).toEqual([{ workItemId: item.workItemId, actions: [], outcome: "blocked" }]);
+    expect(asked.recorded).toMatchObject([{ outcome: "blocked", actions: ["say so"] }]);
   });
 
   /** And a recipe that declares no install has a `prepared` that passes. */
@@ -438,7 +480,7 @@ describe("implement is one agent, and it reports the head it committed", () => {
       }),
     });
 
-    const result = await pass({ ports: p });
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(result.stoppedAt).toMatchObject({
       step: "implement",
@@ -446,7 +488,7 @@ describe("implement is one agent, and it reports the head it committed", () => {
     });
     expect(result.routes).toEqual([]);
     expect(outcomeOf(result)).toBe("failed");
-    expect(asked.settled).toEqual([{ workItemId: item.workItemId, actions: [], outcome: "failed" }]);
+    expect(asked.recorded).toMatchObject([{ outcome: "failed", actions: ["say so"] }]);
   });
 
   /** A crash, a spent turn budget, or a run that committed nothing — 0057 §2. */
@@ -476,16 +518,14 @@ describe("implement is one agent, and it reports the head it committed", () => {
 // --------------------------------------------------------------------- end ----
 
 describe("end runs on every ending, and the effects never decide whether it happened", () => {
-  const withEffects = { end: [{ name: "close it", close: true }] };
-
   it("resolves the declared effects against the outcome the pass reached", async () => {
     const { ports: p, asked } = ports();
 
-    const result = await pass({ ports: p, recipe: recipeWith(withEffects) });
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(outcomeOf(result)).toBe("landed");
-    expect(asked.settled).toEqual([
-      { workItemId: item.workItemId, actions: ["close it"], outcome: "landed" },
+    expect(asked.recorded).toEqual([
+      { workItemId: item.workItemId, at: 0, outcome: "landed", actions: ["close it", "say so"] },
     ]);
     // And it passes: `end` cannot refuse.
     expect(result.steps.at(-1)).toMatchObject({ step: "end", ending: { ending: "passed" } });
@@ -496,15 +536,64 @@ describe("end runs on every ending, and the effects never decide whether it happ
 
     await pass({
       ports: p,
-      recipe: recipeWith({ ...withEffects, prepared: [{ name: "install", run: "pnpm install" }] }),
+      recipe: recipeWith({ ...AT_END, prepared: [{ name: "install", run: "pnpm install" }] }),
       actionsAt: actionsFrom({
         prepared: [canned("install", { verdict: "failed", evidence: "exited 1", findings: [] })],
       }),
     });
 
-    expect(asked.settled).toEqual([
-      { workItemId: item.workItemId, actions: ["close it"], outcome: "blocked" },
-    ]);
+    expect(asked.recorded).toMatchObject([{ outcome: "blocked", actions: ["say so"] }]);
+  });
+
+  /**
+   * **`when:` is the whole safety of `refs:`** (`#240`): an ending that is not a
+   * landing resolves those to nothing, and for an item that did not land they are
+   * the only surviving account of what was tried. Nothing downstream re-derives
+   * the list, so a body that ran every declared cell on every ending would delete
+   * exactly the refs a person needs.
+   */
+  it("filters the declared list by when, rather than running every cell", async () => {
+    const { ports: p, asked } = ports({
+      dispatch: async () => ({ stopped: "no receipt" }),
+    });
+
+    await pass({
+      ports: p,
+      recipe: recipeWith({
+        end: [
+          { name: "keep the refs", refs: true, branch: true, when: "landed" },
+          { name: "label it", labels: ["needs-attention"], when: "blocked" },
+        ],
+      }),
+    });
+
+    expect(asked.recorded).toMatchObject([{ outcome: "blocked", actions: ["label it"] }]);
+  });
+
+  /**
+   * **Resolved once per outcome, off the item's own stream** — so a pass over an
+   * item that already resolved this outcome records nothing, and one that resolved
+   * a *different* outcome records again. Two different things to have done to an
+   * issue.
+   */
+  it("does not resolve the same outcome twice", async () => {
+    const already: Envelope[] = [
+      {
+        seq: 1,
+        streamId: item.workItemId,
+        version: 1,
+        type: "EndActionsResolved",
+        actor: "conductor",
+        at: new Date(0),
+        schemaVer: 1,
+        data: { outcome: "landed", actions: [] },
+      } as unknown as Envelope,
+    ];
+    const { ports: p, asked } = ports({ read: async () => already });
+
+    await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(asked.recorded).toEqual([]);
   });
 
   /**
@@ -515,12 +604,12 @@ describe("end runs on every ending, and the effects never decide whether it happ
    */
   it("reports its own failure as its own ending, and leaves the landing alone", async () => {
     const { ports: p } = ports({
-      settle: async () => {
+      record: async () => {
         throw new Error("the store would not append");
       },
     });
 
-    const result = await pass({ ports: p, recipe: recipeWith(withEffects) });
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
 
     expect(result.stoppedAt).toBeNull();
     expect(outcomeOf(result)).toBe("landed");
@@ -546,7 +635,7 @@ describe("end runs on every ending, and the effects never decide whether it happ
 
     for (const override of endings) {
       const { ports: p } = ports(override);
-      const result = await pass({ ports: p, recipe: recipeWith(withEffects) });
+      const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
       expect(result.steps.filter((s) => s.step === "end")).toHaveLength(1);
       expect(result.steps.at(-1)?.step).toBe("end");
     }

@@ -72,12 +72,12 @@
  * filling in.
  */
 import type { ActionContext } from "@lingtai/actions";
-import type { StepAction } from "@lingtai/recipe";
+import type { Envelope, ToAppend } from "@lingtai/domain";
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
 import type { Worktree } from "@lingtai/repo";
-import type { TerminalOutcome } from "./end-step.ts";
+import { resolveEndActions } from "./end-step.ts";
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
@@ -237,21 +237,35 @@ export interface PassPorts {
   /** `implement` — one agent, in that worktree, and what it committed. */
   dispatch(brief: Brief): Promise<Worked>;
   /**
-   * `end` — resolve the declared effects against the outcome, and record the
-   * resolution.
+   * `end` — the work item's own stream.
    *
-   * **Resolving and doing are two acts and this is the first**
-   * (`end-step.ts`): `resolveEndActions` filters the declared list by `when:`
-   * and the append belongs in a transaction with the outcome, where a crash
-   * cannot separate them; carrying the list out is I/O that must not be able to
-   * undo it, and is `tell.ts`'s. An empty resolution is still a resolution — the
-   * row is what keeps *nothing was configured* apart from *something was
+   * Read rather than handed in, and read at `end` rather than at `claim`,
+   * because `resolveEndActions` asks it two questions that are only answerable
+   * this late: has this item already resolved `end` **for this outcome**, and
+   * what version does the append expect. The step is also the last thing a pass
+   * does, so a stream read at the claim would be nine steps stale.
+   */
+  read(claimed: Claimed): Promise<readonly Envelope[]>;
+  /**
+   * `end` — record what the step resolved, on the item's own stream.
+   *
+   * **Resolving and doing are two acts and neither of them is this**
+   * (`end-step.ts`): the resolving is `resolveEndActions`, which the body calls;
+   * this is the record of that decision, at an expected version; and carrying
+   * the effects out is I/O that must not be able to undo the fact, which is
+   * `tell.ts`'s and the port-owner's.
+   *
+   * Called only with a non-empty list, so an implementation never has to decide
+   * what an empty one means. **An empty resolution is still a resolution** and is
+   * *in* the list — one `EndActionsResolved` whose own `actions` are `[]`, which
+   * is the row that keeps *nothing was configured* apart from *something was
    * configured and did not run* (0016 §4).
    */
-  settle(settling: {
+  record(recording: {
     readonly claimed: Claimed;
-    readonly actions: readonly StepAction[];
-    readonly outcome: TerminalOutcome;
+    /** The version the append expects — `read`'s length, and the whole of the race. */
+    readonly at: number;
+    readonly resolved: readonly ToAppend[];
   }): Promise<void>;
 }
 
@@ -478,10 +492,14 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `PassResult.stoppedAt` is never `end` — so a `close:` that fails to resolve
      * after a merge landed does not turn a landing into a block.
      *
-     * **It carries nothing out.** `resolveEndActions` filters by `when:` and the
-     * record of that decision is an append on the item's own stream; doing the
-     * effects is `tell.ts`'s, on the port-owner's side, where an I/O failure
-     * cannot undo the fact.
+     * **`resolveEndActions` is called rather than reimplemented**, and the two
+     * things it knows are exactly the two a port would get wrong. It filters by
+     * `when:`, which is the whole safety of `refs:` (`#240`): a `when: landed`
+     * that met a block resolves to nothing, and for an item that did not land
+     * those refs are the only surviving account of what was tried. And it
+     * resolves **once per outcome**, off the item's own stream, so an item that
+     * was blocked, came back and then landed resolves twice for two different
+     * outcomes and never twice for one.
      *
      * **A pass that claimed nothing resolves nothing**, and that is not the skip
      * 0016 §4 refuses: `EndActionsResolved` lives on the work item's stream, and
@@ -489,7 +507,13 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * no item for the audit to find either, so nothing goes quiet.
      */
     end: async ({ actions, outcome }): Promise<StepPassed> => {
-      if (claimed !== null) await ports.settle({ claimed, actions, outcome });
+      if (claimed === null) return { ending: "passed" };
+      const events = await ports.read(claimed);
+      const resolved = resolveEndActions(events, actions, outcome);
+      // Empty is *nothing declared* or *already resolved for this outcome*, and
+      // neither is a row. A step that resolved a declared list down to no effects
+      // is not empty here: that is one row whose own `actions` are `[]`.
+      if (resolved.length > 0) await ports.record({ claimed, at: events.length, resolved });
       return { ending: "passed" };
     },
   };
