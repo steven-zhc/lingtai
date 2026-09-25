@@ -249,20 +249,91 @@ describe("four steps may refuse, and the other six may not", () => {
 
   /**
    * The runtime half, because a body read out of `StepBodies[Step]` has been
-   * widened to the union and the compiler has stopped looking. Throwing rather
-   * than downgrading it: a refusal buys a fix round, holds the item and may
-   * reach a person, and none of that may be spent on one nothing meant.
+   * widened to the union and the compiler has stopped looking. It is not
+   * downgraded to a refusal anybody acts on: a refusal buys a fix round, holds
+   * the item and may reach a person, and none of that may be spent on one
+   * nothing meant.
+   *
+   * The assertion throws, and the loop reports the throw as the step's ending
+   * rather than letting it out — because an exception escaping `runPass` takes
+   * `end` with it, and an item whose pass vanished carries no terminal outcome
+   * at all. The words are on `detail`, where a person reads them.
    */
-  it("throws when a step that may not refuse refuses anyway", async () => {
-    const { bodies } = watching({
+  it("reports a body's refusal at a step that may not refuse, and still reaches end", async () => {
+    const { bodies, seen } = watching({
       claim: async () => ({ ending: "refused", because: "action-refused", at: null, detail: "nope" }) as never,
     });
     const { actionsAt } = watchingActions();
     const { emit } = events();
 
-    await expect(runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })).rejects.toThrow(
-      /the `claim` step refused, and only prepared, build, proposed, merge may refuse/,
-    );
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt).toMatchObject({
+      step: "claim",
+      ending: {
+        ending: "did-not-finish",
+        because: "threw",
+        detail: expect.stringContaining(
+          "the `claim` step refused, and only prepared, build, proposed, merge may refuse",
+        ),
+      },
+    });
+    // No fix round bought — and `end` reached, with an outcome for the item.
+    expect(seen.at(-1)?.step).toBe("end");
+    expect(outcomeOf(result.stoppedAt)).toBe("blocked");
+  });
+
+  /**
+   * 0058 §2 from the plugin's side, and the case that makes the check above a
+   * body's alone. `actionsAt` is the caller's seam and the pass does no kind
+   * check of its own — which is why this test hands one in at `review` though
+   * `KINDS_AT.review` is still `[]`. The day that row opens (`recipe.ts:781`:
+   * review is *built by the pass ticket*), a cold reviewer finding a blocker
+   * returns `failed` exactly as it does at `proposed` today.
+   *
+   * That is an ordinary verdict and not a programming error. Reported as
+   * `did-not-finish`, which is what this file's own refusal message
+   * prescribes: it buys no fix round (0057), and it does not crash the pass
+   * before anything can route on it.
+   */
+  it("reads a plugin's failed verdict at one of the six as did-not-finish", async () => {
+    const { bodies } = watching();
+    const { actionsAt } = watchingActions({
+      review: [canned("cold reviewer", { verdict: "failed", evidence: "a blocker in pass.ts", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt).toEqual({
+      step: "review",
+      ending: {
+        ending: "did-not-finish",
+        because: "action-refused",
+        at: "cold reviewer",
+        detail: "a blocker in pass.ts",
+      },
+    });
+    // Everything the action said is kept: the router's whole job is reading it.
+    expect(result.steps.find((s) => s.step === "review")?.results).toHaveLength(1);
+  });
+
+  /** And at one of the four the same verdict is a refusal, with all it buys. */
+  it("reads the same verdict at one of the four as a refusal", async () => {
+    const { bodies } = watching();
+    const { actionsAt } = watchingActions({
+      build: [canned("cold reviewer", { verdict: "failed", evidence: "a blocker in pass.ts", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt?.ending).toEqual({
+      ending: "refused",
+      because: "action-refused",
+      at: "cold reviewer",
+      detail: "a blocker in pass.ts",
+    });
   });
 
   /** 0058 §3c: which step, what refused, and a machine-readable reason. */
@@ -522,11 +593,68 @@ describe("end runs on every ending and cannot refuse", () => {
   });
 
   /**
+   * A body that throws rather than returning: T4b's `implement` when the agent
+   * runtime raises, `merge`'s when `git push` throws. Nothing else in the pass
+   * catches it, so without the loop's own guard the promise rejects with
+   * `steps` and `stoppedAt` discarded and `end` never reached — no resolved
+   * effects, no terminal outcome, and an item waiting on a run that vanished.
+   * `action.ts` guards the same hole one layer down and says why.
+   */
+  it("runs after a body that threw, and the throw is the step's ending", async () => {
+    const { bodies, seen } = watching({
+      implement: async () => {
+        throw new Error("the agent runtime raised: ECONNRESET");
+      },
+    });
+    const { actionsAt } = watchingActions();
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt).toEqual({
+      step: "implement",
+      ending: {
+        ending: "did-not-finish",
+        because: "threw",
+        at: null,
+        detail: "the `implement` step threw: the agent runtime raised: ECONNRESET",
+      },
+    });
+    expect(result.steps.map((s) => s.step)).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "design",
+      "implement",
+      "end",
+    ]);
+    expect(seen.at(-1)).toMatchObject({ step: "end", outcome: "blocked" });
+  });
+
+  /** And a list that could not even be built is the same ending, not a crash. */
+  it("runs after an actionsAt that threw", async () => {
+    const { bodies, seen } = watching();
+    const actionsAt: PassOptions["actionsAt"] = (step) => {
+      if (step === "prepared") throw new Error("no plugin named `instal`");
+      return [];
+    };
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt).toMatchObject({
+      step: "prepared",
+      ending: { ending: "did-not-finish", because: "threw" },
+    });
+    expect(seen.at(-1)?.step).toBe("end");
+  });
+
+  /**
    * The one case the loop already reached it. Running it twice would carry out
    * a recipe's effects twice, which is what `resolveEndActions`'s per-outcome
    * dedupe exists to stop one layer down — and it should not need to.
    */
-  it("runs once when end is where the pass stopped", async () => {
+  it("runs once when end itself is the step that did not pass", async () => {
     const { bodies, seen } = watching({
       end: async () => ({ ending: "did-not-finish", because: "needs-input", at: null, detail: "who owns this?" }),
     });
@@ -537,7 +665,37 @@ describe("end runs on every ending and cannot refuse", () => {
 
     expect(seen.filter((s) => s.step === "end")).toHaveLength(1);
     expect(result.steps.filter((s) => s.step === "end")).toHaveLength(1);
-    expect(result.stoppedAt?.step).toBe("end");
+  });
+
+  /**
+   * **And it is not what stopped the pass.** `end` is reached inline only when
+   * the nine before it passed — so the merge landed, and its body was handed
+   * `landed` and has already resolved its `when: landed` effects, closing the
+   * issue and labelling the item. Naming `end` on `stoppedAt` would leave one
+   * pass with two readings that disagree: `outcomeOf(result.stoppedAt)` would
+   * say `blocked`, and a T5 caller appending from it — the mapping this file
+   * exports for exactly that — would write `WorkItemBlocked` for an item whose
+   * `main` moved, and sit it on *Waiting on you*.
+   *
+   * How `end` went is not lost; it is `end`'s own entry in `steps`.
+   */
+  it("does not report itself as where the pass stopped", async () => {
+    const { bodies, seen } = watching({
+      end: async () => ({ ending: "did-not-finish", because: "threw", at: null, detail: "tell.ts: 404" }),
+    });
+    const { actionsAt } = watchingActions();
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    // What the body was told and what a caller reads back are one answer.
+    expect(seen.at(-1)).toMatchObject({ step: "end", outcome: "landed" });
+    expect(result.stoppedAt).toBeNull();
+    expect(outcomeOf(result.stoppedAt)).toBe("landed");
+    expect(result.steps.at(-1)).toMatchObject({
+      step: "end",
+      ending: { ending: "did-not-finish", because: "threw", detail: "tell.ts: 404" },
+    });
   });
 });
 
@@ -626,14 +784,26 @@ describe("the ten bodies are empty, and the empty one that is not silent", () =>
     const { actionsAt } = watchingActions();
     const { emit } = events();
 
-    await expect(runPass({ recipe, context, emit, actionsAt })).rejects.toThrow(
-      /the `end` step has 1 effect\(s\) declared — "close it" — and this pass has no body/,
-    );
+    const result = await runPass({ recipe, context, emit, actionsAt });
+
+    // Reported as the step's ending rather than thrown out of the pass, which
+    // is the same rule one turn on: a pass that vanished must not look like
+    // one that never started. The words are all still there.
+    expect(result.steps.at(-1)).toMatchObject({
+      step: "end",
+      ending: {
+        ending: "did-not-finish",
+        because: "threw",
+        detail: expect.stringContaining(
+          'the `end` step has 1 effect(s) declared — "close it" — and this pass has no body',
+        ),
+      },
+    });
     // And it names the call the body will make, third argument filled in: the
     // outcome is what a body needs to decide whether `close it` fires at all.
-    await expect(runPass({ recipe, context, emit, actionsAt })).rejects.toThrow(
-      /resolveEndActions\(events, end, "landed"\)/,
-    );
+    expect(result.steps.at(-1)?.ending).toMatchObject({
+      detail: expect.stringContaining('resolveEndActions(events, end, "landed")'),
+    });
   });
 
   it("is the same ten bodies the loop uses by default", () => {

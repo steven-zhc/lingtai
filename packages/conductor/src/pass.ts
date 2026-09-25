@@ -37,7 +37,10 @@
  * visited, every one of the ten lands an entry in `PassResult.steps`, and a
  * configured step whose body does not exist yet **throws** rather than passing
  * quietly — *configured and did not run* must not look like *empty*
- * ([0016](../../../doc/decisions/0016-the-settled-model.md) §4).
+ * ([0016](../../../doc/decisions/0016-the-settled-model.md) §4). The loop
+ * reports that throw as the step's own ending rather than losing the pass to
+ * it, which is the same rule once more: a pass that vanished must not look
+ * like one that never started.
  *
  * ## What survives from the old file
  *
@@ -446,7 +449,16 @@ export interface PassResult {
    * It names the step, which is the third of the three things 0058 §3c asks a
    * refusal to carry; the other two are on the ending. It is **not** set by
    * `end` failing after a stop: `end` runs on every ending, and what stopped
-   * the pass is the step that did.
+   * the pass is the step that did. **Nor by `end` failing after a pass that got
+   * through**, which is the same sentence from the other side: the nine before
+   * it passed, so the merge landed and `end`'s body was handed `landed` and has
+   * already resolved its `when: landed` effects. Naming `end` here would make
+   * `outcomeOf` read `blocked` off the very pass those effects closed the issue
+   * for, and a caller appending from it would write `WorkItemBlocked` for an
+   * item whose `main` moved.
+   *
+   * **How `end` itself ended is `end`'s own entry in `steps`**, which is the
+   * only place it is written down and the only place to read it.
    */
   readonly stoppedAt: { readonly step: Step; readonly ending: Exclude<StepEnding, StepPassed> } | null;
 }
@@ -458,8 +470,10 @@ export interface PassResult {
  * sequence and the outcome rules.* The mapping is the one the conductor already
  * runs, read off its call sites rather than invented here:
  *
- * - every step passed, so `merge` ran and the work landed — `landed`
- *   (`run-once.ts:3423`);
+ * - nothing stopped the spine, so `merge` ran and the work landed — `landed`
+ *   (`run-once.ts:3423`), and that stays true where `end`'s own body then
+ *   stumbled: `main` moved either way, and `end` is never what stopped a pass
+ *   (`PassResult.stoppedAt`);
  * - a refusal, a question a person now holds, or an agent that started and left
  *   no receipt — `blocked`. All three end with a person holding the question
  *   and the item on *Waiting on you* (`run-once.ts:3383`, `:3274`, and `:2229`,
@@ -506,7 +520,12 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     const reached = await runStep(spec, options, bodies, [...steps], stoppedAt);
     steps.push(reached);
     if (reached.ending.ending !== "passed") {
-      stoppedAt = { step: spec.step, ending: reached.ending };
+      // And `end` is never what stopped it, not even when `end` is the step
+      // that did not pass: it was handed `landed` one line ago, because the
+      // nine before it passed. Recording it here would leave one pass with two
+      // readings that disagree — the body told `landed`, `outcomeOf` saying
+      // `blocked` — and the second is the one a caller appends from.
+      if (spec.step !== "end") stoppedAt = { step: spec.step, ending: reached.ending };
       break;
     }
   }
@@ -516,9 +535,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   // the pass stopped early either. A point that fires on *any* terminal outcome
   // cannot live on one of the paths that reaches one (`end-step.ts`): the loop
   // above reaches it only when every step passed, so this is the other nine
-  // arrivals. The guard is for the one case where the loop already ran it — a
-  // stop *at* `end` — which must not run it twice.
-  if (stoppedAt !== null && stoppedAt.step !== "end") {
+  // arrivals. `stoppedAt` is set by a step that broke the loop and never by
+  // `end`, so a non-null one is exactly *the loop did not reach `end`* — which
+  // is what runs it here once and never twice.
+  if (stoppedAt !== null) {
     // `reached` includes the step that stopped it, and `stoppedAt` is what
     // `outcomeOf` reads: `end` is the one body that is told which of the four
     // endings it is running for, because its effects are filtered by `when:`.
@@ -536,6 +556,11 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
  * not happened yet would be routing on nothing. A body is therefore called only
  * when the step's plugins passed, and never called at all is not a case: every
  * step's plugins either pass or end the pass.
+ *
+ * **And it does not throw.** Whatever a body, an `actionsAt` or a workflow
+ * assertion raises comes back as an ending, because the one thing that must
+ * survive every way a step can go wrong is the pass reaching `end` — see
+ * `threw` below.
  */
 async function runStep(
   spec: StepSpec,
@@ -547,46 +572,89 @@ async function runStep(
   const actions = options.recipe.steps[spec.step];
   let results: readonly ActionOutcome[] = [];
 
-  if (spec.plugins === "verdicts") {
-    const result = await runActionPipeline({
+  try {
+    if (spec.plugins === "verdicts") {
+      const result = await runActionPipeline({
+        step: spec.step,
+        actions: options.actionsAt(spec.step, actions),
+        context: options.context,
+        emit: options.emit,
+      });
+      // Carried out whatever the step then did, because the verdicts are what a
+      // later body routes on and a refusal's are the ones it most needs: a
+      // `proposed` handed only *`build` refused* cannot tell a findings-bearing
+      // refusal that buys a fix round from one that has nothing to fix.
+      //
+      // Assigned before the body runs, so a body that throws still reports what
+      // its own plugins said.
+      results = result.results;
+      const ending = endingOf(spec, result);
+      // Not `continue`, and not a swallowed failure: a step whose plugins did
+      // not pass has ended, and the body does not run.
+      if (ending.ending !== "passed") {
+        return { step: spec.step, ending, results };
+      }
+    }
+
+    // The cast is the price of `StepBodies` being keyed by the literal step:
+    // read at `bodies[spec.step]` with `spec.step: Step` it is a union of ten
+    // function types, and calling a union wants the intersection of their
+    // parameters. `EndingAt<Step>` distributes to `StepEnding`, so what comes
+    // back is checked by `onlyTheFourMayRefuse` on the line below rather than
+    // by the compiler.
+    const body = bodies[spec.step] as StepBody<Step>;
+    const ending = await body({
       step: spec.step,
-      actions: options.actionsAt(spec.step, actions),
+      actions,
+      refuses: spec.refuses,
+      reached,
+      // Null at nine of the ten, which is exactly what `StepWork`'s type says:
+      // the outcome is *where the pass stopped*, and no step but `end` runs once
+      // that is known. `StepWork<Step>["outcome"]` distributes to
+      // `TerminalOutcome | null`, so this needs no cast.
+      outcome: spec.step === "end" ? outcomeOf(stoppedAt) : null,
       context: options.context,
       emit: options.emit,
     });
-    // Carried out whatever the step then did, because the verdicts are what a
-    // later body routes on and a refusal's are the ones it most needs: a
-    // `proposed` handed only *`build` refused* cannot tell a findings-bearing
-    // refusal that buys a fix round from one that has nothing to fix.
-    results = result.results;
-    const ending = endingOf(result);
-    // Not `continue`, and not a swallowed failure: a step whose plugins did not
-    // pass has ended, and the body does not run.
-    if (ending.ending !== "passed") {
-      return { step: spec.step, ending: onlyTheFourMayRefuse(spec, ending), results };
-    }
+    return { step: spec.step, ending: onlyTheFourMayRefuse(spec, ending), results };
+  } catch (error) {
+    return { step: spec.step, ending: threw(spec, error), results };
   }
+}
 
-  // The cast is the price of `StepBodies` being keyed by the literal step: read
-  // at `bodies[spec.step]` with `spec.step: Step` it is a union of ten function
-  // types, and calling a union wants the intersection of their parameters.
-  // `EndingAt<Step>` distributes to `StepEnding`, so what comes back is checked
-  // by `onlyTheFourMayRefuse` on the line below rather than by the compiler.
-  const body = bodies[spec.step] as StepBody<Step>;
-  const ending = await body({
-    step: spec.step,
-    actions,
-    refuses: spec.refuses,
-    reached,
-    // Null at nine of the ten, which is exactly what `StepWork`'s type says:
-    // the outcome is *where the pass stopped*, and no step but `end` runs once
-    // that is known. `StepWork<Step>["outcome"]` distributes to
-    // `TerminalOutcome | null`, so this needs no cast.
-    outcome: spec.step === "end" ? outcomeOf(stoppedAt) : null,
-    context: options.context,
-    emit: options.emit,
-  });
-  return { step: spec.step, ending: onlyTheFourMayRefuse(spec, ending), results };
+/**
+ * A step that threw is a step that did not finish, and the pass carries on.
+ *
+ * `action.ts` does this one layer down and says why — *the alternative is an
+ * exception escaping the pipeline and a run ending with no verdict at all* —
+ * and up here the same escape costs more, because what it takes with it is
+ * `end`: the point 0058 §3 says runs on **every** ending, and the guarantee
+ * this whole file is arranged around. An `implement` body whose agent runtime
+ * raises, a `merge` whose `git push` throws, an `actionsAt` that refuses to
+ * build a cell, or one of this file's own workflow assertions firing would
+ * otherwise end the pass with no `PassResult`, no resolved `end` effects and no
+ * terminal outcome on the item at all — the silent `return 1` that
+ * `RefusalReason`'s doc says the old loop was built to remove. A run that
+ * vanishes is the one shape an unattended pipeline cannot report.
+ *
+ * **`did-not-finish` at every one of the ten, and never `refused`**: a crash is
+ * not a judgement about the change, so it buys no fix round and stands only the
+ * pass down (0057 §1–3). `because` is its own token rather than the pipeline's
+ * `did-not-finish`, so *the step threw* and *an agent started and left no
+ * receipt* are told apart by a caller reading a field rather than a sentence
+ * (0031 §1) — and the message the assertion wrote is on `detail`, which is
+ * where a person reads it.
+ */
+function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
+  return {
+    ending: "did-not-finish",
+    because: "threw",
+    // No action to name: `runActionPipeline` has already turned a throwing
+    // action into a verdict, so what arrives here is the step's own body or the
+    // building of its list.
+    at: null,
+    detail: `the \`${spec.step}\` step threw: ${error instanceof Error ? error.message : String(error)}`,
+  };
 }
 
 /**
@@ -595,8 +663,11 @@ async function runStep(
  * Each of the four absences is asked for before `ok`, so a result that somehow
  * carries both cannot read as a pass — and a result carrying neither is a bug
  * in the pipeline rather than a step that quietly succeeded.
+ *
+ * The step is read alongside the verdicts because one of the five means
+ * different things at different steps: see `failedAt` below.
  */
-function endingOf(result: PipelineResult): StepEnding {
+function endingOf(spec: StepSpec, result: PipelineResult): StepEnding {
   if (result.neverRanAt !== null) {
     return { ending: "never-ran", at: result.neverRanAt.action, detail: result.neverRanAt.detail };
   }
@@ -616,8 +687,7 @@ function endingOf(result: PipelineResult): StepEnding {
     return { ending: "held", at: result.heldAt, question: evidenceFrom(result, "needs-approval") };
   }
   if (result.failedAt !== null) {
-    return {
-      ending: "refused",
+    const said = {
       // *Something the recipe declared refused*, which is all the pipeline
       // knows. The log spells this `gate-failed` today — `RefusalReason` in
       // `@lingtai/domain`, and 0058 §3c's own example of a machine-readable
@@ -629,7 +699,20 @@ function endingOf(result: PipelineResult): StepEnding {
       because: "action-refused",
       at: result.failedAt,
       detail: evidenceFrom(result, "failed"),
-    };
+    } as const;
+    // **Which step ran it decides what a `failed` verdict means** (0058 §2).
+    // At one of the four it is a refusal, with everything a refusal buys. At
+    // the other six an action saying no is an ordinary plugin verdict and not a
+    // programming error: `review`'s whole job is a reviewer that finds
+    // blockers, and its verdict for one is `failed` — so the day `KINDS_AT`
+    // opens that row (`recipe.ts:781`, `WHERE_INSTEAD.review`) the first
+    // blocker anybody finds arrives on this line. Reported as `did-not-finish`,
+    // carrying the same three fields, which is what this file's own refusal
+    // message already prescribes: *a step that did not finish reports
+    // `did-not-finish` and reaches `proposed` without buying a fix round
+    // (0057).* Nothing the action said is dropped and no fix round is spent at
+    // a step the workflow does not let refuse.
+    return spec.refuses ? { ending: "refused", ...said } : { ending: "did-not-finish", ...said };
   }
   if (result.ok) return { ending: "passed" };
   throw new Error(
@@ -662,14 +745,23 @@ function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
 }
 
 /**
- * The runtime half of *only the four may refuse*.
+ * The runtime half of *only the four may refuse*, and **a body's alone**.
  *
  * `EndingAt` says it to anybody writing a body and the compiler stops looking
- * once a body is read out of `StepBodies[Step]`. Throwing rather than
- * downgrading the refusal to something else: a refusal from `claim` is a
- * programming error about the workflow, and the consequences a refusal buys —
- * a fix round, a held item, a person — are exactly what must not be spent on
- * one nothing meant.
+ * once a body is read out of `StepBodies[Step]` — which is the whole of what
+ * this catches, and the whole of what its throw is right for. A refusal a
+ * *body* invents at `claim` is a programming error about the workflow, and the
+ * consequences a refusal buys — a fix round, a held item, a person — are
+ * exactly what must not be spent on one nothing meant.
+ *
+ * A plugin's `failed` verdict at one of the six is not that and never reaches
+ * here: `endingOf` reads it against the step and reports `did-not-finish`, so
+ * a reviewer finding a blocker is answered rather than treated as a bug.
+ *
+ * The throw is caught by `runStep` and reported as the step's ending, because
+ * a programming error is the case where an unattended run most needs `end` to
+ * run and the item to carry a terminal outcome. The message is what a person
+ * reads on `detail`; what it no longer does is take the pass with it.
  */
 function onlyTheFourMayRefuse(spec: StepSpec, ending: StepEnding): StepEnding {
   if (ending.ending === "refused" && !spec.refuses) {
