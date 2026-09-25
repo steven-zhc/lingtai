@@ -15,7 +15,7 @@
  * ## What is here, and what is deliberately not
  *
  * Here: how a step is represented, how the recipe drives it, what a step is
- * handed and what it hands back, how a refusal stops the pass and what it
+ * handed and what it hands back, where a refusal sends the pass and what it
  * reports. **The ten bodies are empty** — `NOT_BUILT_YET` is all ten of them —
  * because the bodies are the next ticket and they are filling in a contract
  * this file has already fixed.
@@ -33,14 +33,46 @@
  * going. **The one thing it must never do is `continue` past a step that *was*
  * configured**: four of `end`'s six cells were declarable, drawn, and silently
  * dropped by exactly that line (`#61`, and the comment at `end-step.ts`'s
- * kind guard). So there is no `continue` in this file. Every one of the ten is
- * visited, every one of the ten lands an entry in `PassResult.steps`, and a
- * configured step whose body does not exist yet **throws** rather than passing
- * quietly — *configured and did not run* must not look like *empty*
+ * kind guard). So nothing in this file passes over a step it reached: every
+ * step the pass reaches lands an entry in `PassResult.steps`, and a configured
+ * step whose body does not exist yet **throws** rather than passing quietly —
+ * *configured and did not run* must not look like *empty*
  * ([0016](../../../doc/decisions/0016-the-settled-model.md) §4). The loop
  * reports that throw as the step's own ending rather than losing the pass to
  * it, which is the same rule once more: a pass that vanished must not look
  * like one that never started.
+ *
+ * **A step the pass never reached is the other thing, and it is the drawing's.**
+ * A refusal at `prepared` sends the pass to `proposed`, so `design`,
+ * `implement`, `build` and `review` do not run — they were not skipped, they
+ * are not on the way (0058 §3b). What that must never become is a step being
+ * visited and passed over, which is the line above.
+ *
+ * ## A step that does not pass goes to `proposed`, not to `end`
+ *
+ * **`proposed` is the only step that routes** (0058 §3, §3c), and every step
+ * that did not pass arrives there carrying its reason — a refusal from one of
+ * the four, and `needs-input` from `admit`, `design` or `implement`, which is
+ * no judgement about the change and buys none of what a refusal buys (0057).
+ * **That is what makes the loops bounded**: each one passes through the router,
+ * which is where the ceilings live. A pass that went from the refusal straight
+ * to `end` would put the item on *Waiting on you* with nobody having judged
+ * whether a person was worth interrupting, and no refusal could ever buy the
+ * fix round the money in 0058 §2 is measured in.
+ *
+ * Two of the ten do not arrive there and neither is an omission. **`claim` is
+ * not in 0058 §3b's second drawing**: a claim that did not pass picked no
+ * ticket, so there is nothing to route and nobody to hold. And **`merge`'s
+ * arrival is the one *back*-edge** — the router has already run — so it is a
+ * loop, and a loop wants the ceiling that sits on the router.
+ *
+ * **Here the arrival is built and the routing is not**, which is the T4a/T4b
+ * line: the router is reached, it is handed every step before it and everything
+ * their plugins said, and the pass stops after it — because `NOT_BUILT_YET`'s
+ * `proposed` has nothing to say, and a router that routed nowhere must not fall
+ * through to `merge`. The four answers it will give, the ceilings that bound
+ * them and `merge`'s back-edge are T4b's, and an ending that says *go round
+ * again* lands with them.
  *
  * ## What survives from the old file
  *
@@ -142,6 +174,34 @@ export const PASS: readonly StepSpec[] = STEPS.map((step) => ({
  * forever.
  */
 const END: StepSpec = PASS.find((spec) => spec.step === "end")!;
+
+/**
+ * The nine the pass walks. `end` is not one of them because it is not a place
+ * the walk can stop: it runs after the walk, on every ending (0058 §3).
+ */
+const SPINE: readonly StepSpec[] = PASS.filter((spec) => spec.step !== "end");
+
+/** Where the router sits in the spine — *the only step that routes*, 0058 §3. */
+const ROUTER: number = SPINE.findIndex((spec) => spec.step === "proposed");
+
+/**
+ * The steps that arrive at the router when they do not pass.
+ *
+ * It is 0058 §3b's second drawing, which names seven — `admit`, `prepared`,
+ * `design`, `implement`, `build`, `review`, `merge` — and leaves out three.
+ * `proposed` is the router. `end` runs after every ending rather than arriving
+ * anywhere. And **`claim` is left out on purpose**: a claim that did not pass
+ * picked no ticket, so a router asked to decide what to do about it would be
+ * deciding about nothing, and the person it might interrupt owns no item.
+ *
+ * Written as the subtraction rather than as a list of seven, so a step added to
+ * the vocabulary arrives at the router unless somebody says otherwise — which
+ * is the safe default when the alternative is 0058's *every one of them
+ * arrives at the same place* quietly gaining an exception.
+ */
+const ARRIVES_AT_THE_ROUTER: readonly Step[] = STEPS.filter(
+  (step) => step !== "claim" && step !== "proposed" && step !== "end",
+);
 
 // ------------------------------------------------- what a step hands back ----
 
@@ -292,7 +352,8 @@ export interface StepWork<S extends Step = Step> {
   readonly refuses: boolean;
   /**
    * Every step the pass has already reached, in order, with how each ended and
-   * what its plugins said. Empty at `claim`; nine long at `end`.
+   * what its plugins said. Empty at `claim`; nine long at `end` on a pass that
+   * got through, and shorter on one that was routed.
    *
    * **A body that cannot see backwards cannot route**, and `proposed` is the
    * one step whose whole job is routing (0058 §3c): it decides on `build`'s
@@ -440,7 +501,11 @@ export interface PassResult {
    * always.
    *
    * The list is the anti-skip assertion: ten entries on a pass that got
-   * through, and a `continue` anywhere in the loop would drop one.
+   * through, and a step passed over anywhere in the loop would drop one. It is
+   * shorter on a pass that did not get through, and that is the route rather
+   * than a skip — a refusal at `prepared` reads `claim`, `admit`, `prepared`,
+   * `proposed`, `end`, because the four steps between the refusal and the
+   * router are not on the way (0058 §3b).
    */
   readonly steps: readonly StepReached[];
   /**
@@ -456,6 +521,12 @@ export interface PassResult {
    * `outcomeOf` read `blocked` off the very pass those effects closed the issue
    * for, and a caller appending from it would write `WorkItemBlocked` for an
    * item whose `main` moved.
+   *
+   * **Nor is it set by `proposed` when the pass arrived there**, which is the
+   * same sentence a third time: the router is where a step that did not pass
+   * goes, not what stopped the spine, and `outcomeOf` wants the cause. A
+   * refusal at `prepared` that the router had nothing to say about reads
+   * `prepared` here, with `proposed` in `steps` above showing it was asked.
    *
    * **How `end` itself ended is `end`'s own entry in `steps`**, which is the
    * only place it is written down and the only place to read it.
@@ -499,51 +570,65 @@ export function outcomeOf(stoppedAt: PassResult["stoppedAt"]): TerminalOutcome {
  *
  * ```ts
  * const result = await runPass({ recipe, context, emit });
- * result.steps;      // ten entries, in pass order
+ * result.steps;      // ten entries on a pass that got through, in pass order
  * result.stoppedAt;  // null, or the step that stopped it and why
  * ```
  *
- * The whole of the control flow is: run each step; stop at the first one that
- * did not pass; run `end` whatever happened. Everything a step *does* is its
- * body's and its plugins', which is 0058 §2b — *the core is the sequence and
- * the outcome rules; everything that acts is a plugin.*
+ * The whole of the control flow is: run each step; send the first one that did
+ * not pass to `proposed`, the only step that routes; run `end` whatever
+ * happened. Everything a step *does* is its body's and its plugins', which is
+ * 0058 §2b — *the core is the sequence and the outcome rules; everything that
+ * acts is a plugin.*
  */
 export async function runPass(options: PassOptions): Promise<PassResult> {
   const bodies = options.bodies ?? NOT_BUILT_YET;
   const steps: StepReached[] = [];
   let stoppedAt: PassResult["stoppedAt"] = null;
 
-  for (const spec of PASS) {
-    // `stoppedAt` is still null on every iteration — the loop breaks the moment
-    // it is set — so `end` reached here is `end` after a pass that got through,
-    // and `outcomeOf` says `landed`.
+  let at = 0;
+  while (at < SPINE.length) {
+    const spec = SPINE[at]!;
+    // A `stoppedAt` already set on the way in means this iteration *is* the
+    // router, reached by a step that did not pass. The pass stops after it
+    // however it ends: `NOT_BUILT_YET`'s `proposed` has nothing to say, and a
+    // router that routed nowhere must not fall through to `merge` — the merge
+    // lane is for a change `proposed` passed, not one it was never able to
+    // judge. The four answers it will give are T4b's.
+    const routing = stoppedAt !== null;
     const reached = await runStep(spec, options, bodies, [...steps], stoppedAt);
     steps.push(reached);
-    if (reached.ending.ending !== "passed") {
-      // And `end` is never what stopped it, not even when `end` is the step
-      // that did not pass: it was handed `landed` one line ago, because the
-      // nine before it passed. Recording it here would leave one pass with two
-      // readings that disagree — the body told `landed`, `outcomeOf` saying
-      // `blocked` — and the second is the one a caller appends from.
-      if (spec.step !== "end") stoppedAt = { step: spec.step, ending: reached.ending };
-      break;
+
+    if (routing) break;
+    if (reached.ending.ending === "passed") {
+      at += 1;
+    } else {
+      // The step that stopped the spine, and never the router it goes to:
+      // `outcomeOf` reads this, and *what stopped it* is the cause rather than
+      // the place it was carried to.
+      stoppedAt = { step: spec.step, ending: reached.ending };
+      // **Every step that did not pass arrives at `proposed`** (0058 §3c), so
+      // the steps between it and the router are not on the way. `at < ROUTER`
+      // is the forward arrival; `merge`'s is the one back-edge and is T4b's,
+      // because a loop wants the ceiling that sits on the router — and
+      // `claim`'s absence from the drawing is `ARRIVES_AT_THE_ROUTER`'s.
+      at = at < ROUTER && ARRIVES_AT_THE_ROUTER.includes(spec.step) ? ROUTER : SPINE.length;
     }
   }
 
   // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
   // stopped once a merge has landed, and nothing can be left unfinished because
   // the pass stopped early either. A point that fires on *any* terminal outcome
-  // cannot live on one of the paths that reaches one (`end-step.ts`): the loop
-  // above reaches it only when every step passed, so this is the other nine
-  // arrivals. `stoppedAt` is set by a step that broke the loop and never by
-  // `end`, so a non-null one is exactly *the loop did not reach `end`* — which
-  // is what runs it here once and never twice.
-  if (stoppedAt !== null) {
-    // `reached` includes the step that stopped it, and `stoppedAt` is what
-    // `outcomeOf` reads: `end` is the one body that is told which of the four
-    // endings it is running for, because its effects are filtered by `when:`.
-    steps.push(await runStep(END, options, bodies, [...steps], stoppedAt));
-  }
+  // cannot live on one of the paths that reaches one (`end-step.ts`), so it is
+  // outside the walk rather than the last thing in it: run once here, whatever
+  // the nine did and wherever they stopped.
+  //
+  // `stoppedAt` is what `outcomeOf` reads, and it is null on a pass that got
+  // through — so `end` is never what stopped a pass, not even when `end` is the
+  // step that did not pass. It was handed `landed`, because the nine before it
+  // passed; recording it as the stop would leave one pass with two readings
+  // that disagree — the body told `landed`, `outcomeOf` saying `blocked` — and
+  // the second is the one a caller appends from.
+  steps.push(await runStep(END, options, bodies, [...steps], stoppedAt));
 
   return { steps, stoppedAt };
 }

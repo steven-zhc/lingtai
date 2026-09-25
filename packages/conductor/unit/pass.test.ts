@@ -359,9 +359,16 @@ describe("four steps may refuse, and the other six may not", () => {
       },
     });
     // The step's own body never ran: its plugins ended the step.
-    expect(seen.map((s) => s.step)).toEqual(["claim", "admit", "end"]);
-    // And nothing after `prepared` was reached, `end` excepted.
-    expect(result.steps.map((s) => s.step)).toEqual(["claim", "admit", "prepared", "end"]);
+    expect(seen.map((s) => s.step)).toEqual(["claim", "admit", "proposed", "end"]);
+    // And the refusal went to the router, not to `end` — 0058 §3c. The four
+    // steps between it and `proposed` are not on the way.
+    expect(result.steps.map((s) => s.step)).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "proposed",
+      "end",
+    ]);
   });
 });
 
@@ -497,8 +504,17 @@ describe("a body can read what the steps before it said", () => {
     expect(result.steps.find((s) => s.step === "prepared")?.results).toEqual([
       { action: "install", verdict: "failed", evidence: "exited 1", findings: [] },
     ]);
-    // `end` sees the step that stopped the pass, not the eight before it only.
-    expect(seen.at(-1)?.reached.at(-1)).toMatchObject({ step: "prepared" });
+    // `end` sees the step that stopped the pass and the router it went to,
+    // rather than the steps before it only.
+    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "proposed",
+    ]);
+    expect(seen.at(-1)?.reached.find((s) => s.step === "prepared")?.results).toEqual([
+      { action: "install", verdict: "failed", evidence: "exited 1", findings: [] },
+    ]);
   });
 });
 
@@ -556,6 +572,203 @@ describe("a step that did not finish is not a step that refused", () => {
     const result = await runPass({ recipe, context, emit, bodies, actionsAt });
 
     expect(result.stoppedAt?.ending).toEqual({ ending: "held", at: "sign off", question: "ship it?" });
+  });
+});
+
+// --------------------------------------------------------- the router ----
+
+describe("every step that does not pass arrives at proposed", () => {
+  /**
+   * 0058 §3, §3c and the second drawing of §3b: `proposed` is **the only step
+   * that routes**, and every step that did not pass arrives there carrying its
+   * reason. That is what bounds the loops — each one passes through the
+   * workflow check, which is where the ceilings live — and a pass that went
+   * from the refusal straight to `end` would put the item on *Waiting on you*
+   * with nobody having judged whether a person was worth interrupting.
+   */
+  it("sends a refusal to the router rather than to end", async () => {
+    const recipe = recipeWith({ prepared: [{ name: "install", run: "pnpm install" }] });
+    const { bodies, seen } = watching();
+    const { actionsAt, ran } = watchingActions({
+      prepared: [canned("install", { verdict: "failed", evidence: "exited 1", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    // The router was reached — its plugins ran, and then its body.
+    expect(ran.map((r) => r.step)).toEqual(["claim", "admit", "prepared", "proposed"]);
+    expect(seen.map((s) => s.step)).toEqual(["claim", "admit", "proposed", "end"]);
+    // And what stopped the spine is `prepared`, not the place it was carried
+    // to: `outcomeOf` reads this, and it wants the cause.
+    expect(result.stoppedAt?.step).toBe("prepared");
+  });
+
+  /** `did-not-finish` too, which is 0058's *not the same thing* and buys nothing. */
+  it("sends a step that did not finish there as well", async () => {
+    const { bodies, seen } = watching({
+      implement: async () => ({
+        ending: "did-not-finish",
+        because: "needs-input",
+        at: null,
+        detail: "which of the two schemas is authoritative?",
+      }),
+    });
+    const { actionsAt } = watchingActions();
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(seen.map((s) => s.step)).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "design",
+      "implement",
+      "proposed",
+      "end",
+    ]);
+    expect(result.stoppedAt).toEqual({
+      step: "implement",
+      ending: {
+        ending: "did-not-finish",
+        because: "needs-input",
+        at: null,
+        detail: "which of the two schemas is authoritative?",
+      },
+    });
+  });
+
+  /**
+   * The router routes on `build`'s verdict and `review`'s findings, and on a
+   * refusal it needs the refusing step's own — so the arrival carries the whole
+   * of what happened rather than the fact that something did (0058 §3c: *what
+   * happened has to arrive intact*).
+   */
+  it("hands the router the step that did not pass, with its verdicts", async () => {
+    const recipe = recipeWith({ prepared: [{ name: "install", run: "pnpm install" }] });
+    let atProposed: readonly StepReached[] = [];
+    const { bodies } = watching({
+      proposed: async (work) => {
+        atProposed = work.reached;
+        return { ending: "passed" };
+      },
+    });
+    const { actionsAt } = watchingActions({
+      prepared: [canned("install", { verdict: "failed", evidence: "exited 1", findings: [] })],
+    });
+    const { emit } = events();
+
+    await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(atProposed.map((s) => s.step)).toEqual(["claim", "admit", "prepared"]);
+    expect(atProposed.at(-1)).toEqual({
+      step: "prepared",
+      ending: {
+        ending: "refused",
+        because: "action-refused",
+        at: "install",
+        detail: "exited 1",
+      },
+      results: [{ action: "install", verdict: "failed", evidence: "exited 1", findings: [] }],
+    });
+  });
+
+  /**
+   * **The router routes nowhere yet, and the pass must not fall through to
+   * `merge`** — the merge lane is for a change `proposed` passed, not one it was
+   * never able to judge. `NOT_BUILT_YET`'s `proposed` passes, which is what
+   * makes this the case worth pinning: T4b's four answers land here, and until
+   * they do, a routed pass ends after the router.
+   */
+  it("stops after the router rather than falling through to merge", async () => {
+    const recipe = recipeWith({
+      prepared: [{ name: "install", run: "pnpm install" }],
+      merge: [{ name: "verify", run: "pnpm test" }],
+    });
+    const { bodies } = watching();
+    const { actionsAt, ran } = watchingActions({
+      prepared: [canned("install", { verdict: "failed", evidence: "exited 1", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(ran.map((r) => r.step)).not.toContain("merge");
+    expect(result.steps.map((s) => s.step)).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "proposed",
+      "end",
+    ]);
+  });
+
+  /** And the router is asked once: its own refusal does not send it to itself. */
+  it("does not re-enter the router when the router is what refused", async () => {
+    const recipe = recipeWith({ proposed: [{ name: "judge", run: "true" }] });
+    const { bodies } = watching();
+    const { actionsAt, ran } = watchingActions({
+      proposed: [canned("judge", { verdict: "failed", evidence: "every ceiling spent", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(ran.filter((r) => r.step === "proposed")).toHaveLength(1);
+    expect(result.steps.filter((s) => s.step === "proposed")).toHaveLength(1);
+    expect(result.stoppedAt?.step).toBe("proposed");
+  });
+
+  /**
+   * **`claim` is the one step that does not arrive there**, and it is 0058
+   * §3b's second drawing that says so: it names `admit`, `prepared`, `design`,
+   * `implement`, `build`, `review` and `merge`, and leaves `claim` out. A claim
+   * that did not pass picked no ticket, so there is nothing for a router to
+   * route and no item for it to hold — and `proposed` may send a pass back to
+   * `claim`, which is the edge that would have nothing to release.
+   */
+  it("does not send a claim that did not pass to the router", async () => {
+    // Through the body rather than a plugin, because `KINDS_AT` runs nothing at
+    // `claim` yet and `StepMap` refuses an action there by name — which is the
+    // same `#61` rule one layer out, and is why `claim`'s list is empty here.
+    const { bodies, seen } = watching({
+      claim: async () => ({ ending: "never-ran", at: "queue", detail: "usage limit reached" }),
+    });
+    const { actionsAt } = watchingActions();
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(result.steps.map((s) => s.step)).toEqual(["claim", "end"]);
+    expect(seen.map((s) => s.step)).toEqual(["claim", "end"]);
+    // The wall is about the account rather than the diff: the claim is
+    // released and the item goes back to the queue (0031 §3).
+    expect(outcomeOf(result.stoppedAt)).toBe("failed");
+  });
+
+  /**
+   * **`merge`'s arrival is the one back-edge, and it is T4b's.** 0058 §3c gives
+   * it to `proposed` — *anything else → proposed, and only proposed may send it
+   * to a person* — but the router has already run by then, so that edge is a
+   * loop and a loop wants the ceiling that sits on the router. Until T4b builds
+   * them, a merge that refused ends the pass, which is where the item sits
+   * today. This is the assertion to change when that ticket lands.
+   */
+  it("ends the pass at a merge that refused, which is the edge T4b adds", async () => {
+    const recipe = recipeWith({ merge: [{ name: "verify", run: "pnpm test" }] });
+    const { bodies } = watching();
+    const { actionsAt, ran } = watchingActions({
+      merge: [canned("verify", { verdict: "failed", evidence: "the base moved", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    // Once on the way through, and not a second time on the way back.
+    expect(ran.filter((r) => r.step === "proposed")).toHaveLength(1);
+    expect(result.steps.at(-1)?.step).toBe("end");
+    expect(result.stoppedAt?.step).toBe("merge");
   });
 });
 
@@ -626,6 +839,7 @@ describe("end runs on every ending and cannot refuse", () => {
       "prepared",
       "design",
       "implement",
+      "proposed",
       "end",
     ]);
     expect(seen.at(-1)).toMatchObject({ step: "end", outcome: "blocked" });
