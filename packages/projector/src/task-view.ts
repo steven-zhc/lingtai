@@ -106,7 +106,11 @@ export const taskViewProjection: Projection = {
         -- A table built before #249 has the old column and not this one, and
         -- create table if not exists does not add it. The drift check in
         -- shape.ts names both halves and says the remedy: rebuild task_view.
-        -- Until that runs, the write below is to a column that is not there.
+        -- Until that runs, the write below is to a column that is not there,
+        -- and so is the read: columnOf in store.ts is what makes the board say
+        -- the same sentence rather than count four zeros, because a daemon on
+        -- the old code keeps the checkpoint at head and leaves the shape check
+        -- nothing to fire on.
         verdicts     jsonb not null default '{}'::jsonb,
 
         -- One line for the card: what it is waiting on, or why it stopped.

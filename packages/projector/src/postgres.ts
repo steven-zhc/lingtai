@@ -16,6 +16,7 @@
 import pg from "pg";
 import { postgresUrl } from "@lingtai/env";
 import type { BacklogEntry } from "./backlog.ts";
+import { columnOf } from "./store.ts";
 import type {
   BacklogQuery,
   ProjectionContext,
@@ -60,7 +61,11 @@ function ctxFor(client: pg.PoolClient | pg.Client): ProjectionContext {
 
 /** A `task_view` row → the card the board renders. Unchanged from `readTasks`. */
 function toCard(row: pg.QueryResultRow): TaskCard {
-  const recorded = (row.verdicts ?? {}) as Record<string, string>;
+  // Through `columnOf`, not off the row: `select t.*` on a table created
+  // before the column was renamed hands back no `verdicts` at all, and
+  // `row.verdicts ?? {}` would count that as a run with no verdicts rather
+  // than as the drift it is.
+  const recorded = (columnOf(row, "task_view", "verdicts") ?? {}) as Record<string, string>;
   // Only the run the row names. A released row names none, so it counts
   // nothing — which is the point: between a release and the next attempt
   // reaching the same point there is no live verdict to report, and the

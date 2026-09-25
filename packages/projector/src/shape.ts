@@ -32,16 +32,22 @@
  * the whole point, because the alternative is finding out when the daemon stops.
  */
 import { withProjectionStore } from "./choose.ts";
-import type { Projection, ProjectionContext, ProjectionStore } from "./store.ts";
+import { describeDrift } from "./store.ts";
+import type {
+  Projection,
+  ProjectionContext,
+  ProjectionDrift,
+  ProjectionStore,
+} from "./store.ts";
 
-/** One table that exists and does not match the DDL that declares it. */
-export interface ProjectionDrift {
-  table: string;
-  /** Declared by the DDL, absent from the live table. The #84 direction. */
-  missing: readonly string[];
-  /** In the live table, no longer declared. A `not null` leftover breaks inserts. */
-  unexpected: readonly string[];
-}
+/**
+ * Drift — what it is, how it is said, and the error that carries it — is
+ * declared in `store.ts` and re-exported from here, which is where every reader
+ * of it already looks. It sits there because the twins' read path raises it too
+ * (`columnOf`) and this file reaches a store through `choose.ts`: importing it
+ * from here would make `sqlite.ts` load `pg`.
+ */
+export { ProjectionShapeError, describeDrift, type ProjectionDrift } from "./store.ts";
 
 export interface ProjectionShape {
   projection: string;
@@ -51,29 +57,6 @@ export interface ProjectionShape {
   absent: readonly string[];
   /** Declared, created, and different. */
   drift: readonly ProjectionDrift[];
-}
-
-/**
- * A projection whose table no longer matches its DDL, refused rather than
- * followed.
- *
- * Thrown by `start()`, so a process that would trip over the missing column
- * says so before it takes any work — the message names the remedy, because the
- * remedy is not obvious from `column x does not exist`.
- */
-export class ProjectionShapeError extends Error {
-  // Assigned in the body, not declared as constructor parameters: a parameter
-  // property is the one TypeScript form Node's type stripping refuses, and
-  // nothing but running it under Node catches that (0010).
-  readonly projection: string;
-  readonly drift: readonly ProjectionDrift[];
-
-  constructor(projection: string, drift: readonly ProjectionDrift[]) {
-    super(describeDrift(projection, drift));
-    this.name = "ProjectionShapeError";
-    this.projection = projection;
-    this.drift = drift;
-  }
 }
 
 /** Table-level clauses that sit where a column name would. */
@@ -240,25 +223,6 @@ export async function projectionShape(
   return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) =>
     shapeIn(projection, store),
   );
-}
-
-/**
- * The finding, with the remedy in it.
- *
- * `column task_view.awaiting_approval does not exist` is the symptom, and it
- * sends the reader looking for a migration that does not exist. Naming the
- * rebuild is the difference between a diagnosis and a puzzle.
- */
-export function describeDrift(projection: string, drift: readonly ProjectionDrift[]): string {
-  const what = drift
-    .map((d) => {
-      const bits: string[] = [];
-      if (d.missing.length > 0) bits.push(`missing ${d.missing.join(", ")}`);
-      if (d.unexpected.length > 0) bits.push(`no longer declared: ${d.unexpected.join(", ")}`);
-      return `${d.table} ${bits.join("; ")}`;
-    })
-    .join(" · ");
-  return `${projection} has drifted from its table — ${what}. Replay, never a repair by hand: lingtai projection rebuild ${projection}`;
 }
 
 /** One line for a report: what was compared, and what it found. */

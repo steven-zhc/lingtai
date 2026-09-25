@@ -36,6 +36,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { DatabaseSync } from "node:sqlite";
 import type { BlockDiagnosis } from "@lingtai/domain";
 import type { BacklogEntry } from "./backlog.ts";
+import { columnOf } from "./store.ts";
 import type {
   BacklogQuery,
   ProjectionContext,
@@ -258,7 +259,10 @@ const parseBool = (v: unknown): boolean => v === 1 || v === 1n || v === true;
 
 /** A `task_view` row → the card the board renders. `postgres.ts`'s twin. */
 function toCard(row: ProjectionRow): TaskCard {
-  const recorded = (parseJson(row.verdicts) ?? {}) as Record<string, string>;
+  // Through `columnOf`, for `postgres.ts`'s reason: a row from a table created
+  // before the rename has no `verdicts` key, and reading it off the row counts
+  // drift as a run that recorded nothing.
+  const recorded = (parseJson(columnOf(row, "task_view", "verdicts")) ?? {}) as Record<string, string>;
   const mine = row.run_id ? `${row.run_id as string}:` : null;
   const verdicts = mine
     ? Object.entries(recorded)

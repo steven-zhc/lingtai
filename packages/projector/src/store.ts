@@ -40,6 +40,98 @@ import type { TaskCard } from "./task-view.ts";
 /** A row, as a store hands it back. Column names, not field names. */
 export type ProjectionRow = Record<string, unknown>;
 
+/** One table that exists and does not match the DDL that declares it. */
+export interface ProjectionDrift {
+  table: string;
+  /** Declared by the DDL, absent from the live table. The #84 direction. */
+  missing: readonly string[];
+  /** In the live table, no longer declared. A `not null` leftover breaks inserts. */
+  unexpected: readonly string[];
+}
+
+/**
+ * A projection whose table no longer matches its DDL, refused rather than
+ * followed.
+ *
+ * Thrown by `start()`, so a process that would trip over the missing column
+ * says so before it takes any work — the message names the remedy, because the
+ * remedy is not obvious from `column x does not exist`. Thrown by `columnOf`
+ * too, so a *reader* that would silently count nothing says the same sentence.
+ *
+ * **It lives here rather than in `shape.ts` because the twins have to raise
+ * it.** `shape.ts` reaches a store through `choose.ts`, which names
+ * `postgres.ts`; a read path importing it from there would make `sqlite.ts`
+ * load `pg`. This file imports nothing at runtime, so both twins can. The
+ * names are still exported from `shape.ts`, where every reader of them looks.
+ */
+export class ProjectionShapeError extends Error {
+  // Assigned in the body, not declared as constructor parameters: a parameter
+  // property is the one TypeScript form Node's type stripping refuses, and
+  // nothing but running it under Node catches that (0010).
+  readonly projection: string;
+  readonly drift: readonly ProjectionDrift[];
+
+  constructor(projection: string, drift: readonly ProjectionDrift[]) {
+    super(describeDrift(projection, drift));
+    this.name = "ProjectionShapeError";
+    this.projection = projection;
+    this.drift = drift;
+  }
+}
+
+/**
+ * The finding, with the remedy in it.
+ *
+ * `column task_view.awaiting_approval does not exist` is the symptom, and it
+ * sends the reader looking for a migration that does not exist. Naming the
+ * rebuild is the difference between a diagnosis and a puzzle.
+ *
+ * **And the symptom's own words are unusable on the read path**: the board
+ * reads any error saying `does not exist` as *there is no projection yet* and
+ * renders an empty board (`emptyIfUnbuilt`, `apps/board/src/lib/board.ts`).
+ * This sentence says neither of those words.
+ */
+export function describeDrift(projection: string, drift: readonly ProjectionDrift[]): string {
+  const what = drift
+    .map((d) => {
+      const bits: string[] = [];
+      if (d.missing.length > 0) bits.push(`missing ${d.missing.join(", ")}`);
+      if (d.unexpected.length > 0) bits.push(`no longer declared: ${d.unexpected.join(", ")}`);
+      return `${d.table} ${bits.join("; ")}`;
+    })
+    .join(" · ");
+  return `${projection} has drifted from its table — ${what}. Replay, never a repair by hand: lingtai projection rebuild ${projection}`;
+}
+
+/**
+ * One column of a row the board reads, refused when the live table has not got it.
+ *
+ * **`create table if not exists` never adds a column, and `select t.*` never
+ * misses one.** A column the DDL declares and the live table was born without
+ * is simply *absent from the row*, so `row.verdicts ?? {}` reads it as an empty
+ * map: every card counts zero passed, zero failed, zero waived and zero
+ * approved, a ticket whose build refused draws no `a-fail` stripe and no
+ * `N failed` pill, and nothing anywhere throws.
+ *
+ * Nothing else catches it either. The health dot reads lag and the beacon
+ * (`apps/board/src/lib/health.ts`) and both are honest — a daemon still running
+ * the code from before the rename is appending to the old column and keeping
+ * the checkpoint at head. The shape check runs in `start()` and in `lingtai
+ * doctor`, and the board calls neither for `task_view`. So the board is the one
+ * reader that can be looking at a drifted table and be told nothing, which is
+ * #84's gap moved from the write path to the read path.
+ *
+ * A reader that cannot find the column it counts therefore says so, in the
+ * sentence the shape check already says it in.
+ *
+ * **Null is not absent.** A column that is there and empty answers with its
+ * value; only a column the row has not got at all is drift.
+ */
+export function columnOf(row: ProjectionRow, table: string, column: string): unknown {
+  if (column in row) return row[column];
+  throw new ProjectionShapeError(table, [{ table, missing: [column], unexpected: [] }]);
+}
+
 /**
  * SQL access inside the projection's transaction.
  *
